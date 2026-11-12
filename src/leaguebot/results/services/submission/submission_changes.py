@@ -90,6 +90,7 @@ from leaguebot.core.services.cancellations.cancellation_changes import not_notif
 from leaguebot.core.services.cancellations.cancellation_notice_service import failure_log_lines
 from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN, kept_line
 from leaguebot.core.services.seasons.season_service import set_round_status_on
+from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services.review import review_posting
@@ -155,14 +156,6 @@ __all__ = [
     "submission_open_change", "submission_restart_change",
 ]
 
-_ROUND = (
-    "SELECT r.status, r.division_id, r.round_number, r.format, d.name AS division_name, "
-    "s.season_number, c.results_channel_id "
-    "FROM rounds r JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
-    "LEFT JOIN division_results_config c ON c.division_id = d.id WHERE r.id = ?"
-)
-
-
 def _make_slug(name: str) -> str:
     """Convert a division name to a Discord-channel-safe slug."""
     slug = name.lower().replace(" ", "-")
@@ -181,10 +174,10 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
-            row = await (await db.execute(_ROUND, (int(ctx.payload["round_id"]),))).fetchone()
+            row = await season_service.round_facts_on(db, int(ctx.payload["round_id"]))
         if row is None:
             return Verdict.not_due("the round is gone")
-        if row["status"] == RoundStatus.CANCELLED.value:
+        if row.status is RoundStatus.CANCELLED:
             return Verdict.not_due("the round was cancelled")
         if ctx.payload.get("at_its_start"):
             # Asked by the round's start, on time or caught up: the round is judged due again here,
@@ -192,7 +185,7 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
             # among them. An amendment that has since moved the start ahead, or a change that has
             # since opened or ended the round, leaves nothing to open; one refused leaves the
             # opening to run.
-            if row["status"] != RoundStatus.NOT_RUN.value:
+            if row.status is not RoundStatus.NOT_RUN:
                 return Verdict.not_due("the round is no longer to be run")
             found = await season_service.round_in_division(
                 ctx.db_path, int(ctx.payload["round_id"])
@@ -214,14 +207,12 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
 
     async def not_cancelled(ctx: StepContext) -> bool:
         async with get_connection(ctx.db_path) as db:
-            row = await (
-                await db.execute("SELECT status FROM rounds WHERE id = ?", (int(ctx.payload["round_id"]),))
-            ).fetchone()
-        return row is not None and row["status"] != RoundStatus.CANCELLED.value
+            row = await season_service.round_facts_on(db, int(ctx.payload["round_id"]))
+        return row is not None and row.status is not RoundStatus.CANCELLED
 
     async def start_round(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         round_id = int(ctx.payload["round_id"])
-        row = await (await db.execute(_ROUND, (round_id,))).fetchone()
+        row = await season_service.round_facts_on(db, round_id)
         if row is None:
             raise LookupError(f"round {round_id} is not there to start")
         if not await results_enabled_on(db):
@@ -230,7 +221,7 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
             await set_round_status_on(
                 db, round_id, RoundStatus.FINAL, only_from=(RoundStatus.NOT_RUN.value,)
             )
-            await season_service.refresh_division_status_on(db, int(row["division_id"]))
+            await season_service.refresh_division_status_on(db, row.division_id)
             return StepResult(
                 result={"results": False},
                 follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
@@ -238,35 +229,30 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
         await set_round_status_on(
             db, round_id, RoundStatus.AWAITING_RESULTS, only_from=(RoundStatus.NOT_RUN.value,)
         )
-        server = await (
-            await db.execute(
-                "SELECT interaction_role_id, interaction_channel_id, league_admin_role_id "
-                "FROM server_configs WHERE server_id IS NOT NULL"
-            )
-        ).fetchone()
-        interaction_role = None if server is None else server["interaction_role_id"]
-        admin_role = None if server is None else server["league_admin_role_id"]
-        fmt = RoundFormat(row["format"])
+        server = await ConfigService(ctx.db_path).get_server_config_on(db)
+        interaction_role = None if server is None else server.interaction_role_id
+        admin_role = None if server is None else server.league_admin_role_id
+        fmt = row.format
         is_sprint = fmt is RoundFormat.SPRINT
         sessions = ", ".join(
             results_formatter.format_session_label(each, is_sprint=is_sprint)
             for each in get_sessions_for_format(fmt)
         )
         opening = (
-            f"✅ Results submission open for **Round {row['round_number']}** "
-            f"({row['division_name']}) - {fmt.label}. Sessions: {sessions}.{_MENTION}\n\n"
+            f"✅ Results submission open for **Round {row.round_number}** "
+            f"({row.division_name}) - {fmt.label}. Sessions: {sessions}.{_MENTION}\n\n"
             "Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a "
             "session."
         )
         first = await expected_session_on(db, round_id)
-        slug = _make_slug(row["division_name"])
+        slug = _make_slug(row.division_name)
         create: dict[str, Any] = {
-            "name": f"S{row['season_number']}-{slug}-R{row['round_number']}-results",
-            "beside_channel_id": None if server is None else server["interaction_channel_id"],
+            "name": f"S{row.season_number}-{slug}-R{row.round_number}-results",
+            "beside_channel_id": None if server is None else server.interaction_channel_id,
             "role_ids": [each for each in (interaction_role, admin_role) if each],
-            "round_number": row["round_number"],
-            "division_id": row["division_id"],
-            "division_name": row["division_name"],
+            "round_number": row.round_number,
+            "division_id": row.division_id,
+            "division_name": row.division_name,
             "opening": opening,
             "interaction_role_id": interaction_role,
             "first_session": None if first is None else first.value,
@@ -404,10 +390,8 @@ async def ask_submission_open(
     The round's number is read here, on a connection of its own, to name the change.
     """
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
-        ).fetchone()
-    number = "a round" if row is None else f"round {row['round_number']}"
+        row = await season_service.round_facts_on(db, round_id)
+    number = "a round" if row is None else f"round {row.round_number}"
     payload: dict[str, Any] = {"round_id": round_id}
     if at_its_start:
         payload["at_its_start"] = True
@@ -491,18 +475,17 @@ def submission_restart_change() -> ChangeType:
         round_id = int(ctx.payload["round_id"])
         row = await (
             await db.execute(
-                "SELECT rsc.channel_id, r.round_number FROM round_submission_channels rsc "
-                "JOIN rounds r ON r.id = rsc.round_id WHERE rsc.round_id = ?",
-                (round_id,),
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?", (round_id,),
             )
         ).fetchone()
-        if row is None:
+        facts = await season_service.round_facts_on(db, round_id)
+        if row is None or facts is None:
             return StepResult(result={"cleared": False})
         await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
         await db.execute("DELETE FROM round_submission_channels WHERE round_id = ?", (round_id,))
         line = (
             "System | Bot restarted mid-result-submission | Notice\n"
-            f"  round: R{row['round_number']}\n"
+            f"  round: R{facts.round_number}\n"
             "  Sessions submitted before restart have been cleared. "
             "Submission wizard re-opened — please re-submit all sessions."
         )
@@ -517,14 +500,14 @@ def submission_restart_change() -> ChangeType:
                         "channel_id": int(row["channel_id"]),
                         "reason": "Orphaned submission channel cleanup on restart",
                         "what": "cut-short submission channel",
-                        "round_number": int(row["round_number"]),
+                        "round_number": facts.round_number,
                     },
                 ),
             ),
             follow_ons=(
                 FollowOn(
                     KIND, {"round_id": round_id},
-                    f"Opening round {row['round_number']}'s results submission afresh",
+                    f"Opening round {facts.round_number}'s results submission afresh",
                 ),
             ),
         )
@@ -576,10 +559,8 @@ async def ask_submission_restart(
     """Ask the queue, as the bot, to clear *round_id*'s submission a restart cut short, found open
     in *channel_id*, and open it afresh. The round's number is read here to name the change."""
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
-        ).fetchone()
-    number = "a round" if row is None else f"round {row['round_number']}"
+        row = await season_service.round_facts_on(db, round_id)
+    number = "a round" if row is None else f"round {row.round_number}"
     await queue.ask(
         RESTART_KIND, {"round_id": round_id, "channel_id": channel_id},
         what=f"clearing {number}'s results submission a restart cut short",
@@ -660,14 +641,11 @@ def submission_all_cancelled_change(
         if ended is None:
             return StepResult(result={"ended": False})
         previous = ended.previous
-        row = await (await db.execute(
-            "SELECT c.results_channel_id FROM rounds r "
-            "LEFT JOIN division_results_config c ON c.division_id = r.division_id "
-            "WHERE r.id = ?",
-            (round_id,),
-        )).fetchone()
-        assert row is not None
         target = ended.target
+        configured = await (await db.execute(
+            "SELECT results_channel_id FROM division_results_config WHERE division_id = ?",
+            (int(target["division_id"]),),
+        )).fetchone()
         # A resubmission leaves the standings its first submission posted: they are withdrawn
         # with the round, and the later rounds' worked out again without it.
         held, standings_channel, standings_posts = await withdraw_round_standings_on(db, round_id)
@@ -684,7 +662,7 @@ def submission_all_cancelled_change(
             })
             for session in payload["sessions"]
         )
-        results_channel = row["results_channel_id"]
+        results_channel = None if configured is None else configured["results_channel_id"]
         deletions = tuple(
             PlannedStep(DELETE_MESSAGE, {
                 "channel_id": int(channel), "message_id": int(message_id), "what": what,
@@ -727,11 +705,8 @@ def submission_all_cancelled_change(
         round_id = int(ctx.payload["round_id"])
         called = await season_service.round_called(ctx.db_path, round_id)
         async with get_connection(ctx.db_path) as db:
-            row = await (await db.execute(
-                "SELECT s.season_number FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?", (round_id,),
-            )).fetchone()
-        season = "its season" if row is None else f"season {row['season_number']}"
+            row = await season_service.round_facts_on(db, round_id)
+        season = "its season" if row is None else f"season {row.season_number}"
         return f"{called} would never finish, and {season} could not be completed"
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:

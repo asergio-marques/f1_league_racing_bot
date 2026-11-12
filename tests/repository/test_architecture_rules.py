@@ -2651,19 +2651,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/standings/standings_service.py", "opening_team_standings"): (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "persist_snapshots_on"): (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "reference_round_id"): (2, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "<module>"): (3, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "ask_submission_open"): (1, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "ask_submission_restart"): (1, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "submission_all_cancelled_change.end_round"):
-        (1, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "submission_all_cancelled_change.would_never_finish"):
-        (3, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "submission_open_change.not_cancelled"):
-        (1, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "submission_open_change.start_round"):
-        (1, PASS["results"]),
-    ("results/services/submission/submission_changes.py", "submission_restart_change.clear"):
-        (1, PASS["results"]),
     ("results/services/submission/submission_steps.py", "post_prompt_step.post"): (1, PASS["results"]),
     ("results/services/submission/submission_turn_change.py", "<module>"): (3, PASS["results"]),
     ("results/services/submission/submission_turn_change.py", "turn_steps.post_opening_review"):
