@@ -541,6 +541,29 @@ async def test_under_test_mode_a_missed_round_start_is_left_to_the_advance(
     assert league.created == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)
+async def test_under_test_mode_with_weather_on_a_round_start_after_the_restart_opens_on_time(
+    tmp_path, monkeypatch,
+):
+    """Test mode and weather are on, so round 3's `results` job stands (core specification, "What
+    confirming placements does"). Round 3's start is an hour after the bot's clock when the bot comes
+    up, and results' catch-up runs and asks nothing. The bot's clock then moves two hours on, past
+    round 3's start, and its `results` job fires on time. Round 3's opening is asked of the queue
+    once, and the queue opens it: round 3 awaits results, and one channel is made."""
+    league = await _league(tmp_path, test_mode=True, weather=True)
+    await _start_passed(league, hours=-1)
+
+    await _catch_up(league)
+    assert await _opened_rounds(league) == []
+    league.clock.advance(hours=2)
+    await _fire_job(league, monkeypatch)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await _status(league) == "AWAITING_RESULTS"
+    assert len(league.created) == 1
+
+
 @pytest.mark.parametrize("job_first", [
     pytest.param(True, id="the job first",
                  marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
