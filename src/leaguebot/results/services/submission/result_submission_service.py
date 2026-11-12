@@ -27,6 +27,7 @@ from leaguebot.core.models.cancellation import (
     CancellationRound,
 )
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
@@ -34,7 +35,6 @@ from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import parse_gap, parse_lap_gap, parse_time
-from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -585,6 +585,9 @@ class _ConfigSelectView(LeagueView):
     A put-back that fails is logged on the host and changes nothing else (`_put_back`): a refusal
     stays the presser's one reply, and a fault in the ask is still the one the press raises.
 
+    *ask* is the queue, the change's kind and its payload, the queue being the one its builder was
+    handed, which the view never looks up on the bot.
+
     *text* is required with *ask*, as only a submission's picker is put back and the text it was
     posted with is what it is put back to.
     """
@@ -595,7 +598,7 @@ class _ConfigSelectView(LeagueView):
         config: Any | None = None,
         *,
         session: str | None = None,
-        ask: tuple[str, dict[str, Any]] | None = None,
+        ask: tuple[ChangeQueue, str, dict[str, Any]] | None = None,
         text: str | None = None,
     ) -> None:
         if ask is not None and text is None:
@@ -641,8 +644,7 @@ class _ConfigSelectView(LeagueView):
                     # queue with the pasted session's payload, and the picker comes down by the
                     # press's own edit of the message pressed, which is a reply
                     # (docs/design/architecture.md, "Posting to Discord").
-                    kind, asked = self._ask
-                    queue = bot_of(interaction).change_queue
+                    queue, kind, asked = self._ask
                     pressed = interaction.created_at
                     payload = {
                         **asked, "config_name": _name,

@@ -411,19 +411,19 @@ def register_change_types(
     )
     bot.change_queue.register(
         amend_turn_change(
-            server_config=bot.config_service.get_server_config,
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
     bot.change_queue.register(
         amend_config_change(
-            server_config=bot.config_service.get_server_config,
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
     bot.change_queue.register(
         amend_stage_one_change(
-            server_config=bot.config_service.get_server_config,
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )

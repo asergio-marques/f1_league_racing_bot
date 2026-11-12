@@ -1281,14 +1281,6 @@ def test_every_post_off_the_queue_names_its_reason():
 
 #: The bot's attribute that holds the change queue (`core/utils/league_bot.py`).
 CHANGE_QUEUE = "change_queue"
-#: The results services files whose views' and forms' callbacks reach the change queue through
-#: the bot until results' pass moves them (#439 slice 6b, decision 20): the penalty review's
-#: buttons and forms, and the configuration picker.
-RESULTS_VIEW_FILES = frozenset({
-    "results/services/review/appeals_review_views.py",
-    "results/services/review/penalty_review_views.py",
-    "results/services/submission/result_submission_service.py",
-})
 
 
 def _is_a_service_or_helper(path: str) -> bool:
@@ -1327,13 +1319,7 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
-#: Each callback of a view or form listed under results' pass reads the queue once and hands it
-#: on, binding it to a local where it asks twice (the penalty clear's staging and its approval
-#: message). They are the approve buttons, the configuration picker, Resubmit, the two forms, the
-#: Remove, clear-confirm and Make Changes buttons, and No Penalties.
-KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/submission/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
-}
+KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_no_service_reaches_the_change_queue_through_the_bot():
@@ -1367,40 +1353,6 @@ def test_the_queue_check_sees_bot_of_an_interaction():
         {(service, "handler"): 3}
     )
     assert _queue_reached_through_the_bot_among(_sample(source, cog)) == Counter()
-
-
-def _view_and_form_classes(path: str) -> set[str]:
-    """The classes the package file *path* defines that are views or forms: a base whose name
-    ends ``View`` or ``Modal``."""
-    tree = dict(_sources())[path]
-    return {
-        node.name
-        for node in tree.body
-        if isinstance(node, ast.ClassDef)
-        and any(
-            (base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute)
-             else "").endswith(("View", "Modal"))
-            for base in node.bases
-        )
-    }
-
-
-def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_pass():
-    """The penalty review's buttons and forms, and the configuration picker, sit in results'
-    services files and reach the queue through the bot until results' pass moves them (#439
-    slice 6b, decision 20). Some line is listed under that pass, and each names a callback of a
-    view or form class in one of those files, never a helper the slice hands the queue to."""
-    listed = sorted(
-        key for key, (_count, issue) in KNOWN_QUEUE_REACHED_THROUGH_THE_BOT.items()
-        if issue == PASS["results"]
-    )
-
-    assert listed
-    for path, function in listed:
-        assert path in RESULTS_VIEW_FILES, (path, function)
-        assert "." in function and function.split(".")[0] in _view_and_form_classes(path), (
-            path, function,
-        )
 
 
 # ── 10c. No service looks another service up on the bot ─────────────────────────────────────

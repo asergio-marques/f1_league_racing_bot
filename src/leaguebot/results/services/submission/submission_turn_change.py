@@ -652,6 +652,7 @@ def turn_steps(
             list(payload["config_names"]), await server_config(),
             session=str(payload["session"]),
             ask=(
+                queue,
                 RESUBMISSION_CONFIG_KIND if resubmission else CONFIG_KIND,
                 dict(payload["settle"]),
             ),

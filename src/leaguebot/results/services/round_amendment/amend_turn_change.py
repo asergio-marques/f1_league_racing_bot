@@ -183,6 +183,7 @@ async def take_amended_paste(bot: Any, message: discord.Message, *, queue: Chang
 
 
 def turn_steps(
+    queue: ChangeQueue,
     server_config: ServerConfig,
     *,
     now: Callable[[], datetime],
@@ -399,7 +400,7 @@ def turn_steps(
         return submissions._ConfigSelectView(
             list(payload["config_names"]), await server_config(),
             session=str(payload["session"]),
-            ask=(CONFIG_KIND, dict(payload["draft"])),
+            ask=(queue, CONFIG_KIND, dict(payload["draft"])),
             text=str(payload["text"]),
         )
 
@@ -473,6 +474,7 @@ async def _amendment_standing(ctx: CheckContext) -> Verdict:
 
 def amend_turn_change(
     *,
+    queue: ChangeQueue,
     server_config: ServerConfig,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
@@ -488,7 +490,7 @@ def amend_turn_change(
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep(JUDGE),),
-        steps=turn_steps(server_config, now=now, arm_once=arm_once),
+        steps=turn_steps(queue, server_config, now=now, arm_once=arm_once),
         check=_amendment_standing,
         key=lambda payload: f"{KIND}:{payload['message_id']}",
         doing=lambda _payload: "Taking an amended results paste",
@@ -502,6 +504,7 @@ def amend_turn_change(
 
 def amend_config_change(
     *,
+    queue: ChangeQueue,
     server_config: ServerConfig,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
@@ -535,7 +538,7 @@ def amend_config_change(
         kind=CONFIG_KIND,
         opening=(),
         plan=plan,
-        steps=turn_steps(server_config, now=now, arm_once=arm_once),
+        steps=turn_steps(queue, server_config, now=now, arm_once=arm_once),
         check=_amendment_standing,
         key=lambda payload: f"{CONFIG_KIND}:{payload['channel_id']}:{payload['session_type']}",
         doing=lambda payload: (
@@ -552,6 +555,7 @@ def amend_config_change(
 
 def amend_stage_one_change(
     *,
+    queue: ChangeQueue,
     server_config: ServerConfig,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
@@ -575,7 +579,7 @@ def amend_stage_one_change(
     records them. The drafts are kept once recorded: the amendment expects its next session by
     them.
     """
-    steps = turn_steps(server_config, now=now, arm_once=arm_once)
+    steps = turn_steps(queue, server_config, now=now, arm_once=arm_once)
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         return (
