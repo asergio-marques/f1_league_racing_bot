@@ -91,5 +91,6 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     assert record["message_id"] == str(_sent(league)[0])
     lines = [line for line in league.log().splitlines() if "check-in call of round 4:" in line]
     expected = {"not drawn": [NOT_DRAWN], "no deadline": [NO_DEADLINE], "none": []}[fault]
-    assert [line.split("check-in call of round 4: ", 1)[1] for line in lines] == expected
-    assert all(line.startswith("**") for line in lines)
+    # Each line names the division and the round.
+    heading = f"**{DIVISIONS[PRO][0]}** — check-in call of round 4: "
+    assert lines == [heading + clause for clause in expected]
