@@ -83,7 +83,7 @@ def sign_up_to_round_clean_ups_due(bot: "LeagueBot") -> None:
 def _check_in_view() -> "CheckInViewFactory":
     """The way the call's jobs build the buttons a call carries: the cog's `RsvpView`, which a
     service may not import and so is handed."""
-    from leaguebot.attendance.cogs.attendance_cog import RsvpView
+    from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 
     return lambda round_id: RsvpView(round_id=round_id)
 

@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.attendance.cogs.attendance_cog import RsvpView
+from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.image.services import image_rsvp_post
 from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach

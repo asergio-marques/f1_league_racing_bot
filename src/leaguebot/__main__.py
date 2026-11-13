@@ -1188,7 +1188,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
     from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView, ApprovalView
     from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
-    from leaguebot.attendance.cogs.attendance_cog import RsvpView
+    from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 
     for _view in (
         SignupButtonView(bot.change_queue),

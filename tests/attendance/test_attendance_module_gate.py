@@ -434,7 +434,7 @@ def _make_interaction(bot: MagicMock) -> MagicMock:
 
 
 async def test_a_button_press_records_nothing_while_attendance_is_disabled(tmp_path):
-    from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
+    from leaguebot.attendance.cogs.check_in_buttons import handle_rsvp_button
 
     db_path = await _make_db(tmp_path, attendance_enabled=False)
     await _seed_rsvp_rows(db_path, reserve_accepted=False)

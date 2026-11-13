@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
+from leaguebot.attendance.cogs.check_in_buttons import handle_rsvp_button
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
