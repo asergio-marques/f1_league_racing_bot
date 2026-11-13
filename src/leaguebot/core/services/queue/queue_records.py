@@ -151,7 +151,7 @@ async def done_step_results_before(
             (kind, before, step_name),
         )
         return [
-            (json.loads(row["payload"]), json.loads(row["result"] or "{}"))
+            (json.loads(row["payload"]), json.loads(row["result"] or "null") or {})
             for row in await cursor.fetchall()
         ]
 

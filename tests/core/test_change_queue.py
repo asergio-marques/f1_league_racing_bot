@@ -2278,11 +2278,6 @@ async def test_ever_asked_finds_the_changes_of_a_kind_in_any_state(env):
     assert [p["n"] for p in found] == ["done", "other", "dropped", "discarded", "queued"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: a done step that saved no result is read as None, not the empty dict the reader "
-    "promises",
-)
 async def test_done_step_results_before_gives_each_earlier_change_s_done_step_newest_first(env):
     """`done_step_results_before` gives, newest first, the payload of each change of the kind
     asked before the one named whose step of that name is done, with the result that step saved
