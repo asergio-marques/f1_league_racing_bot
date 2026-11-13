@@ -164,14 +164,15 @@ topic. The table names a service by its file.
 
 | Folder | Services | Chiefly writes |
 |---|---|---|
-| `check_in/` | `attendance_config_service` (`AttendanceService`: the settings read, a round's rows, an answer decided and written, the call's rows, and `rsvp_lock` and `derive_checkin_deadline`, the rules of the lock and of the deadline), `check_in_answer_changes` (an answer asked as a change, and the form's paste), `rsvp_service` (the embed built, the roster, the reserves distributed, the last notice's text, the call's graphic), `check_in_record` (the audit of a round's check-in, read before a call comes down), `check_in_recovery` (start-up: it asks the queue), and the check-in's five changes, below | `driver_round_attendance`, `rsvp_embed_messages`, `rounds.checkin_cleared` |
+| `check_in/` | `attendance_config_service` (`AttendanceService`: the settings read, a round's rows, an answer decided and written, the call's rows, and `rsvp_lock` and `derive_checkin_deadline`, the rules of the lock and of the deadline), `check_in_answer_changes` (an answer asked as a change, and the form's paste), `rsvp_service` (the embed built, the roster, the reserves distributed, the last notice's text, the call's graphic), `check_in_record` (the audit of a round's check-in, read before a call comes down), `check_in_recovery` (start-up: it asks the queue), and the check-in's four changes, below | `driver_round_attendance`, `rsvp_embed_messages`, `rounds.checkin_cleared` |
 | `scoring/` | `attendance_scoring` (who attended and the points a round confers), `attendance_recompute` (the one recompute of the stored copies, and what stands in the way of a recalculation), `attendance_pardons` | `driver_round_attendance`, `attendance_pardons` |
 | `sanctions/` | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
 | `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id) |
 | `settings/` | `attendance_settings` (the eight), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config` |
 | `hooks/` | `attendance_hooks` (the deletes, the round's window, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
 
-**The check-in is five changes, each in a file of its own,** and the file they share:
+**The check-in is four changes, each in a file of its own,** with the file that holds the steps an
+amendment plans over them and the file they share:
 
 | File | Holds |
 |---|---|
@@ -180,9 +181,9 @@ topic. The table names a service by its file.
 | `check_in_deadline` | the deadline's steps and change: the reserves placed, the call locked, the placements announced, and a round's deadline with no call standing |
 | `check_in_clean_up` | the clean-up's steps and change, and the take-down of a call: for a cancellation, an amendment and a call's failure |
 | `check_in_amendment` | the amendment's steps and its three events, and `/test-mode advance`'s step for each of attendance's kinds of round job |
-| `check_in_changes` | what the five read alike, so that none imports another for it: the names of their jobs, the round as a check-in reads it (`call_row`, `round_not_owed`, the moments `scheduled_at_of` and `deadline_of`), the judgement of a timer's ask under test mode (`left_to_advance`) and the factory of a call's buttons (`CheckInViewFactory`) |
+| `check_in_changes` | what the four read alike, so that none imports another for it: the names of their jobs, the round as a check-in reads it (`call_row`, `round_not_owed`, the moments `scheduled_at_of` and `deadline_of`), the judgement of a timer's ask under test mode (`left_to_advance`) and the factory of a call's buttons (`CheckInViewFactory`) |
 
-The five share one record, the call's row, and read it through `check_in_changes`.
+The four share one record, the call's row, and read it through `check_in_changes`.
 
 **Every service is module functions** but two classes. `AttendanceService` carries the database path
 and the reads and writes of the check-in's own rows. `AttendanceAfterReview` carries the bot (for

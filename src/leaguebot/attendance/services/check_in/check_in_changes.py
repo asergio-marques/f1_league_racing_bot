@@ -1,9 +1,9 @@
 """What a round's check-in changes share: the names of their jobs, and the round as they read it.
 
-The check-in is five changes, each in a module of its own: the call (`check_in_call`), its last
-notice (`check_in_last_notice`), its deadline (`check_in_deadline`), its clean-up and the
-take-down of its call (`check_in_clean_up`), and the steps an amendment and `/test-mode advance`
-plan over them (`check_in_amendment`). This module holds what they read alike, so that none
+The check-in is four changes, each in a module of its own: the call (`check_in_call`), its last
+notice (`check_in_last_notice`), its deadline (`check_in_deadline`), and its clean-up with the
+take-down of its call (`check_in_clean_up`); `check_in_amendment` holds the steps an amendment
+and `/test-mode advance` plan over them. This module holds what they read alike, so that none
 imports another for it: the names of their jobs; the round as a check-in reads it (`call_row`,
 with `round_not_owed` judging what a round is owed, `scheduled_at_of` and `deadline_of` its
 moments); the judgement of a timer's ask under test mode (`left_to_advance`); and the factory of
