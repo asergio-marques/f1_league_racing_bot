@@ -170,8 +170,14 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
         return _CLOSED
     # Only a driver with a confirmed seat in this division may answer its call: one refusal for
     # every way of not being a driver of it (an unconfirmed placement, a seat elsewhere, none).
+    # A seat held with no placement row in the division is refused too, as the join of the
+    # placement to its seat always refused it, so the seat holders are filtered by placement.
+    placed = {p.profile_id for p in await TeamService.placed_drivers_on(db, division_id)}
     seat = next(
-        (h for h in await TeamService.seat_holders_on(db, division_id) if h.profile_id == driver),
+        (
+            h for h in await TeamService.seat_holders_on(db, division_id)
+            if h.profile_id == driver and h.profile_id in placed
+        ),
         None,
     )
     if seat is None:

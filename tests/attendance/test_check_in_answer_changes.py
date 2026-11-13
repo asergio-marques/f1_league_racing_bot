@@ -19,11 +19,6 @@ from leaguebot.attendance.services import check_in_answer_changes as answers
 from leaguebot.core.db.database import get_connection
 from tests.attendance.test_seat_join_equivalence import AM, PRO, _seed
 
-_NO_PLACEMENT = (
-    "#285: a driver holding a seat with no placement row in the division is let answer, where "
-    "the old join refused them as not a member"
-)
-
 
 async def _league(path: str) -> None:
     """The league of the module docstring, with the call of each division's round standing and
@@ -53,10 +48,7 @@ async def _league(path: str) -> None:
     pytest.param(PRO, 3, True, id="a-confirmed-reserve-seat"),
     pytest.param(PRO, 2, None, id="b-unconfirmed-placement"),
     pytest.param(PRO, 4, None, id="c-seated-in-another-division-only"),
-    pytest.param(
-        PRO, 5, None, id="d-seat-with-no-placement",
-        marks=pytest.mark.xfail(strict=True, reason=_NO_PLACEMENT),
-    ),
+    pytest.param(PRO, 5, None, id="d-seat-with-no-placement"),
     pytest.param(PRO, 1, False, id="e-placed-in-two-divisions-pro"),
     pytest.param(AM, 1, False, id="e-placed-in-two-divisions-am"),
 ])
