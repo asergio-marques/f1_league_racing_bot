@@ -39,9 +39,15 @@ write the league's configuration at once, each save re-judging the other's.
 **The line is formed here and nowhere else:** `{member} | {command} | {outcome}`, the values
 beneath it, saved in the same save as the value and its audit entry. A save is handed only the
 connection and the payload, never the actor or the clock: the queue stamps the audit entry. No
-settings code reads the wall clock.
+settings code reads the wall clock. (A penalty's change that recalculates, below, wraps the save and is
+handed the step's context, to apply sanctions as the bot.)
 
-**A setting never holds up the queue.** Its save, its check as it comes up to run and the steps
+**A setting never holds up the queue, bar one that recalculates and posts as `/attendance sync`
+does.** Such a change follows the sync's rule whatever starts it, a setting included: its cards,
+lineups and sheets stop the lane where Discord refuses them, for the manager to Retry or Discard,
+since a sanction card lost is worse than a lane held (`penalty_recalculation`). Only its save then
+ends on a fault, as below, and it declares the tables it writes as every setting does. Otherwise
+a setting never holds up the queue: its save, its check as it comes up to run and the steps
 after it end on a fault instead of stopping the lane (`Step.on_fault`,
 `ChangeType.on_check_fault`): a settings change is one atomic save, so a fault is cured one of two
 ways and nothing behind it on the lane ever waits on it. A save that faults has been rolled back

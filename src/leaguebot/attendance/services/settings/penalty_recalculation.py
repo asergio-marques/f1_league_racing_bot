@@ -26,7 +26,9 @@ sync` from the division's first approved round would give it:
   in a division recalculated, and a channel the recalculation posts to that cannot be reached.
   Neither is judged for a value already held, which changes nothing.
 - **The Reserve team's capacity** is read before the save (`CHECK_CAPACITY`), as the sync reads it,
-  for each division recalculated.
+  for each division recalculated, and not at all for a value already held.
+- **The tables it writes** are declared (`WRITES`): the setting's, the recalculation's and the
+  sanctions', the authoriser confining the save to them as it does any setting.
 
 A season not ongoing, or none of whose divisions has an approved round, saves the value alone.
 *Rejected:* a second copy of the recalculation for the setting, which the sync's would drift from.
@@ -73,6 +75,14 @@ if TYPE_CHECKING:
 
 #: The job that reads each division's Reserve capacity, before the save.
 CHECK_CAPACITY = "penalty_check_reserve"
+
+#: The tables the change writes: the penalty's own, the recalculation's, a sanction's seat, status
+#: and card, and what the jobs after the save record (a lineup's and a sheet's message).
+WRITES = (
+    "attendance_config", "attendance_division_config", "divisions", "driver_profiles",
+    "driver_round_attendance", "driver_season_assignments", "team_seats",
+    "verdict_banner_messages",
+)
 
 _APPROVED = (RoundStatus.AWAITING_APPEAL_VERDICTS.value, RoundStatus.FINAL.value)
 
@@ -183,9 +193,13 @@ def penalty_change(
         return sync.faults_verdict(faults) or verdict
 
     async def check_capacity(ctx: StepContext) -> StepResult:
-        """Each division's Reserve capacity, read before the save."""
+        """Each division's Reserve capacity, read before the save, where the save will recalculate:
+        nothing is read for a value already held."""
         async with get_connection(ctx.db_path) as db:
+            row = await (await db.execute(f"SELECT {column} FROM attendance_config")).fetchone()  # noqa: S608
             _season_id, divisions = await _recalculated_on(db)
+        if row is None or row[0] == ctx.payload["value"]:
+            divisions = []
         return StepResult(result={"capacity": {
             str(each.division_id): await sync.reserve_capacity(
                 ctx.db_path, placement, each.latest_round_id, each.division_id
@@ -279,5 +293,5 @@ def penalty_change(
         steps=steps,
         check=check,
         outcome=outcome,
-        writes=None,
+        writes=WRITES,
     )
