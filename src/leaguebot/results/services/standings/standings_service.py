@@ -956,6 +956,23 @@ async def previous_standing_positions(
     }
 
 
+async def team_positions_in_round_on(db: aiosqlite.Connection, round_id: int) -> dict[int, int]:
+    """Each team's constructors' standing position after *round_id*, as ``{team instance id:
+    position}``, read on *db*; empty for a round holding no team standings. A team standing twice
+    reads as its best position.
+
+    Where the standings stood going into a later round, asked of the owner of the snapshots by a
+    module that breaks a tie on it (architecture.md, "The database"). It writes nothing and
+    commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT team_instance_id, MIN(standing_position) AS position "
+        "FROM team_standings_snapshots WHERE round_id = ? GROUP BY team_instance_id",
+        (round_id,),
+    )
+    return {int(row["team_instance_id"]): int(row["position"]) for row in await cursor.fetchall()}
+
+
 def derive_movement(
     current: list[tuple[int, int, int]],
     previous: dict[int, int] | None,

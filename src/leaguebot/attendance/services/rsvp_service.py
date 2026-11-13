@@ -8,7 +8,9 @@ use these."""
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from typing import Any
 
 import aiohttp
 import aiosqlite
@@ -16,7 +18,10 @@ import discord
 
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
 from leaguebot.attendance.services.attendance_config_service import AttendanceService
-from leaguebot.core.services.seasons.season_service import round_facts_on
+from leaguebot.core.services.drivers.driver_service import driver_test_names_on
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons.season_service import division_round_states_on, round_facts_on
+from leaguebot.results.services.standings.standings_service import team_positions_in_round_on
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat
@@ -155,48 +160,38 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
                          "test_display_name": str | None}, ...]
         }
     """
-    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
-
     # A driver whose placement is not yet confirmed is not called to check-in (issue #220),
-    # and so holds no attendance row for the round either.
+    # and so holds no attendance row for the round either: core reads such a seat as empty.
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"""
-            SELECT ti.id        AS team_id,
-                   ti.full_name AS team_name,
-                   ti.is_reserve,
-                   dp.id        AS driver_profile_id,
-                   dp.discord_user_id,
-                   dp.test_display_name
-              FROM team_instances ti
-              LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id
-              LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-                                          AND {uncommitted_seat_excluded("ts")}
-             WHERE ti.division_id = ?
-             ORDER BY ti.is_reserve ASC, ti.full_name ASC, dp.id ASC
-            """,
-            (division_id,),
+        division_teams = await TeamService.division_teams_on(db, division_id, committed_only=True)
+        names = await driver_test_names_on(
+            db,
+            [
+                int(seat["discord_user_id"])
+                for team in division_teams
+                for seat in team["seats"]
+                if seat["driver_profile_id"] is not None
+            ],
         )
-        rows = await cursor.fetchall()
 
     teams: dict[int, dict] = {}
-    for row in rows:
-        tid = row["team_id"]
-        if tid not in teams:
-            teams[tid] = {
-                "id": tid,
-                "name": row["team_name"],
-                "is_reserve": bool(row["is_reserve"]),
-                "drivers": [],
-            }
-        if row["driver_profile_id"] is not None:
-            teams[tid]["drivers"].append(
+    for team in division_teams:
+        teams[team["id"]] = {
+            "id": team["id"],
+            "name": team["full_name"],
+            "is_reserve": team["is_reserve"],
+            "drivers": [
                 {
-                    "driver_profile_id": row["driver_profile_id"],
-                    "discord_user_id": str(row["discord_user_id"]),
-                    "test_display_name": row["test_display_name"],
+                    "driver_profile_id": seat["driver_profile_id"],
+                    "discord_user_id": str(seat["discord_user_id"]),
+                    "test_display_name": names.get(int(seat["discord_user_id"])),
                 }
-            )
+                for seat in sorted(
+                    (s for s in team["seats"] if s["driver_profile_id"] is not None),
+                    key=lambda s: s["driver_profile_id"],
+                )
+            ],
+        }
     # Sort: non-reserve teams first (alphabetical), Reserve last
     return sorted(teams.values(), key=lambda t: (t["is_reserve"], t["name"].lower()))
 
@@ -434,32 +429,34 @@ async def clear_check_in_answers_on(db: aiosqlite.Connection, round_id: int) -> 
 
 async def silent_full_time_drivers(
     db_path: str, round_id: int, division_id: int
-) -> list[aiosqlite.Row]:
+) -> list[dict[str, Any]]:
     """The full-time drivers of *division_id* still at ``NO_RSVP`` for *round_id*, with their
-    Discord ids and any test display name. A reserve is asked, not required, so is never named."""
+    Discord ids and any test display name. A reserve is asked, not required, so is never named.
+
+    A driver is full-time where they hold a seat of a team that is not the reserve team and their
+    placement names a seat of the division: the seat holders, filtered by placement."""
     async with get_connection(db_path) as db:
         cur = await db.execute(
-            """
-            SELECT dp.discord_user_id, dp.test_display_name
-              FROM driver_round_attendance dra
-              JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-              JOIN driver_season_assignments dsa
-                   ON dsa.driver_profile_id = dra.driver_profile_id
-                  AND dsa.division_id = dra.division_id
-              JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
-              JOIN team_instances ti ON ti.id = ts.team_instance_id
-                                    AND ti.division_id = dra.division_id
-             WHERE dra.round_id = ?
-               AND dra.division_id = ?
-               AND dra.rsvp_status = 'NO_RSVP'
-               AND ti.is_reserve = 0
-            """,
+            "SELECT driver_profile_id FROM driver_round_attendance "
+            "WHERE round_id = ? AND division_id = ? AND rsvp_status = 'NO_RSVP' ORDER BY id",
             (round_id, division_id),
         )
-        return list(await cur.fetchall())
+        silent = [int(row["driver_profile_id"]) for row in await cur.fetchall()]
+        placed = {p.profile_id for p in await TeamService.placed_drivers_on(db, division_id)}
+        full_time = {
+            h.profile_id: h
+            for h in await TeamService.seat_holders_on(db, division_id)
+            if h.profile_id in placed and not h.is_reserve
+        }
+        drivers = [full_time[profile_id] for profile_id in silent if profile_id in full_time]
+        names = await driver_test_names_on(db, [d.discord_user_id for d in drivers])
+    return [
+        {"discord_user_id": str(d.discord_user_id), "test_display_name": names.get(d.discord_user_id)}
+        for d in drivers
+    ]
 
 
-def last_notice_content(silent: list[aiosqlite.Row], unix_ts: int) -> str:
+def last_notice_content(silent: Sequence[Mapping[str, Any]], unix_ts: int) -> str:
     """The last notice's text: the reminder naming each of the *silent* drivers, or, where
     everyone has answered, the visibility notice. *unix_ts* is the race, as Discord renders it."""
     if not silent:
@@ -511,24 +508,28 @@ async def reserve_distribution_on(
     3. Assign reserves to vacancies one-by-one; remaining reserves become standby.
     """
     # Accepted reserves ordered by accepted_at ASC (FR-022 / FR-019)
+    division_teams = await TeamService.division_teams_on(db, division_id)
+    reserve_profiles = {
+        seat["driver_profile_id"]
+        for team in division_teams
+        if team["is_reserve"]
+        for seat in team["seats"]
+        if seat["driver_profile_id"] is not None
+    }
     cur = await db.execute(
         """
-        SELECT dra.id         AS dra_id,
-               dra.driver_profile_id,
-               dra.accepted_at
-          FROM driver_round_attendance dra
-          JOIN team_seats ts ON ts.driver_profile_id = dra.driver_profile_id
-          JOIN team_instances ti ON ti.id = ts.team_instance_id
-                                AND ti.division_id = dra.division_id
-         WHERE dra.round_id = ?
-           AND dra.division_id = ?
-           AND dra.rsvp_status = 'ACCEPTED'
-           AND ti.is_reserve = 1
-         ORDER BY dra.accepted_at ASC
+        SELECT id AS dra_id, driver_profile_id, rsvp_status, accepted_at
+          FROM driver_round_attendance
+         WHERE round_id = ? AND division_id = ?
+         ORDER BY accepted_at ASC, id ASC
         """,
         (round_id, division_id),
     )
-    accepted_reserves = await cur.fetchall()
+    answers = await cur.fetchall()
+    accepted_reserves = [
+        each for each in answers
+        if each["rsvp_status"] == "ACCEPTED" and each["driver_profile_id"] in reserve_profiles
+    ]
 
     if answered_by is not None:
         accepted_reserves = [
@@ -543,37 +544,35 @@ async def reserve_distribution_on(
 
     # Candidate teams: non-Reserve teams in division (FR-020).
     # Tiering and tie-breaks are applied below in _static_tier / _current_sort_key.
-    # LEFT JOINs so teams with zero FT drivers still appear.
-    cur = await db.execute(
-        """
-        SELECT ti.id                AS team_id,
-               ti.full_name         AS team_name,
-               ti.max_seats,
-               COUNT(CASE WHEN dra.rsvp_status = 'NO_RSVP'   THEN 1 END) AS no_rsvp_count,
-               COUNT(CASE WHEN dra.rsvp_status = 'DECLINED'  THEN 1 END) AS declined_count,
-               COUNT(CASE WHEN dra.rsvp_status = 'TENTATIVE' THEN 1 END) AS tentative_count,
-               COUNT(CASE WHEN dra.rsvp_status = 'ACCEPTED'  THEN 1 END) AS accepted_count,
-               COUNT(dra.id) AS total_drivers,
-               MIN(tss.standing_position) AS standing_position
-          FROM team_instances ti
-     LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id
-     LEFT JOIN driver_round_attendance dra
-               ON dra.driver_profile_id = ts.driver_profile_id
-              AND dra.round_id = ?
-              AND dra.division_id = ?
-          LEFT JOIN team_standings_snapshots tss
-               ON tss.team_instance_id = ti.id
-              AND tss.round_id = (
-                  SELECT MAX(r2.id) FROM rounds r2
-                   WHERE r2.division_id = ? AND r2.id < ?
-              )
-         WHERE ti.division_id = ?
-           AND ti.is_reserve = 0
-         GROUP BY ti.id, ti.full_name, ti.max_seats
-        """,
-        (round_id, division_id, division_id, round_id, division_id),
-    )
-    team_rows = await cur.fetchall()
+    # A team with zero FT drivers still appears.
+    statuses_of: dict[int, list[str]] = {}
+    for each in answers:
+        statuses_of.setdefault(each["driver_profile_id"], []).append(each["rsvp_status"])
+    # The constructors' standings going into the round: after the latest earlier round of the
+    # division, none where there is no such round.
+    earlier = [each for each in await division_round_states_on(db, division_id) if each < round_id]
+    positions = await team_positions_in_round_on(db, max(earlier)) if earlier else {}
+    team_rows = []
+    for team in division_teams:
+        if team["is_reserve"]:
+            continue
+        held = [
+            status
+            for seat in team["seats"]
+            if seat["driver_profile_id"] is not None
+            for status in statuses_of.get(seat["driver_profile_id"], [])
+        ]
+        team_rows.append({
+            "team_id": team["id"],
+            "team_name": team["full_name"],
+            "max_seats": team["max_seats"],
+            "no_rsvp_count": held.count("NO_RSVP"),
+            "declined_count": held.count("DECLINED"),
+            "tentative_count": held.count("TENTATIVE"),
+            "accepted_count": held.count("ACCEPTED"),
+            "total_drivers": len(held),
+            "standing_position": positions.get(team["id"]),
+        })
 
     def _static_tier(t) -> int:
         """Tier based solely on RSVP/seat state, used for eligibility filtering."""
@@ -750,27 +749,37 @@ async def distribution_announcement(
 
     Composed from the placements as they stand when it is posted."""
     async with get_connection(db_path) as db:
+        division_teams = await TeamService.division_teams_on(db, division_id)
         cur = await db.execute(
             """
-            SELECT dra.assigned_team_id,
-                   dra.is_standby,
-                   dp.discord_user_id,
-                   dp.test_display_name,
-                   ti.full_name AS team_name
-              FROM driver_round_attendance dra
-              JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-              JOIN team_seats ts ON ts.driver_profile_id = dra.driver_profile_id
-              JOIN team_instances src_ti ON src_ti.id = ts.team_instance_id
-                                       AND src_ti.division_id = dra.division_id
-              LEFT JOIN team_instances ti ON ti.id = dra.assigned_team_id
-             WHERE dra.round_id = ?
-               AND dra.division_id = ?
-               AND dra.rsvp_status = 'ACCEPTED'
-               AND src_ti.is_reserve = 1
+            SELECT driver_profile_id, assigned_team_id, is_standby
+              FROM driver_round_attendance
+             WHERE round_id = ? AND division_id = ? AND rsvp_status = 'ACCEPTED'
+             ORDER BY id
             """,
             (round_id, division_id),
         )
-        eligible_rows = await cur.fetchall()
+        accepted = await cur.fetchall()
+        reserves = {
+            seat["driver_profile_id"]: int(seat["discord_user_id"])
+            for team in division_teams
+            if team["is_reserve"]
+            for seat in team["seats"]
+            if seat["driver_profile_id"] is not None
+        }
+        names = await driver_test_names_on(db, list(reserves.values()))
+    team_names = {team["id"]: team["full_name"] for team in division_teams}
+    eligible_rows = [
+        {
+            "assigned_team_id": each["assigned_team_id"],
+            "is_standby": each["is_standby"],
+            "discord_user_id": reserves[each["driver_profile_id"]],
+            "test_display_name": names.get(reserves[each["driver_profile_id"]]),
+            "team_name": team_names.get(each["assigned_team_id"]),
+        }
+        for each in accepted
+        if each["driver_profile_id"] in reserves
+    ]
 
     if not eligible_rows:
         log.info(
