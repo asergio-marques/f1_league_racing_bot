@@ -242,3 +242,57 @@ async def test_a_last_notice_with_no_call_standing_is_dropped(tmp_path):
 
     assert _sent(league) == []
     assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason="#285: under test mode a last notice's timer firing late, as at a restart, still posts the notice")
+async def test_a_last_notice_timer_overdue_at_a_restart_under_test_mode_posts_nothing(tmp_path):
+    """Test mode is on. Round 3's last notice fell due while the bot was down, its call standing
+    and its check-in deadline an hour ahead. As the bot starts again the last notice's timer
+    fires, handed round 3, and the queue runs: no last notice is posted or recorded, as a restart
+    under test mode posts no late call (core spec, "Test mode"), and the queue does not stop."""
+    from tests.attendance.test_check_in_call_change import timer_of
+
+    league = await _league(tmp_path)
+    await league.set_test_mode(True)
+
+    await timer_of(league, "rsvp_last_notice")(ROUND_3)
+    await run_queue(league.bot)
+
+    assert _sent(league) == []
+    assert (await _call_row(league))["last_notice_msg_id"] is None
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason="#285: a last notice asked before the late call it reminds of has posted is dropped at the ask")
+async def test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the_call_stands(
+    tmp_path,
+):
+    """Test mode is off. Round 4 is three hours off and no call was ever posted for it: its call
+    and its last notice both fell due while the bot was down, its check-in deadline an hour
+    ahead. As the bot starts again the restart asks for the late call, and before the queue has
+    posted it the last notice's timer fires, handed round 4. The queue runs: the call is posted
+    in Pro's check-in channel, then the last notice after it, recorded against the call, and the
+    queue does not stop."""
+    from tests.attendance.test_check_in_call_change import (
+        ROUND_4,
+        _call_league,
+        _recover,
+        _round_4_in,
+        timer_of,
+    )
+
+    league = await _call_league(tmp_path)
+    await _round_4_in(league, timedelta(hours=3))
+
+    await _recover(league)
+    await timer_of(league, "rsvp_last_notice")(ROUND_4)
+    await run_queue(league.bot)
+
+    call, notice = _sent(league)
+    [row] = await league.rows(
+        "SELECT message_id, last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
+        ROUND_4,
+    )
+    assert row["message_id"] == str(call)
+    assert row["last_notice_msg_id"] == str(notice)
+    assert await stopped_job(league.db_path) is None

@@ -119,6 +119,17 @@ async def _recover(league: SeasonLeague) -> None:
     await dict(start_up_steps(league.bot))["missed check-in calls"]()
 
 
+def timer_of(league: SeasonLeague, kind: str) -> Any:
+    """The handler attendance signs up for the check-in timer *kind* (`rsvp_notice`,
+    `rsvp_last_notice`, `rsvp_deadline` or `rsvp_cleanup`), as the scheduler fires it, handed a
+    round's id."""
+    from leaguebot.attendance.wiring import register_scheduler_callbacks
+
+    register_scheduler_callbacks(league.bot)
+    return [call.args[1] for call in league.bot.scheduler_service.register_timer.call_args_list
+            if call.args[0] == kind][-1]
+
+
 # ---------------------------------------------------------------------------
 # The call posted and recorded by its own jobs
 # ---------------------------------------------------------------------------
@@ -452,3 +463,23 @@ async def test_the_start_up_asks_no_late_call_under_test_mode(tmp_path):
 
     assert await _call_changes(league) == []
     assert _sent(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason="#285: under test mode a call's timer firing late, as at a restart, still posts the call")
+async def test_a_call_timer_overdue_at_a_restart_under_test_mode_posts_no_late_call(tmp_path):
+    """Test mode is on. Round 4's call fell due two days ago while the bot was down, its
+    check-in deadline still ahead. As the bot starts again the call's timer fires, handed round 4,
+    and the queue runs: no call is posted or recorded, the round's check-in is left open for
+    `/test-mode advance` to post the call in its turn (core spec, "Test mode"), and the queue does
+    not stop."""
+    league = await _call_league(tmp_path)
+    await league.set_test_mode(True)
+
+    await timer_of(league, "rsvp_notice")(ROUND_4)
+    await run_queue(league.bot)
+
+    assert _sent(league) == []
+    assert await _call_record(league) == []
+    [round_] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", ROUND_4)
+    assert round_["checkin_cleared"] == 0
+    assert await stopped_job(league.db_path) is None
