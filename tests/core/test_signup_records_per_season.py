@@ -140,3 +140,25 @@ async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
         await db.commit()
 
     assert len(await svc.get_records(1)) == 1
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#286: driver_signup_on cannot yet be asked for a season's signup"
+)
+async def test_a_driver_s_signup_for_a_season_is_the_one_kept_under_it(db_path):
+    """Season 1 holds the driver's Steam signup and season 2, after it, their Xbox one. Asked for
+    season 1, the one function that says which signup is the driver's gives the Steam signup; asked
+    for no season, the latest season's; asked for a season they never signed up in, none."""
+    from leaguebot.signup.services.signup_module_service import driver_signup_on
+
+    svc = SignupModuleService(db_path)
+    await _season(db_path, 1)
+    await _save_record(svc, db_path, _record("Steam"))
+    await _archive(db_path, 1)
+    await _season(db_path, 2)
+    await _save_record(svc, db_path, _record("Xbox"))
+
+    async with get_connection(db_path) as db:
+        assert (await driver_signup_on(db, [USER], season_id=1))["platform"] == "Steam"
+        assert (await driver_signup_on(db, [USER]))["platform"] == "Xbox"
+        assert await driver_signup_on(db, [USER], season_id=3) is None
