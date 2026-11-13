@@ -85,18 +85,12 @@ async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
                   offered_ago: timedelta | None = None) -> SeasonLeague:
     """`setup_league` at Signups, the window open, the driver role set; Kimi at *state*, his
     signup record saved, his channel standing; manager 77 holding the interaction role. Where
-    *offered_ago* is given the correction choices were posted that long ago, asked for by 77.
-    Today's handlers off the queue are stand-ins that do nothing, so that only what the presses
-    ask of the queue shows."""
+    *offered_ago* is given the correction choices were posted that long ago, asked for by 77."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
     league.roles_held[REVIEWER] = {MANAGER_ROLE_ID}
     await _signed_up(league, SIGNING_UP, state=state, offered_ago=offered_ago)
-    wizards = league.bot.wizard_service
-    wizards.approve_signup = AsyncMock(return_value=None)
-    wizards.request_changes = AsyncMock(return_value=None)
-    wizards.select_correction_parameter = AsyncMock(return_value=None)
     return league
 
 

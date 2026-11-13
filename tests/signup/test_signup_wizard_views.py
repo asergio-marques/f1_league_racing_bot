@@ -74,14 +74,6 @@ def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRI
     path a view rebuilt after a restart takes.
     """
     wizard_service = MagicMock()
-    # Today's handlers off the queue, stand-ins that do nothing; a refused press reaches none of
-    # them, nor the queue.
-    wizard_service.handle_platform_button = AsyncMock(return_value=None)
-    wizard_service.handle_driver_type_button = AsyncMock(return_value=None)
-    wizard_service.handle_preferred_teams_button = AsyncMock(return_value=None)
-    wizard_service.handle_no_preference_teammate = AsyncMock(return_value=None)
-    wizard_service.handle_no_notes = AsyncMock(return_value=None)
-    wizard_service.withdraw = AsyncMock(return_value=None)
     wizard_service.get_wizard_by_channel = AsyncMock(
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
     )
@@ -388,14 +380,8 @@ _ALREADY_ENDED = "This signup has already ended. Nothing was changed."
 
 
 async def _kimi_at(tmp_path: Any, state: str, **kwargs: Any) -> SeasonLeague:
-    """Kimi's wizard at *state*, today's wizard handlers off the queue stand-ins that do
-    nothing, so that only what the press asks of the queue shows."""
-    league = await _team_step(tmp_path, state=state, **kwargs)
-    wizards = league.bot.wizard_service
-    for handler in ("handle_platform_button", "handle_driver_type_button",
-                    "handle_no_preference_teammate", "handle_no_notes"):
-        setattr(wizards, handler, AsyncMock(return_value=None))
-    return league
+    """Kimi's wizard at *state*."""
+    return await _team_step(tmp_path, state=state, **kwargs)
 
 
 async def _press_on(league: SeasonLeague, view_name: str, button: str, *,

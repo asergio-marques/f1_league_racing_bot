@@ -65,9 +65,6 @@ def _cog(db_path):
     bot = MagicMock()
     bot.db_path = db_path
     bot.wizard_service = MagicMock()
-    # Today's clean-up off the queue, a stand-in that does nothing, so that only what the
-    # listener asks of the queue shows.
-    bot.wizard_service.handle_member_remove = AsyncMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
     bot.change_queue = MagicMock()

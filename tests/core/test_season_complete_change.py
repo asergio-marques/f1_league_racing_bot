@@ -2282,9 +2282,6 @@ async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_
     kept.send = AsyncMock(side_effect=_forbidden())
     kept.set_permissions = AsyncMock(return_value=None)
     league.channels[kept.id] = kept
-    # Today's withdrawal off the queue, a stand-in that does nothing, so that only what the
-    # press asks of the queue shows.
-    league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
     press = member_interaction(league.bot, user=league._member(user_id))
     press.guild = league.guild
     press.channel_id = kept.id

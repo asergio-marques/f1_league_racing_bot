@@ -330,10 +330,7 @@ async def test_the_parked_entry_is_keyed_to_the_manager_who_pressed(tmp_path):
 async def _park(league: SeasonLeague, action: str) -> Any:
     """Manager 77 has pressed *action*'s button on Kimi's panel: the press deferred and its entry
     parked as the button parks it, with the press's own interaction, and the lapse task a reason
-    that arrives cancels (#482). Today's rejection off the queue is a stand-in that does nothing,
-    as `_league`'s other handlers are, so that only what the reason asks of the queue shows.
-    Gives the press."""
-    league.bot.wizard_service.reject_signup = AsyncMock(return_value=None)
+    that arrives cancels (#482). Gives the press."""
     press = _pressed_by(league, REVIEWER)
     await press.response.defer(ephemeral=True)
     # The acknowledgement of a deferred press is its first follow-up, and editing that message is

@@ -78,9 +78,7 @@ async def _league(tmp_path: Any, *, state: str = "COLLECTING_NATIONALITY",
                   driver_state: str = "PENDING_SIGNUP_COMPLETION") -> SeasonLeague:
     """`setup_league` at Signups, the window open; Kimi at *driver_state*, his wizard at *state*
     holding *draft*, nationality required, no lap times asked, saved in a save of the test's own
-    as a signup job's record saves it; his signup channel standing. Today's wizard handler off
-    the queue is a stand-in that does nothing, so that only what the listener asks of the queue
-    shows."""
+    as a signup job's record saves it; his signup channel standing."""
     from leaguebot.signup.models.signup_module import (
         ConfigSnapshot,
         SignupWizardRecord,
@@ -120,7 +118,6 @@ async def _league(tmp_path: Any, *, state: str = "COLLECTING_NATIONALITY",
     league.bot.wizard_service.get_wizard_by_channel = AsyncMock(
         side_effect=signups.get_wizard_by_channel
     )
-    league.bot.wizard_service.handle_message = AsyncMock(return_value=None)
     return league
 
 

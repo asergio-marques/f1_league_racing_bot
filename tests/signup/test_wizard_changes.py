@@ -123,9 +123,6 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
             [("FER", "Scuderia Ferrari"), ("MCL", "McLaren Racing")],
         )
         await db.commit()
-    # Today's handlers off the queue, reached by the presses until the changes replace them.
-    league.bot.wizard_service.start_wizard = AsyncMock(return_value=None)
-    league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
     return league
 
 
@@ -1332,12 +1329,9 @@ KIMI_TURN = "test.kimi_turn"
 
 
 async def _leave(league: SeasonLeague, user_id: int = SIGNING_UP) -> None:
-    """Driver *user_id* leaves the league's server, and the signup cog's listener hears it.
-    Today's wizard clean-up off the queue is a stand-in that does nothing, so that only what the
-    listener asks of the queue shows."""
+    """Driver *user_id* leaves the league's server, and the signup cog's listener hears it."""
     from leaguebot.signup.cogs.signup_cog import SignupCog
 
-    league.bot.wizard_service.handle_member_remove = AsyncMock(return_value=None)
     cog = SignupCog.__new__(SignupCog)
     cog.bot = league.bot
     await cog.on_member_remove(league._member(user_id))

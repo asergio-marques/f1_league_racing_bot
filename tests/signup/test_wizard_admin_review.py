@@ -67,8 +67,7 @@ async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
                   lap_times: dict[str, str] | None = None) -> SeasonLeague:
     """`setup_league` at Signups, the window open, the driver role (820) set; Kimi at *state*,
     his wizard unengaged in his signup channel, his signup record saved with *lap_times* (Kimi's
-    two times unless given); manager 77 holding the interaction role. Today's handlers off the
-    queue are stand-ins that do nothing, so that only what is asked of the queue shows."""
+    two times unless given); manager 77 holding the interaction role."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
@@ -90,10 +89,6 @@ async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
     made.posted = []
     made.set_permissions = AsyncMock()
     league.channels[KIMI_CHANNEL] = made
-    wizards = league.bot.wizard_service
-    wizards.approve_signup = AsyncMock(return_value=None)
-    wizards.reject_signup = AsyncMock(return_value=None)
-    wizards.request_changes = AsyncMock(return_value=None)
     return league
 
 

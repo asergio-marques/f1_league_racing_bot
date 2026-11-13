@@ -78,8 +78,6 @@ async def _team_step(tmp_path: Any, *, picks: list[str] | None = None,
     signing up unless a test says otherwise), his wizard
     at *state* (the team step unless a test says otherwise) offering Ferrari, Mercedes and
     McLaren and holding *picks*; his signup channel standing and recording what it is sent.
-    Today's wizard handler off the queue is a stand-in that does nothing, so that only what the
-    press asks of the queue shows.
 
     The wizard row is saved through `save_wizard_on` in a save of the test's own, as a signup
     job's record saves it, and through today's committing `save_wizard` until that form exists,
@@ -128,7 +126,6 @@ async def _team_step(tmp_path: Any, *, picks: list[str] | None = None,
     league.bot.wizard_service.get_wizard_by_channel = AsyncMock(
         side_effect=signups.get_wizard_by_channel
     )
-    league.bot.wizard_service.handle_preferred_teams_button = AsyncMock(return_value=None)
     return league
 
 

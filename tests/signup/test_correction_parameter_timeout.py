@@ -82,8 +82,7 @@ async def _league(tmp_path: Any, *, state: str = AWAITING,
                   requested_by: int | None = REVIEWER) -> SeasonLeague:
     """``setup_league`` at Signups, the window open; Kimi at *state*, his wizard unengaged in
     his channel and his signup record saved; the correction choices posted *offered_ago*, his
-    wizard naming *requested_by* as the manager who asked. Today's Request Changes handler off
-    the queue is a stand-in that does nothing, so that only what the reason asks shows."""
+    wizard naming *requested_by* as the manager who asked."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     league.roles_held[REVIEWER] = {MANAGER_ROLE_ID}
@@ -111,7 +110,6 @@ async def _league(tmp_path: Any, *, state: str = AWAITING,
     made.posted = []
     made.set_permissions = AsyncMock()
     league.channels[KIMI_CHANNEL] = made
-    league.bot.wizard_service.request_changes = AsyncMock(return_value=None)
     return league
 
 
