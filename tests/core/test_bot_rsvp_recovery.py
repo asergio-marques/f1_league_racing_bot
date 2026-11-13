@@ -220,18 +220,30 @@ async def test_a_switched_off_module_s_buttons_are_not_re_armed(tmp_path):
     bot.add_view.assert_not_called()
 
 
-async def test_a_failure_fetching_the_embeds_stops_the_recovery_quietly(tmp_path, caplog):
-    """It runs during startup, so raising would take the bot down over a check-in call. The
-    recovery stops there: no button is re-armed and no deadline asked of the queue."""
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the deadline catch-up stops quietly at a database it cannot read, its fault "
+           "in the host's log alone, rather than raising for the sweep to report",
+)
+async def test_a_database_the_recovery_cannot_read_is_reported_in_the_log_channel(tmp_path):
+    """The restart finds a standing call, but the database holding the rounds cannot be opened.
+    Run through the start-up sweep, attendance's "RSVP views and deadlines" step re-arms no
+    button and asks no deadline, and the sweep posts one line to the log channel, its failure
+    line for that step, rather than the fault going to the host's log alone."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import run_attendance_start_up_step
+
     db_path = await _make_db(tmp_path)
-    bot = await _bot(db_path, embed_error=RuntimeError("database is locked"))
+    bot = await _bot(db_path)
+    bot.db_path = os.path.join(str(tmp_path), "missing", "nowhere.db")
 
-    with caplog.at_level("ERROR"):
-        asked = await _recover(bot)
+    lines, error = await run_attendance_start_up_step(bot, "RSVP views and deadlines")
 
-    assert asked == 0
+    assert error is not None
+    assert lines == [start_up_failure_line("RSVP views and deadlines", error)]
     bot.add_view.assert_not_called()
-    assert "failed to fetch embed messages" in caplog.text
+    assert await _deadlines(db_path) == 0
 
 
 async def test_a_view_that_cannot_be_re_armed_does_not_stop_the_rest(tmp_path, caplog):
@@ -401,25 +413,56 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
-async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog):
-    """The recovery runs before the bot is ready; an exception here would leave the league
-    with no bot at all rather than one missing a distribution. Asking the queue for the
-    deadline raises: the restart logs an error naming the round, and goes on."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the deadline catch-up swallows a round's failure into the host's log rather "
+           "than reporting it once to the log channel",
+)
+async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
+    """Division 1 has two calls standing whose deadlines passed while the bot was down: round 3
+    (id 5) raced an hour ago and round 4 (id 6) half an hour ago. At the restart the queue
+    refuses round 5's deadline. Run through the start-up sweep, attendance's "RSVP views and
+    deadlines" step still asks round 6's deadline, and the sweep posts one line to the log
+    channel, its failure line for that step; the error the step raised names round 5 alone,
+    with the queue's error."""
+    import json
+
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
 
     db_path = await _make_db(tmp_path, hours_until_round=-1)
+    later = datetime.now(timezone.utc) - timedelta(minutes=30)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (?, ?, 4, 'NORMAL', 'Monza Circuit', ?, 'NOT_RUN')",
+            (ROUND_ID + 1, DIVISION_ID, later.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+            "posted_at) VALUES (?, ?, ?, '770001', ?)",
+            (ROUND_ID + 1, DIVISION_ID, str(MESSAGE_ID + 1), later.isoformat()),
+        )
+        await db.commit()
     bot = await _bot(db_path)
+    refused = RuntimeError("the database is locked")
+    ask = bot.change_queue.ask
 
-    with caplog.at_level("ERROR"), patch(
-        "leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
-        new=AsyncMock(side_effect=RuntimeError("database is locked")),
-    ):
-        await recover_rsvp_views_and_deadlines(bot)
+    async def refusing(kind, payload, **kwargs):
+        if kind == DEADLINE and payload["round_id"] == ROUND_ID:
+            raise refused
+        return await ask(kind, payload, **kwargs)
 
-    assert any(
-        record.levelname == "ERROR" and str(ROUND_ID) in record.getMessage()
-        for record in caplog.records
-    )
+    bot.change_queue.ask = refusing
+
+    lines, error = await run_attendance_start_up_step(bot, "RSVP views and deadlines")
+
+    asked = [json.loads(row["payload"])["round_id"] for row in await change_rows(db_path)
+             if row["kind"] == DEADLINE]
+    assert asked == [ROUND_ID + 1]
+    assert round_failures(error, module="attendance") == {ROUND_ID: refused}
+    assert lines == [start_up_failure_line("RSVP views and deadlines", error)]
 
 
 async def test_a_round_whose_timestamp_will_not_parse_is_skipped(tmp_path):

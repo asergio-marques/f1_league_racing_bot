@@ -296,6 +296,55 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
     assert asked == [ROUND_ID + 1, ROUND_ID]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the missed-call catch-up swallows a round's failure into the host's log and "
+           "reads the wall clock, rather than reporting it once to the log channel at the "
+           "queue's moment",
+)
+async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
+    tmp_path,
+):
+    """Division 1 owes two calls: round 430, racing a day out, and round 429, two days out, both
+    deadlines still ahead at the queue's moment. At the restart the queue refuses round 430's
+    call. Run through the start-up sweep, attendance's "missed check-in calls" step still asks
+    round 429's call, and the sweep posts one line to the log channel, its failure line for that
+    step; the error the step raised names round 430 alone, with the queue's error."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status, checkin_cleared) "
+            "VALUES (?, ?, 5, 'NORMAL', 'Monza Circuit', ?, 'NOT_RUN', 0)",
+            (ROUND_ID + 1, DIVISION_ID, (NOW + timedelta(days=1)).isoformat()),
+        )
+        await db.commit()
+    bot = await _make_bot(db_path)
+    refused = RuntimeError("the database is locked")
+    ask = bot.change_queue.ask
+
+    async def refusing(kind: str, payload: dict[str, Any], **kwargs: Any) -> Any:
+        if kind == KIND and payload["round_id"] == ROUND_ID + 1:
+            raise refused
+        return await ask(kind, payload, **kwargs)
+
+    bot.change_queue.ask = refusing
+
+    lines, error = await run_attendance_start_up_step(bot, "missed check-in calls")
+
+    import json
+
+    asked = [json.loads(row["payload"])["round_id"] for row in await change_rows(db_path)
+             if row["kind"] == KIND]
+    assert asked == [ROUND_ID]
+    assert round_failures(error, module="attendance") == {ROUND_ID + 1: refused}
+    assert lines == [start_up_failure_line("missed check-in calls", error)]
+
+
 @pytest.mark.parametrize("queue_ran_first", [
     # The timer asks while the restart's call is still waiting on the queue: the queue's key
     # (`attendance.check_in.call:<round>`) makes the second a repeat of the first, not saved.

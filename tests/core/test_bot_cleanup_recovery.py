@@ -310,8 +310,85 @@ async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path, caplog):
     assert "forecast cleanup failed" in caplog.text
 
 
-async def test_a_database_it_cannot_read_stops_the_recovery_quietly(tmp_path, caplog):
-    bot = _bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
+def _swept_bot(db_path: str) -> MagicMock:
+    """The bot as the start-up sweep hands it to attendance's step: its change queue asked by an
+    `AsyncMock`, its clock the host's, which the seeded rounds are timed from."""
+    bot = _bot(db_path)
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(return_value=datetime.now(timezone.utc))
+    return bot
 
-    assert await _recover(bot) == ([], [])
-    assert "failed to read the messages still standing" in caplog.text
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the clean-up catch-up stops quietly at a database it cannot read, its fault "
+           "in the host's log alone, rather than raising for the sweep to report",
+)
+async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
+    tmp_path,
+):
+    """The database holding the standing check-in calls cannot be opened. Run through the
+    start-up sweep, attendance's "missed check-in clean-ups" step asks no clean-up, and the sweep
+    posts one line to the log channel, its failure line for that step, rather than the fault
+    going to the host's log alone."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import run_attendance_start_up_step
+
+    bot = _swept_bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
+
+    lines, error = await run_attendance_start_up_step(bot, "missed check-in clean-ups")
+
+    assert error is not None
+    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
+    bot.change_queue.ask.assert_not_called()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the clean-up catch-up swallows a round's failure into the host's log rather "
+           "than reporting it once to the log channel",
+)
+async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
+    tmp_path,
+):
+    """Division 1 has two check-in calls standing: round 21's, raced 25 hours ago, and round
+    22's, raced 30 hours ago. At the restart the queue refuses round 22's clean-up. Run through
+    the start-up sweep, attendance's "missed check-in clean-ups" step still asks round 21's, and
+    the sweep posts one line to the log channel, its failure line for that step; the error the
+    step raised names round 22 alone, with the queue's error."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
+
+    db_path = await _make_db(tmp_path, forecast=False)
+    earlier = datetime.now(timezone.utc) - timedelta(hours=30)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (22, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'FINAL')",
+            (DIVISION_ID, earlier.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages "
+            "(round_id, division_id, message_id, channel_id, posted_at) "
+            "VALUES (22, ?, '901', '700', ?)",
+            (DIVISION_ID, earlier.isoformat()),
+        )
+        await db.commit()
+    bot = _swept_bot(db_path)
+    refused = RuntimeError("the database is locked")
+
+    async def ask(kind, payload, **_):
+        if payload["round_id"] == 22:
+            raise refused
+        return 1
+
+    bot.change_queue.ask = AsyncMock(side_effect=ask)
+
+    lines, error = await run_attendance_start_up_step(bot, "missed check-in clean-ups")
+
+    asked = [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list]
+    assert asked == [22, ROUND_ID]
+    assert round_failures(error, module="attendance") == {22: refused}
+    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
