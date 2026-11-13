@@ -244,24 +244,73 @@ def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
     ) == [f"**Pro** has multiple rounds scheduled at {discord_ts(at)}"]
 
 
+#: The refusal signup gives a season's approval while it is on and its signup channel unset: the
+#: words the manager reads, and the reason the log line carries, as core gave them until #286.
+_NO_SIGNUP_CHANNEL = (
+    "\u274c Season cannot be approved \u2014 signup module is enabled but missing required "
+    "configuration:\n\u2022 **Signup channel** (use `/signup channel`)",
+    "signup module is enabled but missing required configuration:\n"
+    "**Signup channel** (use `/signup channel`)",
+)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: signup does not yet answer its own prerequisites through confirmation_refused"
+))
 @pytest.mark.parametrize(
-    "enabled, config, problems",
+    "enabled, config, refused",
     [
-        pytest.param(True, MagicMock(signup_channel_id=None),
-                     ["**Signup channel** (use `/signup channel`)"], id="no-signup-channel"),
+        pytest.param(True, MagicMock(signup_channel_id=None), [_NO_SIGNUP_CHANNEL],
+                     id="no-signup-channel"),
         pytest.param(True, MagicMock(signup_channel_id=55), [], id="channel-set"),
         pytest.param(True, None, [], id="no-configuration"),
         pytest.param(False, MagicMock(signup_channel_id=None), [], id="signup-off"),
     ],
 )
-async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, config, problems):
-    """While the signup module is on, a season is approved only once its signup channel is set;
-    with signup off, or no signup configuration at all, nothing is lacking."""
-    from leaguebot.core.services.seasons import approval_checks
+async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, config, refused):
+    """Results off; signup on with its signup channel unset, on with it set, on with no signup
+    configuration at all, or off with the channel unset. Signup's refusals are read through the
+    hook a season's confirmation is refused through, as signup's wiring signs them up: a season's
+    approval is refused only while signup is on and its channel unset, in today's words, word for
+    word; and signup refuses neither the review nor the configuration's confirmation."""
+    from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+    from tests.support.review_workflows import (
+        sign_up_confirmation_refused,
+        sign_up_signup_refusals,
+    )
 
-    module_service = MagicMock(is_signup_enabled=AsyncMock(return_value=enabled))
-    signup_module_service = MagicMock(get_config=AsyncMock(return_value=config))
+    bot = MagicMock()
+    bot.db_path = ":memory:"
+    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
+    bot.signup_module_service.get_config = AsyncMock(return_value=config)
+    sign_up_confirmation_refused(bot)
+    sign_up_signup_refusals(bot)
 
-    assert await approval_checks.signup_prerequisite_problems(
-        module_service=module_service, signup_module_service=signup_module_service
-    ) == problems
+    approval = await read_refusals(bot.confirmation_refused, SEASON_ID, Confirmation.APPROVAL)
+    assert [(r.message, r.reason) for r in approval] == refused
+    for other in (Confirmation.REVIEW, Confirmation.CONFIGURATION):
+        assert await read_refusals(bot.confirmation_refused, SEASON_ID, other) == []
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: approval_checks still reads signup's settings through SignupSettings"
+))
+def test_core_names_no_signup_setting():
+    """Core's season checks hold no signup rule: `approval_checks` defines no `SignupSettings`,
+    `SignupModuleSettings` or `signup_prerequisite_problems`, and no function of it or of the
+    season review's workflows is handed signup's service."""
+    import inspect
+
+    from leaguebot.core.services.seasons import approval_checks, season_review_workflows
+
+    for name in ("SignupSettings", "SignupModuleSettings", "signup_prerequisite_problems"):
+        assert not hasattr(approval_checks, name), name
+    handed = sorted(
+        f"{module.__name__}.{name}"
+        for module in (approval_checks, season_review_workflows)
+        for name, function in vars(module).items()
+        if inspect.isfunction(function) and function.__module__ == module.__name__
+        and "signup_module_service" in inspect.signature(function).parameters
+    )
+    assert handed == []

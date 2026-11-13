@@ -17,7 +17,8 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
 from tests.support.review_workflows import (
-    record_review_views, run_check, run_workflow, sign_up_confirmation_refused,
+    record_review_views, run_check, run_workflow, sign_up_configuration_faults_read,
+    sign_up_confirmation_refused,
 )
 from tests.support.season_league import reply as _told
 from tests.support.setup_reads import hold_setup
@@ -128,6 +129,8 @@ def _bot(
     bot.output_router.post_log = AsyncMock()
     # Results' refusals, through the hook a season's confirmation is refused through (#283).
     sign_up_confirmation_refused(bot)
+    # Signup's configuration faults, through the hook core reads them at signup's place (#286).
+    sign_up_configuration_faults_read(bot)
     # The configuration's faults, as the builder hands the review them: the gate, handed this
     # bot's services by name as they stand when it is asked, the gates a test stands in included.
     async def _faults(season_id: int, guild: object = None) -> list[str]:
