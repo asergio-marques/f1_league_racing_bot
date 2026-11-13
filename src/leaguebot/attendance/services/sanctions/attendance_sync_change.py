@@ -45,7 +45,7 @@ import aiosqlite
 
 from leaguebot.attendance.services.scoring import attendance_recompute, attendance_scoring
 from leaguebot.attendance.services.sanctions import attendance_sanctions
-from leaguebot.attendance.services import sheet_posting
+from leaguebot.attendance.services.sheet import sheet_posting
 from leaguebot.attendance.services.channel_settings import NOT_ENABLED
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection

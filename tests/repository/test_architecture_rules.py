@@ -801,9 +801,9 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_sheet.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("attendance/services/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
-    ("attendance/services/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
+    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
+    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("results/services/publishing/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
     ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("results/services/standings/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
@@ -3167,13 +3167,13 @@ CATCH_ALLS_ALLOWED = {
         "place 5, a calendar that cannot be drawn is posted as text and its fault is the job's line",
     ("attendance/cogs/attendance_group.py", "record_failed"):
         "place 3, around reporting a failure, where the report itself might fail",
-    ("attendance/services/attendance_sheet.py", "_sheet_attachment"):
+    ("attendance/services/sheet/attendance_sheet.py", "_sheet_attachment"):
         "place 6, the drawing of the sheet's graphic, which then posts as text, its fault a line "
         "of the job",
-    ("attendance/services/attendance_sheet.py", "_round_grid"):
+    ("attendance/services/sheet/attendance_sheet.py", "_round_grid"):
         "place 6, the track registry the sheet's graphic draws its flags from: a registry that "
         "cannot be read draws the headings without flags, its fault a line of the job",
-    ("attendance/services/attendance_sheet.py", "_seat_team_field"):
+    ("attendance/services/sheet/attendance_sheet.py", "_seat_team_field"):
         "place 6, the team names the sheet's graphic draws: teams that cannot be read are drawn "
         "without names, the fault a line of the job",
     ("attendance/services/check_in/rsvp_service.py", "_checkin_attachment"):

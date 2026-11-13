@@ -20,7 +20,7 @@ import pytest
 from pathlib import Path
 
 from leaguebot.attendance.services.sanctions import attendance_sanctions
-from leaguebot.attendance.services import attendance_sheet
+from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.image.services.image_attendance_post import (
     SheetRender,
     attendance_enabled,

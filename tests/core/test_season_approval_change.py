@@ -1690,7 +1690,7 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
     [
         ("opening_standings", "leaguebot.results.services.standings.season_standings_posts",
          _fail_standings),
-        ("opening_sheet", "leaguebot.attendance.services.sheet_posting", _fail_sheet),
+        ("opening_sheet", "leaguebot.attendance.services.sheet.sheet_posting", _fail_sheet),
     ],
     ids=["results' opening standings", "attendance's opening sheet"],
 )

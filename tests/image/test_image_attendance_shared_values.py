@@ -16,7 +16,7 @@ import inspect
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import attendance_sheet
+from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.image.services.image_attendance_service import resolve_drawing, DriverRecord
 
 

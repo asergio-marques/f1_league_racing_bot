@@ -25,7 +25,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.attendance.services import attendance_sheet
+from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.core.models.change import (
     GuildUnavailable,
     PlannedStep,

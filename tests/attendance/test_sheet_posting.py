@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-from leaguebot.attendance.services import attendance_sheet
+from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.sanctions.attendance_sync_change import SYNC_SAVE
 from tests.attendance.test_attendance_sheet_composition import (  # noqa: F401 — the fixture
     db_path,

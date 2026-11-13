@@ -455,7 +455,7 @@ _TEST_MODE_PARTS = (
 _PLACEMENTS_PARTS = (
     ("leaguebot.results.services.standings.season_standings_posts", "placements_confirmed_on",
      "results' opening standings"),
-    ("leaguebot.attendance.services.sheet_posting", "placements_confirmed_on",
+    ("leaguebot.attendance.services.sheet.sheet_posting", "placements_confirmed_on",
      "attendance's opening sheet"),
 )
 
@@ -465,7 +465,7 @@ _PLACEMENTS_PARTS = (
 _SEASON_COMPLETED_PARTS = (
     ("leaguebot.results.services.standings.season_standings_posts", "season_completed_on",
      "results' final standings"),
-    ("leaguebot.attendance.services.sheet_posting", "season_completed_on",
+    ("leaguebot.attendance.services.sheet.sheet_posting", "season_completed_on",
      "attendance's final sheet"),
 )
 

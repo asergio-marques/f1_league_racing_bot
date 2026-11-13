@@ -230,7 +230,7 @@ def sign_up_to_review_marks_read(bot: "LeagueBot") -> None:
 def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
     """Sign attendance's opening post up to the hooks the season's approval declares: the job it
     plans for a division, and the step it defines for its own job."""
-    from leaguebot.attendance.services import sheet_posting
+    from leaguebot.attendance.services.sheet import sheet_posting
 
     bot.placements_confirmed.subscribe(sheet_posting.placements_confirmed_on)
     bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
@@ -238,7 +238,7 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
 
 def sign_up_to_season_completed(bot: "LeagueBot") -> None:
     """Sign attendance's final sheet up to the hooks a season completed declares."""
-    from leaguebot.attendance.services import sheet_posting
+    from leaguebot.attendance.services.sheet import sheet_posting
 
     bot.season_completed.subscribe(sheet_posting.season_completed_on)
     bot.season_completed_steps.subscribe(
