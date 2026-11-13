@@ -58,6 +58,9 @@ DRIVER_ID = "7"
 OTHER_USER_ID = 8
 CHANNEL_ID = 99
 
+#: Why a view re-registered at start cannot yet find its driver through the service it is handed.
+_HANDED = "#286: the wizard's views look the wizard up on the bot, not on the signup service handed to them"
+
 #: The reason a step handler gives for a press on a step already answered (commit point 19).
 _ALREADY_ANSWERED = "That step has already been answered."
 
@@ -67,19 +70,21 @@ _ALREADY_ANSWERED = "That step has already been answered."
 # ---------------------------------------------------------------------------
 
 
-def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRIVER_ID):
-    """An interaction from *user_id*, on a bot whose wizard service is a double.
-
-    *wizard_user* is who `get_wizard_by_channel` reports as owning the channel, which is the
-    path a view rebuilt after a restart takes.
-    """
-    wizard_service = MagicMock()
-    wizard_service.get_wizard_by_channel = AsyncMock(
+def _signups(wizard_user: str | None = DRIVER_ID) -> Any:
+    """A signup service double, handed to a view when it is built (#286), whose
+    `get_wizard_by_channel` reports *wizard_user* as owning the channel (no wizard where None):
+    the path a view rebuilt after a restart takes."""
+    signups = MagicMock()
+    signups.get_wizard_by_channel = AsyncMock(
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
     )
+    return signups
 
+
+def _interaction(user_id: int = int(DRIVER_ID)):
+    """An interaction from *user_id*, on a bot carrying no service a view may look up: the
+    wizard is found through the signup service the view is handed (`_signups`)."""
     bot = MagicMock()
-    bot.wizard_service = wizard_service
     bot.output_router.post_log = AsyncMock()
 
     interaction = MagicMock()
@@ -167,13 +172,14 @@ async def test_another_member_cannot_cancel_a_driver_s_signup():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     """A button left in a channel whose wizard has been cleared up. The lookup finding
     nothing must refuse rather than pass unauthenticated."""
     from leaguebot.signup.services.signup_views import PlatformButtonView
 
-    view = PlatformButtonView()
-    interaction = _interaction(wizard_user=None)
+    view = PlatformButtonView(signup=_signups(None))
+    interaction = _interaction()
 
     await type(view).steam(view, interaction, MagicMock())
 
@@ -181,11 +187,12 @@ async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     _assert_refusal_recorded(interaction, "Steam")
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     """The guard has to hold on the recovered identity too, not only the stored one."""
     from leaguebot.signup.services.signup_views import PlatformButtonView
 
-    view = PlatformButtonView()
+    view = PlatformButtonView(signup=_signups())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).steam(view, interaction, MagicMock())
@@ -387,7 +394,8 @@ async def _kimi_at(tmp_path: Any, state: str, **kwargs: Any) -> SeasonLeague:
 async def _press_on(league: SeasonLeague, view_name: str, button: str, *,
                     registered: bool = False) -> Any:
     """Kimi presses *button* on *view_name*, built for him and handed the change queue (A23),
-    or re-registered at start with the queue alone; gives his press."""
+    or re-registered at start with the queue and the signup service it finds his wizard
+    through (#286); gives his press."""
     from leaguebot.signup.services import signup_views
     from tests.signup.test_preferred_teams_view import KIMI_CHANNEL, TEAMS
 
@@ -397,11 +405,14 @@ async def _press_on(league: SeasonLeague, view_name: str, button: str, *,
     press.channel_id = KIMI_CHANNEL
     press.channel = league.channel(KIMI_CHANNEL)
     account = None if registered else str(SIGNING_UP)
+    handed = {"signup": league.bot.signup_module_service} if registered else {}
     if view_name == "PreferredTeamsButtonView":
-        view = signup_views.PreferredTeamsButtonView(account, league.bot.change_queue, list(TEAMS))
+        view = signup_views.PreferredTeamsButtonView(
+            account, league.bot.change_queue, list(TEAMS), **handed
+        )
         await getattr(view, button)(press)
         return press
-    view = getattr(signup_views, view_name)(account, league.bot.change_queue)
+    view = getattr(signup_views, view_name)(account, league.bot.change_queue, **handed)
     await getattr(type(view), button)(view, press, MagicMock())
     return press
 
@@ -444,10 +455,11 @@ async def test_each_platform_button_reports_its_own_platform(tmp_path, button, p
     assert (await _draft(league))["platform"] == platform
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_view_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     """The view is re-registered at start with no stored driver — the process that knew has
-    gone — and only the change queue, so the owner is found by looking the wizard up by
-    channel: Kimi presses Steam on it, the answer is asked of the queue as his, and once it
+    gone — and the change queue and the signup service, so the owner is found by looking the
+    wizard up by channel through that service: Kimi presses Steam on it, the answer is asked of the queue as his, and once it
     runs Steam is his platform."""
     league = await _kimi_at(tmp_path, "COLLECTING_PLATFORM")
 
