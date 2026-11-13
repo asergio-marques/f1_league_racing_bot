@@ -63,6 +63,9 @@ ATTENDANCE_CHANNEL = 710
 VERDICTS_CHANNEL = 711
 MANAGER_ID = 77
 
+#: The heading over round 1's sanctions in the verdicts channel, in words, images being off.
+HEADING = "**Season 1 Division 1 Round 1**"
+
 #: The change `/attendance sync` asks of the queue.
 SYNC_KIND = "attendance.sync"
 
@@ -79,8 +82,9 @@ class _League:
     def __init__(self, bot: Any, guild: Any, db_path: str, channels: dict[int, Any]) -> None:
         self.bot, self.guild, self.db_path, self.channels = bot, guild, db_path, channels
 
-    def cards(self) -> list[str]:
-        """What the division's verdicts channel was sent: the sanctions' cards."""
+    def verdicts(self) -> list[str]:
+        """What the division's verdicts channel was sent, in order: the heading over the round's
+        sanctions, then their cards."""
         return list(self.channels[VERDICTS_CHANNEL].sent)
 
     def sheets(self) -> list[str]:
@@ -326,8 +330,9 @@ async def test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart(
     from round 1, and the queue runs one job at a time: at no point is the round seen
     recalculated without the sack or the sack without the round, the two being one save. The bot
     stops just after that save, before any card is posted; it comes back and its queue runs on.
-    The change finishes: the sack's one card is posted in the verdicts channel, the sheet once in
-    the attendance channel, the driver stays sacked, and the sync's one line is written."""
+    The change finishes: the verdicts channel, which had no heading for round 1, is sent the
+    round's heading and then the sack's one card, the sheet is posted once in the attendance
+    channel, the driver stays sacked, and the sync's one line is written."""
     league = await _league(tmp_path)
 
     await _sync(league)
@@ -343,13 +348,14 @@ async def test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart(
             break
     else:
         raise AssertionError("the driver was never sacked")
-    assert league.cards() == []
+    assert league.verdicts() == []
 
     await restart_queue(league.bot)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    assert len(league.cards()) == 1
+    heading, _card = league.verdicts()
+    assert heading == HEADING
     assert len(league.sheets()) == 1
     assert await _seated(league.db_path) == []
     assert len(league.sync_lines()) == 1
@@ -358,19 +364,22 @@ async def test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart(
 @pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 async def test_a_second_sync_announces_nothing_already_announced(tmp_path):
     """Round 1 is final and its driver owes an auto-sack. Manager 77 runs `/attendance sync`
-    from round 1 and the queue is run: the driver is sacked and the sack's card posted. They run
-    it again, and the queue is run: the second sync finishes too, finds nothing owed, posts no
-    second card, and its line says no sanction was applied."""
+    from round 1 and the queue is run: the driver is sacked, and the verdicts channel is sent the
+    round's heading and the sack's card. They run it again, and the queue is run: the second sync
+    finishes too, finds nothing owed, posts neither a heading nor a card, and its line says no
+    sanction was applied."""
     league = await _league(tmp_path)
 
     await _sync(league)
     await run_queue(league.bot)
+    heading, _card = league.verdicts()
+    assert heading == HEADING
     await _sync(league)
     await run_queue(league.bot)
 
     assert len(await _sync_changes(league.db_path)) == 2
     assert await stopped_job(league.db_path) is None
-    assert len(league.cards()) == 1
+    assert len(league.verdicts()) == 2
     first, second = league.sync_lines()
     assert "sanctions applied: 1" in first
     assert "sanctions applied: 0" in second
@@ -403,7 +412,7 @@ async def test_a_sanction_the_sync_cannot_apply_is_named_and_the_sync_still_fini
     assert failure in line
     assert line.rstrip().endswith("`/attendance sync division:Division 1 round:1`.")
     assert [each for each in league.log_lines() if "no Reserve team" in each] == [line]
-    assert league.cards() == []
+    assert league.verdicts() == []
 
 
 async def _amend_round_1(league: _League) -> str:
@@ -466,7 +475,7 @@ async def test_a_sync_is_refused_as_it_starts_where_the_league_changed_since_it_
     assert await stopped_job(league.db_path) is None
     assert await _seated(league.db_path) == [DRIVER_PROFILE]
     assert await _attendance(league.db_path, 1) == {"attended": None, "points_awarded": None}
-    assert league.cards() == []
+    assert league.verdicts() == []
     assert league.sheets() == []
     assert reason in updated_reply(interaction)
     refused = [line for line in league.log_lines() if "`/attendance sync` refused" in line]
