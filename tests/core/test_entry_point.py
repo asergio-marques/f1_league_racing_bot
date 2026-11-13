@@ -1276,3 +1276,53 @@ async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, 
     await bot.confirmation_refused.call(7, "the placements review")
 
     assert called == [((bot.module_service, bot.db_path, 7, "the placements review"), {})]
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: core still reads signup's prerequisites through approval_checks' own protocol, and "
+    "the builder signs signup up to no confirmation_refused or configuration_faults_read"
+))
+async def test_the_builder_signs_signup_up_to_a_confirmation_refused_after_results(
+    tmp_path, monkeypatch
+):
+    """Straight after `build`, signup's refusals are signed up to the hook a season's confirmation
+    is refused through after results', so a league sees results' refusals first as today, and its
+    faults to the hook a season's configuration faults are read through; nothing is called yet.
+    Each is handed the league's module service and signup's service (the faults the configuration
+    service too), then what its hook is called with. Without them nothing refuses a season's
+    approval while signup is on with no signup channel."""
+    from leaguebot.results.services.points import season_points_service
+    from leaguebot.signup.services import signup_prerequisites
+
+    called: list[tuple] = []
+
+    async def results_spy(*args, **kwargs):
+        called.append(("results", args, kwargs))
+        return []
+
+    async def signup_spy(*args, **kwargs):
+        called.append(("signup", args, kwargs))
+        return []
+
+    async def faults_spy(*args, **kwargs):
+        called.append(("signup faults", args, kwargs))
+        return []
+
+    monkeypatch.setattr(season_points_service, "confirmation_refusals", results_spy,
+                        raising=False)
+    monkeypatch.setattr(signup_prerequisites, "confirmation_refusals", signup_spy, raising=False)
+    monkeypatch.setattr(signup_prerequisites, "configuration_faults", faults_spy, raising=False)
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert called == []
+
+    await bot.confirmation_refused.call(7, "the placements review")
+    await bot.configuration_faults_read.call(7, None)
+
+    assert called == [
+        ("results", (bot.module_service, bot.db_path, 7, "the placements review"), {}),
+        ("signup", (bot.module_service, bot.signup_module_service, 7, "the placements review"),
+         {}),
+        ("signup faults",
+         (bot.module_service, bot.signup_module_service, bot.config_service, 7, None), {}),
+    ]
