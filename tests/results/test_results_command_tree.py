@@ -9,8 +9,12 @@ syncs: the copies it makes for the instance, each bound to that instance. No gat
 """
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from unittest.mock import MagicMock
 
+import pytest
 from discord import app_commands
 
 from leaguebot.results.cogs.results_cog import ResultsCog
@@ -266,9 +270,54 @@ def test_every_results_command_is_bound_to_the_cog_that_is_loaded():
 
 
 
+#: The order a league has always seen `/results`' subgroups in.
+LISTED_ORDER = ["config", "amend", "reserves", "standings", "rounds", "channel"]
+
+#: Imports one subgroup's file before the cog, as a test that reaches the subgroup alone does
+#: when its worker collects it first, and prints the order the cog's group is sent in.
+_IMPORTED_FIRST = """
+import importlib, sys
+from unittest.mock import MagicMock
+importlib.import_module(sys.argv[1])
+from leaguebot.results.cogs.results_cog import ResultsCog
+(group,) = ResultsCog(MagicMock()).get_app_commands()
+print(",".join(command.name for command in group.commands))
+"""
+
+#: Why each subgroup's file imported first still breaks the order.
+_DECLARED_APART = (
+    "#285: each /results subgroup is still declared in its own file, so the first file a "
+    "process imports sends its subgroup first"
+)
+
+
 def test_the_results_subgroups_are_sent_in_their_listed_order():
     """Discord is sent `/results`'s subgroups in the order they joined the group, which is the
-    order `results_cog.py` imports their files: the order a league has always seen them in."""
-    assert [command.name for command in RESULTS_GROUP.commands] == [
-        "config", "amend", "reserves", "standings", "rounds", "channel",
-    ]
+    order `results_group.py` declares them in: the order a league has always seen them in."""
+    assert [command.name for command in RESULTS_GROUP.commands] == LISTED_ORDER
+
+
+@pytest.mark.parametrize("module", [
+    pytest.param(
+        "leaguebot.results.cogs.channel_commands",
+        marks=pytest.mark.xfail(strict=True, reason=_DECLARED_APART),
+    ),
+    pytest.param(
+        "leaguebot.results.cogs.rounds_commands",
+        marks=pytest.mark.xfail(strict=True, reason=_DECLARED_APART),
+    ),
+    pytest.param(
+        "leaguebot.results.cogs.reserves_commands",
+        marks=pytest.mark.xfail(strict=True, reason=_DECLARED_APART),
+    ),
+])
+def test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first(module):
+    """The subgroups are declared together in `results_group.py`, so the order does not hang on
+    which file a process imports first. It did while each subgroup's file declared its own: a
+    process that imported `channel_commands.py` before the cog sent `channel` first. A fresh
+    interpreter, since the order is fixed once per process."""
+    ran = subprocess.run(
+        [sys.executable, "-c", _IMPORTED_FIRST, module],
+        capture_output=True, text=True, check=True, env=os.environ.copy(),
+    )
+    assert ran.stdout.strip().split(",") == LISTED_ORDER
