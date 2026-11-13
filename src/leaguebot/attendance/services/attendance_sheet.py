@@ -43,8 +43,8 @@ async def post_attendance_sheet(
     """Post a new sheet to the division's attendance channel, which replaces the prior one.
 
     **This posts and nothing else** (#439): it saves no id and deletes no message. It returns
-    the `PostedSheet` (the message posted, its channel, the sheet it replaces, and whether the
-    occasion takes the division's live slot) for the job to save with its mark
+    the `PostedSheet` (the message posted, its channel, the sheet it replaces, whether the
+    occasion takes the division's live slot, and a line for each fault the graphic fell back from) for the job to save with its mark
     (`record_sheet_on`) and to plan the old sheet's deletion after (`standing_posts`); `None`
     where nothing was posted.
 
@@ -196,6 +196,7 @@ async def post_attendance_sheet(
     # leaves ``attachment`` None and the textual sheet below is posted exactly as it always
     # was. The graphic never gates this posting, and this posting never gates a sanction
     # (XIV.7 — image output adds no precondition).
+    faults: list[str] = []
     attachment = (
         None
         if as_text
@@ -209,6 +210,7 @@ async def post_attendance_sheet(
             cfg_row=cfg_row,
             sanctioned_profile_ids=sanctioned_profile_ids,
             occasion=occasion,
+            faults=faults,
         )
     )
 
@@ -247,30 +249,52 @@ async def post_attendance_sheet(
     return PostedSheet(
         message_id=new_msg.id, channel_id=channel_id, previous=prior_msg_id,
         takes_slot=occasion.takes_the_live_slot,
+        faults=await _fault_lines(db_path, division_id, faults),
     )
+
+
+async def _fault_lines(db_path: str, division_id: int, faults: list[str]) -> tuple[str, ...]:
+    """The faults the graphic fell back from, each as a line naming the division, for the job that
+    posted the sheet to write beside its result."""
+    if not faults:
+        return ()
+    name = await _division_name(db_path, division_id)
+    return tuple(f"**{name}** — attendance sheet: {fault}" for fault in faults)
 
 
 @dataclass(frozen=True)
 class PostedSheet:
     """What `post_attendance_sheet` posted: *message_id* in *channel_id*, replacing *previous*
     (the id recorded as the division's live sheet when it ran, or None), and whether the
-    occasion *takes_slot*, that is, replaces the live sheet and is recorded as it."""
+    occasion *takes_slot*, that is, replaces the live sheet and is recorded as it. *faults* are the
+    lines for a fault the graphic fell back from, the sheet going out as text or drawn without a
+    part (none where it was drawn whole or not asked for)."""
 
     message_id: int
     channel_id: int
     previous: str | None
     takes_slot: bool
+    faults: tuple[str, ...] = ()
 
 
 def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
-    """A sheet job's result: the sheet posted (`new`, `old`, `channel_id`, `takes_slot`), or
-    an empty result where nothing was due (a cancelled round, a division with no opening round)."""
+    """A sheet job's result: the sheet posted (`new`, `old`, `channel_id`, `takes_slot`, and
+    `faults` where the graphic fell back from any), or an empty result where nothing was due (a
+    cancelled round, a division with no opening round)."""
     if posted is None:
         return {}
-    return {
+    result: dict[str, Any] = {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "takes_slot": posted.takes_slot,
     }
+    if posted.faults:
+        result["faults"] = list(posted.faults)
+    return result
+
+
+def sheet_lines(result: Mapping[str, Any]) -> tuple[str, ...]:
+    """The lines a sheet job writes with its result: the faults the graphic fell back from."""
+    return tuple(str(line) for line in result.get("faults") or ())
 
 
 async def record_sheet_on(db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]) -> None:
@@ -402,6 +426,7 @@ async def _sheet_attachment(
     cfg_row,
     sanctioned_profile_ids: set[int] | None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+    faults: list[str] | None = None,
 ):
     """The sheet graphic to attach, or None to post the textual sheet alone.
 
@@ -414,6 +439,11 @@ async def _sheet_attachment(
     graphic must never prevent, delay or condition the posting it rides on, still less the
     sanctions enforced beside it (XIV.7), but a sheet drawn with an empty grid would replace the
     standing one with a wrong one.
+
+    **A fault the drawing falls back from is returned as well as logged** (architecture.md,
+    "Errors and failures", place 6): each is appended to *faults*, if given, as a clause the
+    posting turns into a line of its job, so that the league is told its graphic could not be
+    drawn, or drawn without a part, and the full error stays in the host's log.
     """
     if bot is None or guild is None:
         return None
@@ -443,7 +473,7 @@ async def _sheet_attachment(
         # The grid: every round the division holds, run or not (FR-016), and what each
         # conferred on each driver. The points are **read** from the record the module
         # persisted — already net of pardons — and never recomputed here (XIV.7).
-        headings, cells = await _round_grid(db_path, division_id, profile_ids)
+        headings, cells = await _round_grid(db_path, division_id, profile_ids, faults=faults)
         profile_of = {
             int(row["discord_user_id"]): int(row["driver_profile_id"])
             for row in sorted_drivers
@@ -458,8 +488,8 @@ async def _sheet_attachment(
         # The team of a row is the team of the division seating the driver **at the moment of
         # generation** — the reserve team for a reserve — and never the team whose car they
         # drove in any one round (FR-020).
-        team_names = await _seat_team_names(db_path, division_id, user_ids)
-        team_keys = await _seat_team_keys(db_path, division_id, user_ids)
+        team_names = await _seat_team_names(db_path, division_id, user_ids, faults=faults)
+        team_keys = await _seat_team_keys(db_path, division_id, user_ids, faults=faults)
 
         for row in sorted_drivers:
             key = int(row["discord_user_id"])
@@ -518,10 +548,19 @@ async def _sheet_attachment(
             "post_attendance_sheet: the graphic could not be drawn for division %s: %s",
             division_id, exc, exc_info=True,
         )
+        _note(faults, f"the graphic could not be drawn, so the sheet is posted as text: {exc}")
         return None
 
 
-async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
+def _note(faults: list[str] | None, clause: str) -> None:
+    """Add *clause* to *faults*, where the caller keeps them."""
+    if faults is not None:
+        faults.append(clause)
+
+
+async def _round_grid(
+    db_path: str, division_id: int, profile_ids: list[int], faults: list[str] | None = None
+):
     """The sheet's round columns, and the points each round conferred on each driver.
 
     Returns ``(headings, cells)`` where *headings* is one :class:`RoundHeading` per round the
@@ -539,6 +578,9 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
     **A grid that cannot be read from the database is raised** (`_RoundGridUnreadable`), never drawn
     empty. A missing cell and a stored zero are the same picture and the same meaning: the round
     counted nothing against that driver. Nothing here distinguishes the six ways that happens.
+
+    A track registry that cannot be read is no fault of the grid: the headings are drawn without
+    their flags, the full error goes to the host's log and a clause saying so is added to *faults*.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.image_attendance_service import RoundHeading
@@ -571,6 +613,11 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
                     "post_attendance_sheet: the track registry could not be read, so the "
                     "round headings are drawn without their flags: %s",
                     exc, exc_info=True,
+                )
+                _note(
+                    faults,
+                    f"the track registry could not be read, so the round headings are drawn "
+                    f"without their flags: {exc}",
                 )
                 tracks = {}
 
@@ -620,7 +667,7 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
 
 
 async def _seat_team_names(
-    db_path: str, division_id: int, user_ids: list[int]
+    db_path: str, division_id: int, user_ids: list[int], faults: list[str] | None = None
 ) -> dict[int, str]:
     """The team of the division seating each driver **now**, keyed by Discord user id.
 
@@ -628,20 +675,24 @@ async def _seat_team_names(
     not the team whose car they drove in some round (FR-020). This is the name drawn; the
     badge is looked up by the team's shorthand, from ``_seat_team_keys`` (#381).
     """
-    return await _seat_team_field(db_path, division_id, user_ids, "full_name")
+    return await _seat_team_field(db_path, division_id, user_ids, "full_name", faults)
 
 
 async def _seat_team_keys(
-    db_path: str, division_id: int, user_ids: list[int]
+    db_path: str, division_id: int, user_ids: list[int], faults: list[str] | None = None
 ) -> dict[int, str]:
     """The shorthand of the team seating each driver now, which its badge is found by (#381)."""
-    return await _seat_team_field(db_path, division_id, user_ids, "name")
+    return await _seat_team_field(db_path, division_id, user_ids, "name", faults)
 
 
 async def _seat_team_field(
-    db_path: str, division_id: int, user_ids: list[int], field: str
+    db_path: str, division_id: int, user_ids: list[int], field: str,
+    faults: list[str] | None = None,
 ) -> dict[int, str]:
-    """One field of the team seating each driver now — ``name`` or ``full_name``."""
+    """One field of the team seating each driver now — ``name`` or ``full_name``.
+
+    Teams that cannot be read are drawn without names: the full error goes to the host's log and
+    a clause saying so is added to *faults*."""
     if field not in ("name", "full_name"):
         raise ValueError(f"not a team name field: {field}")
     if not user_ids:
@@ -661,11 +712,12 @@ async def _seat_team_field(
                     [division_id, *[str(uid) for uid in user_ids]],
                 )
             ).fetchall()
-    except Exception:  # noqa: BLE001 — a nameless team is drawn empty, never fatal
+    except Exception as exc:  # noqa: BLE001 — a nameless team is drawn empty, never fatal
         log.warning(
             "post_attendance_sheet: the teams of division %s could not be read, so they are "
             "drawn without names", division_id, exc_info=True,
         )
+        _note(faults, f"the teams could not be read, so they are drawn without names: {exc}")
         return {}
     return {int(row["uid"]): row["name"] for row in rows if row["name"]}
 

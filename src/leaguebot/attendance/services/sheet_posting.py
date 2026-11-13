@@ -93,7 +93,7 @@ def sheet_step(modules: ModuleService) -> Step:
                 what="attendance sheet",
                 division_name=str(payload.get("division_name", "the division")),
             )
-        return StepResult(result=result, then=then)
+        return StepResult(result=result, then=then, lines=attendance_sheet.sheet_lines(result))
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         payload = ctx.step_payload or ctx.payload
@@ -262,7 +262,7 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
                 what="attendance sheet",
                 division_name=str(ctx.step_payload.get("division_name", "the division")),
             )
-        return StepResult(result=result, then=then)
+        return StepResult(result=result, then=then, lines=attendance_sheet.sheet_lines(result))
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         await attendance_sheet.record_sheet_on(db, int(ctx.step_payload["division_id"]),
@@ -341,7 +341,7 @@ def final_steps(modules: ModuleService) -> dict[str, Step]:
         )
         # The final sheet stands beside the last round's: nothing is saved for it and nothing
         # deleted, so it plans no deletion and carries no record.
-        return StepResult(result=result)
+        return StepResult(result=result, lines=attendance_sheet.sheet_lines(result))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()
