@@ -843,7 +843,8 @@ _MODULE_STEPS = {
 
 
 #: The module steps whose recovery is a function handed the bot, with where that function
-#: lives and its name: in its module's wiring, or, for results' three recoveries, its services.
+#: lives and its name: in its module's wiring, or, for results' and attendance's three
+#: recoveries each, the module's services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
     "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
@@ -855,10 +856,11 @@ _RECOVERIES_OF_THE_STEPS = {
     "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
     "missed forecast clean-ups": ("leaguebot.weather.wiring",
                                   "recover_missed_forecast_clean_ups"),
-    "missed check-in calls": ("leaguebot.attendance.wiring", "recover_missed_check_in_calls"),
-    "RSVP views and deadlines": ("leaguebot.attendance.wiring",
+    "missed check-in calls": ("leaguebot.attendance.services.check_in_recovery",
+                              "recover_missed_check_in_calls"),
+    "RSVP views and deadlines": ("leaguebot.attendance.services.check_in_recovery",
                                  "recover_rsvp_views_and_deadlines"),
-    "missed check-in clean-ups": ("leaguebot.attendance.wiring",
+    "missed check-in clean-ups": ("leaguebot.attendance.services.check_in_recovery",
                                   "recover_missed_check_in_clean_ups"),
 }
 
@@ -866,10 +868,14 @@ _RECOVERIES_OF_THE_STEPS = {
 #: The steps whose recovery is handed the bot's change queue as well, which a service does not look
 #: up on the bot (architecture.md, "Services stay attached to the bot, and are built in one place").
 _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
-    {"orphaned amend channels", "orphaned submission channels", "missed round starts"}
+    {"orphaned amend channels", "orphaned submission channels", "missed round starts",
+     "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups"}
 )
 
 
+@pytest.mark.xfail(strict=True, reason="#285: attendance's three recoveries are still in its "
+                   "wiring, handed only the bot, not services in "
+                   "attendance.services.check_in_recovery handed the bot's queue")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read
@@ -900,8 +906,10 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
     and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
-    step hands its recovery the bot: results' three in results' services, which are also handed the
-    bot's queue, each of the others in its module's wiring. Nothing is posted to the log channel.
+    step hands its recovery the bot: results' three in results' services and attendance's three in
+    `attendance.services.check_in_recovery`, each of these six also handed the bot's queue, since a
+    service does not look the queue up on the bot; each of the others in its module's wiring.
+    Nothing is posted to the log channel.
     """
     import importlib
     from contextlib import asynccontextmanager
