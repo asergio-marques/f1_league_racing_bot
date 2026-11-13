@@ -180,15 +180,24 @@ async def test_the_driver_may_not_action_their_own_signup_review():
     assert await _may_review(_member(), _config()) is False
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CONFIG)
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: _may_review_signup is not handed the configuration service, and turns a fault "
+    "reading it into a quiet refusal rather than failing the press",
+)
 async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
+    """A league manager presses a button of a signup review while the server configuration
+    cannot be read ("database is locked"). The fault is not turned into an answer: it leaves the
+    gate, so the press fails through the view's error handler, which reports it, and nothing is
+    granted (D7, #286)."""
     from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(_member(MANAGER_ROLE))
     config_service = MagicMock()
     config_service.get_server_config = AsyncMock(side_effect=RuntimeError("database is locked"))
 
-    assert await _may_review_signup(interaction, config_service) is False
+    with pytest.raises(RuntimeError, match="database is locked"):
+        await _may_review_signup(interaction, config_service)
 
 
 # ── The penalty and appeals reviews ───────────────────────────────────────
