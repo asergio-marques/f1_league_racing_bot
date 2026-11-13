@@ -36,20 +36,20 @@ queue behind a stop, runs to its own end, and only then is the stopped head trie
 *Rejected:* a lane of the repair settings' own, beside the league's, which would let two lanes
 write the league's configuration at once, each save re-judging the other's.
 
-**The line is formed here and nowhere else:** `{member} | {command} | {outcome}`, the values
-beneath it, saved in the same save as the value and its audit entry. A save is handed only the
-connection and the payload, never the actor or the clock: the queue stamps the audit entry. No
-settings code reads the wall clock. (A penalty's change that recalculates, below, wraps the save and is
-handed the step's context, to apply sanctions as the bot.)
+**The line is formed here and nowhere else:** `{member} | {command} | {outcome}`, the values beneath
+it, saved in the same save as the value and its audit entry. A save is handed only the connection
+and the payload, never the actor or the clock: the queue stamps the audit entry. No settings code
+reads the wall clock. (A penalty's change that recalculates, below, wraps the save and is handed the
+step's context, to apply sanctions as the bot.)
 
 **A setting never holds up the queue, bar one that recalculates and posts as `/attendance sync`
 does.** Such a change follows the sync's rule whatever starts it, a setting included: its cards,
-lineups and sheets stop the lane where Discord refuses them, for the manager to Retry or Discard,
-since a sanction card lost is worse than a lane held (`penalty_recalculation`). Its check, its
-Reserve capacity read, its save and the roles' job, which the sync also ends on a fault, end on a
-fault as below, and it declares the tables it writes as every setting does. Otherwise
-a setting never holds up the queue: its save, its check as it comes up to run and the steps
-after it end on a fault instead of stopping the lane (`Step.on_fault`,
+lineups and sheets stop the lane where Discord refuses them, for a league manager to Retry or a
+league admin to Discard, since a sanction card lost is worse than a lane held
+(`penalty_recalculation`). Its check, its Reserve capacity read, its save and the roles' job, which
+the sync also ends on a fault, end on a fault as below, and it declares the tables it writes as
+every setting does. Otherwise a setting never holds up the queue: its save, its check as it comes up
+to run and the steps after it end on a fault instead of stopping the lane (`Step.on_fault`,
 `ChangeType.on_check_fault`): a settings change is one atomic save, so a fault is cured one of two
 ways and nothing behind it on the lane ever waits on it. A save that faults has been rolled back
 whole, so nothing is saved, the member is told so and to run it again (`NOTHING_SAVED`, or the
@@ -57,10 +57,10 @@ setting's own words), and the log channel gets the failure line — the cure is 
 after the save, which the setting does not need (checking it against the templates, arming or
 removing a timed job, granting a role to every driver), leaves the setting saved: asking again with
 the same value now saves nothing and repeats no step, so the cure is instead whatever the reply
-names — what was not done, or what to do by hand (`After.fault_reply`).
-*Rejected:* a bespoke change type per command, which forms the line, the audit and the fault
-answer a score of ways; and a step catching its own fault, which could not undo its partial
-writes nor catch what fails after it returns (see `change_queue`).
+names — what was not done, or what to do by hand (`After.fault_reply`). *Rejected:* a bespoke change
+type per command, which forms the line, the audit and the fault answer a score of ways; and a step
+catching its own fault, which could not undo its partial writes nor catch what fails after it
+returns (see `change_queue`).
 
 **Recorded twice, in one save, but for a step that carries the line.** The value, its audit entry
 and its line share one save, save where a step after it `carries_line` (the arming of the daily

@@ -169,7 +169,7 @@ topic. The table names a service by its file.
 | `scoring/` | `attendance_scoring` (who attended and the points a round confers), `attendance_recompute` (the one recompute of the stored copies, and what stands in the way of a recalculation), `attendance_pardons` | `driver_round_attendance`, `attendance_pardons` |
 | `sanctions/` | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
 | `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id) |
-| `settings/` | `attendance_settings` (the eight), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config` |
+| `settings/` | `attendance_settings` (the eight), `penalty_recalculation` (a penalty changed while a season is ongoing), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config`; through the sync's save, the recalculation's and the sanctions' tables |
 | `hooks/` | `attendance_hooks` (the deletes, the round's window, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
 
 **The check-in is four changes, each in a file of its own,** with the file that holds the steps an
@@ -255,7 +255,7 @@ a league is told.
 | `attendance.check_in.answer` | a press of a button, the maintainer's form | `save_answer` (or `save_answers`), `redraw` |
 | `attendance.sync` | `/attendance sync` | the reserve's capacity, one save, the roles, the cards, lineups and sheets, the closing line |
 | `attendance.setting.<name>` for the five settings that are not penalties, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.on:attendance`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
-| `attendance.setting.no_rsvp_penalty`, `attendance.setting.absent_penalty`, `attendance.setting.no_show_penalty` | the commands | the Reserve capacity, one save (the value and the season's recalculation), then the roles, cards, lineups, sheets and deletions the sync's jobs make |
+| `attendance.setting.no_rsvp_penalty`, `attendance.setting.absent_penalty`, `attendance.setting.no_show_penalty` | the commands | the Reserve capacity, one save (the value, the season's recalculation and the sanctions it owes), then the roles, cards, lineups, sheets and deletions the sync's jobs make |
 
 Attendance also contributes jobs to changes core owns, through the hooks of a round amended, a
 cancellation and a season approved or completed: the reopening of a round's check-in inside the
@@ -288,17 +288,17 @@ attendance"). The three penalties are the one `Setting` kind that does more than
 the setting's save goes on, on the same connection, to the sync's own per-division save
 (`recalculate_division_on`), once for each division, and plans the sync's own jobs for the roles,
 cards, lineups and sheets, merged so that a division's sheet and lineup are posted once whichever
-sanctions owe them. The value and the recalculation are one save, so a stop never leaves the
-penalty saved with the figures at the old one; the Reserve team's capacity is read before it
-(`CHECK_CAPACITY`), for a value that changes something, and the check is the sync's. The change
+sanctions owe them. The value, the recalculation and the sanctions are one save, so a stop never
+leaves the penalty saved with the figures at the old one; the Reserve team's capacity is read before
+it (`CHECK_CAPACITY`), for a value that changes something, and the check is the sync's. The change
 declares the tables it writes like any setting. *Rejected:* a second copy of the recalculation for
 the setting, which the sync's would drift from.
 
 **Its posts are the sync's** (`posting_steps`), so they stop the lane where Discord refuses them,
 under `architecture.md`'s settings exception for a change that recalculates and posts as the sync
 does. What attendance adds: the save refuses to recalculate on a Reserve capacity nobody read,
-rolling back whole, so the value is never saved with figures the capacity check did not judge; and
-the sanctions it could not apply are reported as the sync reports them. Pinned by
+rolling back whole, so the value is never saved with figures the capacity check did not judge.
+Pinned by
 `test_a_penalty_change_s_card_discord_refuses_stops_the_queue_and_a_discard_names_it` (the stop),
 `test_a_capacity_read_that_faults_ends_on_a_fault_and_never_stops_the_lane` (the unread capacity),
 `test_a_sanction_the_penalty_change_cannot_apply_is_logged_incomplete_with_the_sync_to_run` (the
@@ -486,7 +486,7 @@ queue's, retried when the database can be read. Pinned by
 
 A division's sheet is posted by one of four jobs, each raising where it cannot post: results'
 `attendance_sheet`, in a round's review, through `AttendanceAfterReview.post_sheet`; `post_sheet`,
-which the sync plans among its jobs; and `opening_sheet` and `final_sheet`,
+which the sync and a penalty's change plan among their jobs; and `opening_sheet` and `final_sheet`,
 attendance's jobs in core's approval of a season's placements and in its completion, under the
 occasion's heading. Each stops the queue where Discord refuses the post or the division has no
 attendance channel, to be set and retried. The rows are the drivers core seats full-time in the
@@ -494,7 +494,8 @@ division (`seat_holders_on`), and every driver with a total recorded in the divi
 round, so that one sacked or moved to Reserve stays on the sheet (`_sheet_rows`' docstring). The
 opening sheet is drawn against the division's first round, the final sheet against the round the
 completion hands it, and the sync's, for its division, against the last round it recalculated, and
-for each other division an auto-sack reached, against that division's latest scored round.
+for each other division an auto-sack reached, against that division's latest scored round; a
+penalty's change posts each division's once, against its latest approved round.
 
 ---
 
@@ -618,8 +619,10 @@ Each is stated where it lives and pinned by the test named.
 | The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_on_attendance`'s save | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
 | A read of a round's window creates no row | `attendance_hooks.round_window` | `test_reading_a_round_s_window_writes_nothing` |
 | A cross-setting rule is judged by the setting's change as it starts | `attendance_settings`' docstring | `test_set_setting_refuses_a_timing_that_breaks_the_invariant` and its two companions |
-| A stored copy has one recompute, run on its caller's connection | `_recalculate_forward`'s docstring | the three tests of "The stored copies of derived figures" |
+| A stored copy has one recompute, run on its caller's connection | `_recalculate_forward`'s docstring | the four tests of "The stored copies of derived figures" |
 | The sync's recalculation and sanctions are one save, its cards later jobs | `attendance_sync_change`'s docstring | `test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart` |
+| A penalty's change stops the lane where Discord refuses its posts, as the sync's do | `penalty_recalculation`'s docstring | `test_a_penalty_change_s_card_discord_refuses_stops_the_queue_and_a_discard_names_it` |
+| A penalty's save refuses to recalculate on a Reserve capacity nobody read | `penalty_recalculation`'s docstring | `test_a_capacity_read_that_faults_ends_on_a_fault_and_never_stops_the_lane` |
 | A sanction the sync cannot apply never stops the others | `attendance_sync_change`'s docstring | `test_a_sanction_the_sync_cannot_apply_never_stops_the_others` |
 | A refused role change leaves the sync's sack applied and the queue running | `attendance_sync_change`'s docstring | `test_a_role_change_discord_refuses_leaves_the_sync_s_sack_applied_and_the_queue_running` |
 | An answer is judged at the press, not as its turn comes | `check_in_answer_changes`' docstring | `test_an_answer_pressed_before_the_lock_counts_though_it_runs_after` |

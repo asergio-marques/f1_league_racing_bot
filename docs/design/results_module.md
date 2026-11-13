@@ -555,7 +555,7 @@ are `architecture.md`'s fifth place ("Errors and failures"), each returning the 
 hands back (`PostedTable.fault`, `SentVerdict`)
 (`test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log`,
 `test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log`,
-`test_a_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why_in_the_log`).
+`test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why`).
 
 **Results' posts off the queue** are `architecture.md`'s exceptions alone ("Every post is made in a
 job"): its replies, the configuration picker's edit of the message pressed (`_ConfigSelectView`),
