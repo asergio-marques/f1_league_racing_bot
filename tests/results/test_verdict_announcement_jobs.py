@@ -309,56 +309,6 @@ async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
     assert [item["driver_name"] for item in drawn] == ["Test Lewis"]
 
 
-#: The change `/attendance sync` asks for the cards of the sanctions it applied (C37).
-SANCTIONS_ANNOUNCE = "attendance.sanctions.announce"
-
-
-async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
-    """Ask the queue, as the bot and as the sync asks it, to announce Lewis's move to reserve in
-    round 3 of Pro, and run it: the league is built with attendance's real hook
-    (`_real_attendance_hook`)."""
-    from leaguebot.core.models.change import ChangeOrigin
-    from tests.support.review_league import candidate
-
-    await league.bot.change_queue.ask(
-        SANCTIONS_ANNOUNCE,
-        {
-            "round_id": ROUND_ID, "division_id": DIVISION_ID, "division": "Pro",
-            "sanctions": [candidate(LEWIS_PROFILE, LEWIS)],
-        },
-        what="announcing round 3's attendance sanctions",
-        origin=ChangeOrigin.BOT,
-    )
-    await run_queue(league.bot)
-
-
-async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
-    """Attendance is on with its real hook, and the verdict graphic is on. A sync has moved
-    Lewis (101), known to the server as "Lewis", to reserve, and asks the queue to announce it:
-    the queue runs whole, and the sanction's card is drawn under "Lewis", never his user id
-    (#141; image spec: a graphic names a person by their display name on the server)."""
-    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
-
-    await _announce_lewis_s_autoreserve(league)
-
-    assert await stopped_at(league) is None
-    assert [item["driver_name"] for item in drawn] == ["Lewis"]
-    assert str(LEWIS) not in drawn[0]["driver_name"]
-
-
-async def test_a_sync_s_sanction_card_as_text_mentions_the_driver(tmp_path):
-    """As above, but with image generation off: the card is posted as text in Pro's verdicts
-    channel (704), mentioning Lewis as <@101> and saying he was moved to reserve."""
-    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
-
-    await _announce_lewis_s_autoreserve(league)
-
-    assert await stopped_at(league) is None
-    [card] = _verdicts(league)
-    assert f"<@{LEWIS}>" in card
-    assert "Moved to Reserve" in card
-
-
 async def test_no_further_action_is_drawn_as_no_penalty(tmp_path, drawn):
     league = await review_league(tmp_path)
     await _approve_reports(league, [_nfa(LEWIS)])
@@ -892,36 +842,3 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     assert "text" in line and fault in line, line
     assert ("to put it right: fix the verdict template, then, once the round is final, amend "
             "the round with `/results rounds amend`") in line, line
-
-
-async def test_a_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why_in_the_log(
-    tmp_path, drawn, monkeypatch,
-):
-    """A sync has moved Lewis to reserve in round 3 of Pro, attendance's real hook is in place,
-    the verdict graphic is on, and the image module's step that builds the picture raises a fault
-    it does not catch itself. The card is posted as text naming Lewis, the queue runs to the end,
-    and the log channel gains one line naming round 3 of Pro, the verdict picture, the fault, that
-    the card went out as text, and that no command posts it again."""
-    from leaguebot.image.services import image_verdict_post
-
-    fault = "the verdict picture's file could not be opened"
-
-    async def _fails(*_args: Any, **_kwargs: Any) -> Any:
-        raise OSError(fault)
-
-    monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
-    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
-
-    await _announce_lewis_s_autoreserve(league)
-
-    assert await stopped_at(league) is None
-    [card] = _verdicts(league)
-    assert f"<@{LEWIS}>" in card and "Moved to Reserve" in card
-    faults = [line.lower() for line in league.bot.log_channel.sent
-              if "Pro" in line and "round 3" in line.lower()]
-    assert len(faults) == 1, league.bot.log_channel.sent
-    [line] = faults
-    assert "verdict" in line and ("picture" in line or "image" in line), line
-    assert "text" in line and fault in line, line
-    assert "to put it right: fix the verdict template; no command posts a sanction's card again" \
-        in line, line

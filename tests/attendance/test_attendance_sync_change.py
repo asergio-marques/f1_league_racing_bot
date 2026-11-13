@@ -55,6 +55,7 @@ from tests.support.change_queue import (
     tier_member,
     updated_reply,
 )
+from tests.results.test_verdict_announcement_jobs import drawn  # noqa: F401 — the fixture
 from tests.support.season_league import set_module_flag
 from tests.support.settings_league import unruled
 from tests.support.undecorate import undecorate
@@ -754,3 +755,92 @@ async def test_a_sync_s_sack_of_a_driver_in_two_divisions_posts_both_lineups(
     assert asked == [DIVISION_ID, OTHER_DIVISION]
     assert len(league.sheets()) == 1
     assert len(league.channels[OTHER_ATTENDANCE_CHANNEL].sent) == (1 if other_has_a_sheet else 0)
+
+
+#: The driver's display name on the server, which the card's picture names them by.
+SERVER_NAME = "Racer"
+
+
+async def _a_member_owed_an_autoreserve(league: _League) -> None:
+    """Make the driver a real one (Discord user 5101, known to the server as "Racer"), not a test
+    driver, owed an auto-reserve rather than an auto-sack: the no-show penalty of 5 against an
+    auto-reserve of 3, auto-sack off."""
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET is_test_driver = 0 WHERE id = ?", (DRIVER_PROFILE,)
+        )
+        await db.commit()
+    member = MagicMock(spec=discord.Member)
+    member.id = 5101
+    member.display_name = SERVER_NAME
+    member.mention = "<@5101>"
+    member.guild = league.guild
+    member.roles = []
+    member.add_roles = AsyncMock()
+    member.remove_roles = AsyncMock()
+    bot_member = MagicMock()
+    league.guild.get_member = MagicMock(
+        side_effect=lambda user_id: member if int(user_id) == 5101 else bot_member
+    )
+    league.guild.fetch_member = AsyncMock(return_value=member)
+
+
+@pytest.mark.parametrize("picture", [False, True], ids=["as-text", "drawn"])
+async def test_a_sync_s_sanction_card_names_the_driver(tmp_path, request, picture):
+    """Round 1 is final; its driver, a member of the server known as "Racer" (Discord user
+    5101), is owed an auto-reserve. With the verdict graphic off, and with it on. Manager 77 runs
+    `/attendance sync` from round 1 and the queue is run whole. As text, the card in the
+    verdicts channel, after the round's heading, mentions the driver as <@5101> and says they
+    were moved to reserve. As a picture, the card is drawn under "Racer", never their user id."""
+    drawn = request.getfixturevalue("drawn") if picture else None
+    league = await _league(tmp_path, autosack=None, autoreserve=3)
+    await _a_member_owed_an_autoreserve(league)
+
+    await _sync(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    if drawn is None:
+        heading, card = league.verdicts()
+        assert heading == HEADING
+        assert "<@5101>" in card
+        assert "Moved to Reserve" in card
+    else:
+        assert [item["driver_name"] for item in drawn] == [SERVER_NAME]
+        assert "5101" not in drawn[0]["driver_name"]
+
+
+async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why(
+    tmp_path, drawn, monkeypatch,
+):
+    """As above, the verdict graphic on, but the image module's step that builds the picture
+    raises a fault it does not catch itself (a file it reads cannot be opened). Manager 77 runs
+    `/attendance sync` from round 1 and the queue is run. The card is posted as text naming the
+    driver and their move to reserve, the queue runs to the end, and the log channel gains one
+    line naming round 1 of Division 1, the verdict picture, the fault, that the card went out as
+    text, and that no command posts it again."""
+    from leaguebot.image.services import image_verdict_post
+
+    fault = "the verdict picture's file could not be opened"
+
+    async def _fails(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError(fault)
+
+    monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
+    league = await _league(tmp_path, autosack=None, autoreserve=3)
+    await _a_member_owed_an_autoreserve(league)
+
+    await _sync(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [card] = [each for each in league.verdicts() if "<@5101>" in each]
+    assert "Moved to Reserve" in card
+    faults = [line.lower() for line in league.log_lines() if fault in line]
+    assert len(faults) == 1, league.log_lines()
+    [line] = faults
+    assert "division 1" in line and "round 1" in line, line
+    assert "verdict" in line and ("picture" in line or "image" in line), line
+    assert "text" in line, line
+    assert "to put it right: fix the verdict template; no command posts a sanction's card again" \
+        in line, line
