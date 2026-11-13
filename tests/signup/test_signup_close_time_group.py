@@ -22,8 +22,11 @@ import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.core.utils.interaction_errors import failure_reply
 from tests.support.change_queue import change_rows, member_interaction, run_queue, tier_member
 from tests.support.season_league import setup_league
+from tests.support.settings_league import fault_in, last_said, log_lines, record_followups, said
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 7731
@@ -181,11 +184,11 @@ _CLOSE_TIME_SETTINGS = (
 
 async def _asked(league, run, *args) -> Any:
     """Manager 77 runs the close-time command *run* (`_add`, `_cancel` or `_modify`) on
-    *league*, the queue not yet run; gives his interaction."""
+    *league*, the queue not yet run; gives his interaction, its follow-ups recorded for `said`."""
     name = {_add: "add", _cancel: "cancel", _modify: "modify"}[run]
     cog = SignupCog.__new__(SignupCog)
     cog.bot = league.bot
-    interaction = _manager(league, f"signup close-time {name}")
+    interaction = record_followups(_manager(league, f"signup close-time {name}"))
     await run(cog, interaction, *args)
     return interaction
 
@@ -298,11 +301,12 @@ class TestCancel:
     @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_clears_the_stored_time_and_the_scheduled_job(self, tmp_path):
         """The window is open with its close time armed a week on. Manager 77 runs `/signup
-        close-time cancel`: nothing is saved as it is asked; when the queue runs, the close time
-        is cleared and the close timer disarmed."""
+        close-time cancel`: he is answered as under way and nothing is saved as it is asked; when
+        the queue runs, the close time is cleared and the close timer disarmed."""
         league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _asked(league, _cancel)
+        asked = await _asked(league, _cancel)
+        assert said(asked)[0].startswith("⏳ ")
         assert await _close_at(league.db_path) == ARMED
         await run_queue(league.bot)
 
@@ -341,11 +345,13 @@ class TestAdd:
     @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_arms_the_timer(self, tmp_path):
         """The window is open with no close time. Manager 77 runs `/signup close-time add` for
-        two weeks on: nothing is saved or armed as it is asked; when the queue runs, the close
-        time is saved and the close timer armed once, for that time."""
+        two weeks on: he is answered as under way and nothing is saved or armed as it is asked;
+        when the queue runs, the close time is saved and the close timer armed once, for that
+        time."""
         league = await _close_league(tmp_path, close_at=None)
 
-        await _asked(league, _add, LATER)
+        asked = await _asked(league, _add, LATER)
+        assert said(asked)[0].startswith("⏳ ")
         assert await _close_at(league.db_path) is None
         assert _armed(league) == []
         await run_queue(league.bot)
@@ -395,11 +401,13 @@ class TestModify:
     @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_cancels_the_old_job_and_arms_the_new(self, tmp_path):
         """The window is open with its close time armed a week on. Manager 77 runs `/signup
-        close-time modify` for two weeks on: nothing changes as it is asked; when the queue runs,
-        the new time is saved and the close timer armed again for it, replacing the old."""
+        close-time modify` for two weeks on: he is answered as under way and nothing changes as
+        it is asked; when the queue runs, the new time is saved and the close timer armed again
+        for it, replacing the old."""
         league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _asked(league, _modify, LATER)
+        asked = await _asked(league, _modify, LATER)
+        assert said(asked)[0].startswith("⏳ ")
         assert await _close_at(league.db_path) == ARMED
         assert _armed(league) == []
         await run_queue(league.bot)
@@ -459,6 +467,76 @@ class TestModify:
             "WHERE change_type = 'SIGNUP_CLOSE_TIME_MODIFY'"
         )
         assert (row["old_value"], row["new_value"]) == (ARMED, LATER)
+
+
+# ── A fault in the save, or in the arming after it ────────────────────────
+
+#: Each close-time command as its test runs it: the command, its name, the close time stored
+#: before it, and the close time stored once it has saved.
+_CLOSE_TIME_COMMANDS = [
+    pytest.param(_add, "add", None, LATER, id="add"),
+    pytest.param(_cancel, "cancel", ARMED, None, id="cancel"),
+    pytest.param(_modify, "modify", ARMED, LATER, id="modify"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
+@pytest.mark.parametrize("run, name, before, _saved", _CLOSE_TIME_COMMANDS)
+async def test_a_close_time_faulted_in_its_save_stores_nothing(
+    tmp_path, run, name, before, _saved
+):
+    """The window is open, its close time unset (add) or armed a week on (cancel, modify).
+    Manager 77 runs `/signup close-time add` or `modify` for two weeks on, or `cancel`, and the
+    audit entry's write faults as the queue runs: the close time stays as it was, the timer is
+    neither armed nor disarmed, no audit entry and no Success line are written, and he is told
+    nothing was saved and to run the command again."""
+    league = await _close_league(tmp_path, close_at=before)
+    args = () if run is _cancel else (LATER,)
+
+    asked = await _asked(league, run, *args)
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    command = f"/signup close-time {name}"
+    assert last_said(asked) == failure_reply(f"`{command}`", NOTHING_SAVED.format(command=command))
+    assert await _close_at(league.db_path) == before
+    assert _armed(league) == [] and _disarmed(league) == []
+    assert await _close_time_audits(league.db_path) == []
+    assert not any(" | Success" in line for line in await log_lines(league))
+
+
+@pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
+@pytest.mark.parametrize("run, name, before, saved", _CLOSE_TIME_COMMANDS)
+async def test_a_close_timer_that_cannot_be_armed_or_removed_leaves_the_time_saved(
+    tmp_path, run, name, before, saved
+):
+    """The window is open, its close time unset (add) or armed a week on (cancel, modify), and
+    the scheduler fails with an error of the bot's own when asked to arm or remove the close
+    timer. Manager 77 runs `/signup close-time add` or `modify` for two weeks on, or `cancel`,
+    and the queue runs: the close time is saved as asked, with its audit entry; he is not told it
+    all went well, but that the auto-close was not armed (add, modify) or not removed (cancel);
+    the log channel carries one failure line for the command naming the kind of fault; and the
+    error's own text reaches neither the reply nor the log."""
+    league = await _close_league(tmp_path, close_at=before)
+    scheduler = league.bot.scheduler_service
+    scheduler.arm_once.side_effect = RuntimeError("scheduler down")
+    scheduler.disarm.side_effect = RuntimeError("scheduler down")
+    args = () if run is _cancel else (LATER,)
+
+    asked = await _ran(league, run, *args)
+
+    assert await _close_at(league.db_path) == saved
+    assert len(await _close_time_audits(league.db_path)) == 1
+    replied = last_said(asked)
+    assert not replied.startswith("✅")
+    assert "auto-close" in replied.lower()
+    assert ("not removed" if run is _cancel else "not armed") in replied
+    assert "scheduler down" not in replied
+    lines = await log_lines(league)
+    [failed] = [line for line in lines if line.startswith("❌ ")]
+    assert failed.startswith(f"❌ `/signup close-time {name}` failed for ")
+    assert "— RuntimeError." in failed
+    assert not any("scheduler down" in line for line in lines)
 
 
 # ── All three need an open window ─────────────────────────────────────────
