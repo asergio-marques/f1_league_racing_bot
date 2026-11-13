@@ -90,7 +90,7 @@ def sign_up_division_channel_faults_read(bot: Any) -> None:
         )
 
     async def attendance_faults(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.attendance.services import attendance_service
+        from leaguebot.attendance.services import attendance_config_service as attendance_service
 
         return await attendance_service.division_channel_faults(
             attendance_service.AttendanceService(bot.db_path), bot.module_service,

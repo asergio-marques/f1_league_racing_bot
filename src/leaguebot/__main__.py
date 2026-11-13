@@ -1078,7 +1078,7 @@ async def build(settings: Settings) -> LeagueBot:
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
     bot.signup_module_service = SignupModuleService(settings.db_path)
     bot.wizard_service = WizardService(

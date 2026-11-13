@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.models.attendance import AttendanceConfig
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
 SERVER_ID = 9119
 

@@ -20,8 +20,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.attendance.services import attendance_service
-from leaguebot.attendance.services.attendance_service import (
+from leaguebot.attendance.services import attendance_config_service as attendance_service
+from leaguebot.attendance.services.attendance_config_service import (
     derive_checkin_deadline,
     post_attendance_sheet,
 )
@@ -601,7 +601,7 @@ async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
 @pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
 async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_name, monkeypatch):
     """The phrase is drawn on the sheet, so a heading above it would say it twice."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_config_service as attendance_service
 
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])

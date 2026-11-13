@@ -19,7 +19,7 @@ import pytest
 
 from pathlib import Path
 
-from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services import attendance_config_service as attendance_service
 from leaguebot.image.services.image_attendance_post import (
     SheetRender,
     attendance_enabled,

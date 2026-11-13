@@ -130,7 +130,7 @@ def _check_in_deletes(*, refuse=None, wipe_db=None):
 
 
 def _with_attendance(bot):
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
     bot.attendance_service = AttendanceService(bot.db_path)
     return bot

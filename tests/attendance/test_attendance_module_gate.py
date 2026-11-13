@@ -32,7 +32,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
 SERVER_ID = 7714
 SEASON_ID = 1

@@ -400,7 +400,7 @@ def test_an_attendance_pardon_reaches_no_verdict_announcement_and_so_no_graphic(
     """
     import inspect
 
-    from leaguebot.attendance.services import attendance_after_review, attendance_service
+    from leaguebot.attendance.services import attendance_after_review, attendance_config_service as attendance_service
 
     writers = [attendance_service._rewrite_round_pardons_on]
     writers += [

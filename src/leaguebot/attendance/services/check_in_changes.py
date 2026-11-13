@@ -73,7 +73,7 @@ import discord
 
 from leaguebot.attendance.models.attendance import AttendanceConfig, RsvpEmbedMessage
 from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound

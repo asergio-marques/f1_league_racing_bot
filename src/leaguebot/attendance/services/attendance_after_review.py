@@ -34,7 +34,7 @@ from typing import Any, TypeVar
 import aiosqlite
 import discord
 
-from leaguebot.attendance.services import attendance_service as _att
+from leaguebot.attendance.services import attendance_config_service as _att
 from leaguebot.attendance.services import check_in_record
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection

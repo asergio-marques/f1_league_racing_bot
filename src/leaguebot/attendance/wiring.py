@@ -45,7 +45,7 @@ def sign_up(bot: "LeagueBot") -> None:
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:
     """Sign attendance's window up to the hook a round's timing windows read declares. It is
     handed whether the round is being amended and checks its own switch."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_config_service as attendance_service
 
     bot.round_windows_read.subscribe(partial(
         attendance_service.round_window, bot.attendance_service, bot.module_service
@@ -55,7 +55,7 @@ def sign_up_to_round_windows(bot: "LeagueBot") -> None:
 def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     """Sign attendance's section up to the hook a season review gathers its lines through: handed
     which review is gathered, the season and its divisions, it checks its own switch."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_config_service as attendance_service
 
     bot.review_sections_read.subscribe(partial(
         attendance_service.review_section, bot.attendance_service, bot.module_service
@@ -142,7 +142,7 @@ def sign_up_to_cancellation_steps(bot: "LeagueBot") -> None:
 def sign_up_to_deletes(bot: "LeagueBot") -> None:
     """Sign attendance's deleting of its own rows up to the hooks a round, a division, a driver
     deleted or a driver merged declares, on the delete's connection, inside its save."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_config_service as attendance_service
 
     bot.rounds_deleted.subscribe(attendance_service.rounds_deleted_on)
     bot.divisions_deleted.subscribe(attendance_service.divisions_deleted_on)
@@ -153,7 +153,7 @@ def sign_up_to_deletes(bot: "LeagueBot") -> None:
 def sign_up_to_pack(bot: "LeagueBot") -> None:
     """Sign attendance's clearing of its own rows tied to the server the bot leaves up to the hook
     the bot packed declares, on the pack's connection."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_config_service as attendance_service
 
     bot.bot_packed.subscribe(attendance_service.bot_packed_on)
 
@@ -161,7 +161,7 @@ def sign_up_to_pack(bot: "LeagueBot") -> None:
 def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
     """Sign attendance's two lines up to the hook the placements review gathers each division's
     module lines through, handed its service and the module service."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_config_service as attendance_service
 
     bot.division_lines_read.subscribe(
         partial(attendance_service.division_lines, bot.attendance_service, bot.module_service)
@@ -187,7 +187,7 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
     """Sign attendance's lines naming its own channels not set or not on the server up to the hook
     a division's channel faults are read through, handed its service and the module service."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_config_service as attendance_service
 
     bot.division_channel_faults_read.subscribe(
         partial(

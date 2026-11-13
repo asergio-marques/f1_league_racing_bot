@@ -26,7 +26,7 @@ from leaguebot.attendance.services.check_in_answer_changes import (
     ask_check_in_answers,
 )
 from leaguebot.attendance.services.check_in_changes import ask_check_in_call, judge_hand_post
-from leaguebot.attendance.services.attendance_service import (
+from leaguebot.attendance.services.attendance_config_service import (
     SettingChange,
     recalculation_faults,
     sync_attendance,

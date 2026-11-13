@@ -136,7 +136,7 @@ async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_
     attendance = AsyncMock(return_value=None)
 
     with patch(
-        "leaguebot.attendance.services.attendance_service.post_attendance_sheet", attendance
+        "leaguebot.attendance.services.attendance_config_service.post_attendance_sheet", attendance
     ):
         await service.post_final_sheet(
             bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=True

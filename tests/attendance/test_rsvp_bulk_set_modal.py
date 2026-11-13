@@ -50,7 +50,7 @@ import discord
 import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import _RsvpBulkSetModal
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,

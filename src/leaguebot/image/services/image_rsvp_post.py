@@ -78,7 +78,7 @@ async def try_attach(
         import discord
 
         from leaguebot.image.models.image_module import PostingOrigin
-        from leaguebot.attendance.services.attendance_service import derive_checkin_deadline
+        from leaguebot.attendance.services.attendance_config_service import derive_checkin_deadline
         from leaguebot.image.services.image_rsvp_service import build_fill_spec, resolve_drawing
         from leaguebot.image.services.image_render_service import (
             resolve_configured_directories,

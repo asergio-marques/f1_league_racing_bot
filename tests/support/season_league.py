@@ -872,7 +872,7 @@ async def ongoing_league(
                 await db.execute(_PHASE_DONE[phase], (rid,))
         await db.commit()
 
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
     league.bot.attendance_service.get_embed_message = AttendanceService(
         league.db_path

@@ -813,7 +813,7 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     """Constitution X.6: re-enabling a module starts fresh. A league that set its own
     windows, penalties and thresholds finds the packaged ones after turning the module off
     and on again, through the commands themselves."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_config_service import AttendanceService
     from tests.support.change_queue import run_queue
 
     league, cog = await _league(tmp_path, "results")

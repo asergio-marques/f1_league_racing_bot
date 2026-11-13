@@ -276,7 +276,7 @@ def _real_call(league: Any, monkeypatch: Any) -> None:
     its message and the round's NO_RSVP rows — is written by the call's own job in its save
     (#439, slice 6b, C28): the attendance service's writers on a handed connection (its `_on`
     forms) are attendance's own, and its committing writers are left as the league's doubles."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_config_service import AttendanceService
     from leaguebot.image.services import image_rsvp_post
 
     monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
@@ -290,7 +290,7 @@ def _real_call(league: Any, monkeypatch: Any) -> None:
 def _attendance_as_it_is(league: Any, monkeypatch: Any) -> None:
     """`_real_call`, the attendance service's committing writers made real as well, so that the
     call's record is written whichever of them the code that posts it uses."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
     _real_call(league, monkeypatch)
     attendance = AttendanceService(league.db_path)

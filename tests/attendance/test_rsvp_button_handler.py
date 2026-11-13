@@ -65,7 +65,7 @@ import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
     league_bot,
@@ -1027,7 +1027,7 @@ async def test_answer_rsvp_applies_the_lock_rules(
     """Each lock rule either side of its moment: a full-time driver locks at the deadline, a
     reserve who has accepted at the deadline, any other reserve at the start, and a deadline
     of 0 is the start. A lock is checked before the answer held, as the handler always has."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _seed_answer(db_path, profile, held)
@@ -1043,7 +1043,7 @@ async def test_answer_rsvp_applies_the_lock_rules(
 
 async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
     """An accept is stamped with the `now` it is given, which orders the reserves."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
 
@@ -1056,7 +1056,7 @@ async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
 
 async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_path):
     """Pressing Accept again changes nothing, and leaves a reserve's place in the queue."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     earlier = (NOW - timedelta(days=1)).isoformat()
@@ -1070,7 +1070,7 @@ async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_p
 
 
 async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_path):
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _seed_answer(
@@ -1084,7 +1084,7 @@ async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_pat
 
 
 async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_path):
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
 
@@ -1097,7 +1097,7 @@ async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_pa
 
 async def test_answer_rsvp_reports_an_answer_it_could_not_write(tmp_path):
     """A write that changes no row is reported as not recorded, never as recorded."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _ignore_answers(db_path)

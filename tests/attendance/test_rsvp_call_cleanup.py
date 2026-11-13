@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 from tests.support.change_queue import league_bot, league_queue, run_queue, stopped_job
 from tests.support.review_league import channel
 from tests.support.season_league import (

@@ -41,7 +41,7 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_service import (
+from leaguebot.attendance.services.attendance_config_service import (
     AttendanceService,
     RsvpOutcome,
     rsvp_lock,

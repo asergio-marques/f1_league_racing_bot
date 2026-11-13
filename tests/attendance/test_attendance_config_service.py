@@ -37,8 +37,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import attendance_service
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services import attendance_config_service as attendance_service
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
 SERVER_ID = 8308
 SEASON_ID = 1

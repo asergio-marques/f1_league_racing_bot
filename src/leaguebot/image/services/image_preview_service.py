@@ -829,7 +829,7 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
     The round's own format decides its session list, its own schedule the times, and the
     division's own check-in configuration the deadline.
     """
-    from leaguebot.attendance.services.attendance_service import derive_checkin_deadline
+    from leaguebot.attendance.services.attendance_config_service import derive_checkin_deadline
     from leaguebot.image.services.image_rsvp_service import build_fill_spec, resolve_drawing
 
     config = await bot.image_config_service.get_config()

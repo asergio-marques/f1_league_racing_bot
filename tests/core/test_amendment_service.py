@@ -110,7 +110,7 @@ def _attendance_as_it_is(league, monkeypatch) -> None:
     recorded as attendance posts it, whichever of the bot's code posts it."""
     from unittest.mock import AsyncMock
 
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_config_service import AttendanceService
     from leaguebot.image.services import image_rsvp_post
 
     monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))

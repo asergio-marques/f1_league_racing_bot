@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services import attendance_config_service as attendance_service
 from leaguebot.image.services import image_attendance_post, image_rsvp_post
 from leaguebot.image.services.image_attendance_service import (
     DriverRecord,

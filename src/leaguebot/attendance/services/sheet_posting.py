@@ -28,7 +28,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services import attendance_config_service as attendance_service
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
