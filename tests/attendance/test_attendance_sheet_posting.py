@@ -761,3 +761,73 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     assert list(posted.faults) == lines
     assert result.get("faults", []) == lines
     assert list(attendance_sheet.sheet_lines(result)) == lines
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the sheet reads the placements twice, names on one read and shorthands on a "
+    "second whose fault goes unreported",
+)
+@pytest.mark.asyncio
+async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
+    sheet_db, monkeypatch
+):
+    """Division 1's sheet after round 3, the images module on, the placements read stubbed to give
+    driver 111 in Ferrari (shorthand FER) once and to fail if read again. The sheet
+    reads them once, draws driver 111 under Ferrari with the FER badge, and its job carries no
+    fault line."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.models.team import PlacedDriver
+    from leaguebot.core.services.drivers.team_service import TeamService
+    from leaguebot.image.services import (
+        image_attendance_post,
+        image_attendance_service,
+        image_results_post,
+    )
+
+    reads: list[int] = []
+    drawn: dict = {}
+
+    async def _placed(_db, division_id):
+        reads.append(division_id)
+        if len(reads) > 1:
+            raise RuntimeError("placements read a second time")
+        return [PlacedDriver(
+            profile_id=1, discord_user_id=111, current_state="ASSIGNED",
+            team_name="Ferrari", team_key="FER", is_reserve=False,
+        )]
+
+    def _resolve(**kwargs):
+        drawn.update(kwargs)
+        return SimpleNamespace()
+
+    async def _on(*_args, **_kwargs):
+        return True
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    async def _render(*_args, **_kwargs):
+        return _Render()
+
+    monkeypatch.setattr(TeamService, "placed_drivers_on", _placed)
+    monkeypatch.setattr(image_attendance_service, "resolve_drawing", _resolve)
+    monkeypatch.setattr(image_attendance_post, "attendance_enabled", _on)
+    monkeypatch.setattr(image_attendance_post, "render_sheet", _render)
+    monkeypatch.setattr(image_results_post, "_driver_names", _empty)
+    monkeypatch.setattr(image_results_post, "_nationalities", _empty)
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    with in_a_job():
+        posted = await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7
+        )
+
+    assert posted is not None and channel.sent_content is not None
+    assert reads == [7]
+    assert drawn["team_names"] == {111: "Ferrari"}
+    assert drawn["team_keys"] == {111: "FER"}
+    assert list(posted.faults) == []

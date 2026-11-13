@@ -39,9 +39,14 @@ def test_the_driver_name_is_resolved_by_the_shared_convention_not_a_second_one()
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the sheet reads the placements twice, through _seat_team_names and "
+    "_seat_team_keys, rather than once through _seat_teams",
+)
 def test_the_team_name_is_the_seat_held_at_generation_in_both_paths():
     source = inspect.getsource(attendance_sheet._sheet_attachment)
-    assert "_seat_team_names" in source
+    assert "_seat_teams(" in source
 
 
 def test_the_total_is_read_from_the_persisted_column_by_both_paths():
