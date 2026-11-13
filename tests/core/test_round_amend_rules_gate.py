@@ -77,7 +77,7 @@ async def _cog(db_path, *, attendance: bool = True, now: datetime | None = None)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     for module in ("weather", "signup", "results", "images"):
         setattr(cog.bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
-    cog.bot.attendance_service.get_or_create_config = AsyncMock(
+    cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=SimpleNamespace(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
         )

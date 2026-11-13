@@ -186,7 +186,7 @@ def _cog(
             base_role_id=roles[0], driver_role_id=roles[1],
         )
     )
-    cog.bot.attendance_service.get_or_create_config = AsyncMock(
+    cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=SimpleNamespace(
             rsvp_notice_days=3, rsvp_last_notice_hours=6, rsvp_deadline_hours=2
         )

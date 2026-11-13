@@ -170,13 +170,15 @@ async def test_no_bot_and_no_guild_yield_no_attachment():
     )
 
 
-def test_the_sanctions_are_enforced_by_a_flow_the_graphic_cannot_reach():
-    """``enforce_attendance_sanctions`` imports no image module and calls none.
+@pytest.mark.parametrize("name", ["owed_sanctions", "check_sanction", "apply_sanction_on"])
+def test_the_sanctions_are_enforced_by_a_flow_the_graphic_cannot_reach(name):
+    """Who is owed a sanction, its check and its save import no image module and call none:
+    the review's jobs and `/attendance sync`'s change enforce through these three alone.
 
     XIV.7's precondition clause: the enforcement must complete exactly as it would with the
     images module disabled, and a render that fails must find that work already done.
     """
-    source = inspect.getsource(attendance_sanctions.enforce_attendance_sanctions)
+    source = inspect.getsource(getattr(attendance_sanctions, name))
     for forbidden in ("image_attendance_post", "image_attendance_service", "render_sheet"):
         assert forbidden not in source
 

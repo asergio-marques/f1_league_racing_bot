@@ -316,7 +316,7 @@ async def test_recalculation_faults_names_a_deleted_verdicts_channel(tmp_path):
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_ignores_the_verdicts_channel_without_thresholds(tmp_path):
-    """`enforce_attendance_sanctions` returns at once when both are unset, so a league
+    """`owed_sanctions` returns at once when both are unset, so a league
     using neither must not be refused for a channel it will never post to (#187)."""
     from leaguebot.attendance.services.attendance_recompute import recalculation_faults
 
