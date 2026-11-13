@@ -465,7 +465,6 @@ async def test_the_start_up_asks_no_late_call_under_test_mode(tmp_path):
     assert _sent(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#285: under test mode a call's timer firing late, as at a restart, still posts the call")
 async def test_a_call_timer_overdue_at_a_restart_under_test_mode_posts_no_late_call(tmp_path):
     """Test mode is on. Round 4's call fell due two days ago while the bot was down, its
     check-in deadline still ahead. As the bot starts again the call's timer fires, handed round 4,

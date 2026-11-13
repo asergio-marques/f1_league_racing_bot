@@ -244,7 +244,6 @@ async def test_a_last_notice_with_no_call_standing_is_dropped(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#285: under test mode a last notice's timer firing late, as at a restart, still posts the notice")
 async def test_a_last_notice_timer_overdue_at_a_restart_under_test_mode_posts_nothing(tmp_path):
     """Test mode is on. Round 3's last notice fell due while the bot was down, its call standing
     and its check-in deadline an hour ahead. As the bot starts again the last notice's timer
@@ -263,7 +262,6 @@ async def test_a_last_notice_timer_overdue_at_a_restart_under_test_mode_posts_no
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#285: a last notice asked before the late call it reminds of has posted is dropped at the ask")
 async def test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the_call_stands(
     tmp_path,
 ):

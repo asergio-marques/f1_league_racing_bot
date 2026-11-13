@@ -100,6 +100,8 @@ from leaguebot.core.models.round import (
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.core.services.seasons.season_end_changes import test_mode_on
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -223,7 +225,9 @@ async def _call_row(db: aiosqlite.Connection, round_id: int) -> CallRow | None:
         "       d.status AS division_status, d.name AS division_name, d.tier AS division_tier, "
         "       d.mention_role_id, d.season_id, s.season_number, "
         "       t.gp_name AS track_gp_name, t.country AS track_country, "
-        "       (SELECT rsvp_deadline_hours FROM attendance_config LIMIT 1) AS deadline_hours "
+        "       (SELECT rsvp_deadline_hours FROM attendance_config LIMIT 1) AS deadline_hours, "
+        "       (SELECT rsvp_notice_days FROM attendance_config LIMIT 1) AS notice_days, "
+        "       (SELECT rsvp_last_notice_hours FROM attendance_config LIMIT 1) AS last_notice_hours "
         "FROM rounds r JOIN divisions d ON d.id = r.division_id "
         "JOIN seasons s ON s.id = d.season_id "
         "LEFT JOIN tracks t ON t.name = r.track_name WHERE r.id = ?",
@@ -271,17 +275,59 @@ def _not_due(
     return None
 
 
+#: How long after its moment a timer's ask still counts as on time under test mode: the five
+#: minutes the scheduler's own jobs are given, so that a timer a restart fires late is told from
+#: one that fires as it falls due.
+_ON_TIME = timedelta(minutes=5)
+
+
+async def _left_to_advance(
+    db: aiosqlite.Connection, row: CallRow | None, kind: str, ctx: CheckContext, *, now: datetime
+) -> str | None:
+    """Why a timer's call or last notice is left to `/test-mode advance`, else None.
+
+    **Under test mode a restart posts neither late** (core specification, "Test mode"): the timers
+    are armed with no lateness limit, so one that fell due while the bot was down fires when it is
+    back, and the change judges its own moment against *now*, the queue's clock. A bot's request
+    that is not advance's and comes more than `_ON_TIME` after the moment of *kind* (`rsvp_notice`
+    or `rsvp_last_notice`) is not due, and the round's check-in is left open for the advance to
+    take in its turn. A call replacing another, an amendment's, is not judged so.
+    """
+    if (
+        row is None
+        or ctx.origin is not ChangeOrigin.BOT
+        or ctx.payload.get("advanced")
+        or ctx.payload.get("replaces") is not None
+        or not await test_mode_on(db)
+    ):
+        return None
+    moments = round_event_moments(
+        _scheduled(row), weather=None,
+        attendance=AttendanceWindows(
+            row["notice_days"] or 0, row["last_notice_hours"] or 0, row["deadline_hours"] or 0
+        ),
+    )
+    moment = moments.get(kind)
+    if moment is None or now - moment <= _ON_TIME:
+        return None
+    return "test mode leaves a moment that passed before the bot came up to /test-mode advance"
+
+
 def _notice_not_due(
     row: CallRow | None, standing: aiosqlite.Row | None, *, now: datetime,
-    advanced: bool = False,
+    advanced: bool = False, call_in_hand: bool = False,
 ) -> str | None:
     """Why the round is owed no last notice, else None: it needs a call standing to remind of,
     and is posted late while the check-in deadline is ahead, never after it. A step *advanced* by
-    test mode is judged by no clock: the deadline that ends the check-in is the one advance fires."""
+    test mode is judged by no clock: the deadline that ends the check-in is the one advance fires.
+
+    A notice asked while the call it reminds of is *call_in_hand* on the queue, a late call a
+    restart asked for, is owed all the same: it waits behind the call, and is judged again as it
+    starts, when the call stands or has been given up."""
     reason = _round_not_owed(row)
     if reason is not None:
         return reason
-    if standing is None:
+    if standing is None and not call_in_hand:
         return "no check-in call stands for the round"
     assert row is not None
     if not advanced and now >= _deadline(row):
@@ -1233,6 +1279,9 @@ def check_in_call_change(
             if refusal is not None:
                 return Verdict.refuse(refusal)
         reason = _not_due(row, standing, ctx.payload.get("replaces"))
+        if reason is None:
+            async with get_connection(ctx.db_path) as db:
+                reason = await _left_to_advance(db, row, "rsvp_notice", ctx, now=now())
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
     def outcome(ctx: OutcomeContext) -> str:
@@ -1391,9 +1440,17 @@ def check_in_last_notice_change(
         async with get_connection(ctx.db_path) as db:
             row = await _call_row(db, round_id)
             standing = await _standing(db, round_id)
-        reason = _notice_not_due(
-            row, standing, now=now(), advanced=bool(ctx.payload.get("advanced"))
-        )
+            # Asked while a late call is still on the queue, the notice waits behind it.
+            call_in_hand = ctx.change_id is None and standing is None and any(
+                int(each["round_id"]) == round_id
+                for each in await unfinished(ctx.db_path, [CHECK_IN_CALL])
+            )
+            reason = _notice_not_due(
+                row, standing, now=now(), advanced=bool(ctx.payload.get("advanced")),
+                call_in_hand=call_in_hand,
+            )
+            if reason is None:
+                reason = await _left_to_advance(db, row, "rsvp_last_notice", ctx, now=now())
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
     def outcome(_ctx: OutcomeContext) -> str:
