@@ -1534,11 +1534,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_sanctions.py", "apply_sanction"): (2, PASS["attendance"]),
     ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"): (3, PASS["attendance"]),
-    ("attendance/services/channel_settings.py", "_channel_setting.check"): (1, PASS["attendance"]),
-    ("attendance/services/check_in_changes.py", "_forget_vanished_call.forget"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
-    ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
     ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),

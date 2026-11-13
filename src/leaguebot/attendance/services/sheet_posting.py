@@ -62,7 +62,7 @@ OPENING_SHEET = "opening_sheet"
 FINAL_SHEET = "final_sheet"
 
 
-def sheet_step() -> Step:
+def sheet_step(modules: ModuleService) -> Step:
     """The job that posts a division's attendance sheet for a round.
 
     The payload is `{"division_id", "division_name", "round_id", "sanctioned"}`, `sanctioned`
@@ -70,7 +70,8 @@ def sheet_step() -> Step:
     try posts as configured (the picture where the image module has one); a try again posts the
     text. The job returns the sheet posted, saves its id as the division's live sheet with its
     mark (`record_sheet_on`) and plans, where the sheet takes the slot, the deletion of the one it
-    replaces; a sheet discarded plans none, so the earlier one stands.
+    replaces; a sheet discarded plans none, so the earlier one stands. *modules* says whether
+    attendance is on.
     """
 
     async def run(ctx: StepContext) -> StepResult:
@@ -99,7 +100,7 @@ def sheet_step() -> Step:
         await attendance_sheet.record_sheet_on(db, int(payload["division_id"]), result.result)
 
     async def still_due(ctx: StepContext) -> bool:
-        return await ctx.bot.module_service.is_attendance_enabled()
+        return await modules.is_attendance_enabled()
 
     async def describe(ctx: StepContext) -> str:
         payload = ctx.step_payload or ctx.payload
@@ -110,12 +111,13 @@ def sheet_step() -> Step:
     )
 
 
-def sheet_post_change() -> ChangeType:
+def sheet_post_change(modules: ModuleService) -> ChangeType:
     """`attendance.sheet.post`: the bot's change, repeatable, that posts one division's sheet.
 
     The check drops the request where attendance is off, the division is gone or the round
     named is cancelled, and refuses where the division has no attendance channel set: the bot's
-    change so refused stops the queue with the reason, to be put right and retried.
+    change so refused stops the queue with the reason, to be put right and retried. *modules* says
+    whether attendance is on.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -148,7 +150,7 @@ def sheet_post_change() -> ChangeType:
     return ChangeType(
         kind=SHEET_POST,
         opening=(PlannedStep(POST_SHEET),),
-        steps={POST_SHEET: sheet_step(), standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step()},
+        steps={POST_SHEET: sheet_step(modules), standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step()},
         check=check,
         key=lambda payload: f"{SHEET_POST}:{payload['division_id']}",
         doing=lambda payload: (

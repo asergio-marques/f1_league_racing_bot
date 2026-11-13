@@ -125,6 +125,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.posting.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
 
@@ -454,6 +455,7 @@ async def forget_check_in_call_on(
 async def _forget_vanished_call(
     ctx: StepContext,
     service: AttendanceService,
+    router: OutputRouter,
     row: CallRow,
     round_id: int,
     division_id: int,
@@ -471,7 +473,7 @@ async def _forget_vanished_call(
     async def forget(db: aiosqlite.Connection) -> None:
         await forget_check_in_call_on(db, round_id, division_id)
         if undeleted:
-            await ctx.bot.output_router.queue_log_on(
+            await router.queue_log_on(
                 db,
                 f"ATTENDANCE | check-in call | NOT DELETED\n"
                 f"  division: {row['division_name']}\n"
@@ -798,6 +800,7 @@ async def give_up_text_for(db_path: str, round_id: int) -> str | None:
 
 def amendment_steps(
     service: AttendanceService,
+    router: OutputRouter,
     *,
     now: Callable[[], datetime],
     view_of: CheckInViewFactory,
@@ -810,12 +813,12 @@ def amendment_steps(
     a check-in deadline (placing the reserves, taking the buttons off the call, announcing),
     closing a check-in that has no call, and the four of taking a check-in down (its plan under
     the amendment's name `CLEAN_UP_CHECK_IN`, each deletion, the mark that it is over). *service* is
-    attendance's, *now* the queue's clock, *seasons* reads the round, *modules* says whether
+    attendance's, *router* writes the log channel's lines, *now* the queue's clock, *seasons* reads the round, *modules* says whether
     attendance is on, *deletes* is `check_in_deletes` and *view_of* builds the buttons of a call
     posted again. Subscribed to core's `amendment_steps`.
     """
     taken_down = take_down_steps(seasons=seasons, modules=modules, deletes=deletes)
-    call = check_in_steps(service, now=now, view_of=view_of)
+    call = check_in_steps(service, router, now=now, view_of=view_of)
     deadline = check_in_deadline_steps(service, now=now)
     clean_up = check_in_clean_up_steps()
 
@@ -967,10 +970,15 @@ def amendment_steps(
 
 
 def check_in_steps(
-    service: AttendanceService, *, now: Callable[[], datetime], view_of: CheckInViewFactory
+    service: AttendanceService,
+    router: OutputRouter,
+    *,
+    now: Callable[[], datetime],
+    view_of: CheckInViewFactory,
 ) -> dict[str, Step]:
-    """The jobs of a check-in call, *service* being attendance's, *now* the queue's clock and
-    *view_of* the way to build the buttons the call carries."""
+    """The jobs of a check-in call, *service* being attendance's, *router* the log channel's
+    writer, *now* the queue's clock and *view_of* the way to build the buttons the call
+    carries."""
 
     async def still_due(ctx: StepContext) -> bool:
         async with get_connection(ctx.db_path) as db:
@@ -1028,7 +1036,7 @@ def check_in_steps(
             vanished = earlier is not None and await rsvp_service._call_vanished(ctx.bot, earlier)
             forget: Callable[[aiosqlite.Connection], Awaitable[None]] | None = None
             if vanished:
-                forget = await _forget_vanished_call(ctx, service, row, round_id, division_id)
+                forget = await _forget_vanished_call(ctx, service, router, row, round_id, division_id)
             if answers_kept and not timed_out and not amending:
                 left = rsvp_service.ANSWERS_KEPT.format(
                     division=division, round=row["round_number"]
@@ -1085,6 +1093,7 @@ def check_in_steps(
         if ctx.tries == 0:
             attachment = await rsvp_service._checkin_attachment(
                 ctx.bot,
+                service,
                 division_id=division_id,
                 division_name=division,
                 division_tier=row["division_tier"],
@@ -1202,7 +1211,11 @@ def check_in_steps(
 
 
 def check_in_call_change(
-    service: AttendanceService, *, now: Callable[[], datetime], view_of: CheckInViewFactory
+    service: AttendanceService,
+    router: OutputRouter,
+    *,
+    now: Callable[[], datetime],
+    view_of: CheckInViewFactory,
 ) -> ChangeType:
     """`attendance.check_in.call`: the bot's change that posts a round's check-in call, or gives
     it up where its deadline has passed. Not repeatable: a round is owed one call."""
@@ -1246,7 +1259,7 @@ def check_in_call_change(
     return ChangeType(
         kind=CHECK_IN_CALL,
         opening=(PlannedStep(GIVE_UP),),
-        steps=check_in_steps(service, now=now, view_of=view_of),
+        steps=check_in_steps(service, router, now=now, view_of=view_of),
         check=check,
         key=lambda payload: f"{CHECK_IN_CALL}:{payload['round_id']}",
         doing=_doing,
@@ -1745,7 +1758,7 @@ def check_in_deadline_steps(
         # A message gone raises NotFound, which completes the job with its gone line.
         message = await channel.fetch_message(int(payload["message_id"]))
         embed = await rsvp_service._rebuild_embed_for_round(
-            int(payload["round_id"]), int(payload["division_id"]), ctx.bot
+            int(payload["round_id"]), int(payload["division_id"]), ctx.db_path, service
         )
         try:
             await edit_check_in_message(message, embed=embed, view=None)

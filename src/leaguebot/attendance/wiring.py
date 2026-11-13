@@ -102,6 +102,7 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
     bot.amendment_steps.subscribe(partial(
         check_in_changes.amendment_steps,
         bot.attendance_service,
+        bot.output_router,
         now=lambda: bot.change_queue.now(),
         view_of=_check_in_view(),
         seasons=bot.season_service,
@@ -271,10 +272,11 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.queue.setting_change import setting_change
 
-    bot.change_queue.register(sheet_post_change())
+    bot.change_queue.register(sheet_post_change(bot.module_service))
     bot.change_queue.register(
         check_in_call_change(
-            bot.attendance_service, now=lambda: bot.change_queue.now(), view_of=_check_in_view()
+            bot.attendance_service, bot.output_router,
+            now=lambda: bot.change_queue.now(), view_of=_check_in_view(),
         )
     )
     bot.change_queue.register(
@@ -303,6 +305,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     for setting in attendance_channel_settings(
         modules=bot.module_service, seasons=bot.season_service,
         channel_of=lambda channel_id: bot.get_channel(channel_id),
+        channel_uses_read=bot.channel_uses_read,
     ):
         bot.change_queue.register(setting_change(setting))
 

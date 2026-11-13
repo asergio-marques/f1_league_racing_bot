@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.core.utils.hooks import AwaitedHook
 
 
 RSVP_CHANNEL = "attendance.setting.rsvp_channel"
@@ -75,12 +76,13 @@ def _channel_setting(
     modules: "ModuleService",
     seasons: "SeasonService",
     channel_of: Callable[[int], object],
+    channel_uses_read: "AwaitedHook",
 ) -> Setting:
     """The setting of the *key* channel (the channel registry's key, which is also the word of the
     command), *called* the name the acknowledgement gives it (its reply capitalises it), *write*
     its column's upsert and *change_type* the audit entry of the channel moving from one to
     another in a division. *channel_of* finds a channel by its id, for the bot's access to it to
-    be judged."""
+    be judged, and *channel_uses_read* is core's hook that names the module holding a channel."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -96,7 +98,7 @@ def _channel_setting(
         if division is None or division.season_id != season.id:
             return Verdict.refuse(division_not_found(payload["division_name"]))
         use = await find_channel_use(
-            ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
+            ctx.db_path, value, channel_uses_read=channel_uses_read
         )
         if use is not None:
             return Verdict.refuse(
@@ -163,20 +165,22 @@ def attendance_channel_settings(
     modules: "ModuleService",
     seasons: "SeasonService",
     channel_of: Callable[[int], object],
+    channel_uses_read: "AwaitedHook",
 ) -> tuple[Setting, ...]:
     """The RSVP channel's setting and the attendance channel's: the module and the season are read
-    through the services handed in, and the channel the bot finds by its id through
-    *channel_of*."""
+    through the services handed in, the channel the bot finds by its id through *channel_of*, and
+    what holds a channel through *channel_uses_read*."""
     return (
         _channel_setting(
             kind=RSVP_CHANNEL, key="rsvp", called="RSVP", write=set_rsvp_channel,
             change_type="RSVP_CHANNEL_SET", modules=modules, seasons=seasons,
-            channel_of=channel_of,
+            channel_of=channel_of, channel_uses_read=channel_uses_read,
         ),
         _channel_setting(
             kind=ATTENDANCE_CHANNEL, key="attendance", called="attendance",
             write=set_attendance_channel, change_type="ATTENDANCE_CHANNEL_SET",
             modules=modules, seasons=seasons, channel_of=channel_of,
+            channel_uses_read=channel_uses_read,
         ),
     )
 

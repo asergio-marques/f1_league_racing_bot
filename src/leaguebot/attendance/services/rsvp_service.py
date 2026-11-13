@@ -9,6 +9,7 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
+from leaguebot.attendance.services.attendance_config_service import AttendanceService
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat, read_scheduled_at
@@ -241,6 +242,7 @@ def call_failure_text(
 
 async def _checkin_attachment(
     bot: LeagueBot,
+    service: AttendanceService,
     *,
     division_id: int,
     division_name: str,
@@ -263,7 +265,7 @@ async def _checkin_attachment(
         from leaguebot.image.services.image_rsvp_post import try_attach
         deadline_hours = None
         try:
-            config = await bot.attendance_service.get_config()
+            config = await service.get_config()
             deadline_hours = getattr(config, "rsvp_deadline_hours", None)
         except Exception:  # noqa: BLE001 — the deadline is optional on the graphic
             log.warning(
@@ -678,9 +680,12 @@ async def write_distribution_on(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
-async def _rebuild_embed_for_round(round_id: int, division_id: int, bot: LeagueBot) -> discord.Embed:
-    """Rebuild the RSVP embed using current DB state for *round_id* / *division_id*."""
-    async with get_connection(bot.db_path) as db:
+async def _rebuild_embed_for_round(
+    round_id: int, division_id: int, db_path: str, service: AttendanceService
+) -> discord.Embed:
+    """Rebuild the RSVP embed using current DB state for *round_id* / *division_id*, *service*
+    being attendance's."""
+    async with get_connection(db_path) as db:
         cur = await db.execute(
             """
             SELECT r.round_number, r.format, r.track_name, r.scheduled_at,
@@ -697,10 +702,10 @@ async def _rebuild_embed_for_round(round_id: int, division_id: int, bot: LeagueB
     if row is None:
         return discord.Embed(title="RSVP", color=discord.Color.red())
 
-    dra_rows = await bot.attendance_service.get_attendance_rows(round_id, division_id)
+    dra_rows = await service.get_attendance_rows(round_id, division_id)
     status_map: dict[int, str] = {r.driver_profile_id: r.rsvp_status for r in dra_rows}
 
-    roster = await query_division_roster(bot.db_path, division_id)
+    roster = await query_division_roster(db_path, division_id)
 
     embed_teams = [
         {

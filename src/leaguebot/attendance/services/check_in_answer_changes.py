@@ -408,7 +408,9 @@ def check_in_answer_steps(
             return gone
         try:
             message = await channel.fetch_message(int(standing["message_id"]))
-            embed = await rsvp_service._rebuild_embed_for_round(round_id, division_id, ctx.bot)
+            embed = await rsvp_service._rebuild_embed_for_round(
+                round_id, division_id, ctx.db_path, service
+            )
             await edit_check_in_message(
                 message, embed=embed, view=view_of(round_id)
             )
