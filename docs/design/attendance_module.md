@@ -100,9 +100,14 @@ carried. Three callers use it, and a named test pins each caller's use:
 | `AttendanceAfterReview.recalculate_on`, an amendment's approval | `"round"` | `test_the_amended_round_s_attendance_is_rebuilt_both_ways_on_the_save_it_is_handed` |
 | the sync's save (`attendance.sync`) | `"all"` | `test_a_sync_recalculates_from_the_named_round_on_and_leaves_earlier_rounds_alone` |
 
-*Rejected:* storing none of the copies and summing on every read. Each round's copy of the total is
-kept so that a figure that looks wrong can be traced round by round, which a sum made on the read
-cannot be (`distribute_attendance_points`' docstring).
+Neither the recompute nor the distribution it calls opens a connection or commits: each is handed
+the save's, so a call handed none is refused by the type check and not lost on close.
+
+*Rejected:* one total for the season in place of a total at each round. The sum was once taken over
+every other finalised round, which wrote the whole season's figure onto the round recomputed and
+onto every round the carry then touched; each round's copy is kept so that a figure that looks wrong
+can be traced round by round, which a flattened one cannot be (`distribute_attendance_points`'
+docstring).
 
 ### The packaged defaults are written once
 
