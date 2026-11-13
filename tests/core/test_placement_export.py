@@ -83,6 +83,18 @@ def _signup_service(db_path):
     return SignupModuleService(db_path)
 
 
+async def _slot(db_path, how, day, time_hhmm):
+    """Add ("INSERT") or remove ("DELETE") the slot at *day* and *time_hhmm*, as
+    `/signup time-slot add` or `remove` leaves the table."""
+    sql = {
+        "INSERT": "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+        "DELETE": "DELETE FROM signup_availability_slots WHERE day_of_week = ? AND time_hhmm = ?",
+    }[how]
+    async with get_connection(db_path) as db:
+        await db.execute(sql, (day, time_hhmm))
+        await db.commit()
+
+
 async def _export(db_path):
     """Export exactly as the cog does — live slots, chronologically ordered."""
     slots = await _signup_service(db_path).get_slots()
@@ -128,7 +140,7 @@ class TestSlotPresence:
         ]
         assert marked_before == ["Friday 21:00 UTC"]
 
-        await _signup_service(db_path).remove_slot_by_rank(1)  # remove Monday
+        await _slot(db_path, "DELETE", 1, "19:00")  # remove Monday
 
         after_rows, after_slots = await _export(db_path)
         marked_after = [
@@ -143,7 +155,7 @@ class TestSlotPresence:
             [{"availability": ["Wed_20_00"]}],
             slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        await _signup_service(db_path).add_slot(1, "08:00")
+        await _slot(db_path, "INSERT", 1, "08:00")
 
         rows, slots = await _export(db_path)
         marked = [s.display_label for s in slots if rows[0]["slot_presence"][s.slot_sequence_id]]
@@ -156,7 +168,7 @@ class TestSlotPresence:
             [{"availability": ["Mon_19_00"]}],
             slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        await _signup_service(db_path).remove_slot_by_rank(1)
+        await _slot(db_path, "DELETE", 1, "19:00")
 
         rows, _ = await _export(db_path)
         assert rows[0]["slot_presence"] == {1: False, 2: False}

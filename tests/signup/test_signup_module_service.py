@@ -7,6 +7,27 @@ import pytest
 from leaguebot.core.db.database import get_connection
 
 
+async def _add_slot(db_path, day_of_week, time_hhmm):
+    """Add the slot at *day_of_week* and *time_hhmm*, as `/signup time-slot add` leaves the table."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+            (day_of_week, time_hhmm),
+        )
+        await db.commit()
+
+
+async def _remove_slot(db_path, rank):
+    """Remove the slot at chronological *rank* (from 1), as `/signup time-slot remove` leaves
+    the table."""
+    async with get_connection(db_path) as db:
+        rows = await (await db.execute(
+            "SELECT id FROM signup_availability_slots ORDER BY day_of_week, time_hhmm"
+        )).fetchall()
+        await db.execute("DELETE FROM signup_availability_slots WHERE id = ?", (rows[rank - 1][0],))
+        await db.commit()
+
+
 async def _delete_wizard(svc, db_path, discord_user_id):
     """Delete the driver's wizard in a save of the test's own, as the channel's deletion does."""
     async with get_connection(db_path) as db:
@@ -77,46 +98,9 @@ class TestSlotIdFormat:
     async def test_get_slots_populates_slot_id(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(5, "21:00")
+        await _add_slot(db_path, 5, "21:00")
         slots = await svc.get_slots()
         assert slots[0].slot_id == "Fri_21_00"
-
-
-class TestSlotAdd:
-    async def test_add_happy_path(self, db_path):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "14:30")
-        slots = await svc.get_slots()
-        assert len(slots) == 1
-        assert slots[0].day_of_week == 1
-        assert slots[0].time_hhmm == "14:30"
-        assert slots[0].slot_sequence_id == 1
-
-    async def test_add_duplicate_raises(self, db_path):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "14:30")
-        with pytest.raises(ValueError, match="already exists"):
-            await svc.add_slot(1, "14:30")
-
-
-class TestSlotRemove:
-    async def test_remove_happy_path(self, db_path):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        await svc.add_slot(2, "10:00")
-        result = await svc.remove_slot_by_rank(1)
-        assert result is True
-        slots = await svc.get_slots()
-        assert slots == []
-
-    @pytest.mark.parametrize("rank", [1, 99], ids=["first-rank", "out-of-range"])
-    async def test_no_slots_returns_false(self, db_path, rank):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        result = await svc.remove_slot_by_rank(rank)
-        assert result is False
 
 
 class TestChronologicalRanking:
@@ -124,9 +108,9 @@ class TestChronologicalRanking:
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         # Add out of order
-        await svc.add_slot(3, "19:00")   # Wed 19:00
-        await svc.add_slot(1, "20:00")   # Mon 20:00
-        await svc.add_slot(1, "14:30")   # Mon 14:30
+        await _add_slot(db_path, 3, "19:00")   # Wed 19:00
+        await _add_slot(db_path, 1, "20:00")   # Mon 20:00
+        await _add_slot(db_path, 1, "14:30")   # Mon 14:30
         slots = await svc.get_slots()
         assert len(slots) == 3
         # Ordered chronologically regardless of insertion order
@@ -140,8 +124,8 @@ class TestChronologicalRanking:
         """Wednesday added first, then Monday → Monday gets #1, Wednesday gets #2."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(3, "18:00")   # Wed 18:00 added first
-        await svc.add_slot(1, "17:00")   # Mon 17:00 added second
+        await _add_slot(db_path, 3, "18:00")   # Wed 18:00 added first
+        await _add_slot(db_path, 1, "17:00")   # Mon 17:00 added second
         slots = await svc.get_slots()
         assert slots[0].day_of_week == 1 and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].slot_sequence_id == 2
@@ -155,13 +139,13 @@ class TestChronologicalRanking:
         """
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "14:30")   # Mon 14:30 → seq 1
-        await svc.add_slot(1, "20:00")   # Mon 20:00 → seq 2
-        await svc.add_slot(3, "19:00")   # Wed 19:00 → seq 3
+        await _add_slot(db_path, 1, "14:30")   # Mon 14:30 → seq 1
+        await _add_slot(db_path, 1, "20:00")   # Mon 20:00 → seq 2
+        await _add_slot(db_path, 3, "19:00")   # Wed 19:00 → seq 3
         # Remove seq_id 2 (Mon 20:00); remaining: Mon 14:30, Wed 19:00
-        await svc.remove_slot_by_rank(2)
+        await _remove_slot(db_path, 2)
         # Add Fri 18:00; new chronological order: Mon 14:30(1), Wed 19:00(2), Fri 18:00(3)
-        await svc.add_slot(5, "18:00")
+        await _add_slot(db_path, 5, "18:00")
         slots = await svc.get_slots()
         assert len(slots) == 3
         assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30" and slots[0].slot_sequence_id == 1
@@ -180,9 +164,9 @@ class TestDurableSlotIdentity:
         """Mon 19:00 (#1), Wed 20:00 (#2), Fri 21:00 (#3) — the issue's worked example."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "19:00")
-        await svc.add_slot(3, "20:00")
-        await svc.add_slot(5, "21:00")
+        await _add_slot(db_path, 1, "19:00")
+        await _add_slot(db_path, 3, "20:00")
+        await _add_slot(db_path, 5, "21:00")
         return svc
 
     async def test_removing_a_slot_does_not_change_other_slot_ids(self, db_path):
@@ -192,7 +176,7 @@ class TestDurableSlotIdentity:
         chosen = next(s for s in slots if s.slot_sequence_id == 3).slot_id
         assert chosen == "Fri_21_00"
 
-        await svc.remove_slot_by_rank(1)   # remove Mon 19:00
+        await _remove_slot(db_path, 1)   # remove Mon 19:00
 
         remaining = await svc.get_slots()
         # Friday's display ordinal has moved from 3 to 2 …
@@ -210,7 +194,7 @@ class TestDurableSlotIdentity:
             s for s in await svc.get_slots() if s.slot_sequence_id == 3
         ).slot_id
 
-        await svc.add_slot(1, "08:00")   # a new Monday morning slot, earliest of all
+        await _add_slot(db_path, 1, "08:00")   # a new Monday morning slot, earliest of all
 
         after = await svc.get_slots()
         assert [s.slot_sequence_id for s in after] == [1, 2, 3, 4]
@@ -221,10 +205,10 @@ class TestDurableSlotIdentity:
     async def test_a_re_added_slot_recovers_its_own_answers(self, db_path):
         """Remove a slot and put it back: answers naming it mean the same time again."""
         svc = await self._friday_league(db_path)
-        await svc.remove_slot_by_rank(2)   # remove Wed 20:00
+        await _remove_slot(db_path, 2)   # remove Wed 20:00
         assert "Wed_20_00" not in {s.slot_id for s in await svc.get_slots()}
 
-        await svc.add_slot(3, "20:00")
+        await _add_slot(db_path, 3, "20:00")
         assert "Wed_20_00" in {s.slot_id for s in await svc.get_slots()}
 
 
@@ -268,7 +252,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(day, time_hhmm)
+            await _add_slot(db_path, day, time_hhmm)
         await self._saved_snapshot(db_path, await svc.get_slots())
 
         async with get_connection(db_path) as db:
@@ -287,7 +271,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(day, time_hhmm)
+            await _add_slot(db_path, day, time_hhmm)
         await self._saved_snapshot(db_path, await svc.get_slots())
 
         snap = (await svc.get_wizard("snap")).config_snapshot
@@ -302,7 +286,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(day, time_hhmm)
+            await _add_slot(db_path, day, time_hhmm)
         scrambled = list(reversed(await svc.get_slots()))
         await self._saved_snapshot(db_path, scrambled)
 
@@ -560,7 +544,7 @@ class TestConfigSnapshotIsolation:
         )
         svc = SignupModuleService(db_path)
         # Add a slot and capture a snapshot with nationality_required=True
-        await svc.add_slot(1, "20:00")
+        await _add_slot(db_path, 1, "20:00")
         slot = (await svc.get_slots())[0]
         snapshot = ConfigSnapshot(
             nationality_required=True,

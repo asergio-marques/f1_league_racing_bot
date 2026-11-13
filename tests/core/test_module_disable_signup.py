@@ -414,16 +414,19 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     its default and two slots are saved; the module is switched off through the queue (still on
     until it runs) and then enabled again through the queue: the settings and slots are as they
     were, the configuration naming no channel."""
-    from leaguebot.signup.models.signup_module import SignupModuleSettings
-
     league = await _league(tmp_path)
     signup = league.bot.signup_module_service
     # Every setting away from its default, so a reset to defaults cannot pass for kept.
-    await signup.save_settings(SignupModuleSettings(
-        nationality_required=False, time_type="SHORT_QUALIFICATION", time_image_required=False,
-    ))
-    await signup.add_slot(3, "19:00")
-    await signup.add_slot(6, "21:30")
+    await league.write(
+        "INSERT OR REPLACE INTO signup_module_settings "
+        "(id, nationality_required, time_type, time_image_required) "
+        "VALUES (1, 0, 'SHORT_QUALIFICATION', 0)"
+    )
+    for day, time_hhmm in ((3, "19:00"), (6, "21:30")):
+        await league.write(
+            "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+            day, time_hhmm,
+        )
     settings, slots = await signup.get_settings(), await signup.get_slots()
 
     await _switch_off(league)
