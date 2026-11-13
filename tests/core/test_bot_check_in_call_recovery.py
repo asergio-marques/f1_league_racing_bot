@@ -303,15 +303,16 @@ async def test_a_call_missed_by_minutes_asked_by_the_restart_and_its_timer_is_po
     """Round 429's call fell due two minutes before the bot came back, inside its timer's
     lateness, its deadline two days ahead. The restart asks for the call, and the timer, firing
     as the scheduler is resumed, asks for it too. The division is sent one call, and the queue
-    holds one change for it, whichever of the two guards drops the second ask."""
+    holds one change for it, whichever of the two guards drops the second ask. The restart's
+    ask is attendance's start-up step as the sweep runs it, the moment the queue's clock."""
     db_path = await _make_db(tmp_path, until_round=timedelta(days=5) - timedelta(minutes=2))
     bot = await _make_bot(db_path)
     [timer] = [call.args[1] for call in bot.scheduler_service.register_timer.call_args_list
                if call.args[0] == "rsvp_notice"]
 
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+    from leaguebot.attendance.wiring import start_up_steps
 
-    await recover_missed_check_in_calls(bot, now=NOW)
+    await dict(start_up_steps(bot))["missed check-in calls"]()
     if queue_ran_first:
         await run_queue(bot)
     await timer(ROUND_ID)
