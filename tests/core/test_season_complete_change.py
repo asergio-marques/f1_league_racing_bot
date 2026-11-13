@@ -2494,6 +2494,7 @@ async def test_work_in_hand_that_is_not_the_season_s_end_does_not_refuse_it(
     assert rows[-1]["state"] == "QUEUED"
 
 
+@pytest.mark.xfail(strict=True, reason="#285: the live sheet's message is not yet kept in attendance_sheet_messages")
 async def test_the_final_sheet_replaces_nothing_and_saves_no_id(tmp_path):
     """Attendance is on, and Pro's attendance channel holds its last round's sheet, 6200,
     recorded as its live one. Completing the season posts Pro's final sheet beside it: once the
@@ -2502,8 +2503,9 @@ async def test_the_final_sheet_replaces_nothing_and_saves_no_id(tmp_path):
     old_sheet = 6200
     league = await pending_completion_league(tmp_path, attendance=True)
     await league.write(
-        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
-        str(old_sheet), PRO,
+        "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
+        "VALUES (?, ?, ?)",
+        PRO, str(PRO_CH.attendance), str(old_sheet),
     )
     league.channel(PRO_CH.attendance).seed(old_sheet, "Pro's last round's sheet")
     await _asked(league)
@@ -2518,9 +2520,9 @@ async def test_the_final_sheet_replaces_nothing_and_saves_no_id(tmp_path):
     [(sent, _final)] = _sheet_events()
     assert sent == "send"
     [row] = await league.rows(
-        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?", PRO,
+        "SELECT message_id FROM attendance_sheet_messages WHERE division_id = ?", PRO,
     )
-    assert str(row["attendance_message_id"]) == str(old_sheet)
+    assert str(row["message_id"]) == str(old_sheet)
 
     await run_queue(league.bot)
 

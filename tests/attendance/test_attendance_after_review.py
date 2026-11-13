@@ -91,9 +91,9 @@ async def _db(tmp_path, *, attendance: bool = True, autoreserve: int | None = 10
                 (division_id, SEASON_ID, name, tier),
             )
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, attendance_channel_id, "
-            "attendance_message_id) VALUES (?, ?, ?)",
-            (DIVISION_ID, str(ATTENDANCE_CHANNEL), str(OLD_SHEET)),
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL)),
         )
         for round_id, number in ((AMENDED_ROUND, 3), (LATEST_ROUND, 7)):
             await db.execute(
@@ -149,6 +149,31 @@ async def _db(tmp_path, *, attendance: bool = True, autoreserve: int | None = 10
         )
         await db.commit()
     return db_path
+
+
+#: Why a test of the live sheet's record fails until it is kept apart from the channels.
+SHEET_KEPT_APART = "#285: the live sheet's message is not yet kept in attendance_sheet_messages"
+
+
+async def _old_sheet_stands(db_path: str) -> None:
+    """Pro's sheet stands in its attendance channel as message 7401, recorded as its live one."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
+            "VALUES (?, ?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL), str(OLD_SHEET)),
+        )
+        await db.commit()
+
+
+async def _live_sheet(db_path: str) -> Any:
+    """Pro's live sheet as recorded: its message id."""
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT message_id FROM attendance_sheet_messages WHERE division_id = ?",
+            (DIVISION_ID,),
+        )).fetchone()
+    return row["message_id"]
 
 
 async def _totals(db_path: str, round_id: int, totals: dict[int, int]) -> None:
@@ -689,6 +714,7 @@ async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path):
     assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 
+@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(tmp_path):
     """Defect 4: the sheet's failure stops the queue and is retried there, so it raises
     `StepFailedOnDiscord`; nothing is put on the old retry queue, and the sheet posted earlier is
@@ -696,6 +722,7 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     from leaguebot.core.models.change import StepFailedOnDiscord
 
     db_path = await _db(tmp_path)
+    await _old_sheet_stands(db_path)
     await _totals(db_path, LATEST_ROUND, {LEWIS: 3, MAX: 1})
     channel = _sheet_channel()
     channel.send = AsyncMock(side_effect=http_error(status=403, text="Missing Access"))
@@ -708,12 +735,7 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
 
     channel.send.assert_awaited_once()
     enqueue.assert_not_awaited()
-    async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?",
-            (DIVISION_ID,),
-        )).fetchone()
-    assert row["attendance_message_id"] == str(OLD_SHEET)
+    assert await _live_sheet(db_path) == str(OLD_SHEET)
 
 
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
@@ -989,12 +1011,14 @@ async def test_a_sanction_announcement_shares_the_round_s_verdict_heading(tmp_pa
     assert verdict_headings(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_the_sheet_s_record_writes_nothing_while_attendance_is_off(tmp_path):
     """The review's sheet job saves the new sheet's id through the hook, on the job's own save.
     Pro's sheet 7401 stands and a new one, 7402, has been posted in its place. With attendance
     off, the record writes nothing and 7401 is still Pro's sheet; switched on, the record makes
     7402 Pro's sheet. Neither commits: the save handed does."""
     db_path = await _db(tmp_path, attendance=False)
+    await _old_sheet_stands(db_path)
     hook = _hook(_bot(db_path, attendance=False), _placement())
     posted = {"new": 7402, "old": str(OLD_SHEET), "channel_id": ATTENDANCE_CHANNEL,
               "takes_slot": True}
@@ -1005,11 +1029,7 @@ async def test_the_sheet_s_record_writes_nothing_while_attendance_is_off(tmp_pat
             await hook.record_sheet_on(db, DIVISION_ID, posted)
             written = db.total_changes - before
             await db.commit()
-            row = await (await db.execute(
-                "SELECT attendance_message_id FROM attendance_division_config "
-                "WHERE division_id = ?", (DIVISION_ID,),
-            )).fetchone()
-        return written, row["attendance_message_id"]
+        return written, await _live_sheet(db_path)
 
     assert await _recorded() == (0, str(OLD_SHEET))
 

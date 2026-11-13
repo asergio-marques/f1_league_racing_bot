@@ -440,6 +440,7 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
+@pytest.mark.xfail(strict=True, reason="#285: the live sheet's message is not yet kept in attendance_sheet_messages")
 async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
     """Attendance is on, with its real hook (the placement service and the lineup poster
     doubles: no sanction is owed). Pro's attendance channel 707 holds its sheet 8805, recorded as
@@ -465,8 +466,13 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
     league.channel(sheet_channel).seed(old_sheet, "Pro's attendance sheet")
     async with get_connection(league.db_path) as db:
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, attendance_channel_id, "
-            "attendance_message_id) VALUES (?, ?, ?)",
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(sheet_channel)),
+        )
+        await db.execute(
+            "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
+            "VALUES (?, ?, ?)",
             (DIVISION_ID, str(sheet_channel), str(old_sheet)),
         )
         await db.commit()
@@ -478,7 +484,7 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
     assert old_sheet in league.channel(sheet_channel).messages, "the old sheet went too soon"
     assert await one(
         league.db_path,
-        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?",
+        "SELECT message_id FROM attendance_sheet_messages WHERE division_id = ?",
         DIVISION_ID,
     ) == str(new)
 

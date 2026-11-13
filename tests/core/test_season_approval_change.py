@@ -2262,6 +2262,7 @@ async def test_a_discard_of_the_approval_stopped_at_its_check_after_a_restart_is
     assert _told(league, CHANNEL_NOT_APPROVED) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#285: the live sheet's message is not yet kept in attendance_sheet_messages")
 async def test_an_opening_sheet_replaces_a_sheet_already_standing_by_a_job(tmp_path, monkeypatch):
     """Attendance is on, and Pro's attendance channel already holds a sheet, 6200, recorded as
     its live one. Once the season is approved, Pro's opening sheet is posted and recorded as the
@@ -2269,8 +2270,9 @@ async def test_an_opening_sheet_replaces_a_sheet_already_standing_by_a_job(tmp_p
     old_sheet = 6200
     league = await _league_for(tmp_path, monkeypatch, attendance=True)
     await league.write(
-        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
-        str(old_sheet), PRO,
+        "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
+        "VALUES (?, ?, ?)",
+        PRO, str(PRO_CH.attendance), str(old_sheet),
     )
     league.channel(PRO_CH.attendance).seed(old_sheet, "Pro's attendance sheet")
     await _pressed(league)
@@ -2286,9 +2288,9 @@ async def test_an_opening_sheet_replaces_a_sheet_already_standing_by_a_job(tmp_p
     assert sent == "send"
     assert old_sheet in league.channel(PRO_CH.attendance).messages, "the old sheet went too soon"
     [row] = await league.rows(
-        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?", PRO,
+        "SELECT message_id FROM attendance_sheet_messages WHERE division_id = ?", PRO,
     )
-    assert str(row["attendance_message_id"]) == str(new)
+    assert str(row["message_id"]) == str(new)
 
     await run_queue(league.bot)
 

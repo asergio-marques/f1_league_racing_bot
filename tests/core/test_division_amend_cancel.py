@@ -1022,13 +1022,21 @@ def _delete_line(name: str) -> str:
     return f"{NAMED} | /division delete | Success\n  division: {name}"
 
 
+#: Why a test of the live sheet's record fails until it is kept apart from the channels.
+SHEET_KEPT_APART = "#285: the live sheet's message is not yet kept in attendance_sheet_messages"
+
+
 async def _give_the_modules_rows(db_path: str) -> None:
-    """Give each division an attendance configuration and each round a drawn weather phase: rows
-    of other modules', which the delete hooks delete."""
+    """Give each division an attendance configuration and a live attendance sheet recorded, and
+    each round a drawn weather phase: rows of other modules', which the delete hooks delete."""
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) "
             "SELECT id, '700' FROM divisions"
+        )
+        await db.execute(
+            "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
+            "SELECT id, '701', '7' || id FROM divisions"
         )
         await db.execute(
             "INSERT INTO phase_results (round_id, phase_number, payload, created_at) "
@@ -1037,17 +1045,21 @@ async def _give_the_modules_rows(db_path: str) -> None:
         await db.commit()
 
 
-async def _modules_rows(db_path: str) -> tuple[list[int], list[int]]:
-    """The divisions holding an attendance configuration, and the rounds holding a drawn weather
-    phase, by id."""
+async def _modules_rows(db_path: str) -> tuple[list[int], list[int], list[int]]:
+    """The divisions holding an attendance configuration, the divisions holding a live attendance
+    sheet recorded, and the rounds holding a drawn weather phase, by id."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT division_id FROM attendance_division_config ORDER BY division_id"
         )
         configured = [row[0] for row in await cursor.fetchall()]
+        cursor = await db.execute(
+            "SELECT division_id FROM attendance_sheet_messages ORDER BY division_id"
+        )
+        sheets = [row[0] for row in await cursor.fetchall()]
         cursor = await db.execute("SELECT round_id FROM phase_results ORDER BY round_id")
         drawn = [row[0] for row in await cursor.fetchall()]
-    return configured, drawn
+    return configured, sheets, drawn
 
 
 async def _round_count(db_path: str) -> int:
@@ -1087,16 +1099,17 @@ async def _placements(db_path: str) -> int:
         return (await cursor.fetchone())[0]
 
 
+@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_a_division_delete_its_hooks_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's Divisions and its record of what changed. Season #1 is being set
     up, in Placements, holding Pro (tier 1, role 555), with one round, and Am (tier 2, role 556),
-    with none; each division has an attendance configuration and Pro's round a drawn weather
-    phase. The league admin Admin (4242) runs `/division delete` of Pro. They are answered at once
+    with none; each division has an attendance configuration and a live attendance sheet
+    recorded, and Pro's round a drawn weather phase. The league admin Admin (4242) runs `/division delete` of Pro. They are answered at once
     with the queue's acknowledgement, "Deleting division **Pro**", naming its first job, and
     nothing is deleted until the queue runs the change, whose kind declares no confinement of its
     save, the delete hooks writing other modules' tables in it. Once it has, the season holds Am
-    alone and no round; Pro's attendance configuration and its round's weather phase are gone,
-    deleted by the hooks in the same save, and Am's configuration stands; one audit entry,
+    alone and no round; Pro's attendance configuration, its live sheet's record and its round's
+    weather phase are gone, deleted by the hooks in the same save, and Am's stand; one audit entry,
     `DIVISION_DELETED`, by Admin, on Pro, stamped with the queue's clock, records the division as
     it stood (Pro, tier 1, role 555) and nothing in its place; the log channel holds today's
     success line alone, naming Pro; and the acknowledgement is updated to today's reply, word for
@@ -1120,7 +1133,7 @@ async def test_a_division_delete_its_hooks_audit_entry_and_line_are_one_save(tmp
 
     assert await _divisions(league.db_path) == [("Am", 2, 556)]
     assert await _round_count(league.db_path) == 0
-    assert await _modules_rows(league.db_path) == ([am], [])
+    assert await _modules_rows(league.db_path) == ([am], [am], [])
     [entry] = await audit_rows(league.db_path)
     assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
         "DIVISION_DELETED", 4242, pro
@@ -1132,13 +1145,14 @@ async def test_a_division_delete_its_hooks_audit_entry_and_line_are_one_save(tmp
     assert last_said(asked) == _deleted("Pro", [("Am", 2, 556)])
 
 
+@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_a_failed_division_delete_deletes_nothing(tmp_path):
     """Season #1 is being set up, in Placements, holding Pro, with one round, and Am; each
-    division has an attendance configuration and Pro's round a drawn weather phase. The league
-    admin runs `/division delete` of Pro, and as the queue runs it the database fails writing the
-    audit entry. Nothing of the change is saved, the delete, the hooks' deletes and the audit
-    entry being one save: Pro, Am and Pro's round stand, so do the attendance configurations and
-    the weather phase, no audit entry is written, and the log channel holds no success line. The
+    division has an attendance configuration and a live attendance sheet recorded, and Pro's
+    round a drawn weather phase. The league admin runs `/division delete` of Pro, and as the
+    queue runs it the database fails writing the audit entry. Nothing of the change is saved, the
+    delete, the hooks' deletes and the audit entry being one save: Pro, Am and Pro's round stand,
+    so do the attendance configurations, the sheets' records and the weather phase, no audit entry is written, and the log channel holds no success line. The
     league's lane stops at the job, as any failed job stops it. Once a league admin discards the
     stopped job, the reply says "Nothing was deleted: division **Pro** stands as it was. Run
     `/division delete` again."; and the lane is clear."""

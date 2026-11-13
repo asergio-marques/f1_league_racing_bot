@@ -1789,7 +1789,7 @@ TABLE_OWNER: dict[str, str] = {
     # attendance
     "attendance_config": "attendance", "attendance_division_config": "attendance",
     "driver_round_attendance": "attendance", "rsvp_embed_messages": "attendance",
-    "attendance_pardons": "attendance",
+    "attendance_pardons": "attendance", "attendance_sheet_messages": "attendance",
     # signup
     "signup_module_settings": "signup", "signup_module_config": "signup",
     "season_signup_config": "signup", "signup_wizard_records": "signup",
