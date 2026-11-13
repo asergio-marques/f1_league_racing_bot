@@ -1432,6 +1432,35 @@ async def test_a_member_leaving_whose_signup_record_cannot_be_read_stops_the_lea
     assert not any("Driver left server" in line for line in league.bot.log_channel.sent)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#286: a driver's timers are disarmed inside the save, not in a job after it"
+)
+async def test_a_save_that_fails_keeps_the_driver_s_timers(tmp_path, monkeypatch):
+    """Kimi, part-way through signing up, leaves the server, and the database fails as the
+    queue saves his leaving. The save is rolled back whole, so his timers are kept with it: his
+    24 hours of inactivity and his channel's deletion are not disarmed, the league lane stops at
+    the save's job, he is still Pending Signup Completion and his channel stands (D5: a timer is
+    disarmed by a job after the save, never inside it)."""
+    import sqlite3
+
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now)
+    monkeypatch.setattr(
+        league.bot.driver_service, "transition_on",
+        AsyncMock(side_effect=sqlite3.OperationalError("database or disk is full")),
+    )
+
+    await _leave(league)
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "leave"
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert league.order == []
+    assert [call.args for call in league.bot.scheduler_service.disarm.call_args_list
+            if str(SIGNING_UP) in call.args] == []
+
+
 async def test_a_member_leaving_while_the_queue_is_stopped_keeps_their_channel_until_it_clears(
     tmp_path,
 ):
