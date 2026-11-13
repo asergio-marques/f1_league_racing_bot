@@ -202,21 +202,23 @@ bot, and a function that needs Discord is handed the bot for that.
 composed from one class for each subgroup (`ConfigCommands`, `ChannelCommands`, `TestCommands`),
 each in a file of its own, and `GroupCommands`, the commands on the group itself, as
 `architecture.md`'s cog bullet ("What each part may do") has a cog too large to read split.
-`attendance_group.py` holds the one group, `ATTENDANCE_GROUP`, which each subgroup names as its
-parent, and `AttendanceSubgroup`, which declares for the type checker what a subgroup takes from
-the cog (the bot and the gate).
-`AttendanceCog` keeps what the subgroups share: the bot and the gate (`_module_gate`). The
-subgroups are `config` (the eight settings and `show`), `channel` (`rsvp` and `attendance`) and
-`test` (`rsvp`, the maintainer's form); `sync` and `post-check-in` sit on the group. A command
-judges what it can refuse before anything is asked, in the words the specification gives, asks the
-change, and holds no rule of its own: each of the eight settings is one call, `_ask_setting`,
-carrying the value, and the rules that compare one setting with another are the service's ("How a
-change is carried out", below).
+`attendance_group.py` holds the one group, `ATTENDANCE_GROUP`, its three subgroups beneath it, the
+wait for the catch-up after a restart, the success line the log channel is written (`record`), and
+`AttendanceSubgroup`, which declares for the type checker what a subgroup takes from the cog.
+`AttendanceCog` keeps the bot and the gate (`_module_gate`). The subgroups are `config` (the eight
+settings and `show`), `channel` (`rsvp` and `attendance`) and `test` (`rsvp`, the maintainer's
+form); `sync` and `post-check-in` sit on the group. A command judges what it can refuse before
+anything is asked, in the words the specification gives, asks the change, and holds no rule of its
+own: each of the eight settings is one call, `_ask_setting`, carrying the value, and the rules that
+compare one setting with another are the service's ("How a change is carried out", below).
 
-**A subgroup joins `/attendance` as its file is imported**, and Discord is sent them in that order,
-the commands on the group last, so `attendance_cog.py` imports them in the order a league sees them
-(the comment above the imports). `tests/attendance/test_attendance_command_tree.py` pins the
-whole tree.
+**The subgroups are declared together**, in `attendance_group.py`, in the order a league sees them,
+and each subgroup's class takes its own as a class attribute. Discord is sent a group's children in
+the order they join it, the commands on the group after its subgroups, so declaring them in one
+file fixes the order whichever subgroup's file a process imports first.
+*Rejected:* each subgroup's file declaring its own, with the cog importing them in order, which
+holds the order only while nothing imports a subgroup's file before the cog, as a test does.
+`tests/attendance/test_attendance_command_tree.py` pins the whole tree.
 
 The check-in's buttons are the cog layer's too, in `check_in_buttons.py`. `RsvpView` and its buttons
 sit beside `handle_rsvp_button`, the one function that reads the id a button carries
@@ -570,11 +572,10 @@ specification's "Resynchronising attendance"). A call that cannot be posted stop
 stop notice saying what is left for the round (`left_for_the_queue`).
 
 **The catch-alls** of attendance sit in the places `architecture.md` allows, and each is named for
-good in `CATCH_ALLS_ALLOWED` where the shape does not tell its place: `record_failed` (in
-`attendance_group.py`), around recording a failure that might itself fail (place 3); the four
-drawings of a graphic above (place 6); the loop of each recovery, one round failing never stopping
-the rest (place 2); and the advance's ask of a change, which raises the fault again as
-`AdvanceStepFailed` for the command to report, a handler in a place by its shape.
+good in `CATCH_ALLS_ALLOWED` where the shape does not tell its place: the four drawings of a graphic
+above (place 6); the loop of each recovery, one round failing never stopping the rest (place 2); and
+the advance's ask of a change, which raises the fault again as `AdvanceStepFailed` for the command
+to report, a handler in a place by its shape.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops"):
 
@@ -592,6 +593,7 @@ Each is stated where it lives and pinned by the test named.
 
 | Constraint | Stated in | Pinned by |
 |---|---|---|
+| `/attendance`'s subgroups join the group in one file, in the order a league sees them | `attendance_group.py`'s docstring | `test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first` |
 | The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_on_attendance`'s save | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
 | A read of a round's window creates no row | `attendance_hooks.round_window` | `test_reading_a_round_s_window_writes_nothing` |
 | A cross-setting rule is judged by the setting's change as it starts | `attendance_settings`' docstring | `test_set_setting_refuses_a_timing_that_breaks_the_invariant` and its two companions |
