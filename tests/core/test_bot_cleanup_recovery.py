@@ -206,6 +206,30 @@ async def test_a_round_under_a_day_past_is_left_to_its_own_job(tmp_path):
     assert await _recover(_bot(db_path)) == ([], [])
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the check-in clean-up catch-up judges a round a day past by the host's clock, "
+           "not the queue's",
+)
+async def test_the_check_in_clean_up_catch_up_reads_the_queue_s_clock(tmp_path):
+    """Round 21 started two hours ago by the host's clock, its call standing, while the queue's
+    clock, the bot's, stands a day and three hours after its start. Attendance's "missed check-in
+    clean-ups" start-up step judges the round a day past at the queue's clock, and asks the queue
+    for its check-in clean-up."""
+    from leaguebot.attendance.wiring import start_up_steps
+
+    bot = _bot(await _make_db(tmp_path, hours_since_start=2, forecast=False))
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(
+        return_value=datetime.now(timezone.utc) + timedelta(hours=25)
+    )
+
+    await dict(start_up_steps(bot))["missed check-in clean-ups"]()
+
+    assert [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list
+            if call.args[0] == CHECK_IN_CLEAN_UP] == [ROUND_ID]
+
+
 async def test_only_what_is_standing_is_cleaned(tmp_path):
     db_path = await _make_db(tmp_path, forecast=False)
 

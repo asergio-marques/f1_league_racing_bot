@@ -297,6 +297,23 @@ async def test_a_deadline_exactly_now_is_run(tmp_path):
     assert await _recover(bot) == 1
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the deadline catch-up judges a deadline passed by the host's clock, not the "
+           "queue's",
+)
+async def test_the_deadline_catch_up_reads_the_queue_s_clock(tmp_path):
+    """Round 5 starts in two days by the host's clock, its six-hour check-in deadline still
+    ahead and its call standing, while the queue's clock, the bot's, stands 45 hours on: three
+    hours past the deadline. The restart's "RSVP views and deadlines" step judges the deadline
+    passed at the queue's clock, and asks the queue for it once."""
+    db_path = await _make_db(tmp_path, hours_until_round=48, deadline_hours=6)
+    bot = await _bot(db_path)
+    league_queue(bot, db_path, now=datetime.now(timezone.utc) + timedelta(hours=45))
+
+    assert await _recover(bot) == 1
+
+
 async def test_a_switched_off_module_s_deadline_is_not_caught_up(tmp_path):
     """Issue #114's other half: the catch-up would distribute reserves into seats hours
     after the fact, for a league that had switched check-in off."""
