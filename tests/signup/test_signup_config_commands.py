@@ -419,7 +419,7 @@ async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
         return run
 
     signup._module_gate = acts("signup nationality", False)
-    attendance._set_penalty = acts("attendance config no-rsvp-penalty")
+    attendance._ask_setting = acts("attendance config no-rsvp-penalty")
     test_mode._refuse_outside_test_mode = acts("test-mode backup lock", True)
     monkeypatch.setattr(bot_cog, "refuse", acts("bot pack"))
     invoked = {"signup nationality": (), "attendance config no-rsvp-penalty": (3,),
