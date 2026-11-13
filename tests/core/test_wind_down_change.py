@@ -238,8 +238,8 @@ async def test_the_wind_down_withdraws_the_approval_of_each_approved_driver_it_t
         "VALUES (6, 2, '2026-01-01', 'COMPLETED')"
     )
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, approved) "
-        "VALUES (6, ?, 'Kimi', 1)",
+        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, server_display_name, approved) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 6, ?, 'Kimi', 1)",
         str(SIGNING_UP),
     )
     await league.write(

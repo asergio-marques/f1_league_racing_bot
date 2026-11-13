@@ -149,8 +149,8 @@ async def _seed_history(
 async def _seed_wizard(db_path: str, user_id: str, *, state: str = "COLLECTING") -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
-            "draft_answers_json) VALUES (?, ?, ?)",
+            "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, "
+            "draft_answers_json) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, ?)",
             (user_id, state, '{"platform": "Steam"}'),
         )
         await db.commit()
@@ -187,8 +187,8 @@ async def _seed_signup_record(db_path: str, user_id: str = OLD_USER) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO signup_records "
-            "(discord_user_id, discord_username, server_display_name, platform) "
-            "VALUES (?, 'lewis', 'Lewis Hamilton', 'Steam')",
+            "(created_at, updated_at, discord_user_id, discord_username, server_display_name, platform) "
+            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'lewis', 'Lewis Hamilton', 'Steam')",
             (user_id,),
         )
         await db.commit()

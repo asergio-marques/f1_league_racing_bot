@@ -95,9 +95,9 @@ async def _league(tmp_path: Any, *, state: str = AWAITING,
         json.dumps(draft), str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, "
+        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, server_display_name, "
         "nationality, platform, platform_id, driver_type) "
-        "VALUES (?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver')",
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver')",
         SEASON_ID, str(SIGNING_UP),
     )
     if offered_ago is not None:

@@ -112,9 +112,9 @@ async def league(db_path):
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (discord_user_id, "
+                    "INSERT INTO signup_records (created_at, updated_at, discord_user_id, "
                     "server_display_name, discord_username, nationality) "
-                    "VALUES (?, ?, ?, 'British')",
+                    "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, ?, 'British')",
                     (str(user_id), f"{team_name} {seat_number}", "d", ),
                 )
                 await db.execute(
@@ -522,8 +522,8 @@ class TestStandingsPreview:
             )
             profile_id = cursor.lastrowid
             await db.execute(
-                "INSERT INTO signup_records (discord_user_id, server_display_name, "
-                "discord_username, nationality) VALUES ('9200000', 'Reserve 1', 'r', "
+                "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name, "
+                "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '9200000', 'Reserve 1', 'r', "
                 "'British')"
             )
             season_id = (
@@ -597,8 +597,8 @@ class TestStandingsPreview:
                     )
                     profile_id = cursor.lastrowid
                     await db.execute(
-                        "INSERT INTO signup_records (discord_user_id, server_display_name, "
-                        "discord_username, nationality) VALUES (?, ?, 'd', 'British')",
+                        "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name, "
+                        "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'd', 'British')",
                         (str(user_id), f"{team_name} {seat_number}"),
                     )
                     await db.execute(
@@ -673,8 +673,8 @@ async def _seed_full_grid(db_path, division_id) -> None:
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (discord_user_id, server_display_name, "
-                    "discord_username, nationality) VALUES (?, ?, 'd', 'British')",
+                    "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name, "
+                    "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'd', 'British')",
                     (str(user_id), f"{team_name} {seat_number}"),
                 )
                 await db.execute(

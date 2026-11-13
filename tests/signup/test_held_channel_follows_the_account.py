@@ -42,8 +42,8 @@ async def _held(league, user_id: int = UNASSIGNED, *, channel: bool = True) -> A
     recorded. Without *channel* the record names none: a draft, a signup never begun."""
     cid = SIGNUP_CHANNEL_BASE + user_id
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(user_id), cid if channel else None,
     )
     if not channel:

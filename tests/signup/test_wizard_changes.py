@@ -439,8 +439,8 @@ async def test_an_old_channel_is_deleted_before_the_new_one_is_created(tmp_path)
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
     _held(league, OLD_CHANNEL)
@@ -467,8 +467,8 @@ async def test_a_discarded_deletion_of_the_earlier_channel_is_named_in_the_reply
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
     old = _held(league, OLD_CHANNEL)
@@ -647,8 +647,8 @@ async def test_signing_up_again_disarms_the_abandoned_wizard_s_timers(tmp_path):
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
     _held(league, OLD_CHANNEL)
@@ -673,8 +673,8 @@ async def test_an_abandoned_channel_already_gone_does_not_stop_sign_up(tmp_path)
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
 
@@ -1297,8 +1297,8 @@ async def _held_after_signup(league: SeasonLeague, user_id: int = SIGNING_UP,
         str(user_id),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(user_id), cid,
     )
     return _held(league, cid)

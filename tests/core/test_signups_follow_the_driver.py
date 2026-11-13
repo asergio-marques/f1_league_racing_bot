@@ -45,8 +45,8 @@ async def _make_db(tmp_path) -> tuple[str, int]:
         )
         profile_id = cursor.lastrowid
         await db.execute(
-            "INSERT INTO signup_records (discord_user_id, server_display_name, "
-            "nationality, total_lap_ms) VALUES (?, 'Racer', 'PT', 90000)",
+            "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name, "
+            "nationality, total_lap_ms) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'Racer', 'PT', 90000)",
             (A,),
         )
         await db.execute(
@@ -78,8 +78,8 @@ async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
     db_path, _ = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (discord_user_id, server_display_name, "
-            "nationality, total_lap_ms) VALUES (?, 'Racer Now', 'BR', 91000)",
+            "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name, "
+            "nationality, total_lap_ms) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'Racer Now', 'BR', 91000)",
             (B,),
         )
         await db.commit()
@@ -93,8 +93,8 @@ async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
 async def _newer_rejected_signup_on_b(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (discord_user_id, server_display_name, "
-            "nationality, total_lap_ms) VALUES (?, 'Rejected Answers', 'BR', 91000)",
+            "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name, "
+            "nationality, total_lap_ms) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'Rejected Answers', 'BR', 91000)",
             (B,),
         )
         await db.commit()
@@ -239,8 +239,8 @@ async def test_approval_marks_only_the_latest_signup_of_the_account(tmp_path):
     db_path, _ = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (discord_user_id, server_display_name) "
-            "VALUES (?, 'Second Go')",
+            "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name) "
+            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'Second Go')",
             (A,),
         )
         await db.commit()

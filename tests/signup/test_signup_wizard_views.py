@@ -581,8 +581,8 @@ async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recor
     league = await _kimi_at(tmp_path, "UNENGAGED", driver_state=driver_state)
     if driver_state != "NOT_SIGNED_UP":
         await league.write(
-            "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
-            "VALUES (?, ?, 'Kimi')", SEASON_ID, str(SIGNING_UP),
+            "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, server_display_name) "
+            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'Kimi')", SEASON_ID, str(SIGNING_UP),
         )
         league.roles_held.setdefault(SIGNING_UP, set()).add(DRIVER_ROLE)
     if driver_state == "ASSIGNED":

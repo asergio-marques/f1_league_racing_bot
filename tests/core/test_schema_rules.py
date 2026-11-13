@@ -204,11 +204,11 @@ async def test_a_points_configuration_takes_its_points_with_it(db_path):
 async def test_a_signup_window_s_deletion_clears_its_records_window(db_path):
     db = _connect(db_path)
     db.execute(
-        "INSERT INTO signup_windows (id, season_id, selected_tracks_json) VALUES (4, 1, '[\"1\"]')"
+        "INSERT INTO signup_windows (opened_at, id, season_id, selected_tracks_json) VALUES ('2026-01-01T00:00:00+00:00', 4, 1, '[\"1\"]')"
     )
     db.execute(
-        "INSERT INTO signup_records (id, season_id, window_id, discord_user_id, platform) "
-        "VALUES (9, 1, 4, '11', 'Steam')"
+        "INSERT INTO signup_records (created_at, updated_at, id, season_id, window_id, discord_user_id, platform) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 9, 1, 4, '11', 'Steam')"
     )
     db.execute("DELETE FROM signup_windows WHERE id = 4")
     db.commit()
@@ -230,9 +230,9 @@ async def test_a_points_configuration_name_is_unique(db_path):
 
 async def test_an_account_holds_one_signup_wizard(db_path):
     db = _connect(db_path)
-    db.execute("INSERT INTO signup_wizard_records (discord_user_id) VALUES ('11')")
+    db.execute("INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '11')")
     with pytest.raises(sqlite3.IntegrityError):
-        db.execute("INSERT INTO signup_wizard_records (discord_user_id) VALUES ('11')")
+        db.execute("INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '11')")
     db.close()
 
 

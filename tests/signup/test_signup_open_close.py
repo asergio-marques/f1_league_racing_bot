@@ -758,8 +758,8 @@ async def test_a_close_with_only_drivers_in_review_says_nobody_loses_their_signu
 async def _give_signup_channel(db_path: str, discord_user_id: str, channel_id: int) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
-            "VALUES (?, ?)",
+            "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id) "
+            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?)",
             (discord_user_id, channel_id),
         )
         await db.commit()
@@ -794,8 +794,8 @@ async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path)
     )
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
-            "VALUES ('7001', NULL)"
+            "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id) "
+            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '7001', NULL)"
         )
         await db.commit()
     interaction = _interaction(members={})

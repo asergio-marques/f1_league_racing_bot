@@ -502,8 +502,8 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
                 (profile_id(user_id), str(user_id), int(user_id == TEST_DRIVER)),
             )
             await db.execute(
-                "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, server_display_name) "
+                "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, ?)",
                 (SEASON_ID, str(user_id), NAMES[user_id]),
             )
             cursor = await db.execute(
@@ -1303,9 +1303,10 @@ async def signing_up(league: SeasonLeague, user_id: int = SIGNING_UP, *,
         profile_id(user_id), str(user_id), state,
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id, "
+        "created_at, last_activity_at) VALUES (?, ?, ?, ?, ?)",
         str(user_id), state, SIGNUP_CHANNEL_BASE + user_id,
+        league.clock.now.isoformat(), league.clock.now.isoformat(),
     )
     if SIGNUP_CHANNEL_BASE + user_id not in league.channels:
         signup_channel(league, user_id)
@@ -1320,8 +1321,8 @@ async def approved_unplaced(league: SeasonLeague, user_id: int = UNASSIGNED) -> 
         profile_id(user_id), str(user_id),
     )
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, server_display_name) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, ?)",
         SEASON_ID, str(user_id), NAMES[user_id],
     )
     league.roles_held.setdefault(user_id, set()).add(DRIVER_ROLE)

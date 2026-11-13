@@ -319,10 +319,10 @@ class TestSnapshotStoresTheDurableIdentity:
         }
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_wizard_records (discord_user_id, "
+                "INSERT INTO signup_wizard_records (created_at, discord_user_id, "
                 "wizard_state, signup_channel_id, config_snapshot_json, "
                 "draft_answers_json, current_lap_track_index, last_activity_at) "
-                "VALUES ('legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
+                "VALUES ('2026-01-01T00:00:00+00:00', 'legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
                 "'2026-01-01T00:00:00')",
                 (json.dumps(legacy),),
             )
@@ -644,7 +644,7 @@ async def test_the_drivers_mid_signup_are_listed_oldest_first_with_the_channel_t
              ("4", pending.value)],
         )
         await db.executemany(
-            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) VALUES (?, ?)",
+            "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?)",
             [("1", 501), ("3", 503), ("4", None)],
         )
         await db.commit()

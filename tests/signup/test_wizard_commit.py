@@ -138,9 +138,9 @@ async def _correcting(tmp_path: Any, state: str, draft: dict[str, Any]) -> Seaso
     league = await _league(tmp_path, state=state, draft=dict(draft, _is_correction=True),
                            driver_state="PENDING_DRIVER_CORRECTION")
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, nationality, platform, "
+        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, nationality, platform, "
         "platform_id, driver_type, notes) "
-        "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', NULL)",
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', NULL)",
         SEASON_ID, str(SIGNING_UP),
     )
     return league

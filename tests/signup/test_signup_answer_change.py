@@ -531,9 +531,9 @@ async def test_a_corrected_answer_commits_the_correction_and_posts_a_fresh_panel
     league = await _league(tmp_path, state="COLLECTING_PLATFORM_ID", draft=draft,
                            driver_state="PENDING_DRIVER_CORRECTION")
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, nationality, platform, "
+        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, nationality, platform, "
         "platform_id, driver_type, notes) "
-        "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', "
         "'Happy to race anywhere')",
         SEASON_ID, str(SIGNING_UP),
     )
