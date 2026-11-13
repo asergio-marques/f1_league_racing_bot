@@ -30,7 +30,6 @@ drivers it cannot find) and passes those over; the save passes over an entry it 
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -61,6 +60,7 @@ from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
 from leaguebot.core.services.queue.queue_records import (
+    done_step_results_before,
     in_hand,
 )
 from leaguebot.core.services.queue.change_types import (
@@ -263,18 +263,11 @@ async def _left_the_drawing(ctx: StepContext) -> bool:
     redraw as it was saved, since the queue is durable and the earlier change is done by now.
     """
     round_id, division_id = int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
-    async with get_connection(ctx.db_path) as db:
-        cursor = await db.execute(
-            "SELECT c.payload, s.result FROM queued_change_steps s "
-            "JOIN queued_changes c ON c.id = s.change_id "
-            "WHERE c.kind = ? AND c.id < ? AND s.name = ? AND s.done_at IS NOT NULL "
-            "ORDER BY c.id DESC",
-            (CHECK_IN_ANSWER, ctx.change_id, REDRAW),
-        )
-        async for row in cursor:
-            earlier = json.loads(row["payload"])
-            if earlier["round_id"] == round_id and earlier["division_id"] == division_id:
-                return bool(json.loads(row["result"] or "{}").get("later"))
+    for earlier, result in await done_step_results_before(
+        ctx.db_path, CHECK_IN_ANSWER, REDRAW, ctx.change_id
+    ):
+        if earlier["round_id"] == round_id and earlier["division_id"] == division_id:
+            return bool(result.get("later"))
     return False
 
 
@@ -552,27 +545,22 @@ async def ask_check_in_answer(
     """
     async with get_connection(db_path) as db:
         profile_id = await resolve_driver_profile_id(interaction.user.id, db)
-        cursor = await db.execute(
-            "SELECT r.division_id, r.round_number, d.name AS division_name FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        round_row = await cursor.fetchone()
+        facts = await round_facts_on(db, round_id)
     if profile_id is None:
         await refuse(interaction, _NOT_REGISTERED, what=f"{button} of a check-in call")
         return
-    if round_row is None:
+    if facts is None:
         await refuse(interaction, _ROUND_GONE, what=f"{button} of a check-in call")
         return
     payload: dict[str, Any] = {
-        "round_id": round_id, "division_id": round_row["division_id"],
+        "round_id": round_id, "division_id": facts.division_id,
         "driver_profile_id": profile_id, "status": status,
         "pressed_at": _aware(interaction.created_at).isoformat(),
-        "round_number": round_row["round_number"], "division_name": round_row["division_name"],
+        "round_number": facts.round_number, "division_name": facts.division_name,
     }
     what = (
-        f"{button} of the check-in call for round {round_row['round_number']} "
-        f"of {round_row['division_name']}"
+        f"{button} of the check-in call for round {facts.round_number} "
+        f"of {facts.division_name}"
     )
     await queue.ask(
         CHECK_IN_ANSWER, payload, interaction=interaction, what=what, origin=ChangeOrigin.MEMBER

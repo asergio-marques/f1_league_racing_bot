@@ -130,6 +130,32 @@ async def in_hand(
         return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
 
 
+async def done_step_results_before(
+    db_path: str, kind: str, step_name: str, before: int
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Each change of *kind* asked before the change whose id is *before* whose step *step_name* is
+    done, as its payload and that step's saved result (an empty dict where it saved none), newest
+    first.
+
+    For a change type whose step must know what an earlier change's step left, the queue being
+    durable and the earlier change done by now: a redraw that learns from the nearest earlier
+    answer to its call whether that one left the drawing to a later one. Read on a connection of its
+    own, as :func:`unfinished` is.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT c.payload, s.result FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id "
+            "WHERE c.kind = ? AND c.id < ? AND s.name = ? AND s.done_at IS NOT NULL "
+            "ORDER BY c.id DESC",
+            (kind, before, step_name),
+        )
+        return [
+            (json.loads(row["payload"]), json.loads(row["result"] or "{}"))
+            for row in await cursor.fetchall()
+        ]
+
+
 @dataclass(frozen=True)
 class AskedChange:
     """A change the queue was asked for: its id and the number of its first job, which is None
