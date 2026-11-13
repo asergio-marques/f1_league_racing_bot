@@ -55,6 +55,7 @@ from tests.support.change_queue import (
 )
 from tests.support.review_league import channel
 from tests.support.season_league import (
+    LEWIS,
     SIGNING_UP,
     SIGNUP_CHANNEL,
     SIGNUP_CHANNEL_BASE,
@@ -1406,6 +1407,52 @@ async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_job
     assert await _wizard(league) is None
     assert any("left" in line.lower() and f"<@{SIGNING_UP}>" in line
                for line in league.bot.log_channel.sent)
+
+
+@pytest.mark.parametrize(("state", "record", "named"), [
+    pytest.param("UNASSIGNED", True, "Lewis Hamilton", id="unassigned"),
+    pytest.param("ASSIGNED", True, "Lewis Hamilton", id="assigned"),
+    pytest.param("ASSIGNED", False, "Lewis", id="assigned-no-signup-record"),
+])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: a placed driver's departure line is posted by the listener itself, and "
+           "signup.member_left drops their leaving as nothing to clean up",
+)
+async def test_a_placed_driver_leaving_writes_the_line_through_the_queue(
+    tmp_path, state, record, named,
+):
+    """Lewis, approved or placed (*state*), leaves the server. The listener posts nothing itself:
+    it asks the queue for `signup.member_left`, whose check admits him, and its save writes the
+    one line "Driver left server" naming him by the name he signed up under ("Lewis Hamilton"),
+    or by his Discord name ("Lewis") where he has no signup record, with his state. The save is
+    the line alone: he keeps his state, no timer of his is disarmed and no channel is deleted."""
+    league = await _league(tmp_path)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?", state, str(LEWIS)
+    )
+    if record:
+        await league.write(
+            "UPDATE signup_records SET server_display_name = 'Lewis Hamilton' "
+            "WHERE discord_user_id = ?", str(LEWIS),
+        )
+    else:
+        await league.write("DELETE FROM signup_records WHERE discord_user_id = ?", str(LEWIS))
+
+    await _leave(league, LEWIS)
+
+    assert not any("Driver left server" in line for line in league.bot.log_channel.sent)
+
+    await run_queue(league.bot)
+
+    [change] = await _changes_of(league, MEMBER_LEFT_KIND)
+    assert (_lane(change), change["state"]) == ("league", "DONE")
+    [line] = [line for line in league.bot.log_channel.sent if "Driver left server" in line]
+    assert f"Driver left server: **{named}** (<@{LEWIS}>) | state: {state}" in line
+    assert await _driver_state(league, LEWIS) == state
+    assert [call.args for call in league.bot.scheduler_service.disarm.call_args_list
+            if str(LEWIS) in call.args] == []
+    assert league.order == []
 
 
 async def test_a_member_leaving_whose_signup_record_cannot_be_read_stops_the_league_lane(
