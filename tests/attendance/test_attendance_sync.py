@@ -197,7 +197,7 @@ async def _invoke(cog, interaction, *, division="division 1", round=1, faults=()
     interaction.command = AttendanceCog.sync
     interaction.client = cog.bot
     with patch(
-        "leaguebot.attendance.cogs.attendance_cog.recalculation_faults",
+        "leaguebot.attendance.cogs.group_commands.recalculation_faults",
         new=AsyncMock(return_value=list(faults)),
     ):
         await undecorate(AttendanceCog.sync)(cog, interaction, division, round)

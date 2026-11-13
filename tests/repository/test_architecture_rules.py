@@ -3165,7 +3165,7 @@ CATCH_ALLS_ALLOWED = {
         "review goes on",
     ("core/services/rounds/calendar_post_service.py", "post_division_calendar"):
         "place 5, a calendar that cannot be drawn is posted as text and its fault is the job's line",
-    ("attendance/cogs/attendance_cog.py", "_record_failed"):
+    ("attendance/cogs/attendance_group.py", "record_failed"):
         "place 3, around reporting a failure, where the report itself might fail",
     ("attendance/services/attendance_sheet.py", "_sheet_attachment"):
         "place 6, the drawing of the sheet's graphic, which then posts as text, its fault a line "

@@ -31,7 +31,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.attendance.cogs.attendance_cog import AttendanceCog, _RsvpBulkSetModal
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.undecorate import undecorate
 
