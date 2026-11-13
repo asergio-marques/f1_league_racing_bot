@@ -324,7 +324,8 @@ async def test_a_discarded_information_post_leaves_the_closed_notice_and_arms_no
     jobs = await _jobs(league)
     assert jobs["arm_close"]["done_at"] and jobs["delete_closed"]["done_at"]
     assert CLOSED_NOTICE in league.signup.messages
-    league.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+    assert [c for c in league.bot.scheduler_service.arm_once.call_args_list
+            if c.args[:1] == ("signup.close_timer",)] == []
     assert not (await league.config())["signups_open"]
 
 
@@ -336,6 +337,9 @@ ARM_AGAIN = (
 )
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: /signup open arms core's signup_close job, not signup.close_timer through arm_once"
+))
 async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp_path):
     """Manager 77 runs `/signup open` with a close time, and arming the close fails, so the
     change stops at `arm_close` with the information posted and signups open. A league admin
@@ -343,9 +347,11 @@ async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp
     `/signup close-time add`, and that the bot arms it when it next starts, never to set it with
     `/signup close-time add` alone."""
     league = await _league(tmp_path)
-    league.bot.scheduler_service.schedule_signup_close_timer.side_effect = RuntimeError(
-        "the job store is locked"
-    )
+    def _arm_once(kind, _key, _run_at):
+        if kind == "signup.close_timer":
+            raise RuntimeError("the job store is locked")
+
+    league.bot.scheduler_service.arm_once.side_effect = _arm_once
     interaction = await _open(league, close_time="2999-01-01T20:00:00")
     await run_queue(league.bot)
     job = await stopped_job(league.db_path)

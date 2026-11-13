@@ -321,32 +321,9 @@ def test_a_round_s_forecast_and_check_in_come_down_together():
 # ---------------------------------------------------------------------------
 
 
-def test_the_signup_timer_is_armed_for_the_league():
-    service = _service()
-
-    service.schedule_signup_close_timer("2026-03-01T20:00:00")
-
-    job = _added(service)[0]
-    assert job.kwargs["id"] == "signup_close"
-    assert job.kwargs["trigger"].run_date == datetime(2026, 3, 1, 20, tzinfo=timezone.utc)
-
-
-def test_re_arming_the_signup_timer_replaces_it():
-    """A manager who changes the close time must not end up with two closes."""
-    service = _service()
-
-    service.schedule_signup_close_timer("2026-03-01T20:00:00")
-    service.schedule_signup_close_timer("2026-03-02T20:00:00")
-
-    ids = {c.kwargs["id"] for c in _added(service)}
-    assert ids == {"signup_close"}
-    assert all(c.kwargs["replace_existing"] for c in _added(service))
-
-
 @pytest.mark.parametrize(
     "cancel,args,job_id",
     [
-        ("cancel_signup_close_timer", (), "signup_close"),
         ("cancel_job", ("weather_p1_x",), "weather_p1_x"),
     ],
 )

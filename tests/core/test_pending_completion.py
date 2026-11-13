@@ -216,6 +216,9 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
     assert seats[0]["n"] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the wind-down cancels core's signup_close job rather than disarming signup.close_timer"
+))
 async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
     """The season is in Ongoing signups with every division finished, and signups are open:
     winding it down closes the window as every division being done, and cancels the close
@@ -246,7 +249,8 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
     [line] = [line for line in lines if "🔒 Signups closed as every division is done" in line]
     assert "<@" not in line, line
     assert any("returned" in text and "1" in text for text in line.splitlines()[1:]), line
-    league.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
+    assert [c.args[0] for c in league.bot.scheduler_service.disarm.call_args_list
+            ].count("signup.close_timer") == 1
     assert await _league_stage(league) == "PENDING_COMPLETION"
 
 

@@ -281,16 +281,19 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
 _SCHEDULER_KINDS = {
     "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",
-    "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup", "signup_close", "portrait_refresh",
-    "amendment_sweep",
+    "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup", "portrait_refresh", "amendment_sweep",
 }
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the signup close is still the scheduler's own `signup_close` job, not the one-off "
+    "timer `signup.close_timer`"
+))
 async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     """Straight after `build`, with the scheduler not yet started, every kind is signed up in the
     one registry: the scheduler's own jobs (the three weather phases, the forecast clean-up, the
-    result submission, the four check-in jobs, the signup close, the portrait refresh and the
-    amendment sweep) and every one-off timer kind."""
+    result submission, the four check-in jobs, the portrait refresh and the amendment sweep) and
+    every one-off timer kind, the signup close timer among them."""
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.results.services.round_amendment.amend_changes import TIMER as AMEND_TIMER
     from leaguebot.results.services.review.review_lock_change import TIMER as LOCK_TIMER
@@ -302,7 +305,8 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
 
     assert not scheduler._scheduler.running
     kinds = _SCHEDULER_KINDS | {AMEND_TIMER, LOCK_TIMER, DELETE_TIMER, INACTIVITY_TIMER,
-                                CORRECTION_TIMER, season_review_changes.TIMER}
+                                CORRECTION_TIMER, season_review_changes.TIMER,
+                                "signup.close_timer"}
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
 
 
@@ -847,6 +851,7 @@ _MODULE_STEPS = {
 #: recoveries each, the module's services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
+    "signup close timer": ("leaguebot.signup.services.window_close", "recover_missed_close"),
     "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
                                 "recover_orphaned_amend_channels"),
     "orphaned submission channels": ("leaguebot.results.services.submission.submission_recovery",
@@ -868,11 +873,16 @@ _RECOVERIES_OF_THE_STEPS = {
 #: The steps whose recovery is handed the bot's change queue as well, which a service does not look
 #: up on the bot (architecture.md, "Services stay attached to the bot, and are built in one place").
 _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
-    {"orphaned amend channels", "orphaned submission channels", "missed round starts",
+    {"signup close timer", "orphaned amend channels", "orphaned submission channels",
+     "missed round starts",
      "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups"}
 )
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the signup close timer's start-up step re-arms through core's scheduler rather than "
+    "asking window_close.recover_missed_close with the bot's queue"
+))
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read
@@ -899,9 +909,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     sweep then runs each step's own recovery, stubbed to record what it was handed, once, for the
     bot, in the same order, so that a name cannot stand over another step's recovery: the expired
     review prompts, a review left standing, ask the bot's queue for its take-down ending `restart`;
-    the hub hands its recovery the bot, its queue and its hub options; the signup close timer, a
-    close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
-    and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
+    the hub hands its recovery the bot, its queue and its hub options; the signup close timer's
+    catch-up, `recover_missed_close` in signup's `window_close`, is handed the bot and its queue,
+    whose clock judges the close time; the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
@@ -939,9 +949,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
     monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
     monkeypatch.setattr(WizardService, "recover_wizards", recovery("recover_wizards"))
-    for method in ("schedule_amendment_sweep", "schedule_signup_close_timer"):
-        monkeypatch.setattr(SchedulerService, method, scheduling(method))
-    monkeypatch.setattr(SchedulerService, "has_job", lambda self, job_id: False)
+    monkeypatch.setattr(SchedulerService, "schedule_amendment_sweep",
+                        scheduling("schedule_amendment_sweep"))
 
     signed_up: list[tuple] = []
     subscribe = StartingHook.subscribe
@@ -1012,7 +1021,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
                                                         season_review_changes.RESTART), {}),
         "hub": ("recover_hub", (bot,), {"queue": bot.change_queue,
                                         "hub_options": bot.hub_options}),
-        "signup close timer": ("schedule_signup_close_timer", (scheduler, close_at), {}),
         "wizards": ("recover_wizards", (bot.wizard_service,), {}),
         "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {

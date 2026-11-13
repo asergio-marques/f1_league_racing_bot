@@ -510,6 +510,32 @@ async def test_a_close_time_cancelled_does_not_close_signups(tmp_path):
 
 
 @pytest.mark.xfail(strict=True, reason=(
+    "#286: no signup.close_timer is armed by the close-time commands, nor a handler for it "
+    "that judges the stored close time"
+))
+async def test_the_close_timer_closes_signups_at_their_set_time(tmp_path):
+    """The window is open with no close time. Manager 77 adds one two weeks on and the queue
+    runs. The queue's clock moves past it and the close timer fires for the key it was armed
+    with; the queue runs: signups are closed, audited once by the system as an automatic close."""
+    from tests.support.change_queue import maybe_await
+
+    league = await _close_league(tmp_path, close_at=None)
+    await _ran(league, _add, LATER)
+    [(_, key, _run_at)] = _armed(league)
+    league.clock.advance(days=15)
+
+    [handler] = [call.args[1]
+                 for call in league.bot.scheduler_service.register_timer.call_args_list
+                 if call.args and call.args[0] == CLOSE_TIMER]
+    await maybe_await(handler(key))
+    await run_queue(league.bot)
+
+    [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+    assert not window["signups_open"]
+    assert (await _audit_types(league.db_path)).count("SIGNUP_AUTO_CLOSE") == 1
+
+
+@pytest.mark.xfail(strict=True, reason=(
     "#286: signup's start-up step judges the close time against the host's clock, not the "
     "queue's, and re-arms rather than catching up"
 ))

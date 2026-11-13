@@ -466,7 +466,8 @@ async def test_opening_without_a_close_time_arms_nothing(tmp_path):
 
     await _open(cog, _interaction())
 
-    cog.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+    assert [c for c in cog.bot.scheduler_service.arm_once.call_args_list
+            if c.args[:1] == ("signup.close_timer",)] == []
 
 
 async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
@@ -483,6 +484,9 @@ async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
     assert json.loads(row["new_value"])["track_ids"] == ["1"]
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: /signup open arms core's signup_close job, not signup.close_timer through arm_once"
+))
 async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row(tmp_path):
     """A manager opens signups with a close time a week out: the close timer is armed, and the
     Success line and the SIGNUP_OPEN audit row both carry the close time armed."""
@@ -491,7 +495,8 @@ async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row
 
     await _open(cog, _interaction(), close_time=_future(7))
 
-    cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once()
+    assert [c.args[0] for c in cog.bot.scheduler_service.arm_once.call_args_list
+            ].count("signup.close_timer") == 1
     armed = (await SignupModuleService(db_path).get_config()).close_at
     assert armed is not None
     [line] = _lines(cog)

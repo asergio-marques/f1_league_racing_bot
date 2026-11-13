@@ -395,10 +395,6 @@ def _arm_results_now(service: Any, rnd: Any) -> None:
     service.run_result_submission_now(rnd, season_number=7, division_tier=1)
 
 
-def _arm_signup_close(service: Any, _rnd: Any) -> None:
-    service.schedule_signup_close_timer((_now() + timedelta(days=3)).isoformat())
-
-
 def _arm_portrait_refresh(service: Any, _rnd: Any) -> None:
     service.schedule_portrait_refresh("06:00")
 
@@ -437,7 +433,6 @@ EVERY_ARMED_KIND = [
                  id="cleanup-schedule_round_cleanups"),
     pytest.param("rsvp_cleanup", _arm_cleanups, f"rsvp_cleanup{_ROUND_SUFFIX}", _ROUND_ID,
                  id="rsvp_cleanup-schedule_round_cleanups"),
-    pytest.param("signup_close", _arm_signup_close, "signup_close", None, id="signup_close"),
     pytest.param("portrait_refresh", _arm_portrait_refresh, "pfp_daily", None,
                  id="portrait_refresh"),
     pytest.param("amendment_sweep", _arm_amendment_sweep, "amend_sweep", None,
