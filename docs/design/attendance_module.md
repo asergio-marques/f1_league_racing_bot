@@ -465,9 +465,9 @@ was left out, so the league is told in the log channel, the full error going to 
 catch holds the drawing only, never the post (`architecture.md`, "A catch-all error handler", sixth
 place), and it is in four functions: `_checkin_attachment` (the call's graphic),
 `_sheet_attachment` (the sheet's graphic), `_round_grid` (the track registry the graphic draws its
-flags from: a registry that cannot be read draws the headings without flags) and `_seat_team_field`
-(the team names it draws: teams that cannot be read are drawn without names). The team names and
-their shorthands are read from the same teams, so a fault reading them is told once. Pinned by
+flags from: a registry that cannot be read draws the headings without flags) and `_seat_teams`
+(the team names and badges it draws: teams that cannot be read are drawn without either). The
+names and the shorthands come from one read of the placements, so a fault reading them is told once. Pinned by
 `test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job` and
 `test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job`.
 
