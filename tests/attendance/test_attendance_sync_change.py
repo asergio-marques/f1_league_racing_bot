@@ -18,10 +18,12 @@ real queue, attendance's real share of a round's review and a real placement ser
 pinned. The league: Division 1 of season 1, ongoing, its full-time driver (profile 101, a test
 driver, so no role is touched) seated in Alpha; each finalised round has the driver as accepted
 and not raced, so the recalculation gives them the no-show penalty; auto-sack is set at 3 points
-and auto-reserve off, and the division has a Reserve team, unless a test says otherwise.
+and auto-reserve off, and the division has a Reserve team and a lineup channel, unless a test
+says otherwise.
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -38,6 +40,8 @@ from tests.support.change_queue import (
     SERVER_ID,
     Clock,
     change_rows,
+    discard_job,
+    http_error,
     league_bot,
     league_queue,
     member_interaction,
@@ -45,6 +49,7 @@ from tests.support.change_queue import (
     run_queue,
     seed_server,
     set_guilds,
+    set_user,
     stopped_job,
     text_channel,
     tier_member,
@@ -61,6 +66,7 @@ ALPHA, RESERVE = 10, 11
 DRIVER_PROFILE = 101
 ATTENDANCE_CHANNEL = 710
 VERDICTS_CHANNEL = 711
+LINEUP_CHANNEL = 712
 MANAGER_ID = 77
 
 #: The heading over round 1's sanctions in the verdicts channel, in words, images being off.
@@ -126,9 +132,9 @@ async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
             (SEASON_ID,),
         )
         await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-            "VALUES (?, ?, 'Division 1', 1, 555)",
-            (DIVISION_ID, SEASON_ID),
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, "
+            "lineup_channel_id) VALUES (?, ?, 'Division 1', 1, 555, ?)",
+            (DIVISION_ID, SEASON_ID, LINEUP_CHANNEL),
         )
         for number, status in rounds.items():
             await db.execute(
@@ -191,6 +197,7 @@ async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
         bot.interaction_channel.id: bot.interaction_channel,
         ATTENDANCE_CHANNEL: text_channel(ATTENDANCE_CHANNEL),
         VERDICTS_CHANNEL: text_channel(VERDICTS_CHANNEL),
+        LINEUP_CHANNEL: text_channel(LINEUP_CHANNEL),
     }
     guild = MagicMock(spec=discord.Guild)
     guild.id = SERVER_ID
@@ -203,6 +210,10 @@ async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
     bot.fetch_channel = AsyncMock(side_effect=lambda cid: channels[cid])
     bot.get_guild = MagicMock(return_value=guild)
     set_guilds(bot, [guild])
+    # The bot's own user, logged in, which a sanction it applies is recorded as.
+    bot_user = MagicMock(id=900)
+    bot_user.__str__.return_value = "League Bot"
+    set_user(bot, bot_user)
     league_queue(bot, db_path, now=Clock(NOW))
     return _League(bot, guild, db_path, channels)
 
@@ -486,3 +497,96 @@ async def test_a_sync_is_refused_as_it_starts_where_the_league_changed_since_it_
     assert refused[0].startswith("⛔ `/attendance sync` refused for Manager (`<@77>`) — ")
     assert reason in refused[0]
     assert league.sync_lines() == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
+async def test_a_sync_s_card_discord_refuses_stops_the_queue_and_a_discard_names_it(tmp_path):
+    """Round 1 is final and its driver owes an auto-sack. Manager 77 runs `/attendance sync`
+    from round 1 and the queue is run: the round's heading is posted in the verdicts channel, but
+    Discord refuses the sack's card (Missing Access). The queue stops at the card, the driver
+    already sacked. A league admin discards it: the queue goes on, the driver stays sacked, and
+    the log channel names the driver's auto-sack as applied but not announced."""
+    league = await _league(tmp_path)
+    verdicts = league.channels[VERDICTS_CHANNEL]
+    post = verdicts.send.side_effect
+
+    async def _refuse_the_card(content: str = "", **kwargs: Any) -> Any:
+        if verdicts.sent:  # the heading stands, so this is the card
+            raise http_error(discord.Forbidden, status=403, text="Missing Access")
+        return await post(content, **kwargs)
+
+    verdicts.send.side_effect = _refuse_the_card
+
+    await _sync(league)
+    await run_queue(league.bot)
+
+    assert len(await _sync_changes(league.db_path)) == 1
+    assert await stopped_job(league.db_path) is not None
+    assert league.verdicts() == [HEADING]
+    assert await _seated(league.db_path) == []
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _seated(league.db_path) == []
+    named = [line for line in league.log_lines() if "5101" in line and "autosack" in line]
+    assert any("not announced" in line for line in named)
+
+
+#: The roles a sack takes from the driver: the division's, Alpha's and the driver role.
+DIVISION_ROLE, ALPHA_ROLE, DRIVER_ROLE = 555, 9010, 9020
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
+async def test_a_role_change_discord_refuses_leaves_the_sync_s_sack_applied_and_the_queue_running(
+    tmp_path, caplog
+):
+    """Round 1 is final and its driver owes an auto-sack. The driver is a real one (Discord user
+    5101), not a test driver, holding the division's role, Alpha's team role and the driver role,
+    so a sack takes their roles back; Discord refuses to take any of them (Missing Permissions).
+    Manager 77 runs `/attendance sync` from round 1 and the queue is run. The sack is saved all
+    the same, the driver no longer seated; the queue does not stop; the verdicts channel is sent
+    the round's heading and the sack's card; the sync's line reads Success with one sanction
+    applied; and the refusal is noted in the host's log, naming the member."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET is_test_driver = 0 WHERE id = ?", (DRIVER_PROFILE,)
+        )
+        await db.execute("UPDATE server_configs SET driver_role_id = ?", (DRIVER_ROLE,))
+        await db.execute(
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Alpha', ?, ?)",
+            (ALPHA_ROLE, NOW.isoformat()),
+        )
+        await db.commit()
+    roles = {role_id: MagicMock(id=role_id) for role_id in (DIVISION_ROLE, ALPHA_ROLE, DRIVER_ROLE)}
+    league.guild.get_role = MagicMock(side_effect=roles.get)
+    member = MagicMock()
+    member.id = 5101
+    member.guild = league.guild
+    member.roles = list(roles.values())
+    member.remove_roles = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+    # The bot's own member, as the server gives it, beside the driver.
+    bot_member = MagicMock()
+    league.guild.get_member = MagicMock(
+        side_effect=lambda user_id: member if int(user_id) == 5101 else bot_member
+    )
+    league.guild.fetch_member = AsyncMock(return_value=member)
+
+    with caplog.at_level(logging.WARNING):
+        await _sync(league)
+        await run_queue(league.bot)
+
+    assert len(await _sync_changes(league.db_path)) == 1
+    member.remove_roles.assert_awaited()
+    assert await _seated(league.db_path) == []
+    assert await stopped_job(league.db_path) is None
+    heading, _card = league.verdicts()
+    assert heading == HEADING
+    [line] = league.sync_lines()
+    assert "| /attendance sync | Success" in line
+    assert "sanctions applied: 1" in line
+    assert any(record.levelno >= logging.WARNING and "5101" in record.getMessage()
+               for record in caplog.records)
