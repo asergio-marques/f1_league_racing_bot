@@ -376,6 +376,51 @@ async def test_the_review_panel_s_post_cannot_be_discarded(tmp_path):
     assert len([m for m in posted() if type(m.view).__name__ == "AdminReviewView"]) == 1
 
 
+#: The longest message Discord takes.
+DISCORD_LIMIT = 2000
+#: The longest answers a driver can give: a platform ID and a preferred teammate of 1,900
+#: characters each (the issue's reproduction), and a time for every one of 24 tracks.
+LONGEST_DRAFT = dict(
+    FULL_DRAFT,
+    platform_id="P" * 1900,
+    preferred_teammate="T" * 1900,
+    lap_times={str(track): "1:23.456" for track in range(1, 25)},
+)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: the review panel is posted as one message, which Discord refuses past 2,000 "
+           "characters",
+)
+async def test_the_worst_case_panel_is_posted_in_parts(tmp_path):
+    """Kimi has answered everything but his notes with the longest answers he can give: a
+    platform ID and a preferred teammate of 1,900 characters each, and a time for each of 24
+    tracks. Discord refuses any message over 2,000 characters. He types "See you there"; once
+    the queue runs it is not stopped, and his review panel stands in his channel in two or more
+    parts, each no longer than Discord takes, his whole platform ID and preferred teammate among
+    them. The Approve / Request Changes / Reject buttons are on the last part alone."""
+    league = await _league(tmp_path, draft=LONGEST_DRAFT)
+    league.channel(KIMI_CHANNEL).fail_when = lambda content, _kwargs: len(content) > DISCORD_LIMIT
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    posted = [league.channel(KIMI_CHANNEL).messages[mid]
+              for mid in sorted(league.channel(KIMI_CHANNEL).messages)]
+    [start] = [at for at, message in enumerate(posted)
+               if message.content.startswith("**📋 Signup Review**")]
+    parts = posted[start:]
+    assert len(parts) >= 2
+    assert all(len(part.content) <= DISCORD_LIMIT for part in parts)
+    assert [type(part.view).__name__ for part in parts] == (
+        ["NoneType"] * (len(parts) - 1) + ["AdminReviewView"]
+    )
+    assert any("P" * 1900 in part.content for part in parts)
+    assert any("T" * 1900 in part.content for part in parts)
+
+
 #: The line the ending writes in the log channel, naming Kimi and his gone channel.
 CHANNEL_GONE_LINE = (
     f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "

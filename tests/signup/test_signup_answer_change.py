@@ -614,3 +614,138 @@ def test_judge_answer_holds_each_step_s_rules(state, typed, step, refusal):
 
     assert isinstance(judged, Refused)
     assert (judged.step, judged.reply) == (step, refusal)
+
+
+# ---------------------------------------------------------------------------
+# What Discord can take (#459)
+# ---------------------------------------------------------------------------
+
+#: The longest message Discord takes.
+DISCORD_LIMIT = 2000
+
+
+def _over_the_limit(content: str, _kwargs: dict[str, Any]) -> bool:
+    """Discord refuses a message longer than it takes."""
+    return len(content) > DISCORD_LIMIT
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: the refusal quotes the whole wrong answer, past what one message can take",
+)
+async def test_a_long_wrong_answer_is_refused_in_one_message(tmp_path):
+    """Kimi is asked his preferred teams (the league's are Alpha and Beta) and types one name
+    1,990 characters long, which is no team. Discord refuses any message over 2,000 characters.
+    When the queue runs he is answered in one message in his channel, no longer than Discord
+    takes, which says the team is unknown and still names Alpha and Beta as the teams he may
+    choose; his lane is not stopped and his wizard still asks his preferred teams."""
+    league = await _league(tmp_path, state="COLLECTING_PREFERRED_TEAMS")
+    league.channel(KIMI_CHANNEL).fail_when = _over_the_limit
+
+    await _type(league, "Z" * 1990)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [refusal] = [text for text in _texts(league) if text.startswith("❌")]
+    assert len(refusal) <= DISCORD_LIMIT
+    assert refusal.startswith("❌ Unknown team(s):")
+    assert "Valid teams: `Alpha`, `Beta`" in refusal
+    assert (await _wizard(league))["wizard_state"] == "COLLECTING_PREFERRED_TEAMS"
+
+
+# ---------------------------------------------------------------------------
+# A stuck review panel released by a withdrawal (#459)
+# ---------------------------------------------------------------------------
+
+#: The manager who asked for Kimi's correction, in the lapse's case.
+REVIEWER = 77
+#: The timer the correction's five minutes are kept by.
+CORRECTION_TIMER = "correction_lapse"
+
+
+async def _submitted(tmp_path: Any) -> SeasonLeague:
+    """Kimi has answered every question but his notes, and types "Happy to race anywhere"."""
+    league = await _league(tmp_path, state="COLLECTING_NOTES", draft=ANSWERED_TO_NOTES)
+    _refuse_the_panel(league)
+    await _type(league, "Happy to race anywhere")
+    return league
+
+
+async def _lapsed(tmp_path: Any) -> SeasonLeague:
+    """Kimi's signup is saved and manager 77 asked him for a correction five minutes ago; nobody
+    chose which answer, and the correction's five minutes run out."""
+    league = await _league(
+        tmp_path, state="UNENGAGED", draft={"_correction_requested_by": str(REVIEWER)},
+        driver_state="AWAITING_CORRECTION_PARAMETER",
+    )
+    await league.write(
+        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, "
+        "server_display_name, nationality, platform, platform_id, driver_type) "
+        "VALUES (?, ?, ?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver')",
+        league.clock.now.isoformat(), league.clock.now.isoformat(), SEASON_ID, str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE signup_wizard_records SET correction_offered_at = ? WHERE discord_user_id = ?",
+        (league.clock.now - timedelta(minutes=5)).isoformat(), str(SIGNING_UP),
+    )
+    _refuse_the_panel(league)
+    [callback] = [call.args[1]
+                  for call in league.bot.scheduler_service.register_timer.call_args_list
+                  if call.args and call.args[0] == CORRECTION_TIMER]
+    await callback(str(SIGNING_UP))
+    return league
+
+
+def _refuse_the_panel(league: SeasonLeague) -> None:
+    """Discord refuses the review panel in Kimi's channel, and takes every other post."""
+    league.channel(KIMI_CHANNEL).fail_when = (
+        lambda _content, kwargs: type(kwargs.get("view")).__name__ == "AdminReviewView"
+    )
+
+
+async def _press_cancel(league: SeasonLeague) -> None:
+    """Kimi presses Cancel Signup, left on an earlier question in his channel."""
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
+
+    press = member_interaction(league.bot, user=_kimi(league))
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    view = WithdrawButtonView(str(SIGNING_UP), league.bot.change_queue)
+    await view.withdraw_button.callback(press)
+
+
+@pytest.mark.parametrize("waiting", [
+    pytest.param(_submitted, id="after his signup is submitted"),
+    pytest.param(_lapsed, id="after his correction lapses"),
+])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: the review panel stays owed after the driver withdraws, and the lapse's "
+           "panel is posted on the league lane",
+)
+async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting):
+    """Kimi is owed a review panel in his channel (*waiting*: his signup just submitted, or his
+    correction lapsed and he is back awaiting approval), and Discord refuses it. When the queue
+    runs, the job posting it stops his channel's lane alone: the league lane is not stopped.
+    Kimi then presses Cancel Signup, and the league runs his withdrawal: he is Not Signed Up.
+    Discord takes the panel again, and a Retry on his lane clears it without posting the panel,
+    which is no longer owed to anyone."""
+    league = await waiting(tmp_path)
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, KIMI_LANE)
+    assert stopped is not None and stopped["name"] == "post_panel"
+    assert await stopped_job(league.db_path, "league") is None
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+
+    league.channel(KIMI_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=KIMI_LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert [message for message in league.channel(KIMI_CHANNEL).messages.values()
+            if type(message.view).__name__ == "AdminReviewView"] == []
