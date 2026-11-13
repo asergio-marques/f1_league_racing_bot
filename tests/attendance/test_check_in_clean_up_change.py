@@ -284,11 +284,7 @@ async def test_the_clean_up_leaves_the_other_round_of_a_double_header_standing(t
 
 @pytest.mark.parametrize("queue_ran_first", [
     pytest.param(False, id="the timer asks before the queue runs"),
-    pytest.param(True, id="the timer asks after the queue has run", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#285: a clean-up asked once the round's check-in is marked over is still saved "
-               "as a second change, rather than dropped as no longer due",
-    )),
+    pytest.param(True, id="the timer asks after the queue has run"),
 ])
 async def test_a_clean_up_missed_asked_by_the_restart_and_its_timer_takes_down_once(
     tmp_path, queue_ran_first,

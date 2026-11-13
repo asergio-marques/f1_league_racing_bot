@@ -1470,7 +1470,9 @@ def _not_cleaned(row: CallRow | None) -> str | None:
     """Why the round is owed no clean-up, else None: unlike a call, a clean-up is owed a round
     whose results are in and whose check-in is over, and so is one that ended cancelled because
     every session was entered as not held (its call stands until the day after, as any round's);
-    only a round called off is owed none."""
+    only a round called off is owed none, and a round whose check-in is marked over is owed no
+    second: the restart's ask and the timer's both reach the queue, and whichever comes second
+    finds the first done and is dropped as not due."""
     if row is None:
         return "the round is gone"
     if row["round_status"] == "CANCELLED" and not row["not_held"]:
@@ -1479,6 +1481,8 @@ def _not_cleaned(row: CallRow | None) -> str | None:
         return "the division is cancelled"
     if not row["attendance_on"]:
         return "the attendance module is off"
+    if row["checkin_cleared"]:
+        return "the round's check-in is over"
     return None
 
 
