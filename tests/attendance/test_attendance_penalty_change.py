@@ -281,19 +281,27 @@ async def _owed_a_sack_once_raised(tmp_path: Any) -> _League:
     return await _league(tmp_path, rounds={1: "FINAL", 2: "FINAL"}, no_show_penalty=1)
 
 
+#: The new no-show penalty, by the round at which it first takes the driver over auto-sack's 3:
+#: 2 gives totals of 2 and 4, over at round 2; 4 gives 4 and 8, over at round 1 already.
+OVER_THE_LIMIT_AT = {"round-2": 2, "round-1": 4}
+
+
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
+@pytest.mark.parametrize("first_over", list(OVER_THE_LIMIT_AT), ids=list(OVER_THE_LIMIT_AT))
 async def test_a_driver_the_new_penalty_takes_over_the_limit_is_sanctioned_at_the_latest_round(
-    tmp_path,
+    tmp_path, first_over,
 ):
     """Division 1's rounds 1 and 2 are final; the driver accepted both and raced neither. The
     no-show penalty is 1 and auto-sack is at 3, so their 2 points owe nothing. Manager 77 runs
-    `/attendance config no-show-penalty 2` and the queue is run. Their total after round 2 is 4,
-    over the limit: they are sacked, no longer seated; the verdicts channel is sent round 2's
-    heading and the sack's one card, naming them; the attendance channel is sent one sheet; the
-    queue does not stop; and the reply lists the sack as `/attendance sync` lists one."""
+    `/attendance config no-show-penalty <value>` and the queue is run, the value 2 (their total
+    first over the limit after round 2) or 4 (over it after round 1 already). They are sacked
+    once, no longer seated; the verdicts channel is sent round 2's heading, the latest round's,
+    and the sack's one card, naming them, and nothing under round 1; the attendance channel is
+    sent one sheet; the queue does not stop; and the reply lists the sack as `/attendance sync`
+    lists one."""
     league = await _owed_a_sack_once_raised(tmp_path)
 
-    interaction = await _ask_penalty(league, "no-show-penalty", 2)
+    interaction = await _ask_penalty(league, "no-show-penalty", OVER_THE_LIMIT_AT[first_over])
 
     assert await stopped_job(league.db_path) is None
     assert await _seated(league.db_path) == []
@@ -330,6 +338,29 @@ async def test_the_same_penalty_again_mid_season_changes_nothing_and_announces_n
     assert len(league.sheets()) == 1
     _first, again = _setting_lines(league, "no-show-penalty")
     assert "| /attendance config no-show-penalty | Nothing changed" in again
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_sanction_already_applied_stands_when_the_penalty_is_lowered(tmp_path):
+    """As above: the no-show penalty raised from 1 to 2 sacks the driver at round 2, carded once.
+    Manager 77 then runs `/attendance config no-show-penalty 1`, which takes their total after
+    round 2 back to 2, under auto-sack's 3, and the queue is run. Both rounds are recalculated at
+    1 point (totals 1 and 2); the driver stays sacked, not seated again; no further heading or
+    card is posted; the queue does not stop; and the reply lists no sanction."""
+    league = await _owed_a_sack_once_raised(tmp_path)
+    await _ask_penalty(league, "no-show-penalty", 2)
+    assert await _seated(league.db_path) == []
+    assert len(league.verdicts()) == 2
+
+    interaction = await _ask_penalty(league, "no-show-penalty", 1)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _penalty(league.db_path, "no_show_penalty") == 1
+    assert [(round_id, points, total) for round_id, _, _, points, total
+            in await _rows(league.db_path)] == [(1, 1, 1), (2, 1, 2)]
+    assert await _seated(league.db_path) == []
+    assert len(league.verdicts()) == 2
+    assert "Sanctions applied:" not in last_said(interaction)
 
 
 async def _pending_completion(league: _League) -> None:
