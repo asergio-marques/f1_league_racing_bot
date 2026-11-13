@@ -224,6 +224,25 @@ async def test_a_user_with_no_profile_reads_as_none(tmp_path):
     assert await service.get_profile(OLD_USER) is None
 
 
+@pytest.mark.xfail(strict=True, reason="#286: core has no reader of an account's state on a handed connection")
+async def test_state_of_account_on_reads_on_the_handed_connection(tmp_path):
+    """The state of the driver holding an account, read on the connection the caller holds, so
+    signup's checks and saves read it with what their own save has written and not yet committed
+    (#286): an Unassigned driver moved to Assigned on the connection reads as Assigned there, and
+    an account with no profile reads as None."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path, state="UNASSIGNED")
+    service = DriverService(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE discord_user_id = ?",
+            (OLD_USER,),
+        )
+        assert await service.state_of_account_on(db, OLD_USER) is DriverState.ASSIGNED
+        assert await service.state_of_account_on(db, NEW_USER) is None
+
+
 # ---------------------------------------------------------------------------
 # The destructive transition
 # ---------------------------------------------------------------------------
