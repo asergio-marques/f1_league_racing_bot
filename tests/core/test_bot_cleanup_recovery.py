@@ -49,6 +49,7 @@ async def _make_db(
     round_status: str = "FINAL",
     division_status: str = "ACTIVE",
     season_status: str = "ACTIVE",
+    season_stage: str | None = None,
     forecast: bool = True,
     check_in: bool = True,
     phases: tuple[int, ...] = (3,),
@@ -71,6 +72,9 @@ async def _make_db(
             "VALUES (?, 1, '2026-01-01', ?)",
             (SEASON_ID, season_status),
         )
+        if season_stage is not None:
+            await db.execute("UPDATE seasons SET stage = ? WHERE id = ?",
+                             (season_stage, SEASON_ID))
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, status) "
             "VALUES (?, ?, 'Division 1', 1, 555, ?)",
@@ -149,6 +153,9 @@ async def _recover(
     pytest.param({"hours_since_start": 24}, id="exactly a day past"),
     # The live jobs outlive the season's completion, and the catch-up does as they would.
     pytest.param({"season_status": "COMPLETED"}, id="a completed season"),
+    # A season awaiting completion is not in an ongoing stage, but its last round's check-in
+    # still comes down a day after the race, as its timer would take it (decided 2026-11-13).
+    pytest.param({"season_stage": "PENDING_COMPLETION"}, id="a season pending completion"),
     # Round 21 started 25 hours ago, its Phase 3 forecast and its call standing, and ended
     # cancelled because every session of it was entered as not held: the catch-up asks both its
     # clean-ups, as for any round a day past (#439, slice 8, Part E; attendance :75; weather :143).

@@ -52,6 +52,7 @@ async def _make_db(
     deadline_hours: int = 2,
     attendance_enabled: bool = True,
     season_status: str = "ACTIVE",
+    season_stage: str | None = None,
     round_status: str = "NOT_RUN",
     checkin_cleared: bool = False,
     call_standing: bool = False,
@@ -82,6 +83,9 @@ async def _make_db(
             "VALUES (?, 3, '2026-09-01', ?)",
             (SEASON_ID, season_status),
         )
+        if season_stage is not None:
+            await db.execute("UPDATE seasons SET stage = ? WHERE id = ?",
+                             (season_stage, SEASON_ID))
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
             "VALUES (?, ?, 'Division 1', 1, 555)",
@@ -247,6 +251,9 @@ async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
     pytest.param({"attendance_enabled": False}, id="attendance disabled"),
     # A season still in setup has no check-ins owed.
     pytest.param({"season_status": "SETUP"}, id="a season in setup"),
+    # A season raced to its end, awaiting completion, is not in an ongoing stage: no call is
+    # owed (decided 2026-11-13).
+    pytest.param({"season_stage": "PENDING_COMPLETION"}, id="a season pending completion"),
     # Decided 2026-09-24, and kept by #439 (slice 6b, decision 15). `/test-mode advance` posts a
     # test season's calls in their turn, and a restored save's rounds have all gone by.
     pytest.param({"test_mode": True}, id="test mode on"),

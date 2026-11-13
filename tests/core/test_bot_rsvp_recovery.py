@@ -62,6 +62,7 @@ async def _make_db(
     *,
     attendance_enabled: bool = True,
     season_status: str = "ACTIVE",
+    season_stage: str | None = None,
     round_status: str = "NOT_RUN",
     deadline_hours: int = 6,
     hours_until_round: int = -1,
@@ -100,6 +101,9 @@ async def _make_db(
             "VALUES (?, 1, '2026-01-01', ?)",
             (SEASON_ID, season_status),
         )
+        if season_stage is not None:
+            await db.execute("UPDATE seasons SET stage = ? WHERE id = ?",
+                             (season_stage, SEASON_ID))
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
             "VALUES (?, ?, 'Division 1', 1, 555)",
@@ -369,10 +373,20 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
     pytest.param({"round_status": "CANCELLED"}, id="a cancelled round"),
     # A season in setup has not started; its check-in calls are not yet owed.
     pytest.param({"season_status": "SETUP"}, id="a season not running"),
+    # A season raced to its end, awaiting completion, is not in an ongoing stage: its missed
+    # deadline is not caught up, as its missed call is not (decided 2026-11-13).
+    pytest.param(
+        {"season_stage": "PENDING_COMPLETION"}, id="a season pending completion",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#285: the deadline's catch-up judges a live season by its ACTIVE status, "
+                   "not by ONGOING_STAGES",
+        ),
+    ),
 ])
 async def test_a_round_not_to_be_run_has_no_deadline_to_catch_up(tmp_path, status):
-    """A round called off, or one of a season not yet running, has its passed deadline left
-    alone: the restart asks nothing."""
+    """A round called off, or one of a season not yet running or awaiting completion, has its
+    passed deadline left alone: the restart asks nothing."""
     db_path = await _make_db(tmp_path, hours_until_round=-1, **status)
     bot = await _bot(db_path)
 
