@@ -1333,6 +1333,44 @@ async def test_the_24_hour_deletion_runs_on_the_driver_s_lane_and_a_refusal_stop
     assert league.channel(KIMI_CHANNEL) is held
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: a held channel's deletion is judged by its timer alone, not by when its hold runs "
+    "out, and the start-up asks none that fell due while the bot was down"
+))
+async def test_a_held_channel_due_while_down_is_deleted_on_start(tmp_path):
+    """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
+    channel (6405) is held for 24 hours. Twenty-three hours on, its deletion is asked early (its
+    timer fired before its time) and the queue runs: the deletion is not yet due, and the channel
+    and his wizard's row stand. The bot is then down past the 24 hours and starts again, the
+    queue's clock 25 hours after the withdrawal: recovering the wizards asks
+    `signup.channel.delete` of Kimi's channel, as the bot, on his channel's lane, and when the
+    queue runs the channel is deleted and his wizard's row with it."""
+    league = await _mid_signup(tmp_path)
+    held = league.channel(KIMI_CHANNEL)
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    league.clock.advance(hours=23)
+    await _timer_callback(league, DELETE_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    held.delete.assert_not_awaited()
+    assert await _wizard(league) is not None
+
+    league.clock.advance(hours=2)
+    asked_before = len(await _changes_of(league, DELETE_KIND))
+    await _recover_wizards(league)
+
+    asked = await _changes_of(league, DELETE_KIND)
+    assert len(asked) == asked_before + 1
+    assert (_lane(asked[-1]), asked[-1]["origin"]) == (KIMI_LANE, "BOT")
+
+    await run_queue(league.bot)
+
+    held.delete.assert_awaited_once()
+    assert await _wizard(league) is None
+
+
 # ---------------------------------------------------------------------------
 # A member leaving mid-signup (C80)
 # ---------------------------------------------------------------------------
