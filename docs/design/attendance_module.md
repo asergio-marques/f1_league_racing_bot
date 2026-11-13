@@ -227,18 +227,19 @@ a league is told.
 
 | Kind | Asked by | Jobs |
 |---|---|---|
-| `attendance.check_in.call` | the `rsvp_notice` timer, the restart, `/attendance post-check-in`, an amendment | `give_up`, `post_call`, `delete_earlier` |
-| `attendance.check_in.last_notice` | the `rsvp_last_notice` timer | `post_last_notice` |
-| `attendance.check_in.deadline` | the `rsvp_deadline` timer, the restart | `distribute`, `lock_call`, `announce`; or `close_without_call` |
-| `attendance.check_in.clean_up` | the `rsvp_cleanup` timer, the restart | `plan`, `delete_message` for each message, `mark_cleared` |
+| `attendance.check_in.call` | the `rsvp_notice` timer, the restart, `/attendance post-check-in`, `/test-mode advance` | `give_up`, `post_call`, `delete_earlier` |
+| `attendance.check_in.last_notice` | the `rsvp_last_notice` timer, `/test-mode advance` | `post_last_notice` |
+| `attendance.check_in.deadline` | the `rsvp_deadline` timer, the restart, `/test-mode advance` | `distribute`, `lock_call`, `announce`; or `close_without_call` |
+| `attendance.check_in.clean_up` | the `rsvp_cleanup` timer, the restart, `/test-mode advance` | `plan`, `delete_message` for each message, `mark_cleared` |
 | `attendance.check_in.answer` | a press of a button, the maintainer's form | `save_answer` (or `save_answers`), `redraw` |
 | `attendance.sync` | `/attendance sync` | the reserve's capacity, one save, the roles, the cards, lineups and sheets, the closing line |
 | `attendance.setting.<name>` for the eight settings, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.on:attendance`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
 
 Attendance also contributes jobs to changes core owns, through the hooks of a round amended, a
 cancellation and a season approved or completed: the reopening of a round's check-in inside the
-amendment's save, the take-down of a call and the reading of its record before a cancellation, and
-attendance's own notice of the cancellation (`NOTIFY_CHECKIN`).
+amendment's save and the call posted again when the round is armed, the take-down of a call and the
+reading of its record before a cancellation, and attendance's own notice of the cancellation
+(`NOTIFY_CHECKIN`).
 
 ### Settings are `Setting` changes
 
@@ -328,9 +329,9 @@ A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_dea
 `rsvp_cleanup`, armed by core's scheduler service (`schedule_attendance_round`, and
 `schedule_round_cleanups` for the next-day clean-up) from the three lead times attendance's
 `round_window` hook hands core. Attendance registers a callback for each kind (`register_timer`); a
-callback reads the round again and asks the matching change, as the bot's, so a timer that fires
-after its work was changed does nothing. All four are armed with no lateness limit, and each
-handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
+callback asks the matching change, as the bot's, and the change's check reads the round again, so a
+timer that fires after its work was changed does nothing. All four are armed with no lateness limit,
+and each handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
 `test_a_check_in_timer_is_armed_with_no_lateness_limit`.
 
 What each does when its moment passed while the bot was down is the attendance specification's
@@ -363,7 +364,8 @@ Attendance's turn of the start-up sweep is three steps named in `wiring.start_up
 function of `check_in_recovery` handed the bot and the queue, in the order they run:
 
 1. **missed check-in calls** (`recover_missed_check_in_calls`): a call that fell due while the bot
-   was down, its deadline ahead, is asked as late, in the order its rounds race;
+   was down is asked, as late where its deadline is ahead and to be given up where it has passed,
+   in the order its rounds race;
 2. **RSVP views and deadlines** (`recover_rsvp_views_and_deadlines`): the buttons of every standing
    call are armed again, and a deadline that passed while the bot was down is asked;
 3. **missed check-in clean-ups** (`recover_missed_check_in_clean_ups`): a check-in due to come
@@ -399,7 +401,7 @@ a job of a change, and goes through core's handler for its kind of post.
 |---|---|---|---|---|
 | the check-in call, its last notice and the distribution's announcement | notice | the division's check-in channel, read as it then stands | `send_notice`, naming who it may mention | the job's record, on `rsvp_embed_messages` |
 | the call's redraw as answers come in | notice | the call's own | `edit_notice` | the call's own |
-| the call's take-down | notice | the call's own | `delete_notice`, through the one delete step every standing post shares | the row, forgotten as it goes |
+| the call's take-down | notice | the call's own | the one delete step every standing post shares (`delete_standing`) when a call is replaced or cleaned up; `delete_notice` when a cancellation or an amendment takes it down | the row, forgotten as it goes |
 | the attendance sheet | standing post | the division's attendance channel | `post_standing`: the new one is up before the old is deleted | `attendance_division_config.attendance_message_id` |
 | the cancellation notice | notice | the division's check-in channel | `post_cancellation_notice`, core's | not kept |
 | the sanction cards and their banner | results' `review_verdicts` jobs | the division's verdicts channel | results' handlers | results' |
@@ -437,15 +439,17 @@ queue's, retried when the database can be read. Pinned by
 
 ### The sheet
 
-A division's sheet is posted by one of three jobs, each raising where it cannot post:
-`post_sheet`, which the sync plans among its jobs, and `opening_sheet` and `final_sheet`,
+A division's sheet is posted by one of four jobs, each raising where it cannot post: results'
+`attendance_sheet`, in a round's review, through `AttendanceAfterReview.post_sheet`; `post_sheet`,
+which the sync plans among its jobs; and `opening_sheet` and `final_sheet`,
 attendance's jobs in core's approval of a season's placements and in its completion, under the
 occasion's heading. Each stops the queue where Discord refuses the post or the division has no
 attendance channel, to be set and retried. The rows are the drivers core seats full-time in the
 division (`seat_holders_on`), and every driver with a total recorded in the division up to the
 round, so that one sacked or moved to Reserve stays on the sheet (`_sheet_rows`' docstring). The
 opening sheet is drawn against the division's first round, the final sheet against the round the
-completion hands it, and the sync's against the last round it recalculated.
+completion hands it, and the sync's, for its division, against the last round it recalculated, and
+for each other division an auto-sack reached, against that division's latest scored round.
 
 ---
 
@@ -532,16 +536,16 @@ Answers to `architecture.md`, "Errors and failures".
 
 **A recovery that fails on one round stops none of the others.** `check_in_recovery` goes through
 every round, catching and noting the failure of each, and raises `RecoveryFailed` once at the end,
-naming each round and its error, which the start-up sweep reports to the log channel in one line.
-A database it cannot read is raised as it is, for the sweep to report: nothing is caught up, and
-nothing says so but that line. Pinned by
-`test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is` and
-`test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`.
+naming each round and its error, which the start-up sweep reports to the log channel in one line. A
+call whose buttons cannot be armed again is noted in the host's log alone. A database it cannot read
+is raised as it is, for the sweep to report: nothing is caught up, and nothing says so but that
+line. Pinned by `test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`
+and `test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`.
 
 **What a stop leaves** is `architecture.md`'s ("Errors and failures"). The sync's roles are the one
 exception: they end on a fault, the sanction stands, and the fault goes to the host's log (the
-specification's "Resynchronising attendance"). The call's refusal says what is left for the round
-(`left_for_the_queue`).
+specification's "Resynchronising attendance"). A call that cannot be posted stops the queue, the
+stop notice saying what is left for the round (`left_for_the_queue`).
 
 **The catch-alls** of attendance sit in the places `architecture.md` allows, and each is named for
 good in `CATCH_ALLS_ALLOWED` where the shape does not tell its place: `_record_failed`, around
