@@ -35,7 +35,7 @@ from leaguebot.attendance.models.attendance import (
     CHECK_IN_DEADLINE,
     CHECK_IN_LAST_NOTICE,
 )
-from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
+from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection, tuple_rows_in
 from leaguebot.core.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (

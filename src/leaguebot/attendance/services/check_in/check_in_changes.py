@@ -22,7 +22,7 @@ from typing import Any
 import aiosqlite
 import discord
 
-from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
+from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.attendance.services.test_mode_steps import check_ins_cleared
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.round import (

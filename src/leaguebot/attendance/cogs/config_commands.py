@@ -13,7 +13,7 @@ from leaguebot.attendance.cogs.attendance_group import (
     ATTENDANCE_GROUP,
     AttendanceSubgroup,
 )
-from leaguebot.attendance.services.attendance_settings import KINDS
+from leaguebot.attendance.services.settings.attendance_settings import KINDS
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe
 

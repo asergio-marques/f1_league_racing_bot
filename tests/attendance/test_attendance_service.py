@@ -85,7 +85,7 @@ class TestSetAttendanceChannel:
         connection, then committed: the division's config reads it back as the text "888", its
         RSVP channel still unset, and the setter gives back no channel replaced."""
         from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-        from leaguebot.attendance.services.division_channels import set_attendance_channel
+        from leaguebot.attendance.services.settings.division_channels import set_attendance_channel
         from leaguebot.core.db.database import get_connection
 
         async with get_connection(db_path) as db:

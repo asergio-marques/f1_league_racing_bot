@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 
 from leaguebot.attendance.cogs.attendance_group import ATTENDANCE_GROUP, AttendanceSubgroup
-from leaguebot.attendance.services.channel_settings import (
+from leaguebot.attendance.services.settings.channel_settings import (
     ATTENDANCE_CHANNEL,
     NO_ACCESS,
     NOT_ENABLED,

@@ -117,9 +117,9 @@ CHANNEL_SETTERS = [
 
 
 def _channel_setter(name: str):
-    """The setter *name* of `attendance/services/division_channels.py`, imported as the test
+    """The setter *name* of `attendance/services/settings/division_channels.py`, imported as the test
     runs so that this file collects before the build writes it."""
-    from leaguebot.attendance.services import division_channels
+    from leaguebot.attendance.services.settings import division_channels
 
     return getattr(division_channels, name)
 

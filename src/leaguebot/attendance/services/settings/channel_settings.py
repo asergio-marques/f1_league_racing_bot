@@ -31,7 +31,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.attendance.services.division_channels import (
+from leaguebot.attendance.services.settings.division_channels import (
     set_attendance_channel,
     set_rsvp_channel,
 )

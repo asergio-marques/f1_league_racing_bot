@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 def register_switch(modules: "ModuleService") -> None:
     """Sign attendance up with `ModuleService` for the reader of its own switch, keyed by the name
     `is_attendance_enabled` asks it by."""
-    from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
+    from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 
     modules.register_switch("attendance", attendance_enabled_on)
 
@@ -177,7 +177,7 @@ def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign attendance up to the hook a channel being set is asked of each module through,
     handed the database's path."""
-    from leaguebot.attendance.services import division_channels
+    from leaguebot.attendance.services.settings import division_channels
 
     bot.channel_uses_read.subscribe(partial(division_channels.channel_uses, bot.db_path))
 
@@ -185,7 +185,7 @@ def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
     """Sign attendance up to the hook the factory reset asks each module through for every channel
     it holds, handed the database's path."""
-    from leaguebot.attendance.services import division_channels
+    from leaguebot.attendance.services.settings import division_channels
 
     bot.setting_channels_read.subscribe(partial(division_channels.setting_channels, bot.db_path))
 
@@ -249,18 +249,26 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 def register_change_types(bot: "LeagueBot") -> None:
     """Make the queue known attendance's kinds of change: the four check-in jobs and the answer,
     `/attendance sync`, the module's switch, its eight settings and its channel settings."""
-    from leaguebot.attendance.services.attendance_settings import attendance_config_settings
-    from leaguebot.attendance.services.channel_settings import attendance_channel_settings
-    from leaguebot.attendance.services.check_in.check_in_answer_changes import check_in_answer_change
+    from leaguebot.attendance.services.settings.attendance_settings import (
+        attendance_config_settings,
+    )
+    from leaguebot.attendance.services.settings.channel_settings import attendance_channel_settings
+    from leaguebot.attendance.services.check_in.check_in_answer_changes import (
+        check_in_answer_change,
+    )
     from leaguebot.attendance.services.check_in.check_in_call import check_in_call_change
     from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_change
     from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_change
-    from leaguebot.attendance.services.check_in.check_in_last_notice import check_in_last_notice_change
-    from leaguebot.attendance.services.module_switch_settings import (
+    from leaguebot.attendance.services.check_in.check_in_last_notice import (
+        check_in_last_notice_change,
+    )
+    from leaguebot.attendance.services.settings.module_switch_settings import (
         module_off_attendance,
         module_on_attendance,
     )
-    from leaguebot.attendance.services.sanctions.attendance_sync_change import attendance_sync_change
+    from leaguebot.attendance.services.sanctions.attendance_sync_change import (
+        attendance_sync_change,
+    )
     from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(
