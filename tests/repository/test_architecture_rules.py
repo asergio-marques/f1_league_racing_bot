@@ -3287,7 +3287,7 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
     ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_round_grid"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_round_grid"): (1, PASS["attendance"]),
     ("attendance/services/attendance_sheet.py", "_seat_team_field"): (1, PASS["attendance"]),
     ("attendance/services/attendance_sheet.py", "_sheet_attachment"): (1, PASS["attendance"]),
     ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"):

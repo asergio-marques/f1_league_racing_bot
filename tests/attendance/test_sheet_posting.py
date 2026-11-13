@@ -260,11 +260,6 @@ async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_non
     assert str(await _sheet_id(league)) == str(new)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: a round grid that cannot be read is drawn empty, and the sheet is posted over "
-    "the standing one",
-)
 async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_one(tmp_path):
     """Pro's sheet stands as message 6200, and the image module is on with the attendance
     graphic switched on, so Pro's round 1 sheet is drawn with its grid of rounds. The points

@@ -379,6 +379,18 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     ]
 
 
+class _RoundGridUnreadable(Exception):
+    """The grid of rounds the graphic draws could not be read from the database."""
+
+
+def _stop_on_unreadable_grid(fault: Exception) -> None:
+    """Raise *fault* where it is the grid of rounds failing to be read: a sheet drawn with an empty
+    grid would replace the standing one with a wrong one, so its job stops and is retried. Any
+    other fault of the drawing is left to the caller, the sheet posting as text alone."""
+    if isinstance(fault, _RoundGridUnreadable):
+        raise fault
+
+
 async def _sheet_attachment(
     bot: LeagueBot,
     guild: discord.Guild,
@@ -398,8 +410,10 @@ async def _sheet_attachment(
     the aspect being off, the template being invalid and the render having failed are not
     distinguished, because the answer to all four is the same.
 
-    Nothing raised here escapes. A graphic must never prevent, delay or condition the posting
-    it rides on, still less the sanctions enforced beside it (XIV.7).
+    Nothing raised here escapes but the grid of rounds failing to be read (`_stop_on_unreadable_grid`): a
+    graphic must never prevent, delay or condition the posting it rides on, still less the
+    sanctions enforced beside it (XIV.7), but a sheet drawn with an empty grid would replace the
+    standing one with a wrong one.
     """
     if bot is None or guild is None:
         return None
@@ -499,6 +513,7 @@ async def _sheet_attachment(
 
         return discord.File(str(render.png), filename=Path(render.png).name)
     except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
+        _stop_on_unreadable_grid(exc)
         log.error(
             "post_attendance_sheet: the graphic could not be drawn for division %s: %s",
             division_id, exc, exc_info=True,
@@ -521,7 +536,8 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
     A round of the mystery format records no track and is drawn from the datum "Mystery", as
     every graphic draws one (wip-spec § "A round of the mystery format").
 
-    A missing cell and a stored zero are the same picture and the same meaning: the round
+    **A grid that cannot be read from the database is raised** (`_RoundGridUnreadable`), never drawn
+    empty. A missing cell and a stored zero are the same picture and the same meaning: the round
     counted nothing against that driver. Nothing here distinguishes the six ways that happens.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
@@ -597,9 +613,8 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
                     cells.setdefault(int(row["driver_profile_id"]), {})[points_ordinal] = (
                         row["points_awarded"]
                     )
-    except Exception as exc:  # noqa: BLE001 — a grid that cannot be read is drawn empty
-        log.error("post_attendance_sheet: could not read the round grid: %s", exc, exc_info=True)
-        return [], {}
+    except aiosqlite.Error as exc:
+        raise _RoundGridUnreadable(str(exc)) from exc
 
     return headings, cells
 
