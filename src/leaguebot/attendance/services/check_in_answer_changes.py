@@ -70,7 +70,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.posting.standing_post_handler import edit_standing
+from leaguebot.core.services.posting.notice_handler import edit_notice
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 from leaguebot.core.services.drivers.team_service import TeamService
@@ -393,7 +393,7 @@ def check_in_answer_steps(
             embed = await rsvp_service._rebuild_embed_for_round(
                 round_id, division_id, ctx.db_path, service
             )
-            await edit_standing(
+            await edit_notice(
                 message, mentions=discord.AllowedMentions.none(),
                 embed=embed, view=view_of(round_id),
             )

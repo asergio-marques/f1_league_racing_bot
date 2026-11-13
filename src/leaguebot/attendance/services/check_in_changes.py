@@ -55,9 +55,10 @@ messages had not been cleared and delete them, so a Discard on it is refused and
 moves it.
 
 The posts of a check-in (the call, and the last notice and announcement that follow) go through
-core's notice handler (`send_notice`, the call's own `post_standing`), each stating the mentions the post may notify
-where it is sent, and the call's edit through `edit_standing` (architecture.md, "Posting to Discord"): the
-message ids a post returns are saved by the job's record.
+core's notice handler (`send_notice`), each stating the mentions the post may notify where it is sent,
+and the call's edits through `edit_notice` (architecture.md, "Posting to Discord", which classes the
+call, edited in place as drivers answer, a notice): the message ids a post returns are saved by the
+job's record.
 """
 
 from __future__ import annotations
@@ -118,8 +119,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
-from leaguebot.core.services.posting.standing_post_handler import edit_standing, post_standing
+from leaguebot.core.services.posting.notice_handler import delete_notice, edit_notice, send_notice
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now
@@ -1138,14 +1138,16 @@ def check_in_steps(
                 faults=faults,
             )
         try:
-            posted_id = await post_standing(
+            parts: dict[str, Any] = {"embed": embed, "view": view_of(round_id)}
+            if attachment is not None:
+                parts["file"] = attachment
+            message = await send_notice(
                 channel,
                 f"<@&{role}>\n" if role else None,
                 mentions=discord.AllowedMentions(roles=bool(role)),
-                embed=embed,
-                view=view_of(round_id),
-                file=attachment,
+                **parts,
             )
+            posted_id = message.id
         except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             # A fault on the connection (a timeout among them) is handled as Discord refusing is.
             raise await stops(
@@ -1811,7 +1813,7 @@ def check_in_deadline_steps(
             int(payload["round_id"]), int(payload["division_id"]), ctx.db_path, service
         )
         try:
-            await edit_standing(message, mentions=discord.AllowedMentions.none(), embed=embed, view=None)
+            await edit_notice(message, mentions=discord.AllowedMentions.none(), embed=embed, view=None)
         except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             if isinstance(exc, discord.NotFound):
                 raise
