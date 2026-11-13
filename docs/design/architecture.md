@@ -826,16 +826,17 @@ second writer.
 - Everything else is service code.
 
 **A rule that compares one setting with another is judged by the service that writes the
-setting, on the connection it writes on,** never only in the command. A command may judge it too,
-to refuse before anything is asked, but a change ahead in the queue may have moved the other setting
-since, so the service judges it again as the save runs (see "Checked before it is queued, and again
-before it runs"). A timing that must stay shorter than another, or two thresholds that must not
+setting,** never only in the command. A command may judge it too, to refuse before anything is
+asked, but a change ahead in the queue may have moved the other setting since, so the service judges
+it again as the change starts, in its check (see "Checked before it is queued, and again before it
+runs"; the `Setting` docstring). A timing that must stay shorter than another, or two thresholds that must not
 overlap, are examples.
 
 **A stored copy of a derived figure has one function that recomputes it,** which runs on the
 connection its caller was handed, and a named test pins each caller's use of it. A running total
-kept beside the rows it sums is such a copy: where two paths each recomputed it for themselves, one
-went stale when the other's rule changed. A module's design file names each copy it keeps and the
+kept beside the rows it sums is such a copy: where one path recomputed only the round it changed
+and another carried the total through the rounds after, the copies after an amended round went
+stale. A module's design file names each copy it keeps and the
 function that recomputes it.
 
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by rebuilding
@@ -922,8 +923,8 @@ sweep to apply, which puts a module's rule in core.
 **A handler of a job armed with no lateness limit judges lateness itself,** against its own due
 moment and the `now` it is handed ("The time is always passed in"), since the scheduler no longer
 does, and a job caught up by the sweep and the same job fired late take that one judgement. A skip
-that needs no record is a change ended as not due, with a line saying so in the log channel, as any
-change that finds its work not due ends.
+that needs no record is the change, or its step, found no longer due and dropped, as any bot's
+change whose work is not due is (the host's log says so).
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
@@ -1311,8 +1312,8 @@ stated exceptions below them:
    shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
    posting it hands back, so that the fallback is recorded where the job's lines go, as the season
    review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does;
-6. around the drawing of a graphic that rides on a post, where the post then goes out as text alone:
-   the full error goes to the host's log, and the fault is returned as a line of the job that posts,
+6. around the drawing of a graphic that rides on a post, where the post then goes out as text alone
+   (Constitution XIV.7): the full error goes to the host's log, and the fault is returned as a line of the job that posts,
    so that the league is told its graphic could not be drawn. The catch holds the drawing only,
    never the post.
 
