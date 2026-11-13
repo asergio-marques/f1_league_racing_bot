@@ -272,11 +272,11 @@ async def _left_the_drawing(ctx: StepContext) -> bool:
     redraw as it was saved, since the queue is durable and the earlier change is done by now.
     """
     round_id, division_id = int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
-    for earlier, result in await done_step_results_before(
-        ctx.db_path, CHECK_IN_ANSWER, REDRAW, ctx.change_id
+    for _earlier, result in await done_step_results_before(
+        ctx.db_path, CHECK_IN_ANSWER, REDRAW, ctx.change_id,
+        matching={"round_id": round_id, "division_id": division_id},
     ):
-        if earlier["round_id"] == round_id and earlier["division_id"] == division_id:
-            return bool(result.get("later"))
+        return bool(result.get("later"))
     return False
 
 

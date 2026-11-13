@@ -2328,11 +2328,6 @@ async def test_done_step_results_before_gives_each_earlier_change_s_done_step_ne
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: done_step_results_before reads every earlier change's done step, whatever its "
-    "payload names, and takes no matching",
-)
 async def test_done_step_results_before_gives_only_the_changes_whose_payload_matches(env):
     """Asked with `matching`, `done_step_results_before` gives only the earlier changes whose
     payload holds each of its values, newest first, filtered as it reads rather than after: a
