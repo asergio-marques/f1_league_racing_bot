@@ -355,15 +355,15 @@ _WINDOWS_PARTS = (
 _AMENDMENT_PARTS = (
     ("round_amended", "leaguebot.weather.services.phase_withdrawal", "round_amended_on",
      "weather's withdrawal"),
-    ("round_amended", "leaguebot.attendance.services.check_in_changes", "round_amended_on",
+    ("round_amended", "leaguebot.attendance.services.check_in_amendment", "round_amended_on",
      "attendance's reopening"),
-    ("round_armed", "leaguebot.attendance.services.check_in_changes", "amendment_posts",
+    ("round_armed", "leaguebot.attendance.services.check_in_amendment", "amendment_posts",
      "attendance's posts"),
     ("round_armed", "leaguebot.weather.services.forecast_changes", "amendment_posts",
      "weather's posts"),
     ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
      "weather's clean-ups"),
-    ("round_clean_ups_due", "leaguebot.attendance.services.check_in_changes",
+    ("round_clean_ups_due", "leaguebot.attendance.services.check_in_amendment",
      "amendment_clean_ups", "attendance's clean-ups"),
 )
 

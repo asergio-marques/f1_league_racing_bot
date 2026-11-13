@@ -60,24 +60,24 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
 def sign_up_to_round_amended(bot: "LeagueBot") -> None:
     """Sign attendance's reopening of its check-in up to the hook an amended round declares,
     inside the save."""
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_amendment
 
-    bot.round_amended.subscribe(check_in_changes.round_amended_on)
+    bot.round_amended.subscribe(check_in_amendment.round_amended_on)
 
 
 def sign_up_to_round_armed(bot: "LeagueBot") -> None:
     """Sign attendance's posts up to the hook an amended round's arming again declares."""
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_amendment
 
-    bot.round_armed.subscribe(check_in_changes.amendment_posts)
+    bot.round_armed.subscribe(check_in_amendment.amendment_posts)
 
 
 def sign_up_to_round_clean_ups_due(bot: "LeagueBot") -> None:
     """Sign attendance's clean-up up to the hook the clean-ups due a day after a round are read
     through."""
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_amendment
 
-    bot.round_clean_ups_due.subscribe(check_in_changes.amendment_clean_ups)
+    bot.round_clean_ups_due.subscribe(check_in_amendment.amendment_clean_ups)
 
 
 def _check_in_view() -> "CheckInViewFactory":
@@ -91,10 +91,10 @@ def _check_in_view() -> "CheckInViewFactory":
 def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
     """Sign attendance's steps for an amendment up to the hook the steps each module defines for
     it are read through."""
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_amendment, check_in_changes
 
     bot.amendment_steps.subscribe(partial(
-        check_in_changes.amendment_steps,
+        check_in_amendment.amendment_steps,
         bot.attendance_service,
         bot.output_router,
         now=lambda: bot.change_queue.now(),
@@ -315,10 +315,12 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     Each asks the change queue, read from the bot when it fires. The bot keeps the one queue
     `build` made; a test that replaces the queue must register these handlers again."""
     from leaguebot.attendance.services.check_in_changes import (
-        advance_steps as check_in_advance_steps,
         ask_check_in_call,
         ask_check_in_clean_up,
         ask_check_in_deadline,
+    )
+    from leaguebot.attendance.services.check_in_amendment import (
+        advance_steps as check_in_advance_steps,
     )
     from leaguebot.attendance.services.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
