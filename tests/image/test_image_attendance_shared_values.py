@@ -159,12 +159,14 @@ async def test_a_driver_with_no_record_for_a_round_simply_has_no_cell(grid_db):
 
 
 @pytest.mark.asyncio
-async def test_the_grid_is_drawn_empty_rather_than_failing_on_an_unreadable_database(tmp_path):
+async def test_the_grid_is_raised_rather_than_drawn_empty_on_an_unreadable_database(tmp_path):
     """The database sits in a directory that does not exist, so the connection genuinely
-    fails rather than creating an empty file where pytest ran (#163)."""
+    fails rather than creating an empty file where pytest ran (#163). A grid drawn empty would
+    replace the standing sheet with a wrong one, so the read raises the module's own fault, and
+    the sheet's job stops to be retried."""
     absent = tmp_path / "absent" / "no-such.db"
-    headings, cells = await attendance_sheet._round_grid(str(absent), 7, [1])
-    assert headings == [] and cells == {}
+    with pytest.raises(attendance_sheet._RoundGridUnreadable):
+        await attendance_sheet._round_grid(str(absent), 7, [1])
     assert not absent.exists()
 
 
