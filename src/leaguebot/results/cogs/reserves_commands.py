@@ -13,14 +13,12 @@ from leaguebot.core.utils.channel_guard import league_manager_only
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import season_for_command
-from leaguebot.results.cogs.results_group import RESULTS_GROUP, ResultsSubgroup
+from leaguebot.results.cogs.results_group import RESERVES_GROUP, ResultsSubgroup
 from leaguebot.results.services.points.points_settings import RESERVES, reserves_toggle_request
 
 
 class ReservesCommands(ResultsSubgroup):
-    reserves_group = app_commands.Group(
-        name="reserves", description="Reserve driver visibility in standings", parent=RESULTS_GROUP
-    )
+    reserves_group = RESERVES_GROUP
 
     @reserves_group.command(name="toggle", description="Toggle reserve driver visibility in division standings.")
     @app_commands.describe(division="Division name")

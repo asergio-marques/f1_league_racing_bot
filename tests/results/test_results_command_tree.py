@@ -284,12 +284,6 @@ from leaguebot.results.cogs.results_cog import ResultsCog
 print(",".join(command.name for command in group.commands))
 """
 
-#: Why each subgroup's file imported first still breaks the order.
-_DECLARED_APART = (
-    "#285: each /results subgroup is still declared in its own file, so the first file a "
-    "process imports sends its subgroup first"
-)
-
 
 def test_the_results_subgroups_are_sent_in_their_listed_order():
     """Discord is sent `/results`'s subgroups in the order they joined the group, which is the
@@ -298,18 +292,9 @@ def test_the_results_subgroups_are_sent_in_their_listed_order():
 
 
 @pytest.mark.parametrize("module", [
-    pytest.param(
-        "leaguebot.results.cogs.channel_commands",
-        marks=pytest.mark.xfail(strict=True, reason=_DECLARED_APART),
-    ),
-    pytest.param(
-        "leaguebot.results.cogs.rounds_commands",
-        marks=pytest.mark.xfail(strict=True, reason=_DECLARED_APART),
-    ),
-    pytest.param(
-        "leaguebot.results.cogs.reserves_commands",
-        marks=pytest.mark.xfail(strict=True, reason=_DECLARED_APART),
-    ),
+    "leaguebot.results.cogs.channel_commands",
+    "leaguebot.results.cogs.rounds_commands",
+    "leaguebot.results.cogs.reserves_commands",
 ])
 def test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first(module):
     """The subgroups are declared together in `results_group.py`, so the order does not hang on

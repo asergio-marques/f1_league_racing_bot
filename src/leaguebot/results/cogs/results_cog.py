@@ -4,7 +4,7 @@ The subgroups' commands live in `config_commands.py`, `points_amend_commands.py`
 `reserves_commands.py`, `standings_commands.py`, `rounds_commands.py` and `channel_commands.py`,
 one file for each subgroup, under the one `/results` group declared in `results_group.py`. The
 cog stays one cog for one group: it holds `/results` as a class attribute, each subgroup's class
-declares its subgroup with that group as its parent, and discord.py binds a cog's group to the cog
+takes its subgroup from `results_group.py`, where they are declared together, and discord.py binds a cog's group to the cog
 together with every child beneath it, so every command runs with this cog's `self`. A cog too large
 to read in one file is split by subgroup rather than into a cog for each, as the architecture's cog
 bullet gives it (`docs/design/architecture.md`).
@@ -19,8 +19,8 @@ from discord.ext import commands
 
 from leaguebot.results.cogs.results_group import RESULTS_GROUP
 
-# A subgroup joins `/results` as its file is imported, and Discord is sent them in that order, so
-# these imports stand in the order the subgroups are listed, not alphabetically.
+# The subgroups are declared together in `results_group.py`, in the order a league sees them, so
+# the order these imports stand in does not matter.
 from leaguebot.results.cogs.config_commands import ConfigCommands
 from leaguebot.results.cogs.points_amend_commands import PointsAmendCommands
 from leaguebot.results.cogs.reserves_commands import ReservesCommands
