@@ -55,11 +55,6 @@ from tests.support.settings_league import audit_rows, last_said
 from tests.support.settings_league import interaction as member_asks
 from tests.support.undecorate import undecorate
 
-NOT_YET = (
-    "#285: a penalty change whose sanction cannot apply is not yet logged Incomplete, ending with "
-    "the /attendance sync command of each division with a failure"
-)
-
 #: The manager asking, as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Manager (`<@{MANAGER_ID}>`)"
 
@@ -360,7 +355,6 @@ async def test_a_sanction_already_applied_stands_when_the_penalty_is_lowered(tmp
     assert "Sanctions applied:" not in last_said(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sanction_the_penalty_change_cannot_apply_is_logged_incomplete_with_the_sync_to_run(
     tmp_path,
 ):

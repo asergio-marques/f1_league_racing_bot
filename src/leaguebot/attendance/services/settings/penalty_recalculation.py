@@ -14,9 +14,14 @@ sync` from the division's first approved round would give it:
   new value takes over a threshold at an earlier round is sanctioned once, under the latest
   round's heading, and a sanction already applied is never undone by a lowered penalty.
 - **Later jobs.** The roles, the cards, the lineups and the sheets are the sync's own jobs
-  (`posting_steps`), planned by the save, which stop the lane where Discord refuses them. A sheet
-  or a lineup two divisions' sanctions both owe is posted once, against its division's latest
-  round.
+  (`posting_steps`), planned by the save, which stop the lane where Discord refuses them. This is
+  the one departure from `setting_change`'s rule that a setting never holds up the queue: a
+  change that recalculates and posts as `/attendance sync` does follows the sync's rule whatever
+  starts it, a lost sanction card being worse than a held lane. A sheet or a lineup two
+  divisions' sanctions both owe is posted once, against its division's latest round.
+- **Not all applied.** Where a sanction could not be applied the setting's line reads
+  `Incomplete`, as the sync's does, naming each driver, the sanction and the reason, and ending
+  with `sync_hint_text` for each division with a failure; the reply says the same.
 - **Refusals** are the sync's, made at the ask and again as the change starts: an amendment open
   in a division recalculated, and a channel the recalculation posts to that cannot be reached.
   Neither is judged for a value already held, which changes nothing.
@@ -37,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sanctions import attendance_sync_change as sync
 from leaguebot.attendance.services.scoring import attendance_recompute
 from leaguebot.attendance.services.sheet import sheet_posting
@@ -79,6 +85,7 @@ class _Recalculated:
     division_id: int
     name: str
     first_round_id: int
+    first_round_number: int
     latest_round_id: int
 
 
@@ -94,13 +101,20 @@ async def _recalculated_on(db: aiosqlite.Connection) -> tuple[int, list[_Recalcu
         if division.status == DivisionStatus.CANCELLED:
             continue
         states = await season_service.division_round_states_on(db, division.id)
-        approved = [round_id for round_id, (_number, status) in states.items()
+        approved = [(round_id, number) for round_id, (number, status) in states.items()
                     if status in _APPROVED]
         if approved:
             found.append(_Recalculated(
-                division.id, division.name or f"division {division.id}", approved[0], approved[-1]
+                division.id, division.name or f"division {division.id}",
+                approved[0][0], approved[0][1], approved[-1][0],
             ))
     return (season.id, found) if found else (0, [])
+
+
+def _with_outcome(line: str, outcome: str) -> str:
+    """*line*, a setting's log line, with *outcome* in place of the one it carries."""
+    first, newline, rest = line.partition("\n")
+    return f"{first.rpartition(' | ')[0]} | {outcome}{newline}{rest}"
 
 
 def _merged(planned: list[PlannedStep], latest: dict[int, int]) -> list[PlannedStep]:
@@ -201,6 +215,7 @@ def penalty_change(
         planned: list[PlannedStep] = []
         applied: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
+        hints: list[str] = []
         for each in divisions:
             done = await sync.recalculate_division_on(
                 db, db_path=ctx.db_path, placement=placement, acting=acting, now=now(),
@@ -212,16 +227,22 @@ def penalty_change(
             planned.extend(done.then)
             applied.extend(done.result["applied"])
             failed.extend(done.result["failed"])
+            if done.result["failed"]:
+                hints.append(attendance_sanctions.sync_hint_text(
+                    each.name, each.first_round_number
+                ))
         names = [each.name for each in divisions]
         setting_line = "\n".join([
-            saved.lines[0],
+            _with_outcome(saved.lines[0], "Incomplete") if failed else saved.lines[0],
             f"  attendance recalculated at the new value: {', '.join(names)}",
             f"  sanctions applied: {len(applied)}",
-            *(f"  {sync._failure(entry, quoted=True)}" for entry in failed),
+            *(f"  {sync._failure(entry)}" for entry in failed),
+            *(f"  {hint}" for hint in hints),
         ])
         return dataclasses.replace(
             saved,
-            result={**saved.result, "recalculated": names, "applied": applied, "failed": failed},
+            result={**saved.result, "recalculated": names, "applied": applied, "failed": failed,
+                    "hints": hints},
             lines=(setting_line, *lines),
             then=tuple(_merged(planned, {each.division_id: each.latest_round_id
                                          for each in divisions})),
@@ -239,6 +260,7 @@ def penalty_change(
             f"Attendance was recalculated at the new value, as `/attendance sync` would, for "
             f"every approved round of {names}, and their sheets are posted again.",
             *sync.sanction_reply_lines(saved["applied"], saved["failed"]),
+            *saved["hints"],
             *sync.not_done_lines(ctx),
         ])
 
