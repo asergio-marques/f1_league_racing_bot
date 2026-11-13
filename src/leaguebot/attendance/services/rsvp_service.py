@@ -114,43 +114,6 @@ def build_rsvp_embed(
     return embed
 
 
-class RsvpView(LeagueView):
-    """Persistent RSVP view — three action buttons (Accept / Tentative / Decline).
-
-    custom_id values embed the round_id so handlers can identify the target round
-    without querying an extra DB table.  Timeout=None keeps the view alive across
-    bot restarts when re-registered via bot.add_view().
-    """
-
-    def __init__(self, round_id: int = 0) -> None:
-        super().__init__(timeout=None)
-        self._round_id = round_id
-        # Buttons must be added dynamically so custom_ids include the round_id.
-        # discord.py requires custom_id to be set at construction for persistence.
-        self.add_item(_RsvpButton("accept",   round_id, "✅ Accept",   discord.ButtonStyle.success))
-        self.add_item(_RsvpButton("tentative", round_id, "❓ Tentative", discord.ButtonStyle.secondary))
-        self.add_item(_RsvpButton("decline",  round_id, "❌ Decline",  discord.ButtonStyle.danger))
-
-
-class _RsvpButton(discord.ui.Button):
-    def __init__(
-        self,
-        action: str,
-        round_id: int,
-        label: str,
-        style: discord.ButtonStyle,
-    ) -> None:
-        self._custom_id = f"rsvp_{action}_r{round_id}"
-        super().__init__(label=label, style=style, custom_id=self._custom_id)
-        self._action = action
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        # Delegate to the cog that handles RSVP button interactions.
-        # The cog is responsible for validation, DB updates, and embed editing.
-        from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
-        await handle_rsvp_button(interaction, self._custom_id)
-
-
 # ── The attendance module gate ────────────────────────────────────────────────
 #
 # An entry point asks whether the attendance module is enabled before it does anything, and

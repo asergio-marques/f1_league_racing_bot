@@ -265,7 +265,7 @@ async def _submit(bot, entries: str, interaction=None):
     with patch(
         "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
-    ) as rebuild, patch("leaguebot.attendance.services.rsvp_service.RsvpView", new=MagicMock()):
+    ) as rebuild, patch("leaguebot.attendance.cogs.attendance_cog.RsvpView", new=MagicMock()):
         await modal.on_submit(interaction)
         await run_queue(bot)
     return interaction, rebuild

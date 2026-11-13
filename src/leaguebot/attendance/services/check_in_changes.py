@@ -128,6 +128,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+#: How the buttons of a call are built for a round's id. A service may not import the cog that
+#: owns them, so wiring hands this to the jobs that post or redraw a call.
+CheckInViewFactory = Callable[[int], discord.ui.View]
+
 GIVE_UP = "give_up"
 POST_CALL = "post_call"
 DELETE_EARLIER = "delete_earlier"
@@ -796,6 +800,7 @@ def amendment_steps(
     service: AttendanceService,
     *,
     now: Callable[[], datetime],
+    view_of: CheckInViewFactory,
     seasons: season_service.SeasonService,
     modules: ModuleService,
     deletes: Callable[[int, int], Awaitable[bool]],
@@ -806,10 +811,11 @@ def amendment_steps(
     closing a check-in that has no call, and the four of taking a check-in down (its plan under
     the amendment's name `CLEAN_UP_CHECK_IN`, each deletion, the mark that it is over). *service* is
     attendance's, *now* the queue's clock, *seasons* reads the round, *modules* says whether
-    attendance is on and *deletes* is `check_in_deletes`. Subscribed to core's `amendment_steps`.
+    attendance is on, *deletes* is `check_in_deletes` and *view_of* builds the buttons of a call
+    posted again. Subscribed to core's `amendment_steps`.
     """
     taken_down = take_down_steps(seasons=seasons, modules=modules, deletes=deletes)
-    call = check_in_steps(service, now=now)
+    call = check_in_steps(service, now=now, view_of=view_of)
     deadline = check_in_deadline_steps(service, now=now)
     clean_up = check_in_clean_up_steps()
 
@@ -960,8 +966,11 @@ def amendment_steps(
     }
 
 
-def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -> dict[str, Step]:
-    """The jobs of a check-in call, *service* being attendance's and *now* the queue's clock."""
+def check_in_steps(
+    service: AttendanceService, *, now: Callable[[], datetime], view_of: CheckInViewFactory
+) -> dict[str, Step]:
+    """The jobs of a check-in call, *service* being attendance's, *now* the queue's clock and
+    *view_of* the way to build the buttons the call carries."""
 
     async def still_due(ctx: StepContext) -> bool:
         async with get_connection(ctx.db_path) as db:
@@ -1092,7 +1101,7 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
                 channel,
                 content=f"<@&{role}>\n" if role else None,
                 embed=embed,
-                view=rsvp_service.RsvpView(round_id=round_id),
+                view=view_of(round_id),
                 file=attachment,
                 mentions=discord.AllowedMentions(roles=bool(role)),
             )
@@ -1192,7 +1201,9 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
     }
 
 
-def check_in_call_change(service: AttendanceService, *, now: Callable[[], datetime]) -> ChangeType:
+def check_in_call_change(
+    service: AttendanceService, *, now: Callable[[], datetime], view_of: CheckInViewFactory
+) -> ChangeType:
     """`attendance.check_in.call`: the bot's change that posts a round's check-in call, or gives
     it up where its deadline has passed. Not repeatable: a round is owed one call."""
 
@@ -1235,7 +1246,7 @@ def check_in_call_change(service: AttendanceService, *, now: Callable[[], dateti
     return ChangeType(
         kind=CHECK_IN_CALL,
         opening=(PlannedStep(GIVE_UP),),
-        steps=check_in_steps(service, now=now),
+        steps=check_in_steps(service, now=now, view_of=view_of),
         check=check,
         key=lambda payload: f"{CHECK_IN_CALL}:{payload['round_id']}",
         doing=_doing,

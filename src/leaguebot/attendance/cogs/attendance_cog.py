@@ -37,7 +37,7 @@ from leaguebot.core.utils.channel_guard import league_admin_only, league_manager
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, describe_form
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
-from leaguebot.core.utils.league_server import LeagueModal, guild_of
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView, guild_of
 from leaguebot.core.utils.log_lines import interaction_member, refuse
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
@@ -1145,10 +1145,49 @@ _ACTION_LABELS = {
     "decline":   "Decline",
 }
 
+class RsvpView(LeagueView):
+    """Persistent RSVP view — three action buttons (Accept / Tentative / Decline).
+
+    custom_id values embed the round_id so handlers can identify the target round
+    without querying an extra DB table.  Timeout=None keeps the view alive across
+    bot restarts when re-registered via bot.add_view(). The id is `rsvp_{action}_r{round_id}`,
+    written here and read back by `handle_rsvp_button`, the only two places that know it. The
+    services that post or redraw a call are handed a way to build this view
+    (`CheckInViewFactory`), as they may not import a cog.
+    """
+
+    def __init__(self, round_id: int = 0) -> None:
+        super().__init__(timeout=None)
+        self._round_id = round_id
+        # Buttons must be added dynamically so custom_ids include the round_id.
+        # discord.py requires custom_id to be set at construction for persistence.
+        self.add_item(_RsvpButton("accept",   round_id, "✅ Accept",   discord.ButtonStyle.success))
+        self.add_item(_RsvpButton("tentative", round_id, "❓ Tentative", discord.ButtonStyle.secondary))
+        self.add_item(_RsvpButton("decline",  round_id, "❌ Decline",  discord.ButtonStyle.danger))
+
+
+class _RsvpButton(discord.ui.Button):
+    def __init__(
+        self,
+        action: str,
+        round_id: int,
+        label: str,
+        style: discord.ButtonStyle,
+    ) -> None:
+        self._custom_id = f"rsvp_{action}_r{round_id}"
+        super().__init__(label=label, style=style, custom_id=self._custom_id)
+        self._action = action
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # The press is handled here, beside the id it carries: validation, the module gate and
+        # the answer asked of the change queue.
+        await handle_rsvp_button(interaction, self._custom_id)
+
+
 async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -> None:
     """Handle an RSVP button press.
 
-    This function is called by _RsvpButton.callback in rsvp_service.py. It reads the button and
+    This function is called by `_RsvpButton.callback`, above. It reads the button and
     asks the change queue for the answer (`attendance.check_in.answer`, #439), which saves it and
     redraws the call when its turn comes. The press is acknowledged privately as under way and
     the acknowledgement updated with what became of it; a press the locks, the round or the

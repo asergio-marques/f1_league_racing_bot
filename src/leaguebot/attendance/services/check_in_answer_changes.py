@@ -12,7 +12,7 @@ a reserve who has accepted.
 - `save_answer` (a save) writes the answer through `answer_rsvp_on`. A press that changes nothing,
   a write that took no row and a lock found at the save write their log line here, and the member's
   reply says what became of it.
-- `redraw` (an edit) draws the call again from every answer, with a fresh `RsvpView`, and writes the
+- `redraw` (an edit) draws the call again from every answer, with a fresh view of the buttons (built by the `view_of` wiring hands in), and writes the
   answer's success line, naming a call it could not redraw because it is gone. A burst of answers
   to one call makes one redraw: one whose turn comes with a later answer to the same call in hand
   leaves the drawing to that one, and that one draws the call whatever became of its own answer
@@ -46,7 +46,10 @@ from leaguebot.attendance.services.attendance_config_service import (
     RsvpOutcome,
     rsvp_lock,
 )
-from leaguebot.attendance.services.check_in_changes import edit_check_in_message
+from leaguebot.attendance.services.check_in_changes import (
+    CheckInViewFactory,
+    edit_check_in_message,
+)
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
@@ -286,8 +289,11 @@ async def _left_the_drawing(ctx: StepContext) -> bool:
     return False
 
 
-def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
-    """The jobs of a check-in answer, *service* being attendance's."""
+def check_in_answer_steps(
+    service: AttendanceService, view_of: CheckInViewFactory
+) -> dict[str, Step]:
+    """The jobs of a check-in answer, *service* being attendance's and *view_of* the way to build
+    the buttons of the call it redraws."""
 
     async def save_answer(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
@@ -404,7 +410,7 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
             message = await channel.fetch_message(int(standing["message_id"]))
             embed = await rsvp_service._rebuild_embed_for_round(round_id, division_id, ctx.bot)
             await edit_check_in_message(
-                message, embed=embed, view=rsvp_service.RsvpView(round_id=round_id)
+                message, embed=embed, view=view_of(round_id)
             )
         except discord.NotFound:
             if owes:
@@ -460,7 +466,9 @@ def _bulk_outcome(ctx: OutcomeContext, saved: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def check_in_answer_change(service: AttendanceService) -> ChangeType:
+def check_in_answer_change(
+    service: AttendanceService, view_of: CheckInViewFactory
+) -> ChangeType:
     """`attendance.check_in.answer`: a member's change that saves one driver's answer to a round's
     check-in call and redraws the call. Repeatable: a driver may answer again."""
 
@@ -516,7 +524,7 @@ def check_in_answer_change(service: AttendanceService) -> ChangeType:
     return ChangeType(
         kind=CHECK_IN_ANSWER,
         opening=(PlannedStep(SAVE_ANSWER), PlannedStep(REDRAW)),
-        steps=check_in_answer_steps(service),
+        steps=check_in_answer_steps(service, view_of),
         check=check,
         key=lambda payload: (
             f"{CHECK_IN_ANSWER}:{payload['round_id']}:"

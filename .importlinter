@@ -35,8 +35,6 @@ forbidden_modules =
     leaguebot.*.cogs
 allow_indirect_imports = True
 ignore_imports =
-    # #285: the check-in rules live in the cog.
-    leaguebot.attendance.services.rsvp_service -> leaguebot.attendance.cogs.attendance_cog
 
 [importlinter:contract:models-use-no-discord-and-no-database]
 name = Models use no Discord and no database

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from leaguebot.core.models.round import read_scheduled_at
 
 if TYPE_CHECKING:
+    from leaguebot.attendance.services.check_in_changes import CheckInViewFactory
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -85,6 +86,14 @@ def sign_up_to_round_clean_ups_due(bot: "LeagueBot") -> None:
     bot.round_clean_ups_due.subscribe(check_in_changes.amendment_clean_ups)
 
 
+def _check_in_view() -> "CheckInViewFactory":
+    """The way the call's jobs build the buttons a call carries: the cog's `RsvpView`, which a
+    service may not import and so is handed."""
+    from leaguebot.attendance.cogs.attendance_cog import RsvpView
+
+    return lambda round_id: RsvpView(round_id=round_id)
+
+
 def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
     """Sign attendance's steps for an amendment up to the hook the steps each module defines for
     it are read through."""
@@ -94,6 +103,7 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
         check_in_changes.amendment_steps,
         bot.attendance_service,
         now=lambda: bot.change_queue.now(),
+        view_of=_check_in_view(),
         seasons=bot.season_service,
         modules=bot.module_service,
         deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
@@ -263,7 +273,9 @@ def register_change_types(bot: "LeagueBot") -> None:
 
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(
-        check_in_call_change(bot.attendance_service, now=lambda: bot.change_queue.now())
+        check_in_call_change(
+            bot.attendance_service, now=lambda: bot.change_queue.now(), view_of=_check_in_view()
+        )
     )
     bot.change_queue.register(
         check_in_last_notice_change(bot.attendance_service, now=lambda: bot.change_queue.now())
@@ -272,7 +284,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         check_in_deadline_change(bot.attendance_service, now=lambda: bot.change_queue.now())
     )
     bot.change_queue.register(check_in_clean_up_change())
-    bot.change_queue.register(check_in_answer_change(bot.attendance_service))
+    bot.change_queue.register(check_in_answer_change(bot.attendance_service, _check_in_view()))
     bot.change_queue.register(
         sanctions_announce_change(
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
@@ -487,7 +499,7 @@ async def recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
         CHECK_IN_DEADLINE,
         ask_check_in_deadline,
     )
-    from leaguebot.attendance.services.rsvp_service import RsvpView
+    from leaguebot.attendance.cogs.attendance_cog import RsvpView
     from leaguebot.core.db.database import get_connection as _gc
     from leaguebot.core.models.change import ChangeOrigin
     from leaguebot.core.services.queue.queue_records import unfinished

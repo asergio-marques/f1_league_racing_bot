@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from leaguebot.attendance.cogs.attendance_cog import RsvpView
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.image.services import image_rsvp_post
 from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach
@@ -164,7 +165,7 @@ def test_no_path_that_edits_the_embed_can_reach_the_image_module(function_name):
 
 
 def test_the_button_view_reaches_no_image_module():
-    source = inspect.getsource(rsvp_service.RsvpView)
+    source = inspect.getsource(RsvpView)
     for image_module in _IMAGE_MODULES:
         assert image_module not in source
 
