@@ -76,6 +76,7 @@ from leaguebot.attendance.models.attendance import AttendanceConfig, RsvpEmbedMe
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_config_service import AttendanceService
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
+from leaguebot.attendance.services.test_mode_steps import check_ins_cleared
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
 from leaguebot.core.models.change import (
@@ -116,6 +117,7 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.posting.standing_post_handler import edit_standing, post_standing
+from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now
 from leaguebot.core.services.test_mode.test_mode_service import (
@@ -186,24 +188,35 @@ CallRow = Mapping[str, Any]
 
 
 async def _call_row(db: aiosqlite.Connection, round_id: int) -> CallRow | None:
-    cursor = await db.execute(
-        "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
-        "       r.status AS round_status, r.not_held, r.checkin_cleared, "
-        "       d.status AS division_status, d.name AS division_name, d.tier AS division_tier, "
-        "       d.mention_role_id, d.season_id, s.season_number, "
-        "       t.gp_name AS track_gp_name, t.country AS track_country, "
-        "       (SELECT rsvp_deadline_hours FROM attendance_config LIMIT 1) AS deadline_hours, "
-        "       (SELECT rsvp_notice_days FROM attendance_config LIMIT 1) AS notice_days, "
-        "       (SELECT rsvp_last_notice_hours FROM attendance_config LIMIT 1) AS last_notice_hours "
-        "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-        "JOIN seasons s ON s.id = d.season_id "
-        "LEFT JOIN tracks t ON t.name = r.track_name WHERE r.id = ?",
-        (round_id,),
-    )
-    row = await cursor.fetchone()
-    if row is None:
+    """The round, its division and season, its track and the check-in settings, as one row, read on
+    *db*: core's tables through core's readers, attendance's own settings and its column on `rounds`
+    by its own, or None where the round is gone."""
+    facts = await season_service.round_facts_on(db, round_id)
+    if facts is None:
         return None
-    return {**dict(row), "attendance_on": await attendance_enabled_on(db)}
+    division = await season_service.division_on(db, facts.division_id)
+    track = await track_service.get_track_by_name(db, facts.track_name) if facts.track_name else None
+    config = await (await db.execute(
+        "SELECT rsvp_deadline_hours, rsvp_notice_days, rsvp_last_notice_hours "
+        "FROM attendance_config LIMIT 1"
+    )).fetchone()
+    return {
+        "id": facts.round_id, "division_id": facts.division_id,
+        "round_number": facts.round_number, "format": facts.format.value,
+        "track_name": facts.track_name, "scheduled_at": facts.scheduled_at.isoformat(),
+        "round_status": facts.status.value, "not_held": int(facts.not_held),
+        "checkin_cleared": int(bool(await check_ins_cleared(db, [round_id]))),
+        "division_status": facts.division_status.value, "division_name": facts.division_name,
+        "division_tier": facts.division_tier,
+        "mention_role_id": division.mention_role_id if division else None,
+        "season_id": facts.season_id, "season_number": facts.season_number,
+        "track_gp_name": track["gp_name"] if track else None,
+        "track_country": track["country"] if track else None,
+        "deadline_hours": config["rsvp_deadline_hours"] if config else None,
+        "notice_days": config["rsvp_notice_days"] if config else None,
+        "last_notice_hours": config["rsvp_last_notice_hours"] if config else None,
+        "attendance_on": await attendance_enabled_on(db),
+    }
 
 
 async def _standing(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
