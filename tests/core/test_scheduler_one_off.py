@@ -214,11 +214,6 @@ async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(se
     assert handed == [4343]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the last check-in notice's timer is still armed with the scheduler's default "
-    "lateness limit, so one missed while the bot was down is dropped at start",
-)
 async def test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back(services):
     """Round 3 of division tier 1 in season 7 (id 21) starts 20 hours from now, its last notice
     24 hours before the race and its deadline 2 hours before. Its check-in timers were armed six

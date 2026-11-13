@@ -273,11 +273,6 @@ def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the four check-in timers are still armed with APScheduler's default lateness "
-    "limit, so one missed while the bot was down is dropped",
-)
 def test_a_check_in_timer_is_armed_with_no_lateness_limit():
     """A round on 1 March 2026 at 18:00, armed with `now` a month before it: its call, last
     notice, deadline and clean-up are each armed with no lateness limit, so one due while the bot

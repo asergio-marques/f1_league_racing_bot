@@ -177,8 +177,9 @@ async def recover_rsvp_views_and_deadlines(bot: LeagueBot, *, queue: ChangeQueue
     announcement's id cannot either: a discarded announcement leaves none, and the deadline has
     run all the same.
 
-    For any round whose rsvp_last_notice fire time has already passed, silently skip — do NOT fire
-    retroactively (FR-029 edge case).
+    A last notice whose moment passed while the bot was down is not asked for here (FR-029): its
+    timer is armed with no lateness limit, the job store keeps a job that fell due, and it fires
+    when the bot is back, the notice's change sending it late while the deadline is ahead.
 
     A restart is one of the three paths the core specification names, so none of this runs
     for a server whose attendance module is switched off. Re-arming the buttons

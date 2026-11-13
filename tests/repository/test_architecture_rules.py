@@ -596,11 +596,9 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Each owned by the pass whose handler must first judge a missed event of its kind.
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (1, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["image"]),
     # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`.
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (1, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService._arm_forecast_cleanup"): (1, PASS["weather"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["signup"]),
 }
