@@ -10,7 +10,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.models.team import DefaultTeam, PlacedDriver, SeatedDriver, TeamInstance
+from leaguebot.core.models.team import DefaultTeam, PlacedDriver, SeatedDriver, SeatHolder, TeamInstance
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.input_validator import NAME, parse_role_mention, parse_user_mention
 
@@ -442,6 +442,40 @@ class TeamService:
         return seated
 
     @staticmethod
+    async def seat_holders_on(db: aiosqlite.Connection, division_id: int) -> list[SeatHolder]:
+        """`seated_drivers_on`, with each driver's profile: the drivers holding a seat of
+        *division_id*, the reserve team's included, a seat held on a placement not yet confirmed
+        counting as empty, read on *db*. It writes nothing and commits nothing."""
+        from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
+
+        cursor = await db.execute(
+            f"""
+            SELECT ts.driver_profile_id, dp.discord_user_id, ti.full_name AS team_name, ti.is_reserve
+            FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+            WHERE ti.division_id = ?
+              AND ts.driver_profile_id IS NOT NULL
+              AND {uncommitted_seat_excluded("ts")}
+            ORDER BY ts.id
+            """,
+            (division_id,),
+        )
+        holders: list[SeatHolder] = []
+        for row in await cursor.fetchall():
+            try:
+                user_id = int(row["discord_user_id"])
+            except (TypeError, ValueError):
+                continue
+            holders.append(
+                SeatHolder(
+                    int(row["driver_profile_id"]), user_id, row["team_name"] or "",
+                    bool(row["is_reserve"]),
+                )
+            )
+        return holders
+
+    @staticmethod
     async def placed_drivers_on(db: aiosqlite.Connection, division_id: int) -> list[PlacedDriver]:
         """The drivers whose placement names a seat of a team of *division_id*, the reserve team's
         included, each as the placement reads, read on *db*; empty for a division with none.
@@ -455,7 +489,7 @@ class TeamService:
         cursor = await db.execute(
             """
             SELECT dsa.driver_profile_id, dp.discord_user_id, dp.current_state,
-                   ti.full_name AS team_name, ti.is_reserve
+                   ti.full_name AS team_name, ti.name AS team_key, ti.is_reserve
             FROM driver_season_assignments dsa
             JOIN team_seats ts ON ts.id = dsa.team_seat_id
             JOIN team_instances ti ON ti.id = ts.team_instance_id
@@ -471,6 +505,7 @@ class TeamService:
                 discord_user_id=int(row["discord_user_id"]),
                 current_state=str(row["current_state"]),
                 team_name=row["team_name"] or "",
+                team_key=row["team_key"] or "",
                 is_reserve=bool(row["is_reserve"]),
             )
             for row in await cursor.fetchall()

@@ -183,6 +183,29 @@ async def accounts_of_profile(db, profile_id: int) -> list[str]:
     return [str(r[0]) for r in await cursor.fetchall()]
 
 
+async def driver_identities_on(
+    db, profile_ids,
+) -> dict[int, tuple[str, str | None]]:
+    """The current account and test display name of each driver in *profile_ids*, keyed by their
+    profile id: ``(discord_user_id, test_display_name)``, read on *db*.
+
+    An id holding no profile is simply absent from the answer. `driver_names_for_profiles` is the
+    same read on a connection of its own.
+    """
+    ids = sorted({int(i) for i in profile_ids})
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    rows = await (
+        await db.execute(
+            f"SELECT id, discord_user_id, test_display_name FROM driver_profiles "  # noqa: S608
+            f"WHERE id IN ({marks})",
+            ids,
+        )
+    ).fetchall()
+    return {int(r["id"]): (str(r["discord_user_id"]), r["test_display_name"]) for r in rows}
+
+
 async def driver_names_for_profiles(
     db_path: str, profile_ids,
 ) -> dict[int, tuple[str, str | None]]:
@@ -195,19 +218,10 @@ async def driver_names_for_profiles(
     profile is simply absent from the answer (`team_names_for_instances` is the same shape for a
     team).
     """
-    ids = sorted({int(i) for i in profile_ids})
-    if not ids:
+    if not {int(i) for i in profile_ids}:
         return {}
-    marks = ",".join("?" * len(ids))
     async with get_connection(db_path) as db:
-        rows = await (
-            await db.execute(
-                f"SELECT id, discord_user_id, test_display_name FROM driver_profiles "  # noqa: S608
-                f"WHERE id IN ({marks})",
-                ids,
-            )
-        ).fetchall()
-    return {int(r["id"]): (str(r["discord_user_id"]), r["test_display_name"]) for r in rows}
+        return await driver_identities_on(db, profile_ids)
 
 
 async def current_account_of(db, discord_user_id) -> str:

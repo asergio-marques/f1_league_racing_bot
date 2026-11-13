@@ -2485,17 +2485,9 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["attendance"]),
     ("attendance/services/attendance_config_service.py", "AttendanceService.get_current_embed_message"):
         (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_division_name"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_opening_attendance_rows"):
-        (3, PASS["attendance"]),
     ("attendance/services/attendance_recompute.py", "_recalculate_forward"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_round_grid"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_round_number"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_seat_team_field"): (4, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_sheet_rows"): (6, PASS["attendance"]),
     ("attendance/services/attendance_scoring.py", "distribute_attendance_points"):
         (9, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "post_attendance_sheet"): (2, PASS["attendance"]),
     ("attendance/services/attendance_recompute.py", "recalculation_faults"): (2, PASS["attendance"]),
     ("attendance/services/attendance_scoring.py", "record_attendance_from_results_full_recompute"):
         (8, PASS["attendance"]),

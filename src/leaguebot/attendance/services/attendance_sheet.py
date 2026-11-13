@@ -20,6 +20,14 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.drivers.driver_service import driver_identities_on
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons.season_service import (
+    division_on,
+    division_rounds_in_order_on,
+    round_facts_on,
+)
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
@@ -81,11 +89,9 @@ async def post_attendance_sheet(
     if row is None or not row["attendance_channel_id"]:
         log.warning("post_attendance_sheet: no attendance_channel_id configured for division %s", division_id)
         async with get_connection(db_path) as db:
-            named = await (
-                await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
-            ).fetchone()
+            named = await division_on(db, division_id)
         raise StepFailedOnDiscord(
-            f"**{named['name'] if named else 'the division'}** has no attendance channel set: "
+            f"**{named.name if named else 'the division'}** has no attendance channel set: "
             "set one with `/attendance channel attendance`, then press Retry."
         )
 
@@ -95,13 +101,11 @@ async def post_attendance_sheet(
     # called from, and so that no graphic is ever generated for a posting that will not happen
     # (XIV.8 — no posting, no graphic).
     async with get_connection(db_path) as db:
-        round_row = await (
-            await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
-        ).fetchone()
+        round_facts = await round_facts_on(db, round_id)
     if (
         occasion.names_a_round
-        and round_row is not None
-        and round_row["status"] == "CANCELLED"
+        and round_facts is not None
+        and round_facts.status is RoundStatus.CANCELLED
     ):
         # A season-boundary sheet is about the season and not about a round, so no round's
         # cancellation bears on it (see `leaguebot.core.models.classification_occasion`).
@@ -330,47 +334,41 @@ async def _sheet_rows(db, round_id: int, division_id: int) -> list:
     recorded for the driver in this division is the evidence. Each driver's total is the one
     recorded at their latest scored round up to this one, and nought where none is.
     """
-    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
-
+    current = await round_facts_on(db, round_id)
+    number_of = {
+        rnd.id: rnd.round_number for rnd in await division_rounds_in_order_on(db, division_id)
+    }
     cursor = await db.execute(
-        f"""
-        WITH current_round AS (
-            SELECT round_number FROM rounds WHERE id = ?
-        ),
-        listed AS (
-            SELECT dra.driver_profile_id
-            FROM driver_round_attendance dra
-            JOIN rounds r ON r.id = dra.round_id
-            WHERE dra.division_id = ?
-              AND dra.total_points_after IS NOT NULL
-              AND r.round_number <= (SELECT round_number FROM current_round)
-            UNION
-            SELECT ts.driver_profile_id
-            FROM team_seats ts
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE ti.division_id = ?
-              AND ti.is_reserve = 0
-              AND ts.driver_profile_id IS NOT NULL
-              AND {uncommitted_seat_excluded("ts")}
-        )
-        SELECT dp.id AS driver_profile_id, dp.discord_user_id, dp.test_display_name,
-               COALESCE((
-                   SELECT dra2.total_points_after
-                   FROM driver_round_attendance dra2
-                   JOIN rounds r2 ON r2.id = dra2.round_id
-                   WHERE dra2.driver_profile_id = dp.id
-                     AND dra2.division_id = ?
-                     AND dra2.total_points_after IS NOT NULL
-                     AND r2.round_number <= (SELECT round_number FROM current_round)
-                   ORDER BY r2.round_number DESC
-                   LIMIT 1
-               ), 0) AS total_points_after
-        FROM driver_profiles dp
-        WHERE dp.id IN (SELECT driver_profile_id FROM listed)
+        """
+        SELECT round_id, driver_profile_id, total_points_after FROM driver_round_attendance
+        WHERE division_id = ? AND total_points_after IS NOT NULL
         """,
-        (round_id, division_id, division_id, division_id),
+        (division_id,),
     )
-    return await cursor.fetchall()
+    # Each driver's total at their latest scored round up to this one.
+    latest: dict[int, tuple[int, int]] = {}
+    for row in await cursor.fetchall():
+        number = number_of.get(int(row["round_id"]))
+        if current is None or number is None or number > current.round_number:
+            continue
+        profile_id = int(row["driver_profile_id"])
+        if profile_id not in latest or number > latest[profile_id][0]:
+            latest[profile_id] = (number, row["total_points_after"])
+    seated = {
+        driver.profile_id
+        for driver in await TeamService.seat_holders_on(db, division_id)
+        if not driver.is_reserve
+    }
+    identities = await driver_identities_on(db, latest.keys() | seated)
+    return [
+        {
+            "driver_profile_id": profile_id,
+            "discord_user_id": account,
+            "test_display_name": name,
+            "total_points_after": latest[profile_id][1] if profile_id in latest else 0,
+        }
+        for profile_id, (account, name) in sorted(identities.items())
+    ]
 
 
 async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
@@ -380,31 +378,22 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     round does — seated, non-reserve — and carries the team name besides, which is what the
     opening order is taken on.
     """
-    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
-
-    cursor = await db.execute(
-        f"""
-        SELECT dp.id AS driver_profile_id, dp.discord_user_id, dp.test_display_name,
-               ti.full_name AS team_name
-        FROM team_seats ts
-        JOIN team_instances ti ON ti.id = ts.team_instance_id
-        JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-        WHERE ti.division_id = ?
-          AND ti.is_reserve = 0
-          AND ts.driver_profile_id IS NOT NULL
-          AND {uncommitted_seat_excluded("ts")}
-        """,
-        (division_id,),
-    )
+    seated = [
+        driver
+        for driver in await TeamService.seat_holders_on(db, division_id)
+        if not driver.is_reserve
+    ]
+    identities = await driver_identities_on(db, [driver.profile_id for driver in seated])
     return [
         {
-            "driver_profile_id": row["driver_profile_id"],
+            "driver_profile_id": driver.profile_id,
             "total_points_after": 0,
-            "discord_user_id": row["discord_user_id"],
-            "test_display_name": row["test_display_name"],
-            "team_name": row["team_name"],
+            "discord_user_id": identities[driver.profile_id][0],
+            "test_display_name": identities[driver.profile_id][1],
+            "team_name": driver.team_name,
         }
-        for row in await cursor.fetchall()
+        for driver in seated
+        if driver.profile_id in identities
     ]
 
 
@@ -595,13 +584,7 @@ async def _round_grid(
     cells: dict[int, dict[int, int | None]] = {}
     try:
         async with get_connection(db_path) as db:
-            rows = await (
-                await db.execute(
-                    "SELECT id, round_number, track_name, format FROM rounds "
-                    "WHERE division_id = ? ORDER BY round_number",
-                    (division_id,),
-                )
-            ).fetchall()
+            rounds = await division_rounds_in_order_on(db, division_id)
 
             # The heading's flag resolves by **country**, not by circuit (044 moved the
             # datum when the column heading became a flag rather than a track map), so the
@@ -627,15 +610,15 @@ async def _round_grid(
                 tracks = {}
 
             ordinal_of: dict[int, int] = {}
-            for ordinal, row in enumerate(rows, start=1):
-                ordinal_of[int(row["id"])] = ordinal
-                mystery = str(row["format"] or "").upper().endswith("MYSTERY")
-                track_name = None if mystery else (row["track_name"] or None)
+            for ordinal, rnd in enumerate(rounds, start=1):
+                ordinal_of[rnd.id] = ordinal
+                mystery = str(rnd.format.value or "").upper().endswith("MYSTERY")
+                track_name = None if mystery else (rnd.track_name or None)
                 record = tracks.get(track_name) if track_name else None
                 headings.append(
                     RoundHeading(
                         ordinal=ordinal,
-                        number=str(row["round_number"]),
+                        number=str(rnd.round_number),
                         track=MYSTERY_DATUM if mystery else track_name,
                         country=(
                             MYSTERY_DATUM
@@ -702,21 +685,9 @@ async def _seat_team_field(
         raise ValueError(f"not a team name field: {field}")
     if not user_ids:
         return {}
-    placeholders = ",".join("?" * len(user_ids))
     try:
         async with get_connection(db_path) as db:
-            rows = await (
-                await db.execute(
-                    f"SELECT dp.discord_user_id AS uid, ti.{field} AS name "
-                    f"FROM driver_profiles dp "
-                    f"JOIN driver_season_assignments dsa "
-                    f"  ON dsa.driver_profile_id = dp.id AND dsa.division_id = ? "
-                    f"JOIN team_seats ts ON ts.id = dsa.team_seat_id "
-                    f"JOIN team_instances ti ON ti.id = ts.team_instance_id "
-                    f"WHERE dp.discord_user_id IN ({placeholders})",
-                    [division_id, *[str(uid) for uid in user_ids]],
-                )
-            ).fetchall()
+            placed = await TeamService.placed_drivers_on(db, division_id)
     except Exception as exc:  # noqa: BLE001 — a nameless team is drawn empty, never fatal
         log.warning(
             "post_attendance_sheet: the teams of division %s could not be read, so they are "
@@ -724,22 +695,21 @@ async def _seat_team_field(
         )
         _note(faults, f"the teams could not be read, so they are drawn without names: {exc}")
         return {}
-    return {int(row["uid"]): row["name"] for row in rows if row["name"]}
+    wanted = set(user_ids)
+    return {
+        driver.discord_user_id: (driver.team_name if field == "full_name" else driver.team_key)
+        for driver in placed
+        if driver.discord_user_id in wanted and (driver.team_name if field == "full_name" else driver.team_key)
+    }
 
 
 async def _division_name(db_path: str, division_id: int) -> str:
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT name FROM divisions WHERE id = ?", (division_id,)
-        )
-        row = await cursor.fetchone()
-    return (row["name"] if row and row["name"] else f"Division {division_id}")
+        division = await division_on(db, division_id)
+    return division.name if division and division.name else f"Division {division_id}"
 
 
 async def _round_number(db_path: str, round_id: int) -> str:
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT round_number FROM rounds WHERE id = ?", (round_id,)
-        )
-        row = await cursor.fetchone()
-    return str(row["round_number"]) if row and row["round_number"] else str(round_id)
+        facts = await round_facts_on(db, round_id)
+    return str(facts.round_number) if facts and facts.round_number else str(round_id)
