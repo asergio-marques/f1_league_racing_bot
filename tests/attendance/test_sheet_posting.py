@@ -325,8 +325,9 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     """Pro's sheet stands as message 6200, and the image module is on with the attendance
     graphic switched on, so Pro's round 1 sheet is drawn with its grid of rounds. The points
     each round gave each driver cannot be read. The queue stops at the post, nothing is sent,
-    and 6200 stays as Pro's live sheet, rather than a sheet with an empty grid replacing it. A
-    league admin presses Retry: the sheet is posted as text and replaces 6200."""
+    and 6200 stays as Pro's live sheet, rather than a sheet with an empty grid replacing it. The
+    points become readable again and a league admin presses Retry: the new sheet is posted and
+    replaces 6200."""
     from leaguebot.image.services.image_attendance_post import (
         ATTENDANCE_ASPECT,
         ATTENDANCE_TEMPLATE_KEY,
@@ -361,6 +362,9 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     assert OLD_SHEET in league.channel(SHEET).messages
     assert str(await _sheet_id(league)) == str(OLD_SHEET)
 
+    await league.write(
+        "ALTER TABLE driver_round_attendance RENAME COLUMN points_unreadable TO points_awarded"
+    )
     await retry_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
