@@ -389,18 +389,26 @@ async def test_a_move_that_cannot_unlock_the_old_channel_says_so_and_stands(tmp_
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(tmp_path):
     """Anything but Discord's refusal is a fault in the bot. The manager sets 700, and setting
-    its overwrites raises an error of the bot's own once the channel is saved: the fault goes to
-    the queue's failure path, the manager is not told the channel was set as if all went well,
-    and the error's own text reaches neither the reply nor the log."""
+    its overwrites raises an error of the bot's own once the channel is saved. It is work after
+    the save, so 700 stays saved as the signup channel; the manager is not told the channel was
+    set as if all went well, but that its permissions on <#700> were not set; the log channel
+    carries one failure line for `/signup channel` naming the kind of fault; and the error's own
+    text reaches neither the reply nor the log."""
     league = await _league(tmp_path)
     channel = _channel(fault=RuntimeError("gateway closed"))
     _discord(league, channel)
 
     asked = await _run(league, channel)
 
-    assert last_said(asked) != f"✅ Signup channel set to <#{NEW}>."
-    assert "gateway closed" not in last_said(asked)
-    assert not any("gateway closed" in line for line in await log_lines(league))
+    assert await _stored(league.db_path) == NEW
+    replied = last_said(asked)
+    assert replied != f"✅ Signup channel set to <#{NEW}>."
+    assert f"<#{NEW}>" in replied and "permission" in replied.lower()
+    assert "gateway closed" not in replied
+    lines = await log_lines(league)
+    [failed] = [line for line in lines if line.startswith("❌ ")]
+    assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} — RuntimeError.")
+    assert not any("gateway closed" in line for line in lines)
 
 
 def _day(value: int = 5):
