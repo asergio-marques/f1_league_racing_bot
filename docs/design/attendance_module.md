@@ -92,13 +92,14 @@ One function recomputes them, as `architecture.md`'s "The database" has a stored
 flags as the caller asks for (`recompute`: `"all"`, `"round"` or `"none"`, its docstring says what
 each leaves alone), distributes the points of the round and carries the total through every
 finalised round after it, so that a stop leaves the copies of all the rounds as they were or all of
-them carried. Its three callers:
+them carried. Its four callers:
 
 | Caller | Mode | Pinned by |
 |---|---|---|
 | `AttendanceAfterReview.record_on`, a round's first approval | `"none"`, the flags having been recorded upgrade-only | `test_recording_a_round_carries_every_later_round_s_total_on_the_save_it_is_handed` |
 | `AttendanceAfterReview.recalculate_on`, an amendment's approval | `"round"` | `test_the_amended_round_s_attendance_is_rebuilt_both_ways_on_the_save_it_is_handed` |
 | the sync's save (`attendance.sync`) | `"all"` | `test_a_sync_recalculates_from_the_named_round_on_and_leaves_earlier_rounds_alone` |
+| a penalty's save while the season is ongoing (`penalty_recalculation`), once for each division, through the sync's per-division save (`recalculate_division_on`) | `"all"`, from the division's first approved round | `test_a_penalty_changed_mid_season_recalculates_every_approved_round_as_a_sync_would` |
 
 Neither the recompute nor the distribution it calls opens a connection or commits: each is handed
 the save's, so a call handed none is refused by the type check and not lost on close.
@@ -284,6 +285,20 @@ the change's check too. Pinned by `test_set_setting_refuses_a_timing_that_breaks
 `test_set_setting_refuses_an_autosack_and_autoreserve_that_overlap` and
 `test_set_setting_refuses_a_timing_change_once_a_season_is_confirmed`. A threshold of 0 is carried
 as `None`, as the column stores it.
+
+**A penalty changed while a season is ongoing recalculates the season** (`penalty_recalculation`).
+The three penalties are the one `Setting` kind that does more than save its column: the setting's
+save goes on, on the same connection, to recalculate every approved round of every live division
+through the sync's own per-division save (`recalculate_division_on`), and so applies the sanctions
+the division's latest round owes and plans the sync's own jobs for the roles, cards, lineups and
+sheets. The value and the recalculation are one save, so a stop never leaves the penalty saved
+with the figures at the old one; the Reserve team's capacity is read before it, as the sync reads
+it; and the check adds the sync's refusals (an amendment open, a channel unreachable) for a value
+that changes something. A sheet or lineup two divisions' sanctions both owe is posted once, against
+its division's latest round. *Rejected:* a second copy of the recalculation for the setting, which
+the sync's would drift from. Pinned by
+`test_a_driver_the_new_penalty_takes_over_the_limit_is_sanctioned_at_the_latest_round` and
+`test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart`.
 
 ### The sync is one change
 
