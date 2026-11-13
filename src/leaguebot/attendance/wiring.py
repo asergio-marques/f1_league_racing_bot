@@ -262,14 +262,9 @@ def register_change_types(bot: "LeagueBot") -> None:
         module_off_attendance,
         module_on_attendance,
     )
-    from leaguebot.attendance.services.sanctions_announce_change import (
-        sanctions_announce_change,
-    )
     from leaguebot.attendance.services.attendance_sync_change import attendance_sync_change
-    from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.queue.setting_change import setting_change
 
-    bot.change_queue.register(sheet_post_change(bot.module_service))
     bot.change_queue.register(
         check_in_call_change(
             bot.attendance_service, bot.output_router,
@@ -284,11 +279,6 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(check_in_clean_up_change())
     bot.change_queue.register(check_in_answer_change(bot.attendance_service, _check_in_view()))
-    bot.change_queue.register(
-        sanctions_announce_change(
-            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
-        )
-    )
     bot.change_queue.register(
         attendance_sync_change(
             placement=bot.placement_service, roles=bot.team_role_service,

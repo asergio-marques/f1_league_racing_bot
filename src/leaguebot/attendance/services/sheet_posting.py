@@ -1,10 +1,9 @@
-"""A division's attendance sheet, asked of the change queue (#439, slice 6).
+"""A division's attendance sheet, a job of the change queue (#439, slice 6).
 
-A sheet is posted by the `post_sheet` job, which `/attendance sync` plans as its own jobs and which
-the change `attendance.sheet.post` (`ask_sheet_post`) also holds, asked by nothing in the bot at
-present. A sheet Discord refuses stops the queue at the `post_sheet` job, to be tried again as text
-(Constitution XIV, rule 8) or discarded. A division with no attendance channel set stops it too,
-naming the command that sets one.
+A sheet is posted by the `post_sheet` job, which `/attendance sync` plans among the jobs of its
+own change. A sheet Discord refuses stops the queue at the `post_sheet` job, to be tried again as
+text (Constitution XIV, rule 8) or discarded. A division with no attendance channel set stops it
+too, naming the command that sets one.
 
 **The opening and final sheets, posted when a season is approved and when it completes
 (#283),** are two further occasions this module posts, under the same rules: the attendance
@@ -22,46 +21,29 @@ Neither reads `rounds` itself, and each raises where it cannot post, for the que
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 
 import aiosqlite
 
 from leaguebot.attendance.services import attendance_sheet
-from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
-    ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
     StepKind,
     StepResult,
-    Verdict,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
-from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.queue.change_queue import (
-    ChangeQueue,
-)
 from leaguebot.core.services.queue.change_types import (
-    ChangeType,
-    CheckContext,
-    OutcomeContext,
     Step,
     StepContext,
 )
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
-from leaguebot.core.services.seasons.season_service import (
-    division_first_round,
-    division_on,
-    round_facts_on,
-)
+from leaguebot.core.services.seasons.season_service import division_first_round
 from leaguebot.core.utils.league_server import league_guild
 
 POST_SHEET = "post_sheet"
-SHEET_POST = "attendance.sheet.post"
 OPENING_SHEET = "opening_sheet"
 FINAL_SHEET = "final_sheet"
 
@@ -112,82 +94,6 @@ def sheet_step(modules: ModuleService) -> Step:
 
     return Step(
         POST_SHEET, StepKind.ACT, run, still_due=still_due, describe=describe, record=record,
-    )
-
-
-def sheet_post_change(modules: ModuleService) -> ChangeType:
-    """`attendance.sheet.post`: the bot's change, repeatable, that posts one division's sheet.
-
-    The check drops the request where attendance is off, the division is gone or the round
-    named is cancelled, and refuses where the division has no attendance channel set: the bot's
-    change so refused stops the queue with the reason, to be put right and retried. *modules* says
-    whether attendance is on.
-    """
-
-    async def check(ctx: CheckContext) -> Verdict:
-        async with get_connection(ctx.db_path) as db:
-            enabled = await attendance_enabled_on(db)
-            division = await division_on(db, int(ctx.payload["division_id"]))
-            channel_row = await (await db.execute(
-                "SELECT attendance_channel_id FROM attendance_division_config WHERE division_id = ?",
-                (int(ctx.payload["division_id"]),),
-            )).fetchone()
-            round_facts = await round_facts_on(db, int(ctx.payload["round_id"]))
-        if not enabled:
-            return Verdict.not_due("attendance is off")
-        if division is None:
-            return Verdict.not_due("the division is gone")
-        if round_facts is not None and round_facts.status is RoundStatus.CANCELLED:
-            return Verdict.not_due("the round was cancelled")
-        if channel_row is None or not channel_row["attendance_channel_id"]:
-            return Verdict.refuse(
-                f"**{division.name}** has no attendance channel set: set one with "
-                f"`/attendance channel attendance`, then press Retry."
-            )
-        return Verdict.go()
-
-    def outcome(_ctx: OutcomeContext) -> str:
-        return ""
-
-    return ChangeType(
-        kind=SHEET_POST,
-        opening=(PlannedStep(POST_SHEET),),
-        steps={POST_SHEET: sheet_step(modules), standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step()},
-        check=check,
-        key=lambda payload: f"{SHEET_POST}:{payload['division_id']}",
-        doing=lambda payload: (
-            f"posting the attendance sheet of **{payload.get('division_name', 'the division')}**"
-        ),
-        outcome=outcome,
-        repeatable=True,
-    )
-
-
-async def ask_sheet_post(
-    queue: ChangeQueue,
-    db_path: str,
-    division_id: int,
-    round_id: int,
-    sanctioned: Iterable[int] = (),
-) -> None:
-    """Ask the queue to post the attendance sheet of *division_id* for *round_id*, marking the
-    driver profiles in *sanctioned* as having reached the limit.
-
-    A command which makes its own change and wants a standing post after it asks the queue for
-    that post as a change of the bot's, of a kind that may be repeated (slice 6's decision 2); the
-    command's reply is unchanged and the post follows. The division's name is read here, through
-    core's read of the division, on a connection of its own.
-    """
-    async with get_connection(db_path) as db:
-        division = await division_on(db, division_id)
-    name = division.name if division is not None else str(division_id)
-    payload: dict[str, Any] = {
-        "division_id": division_id, "division_name": name, "round_id": round_id,
-        "sanctioned": sorted(int(each) for each in sanctioned),
-    }
-    await queue.ask(
-        SHEET_POST, payload, what=f"posting the attendance sheet of **{name}**",
-        origin=ChangeOrigin.BOT,
     )
 
 
