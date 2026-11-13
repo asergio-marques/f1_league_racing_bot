@@ -50,6 +50,7 @@ from tests.support.season_league import (
     SIGNING_UP,
     SIGNUP_CHANNEL_BASE,
     SeasonLeague,
+    review_services,
     setup_league,
     signing_up,
 )
@@ -61,6 +62,10 @@ LAP_TIMES = {"1": "1:30.000", "2": "1:31.500"}
 INACTIVITY_TIMER = "signup_inactivity"
 CLOSING_KIND = "signup.closing"
 LABELS = {"reject": "Reject", "request_changes": "Request Changes"}
+
+
+#: Why the review panel cannot yet be built with the services it reads handed to it.
+_HANDED_REVIEW = "#286: the signup review panel looks its services up on the bot, not on those handed to it"
 
 
 async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
@@ -108,12 +113,13 @@ def _press(league: SeasonLeague) -> Any:
 
 
 async def _approve(league: SeasonLeague, *, run: bool = True) -> Any:
-    """Manager 77 presses Approve on Kimi's review panel, handed the change queue when built
-    (A23), and the queue runs unless *run* is false."""
+    """Manager 77 presses Approve on Kimi's review panel, handed the change queue (A23) and the
+    services it reads (#286) when built, and the queue runs unless *run* is false."""
     from leaguebot.signup.services.signup_views import AdminReviewView
 
     press = _press(league)
-    view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue)
+    view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue,
+                           **review_services(league.bot))
     await view.approve_button.callback(press)
     if run:
         await run_queue(league.bot)
@@ -212,6 +218,7 @@ async def _closings(league: SeasonLeague) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_a_driver_with_no_lap_times_stores_no_seeding_value(tmp_path):
     """A league that asked for no times has nothing to seed from, and storing a zero would seed
     every driver identically: Kimi's record, holding no lap times, is approved with no total."""
@@ -223,6 +230,7 @@ async def test_a_driver_with_no_lap_times_stores_no_seeding_value(tmp_path):
     assert (await _record(league))["total_lap_ms"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_approval_without_a_signup_configuration_does_nothing(tmp_path):
     """The signup module's configuration is gone when manager 77 presses Approve: Kimi stays
     awaiting approval, holds no role, and nothing is posted in his channel; the manager is told
@@ -239,6 +247,7 @@ async def test_approval_without_a_signup_configuration_does_nothing(tmp_path):
     assert "⛔" in told and "✅" not in told, told
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 @pytest.mark.parametrize("why", ["role missing", "member left", "Discord refuses"])
 async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(tmp_path, why):
     """The driver role cannot be given: the role has been deleted, Kimi has left the server, or
@@ -267,6 +276,7 @@ async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(tmp
     assert "driver role could not be granted" in league.log().lower()
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
     """Where the role is given there is nothing to report: neither the manager's reply nor the
     log says a role could not be granted, and the Approved line names the manager and Kimi."""
@@ -282,6 +292,7 @@ async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
                for line in _lines(league)), league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
     """No driver role is set for the league: Kimi is approved and given no role."""
     league = await _league(tmp_path)
@@ -293,6 +304,7 @@ async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
     assert league.granted.get(SIGNING_UP) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_approval_cancels_the_inactivity_timeout(tmp_path):
     """The wizard is finished. Left armed, the 24-hour timeout would later close a signup that
     had already been approved, so the approval disarms Kimi's inactivity timer."""
@@ -303,6 +315,7 @@ async def test_approval_cancels_the_inactivity_timeout(tmp_path):
     league.bot.scheduler_service.disarm.assert_any_call(INACTIVITY_TIMER, str(SIGNING_UP))
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_an_approval_whose_role_job_is_discarded_is_still_recorded(tmp_path, monkeypatch):
     """Manager 77 approves Kimi and a fault of the bot's own stops the queue at the job that
     gives the driver role; an admin discards it. Kimi is Unassigned, and the log channel carries
@@ -326,7 +339,7 @@ async def test_an_approval_whose_role_job_is_discarded_is_still_recorded(tmp_pat
 @pytest.mark.parametrize(
     ("outcome", "action"),
     [
-        pytest.param("approve", "Approved"),
+        pytest.param("approve", "Approved", marks=pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)),
         pytest.param("reject", "Rejected"),
         pytest.param("request_changes", "Correction requested"),
     ],

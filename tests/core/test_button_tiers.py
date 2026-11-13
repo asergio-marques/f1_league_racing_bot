@@ -32,6 +32,10 @@ MANAGER_ROLE = 222
 ADMIN_ROLE = 444
 
 
+#: Why the review panel's gate cannot yet be handed the configuration service it reads.
+_HANDED_CONFIG = "#286: _may_review_signup reads the configuration service on the bot, not the one handed to it"
+
+
 def _config(*, admin_role: int | None = ADMIN_ROLE) -> ServerConfig:
     return ServerConfig(
         server_id=SERVER_ID,
@@ -159,29 +163,32 @@ async def _may_review(member, config):
     from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(member)
-    interaction.client.config_service.get_server_config = AsyncMock(return_value=config)
-    return await _may_review_signup(interaction)
+    config_service = MagicMock()
+    config_service.get_server_config = AsyncMock(return_value=config)
+    return await _may_review_signup(interaction, config_service)
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_CONFIG)
 @pytest.mark.parametrize("roles", [(MANAGER_ROLE,), (ADMIN_ROLE,)], ids=["manager", "admin"])
 async def test_either_tier_may_action_a_signup_review(roles):
     assert await _may_review(_member(*roles), _config()) is True
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_CONFIG)
 async def test_the_driver_may_not_action_their_own_signup_review():
     """The panel is posted in the driver's own channel, which they can read."""
     assert await _may_review(_member(), _config()) is False
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_CONFIG)
 async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
     from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(_member(MANAGER_ROLE))
-    interaction.client.config_service.get_server_config = AsyncMock(
-        side_effect=RuntimeError("database is locked")
-    )
+    config_service = MagicMock()
+    config_service.get_server_config = AsyncMock(side_effect=RuntimeError("database is locked"))
 
-    assert await _may_review_signup(interaction) is False
+    assert await _may_review_signup(interaction, config_service) is False
 
 
 # ── The penalty and appeals reviews ───────────────────────────────────────

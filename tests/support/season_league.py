@@ -1346,6 +1346,26 @@ def wizard_service(bot: Any, db_path: str, scheduler: Any, *, change_queue: Any)
     )
 
 
+def review_services(bot: Any) -> dict[str, Any]:
+    """The services a signup review panel (`AdminReviewView`) is handed when it is built, *bot*'s
+    own (#286): the signup service it finds the channel's driver through, the driver service it
+    reads their state from, the configuration service whose tiers judge the presser, and the
+    output router that writes its lines to the log channel."""
+    return {
+        "signup": bot.signup_module_service,
+        "drivers": bot.driver_service,
+        "config": bot.config_service,
+        "router": bot.output_router,
+    }
+
+
+def correction_services(bot: Any) -> dict[str, Any]:
+    """The services the correction choices (`CorrectionParameterView`) are handed when they are
+    built, *bot*'s own (#286): the signup service they find the channel's driver through and the
+    configuration service whose tiers judge the presser."""
+    return {"signup": bot.signup_module_service, "config": bot.config_service}
+
+
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
     """The signup wizards recovered as the bot does when it starts (`recover_wizards`), the
     wizard service built as the builder builds it, over the league's real signup module and
