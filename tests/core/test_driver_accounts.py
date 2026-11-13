@@ -25,6 +25,7 @@ from leaguebot.core.services.drivers.driver_service import (
     current_account_map,
     current_account_map_for_division,
     current_account_of,
+    profile_id_of_current_account,
     resolve_driver_profile_id,
 )
 from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
@@ -183,6 +184,23 @@ async def test_resolve_driver_profile_id_finds_the_driver_by_any_account(tmp_pat
         assert await resolve_driver_profile_id(int(A), db) == pid
         assert await resolve_driver_profile_id(int(B), db) == pid
         assert await resolve_driver_profile_id(int(C), db) is None
+
+
+async def test_profile_id_of_current_account_finds_a_driver_by_the_account_profiles_name_now(
+    tmp_path,
+):
+    """Unlike `resolve_driver_profile_id`, a driver is found only by the account their profile
+    names now: the driver who moved from account A to B is found by B and not by A; a second
+    driver, on C, is found by C; an account nobody holds finds nobody."""
+    db_path = await _make_db(tmp_path)
+    moved = await _profile(db_path, A)
+    await _make_current(db_path, moved, B)
+    other = await _profile(db_path, C)
+
+    assert await profile_id_of_current_account(db_path, int(B)) == moved
+    assert await profile_id_of_current_account(db_path, int(C)) == other
+    assert await profile_id_of_current_account(db_path, int(A)) is None
+    assert await profile_id_of_current_account(db_path, 9999) is None
 
 
 async def test_accounts_of_lists_the_whole_driver_from_any_account(tmp_path):

@@ -2278,6 +2278,61 @@ async def test_ever_asked_finds_the_changes_of_a_kind_in_any_state(env):
     assert [p["n"] for p in found] == ["done", "other", "dropped", "discarded", "queued"]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: a done step that saved no result is read as None, not the empty dict the reader "
+    "promises",
+)
+async def test_done_step_results_before_gives_each_earlier_change_s_done_step_newest_first(env):
+    """`done_step_results_before` gives, newest first, the payload of each change of the kind
+    asked before the one named whose step of that name is done, with the result that step saved
+    (an empty dict where it saved none). Here changes 1 and 2 of "watched" have their redraw done,
+    the first saving {"later": true} and the second nothing; change 3, of "other", has a redraw
+    done too; change 4's redraw fails, so is not done; change 5 waits behind it. Asked before
+    change 5, changes 2 and 1 come back; before change 2, change 1 alone; the "post" step each
+    "watched" change also did is never mistaken for the redraw."""
+    from leaguebot.core.services.queue.queue_records import done_step_results_before
+
+    api = _api()
+
+    async def _redraw(ctx):
+        n = ctx.payload["n"]
+        if n == 4:
+            raise RuntimeError("boom")
+        return api.StepResult(result={"later": True} if n == 1 else None)
+
+    async def _post(_ctx):
+        return api.StepResult(result={"posted": True})
+
+    _queue(
+        env,
+        _type("watched", steps=[
+            api.Step("redraw", api.StepKind.ACT, _redraw),
+            api.Step("post", api.StepKind.ACT, _post),
+        ]),
+        _type("other", steps=[api.Step("redraw", api.StepKind.ACT, _redraw)]),
+    )
+
+    first = await _ask(env, "watched", {"n": 1})
+    second = await _ask(env, "watched", {"n": 2})
+    await _ask(env, "other", {"n": 3})
+    await _ask(env, "watched", {"n": 4})
+    fifth = await _ask(env, "watched", {"n": 5})
+    await run_queue(env.bot)
+
+    assert await _states(env) == ["DONE", "DONE", "DONE", "RUNNING", "QUEUED"]
+    assert await done_step_results_before(env.db_path, "watched", "redraw", fifth) == [
+        ({"n": 2}, {}), ({"n": 1}, {"later": True}),
+    ]
+    assert await done_step_results_before(env.db_path, "watched", "redraw", second) == [
+        ({"n": 1}, {"later": True}),
+    ]
+    assert await done_step_results_before(env.db_path, "watched", "redraw", first) == []
+    assert await done_step_results_before(env.db_path, "other", "redraw", fifth) == [
+        ({"n": 3}, {}),
+    ]
+
+
 async def test_a_check_as_the_change_starts_knows_its_own_id(env):
     """A check asked when the change is asked for has no change id; the same check as the change
     starts is handed the change's id, so that it can leave itself out of `unfinished`."""
