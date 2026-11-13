@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_config_service import _opening_attendance_rows
+from leaguebot.attendance.services.attendance_sheet import _opening_attendance_rows
 from leaguebot.attendance.services.rsvp_service import query_division_roster
 
 SERVER_ID = 22080

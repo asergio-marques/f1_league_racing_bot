@@ -20,11 +20,9 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.attendance.services import attendance_config_service as attendance_service
-from leaguebot.attendance.services.attendance_config_service import (
-    derive_checkin_deadline,
-    post_attendance_sheet,
-)
+from leaguebot.attendance.services import attendance_sheet
+from leaguebot.attendance.services.attendance_config_service import derive_checkin_deadline
+from leaguebot.attendance.services.attendance_sheet import post_attendance_sheet
 from tests.support.change_queue import in_a_job
 
 
@@ -315,7 +313,7 @@ async def test_with_a_graphic_the_message_carries_the_heading_alone(sheet_db, mo
     names precisely so that it carries no mention.
     """
     monkeypatch.setattr(
-        attendance_service, "_sheet_attachment", _fake_attachment(object())
+        attendance_sheet, "_sheet_attachment", _fake_attachment(object())
     )
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
@@ -512,7 +510,7 @@ async def test_the_sheet_graphic_is_gone_once_it_has_posted(
     sheet_db, monkeypatch, tmp_path
 ):
     png = _sheet_artifact(tmp_path)
-    monkeypatch.setattr(attendance_service, "_sheet_attachment", _real_attachment(png))
+    monkeypatch.setattr(attendance_sheet, "_sheet_attachment", _real_attachment(png))
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
@@ -532,7 +530,7 @@ async def test_the_sheet_graphic_is_gone_when_the_send_fails(
     """The refused send raises, and the job's next try posts the text; the picture is never
     kept for it (XIV.8, FR-060)."""
     png = _sheet_artifact(tmp_path)
-    monkeypatch.setattr(attendance_service, "_sheet_attachment", _real_attachment(png))
+    monkeypatch.setattr(attendance_sheet, "_sheet_attachment", _real_attachment(png))
     await _config(sheet_db, prior="4242")
     channel = _FakeChannel([], send_fails=True)
     guild = _FakeGuild(channel, {111: "Ayrton"})
@@ -601,13 +599,13 @@ async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
 @pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
 async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_name, monkeypatch):
     """The phrase is drawn on the sheet, so a heading above it would say it twice."""
-    from leaguebot.attendance.services import attendance_config_service as attendance_service
+    from leaguebot.attendance.services import attendance_sheet
 
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
     monkeypatch.setattr(
-        attendance_service, "_sheet_attachment", _fake_attachment(object())
+        attendance_sheet, "_sheet_attachment", _fake_attachment(object())
     )
 
     with in_a_job():

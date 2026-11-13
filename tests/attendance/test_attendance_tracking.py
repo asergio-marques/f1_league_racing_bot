@@ -10,7 +10,7 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_config_service import (
+from leaguebot.attendance.services.attendance_scoring import (
     record_attendance_from_results_on,
     record_attendance_from_results_full_recompute,
     distribute_attendance_points,
@@ -711,12 +711,12 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     already persisted when the second round's call failed — leaving the division scored
     to a different rule from one round to the next, with no command to put it right.
     """
-    from leaguebot.attendance.services import attendance_config_service as attendance_service
+    from leaguebot.attendance.services import attendance_recompute, attendance_scoring
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
     assert await _awarded(db_file, round_ids[0]) is None
 
-    real = attendance_service.distribute_attendance_points
+    real = attendance_scoring.distribute_attendance_points
     calls: list[int] = []
 
     async def failing_after_the_first(db_path, round_id, division_id, *, db=None):
@@ -726,11 +726,11 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
         return await real(db_path, round_id, division_id, db=db)
 
     monkeypatch.setattr(
-        attendance_service, "distribute_attendance_points", failing_after_the_first
+        attendance_scoring, "distribute_attendance_points", failing_after_the_first
     )
 
     with pytest.raises(RuntimeError):
-        await attendance_service._recalculate_forward(
+        await attendance_recompute._recalculate_forward(
             db_file, round_ids[0], division_id, recompute="round",
         )
 
@@ -743,11 +743,11 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
 @pytest.mark.asyncio
 async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
     """The other half of the same rule: nothing was broken making it atomic."""
-    from leaguebot.attendance.services import attendance_config_service as attendance_service
+    from leaguebot.attendance.services import attendance_recompute
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
-    await attendance_service._recalculate_forward(
+    await attendance_recompute._recalculate_forward(
         db_file, round_ids[0], division_id, recompute="round",
     )
 

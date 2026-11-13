@@ -400,9 +400,9 @@ def test_an_attendance_pardon_reaches_no_verdict_announcement_and_so_no_graphic(
     """
     import inspect
 
-    from leaguebot.attendance.services import attendance_after_review, attendance_config_service as attendance_service
+    from leaguebot.attendance.services import attendance_after_review, attendance_pardons
 
-    writers = [attendance_service._rewrite_round_pardons_on]
+    writers = [attendance_pardons._rewrite_round_pardons_on]
     writers += [
         member for _, cls in inspect.getmembers(attendance_after_review, inspect.isclass)
         if cls.__module__ == attendance_after_review.__name__

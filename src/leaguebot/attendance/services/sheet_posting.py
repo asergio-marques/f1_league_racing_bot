@@ -28,7 +28,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.attendance.services import attendance_config_service as attendance_service
+from leaguebot.attendance.services import attendance_sheet
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
@@ -80,11 +80,11 @@ def sheet_step() -> Step:
             raise GuildUnavailable("the league's server is not in the cache")
         payload = ctx.step_payload or ctx.payload
         sanctioned = {int(each) for each in payload.get("sanctioned") or []}
-        posted = await attendance_service.post_attendance_sheet(
+        posted = await attendance_sheet.post_attendance_sheet(
             ctx.bot, guild, ctx.db_path, int(payload["round_id"]), int(payload["division_id"]),
             sanctioned_profile_ids=sanctioned or None, as_text=ctx.tries > 0,
         )
-        result = attendance_service.sheet_result(posted)
+        result = attendance_sheet.sheet_result(posted)
         then: tuple[PlannedStep, ...] = ()
         if posted is not None and posted.takes_slot:
             then = standing_posts.replaced(
@@ -96,7 +96,7 @@ def sheet_step() -> Step:
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         payload = ctx.step_payload or ctx.payload
-        await attendance_service.record_sheet_on(db, int(payload["division_id"]), result.result)
+        await attendance_sheet.record_sheet_on(db, int(payload["division_id"]), result.result)
 
     async def still_due(ctx: StepContext) -> bool:
         return await ctx.bot.module_service.is_attendance_enabled()
@@ -206,18 +206,18 @@ async def post_opening_sheet(
     bot: Any, guild: Any, db_path: str, division_id: int, *, as_text: bool = False
 ) -> dict[str, Any]:
     """Post one division's opening attendance sheet, raising where it cannot be posted, and
-    give the job its result (`attendance_service.sheet_result`).
+    give the job its result (`attendance_sheet.sheet_result`).
 
     This always raises and saves nothing: a division with no attendance channel stops the queue,
     its failure naming `/attendance channel attendance`, and so does one given a channel the
     guild no longer holds. The opening sheet takes the division's live slot, which the job saves
-    with its mark (`attendance_service.record_sheet_on`) and replaces by a job of its own.
+    with its mark (`attendance_sheet.record_sheet_on`) and replaces by a job of its own.
     *as_text* leaves the graphic out, which is how a job retries.
     """
     opener = await _opening_round(db_path, division_id)
     if opener is None:
-        return attendance_service.sheet_result(None)
-    return attendance_service.sheet_result(await attendance_service.post_attendance_sheet(
+        return attendance_sheet.sheet_result(None)
+    return attendance_sheet.sheet_result(await attendance_sheet.post_attendance_sheet(
         bot,
         guild,
         db_path,
@@ -263,7 +263,7 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
         return StepResult(result=result, then=then)
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
-        await attendance_service.record_sheet_on(db, int(ctx.step_payload["division_id"]),
+        await attendance_sheet.record_sheet_on(db, int(ctx.step_payload["division_id"]),
                                                   result.result)
 
     async def still_due(_ctx: StepContext) -> bool:
@@ -291,7 +291,7 @@ async def post_final_sheet(
     bot: Any, guild: Any, db_path: str, division_id: int, round_id: int, *, as_text: bool = False
 ) -> dict[str, Any]:
     """Post one division's final attendance sheet, drawn against *round_id*, raising where it
-    cannot be posted, and give the job its result (`attendance_service.sheet_result`).
+    cannot be posted, and give the job its result (`attendance_sheet.sheet_result`).
 
     This always raises and saves nothing: a division with no attendance channel stops the queue,
     its failure naming `/attendance channel attendance`, and so does one given a channel the
@@ -299,7 +299,7 @@ async def post_final_sheet(
     so nothing is saved for it and nothing deleted. *as_text* leaves the graphic out, which is
     how a job retries.
     """
-    return attendance_service.sheet_result(await attendance_service.post_attendance_sheet(
+    return attendance_sheet.sheet_result(await attendance_sheet.post_attendance_sheet(
         bot,
         guild,
         db_path,

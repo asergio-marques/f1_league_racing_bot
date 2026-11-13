@@ -8,7 +8,7 @@ name; what keys artwork, a seat or a role mapping is the shorthand.
 from __future__ import annotations
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_config_service import _seat_team_keys, _seat_team_names
+from leaguebot.attendance.services.attendance_sheet import _seat_team_keys, _seat_team_names
 from leaguebot.results.services.standings.standings_service import opening_team_standings
 from leaguebot.core.services.drivers.team_service import (
     team_artwork_keys_for_instances,

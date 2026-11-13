@@ -28,10 +28,9 @@ from leaguebot.attendance.services.check_in_answer_changes import (
 from leaguebot.attendance.services.check_in_changes import ask_check_in_call, judge_hand_post
 from leaguebot.attendance.services.attendance_config_service import (
     SettingChange,
-    recalculation_faults,
-    sync_attendance,
     validate_timing_invariant,
 )
+from leaguebot.attendance.services.attendance_recompute import recalculation_faults, sync_attendance
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing

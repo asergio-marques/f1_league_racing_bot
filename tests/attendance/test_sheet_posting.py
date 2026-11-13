@@ -16,7 +16,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.attendance.services import attendance_config_service as attendance_service
+from leaguebot.attendance.services import (
+    attendance_recompute,
+    attendance_sanctions,
+    attendance_scoring,
+    attendance_sheet,
+)
 from tests.attendance.test_attendance_sheet_composition import (  # noqa: F401 — the fixture
     AM,
     PRO as COMPOSED_PRO,
@@ -65,11 +70,11 @@ async def _scored_league(tmp_path: Any) -> Any:
 async def _sync(league: Any) -> Any:
     """`/attendance sync` of Pro from round 1, its recalculation stubbed (the totals are the
     test's), handed the league's change queue; the queue is not run."""
-    with patch.object(attendance_service, "record_attendance_from_results_full_recompute",
+    with patch.object(attendance_scoring, "record_attendance_from_results_full_recompute",
                       new=AsyncMock(return_value=None)), \
-            patch.object(attendance_service, "distribute_attendance_points",
+            patch.object(attendance_scoring, "distribute_attendance_points",
                          new=AsyncMock(return_value=None)):
-        return await attendance_service.sync_attendance(
+        return await attendance_recompute.sync_attendance(
             league.bot, league.guild, league.db_path, PRO, ROUND_1, SEASON_ID,
             queue=league.bot.change_queue,
         )
@@ -137,8 +142,8 @@ async def test_a_sync_s_sanctions_ask_for_the_sheet_of_each_division_a_sack_reac
     queue = MagicMock()
     queue.ask = AsyncMock()
 
-    with patch.object(attendance_service, "post_attendance_sheet", new=AsyncMock()) as posted:
-        await attendance_service.enforce_attendance_sanctions(
+    with patch.object(attendance_sheet, "post_attendance_sheet", new=AsyncMock()) as posted:
+        await attendance_sanctions.enforce_attendance_sanctions(
             bot, MagicMock(), db_path, 102, COMPOSED_PRO, 1, queue=queue,
         )
 
@@ -309,7 +314,7 @@ async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_non
     assert OLD_SHEET in league.channel(SHEET).messages, "the old sheet went too soon"
 
     async with get_connection(league.db_path) as db:
-        await attendance_service.record_sheet_on(
+        await attendance_sheet.record_sheet_on(
             db, PRO, {"new": 6300, "old": str(new), "channel_id": SHEET, "takes_slot": False},
         )
         await db.commit()

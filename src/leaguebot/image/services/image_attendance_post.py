@@ -1,6 +1,6 @@
 """Post a division's attendance sheet as a graphic (041, US2).
 
-**This module renders and never posts.** ``attendance_service.post_attendance_sheet`` owns the
+**This module renders and never posts.** ``attendance_sheet.post_attendance_sheet`` owns the
 posting — one send site, the replacement produced and posted before the message it replaces
 is deleted (Constitution XIV.8; the deletion is the change queue's job after the post) — and this
 hands it a file to attach. That is the

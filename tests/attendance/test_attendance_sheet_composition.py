@@ -14,7 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_config_service import _sheet_rows, enforce_attendance_sanctions
+from leaguebot.attendance.services.attendance_sheet import _sheet_rows
+from leaguebot.attendance.services.attendance_sanctions import enforce_attendance_sanctions
 from tests.attendance.test_attendance_sanctions import _asking_for_sheets
 
 SERVER_ID = 22170
@@ -158,7 +159,7 @@ async def _enforce(db_path, *, sack=None):
     bot.lineup_poster._refresh_lineup_post = AsyncMock()
     bot.change_queue.ask = AsyncMock()
 
-    with patch("leaguebot.attendance.services.attendance_config_service.post_attendance_sheet",
+    with patch("leaguebot.attendance.services.attendance_sheet.post_attendance_sheet",
                new=AsyncMock()), _asking_for_sheets() as asked:
         await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1,
                                            queue=bot.change_queue)

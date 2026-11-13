@@ -308,9 +308,9 @@ class AttendanceDouble:
         off."""
         if not self.league.attendance_on:
             return []
-        from leaguebot.attendance.services import attendance_config_service as attendance_service
+        from leaguebot.attendance.services import attendance_recompute
 
-        return await attendance_service.recalculation_faults(
+        return await attendance_recompute.recalculation_faults(
             self.league.db_path, season_id, guild, self.league.bot, cancelled_too=True
         )
 
@@ -408,9 +408,9 @@ class AttendanceDouble:
             raise self.lineup_fails.pop(0)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
-        from leaguebot.attendance.services import attendance_config_service as attendance_service
+        from leaguebot.attendance.services import attendance_sanctions
 
-        return await attendance_service.sync_hint(self.league.db_path, division_id, round_id)
+        return await attendance_sanctions.sync_hint(self.league.db_path, division_id, round_id)
 
 
 #: The roles a sanction names to take back and to give: an autosack the division's and the

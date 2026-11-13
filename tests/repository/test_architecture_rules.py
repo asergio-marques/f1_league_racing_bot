@@ -808,9 +808,9 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_config_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("attendance/services/attendance_config_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
-    ("attendance/services/attendance_config_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
+    ("attendance/services/attendance_sheet.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("attendance/services/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
+    ("attendance/services/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("results/services/publishing/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
     ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("results/services/standings/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
@@ -1011,7 +1011,7 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_config_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "post_attendance_sheet"): (2, PASS["attendance"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
@@ -1532,8 +1532,8 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_config_service.py", "apply_sanction"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "enforce_attendance_sanctions"): (3, PASS["attendance"]),
+    ("attendance/services/attendance_sanctions.py", "apply_sanction"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"): (3, PASS["attendance"]),
     ("attendance/services/channel_settings.py", "_channel_setting.check"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "_forget_vanished_call.forget"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
@@ -2170,8 +2170,8 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Attendance's pass
     ("attendance/services/attendance_config_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
     ("attendance/services/attendance_config_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_recompute.py", "_recalculate_forward"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_scoring.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     ("core/services/drivers/placement_service.py", "PlacementService.move_driver"): (1, PASS["attendance"]),
     ("core/services/drivers/placement_service.py", "PlacementService.sack_driver"): (1, PASS["attendance"]),
     # Signup's pass
@@ -2511,26 +2511,26 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["attendance"]),
     ("attendance/services/attendance_config_service.py", "AttendanceService.get_current_embed_message"):
         (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_display_name_on"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_division_name"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_opening_attendance_rows"):
+    ("attendance/services/attendance_sanctions.py", "_display_name_on"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_division_name"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_opening_attendance_rows"):
         (3, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_recalculate_forward"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_round_grid"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_round_number"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_sanction_facts_on"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_seat_team_field"): (4, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_sheet_rows"): (6, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "distribute_attendance_points"):
+    ("attendance/services/attendance_recompute.py", "_recalculate_forward"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_round_grid"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_round_number"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_sanctions.py", "_sanction_facts_on"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_seat_team_field"): (4, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_sheet_rows"): (6, PASS["attendance"]),
+    ("attendance/services/attendance_scoring.py", "distribute_attendance_points"):
         (9, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "enforce_attendance_sanctions"):
+    ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"):
         (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "owed_sanctions"): (9, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "recalculation_faults"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "record_attendance_from_results_full_recompute"):
+    ("attendance/services/attendance_sanctions.py", "owed_sanctions"): (9, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "post_attendance_sheet"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_recompute.py", "recalculation_faults"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_scoring.py", "record_attendance_from_results_full_recompute"):
         (8, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "record_attendance_from_results_on"):
+    ("attendance/services/attendance_scoring.py", "record_attendance_from_results_on"):
         (8, PASS["attendance"]),
     ("attendance/services/check_in_answer_changes.py", "_facts"): (4, PASS["attendance"]),
     ("attendance/services/check_in_answer_changes.py", "_left_the_drawing"):
@@ -3310,10 +3310,10 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (5, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_round_grid"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_seat_team_field"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "_sheet_attachment"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "enforce_attendance_sanctions"):
+    ("attendance/services/attendance_sheet.py", "_round_grid"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_seat_team_field"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_sheet.py", "_sheet_attachment"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"):
         (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),

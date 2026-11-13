@@ -37,7 +37,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import attendance_config_service as attendance_service
+from leaguebot.attendance.services import attendance_hooks, attendance_recompute, attendance_scoring
 from leaguebot.attendance.services.attendance_config_service import AttendanceService
 
 SERVER_ID = 8308
@@ -113,7 +113,7 @@ async def test_reading_a_round_s_window_writes_nothing(tmp_path):
     modules = MagicMock()
     modules.is_attendance_enabled = AsyncMock(return_value=True)
 
-    await attendance_service.round_window(AttendanceService(db_path), modules, amending=False)
+    await attendance_hooks.round_window(AttendanceService(db_path), modules, amending=False)
 
     assert await _row(db_path) == {}
 
@@ -297,17 +297,17 @@ def pipeline():
     """Stub the two recalculation steps, so the ordering and the arguments are what is
     tested."""
     with patch.object(
-        attendance_service,
+        attendance_scoring,
         "record_attendance_from_results_full_recompute",
         new=AsyncMock(return_value=None),
     ) as recompute, patch.object(
-        attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
+        attendance_scoring, "distribute_attendance_points", new=AsyncMock(return_value=None)
     ) as distribute:
         yield recompute, distribute
 
 
 async def _recalculate(db_path: str, round_id: int = 1) -> None:
-    await attendance_service._recalculate_forward(
+    await attendance_recompute._recalculate_forward(
         db_path, round_id, DIVISION_ID, recompute="round",
     )
 

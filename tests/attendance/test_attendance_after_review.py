@@ -410,7 +410,7 @@ async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_
     roles to change, posting nothing and changing no role: Lewis's roles of Pro and Alpha to be
     taken back, Max's Alpha role swapped for the Reserve team's. `/attendance sync` calls
     attendance's own `apply_sanction` with its default, which still posts the line."""
-    from leaguebot.attendance.services import attendance_config_service as attendance_service
+    from leaguebot.attendance.services import attendance_sanctions
 
     db_path = await _db(tmp_path)
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25, MAX: 12})
@@ -450,7 +450,7 @@ async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_
     bot = _bot(db_path)
     [owed] = await _hook(bot, _placement()).sanction_candidates(LATEST_ROUND, DIVISION_ID)
 
-    line = await attendance_service.apply_sanction(
+    line = await attendance_sanctions.apply_sanction(
         bot, bot.get_guild(1), db_path, _placement(), LATEST_ROUND, DIVISION_ID, owed,
     )
 

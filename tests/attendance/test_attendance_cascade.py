@@ -19,8 +19,8 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.attendance.services import attendance_config_service as attendance_service
-from leaguebot.attendance.services.attendance_config_service import distribute_attendance_points
+from leaguebot.attendance.services import attendance_recompute, attendance_scoring
+from leaguebot.attendance.services.attendance_scoring import distribute_attendance_points
 from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
 
@@ -54,7 +54,7 @@ async def _score_both_rounds(db_file: str, division_id: int, round_ids: list[int
 
 async def _carry_forward(db_file: str, round_id: int, division_id: int) -> list[int]:
     """The round's points awarded and its totals carried forward, no attended flag rebuilt."""
-    return await attendance_service._recalculate_forward(
+    return await attendance_recompute._recalculate_forward(
         db_file, round_id, division_id, recompute="none"
     )
 
@@ -118,7 +118,7 @@ async def test_the_cascade_never_revokes_a_driver_s_attendance(tmp_path, monkeyp
 
     full_recompute = AsyncMock()
     monkeypatch.setattr(
-        attendance_service,
+        attendance_scoring,
         "record_attendance_from_results_full_recompute",
         full_recompute,
     )
@@ -137,7 +137,7 @@ async def test_the_cascade_lands_whole_or_not_at_all(tmp_path, monkeypatch):
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
     assert await _awarded(db_file, round_ids[0]) is None
 
-    real = attendance_service.distribute_attendance_points
+    real = attendance_scoring.distribute_attendance_points
     calls: list[int] = []
 
     async def failing_after_the_first(db_path, round_id, division_id, *, db=None):
@@ -147,7 +147,7 @@ async def test_the_cascade_lands_whole_or_not_at_all(tmp_path, monkeypatch):
         return await real(db_path, round_id, division_id, db=db)
 
     monkeypatch.setattr(
-        attendance_service, "distribute_attendance_points", failing_after_the_first
+        attendance_scoring, "distribute_attendance_points", failing_after_the_first
     )
 
     with pytest.raises(RuntimeError):
@@ -175,7 +175,7 @@ async def test_an_unknown_recompute_mode_is_refused(tmp_path):
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
     with pytest.raises(ValueError, match="unknown recompute mode"):
-        await attendance_service._recalculate_forward(
+        await attendance_recompute._recalculate_forward(
             db_file, round_ids[0], division_id, recompute="everything"
         )
 
