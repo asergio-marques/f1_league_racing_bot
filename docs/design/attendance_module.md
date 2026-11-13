@@ -283,15 +283,16 @@ the change's check too. Pinned by `test_set_setting_refuses_a_timing_that_breaks
 as `None`, as the column stores it.
 
 **A penalty changed while a season is ongoing recalculates the season** (`penalty_recalculation`;
-the attendance specification's "Attendance points" and "Resynchronising attendance" hold the rule).
-The three penalties are the one `Setting` kind that does more than save its column: the setting's
-save goes on, on the same connection, to the sync's own per-division save
-(`recalculate_division_on`), and plans the sync's own jobs for the roles, cards, lineups and
-sheets. The value and the recalculation are one save, so a stop never leaves the penalty saved with
-the figures at the old one; the Reserve team's capacity is read before it, for a value that
-changes something, and the check adds the sync's refusals. The change declares the tables it writes
-like any setting. *Rejected:* a second copy of the recalculation for the setting, which the sync's
-would drift from.
+the rule is the attendance specification's "Attendance points", resting on "Resynchronising
+attendance"). The three penalties are the one `Setting` kind that does more than save its column:
+the setting's save goes on, on the same connection, to the sync's own per-division save
+(`recalculate_division_on`), once for each division, and plans the sync's own jobs for the roles,
+cards, lineups and sheets, merged so that a division's sheet and lineup are posted once whichever
+sanctions owe them. The value and the recalculation are one save, so a stop never leaves the
+penalty saved with the figures at the old one; the Reserve team's capacity is read before it
+(`CHECK_CAPACITY`), for a value that changes something, and the check is the sync's. The change
+declares the tables it writes like any setting. *Rejected:* a second copy of the recalculation for
+the setting, which the sync's would drift from.
 
 **A change that recalculates and posts as `/attendance sync` does follows the sync's rule
 whatever starts it, a setting included.** Its cards, lineups and sheets are the sync's own jobs and
@@ -300,9 +301,10 @@ end on a fault as a setting's later steps do (`architecture.md`, the settings ex
 sanction card lost is worse than a lane held. Its check, its read of the Reserve capacity, its
 save (rolled back whole where it faults, and refusing to recalculate on a capacity nobody read)
 and the roles' job, as the sync's, still end on a fault; and the sanctions it could not apply
-are reported as the sync reports them (its line reads Incomplete and ends with the sync to run). Pinned by
-`test_a_driver_the_new_penalty_takes_over_the_limit_is_sanctioned_at_the_latest_round` and
-`test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart`.
+are reported as the sync reports them (the attendance specification's "Sanctions"). Pinned by
+`test_a_sanction_the_penalty_change_cannot_apply_is_logged_incomplete_with_the_sync_to_run` for the
+report and `test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart` for the jobs
+being the change's own.
 
 ### The sync is one change
 
