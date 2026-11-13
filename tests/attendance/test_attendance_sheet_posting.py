@@ -680,3 +680,91 @@ async def test_the_opening_sheet_reads_the_seats_rather_than_the_attendance_reco
 
     assert "0 attendance points" in channel.sent_content
     assert "4 attendance points" not in channel.sent_content
+
+
+# ── A graphic's fallback told as a line of its job (architecture.md, place 6) ─
+
+
+class _Render:
+    """A render that drew nothing and has nothing to report: the sheet goes out as text."""
+
+    png = None
+    notices: list = []
+    problem = None
+
+
+#: Why the teams case does not hold yet.
+TEAMS_TOLD_TWICE = (
+    "#285: teams that cannot be read are told twice, once for their full names and once for their "
+    "shorthands, rather than in one line"
+)
+
+
+@pytest.mark.parametrize("fault", [
+    "drawing",
+    "track registry",
+    pytest.param("teams", marks=pytest.mark.xfail(strict=True, reason=TEAMS_TOLD_TWICE)),
+    "none",
+])
+@pytest.mark.asyncio
+async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
+    sheet_db, monkeypatch, fault
+):
+    """Division 1's sheet after round 3, the images module on. (drawing) the graphic's drawing
+    raises; (track registry) the track registry cannot be read; (teams) the teams cannot be read;
+    (none) nothing fails. The sheet posts each time, and the job's result and lines carry one line
+    naming the division and what the graphic fell back from, and none where nothing failed."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers.team_service import TeamService
+    from leaguebot.core.services.rounds import calendar_post_service
+    from leaguebot.image.services import image_attendance_post, image_results_post
+
+    async def _on(*_args, **_kwargs):
+        return True
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    async def _render(*_args, **_kwargs):
+        if fault == "drawing":
+            raise RuntimeError("template unreadable")
+        return _Render()
+
+    async def _unreadable(*_args, **_kwargs):
+        raise RuntimeError(f"{fault} unreadable")
+
+    monkeypatch.setattr(image_attendance_post, "attendance_enabled", _on)
+    monkeypatch.setattr(image_attendance_post, "render_sheet", _render)
+    monkeypatch.setattr(image_results_post, "_driver_names", _empty)
+    monkeypatch.setattr(image_results_post, "_nationalities", _empty)
+    if fault == "track registry":
+        monkeypatch.setattr(calendar_post_service, "tracks_by_name", _unreadable)
+    if fault == "teams":
+        monkeypatch.setattr(TeamService, "placed_drivers_on", _unreadable)
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    with in_a_job():
+        posted = await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7
+        )
+
+    assert posted is not None and channel.sent_content is not None
+    expected = {
+        "drawing": [
+            "the graphic could not be drawn, so the sheet is posted as text: template unreadable"
+        ],
+        "track registry": [
+            "the track registry could not be read, so the round headings are drawn without their "
+            "flags: track registry unreadable"
+        ],
+        "teams": ["the teams could not be read, so they are drawn without names: teams unreadable"],
+        "none": [],
+    }[fault]
+    lines = [f"**Division 1** — attendance sheet: {clause}" for clause in expected]
+    result = attendance_sheet.sheet_result(posted)
+    assert list(posted.faults) == lines
+    assert result.get("faults", []) == lines
+    assert list(attendance_sheet.sheet_lines(result)) == lines
