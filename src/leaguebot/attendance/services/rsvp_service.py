@@ -427,6 +427,20 @@ async def clear_check_in_answers_on(db: aiosqlite.Connection, round_id: int) -> 
     await db.execute("DELETE FROM driver_round_attendance WHERE round_id = ?", (round_id,))
 
 
+def _seat_order(division_teams: Sequence[Mapping[str, Any]]) -> dict[int, int]:
+    """Each seated driver's place in the order a notice names drivers in: by team shorthand,
+    then seat number, as the division's teams list them. No rule fixes the order; it is kept
+    as the notices have always given it, so that the reads through core's readers change
+    nothing a league sees (`test_the_last_notice_names_the_silent_drivers_in_seat_order`)."""
+    seats = sorted(
+        (str(team["name"]).lower(), int(seat["seat_number"]), int(seat["driver_profile_id"]))
+        for team in division_teams
+        for seat in team["seats"]
+        if seat["driver_profile_id"] is not None
+    )
+    return {profile_id: place for place, (_team, _seat, profile_id) in enumerate(seats)}
+
+
 async def silent_full_time_drivers(
     db_path: str, round_id: int, division_id: int
 ) -> list[dict[str, Any]]:
@@ -448,7 +462,11 @@ async def silent_full_time_drivers(
             for h in await TeamService.seat_holders_on(db, division_id)
             if h.profile_id in placed and not h.is_reserve
         }
-        drivers = [full_time[profile_id] for profile_id in silent if profile_id in full_time]
+        order = _seat_order(await TeamService.division_teams_on(db, division_id))
+        drivers = sorted(
+            (full_time[profile_id] for profile_id in silent if profile_id in full_time),
+            key=lambda holder: order.get(holder.profile_id, len(order)),
+        )
         names = await driver_test_names_on(db, [d.discord_user_id for d in drivers])
     return [
         {"discord_user_id": str(d.discord_user_id), "test_display_name": names.get(d.discord_user_id)}
@@ -769,6 +787,7 @@ async def distribution_announcement(
         }
         names = await driver_test_names_on(db, list(reserves.values()))
     team_names = {team["id"]: team["full_name"] for team in division_teams}
+    order = _seat_order(division_teams)
     eligible_rows = [
         {
             "assigned_team_id": each["assigned_team_id"],
@@ -777,7 +796,9 @@ async def distribution_announcement(
             "test_display_name": names.get(reserves[each["driver_profile_id"]]),
             "team_name": team_names.get(each["assigned_team_id"]),
         }
-        for each in accepted
+        for each in sorted(
+            accepted, key=lambda row: order.get(row["driver_profile_id"], len(order))
+        )
         if each["driver_profile_id"] in reserves
     ]
 
