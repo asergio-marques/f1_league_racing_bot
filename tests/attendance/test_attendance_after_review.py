@@ -353,6 +353,50 @@ async def test_a_driver_signed_off_or_in_the_reserve_team_is_not_owed_a_sanction
     assert candidates == []
 
 
+#: A driver's total against the two thresholds, and what they are owed: each case is
+#: ``(autoreserve, autosack, Lewis's total at round 7, whether attendance has a config row,
+#: the sanction Lewis is owed or None)``.
+THRESHOLD_CASES = {
+    # No configuration row at all is not a row of zeroes, and owes nobody anything.
+    "no-configuration": (10, 20, 99, False, None),
+    # FR-027: a league that wants the points but not the automatic consequences.
+    "thresholds-unset": (None, None, 500, True, None),
+    # A threshold of zero means "never", not "every driver on the grid at once".
+    "thresholds-zero": (0, 0, 500, True, None),
+    "below-both": (10, 20, 9, True, None),
+    # At, not past: the twentieth point is the one that sacks.
+    "at-the-autosack-threshold": (None, 20, 20, True, "AUTOSACK"),
+    "one-short-of-the-autosack-threshold": (None, 20, 19, True, None),
+    # A total nobody calculated is not read as a total to sanction on.
+    "no-total-recorded": (1, None, None, True, None),
+}
+
+
+@pytest.mark.parametrize(
+    "autoreserve,autosack,total,configured,owed",
+    list(THRESHOLD_CASES.values()), ids=list(THRESHOLD_CASES),
+)
+async def test_who_is_owed_a_sanction_turns_on_the_thresholds_and_the_total_recorded(
+    tmp_path, autoreserve, autosack, total, configured, owed,
+):
+    """Lewis, full-time in Pro, has the given attendance total after round 7, against the given
+    auto-reserve and auto-sack thresholds (or no attendance configuration at all). He is owed the
+    sanction given, and nothing where none is given. These are the threshold rules
+    `/attendance sync` and a round's review share, as the old sync's run pinned them."""
+    db_path = await _db(tmp_path, autoreserve=autoreserve, autosack=autosack)
+    await _totals(db_path, LATEST_ROUND, {LEWIS: total})
+    if not configured:
+        async with get_connection(db_path) as db:
+            await db.execute("DELETE FROM attendance_config")
+            await db.commit()
+
+    candidates = await _hook(_bot(db_path), _placement()).sanction_candidates(
+        LATEST_ROUND, DIVISION_ID
+    )
+
+    assert _by_profile(candidates) == ({} if owed is None else {LEWIS: owed})
+
+
 async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path):
     """Attendance spec: "a failure of the autoreserve of each driver owed one, not a sanction
     silently passed over". Pro has no Reserve team and Max is owed an autoreserve: the check
@@ -403,15 +447,12 @@ async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp
     assert placement.move_on.await_args.kwargs["team_name"] == "Reserve"
 
 
-async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_path):
+async def test_apply_sanction_on_returns_each_line_and_the_roles_and_posts_nothing(tmp_path):
     """The queue writes a job's lines in the save that marks it done, so a stop between a line
     posted from the job and that mark would leave a line for a job tried again. Saving Lewis's
     autosack and Max's autoreserve on the save it is handed, the hook returns each line and the
     roles to change, posting nothing and changing no role: Lewis's roles of Pro and Alpha to be
-    taken back, Max's Alpha role swapped for the Reserve team's. `/attendance sync` calls
-    attendance's own `apply_sanction` with its default, which still posts the line."""
-    from leaguebot.attendance.services import attendance_sanctions
-
+    taken back, Max's Alpha role swapped for the Reserve team's."""
     db_path = await _db(tmp_path)
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25, MAX: 12})
     guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
@@ -442,20 +483,6 @@ async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_
     bot.output_router.post_log.assert_not_awaited()
     guild.member.add_roles.assert_not_awaited()
     guild.member.remove_roles.assert_not_awaited()
-
-    synced = tmp_path / "synced"
-    synced.mkdir()
-    db_path = await _db(synced)
-    await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
-    bot = _bot(db_path)
-    [owed] = await _hook(bot, _placement()).sanction_candidates(LATEST_ROUND, DIVISION_ID)
-
-    line = await attendance_sanctions.apply_sanction(
-        bot, bot.get_guild(1), db_path, _placement(), LATEST_ROUND, DIVISION_ID, owed,
-    )
-
-    assert line.startswith("ATTENDANCE_AUTOSACK | ")
-    bot.output_router.post_log.assert_awaited_once_with(line)
 
 
 async def test_apply_sanction_on_sacks_on_the_save_it_is_handed_and_commits_nothing(tmp_path):

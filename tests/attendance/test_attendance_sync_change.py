@@ -589,3 +589,107 @@ async def test_a_role_change_discord_refuses_leaves_the_sync_s_sack_applied_and_
     assert "sanctions applied: 1" in line
     assert any(record.levelno >= logging.WARNING and "5101" in record.getMessage()
                for record in caplog.records)
+
+
+async def test_a_driver_already_signed_off_is_passed_over_with_a_no_op_line(tmp_path):
+    """Round 1 is final; its driver, over the auto-sack threshold of 3 with the no-show penalty
+    of 5, has already been signed off (Not Signed Up) though still seated in Alpha. Manager 77 runs
+    `/attendance sync` from round 1 and the queue is run. The queue does not stop; the driver is
+    not sacked again, so stays seated as they were; no heading or card is posted; the sync's line
+    says no sanction was applied; and the log channel is told of the no-op."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE id = ?",
+            (DRIVER_PROFILE,),
+        )
+        await db.commit()
+
+    await _sync(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _seated(league.db_path) == [DRIVER_PROFILE]
+    assert league.verdicts() == []
+    [line] = league.sync_lines()
+    assert "sanctions applied: 0" in line
+    assert any("ATTENDANCE_AUTOSACK | No-op" in each for each in league.log_lines())
+
+
+#: Division 2 of the season, its lineup and attendance channels and its team, where the driver
+#: also races.
+OTHER_DIVISION, OTHER_LINEUP_CHANNEL, OTHER_ATTENDANCE_CHANNEL, OTHER_TEAM = 2, 713, 714, 12
+
+
+@pytest.mark.parametrize("other_has_a_sheet", [True, False],
+                         ids=["division-2-has-a-sheet", "division-2-has-no-sheet"])
+async def test_a_sync_s_sack_of_a_driver_in_two_divisions_posts_both_lineups(
+    tmp_path, other_has_a_sheet,
+):
+    """Round 1 of Division 1 is final and its driver owes an auto-sack; the driver also holds a
+    confirmed seat in Division 2's Alpha, and Division 2 has an attendance channel. Where
+    Division 2 has a sheet (its round 201 scored), and where it has none yet. Manager 77 runs
+    `/attendance sync` from round 1 and the queue is run. The sack takes the driver out of both
+    divisions, and the lineup of each is posted once: Division 1's and Division 2's. Division 2's
+    sheet is posted again once where it had one, to correct it, and not at all where it had none;
+    Division 1's is posted once."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, "
+            "lineup_channel_id) VALUES (?, ?, 'Division 2', 2, 556, ?)",
+            (OTHER_DIVISION, SEASON_ID, OTHER_LINEUP_CHANNEL),
+        )
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, "
+            "is_reserve) VALUES (?, ?, 'Alpha', 'Alpha', 2, 0)",
+            (OTHER_TEAM, OTHER_DIVISION),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (30, ?, 1, ?)",
+            (OTHER_TEAM, DRIVER_PROFILE),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id, committed) VALUES (?, ?, ?, 30, 1)",
+            (DRIVER_PROFILE, SEASON_ID, OTHER_DIVISION),
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (OTHER_DIVISION, str(OTHER_ATTENDANCE_CHANNEL)),
+        )
+        if other_has_a_sheet:
+            await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+                "scheduled_at, status) VALUES (201, ?, 1, 'NORMAL', 'Monza', "
+                "'2026-09-01T18:00:00+00:00', 'FINAL')",
+                (OTHER_DIVISION,),
+            )
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+                "rsvp_status, attended, points_awarded, total_points_after) "
+                "VALUES (201, ?, ?, 'ACCEPTED', 1, 0, 0)",
+                (OTHER_DIVISION, DRIVER_PROFILE),
+            )
+        await db.commit()
+    for channel_id in (OTHER_LINEUP_CHANNEL, OTHER_ATTENDANCE_CHANNEL):
+        league.channels[channel_id] = text_channel(channel_id)
+        league.channels[channel_id].guild = league.guild
+    league.bot.lineup_poster.refresh_lineup = AsyncMock(return_value=None)
+
+    await _sync(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id = ?", (DRIVER_PROFILE,)
+        )
+        assert (await cursor.fetchone())[0] == 0
+    asked = sorted(call.args[1] for call in
+                   league.bot.lineup_poster.refresh_lineup.await_args_list)
+    assert asked == [DIVISION_ID, OTHER_DIVISION]
+    assert len(league.sheets()) == 1
+    assert len(league.channels[OTHER_ATTENDANCE_CHANNEL].sent) == (1 if other_has_a_sheet else 0)

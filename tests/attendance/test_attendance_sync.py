@@ -12,17 +12,124 @@ are the command's refusals, each answered and recorded with no change asked of t
 """
 from __future__ import annotations
 
+import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
-from tests.attendance.test_attendance_sanctions import (
-    DIVISION_ID,
-    ROUND_ID,
-    SEASON_ID,
-    _make_db,
-)
+from leaguebot.core.db.database import get_connection, run_migrations
+
+SERVER_ID = 8208
+SEASON_ID = 1
+DIVISION_ID = 1
+ROUND_ID = 1
+#: The full-time driver of team Alpha, and the stand-in of the Reserve team.
+_FULL_TIME_PROFILE, _RESERVE_PROFILE = 101, 102
+
+
+async def _make_db(
+    tmp_path,
+    *,
+    autoreserve: int | None = None,
+    autosack: int | None = None,
+    with_config: bool = True,
+    with_reserve_team: bool = True,
+) -> str:
+    """A migrated DB with one division, a full-time team and (usually) a Reserve team.
+
+    *autoreserve* and *autosack* go into `attendance_config` exactly as given, so a test can
+    distinguish "disabled" (`None`) from "zero", which the function treats alike but by
+    different code — `cfg_row["..."] or None`.
+    """
+    db_path = os.path.join(str(tmp_path), "sanctions.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (?, 100, 200, 300)",
+            (SERVER_ID,),
+        )
+        if with_config:
+            await db.execute(
+                "INSERT INTO attendance_config "
+                "(id, autoreserve_threshold, autosack_threshold) VALUES (?, ?, ?)",
+                (1, autoreserve, autosack),
+            )
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Division 1', 1, 555)",
+            (DIVISION_ID, SEASON_ID),
+        )
+        # A round in the recent past — sanctions are evaluated after it has been run. Taken
+        # from the clock rather than pinned to a date, so the test cannot rot into passing.
+        await db.execute(
+            "INSERT INTO rounds "
+            "(id, division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (?, ?, 1, 'NORMAL', 'Silverstone Circuit', ?)",
+            (
+                ROUND_ID,
+                DIVISION_ID,
+                (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+            ),
+        )
+
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, ?, 'Alpha', 'Alpha', 2, 0)",
+            (DIVISION_ID,),
+        )
+        if with_reserve_team:
+            await db.execute(
+                "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (11, ?, 'Reserve', 'Reserve', 6, 1)",
+                (DIVISION_ID,),
+            )
+
+        for profile_id, name in (
+            (_FULL_TIME_PROFILE, "Full Timer"),
+            (_RESERVE_PROFILE, "Stand In"),
+        ):
+            await db.execute(
+                "INSERT INTO driver_profiles "
+                "(id, discord_user_id, current_state, is_test_driver, "
+                "test_display_name) VALUES (?, ?, 'ACTIVE', 1, ?)",
+                (profile_id, str(profile_id), name),
+            )
+
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (20, 10, 1, ?)",
+            (_FULL_TIME_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, ?, ?, 20)",
+            (_FULL_TIME_PROFILE, SEASON_ID, DIVISION_ID),
+        )
+
+        if with_reserve_team:
+            await db.execute(
+                "INSERT INTO team_seats "
+                "(id, team_instance_id, seat_number, driver_profile_id) VALUES (21, 11, 1, ?)",
+                (_RESERVE_PROFILE,),
+            )
+            await db.execute(
+                "INSERT INTO driver_season_assignments "
+                "(driver_profile_id, season_id, division_id, team_seat_id) "
+                "VALUES (?, ?, ?, 21)",
+                (_RESERVE_PROFILE, SEASON_ID, DIVISION_ID),
+            )
+
+        await db.commit()
+    return db_path
 
 
 
