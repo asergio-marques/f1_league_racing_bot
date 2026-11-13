@@ -93,11 +93,11 @@ async def _standing_round_ids(
 async def recover_missed_check_in_calls(bot: LeagueBot, *, queue: ChangeQueue) -> None:
     """Post late the check-in calls that fell due while the bot was down.
 
-    A call's job is one of those the scheduler discards when the bot comes back more than its
-    misfire grace after it, and nothing else posted it: the round asked nobody whether they
-    were racing, opened no attendance rows, and counted nothing against anyone. A call that came
-    due is posted late, provided the round's check-in deadline is still ahead, and the drivers
-    answer in the time left. The deadline boundary is the one `/attendance post-check-in` holds to —
+    A call's timer fires late when the bot is back, having no lateness limit, and this ask meets
+    the timer's on the change's key, so the call posts once. Until one of them posts it the round
+    has asked nobody whether they were racing, opened no attendance rows, and counted nothing
+    against anyone. A call that came due is posted late, provided the round's check-in deadline
+    is still ahead, and the drivers answer in the time left. The deadline boundary is the one `/attendance post-check-in` holds to —
     with a deadline of zero, the round's own moment.
 
     A round is owed a late call where its season is in one of the three ongoing stages, neither
@@ -240,8 +240,9 @@ async def recover_missed_check_in_clean_ups(bot: LeagueBot, *, queue: ChangeQueu
     clean-up fell due while the bot was down: attendance's part of the start-up's missed clean-ups.
 
     A call comes down `POST_RACE_CLEANUP_DELAY` after its round's start, by the ``rsvp_cleanup``
-    job. A job falling due while the bot is stopped is discarded by the scheduler's misfire grace
-    rather than run late, and nothing else would take those messages down.
+    job. A job falling due while the bot is stopped fires late when the bot is back, having no
+    lateness limit, and this ask meets the timer's on the change's key, so the messages come down
+    once.
 
     A round called off, or of a division called off, is left alone: its cancellation removed the
     job. A round that ended cancelled because every session was entered as not held

@@ -3,7 +3,7 @@
 A driver whose total reaches a threshold is owed an autoreserve or an autosack (`owed_sanctions`,
 `check_sanction`); `apply_sanction_on` saves one on a connection, and `sync_hint` names the
 command that finishes a run that did not all apply. The announcement of a
-sanction is `sanctions_announce_change`'s.
+sanction is a job of the sync's change (`attendance_sync_change`), the card results' own.
 """
 
 from __future__ import annotations

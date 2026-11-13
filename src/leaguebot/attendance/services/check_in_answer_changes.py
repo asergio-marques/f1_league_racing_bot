@@ -148,7 +148,12 @@ def _aware(moment: str | datetime) -> datetime:
 
 async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | str:
     """The facts the press is judged on, or the refusal the press is answered with where the round
-    or the driver's place in it is gone. Read on *db*."""
+    or the driver's place in it is gone. Read on *db*.
+
+    **A driver is a member of the division where they hold a confirmed seat in it and have a
+    placement there:** the seat holders, filtered by placement. A seat held with no placement row
+    in the division is refused as not a member, as a join of the placement to its seat refuses it;
+    a reader of the seats alone would let such a driver answer the call."""
     round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
     driver = int(payload["driver_profile_id"])
     # The round is core's to give; the deadline is attendance's own. A league holding no
@@ -170,8 +175,6 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
         return _CLOSED
     # Only a driver with a confirmed seat in this division may answer its call: one refusal for
     # every way of not being a driver of it (an unconfirmed placement, a seat elsewhere, none).
-    # A seat held with no placement row in the division is refused too, as the join of the
-    # placement to its seat always refused it, so the seat holders are filtered by placement.
     placed = {p.profile_id for p in await TeamService.placed_drivers_on(db, division_id)}
     seat = next(
         (

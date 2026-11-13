@@ -1,8 +1,9 @@
 """The announcement of the attendance sanctions `/attendance sync` applied, on the change queue
 (#439, slice 6b): `attendance.sanctions.announce`.
 
-The sync applies its sanctions itself and then asks this change, as the bot's and repeatably, for
-their cards. Its jobs are results' own (`review_verdicts`): `announce_heading`, which posts the
+The sync plans the cards of the sanctions it applies as jobs of its own change, and nothing in the
+bot asks this change at present: it holds the same two jobs for a run of sanctions announced apart
+from their save, as the bot's and repeatably. Its jobs are results' own (`review_verdicts`): `announce_heading`, which posts the
 round's banner where none stands and records it with its mark, and one `announce_sanction` for
 each sanction, whose card goes beneath that banner and whose record notes the banner as heading a
 sanction card. A card Discord refuses stops the queue at its job, to be tried again as text

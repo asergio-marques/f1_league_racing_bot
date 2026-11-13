@@ -1,11 +1,10 @@
 """A division's attendance sheet, asked of the change queue (#439, slice 6).
 
-A command that makes its own change and wants the sheet posted after it (`/attendance sync`, and
-the sanctions it enforces) asks the queue, as the bot's and repeatably, to post it
-(`attendance.sheet.post`): the command's reply says what it did, and the post follows. A sheet
-Discord refuses stops the queue at the `post_sheet` job, to be tried again as text (Constitution
-XIV, rule 8) or discarded, instead of being put on the old retry queue. A division with no
-attendance channel set stops it too, naming the command that sets one.
+A sheet is posted by the `post_sheet` job, which `/attendance sync` plans as its own jobs and which
+the change `attendance.sheet.post` (`ask_sheet_post`) also holds, asked by nothing in the bot at
+present. A sheet Discord refuses stops the queue at the `post_sheet` job, to be tried again as text
+(Constitution XIV, rule 8) or discarded. A division with no attendance channel set stops it too,
+naming the command that sets one.
 
 **The opening and final sheets, posted when a season is approved and when it completes
 (#283),** are two further occasions this module posts, under the same rules: the attendance
