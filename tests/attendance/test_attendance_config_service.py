@@ -2,7 +2,7 @@
 
 Issue #208. `tests/attendance/test_attendance_config_commands.py` covers the *commands* a league
 types; nothing covered the service beneath them. The eight settings' writes, the
-`get_or_create_config` default row and the division channel upserts were all unexecuted, so
+default row and the division channel upserts were all unexecuted, so
 the SQL that actually persists a league's settings had no cover at all.
 
 Two things are pinned here that a double would not catch, which is why every test runs
@@ -80,26 +80,13 @@ async def _row(db_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# get_config / get_or_create_config
+# get_config, and the reads that write nothing
 # ---------------------------------------------------------------------------
 
 
 async def test_a_server_that_never_configured_attendance_has_no_config(tmp_path):
     service = AttendanceService(await _make_db(tmp_path))
     assert await service.get_config() is None
-
-
-async def test_get_or_create_writes_the_packaged_defaults(tmp_path):
-    """The first `/attendance` command a league runs lands here. It must leave a usable row
-    rather than a row of nulls, because every setter after it is an UPDATE and would write
-    into nothing."""
-    service = AttendanceService(await _make_db(tmp_path))
-
-    config = await service.get_or_create_config()
-
-    assert config is not None
-    assert config.module_enabled is False
-    assert await service.get_config() is not None
 
 
 async def test_reading_a_round_s_window_writes_nothing(tmp_path):
@@ -113,27 +100,6 @@ async def test_reading_a_round_s_window_writes_nothing(tmp_path):
     await attendance_hooks.round_window(AttendanceService(db_path), modules, amending=False)
 
     assert await _row(db_path) == {}
-
-
-async def test_get_or_create_is_idempotent(tmp_path):
-    """Called on every config command. A second row for the same server would make which
-    settings the league gets depend on row order."""
-    db_path = await _make_db(tmp_path)
-    service = AttendanceService(db_path)
-
-    await service.get_or_create_config()
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE attendance_config SET no_rsvp_penalty = 42")
-        await db.commit()
-    await service.get_or_create_config()
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM attendance_config"
-        )
-        assert (await cursor.fetchone())["n"] == 1
-    # The second call returned the existing row rather than resetting it.
-    assert (await _row(db_path))["no_rsvp_penalty"] == 42
 
 
 # ---------------------------------------------------------------------------
