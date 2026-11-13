@@ -3208,6 +3208,20 @@ CATCH_ALLS_ALLOWED = {
         "review goes on",
     ("core/services/rounds/calendar_post_service.py", "post_division_calendar"):
         "place 5, a calendar that cannot be drawn is posted as text and its fault is the job's line",
+    ("attendance/cogs/attendance_cog.py", "_record_failed"):
+        "place 3, around reporting a failure, where the report itself might fail",
+    ("attendance/services/attendance_sheet.py", "_sheet_attachment"):
+        "place 6, the drawing of the sheet's graphic, which then posts as text, its fault a line "
+        "of the job",
+    ("attendance/services/attendance_sheet.py", "_round_grid"):
+        "place 6, the track registry the sheet's graphic draws its flags from: a registry that "
+        "cannot be read draws the headings without flags, its fault a line of the job",
+    ("attendance/services/attendance_sheet.py", "_seat_team_field"):
+        "place 6, the team names the sheet's graphic draws: teams that cannot be read are drawn "
+        "without names, the fault a line of the job",
+    ("attendance/services/rsvp_service.py", "_checkin_attachment"):
+        "place 6, the drawing of the check-in call's graphic, which then posts without it, its "
+        "fault a line of the job",
     ("core/services/rounds/calendar_post_service.py", "render_for_command"):
         "place 5, a commanded calendar that cannot be drawn is refused, its fault the review's line",
     ("image/services/image_drawing.py", "ImageDrawing.calendar_wanted"):
@@ -3276,11 +3290,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
-    ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_round_grid"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_seat_team_field"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sheet.py", "_sheet_attachment"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
