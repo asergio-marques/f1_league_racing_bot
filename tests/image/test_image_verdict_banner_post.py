@@ -214,35 +214,10 @@ async def test_the_banner_is_discarded_once_posted(flow):
 #
 # A sanction is posted into the same channel, for the same round, as the round's verdicts, so it
 # is headed: by the round's banner where one stands, and by one of its own where none does
-# (decided 2026-09-09). Since #439 (slice 6b) `/attendance sync` asks the change queue to announce
-# its sanctions, and the announcement's own heading job heads its cards; one banner over several
-# cards, recorded with its job's mark, and a refused card are pinned in
-# tests/attendance/test_attendance_sync.py, and the shared poster the sync built until then is
-# gone with the announcer.
-
-
-async def test_a_sanction_standing_alone_heads_itself(tmp_path):
-    """Pro's round 3 had no penalty applied, so no heading stands in its verdicts channel (704).
-    A sync moves Lewis to reserve and asks the queue to announce it, as the bot. The queue's
-    first job posts a heading in 704; Lewis's card follows beneath it; and the heading is
-    recorded as heading a sanction card, so no replay of the round's verdicts takes it down."""
-    from leaguebot.core.db.database import get_connection
-    from tests.attendance.test_attendance_sync import _ask_announcement, _cards
-    from tests.results.test_report_approval_change import _cards_posted_for_real
-    from tests.support import review_league as rl
-    from tests.support.change_queue import run_queue
-
-    league = await rl.review_league(tmp_path, attendance=True)
-    _cards_posted_for_real(league)
-
-    await _ask_announcement(league, (rl.LEWIS_PROFILE, rl.LEWIS))
-    await run_queue(league.bot)
-
-    assert await rl.stopped_at(league) is None
-    assert _cards(league) == [rl.LEWIS_PROFILE]
-    heading, _card = league.sent_to(rl.VERDICTS_CHANNEL)
-    async with get_connection(league.db_path) as db:
-        assert await vas._banners_heading_sanctions_on(db, [heading]) == {heading}
+# (decided 2026-09-09). `/attendance sync` is one change on the queue, whose heading job heads its
+# cards; a sanction standing alone heading itself is pinned in
+# tests/attendance/test_attendance_sync_change.py, and the banner marked as heading a sanction card
+# by test_a_sanction_card_marks_exactly_its_banner.
 
 
 # ── heading_text ──────────────────────────────────────────────────────────
