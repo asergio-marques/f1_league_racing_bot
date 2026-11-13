@@ -186,6 +186,41 @@ class AttendanceService:
             autosack_threshold=row["autosack_threshold"],
         )
 
+    async def get_config_or_defaults(self) -> AttendanceConfig:
+        """The stored configuration, or the packaged defaults where none is stored, writing nothing.
+
+        The defaults are the schema's own column defaults, read from it, so that the module
+        keeps one copy of them: the row the module's switch-on writes leaves them to the schema.
+        A read hook uses this rather than `get_or_create_config`, which writes the row.
+        """
+        existing = await self.get_config()
+        if existing is not None:
+            return existing
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT name, dflt_value FROM pragma_table_info('attendance_config')"
+            )
+            defaults = {row["name"]: row["dflt_value"] for row in await cursor.fetchall()}
+
+        def _int(column: str) -> int:
+            return int(defaults[column])
+
+        def _nullable(column: str) -> int | None:
+            value = defaults[column]
+            return None if value is None else int(value)
+
+        return AttendanceConfig(
+            module_enabled=bool(_int("module_enabled")),
+            rsvp_notice_days=_int("rsvp_notice_days"),
+            rsvp_last_notice_hours=_int("rsvp_last_notice_hours"),
+            rsvp_deadline_hours=_int("rsvp_deadline_hours"),
+            no_rsvp_penalty=_int("no_rsvp_penalty"),
+            absent_penalty=_int("absent_penalty"),
+            no_show_penalty=_int("no_show_penalty"),
+            autoreserve_threshold=_nullable("autoreserve_threshold"),
+            autosack_threshold=_nullable("autosack_threshold"),
+        )
+
     async def get_or_create_config(self) -> AttendanceConfig:
         existing = await self.get_config()
         if existing is not None:

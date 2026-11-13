@@ -388,7 +388,7 @@ def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    cog.bot.attendance_service.get_or_create_config = AsyncMock(
+    cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=_attendance_config()
     )
     return cog
@@ -513,7 +513,7 @@ async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_pat
 
     await _run(cog, _interaction())
 
-    cog.bot.attendance_service.get_or_create_config.assert_not_awaited()
+    cog.bot.attendance_service.get_config_or_defaults.assert_not_awaited()
 
 
 # The windows above are contributed by the modules that configure them. With weather and

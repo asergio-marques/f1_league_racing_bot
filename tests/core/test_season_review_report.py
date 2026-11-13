@@ -251,7 +251,7 @@ def _cog(
         autosack_threshold=10,
     )
     bot.attendance_service.get_config = AsyncMock(return_value=attendance_cfg)
-    bot.attendance_service.get_or_create_config = AsyncMock(return_value=attendance_cfg)
+    bot.attendance_service.get_config_or_defaults = AsyncMock(return_value=attendance_cfg)
     bot.attendance_service.get_division_config = AsyncMock(
         return_value=SimpleNamespace(rsvp_channel_id=801, attendance_channel_id=None)
     )

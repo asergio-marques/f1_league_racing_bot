@@ -98,10 +98,11 @@ async def round_window(
 ) -> AttendanceWindows | None:
     """Attendance's part of a round's timing windows read: its three lead times, or None where
     the module is off, since a league without attendance has no check-in to lose or to be inside
-    the window of. Counts as off for an amendment too, so *amending* changes nothing here."""
+    the window of. Counts as off for an amendment too, so *amending* changes nothing here. Reads
+    only: with no configuration stored, the packaged defaults answer and no row is created."""
     if not await modules.is_attendance_enabled():
         return None
-    config = await attendance.get_or_create_config()
+    config = await attendance.get_config_or_defaults()
     return AttendanceWindows(
         notice_days=config.rsvp_notice_days,
         last_notice_hours=config.rsvp_last_notice_hours,

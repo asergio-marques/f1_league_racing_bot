@@ -265,7 +265,7 @@ class SeasonLeague:
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
         set_guilds(bot, [guild])
-        bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
+        bot.attendance_service.get_config_or_defaults = AsyncMock(side_effect=self._attendance)
         bot.attendance_after_review.check_in_read_on = AttendanceAfterReview(
             bot, MagicMock()
         ).check_in_read_on
@@ -938,7 +938,7 @@ def attendance_from_the_database(league: SeasonLeague) -> None:
     """The league's attendance service reading its configuration from the database, in place of
     the league's stub, and held by the check-in's change types: the builder's own service with
     the stub dropped, which its change types already hold."""
-    vars(league.bot.attendance_service).pop("get_or_create_config", None)
+    vars(league.bot.attendance_service).pop("get_config_or_defaults", None)
 
 
 def removed_jobs(rid: int) -> list[str]:
