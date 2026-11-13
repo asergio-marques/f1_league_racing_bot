@@ -3,6 +3,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+#: The kinds of attendance's four check-in changes. Core names none of them: attendance asks for
+#: each itself and reads what is still unfinished of each for its own steps of `/test-mode
+#: advance`.
+CHECK_IN_CALL = "attendance.check_in.call"
+CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
+CHECK_IN_DEADLINE = "attendance.check_in.deadline"
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
+
 
 @dataclass
 class AttendanceConfig:

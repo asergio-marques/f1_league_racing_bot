@@ -31,9 +31,9 @@ from datetime import datetime, timedelta
 
 import aiosqlite
 
+from leaguebot.attendance.models.attendance import CHECK_IN_DEADLINE
 from leaguebot.attendance.models.recovery_failed import RecoveryFailed
 from leaguebot.attendance.services.check_in_changes import (
-    CHECK_IN_DEADLINE,
     CheckInViewFactory,
     ask_check_in_call,
     ask_check_in_clean_up,

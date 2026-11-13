@@ -193,15 +193,6 @@ def module_off(module: str) -> str:
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 
-#: The kinds of attendance's four check-in changes. Attendance reads what is still unfinished of
-#: each for its own steps of `/test-mode advance`, and `/test-mode review` still reads them in
-#: core until attendance hands it its own marks.
-CHECK_IN_CALL = "attendance.check_in.call"
-CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
-CHECK_IN_DEADLINE = "attendance.check_in.deadline"
-CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
-
-
 def forecasts_named(phases: Iterable[int]) -> str:
     """The forecasts a clean-up deletes, named by their phases as every text of the clean-up
     names them: "the Phase 2 forecast", "the Phase 1 and 2 forecasts", or "the forecast" where no

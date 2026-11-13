@@ -72,7 +72,14 @@ import aiohttp
 import aiosqlite
 import discord
 
-from leaguebot.attendance.models.attendance import AttendanceConfig, RsvpEmbedMessage
+from leaguebot.attendance.models.attendance import (
+    CHECK_IN_CALL,
+    CHECK_IN_CLEAN_UP,
+    CHECK_IN_DEADLINE,
+    CHECK_IN_LAST_NOTICE,
+    AttendanceConfig,
+    RsvpEmbedMessage,
+)
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_config_service import AttendanceService
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
@@ -80,10 +87,6 @@ from leaguebot.attendance.services.test_mode_steps import check_ins_cleared
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
 from leaguebot.core.models.change import (
-    CHECK_IN_CALL,
-    CHECK_IN_CLEAN_UP,
-    CHECK_IN_DEADLINE,
-    CHECK_IN_LAST_NOTICE,
     ChangeOrigin,
     FollowOn,
     PlannedStep,
