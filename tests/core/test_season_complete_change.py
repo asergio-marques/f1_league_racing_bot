@@ -1722,6 +1722,76 @@ async def test_a_season_end_notice_mentions_only_the_driver(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the season's end holds a driver's channel through the wizard service, not "
+    "closing_steps' own jobs arming its deletion from the queue's clock, and the wizards are "
+    "recovered by the wizard service, not closing_steps.recover_wizards"
+))
+async def test_448_disabling_signup_after_a_season_completed_keeps_the_deletions_and_posts_no_expiry(
+    tmp_path,
+):
+    """#448's path for a completed season, the twin of the abort's. Drivers 105 and 106 are
+    part-way through signing up (Pending Signup Completion, their wizards collecting their notes)
+    when admin 77 completes the season and the queue runs: each signup channel is told, locked
+    and held, its deletion armed a day after the queue's clock. An hour later league manager 77
+    runs `/module disable signup` and the queue runs: neither channel's deletion is disarmed. An
+    hour after that the bot restarts: recovering the wizards arms no 24-hour timer and asks no
+    expiry. A day after the completion each channel's deletion timer fires and the queue runs:
+    both channels are deleted, and neither was posted anything after the switch-off, no "expired
+    due to inactivity" notice among it."""
+    from datetime import timedelta
+
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from tests.core.test_season_abort_change import _timer_fired
+    from tests.support.change_queue import tier_member
+
+    drivers = (SIGNING_UP, SIGNING_UP_TOO)
+    league = await pending_completion_league(tmp_path)
+    await league.switch("signup", True)
+    for user_id in drivers:
+        await _mid_wizard(league, user_id)
+    held = {user_id: league.channel(SIGNUP_CHANNEL_BASE + user_id) for user_id in drivers}
+    for channel in held.values():
+        channel.delete = AsyncMock()
+    await _asked(league)
+    await run_queue(league.bot)
+    assert await _status(league) == "COMPLETED"
+    scheduler = league.bot.scheduler_service
+    due = league.clock.now + timedelta(hours=24)
+    assert sorted(_deletions_armed(league)) == [
+        ("signup_channel_delete", str(user_id), due) for user_id in drivers
+    ]
+
+    league.clock.advance(hours=1)
+    disarms_before = len(scheduler.disarm.call_args_list)
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = league.bot
+    manager = member_interaction(league.bot, user=tier_member("manager", member_id=77))
+    manager.guild = league.guild
+    manager.command = MagicMock(qualified_name="module disable")
+    await cog._disable_signup(manager)
+    await run_queue(league.bot)
+    assert not league.errors, league.errors
+    disarmed = {call.args[:2] for call in scheduler.disarm.call_args_list[disarms_before:]}
+    for user_id in drivers:
+        assert ("signup_channel_delete", str(user_id)) not in disarmed
+    posted = {user_id: list(channel.texts) for user_id, channel in held.items()}
+
+    league.clock.advance(hours=1)
+    assert await wizards_recovered(league) == {"armed": [], "expired": []}
+    await run_queue(league.bot)
+
+    league.clock.advance(hours=22)
+    for user_id in drivers:
+        await _timer_fired(league, "signup_channel_delete")(str(user_id))
+    await run_queue(league.bot)
+
+    for user_id, channel in held.items():
+        channel.delete.assert_awaited_once()
+        assert channel.texts == posted[user_id]
+        assert not any("expired" in text.lower() for text in channel.texts)
+
+
 async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcome_says_so(
     tmp_path,
 ):
