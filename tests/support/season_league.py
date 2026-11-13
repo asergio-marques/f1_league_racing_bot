@@ -1367,26 +1367,25 @@ def correction_services(bot: Any) -> dict[str, Any]:
 
 
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
-    """The signup wizards recovered as the bot does when it starts (`recover_wizards`), the
-    wizard service built as the builder builds it, over the league's real signup module and
-    driver services; gives the accounts whose 24-hour timer was armed again (``armed``) and those
-    whose expiry was asked at once (``expired``), neither run.
+    """The signup wizards recovered as the bot does when it starts: signup's catch-up,
+    `recover_wizards` in `closing_steps`, handed the bot and the league's change queue (#286);
+    gives the accounts whose 24-hour timer was armed (``armed``), which the catch-up never does,
+    and those whose expiry was asked at once (``expired``), neither run.
 
-    The wizard service is handed the change queue (#439, slice 6b, C77): an expiry is then the
-    `signup.end` it asks of the queue, and an arming the scheduler service's `signup_inactivity`
-    timer. `recover_wizards` reads the host's clock, as a wizard's last activity written by
-    `signing_up` does."""
+    An expiry is the `signup.end` it asks of the queue, and an arming would be the scheduler
+    service's `signup_inactivity` timer. The catch-up judges each 24 hours with the queue's clock,
+    `league.clock`."""
     import asyncio
+
+    from leaguebot.signup.services.closing_steps import recover_wizards
 
     bot = league.bot
     armed: list[str] = []
     expired: list[str] = []
-    wizards = wizard_service(bot, league.db_path, bot.scheduler_service,
-                             change_queue=bot.change_queue)
     asked_before = {row["id"] for row in await change_rows(league.db_path)}
     arms_before = len(bot.scheduler_service.arm_once.call_args_list)
     before = asyncio.all_tasks()
-    await wizards.recover_wizards()
+    await recover_wizards(bot, queue=bot.change_queue)
     await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
     for row in await change_rows(league.db_path):
         if row["id"] in asked_before or row["kind"] != "signup.end":

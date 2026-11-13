@@ -583,6 +583,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the wizards are recovered by the wizard service, not closing_steps.recover_wizards"
+))
 async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_path):
     """Driver 105 is correcting their signup (Pending Driver Correction, their wizard in a
     correction step) when the wind-down turns the season's pending placements down. 105's wizard

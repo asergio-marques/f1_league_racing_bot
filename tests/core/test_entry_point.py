@@ -847,11 +847,12 @@ _MODULE_STEPS = {
 
 
 #: The module steps whose recovery is a function handed the bot, with where that function
-#: lives and its name: in its module's wiring, or, for results' and attendance's three
-#: recoveries each, the module's services.
+#: lives and its name: in its module's wiring, or, for signup's two and results' and attendance's
+#: three recoveries each, the module's services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
     "signup close timer": ("leaguebot.signup.services.window_close", "recover_missed_close"),
+    "wizards": ("leaguebot.signup.services.closing_steps", "recover_wizards"),
     "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
                                 "recover_orphaned_amend_channels"),
     "orphaned submission channels": ("leaguebot.results.services.submission.submission_recovery",
@@ -873,7 +874,7 @@ _RECOVERIES_OF_THE_STEPS = {
 #: The steps whose recovery is handed the bot's change queue as well, which a service does not look
 #: up on the bot (architecture.md, "Services stay attached to the bot, and are built in one place").
 _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
-    {"signup close timer", "orphaned amend channels", "orphaned submission channels",
+    {"signup close timer", "wizards", "orphaned amend channels", "orphaned submission channels",
      "missed round starts",
      "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups"}
 )
@@ -881,7 +882,8 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 
 @pytest.mark.xfail(strict=True, reason=(
     "#286: the signup close timer's start-up step re-arms through core's scheduler rather than "
-    "asking window_close.recover_missed_close with the bot's queue"
+    "asking window_close.recover_missed_close with the bot's queue, and the wizards are "
+    "recovered by the wizard service rather than closing_steps.recover_wizards with the queue"
 ))
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
@@ -911,8 +913,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     review prompts, a review left standing, ask the bot's queue for its take-down ending `restart`;
     the hub hands its recovery the bot, its queue and its hub options; the signup close timer's
     catch-up, `recover_missed_close` in signup's `window_close`, is handed the bot and its queue,
-    whose clock judges the close time; the wizards are recovered by
-    the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
+    whose clock judges the close time; the wizards' catch-up, `recover_wizards` in signup's
+    `closing_steps`, is handed the bot and its queue, whose clock judges each 24 hours; the
+    amendment sweep arms the bot's scheduler's sweep; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
     service does not look the queue up on the bot; each of the others in its module's wiring.
@@ -929,7 +932,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     from leaguebot.core.services.modules import hub_service
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.utils.hooks import StartingHook
-    from leaguebot.signup.services.wizard_service import WizardService
     from tests.support.review_prompts import store_review_prompt
 
     ran: list[tuple] = []
@@ -948,7 +950,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
     monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
     monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
-    monkeypatch.setattr(WizardService, "recover_wizards", recovery("recover_wizards"))
     monkeypatch.setattr(SchedulerService, "schedule_amendment_sweep",
                         scheduling("schedule_amendment_sweep"))
 
@@ -1021,7 +1022,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
                                                         season_review_changes.RESTART), {}),
         "hub": ("recover_hub", (bot,), {"queue": bot.change_queue,
                                         "hub_options": bot.hub_options}),
-        "wizards": ("recover_wizards", (bot.wizard_service,), {}),
         "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {
         step: (function, (bot,),

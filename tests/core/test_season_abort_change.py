@@ -890,6 +890,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert not await _season_stands(league)
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the wizards are recovered by the wizard service, not closing_steps.recover_wizards"
+))
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
     collecting their notes) when the abort's `end` runs its driver pass. Their wizard is

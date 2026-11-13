@@ -808,16 +808,18 @@ def _expired(league: SeasonLeague, user_id: int = SIGNING_UP) -> list[str]:
             if "expired" in text.lower()]
 
 
-def _wizards(league: SeasonLeague) -> Any:
-    """The wizard service as the builder makes it, handed the change queue when built, over the
-    league's real signup module service."""
-    from tests.support.season_league import wizard_service
+_RECOVERED_BY_THE_WIZARD_SERVICE = (
+    "#286: the wizards are recovered by the wizard service, not closing_steps.recover_wizards"
+)
 
-    wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service,
-        change_queue=league.bot.change_queue,
-    )
-    return wizards
+
+async def _recover_wizards(league: SeasonLeague) -> None:
+    """The wizards recovered as the bot does when it starts: signup's catch-up, `recover_wizards`
+    in `closing_steps`, handed the bot and the league's change queue, whose clock (`league.clock`)
+    judges each 24 hours (#286)."""
+    from leaguebot.signup.services.closing_steps import recover_wizards
+
+    await recover_wizards(league.bot, queue=league.bot.change_queue)
 
 
 async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
@@ -1135,25 +1137,36 @@ async def test_a_timer_that_fires_before_the_24_hours_since_the_last_answer_ends
     assert _armed(league, DELETE_TIMER) == []
 
 
-async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
-    """The bot starts again. Kimi was last active 25 hours ago, a second driver (115) an hour
-    ago, both part-way through signing up. Recovering the wizards (the wizard service built with
-    the change queue) asks the queue for Kimi's `signup.end` as the bot, on the league lane,
-    before the queue starts, and asks nothing for the second driver. When the queue runs Kimi is
-    Not Signed Up and told his signup expired; the second driver is still signing up."""
-    from datetime import datetime, timezone
-
+@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
+@pytest.mark.parametrize("naive", [False, True], ids=["with a zone", "without a zone"])
+async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path, naive):
+    """The bot starts again, its queue's clock two days ahead of the host's. Kimi was last active
+    25 hours before the queue's clock, a second driver (115) 23 hours before it, both part-way
+    through signing up, each time stored with its zone or, as in older rows, without one (read as
+    UTC). Recovering the wizards (signup's catch-up, handed the bot and the queue) judges the 24
+    hours by the queue's clock, not the host's: it asks the queue for Kimi's `signup.end` as the
+    bot, on the league lane, before the queue starts, asks nothing for the second driver, and
+    arms no 24-hour timer for either, the second's own timer still standing in the scheduler.
+    When the queue runs Kimi is Not Signed Up and told his signup expired; the second driver is
+    still signing up."""
     league = await _league(tmp_path)
-    host_now = datetime.now(timezone.utc)
-    await _idle(league, SIGNING_UP, host_now - timedelta(hours=25))
-    await _idle(league, OTHER, host_now - timedelta(hours=1))
+    league.clock.advance(days=2)
+    for user_id, idle_hours in ((SIGNING_UP, 25), (OTHER, 23)):
+        since = league.clock.now - timedelta(hours=idle_hours)
+        await _idle(league, user_id, since)
+        if naive:
+            await league.write(
+                "UPDATE signup_wizard_records SET last_activity_at = ? WHERE discord_user_id = ?",
+                since.replace(tzinfo=None).isoformat(), str(user_id),
+            )
 
-    await _wizards(league).recover_wizards()
+    await _recover_wizards(league)
 
     [end] = await _changes_of(league, END_KIND)
     assert (_lane(end), end["origin"]) == ("league", "BOT")
     assert str(SIGNING_UP) in str(end["payload"])
     assert str(OTHER) not in str(end["payload"])
+    assert _armed(league, INACTIVITY_TIMER) == []
 
     await run_queue(league.bot)
 
@@ -1644,32 +1657,7 @@ async def test_an_expiry_for_a_driver_who_has_since_submitted_changes_nothing(tm
     assert _armed(league, DELETE_TIMER) == []
 
 
-@pytest.mark.parametrize("naive", [False, True], ids=["with a zone", "without a zone"])
-async def test_a_restart_re_arms_each_open_signup_from_its_own_last_activity(tmp_path, naive):
-    """The bot starts again. A driver (115) part-way through signing up was last active an hour
-    ago, the time stored with its zone or, as in older rows, without one (read as UTC).
-    Recovering the wizards (the wizard service built with the change queue) asks no expiry for
-    him, and arms his 24-hour timer for 24 hours after his last activity, not 24 hours from the
-    restart."""
-    from datetime import datetime, timezone
-
-    league = await _league(tmp_path)
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
-    await _idle(league, OTHER, since)
-    if naive:
-        await league.write(
-            "UPDATE signup_wizard_records SET last_activity_at = ? WHERE discord_user_id = ?",
-            since.replace(tzinfo=None).isoformat(), str(OTHER),
-        )
-
-    await _wizards(league).recover_wizards()
-
-    assert await _changes_of(league, END_KIND) == []
-    assert _armed(league, INACTIVITY_TIMER) == [
-        (INACTIVITY_TIMER, str(OTHER), since + timedelta(hours=24))
-    ]
-
-
+@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
 async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_a_manager(
     tmp_path,
 ):
@@ -1678,10 +1666,8 @@ async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_
     second driver (115) gave his last answer and waits on a manager: Pending Admin Approval, his
     wizard parked. Recovering the wizards asks no expiry of either and arms neither's 24-hour
     timer; when the queue runs nothing is posted in either channel."""
-    from datetime import datetime, timezone
-
     league = await _league(tmp_path)
-    since = datetime.now(timezone.utc) - timedelta(hours=30)
+    since = league.clock.now - timedelta(hours=30)
     for user_id, state in ((SIGNING_UP, "NOT_SIGNED_UP"), (OTHER, "PENDING_ADMIN_APPROVAL")):
         await _idle(league, user_id, since)
         await league.write(
@@ -1694,7 +1680,7 @@ async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_
             state, str(user_id),
         )
 
-    await _wizards(league).recover_wizards()
+    await _recover_wizards(league)
     await run_queue(league.bot)
 
     assert await _changes_of(league, END_KIND) == []
