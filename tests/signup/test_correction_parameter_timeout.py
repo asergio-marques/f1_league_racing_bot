@@ -128,7 +128,7 @@ async def _restart(league: SeasonLeague) -> None:
     from tests.support.season_league import wizard_service
 
     wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
+        league.bot, league.db_path, league.bot.scheduler_service,
         change_queue=league.bot.change_queue,
     )
     await wizards.recover_correction_timeouts()

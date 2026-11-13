@@ -813,7 +813,7 @@ def _wizards(league: SeasonLeague) -> Any:
     from tests.support.season_league import wizard_service
 
     wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
+        league.bot, league.db_path, league.bot.scheduler_service,
         change_queue=league.bot.change_queue,
     )
     return wizards

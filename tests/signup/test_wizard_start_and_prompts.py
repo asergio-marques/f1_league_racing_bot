@@ -81,14 +81,6 @@ def _service(
     module_enabled=True,
     signups_open=True,
 ):
-    svc = WizardService.__new__(WizardService)
-    svc._correction_tasks = {}
-    svc._change_queue = MagicMock()
-    svc._scheduler = MagicMock()
-    svc._scheduler._scheduler = MagicMock()
-    svc._output_router = MagicMock()
-    svc._output_router.post_log = AsyncMock()
-
     signup = MagicMock()
     signup.get_wizard = AsyncMock(return_value=existing)
     signup.get_config = AsyncMock(
@@ -110,7 +102,6 @@ def _service(
     drivers = MagicMock()
 
     bot = MagicMock()
-    bot.signup_module_service = signup
     bot.driver_service = drivers
     bot.module_service.is_signup_enabled = AsyncMock(return_value=module_enabled)
     bot.config_service.get_server_config = AsyncMock(
@@ -127,9 +118,10 @@ def _service(
         ]
     )
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    svc._bot = bot
-    svc._get_track_name_map = AsyncMock(return_value={"27": "Silverstone"})
-    return svc
+    # Built as the builder builds it, handed the signup module service it reads wizards through
+    # and passes to the views it makes (#286), the bot then carrying none of its own.
+    bot.signup_module_service = None
+    return WizardService(":memory:", MagicMock(), signup, change_queue=MagicMock(), bot=bot)
 
 
 # ---------------------------------------------------------------------------

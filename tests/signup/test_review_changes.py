@@ -632,7 +632,7 @@ async def test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice(tmp_pat
     await _signed_up(league, OTHER, state="AWAITING_CORRECTION_PARAMETER",
                      offered_ago=timedelta(minutes=1))
     wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
+        league.bot, league.db_path, league.bot.scheduler_service,
         change_queue=league.bot.change_queue,
     )
 

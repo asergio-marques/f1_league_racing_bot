@@ -1335,13 +1335,15 @@ async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
     return rows[0]["wizard_state"] if rows else None
 
 
-def wizard_service(bot: Any, db_path: str, scheduler: Any, router: Any, *,
-                   change_queue: Any) -> Any:
+def wizard_service(bot: Any, db_path: str, scheduler: Any, *, change_queue: Any) -> Any:
     """The signup wizard service as the builder makes it, holding *bot* from the moment it is
-    built (#283)."""
+    built (#283), and handed the signup module service it reads wizards through, *bot*'s own,
+    rather than looking it up on the bot (#286)."""
     from leaguebot.signup.services.wizard_service import WizardService
 
-    return WizardService(db_path, scheduler, router, change_queue=change_queue, bot=bot)
+    return WizardService(
+        db_path, scheduler, bot.signup_module_service, change_queue=change_queue, bot=bot
+    )
 
 
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
@@ -1359,7 +1361,7 @@ async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
     bot = league.bot
     armed: list[str] = []
     expired: list[str] = []
-    wizards = wizard_service(bot, league.db_path, bot.scheduler_service, bot.output_router,
+    wizards = wizard_service(bot, league.db_path, bot.scheduler_service,
                              change_queue=bot.change_queue)
     asked_before = {row["id"] for row in await change_rows(league.db_path)}
     arms_before = len(bot.scheduler_service.arm_once.call_args_list)
