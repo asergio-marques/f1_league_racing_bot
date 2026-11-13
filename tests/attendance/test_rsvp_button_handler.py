@@ -343,9 +343,6 @@ async def _ignore_answers(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#285: an unparseable button id is still refused, not raised"
-)
 async def test_an_unparseable_check_in_button_id_is_a_fault_not_a_refusal(tmp_path):
     """The bot writes every check-in button's id itself, so one it cannot read is a fault of the
     bot's, not anything the driver did: the handler raises, and the view's `on_error` reports it

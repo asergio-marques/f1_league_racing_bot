@@ -1187,7 +1187,8 @@ class _RsvpButton(discord.ui.Button):
 async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -> None:
     """Handle an RSVP button press.
 
-    This function is called by `_RsvpButton.callback`, above. It reads the button and
+    This function is called by `_RsvpButton.callback`, above. It reads the button (an id it cannot
+    read is a fault, raised, and an action it does not know a refusal) and
     asks the change queue for the answer (`attendance.check_in.answer`, #439), which saves it and
     redraws the call when its turn comes. The press is acknowledged privately as under way and
     the acknowledgement updated with what became of it; a press the locks, the round or the
@@ -1205,19 +1206,18 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     form. A line names the button and, once the round is read, the call it sits on: "the
     “Accept” button of the check-in call for round 3 of Division 1".
     """
-    # Parse action and round_id from custom_id: rsvp_{action}_r{round_id}
+    # Parse action and round_id from custom_id: rsvp_{action}_r{round_id}. The bot writes every
+    # id itself (`_RsvpButton`), so one it cannot read is a fault of the bot's, not a refusal of
+    # the driver's: it raises, and the view's `on_error` reports it through `report_failure`.
+    # An action it does not know, below, is a refusal: a button an older version left behind.
     try:
         # Strip "rsvp_" prefix, then split off "_r{round_id}" suffix
         without_prefix = custom_id[len("rsvp_"):]       # e.g. "accept_r42"
         action_part, round_id_str = without_prefix.rsplit("_r", 1)
         round_id = int(round_id_str)
         action = action_part  # "accept" | "tentative" | "decline"
-    except (ValueError, IndexError):
-        log.error("handle_rsvp_button: could not parse custom_id=%r", custom_id)
-        await refuse(
-            interaction, "❌ Internal error: invalid button ID.", what="a check-in call button"
-        )
-        return
+    except (ValueError, IndexError) as exc:
+        raise ValueError(f"a check-in button carries an id the bot cannot read: {custom_id!r}") from exc
 
     new_status = _ACTION_TO_STATUS.get(action)
     if new_status is None:
