@@ -172,32 +172,21 @@ async def sheet_db(tmp_path):
     return path
 
 
-#: Why a test reading or writing the live sheet's own record fails until it is kept apart.
-_SHEET_KEPT_APART = "#285: the live sheet's message is not yet kept in attendance_sheet_messages"
-
-
 async def _config(db_path, *, prior: str | None):
-    """Division 7's attendance channel is 900; where *prior* is given, the sheet standing there
-    as message *prior* is recorded as its live one."""
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, attendance_channel_id) VALUES (7, '900')"
+            "(division_id, attendance_channel_id, attendance_message_id) VALUES (7, '900', ?)",
+            (prior,),
         )
-        if prior is not None:
-            await db.execute(
-                "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
-                "VALUES (7, '900', ?)",
-                (prior,),
-            )
         await db.commit()
 
 
 async def _stored_message_id(db_path) -> str | None:
     async with aiosqlite.connect(db_path) as db:
         cur = await db.execute(
-            "SELECT message_id FROM attendance_sheet_messages WHERE division_id = 7"
+            "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = 7"
         )
         row = await cur.fetchone()
     return row[0] if row else None
@@ -207,7 +196,6 @@ async def _stored_message_id(db_path) -> str | None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_exactly_one_send_site_is_exercised_and_nothing_is_deleted(sheet_db):
     """The sheet is sent once; the one it replaces is deleted by the job after the post
     (`standing_posts`), never by the posting itself, and the posting saves no id."""
@@ -225,7 +213,6 @@ async def test_exactly_one_send_site_is_exercised_and_nothing_is_deleted(sheet_d
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
     """The whole point of the ordering: a failure costs the league nothing it had. The refused
     send raises, for the queue to stop on."""
@@ -243,7 +230,6 @@ async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_the_replacements_id_is_returned(sheet_db):
     """The new sheet's id, its channel and the sheet it replaces are given back for the job to
     save; the posting writes nothing. An ordinary sheet still takes the slot: the occasion that
@@ -264,7 +250,6 @@ async def test_the_replacements_id_is_returned(sheet_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_a_first_posting_deletes_nothing(sheet_db):
     await _config(sheet_db, prior=None)
     journal: list[str] = []
@@ -344,7 +329,6 @@ async def test_with_a_graphic_the_message_carries_the_heading_alone(sheet_db, mo
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
     """FR-047: a cancelled round distributes no points and produces no sheet.
 
@@ -364,17 +348,15 @@ async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db):
     """FR-046: where the division has no attendance channel set, nothing is posted or deleted,
     and the sheet's job is stopped naming the command that sets the channel, rather than
     completing having posted nothing (#439, slice 6b, fault 5)."""
     async with get_connection(sheet_db) as db:
         await db.execute("DELETE FROM attendance_division_config")
-        await db.execute("INSERT INTO attendance_division_config (division_id) VALUES (7)")
         await db.execute(
-            "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
-            "VALUES (7, '900', '4242')"
+            "INSERT INTO attendance_division_config (division_id, attendance_message_id) "
+            "VALUES (7, '4242')"
         )
         await db.commit()
 
@@ -542,7 +524,6 @@ async def test_the_sheet_graphic_is_gone_once_it_has_posted(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_the_sheet_graphic_is_gone_when_the_send_fails(
     sheet_db, monkeypatch, tmp_path
 ):
@@ -575,7 +556,6 @@ def _occasion(name):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_the_opening_sheet_takes_the_live_slot(sheet_db):
     """Round one then replaces it, so the division never holds two sheets. The posting says
     the sheet takes the slot and names the one it replaces; the job saves and deletes."""
@@ -597,7 +577,6 @@ async def test_the_opening_sheet_takes_the_live_slot(sheet_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SHEET_KEPT_APART)
 async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
     """It claims no slot and deletes nothing — nothing may ever replace the last word."""
     await _config(sheet_db, prior="4242")

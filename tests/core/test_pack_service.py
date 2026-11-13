@@ -64,8 +64,8 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
                 posted_at) VALUES (1, 1, 1, 60, '2026-01-03');
             INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id,
                 posted_at) VALUES (1, 1, '61', '62', '2026-01-03');
-            INSERT INTO attendance_division_config (division_id, attendance_channel_id)
-                VALUES (1, '63');
+            INSERT INTO attendance_division_config (division_id, attendance_channel_id,
+                attendance_message_id) VALUES (1, '63', '64');
             INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed,
                 results_posted, prompt_message_id, resubmit_prompt_message_id)
             VALUES (1, 65, '2026-01-08', 1, 1, 66, 67);
@@ -271,25 +271,8 @@ async def test_pack_clears_wizards_the_retry_queue_and_the_review_prompt(db_path
     assert await _count(db_path, "season_review_prompts") == 0
 
 
-#: Why a test of the live sheet's record fails until it is kept apart from the channels.
-SHEET_KEPT_APART = "#285: the live sheet's message is not yet kept in attendance_sheet_messages"
-
-
-async def _a_sheet_stands(db_path) -> None:
-    """Division 1's attendance sheet stands in channel 63 as message 64, recorded as its live
-    one."""
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
-            "VALUES (1, '63', '64')"
-        )
-        await db.commit()
-
-
-@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_pack_clears_the_message_ids_the_bot_edits_by(db_path):
     await _seed(db_path)
-    await _a_sheet_stands(db_path)
 
     await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
@@ -297,7 +280,8 @@ async def test_pack_clears_the_message_ids_the_bot_edits_by(db_path):
     assert await _count(db_path, "rsvp_embed_messages") == 0
     division = await _one(db_path, "SELECT * FROM divisions")
     assert (division["lineup_message_id"], division["calendar_message_id"]) == (None, None)
-    assert await _count(db_path, "attendance_sheet_messages") == 0
+    attendance = await _one(db_path, "SELECT * FROM attendance_division_config")
+    assert attendance["attendance_message_id"] is None
     submission = await _one(db_path, "SELECT * FROM round_submission_channels")
     assert submission["prompt_message_id"] is None
     assert submission["resubmit_prompt_message_id"] is None
@@ -335,7 +319,6 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
     assert cleared == [(hook, queue)]
 
 
-@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing(db_path):
     """One transaction, the modules' parts included. A league with one past season and one of
     everything the pack clears; signup, weather, attendance and results have each cleared their
@@ -343,7 +326,6 @@ async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing
     message and channel ids they clear set to nothing), when a part signed up after them fails.
     No table is changed, the pack is not recorded, and the scheduled work is left armed."""
     await _seed(db_path)
-    await _a_sheet_stands(db_path)
     hook = pack_hook()
     left_when_it_failed = []
 
@@ -354,7 +336,8 @@ async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing
             " OR signup_button_message_id IS NOT NULL OR signup_closed_message_id IS NOT NULL",
             "SELECT COUNT(*) FROM forecast_messages",
             "SELECT COUNT(*) FROM rsvp_embed_messages",
-            "SELECT COUNT(*) FROM attendance_sheet_messages",
+            "SELECT COUNT(*) FROM attendance_division_config"
+            " WHERE attendance_message_id IS NOT NULL",
             "SELECT COUNT(*) FROM round_submission_channels"
             " WHERE prompt_message_id IS NOT NULL OR resubmit_prompt_message_id IS NOT NULL",
         ):

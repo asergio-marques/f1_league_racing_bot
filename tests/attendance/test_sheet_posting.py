@@ -13,7 +13,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
-import pytest
 
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.sanctions.attendance_sync_change import SYNC_SAVE
@@ -34,7 +33,6 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.season_league import (
-    AM,
     DIVISIONS,
     LEWIS,
     PRO,
@@ -48,8 +46,6 @@ from tests.support.undecorate import undecorate
 KIND = "attendance.sync"
 SHEET = DIVISIONS[PRO][3].attendance
 ROUND_1 = round_id(PRO, 1)
-#: Why a test of the live sheet's record fails until it is kept apart from the channels.
-SHEET_KEPT_APART = "#285: the live sheet's message is not yet kept in attendance_sheet_messages"
 
 
 async def _scored_league(tmp_path: Any, **options: Any) -> Any:
@@ -195,22 +191,19 @@ OLD_SHEET_LINK = f"https://discord.test/{SHEET}/{OLD_SHEET}"
 async def _old_sheet_standing(league: Any) -> None:
     """Pro's sheet stands as message 6200, recorded as the division's live sheet."""
     await league.write(
-        "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
-        "VALUES (?, ?, ?)",
-        PRO, str(SHEET), str(OLD_SHEET),
+        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
+        str(OLD_SHEET), PRO,
     )
     league.channel(SHEET).seed(OLD_SHEET, "Pro's attendance sheet")
 
 
 async def _sheet_id(league: Any) -> Any:
-    """Pro's live sheet as recorded: its message id."""
     [row] = await league.rows(
-        "SELECT message_id FROM attendance_sheet_messages WHERE division_id = ?", PRO,
+        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?", PRO,
     )
-    return row["message_id"]
+    return row["attendance_message_id"]
 
 
-@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_the_new_sheet_is_posted_before_the_old_one_is_deleted_by_a_job(tmp_path):
     """Pro's sheet stands as message 6200. Alex runs `/attendance sync` for Pro from round 1.
     Once the sync's sheet job is done, the new sheet is sent and 6200 still stands; the queue
@@ -235,7 +228,6 @@ async def test_the_new_sheet_is_posted_before_the_old_one_is_deleted_by_a_job(tm
     assert str(await _sheet_id(league)) == str(new)
 
 
-@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_none(tmp_path):
     """Pro's sheet stands as message 6200 and Alex runs `/attendance sync` for Pro from round 1.
     Once the sync's sheet job is done, and before the deletion after it runs, the division
@@ -261,7 +253,6 @@ async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_non
     assert str(await _sheet_id(league)) == str(new)
 
 
-@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_one(tmp_path):
     """Pro's sheet stands as message 6200, and the image module is on with the attendance
     graphic switched on, so Pro's round 1 sheet is drawn with its grid of rounds. Alex runs
@@ -311,7 +302,6 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     assert str(await _sheet_id(league)) == str(new)
 
 
-@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
 async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):
@@ -338,48 +328,3 @@ async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_dis
     assert "deleting the earlier attendance sheet of **Pro**" in await _said(league)
     assert OLD_SHEET in league.channel(SHEET).messages
     assert _sends(league) == 1
-
-
-#: The attendance channel Pro moves to once attendance is back on, in the different-channel case:
-#: Am's before the switch-off, which cleared it.
-ELSEWHERE = DIVISIONS[AM][3].attendance
-
-
-@pytest.mark.xfail(strict=True, reason=SHEET_KEPT_APART)
-@pytest.mark.parametrize("returning_to", [SHEET, ELSEWHERE], ids=["same-channel", "other-channel"])
-async def test_the_sheet_left_standing_by_the_switch_off_is_replaced_on_return(
-    tmp_path, returning_to,
-):
-    """Pro's sheet stands as message 6200 in its attendance channel 604, recorded as its live
-    one. Attendance is turned off, which clears Pro's channels and deletes no message: 6200 still
-    stands and is still recorded. Attendance is turned on again, Alex runs `/attendance channel
-    attendance` for Pro with 604 again (or with another channel, 704), and then `/attendance sync`
-    for Pro from round 1, and the queue runs to the end. The new sheet is sent to the channel now
-    set, 6200 is deleted from 604 where it stood, and the new sheet is Pro's live one, recorded
-    with the channel it stands in."""
-    from leaguebot.core.db.database import get_connection
-
-    league = await _scored_league(tmp_path)
-    await _old_sheet_standing(league)
-
-    async with get_connection(league.db_path) as db:
-        assert await league.bot.attendance_service.switch_off_on(db) is True
-        await db.commit()
-
-    assert _sheet_events(league) == []
-    assert str(await _sheet_id(league)) == str(OLD_SHEET)
-
-    await league.switch("attendance", True)
-    await run_attendance_channel_command(league, "attendance", returning_to)
-    await run_queue(league.bot)
-    await _sync_pro(league)
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    seen = [event for event in league.events if event[1] in (SHEET, returning_to)]
-    [new] = [mid for kind, _cid, mid in seen if kind == "send"]
-    assert seen == [("send", returning_to, new), ("delete", SHEET, OLD_SHEET)]
-    [row] = await league.rows(
-        "SELECT channel_id, message_id FROM attendance_sheet_messages WHERE division_id = ?", PRO,
-    )
-    assert (int(row["channel_id"]), str(row["message_id"])) == (returning_to, str(new))

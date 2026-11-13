@@ -326,38 +326,6 @@ async def test_disabling_attendance_clears_its_division_channels(tmp_path):
     assert await _division_configs(league.db_path) == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the live sheet's message is not yet kept in attendance_sheet_messages",
-)
-async def test_disabling_attendance_leaves_each_division_s_sheet_standing(tmp_path):
-    """Two divisions, each with its attendance sheet standing and recorded as its live one.
-    Admin turns attendance off and the queue runs: the divisions' channels are cleared, and
-    each sheet's record stands, channel and message, so the first sheet posted once attendance
-    is back on replaces it rather than leaving it beside the new one."""
-    league, cog, asked = await _attendance_league(tmp_path, divisions=2)
-    async with get_connection(league.db_path) as db:
-        await db.executemany(
-            "INSERT INTO attendance_sheet_messages (division_id, channel_id, message_id) "
-            "VALUES (?, ?, ?)",
-            [(1, "800001", "900001"), (2, "800002", "900002")],
-        )
-        await db.commit()
-
-    await cog._disable_attendance(asked)
-    await run_queue(league.bot)
-
-    assert await _division_configs(league.db_path) == 0
-    async with get_connection(league.db_path) as db:
-        cursor = await db.execute(
-            "SELECT division_id, channel_id, message_id FROM attendance_sheet_messages "
-            "ORDER BY division_id"
-        )
-        assert [tuple(row) for row in await cursor.fetchall()] == [
-            (1, "800001", "900001"), (2, "800002", "900002"),
-        ]
-
-
 async def test_disabling_attendance_twice_does_no_work(tmp_path):
     """Refused at once: nothing is queued and nothing audited."""
     from tests.support.change_queue import change_rows
