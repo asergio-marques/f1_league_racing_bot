@@ -226,11 +226,6 @@ async def test_a_switched_off_module_s_buttons_are_not_re_armed(tmp_path):
     bot.add_view.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the deadline catch-up stops quietly at a database it cannot read, its fault "
-           "in the host's log alone, rather than raising for the sweep to report",
-)
 async def test_a_database_the_recovery_cannot_read_is_reported_in_the_log_channel(tmp_path):
     """The restart finds a standing call, but the database holding the rounds cannot be opened.
     Run through the start-up sweep, attendance's "RSVP views and deadlines" step re-arms no
@@ -297,11 +292,6 @@ async def test_a_deadline_exactly_now_is_run(tmp_path):
     assert await _recover(bot) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the deadline catch-up judges a deadline passed by the host's clock, not the "
-           "queue's",
-)
 async def test_the_deadline_catch_up_reads_the_queue_s_clock(tmp_path):
     """Round 5 starts in two days by the host's clock, its six-hour check-in deadline still
     ahead and its call standing, while the queue's clock, the bot's, stands 45 hours on: three
@@ -410,11 +400,6 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
     # deadline is not caught up, as its missed call is not (decided 2026-11-13).
     pytest.param(
         {"season_stage": "PENDING_COMPLETION"}, id="a season pending completion",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#285: the deadline's catch-up judges a live season by its ACTIVE status, "
-                   "not by ONGOING_STAGES",
-        ),
     ),
 ])
 async def test_a_round_not_to_be_run_has_no_deadline_to_catch_up(tmp_path, status):
@@ -434,11 +419,6 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the deadline catch-up swallows a round's failure into the host's log rather "
-           "than reporting it once to the log channel",
-)
 async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
     """Division 1 has two calls standing whose deadlines passed while the bot was down: round 3
     (id 5) raced an hour ago and round 4 (id 6) half an hour ago. At the restart the queue

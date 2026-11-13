@@ -216,11 +216,6 @@ async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_pa
     assert await _call_stands(db_path)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the missed-call catch-up judges the deadline by the wall clock, not by the "
-           "queue's clock, so a call still answerable is not asked as late",
-)
 async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
     """Staff learn the call went out late, and until when it can be answered: once the queue has
     posted it, the log channel says it was not posted when it fell due, with its deadline."""
@@ -253,11 +248,6 @@ async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
     # Its job is still to come, and posting early would override the league's lead time.
     pytest.param(
         {"until_round": timedelta(days=6)}, id="the call not yet due",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#285: the missed-call catch-up judges a call due by the wall clock, not by "
-                   "the queue's clock",
-        ),
     ),
     # The call went out; a second beside it would divide the division's answers.
     pytest.param({"call_standing": True}, id="a call standing"),
@@ -309,12 +299,6 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
     assert asked == [ROUND_ID + 1, ROUND_ID]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the missed-call catch-up swallows a round's failure into the host's log and "
-           "reads the wall clock, rather than reporting it once to the log channel at the "
-           "queue's moment",
-)
 async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):

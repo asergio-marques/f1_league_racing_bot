@@ -873,9 +873,6 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#285: attendance's three recoveries are still in its "
-                   "wiring, handed only the bot, not services in "
-                   "attendance.services.check_in_recovery handed the bot's queue")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read

@@ -170,12 +170,9 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/wiring.py", "recover_missed_check_in_calls"): (2, PASS["attendance"]),
-    ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
-    ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
@@ -2492,11 +2489,8 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/wiring.py", "recover_missed_check_in_calls"): (4, PASS["attendance"]),
-    ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
-    ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (4, PASS["attendance"]),
     ("attendance/services/attendance_config_service.py", "AttendanceService.driver_profile_id_for_account"):
         (1, PASS["attendance"]),
     ("attendance/services/attendance_config_service.py", "AttendanceService.get_current_embed_message"):
@@ -3294,11 +3288,8 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/wiring.py", "recover_missed_check_in_calls"): (1, PASS["attendance"]),
-    ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (1, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
-    ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (5, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
     ("attendance/services/attendance_sheet.py", "_round_grid"): (2, PASS["attendance"]),
     ("attendance/services/attendance_sheet.py", "_seat_team_field"): (1, PASS["attendance"]),

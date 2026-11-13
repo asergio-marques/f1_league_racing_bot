@@ -206,11 +206,6 @@ async def test_a_round_under_a_day_past_is_left_to_its_own_job(tmp_path):
     assert await _recover(_bot(db_path)) == ([], [])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the check-in clean-up catch-up judges a round a day past by the host's clock, "
-           "not the queue's",
-)
 async def test_the_check_in_clean_up_catch_up_reads_the_queue_s_clock(tmp_path):
     """Round 21 started two hours ago by the host's clock, its call standing, while the queue's
     clock, the bot's, stands a day and three hours after its start. Attendance's "missed check-in
@@ -344,11 +339,6 @@ def _swept_bot(db_path: str) -> MagicMock:
     return bot
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the clean-up catch-up stops quietly at a database it cannot read, its fault "
-           "in the host's log alone, rather than raising for the sweep to report",
-)
 async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
     tmp_path,
 ):
@@ -369,11 +359,6 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
     bot.change_queue.ask.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the clean-up catch-up swallows a round's failure into the host's log rather "
-           "than reporting it once to the log channel",
-)
 async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):

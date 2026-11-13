@@ -1675,6 +1675,39 @@ async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
         return [_row_to_round(row) for row in await cursor.fetchall()]
 
 
+async def rounds_of_ongoing_seasons(db_path: str, statuses: Iterable[str]) -> list[Round]:
+    """Each round of a season in an ongoing stage (`ONGOING_STAGES`) whose status is one of
+    *statuses*, earliest first, a round of a cancelled division left out.
+
+    For a module catching up what came due while the bot was down: attendance's calls and
+    deadlines, which a season is owed while it is raced. A round whose stored moment cannot be
+    read is passed over, as one that can be placed nowhere. The stored moments are ISO 8601 text
+    in UTC written with their offset (`stored_scheduled_at`), so text order is time order. It
+    writes nothing.
+    """
+    ongoing = [stage.value for stage in ONGOING_STAGES]
+    wanted = sorted(set(statuses))
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
+            "r.status FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            f"WHERE s.stage IN ({','.join('?' for _ in ongoing)}) "
+            f"AND r.status IN ({','.join('?' for _ in wanted)}) "
+            "AND d.status != 'CANCELLED' "
+            "ORDER BY r.scheduled_at, r.id",
+            (*ongoing, *wanted),
+        )
+        rows = await cursor.fetchall()
+    rounds: list[Round] = []
+    for row in rows:
+        try:
+            rounds.append(_row_to_round(row))
+        except ValueError:
+            continue
+    return rounds
+
+
 # ------------------------------------------------------------------
 # Row mappers
 # ------------------------------------------------------------------
