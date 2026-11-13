@@ -95,6 +95,15 @@ async def test_a_second_window_is_a_second_record(db_path):
 _CONFIRMED_AT = datetime(2026, 3, 1, 12, 30, tzinfo=timezone.utc)
 
 
+async def _seed(db_path, *statements: str) -> None:
+    """Write *statements* in a save of the test's own, as the signup settings' saves leave the
+    tables."""
+    async with get_connection(db_path) as db:
+        for statement in statements:
+            await db.execute(statement)
+        await db.commit()
+
+
 async def _confirmed(db_path, season_id: int, now: datetime = _CONFIRMED_AT) -> None:
     """Season *season_id*'s configuration confirmed: signup's subscriber to the "configuration
     confirmed" hook called on the save's connection, which commits nothing of its own."""
@@ -112,11 +121,12 @@ async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
     connection, season 5 and the queue's clock, keeps those settings and that slot for season 5,
     stamped with the queue's clock, on the save's connection, committing nothing itself."""
     svc = SignupModuleService(db_path)
-    await svc.add_slot(1, "19:00")
-    settings = await svc.get_settings()
-    settings.time_type = "SHORT_QUALIFICATION"
-    settings.nationality_required = False
-    await svc.save_settings(settings)
+    await _seed(
+        db_path,
+        "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (1, '19:00')",
+        "INSERT INTO signup_module_settings (id, nationality_required, time_type,"
+        " time_image_required) VALUES (1, 0, 'SHORT_QUALIFICATION', 1)",
+    )
 
     await _confirmed(db_path, 5)
 
@@ -134,7 +144,10 @@ async def test_the_snapshot_is_replaced_not_duplicated(db_path):
     one slot, stamped with the later clock."""
     svc = SignupModuleService(db_path)
     await _confirmed(db_path, 5)
-    await svc.add_slot(3, "20:00")
+    await _seed(
+        db_path,
+        "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (3, '20:00')",
+    )
     later = datetime(2026, 3, 2, 12, 30, tzinfo=timezone.utc)
 
     await _confirmed(db_path, 5, later)

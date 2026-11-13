@@ -569,11 +569,11 @@ async def test_the_first_question_is_nationality_only_where_required_and_a_butto
     taken away, so a stray message cannot be read as an answer to a button-only step."""
     league = await _league(tmp_path)
     # The settings row is saved, not updated: a league that never changed them has none.
-    from leaguebot.signup.models.signup_module import SignupModuleSettings
-
-    await league.bot.signup_module_service.save_settings(SignupModuleSettings(
-        nationality_required=nationality, time_type="TIME_TRIAL", time_image_required=True,
-    ))
+    await league.write(
+        "INSERT INTO signup_module_settings (id, nationality_required, time_type,"
+        " time_image_required) VALUES (1, ?, 'TIME_TRIAL', 1)",
+        int(nationality),
+    )
     await league.write("UPDATE season_signup_config SET nationality_required = ?", int(nationality))
 
     await _press_sign_up(league)
