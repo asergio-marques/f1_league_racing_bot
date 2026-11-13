@@ -87,8 +87,10 @@ class _League:
         return list(self.channels[VERDICTS_CHANNEL].sent)
 
     def sheets(self) -> list[str]:
-        """What the division's attendance channel was sent: the sheet."""
-        return list(self.channels[ATTENDANCE_CHANNEL].sent)
+        """What the division's attendance channel was sent: the sheet. Nothing, once the channel
+        is gone from the server."""
+        channel = self.channels.get(ATTENDANCE_CHANNEL)
+        return [] if channel is None else list(channel.sent)
 
     def log_lines(self) -> list[str]:
         """Every line the log channel was sent."""
