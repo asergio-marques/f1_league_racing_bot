@@ -152,19 +152,65 @@ async def _audit_types(db_path) -> list[str]:
 CLOSE_KIND = "signup.close"
 
 
-async def _close_league(tmp_path, *, close_at: str | None) -> Any:
-    """`setup_league` at Signups with the window open and its close time *close_at*, on a real
-    change queue: nobody part-way through signing up."""
+async def _close_league(tmp_path, *, close_at: str | None, signups_open: bool = True) -> Any:
+    """`setup_league` at Signups with the window open (or, where not *signups_open*, closed) and
+    its close time *close_at*, on a real change queue: nobody part-way through signing up."""
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
-    await league.write("UPDATE signup_module_config SET close_at = ?", close_at)
+    await league.write(
+        "UPDATE signup_module_config SET close_at = ?, signups_open = ?", close_at, int(signups_open)
+    )
     return league
 
 
-def _manager(league) -> Any:
+def _manager(league, command: str = "signup close") -> Any:
     interaction = member_interaction(league.bot, user=tier_member("manager", member_id=77))
     interaction.guild = league.guild
-    interaction.command = MagicMock(qualified_name="signup close")
+    interaction.command = MagicMock(qualified_name=command)
     return interaction
+
+
+#: The kind of the one-off timer that closes signups at their set time (#286, item 12).
+CLOSE_TIMER = "signup.close_timer"
+
+#: What the close-time commands do not yet do before #286's item 12.
+_CLOSE_TIME_SETTINGS = (
+    "#286: the close-time commands are not yet Settings that arm and disarm the "
+    "signup.close_timer from the change queue"
+)
+
+
+async def _asked(league, run, *args) -> Any:
+    """Manager 77 runs the close-time command *run* (`_add`, `_cancel` or `_modify`) on
+    *league*, the queue not yet run; gives his interaction."""
+    name = {_add: "add", _cancel: "cancel", _modify: "modify"}[run]
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    interaction = _manager(league, f"signup close-time {name}")
+    await run(cog, interaction, *args)
+    return interaction
+
+
+async def _ran(league, run, *args) -> Any:
+    """Manager 77 runs the close-time command *run* on *league*, then the queue runs."""
+    interaction = await _asked(league, run, *args)
+    await run_queue(league.bot)
+    return interaction
+
+
+def _armed(league) -> list[tuple]:
+    """Each arming of the close timer, as `arm_once(kind, key, run_at)` was called."""
+    return [call.args for call in league.bot.scheduler_service.arm_once.call_args_list
+            if call.args and call.args[0] == CLOSE_TIMER]
+
+
+def _disarmed(league) -> list[tuple]:
+    """Each disarming of the close timer, as `disarm(kind, key)` was called."""
+    return [call.args for call in league.bot.scheduler_service.disarm.call_args_list
+            if call.args and call.args[0] == CLOSE_TIMER]
+
+
+async def _close_time_audits(db_path) -> list[str]:
+    return [t for t in await _audit_types(db_path) if t.startswith("SIGNUP_CLOSE_TIME")]
 
 
 async def _close_on(league) -> Any:
@@ -249,135 +295,136 @@ class TestTheCloseRefusal:
 
 
 class TestCancel:
+    @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_clears_the_stored_time_and_the_scheduled_job(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=ARMED)
-        cog = _cog(db_path)
+        """The window is open with its close time armed a week on. Manager 77 runs `/signup
+        close-time cancel`: nothing is saved as it is asked; when the queue runs, the close time
+        is cleared and the close timer disarmed."""
+        league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _cancel(cog, _interaction())
+        await _asked(league, _cancel)
+        assert await _close_at(league.db_path) == ARMED
+        await run_queue(league.bot)
 
-        assert await _close_at(db_path) is None
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
+        assert await _close_at(league.db_path) is None
+        assert len(_disarmed(league)) == 1
 
     async def test_it_leaves_signups_open(self, tmp_path):
         """The window survives the cancel — only the timer goes."""
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
+        league = await _close_league(tmp_path, close_at=ARMED)
 
-        db_path = await _seed(tmp_path, close_at=ARMED)
+        await _ran(league, _cancel)
 
-        await _cancel(_cog(db_path), _interaction())
-
-        cfg = await SignupModuleService(db_path).get_config()
-        assert cfg.signups_open is True
+        [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+        assert window["signups_open"]
 
     async def test_it_is_refused_when_nothing_is_armed(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=None)
-        cog = _cog(db_path)
-        interaction = _interaction()
+        league = await _close_league(tmp_path, close_at=None)
 
-        await _cancel(cog, interaction)
+        interaction = await _ran(league, _cancel)
 
         assert "No auto-close time is set" in _reply(interaction)
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_not_called()
+        assert _disarmed(league) == []
 
     async def test_it_is_audited(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=ARMED)
+        league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _cancel(_cog(db_path), _interaction())
+        await _ran(league, _cancel)
 
-        assert await _audit_types(db_path) == ["SIGNUP_CLOSE_TIME_CANCEL"]
+        assert await _close_time_audits(league.db_path) == ["SIGNUP_CLOSE_TIME_CANCEL"]
 
 
 # ── /signup close-time add ────────────────────────────────────────────────
 
 
 class TestAdd:
+    @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_arms_the_timer(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=None)
-        cog = _cog(db_path)
+        """The window is open with no close time. Manager 77 runs `/signup close-time add` for
+        two weeks on: nothing is saved or armed as it is asked; when the queue runs, the close
+        time is saved and the close timer armed once, for that time."""
+        league = await _close_league(tmp_path, close_at=None)
 
-        await _add(cog, _interaction(), LATER)
+        await _asked(league, _add, LATER)
+        assert await _close_at(league.db_path) is None
+        assert _armed(league) == []
+        await run_queue(league.bot)
 
-        assert await _close_at(db_path) == LATER
-        cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once_with(
-            LATER
-        )
+        assert await _close_at(league.db_path) == LATER
+        [(_, _key, run_at)] = _armed(league)
+        assert run_at == datetime.fromisoformat(LATER)
 
     async def test_it_is_refused_when_one_is_already_armed(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=ARMED)
-        cog = _cog(db_path)
-        interaction = _interaction()
+        league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _add(cog, interaction, LATER)
+        interaction = await _ran(league, _add, LATER)
 
         assert "`/signup close-time modify`" in _reply(interaction)
-        assert await _close_at(db_path) == ARMED
-        cog.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+        assert await _close_at(league.db_path) == ARMED
+        assert _armed(league) == []
 
     async def test_it_rejects_a_past_time(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=None)
-        cog = _cog(db_path)
-        interaction = _interaction()
+        league = await _close_league(tmp_path, close_at=None)
         past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
 
-        await _add(cog, interaction, past)
+        interaction = await _ran(league, _add, past)
 
         assert "must be a future datetime" in _reply(interaction)
-        assert await _close_at(db_path) is None
+        assert await _close_at(league.db_path) is None
 
     async def test_it_rejects_an_unparseable_time(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=None)
-        cog = _cog(db_path)
-        interaction = _interaction()
+        league = await _close_league(tmp_path, close_at=None)
 
-        await _add(cog, interaction, "next Tuesday-ish")
+        interaction = await _ran(league, _add, "next Tuesday-ish")
 
         assert "not a valid ISO 8601 datetime" in _reply(interaction)
-        assert await _close_at(db_path) is None
+        assert await _close_at(league.db_path) is None
 
     async def test_it_is_audited(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=None)
+        league = await _close_league(tmp_path, close_at=None)
 
-        await _add(_cog(db_path), _interaction(), LATER)
+        await _ran(league, _add, LATER)
 
-        assert await _audit_types(db_path) == ["SIGNUP_CLOSE_TIME_ADD"]
+        assert await _close_time_audits(league.db_path) == ["SIGNUP_CLOSE_TIME_ADD"]
 
 
 # ── /signup close-time modify ─────────────────────────────────────────────
 
 
 class TestModify:
+    @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_cancels_the_old_job_and_arms_the_new(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=ARMED)
-        cog = _cog(db_path)
+        """The window is open with its close time armed a week on. Manager 77 runs `/signup
+        close-time modify` for two weeks on: nothing changes as it is asked; when the queue runs,
+        the new time is saved and the close timer armed again for it, replacing the old."""
+        league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _modify(cog, _interaction(), LATER)
+        await _asked(league, _modify, LATER)
+        assert await _close_at(league.db_path) == ARMED
+        assert _armed(league) == []
+        await run_queue(league.bot)
 
-        assert await _close_at(db_path) == LATER
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
-        cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once_with(
-            LATER
-        )
+        assert await _close_at(league.db_path) == LATER
+        [(_, _key, run_at)] = _armed(league)
+        assert run_at == datetime.fromisoformat(LATER)
 
     async def test_it_is_refused_when_nothing_is_armed(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=None)
-        cog = _cog(db_path)
-        interaction = _interaction()
+        league = await _close_league(tmp_path, close_at=None)
 
-        await _modify(cog, interaction, LATER)
+        interaction = await _ran(league, _modify, LATER)
 
         assert "`/signup close-time add`" in _reply(interaction)
-        assert await _close_at(db_path) is None
-        cog.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+        assert await _close_at(league.db_path) is None
+        assert _armed(league) == []
 
     async def test_a_rejected_time_leaves_the_armed_one_alone(self, tmp_path):
         """A mistyped replacement must not disarm what is already there."""
-        db_path = await _seed(tmp_path, close_at=ARMED)
-        cog = _cog(db_path)
+        league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _modify(cog, _interaction(), "the Thursday after next")
+        await _ran(league, _modify, "the Thursday after next")
 
-        assert await _close_at(db_path) == ARMED
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_not_called()
+        assert await _close_at(league.db_path) == ARMED
+        assert _disarmed(league) == [] and _armed(league) == []
 
     @pytest.mark.parametrize(
         "typed", [ARMED, ARMED.removesuffix("+00:00")], ids=["as-stored", "naive-utc"]
@@ -387,33 +434,30 @@ class TestModify:
     ):
         """The manager gives the instant already armed, as stored or as a naive time read as
         UTC: they are told nothing changed, no audit row is written, the timer is neither
-        cancelled nor re-armed, and one line records that nothing changed."""
-        db_path = await _seed(tmp_path, close_at=ARMED)
-        cog = _cog(db_path)
-        interaction = _interaction()
+        disarmed nor armed again, and one line records that nothing changed."""
+        from tests.support.change_queue import queued_log_lines
 
-        await _modify(cog, interaction, typed)
+        league = await _close_league(tmp_path, close_at=ARMED)
+
+        interaction = await _ran(league, _modify, typed)
 
         assert re.search(r"[Nn]othing (was )?changed", _reply(interaction))
-        assert await _close_at(db_path) == ARMED
-        assert await _audit_types(db_path) == []
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_not_called()
-        cog.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
-        [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-        assert line.startswith(
-            "Manager (<@42>) | /signup close-time modify | Nothing changed"
-        )
+        assert await _close_at(league.db_path) == ARMED
+        assert await _close_time_audits(league.db_path) == []
+        assert _disarmed(league) == [] and _armed(league) == []
+        lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+        [line] = [line for line in lines if "/signup close-time modify" in line]
+        assert line.startswith("Admin (`<@77>`) | /signup close-time modify | Nothing changed")
 
     async def test_it_records_the_time_it_replaced(self, tmp_path):
-        db_path = await _seed(tmp_path, close_at=ARMED)
+        league = await _close_league(tmp_path, close_at=ARMED)
 
-        await _modify(_cog(db_path), _interaction(), LATER)
+        await _ran(league, _modify, LATER)
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT old_value, new_value FROM audit_entries",
-            )
-            row = await cursor.fetchone()
+        [row] = await league.rows(
+            "SELECT old_value, new_value FROM audit_entries "
+            "WHERE change_type = 'SIGNUP_CLOSE_TIME_MODIFY'"
+        )
         assert (row["old_value"], row["new_value"]) == (ARMED, LATER)
 
 
@@ -425,15 +469,68 @@ class TestTheyRequireAnOpenWindow:
     async def test_refused_while_signups_are_closed(self, tmp_path, run):
         """`close_at` means nothing without a window: `set_window_closed` nulls it, so a
         timer armed against a closed window could only fire a forced close on nothing."""
-        db_path = await _seed(tmp_path, signups_open=False, close_at=None)
-        cog = _cog(db_path)
-        interaction = _interaction()
+        league = await _close_league(tmp_path, close_at=None, signups_open=False)
 
-        await run(cog, interaction)
+        interaction = await _ran(league, run)
 
         assert "Signups are not currently open" in _reply(interaction)
-        cog.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_not_called()
+        assert _armed(league) == [] and _disarmed(league) == []
+
+
+# ── The close timer, and the close time missed while the bot was down ─────
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: no signup.close_timer is armed by the close-time commands, nor a handler for it "
+    "that judges the stored close time"
+))
+async def test_a_close_time_cancelled_does_not_close_signups(tmp_path):
+    """The window is open with no close time. Manager 77 adds one two weeks on and the queue
+    runs; he then cancels it and the queue runs. The close timer fires anyway for the key it was
+    armed with, as one whose disarming came too late would, the queue's clock past the old time,
+    and the queue runs: the stored close time is gone, so signups stay open and no automatic
+    close is audited."""
+    from tests.support.change_queue import maybe_await
+
+    league = await _close_league(tmp_path, close_at=None)
+    await _ran(league, _add, LATER)
+    [(_, key, _run_at)] = _armed(league)
+    await _ran(league, _cancel)
+    league.clock.advance(days=15)
+
+    [handler] = [call.args[1]
+                 for call in league.bot.scheduler_service.register_timer.call_args_list
+                 if call.args and call.args[0] == CLOSE_TIMER]
+    await maybe_await(handler(key))
+    await run_queue(league.bot)
+
+    [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+    assert window["signups_open"]
+    assert "SIGNUP_AUTO_CLOSE" not in await _audit_types(league.db_path)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: signup's start-up step judges the close time against the host's clock, not the "
+    "queue's, and re-arms rather than catching up"
+))
+async def test_a_close_time_missed_while_down_closes_on_start(tmp_path):
+    """The window is open with its close time an hour on by the host's clock; the bot was down
+    and the queue's clock now reads two hours on, past it. Signup's "signup close timer"
+    start-up step runs, and the queue runs: signups are closed, audited once as an automatic
+    close, and no close timer is armed for a time already gone."""
+    from leaguebot.signup.wiring import start_up_steps
+
+    close_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
+    league = await _close_league(tmp_path, close_at=close_at.isoformat())
+    league.clock.advance(hours=2)
+
+    await dict(start_up_steps(league.bot))["signup close timer"]()
+    await run_queue(league.bot)
+
+    [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+    assert not window["signups_open"]
+    assert (await _audit_types(league.db_path)).count("SIGNUP_AUTO_CLOSE") == 1
+    assert _armed(league) == []
 
 
 # ── One parser, two entry points ──────────────────────────────────────────
