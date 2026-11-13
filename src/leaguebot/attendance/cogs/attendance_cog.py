@@ -9,7 +9,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.attendance.services.channel_settings import (
@@ -33,7 +32,10 @@ from leaguebot.attendance.services.attendance_sync_change import (
     faults_verdict,
     round_verdict,
 )
-from leaguebot.core.services.seasons.season_service import round_by_number
+from leaguebot.core.services.seasons.season_service import (
+    division_in_ongoing_season,
+    round_by_number,
+)
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
@@ -612,34 +614,18 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        from leaguebot.core.db.database import get_connection as _gc
-
         # Validate the division is of a season being raced — one of the three ongoing stages,
         # a check-in belonging to nothing else (issue #220) — and has an active RSVP embed.
-        from leaguebot.core.models.season import ONGOING_STAGES
+        found = await division_in_ongoing_season(self.bot.db_path, division)
 
-        ongoing = [stage.value for stage in ONGOING_STAGES]
-        async with _gc(self.bot.db_path) as db:
-            cur = await db.execute(
-                f"""
-                SELECT d.id AS division_id, d.name AS division_name
-                  FROM divisions d
-                  JOIN seasons s ON s.id = d.season_id
-                 WHERE s.stage IN ({",".join("?" for _ in ongoing)})
-                   AND LOWER(d.name) = LOWER(?)
-                """,
-                (*ongoing, division),
-            )
-            div_row = await cur.fetchone()
-
-        if div_row is None:
+        if found is None:
             await refuse(
                 interaction,
                 f"❌ Division **{division}** not found in a season being raced.",
                 what=describe(interaction),
             )
             return
-        division_id: int = div_row["division_id"]
+        division_id = found.id
 
         target_embed = await self.bot.attendance_service.get_current_embed_message(division_id)
         if target_embed is None:
@@ -653,7 +639,7 @@ class AttendanceCog(commands.Cog):
 
         await interaction.response.send_modal(
             _RsvpBulkSetModal(
-                division_name=div_row["division_name"],
+                division_name=found.name,
                 division_id=division_id,
                 round_id=target_embed.round_id,
                 embed_message_id=int(target_embed.message_id),

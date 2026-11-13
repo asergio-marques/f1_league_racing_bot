@@ -26,6 +26,7 @@ from leaguebot.core.models.round import (
     stored_scheduled_at,
 )
 from leaguebot.core.models.season import (
+    ONGOING_STAGES,
     Season,
     SeasonStage,
     SeasonStatus,
@@ -1355,6 +1356,29 @@ async def division_first_round(db_path: str, division_id: int) -> Round | None:
         )
         row = await cursor.fetchone()
     return _row_to_round(row) if row else None
+
+
+async def division_in_ongoing_season(db_path: str, name: str) -> Division | None:
+    """The division of a season being raced that *name* names, without regard to case, or None.
+
+    A season being raced is one in an ongoing stage (`ONGOING_STAGES`), the stages a check-in
+    belongs to. For a module reading core's tables only through core's services, where the caller
+    has the database path and no `SeasonService`: a maintainer typing a division's name into a
+    command is not copying it letter for letter. It writes nothing.
+    """
+    ongoing = [stage.value for stage in ONGOING_STAGES]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT d.id, d.season_id, d.name, d.mention_role_id, d.status, d.tier, "
+            "d.lineup_channel_id, d.calendar_channel_id, d.lineup_message_id, "
+            "d.calendar_message_id "
+            "FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            f"WHERE s.stage IN ({','.join('?' for _ in ongoing)}) "
+            "AND LOWER(d.name) = LOWER(?) LIMIT 1",
+            (*ongoing, name),
+        )
+        row = await cursor.fetchone()
+    return _row_to_division(row) if row else None
 
 
 async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list[int]:
