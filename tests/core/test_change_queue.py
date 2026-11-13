@@ -2328,6 +2328,47 @@ async def test_done_step_results_before_gives_each_earlier_change_s_done_step_ne
     ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: done_step_results_before reads every earlier change's done step, whatever its "
+    "payload names, and takes no matching",
+)
+async def test_done_step_results_before_gives_only_the_changes_whose_payload_matches(env):
+    """Asked with `matching`, `done_step_results_before` gives only the earlier changes whose
+    payload holds each of its values, newest first, filtered as it reads rather than after: a
+    check-in press asks for the earlier answers to its own call alone. Four "watched" changes have
+    their redraw done: round 1 of division 7 (saving {"later": true}), round 2 of division 7,
+    round 1 of division 8, and round 1 of division 7 again; a fifth waits. Asked before the fifth
+    for round 1 of division 7, the fourth and the first come back; for round 2 of division 7, the
+    second alone; for round 3, nothing."""
+    from leaguebot.core.services.queue.queue_records import done_step_results_before
+
+    api = _api()
+
+    async def _redraw(ctx):
+        return api.StepResult(result={"later": True} if ctx.payload["n"] == 1 else None)
+
+    _queue(env, _type("watched", steps=[api.Step("redraw", api.StepKind.ACT, _redraw)]))
+
+    for n, round_id, division_id in ((1, 1, 7), (2, 2, 7), (3, 1, 8), (4, 1, 7)):
+        await _ask(env, "watched", {"n": n, "round_id": round_id, "division_id": division_id})
+    await run_queue(env.bot)
+    fifth = await _ask(env, "watched", {"n": 5, "round_id": 1, "division_id": 7})
+
+    def _asked(round_id, division_id):
+        return done_step_results_before(
+            env.db_path, "watched", "redraw", fifth,
+            matching={"round_id": round_id, "division_id": division_id},
+        )
+
+    assert await _asked(1, 7) == [
+        ({"n": 4, "round_id": 1, "division_id": 7}, {}),
+        ({"n": 1, "round_id": 1, "division_id": 7}, {"later": True}),
+    ]
+    assert await _asked(2, 7) == [({"n": 2, "round_id": 2, "division_id": 7}, {})]
+    assert await _asked(3, 7) == []
+
+
 async def test_a_check_as_the_change_starts_knows_its_own_id(env):
     """A check asked when the change is asked for has no change id; the same check as the change
     starts is handed the change's id, so that it can leave itself out of `unfinished`."""
