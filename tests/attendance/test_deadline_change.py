@@ -19,7 +19,7 @@ lock or announcement stops the queue, and a discarded announcement is named and 
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -175,20 +175,23 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
     `distribute`, `lock_call`, `announce` — taking the buttons off the call (7001) and posting
     one announcement in Pro's check-in channel, recorded on the call with the deadline marked
     as run: with no mark and no message, the deadline has not run, so it runs. The deadline
-    timer's callback asks the queue rather than running the deadline."""
+    timer's callback asks the queue rather than running the deadline. The queue's clock is moved
+    three minutes on, away from the host's, before the queue runs: the deadline is marked as run
+    at the queue's clock."""
     from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
     await _ask(league)
     assert _sent(league) == [] and _edited(league) == []
+    league.clock.advance(minutes=3)
     await run_queue(league.bot)
 
     assert _edited(league) == [CALL]
     [posted] = _sent(league)
     row = await _call_row(league)
     assert row["distribution_msg_id"] == str(posted)
-    assert row["deadline_run_at"] is not None
+    assert datetime.fromisoformat(row["deadline_run_at"]) == league.clock.now
     [change] = await _deadline_changes(league)
     assert [step["name"] for step in await step_rows(league.db_path, change["id"])] == [
         "distribute", "lock_call", "announce",

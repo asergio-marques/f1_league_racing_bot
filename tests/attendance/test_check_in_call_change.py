@@ -18,7 +18,7 @@ leaves alone a call already in hand; under test mode it asks none (the #429 rule
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -145,15 +145,18 @@ async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
 
 async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its_mark(tmp_path):
     """The call's message and channel, and a NO_RSVP row for each of Pro's seated drivers, are
-    saved with the posting job's mark."""
+    saved with the posting job's mark. The queue's clock is moved three minutes on, away from the
+    host's, before the queue runs: the call is recorded as posted at the queue's clock."""
     league = await _call_league(tmp_path)
 
     await _ask(league)
+    league.clock.advance(minutes=3)
     await run_queue(league.bot)
 
     [posted] = _sent(league)
     [row] = await _call_record(league)
     assert (row["message_id"], row["channel_id"]) == (str(posted), str(CHECK_IN))
+    assert datetime.fromisoformat(row["posted_at"]) == league.clock.now
     assert await _answers(league) == {profile_id(LEWIS): "NO_RSVP", profile_id(MAX): "NO_RSVP"}
     [change] = await _call_changes(league)
     [post] = [step for step in await step_rows(league.db_path, change["id"])
