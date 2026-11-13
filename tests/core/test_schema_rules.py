@@ -236,6 +236,27 @@ async def test_an_account_holds_one_signup_wizard(db_path):
     db.close()
 
 
+@pytest.mark.xfail(strict=True, reason="#286: nothing in the schema holds signup to one open window")
+async def test_a_second_open_window_is_refused(db_path):
+    """Season 1 has a signup window that closed and one still open. A second window opened
+    beside the open one is refused by the schema: signup has one open window at a time, so the
+    close time and the close are written to that window alone."""
+    db = _connect(db_path)
+    db.execute(
+        "INSERT INTO signup_windows (season_id, opened_at, closed_at) "
+        "VALUES (1, '2026-01-01T10:00:00+00:00', '2026-01-02T10:00:00+00:00')"
+    )
+    db.execute(
+        "INSERT INTO signup_windows (season_id, opened_at) VALUES (1, '2026-01-03T10:00:00+00:00')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO signup_windows (season_id, opened_at) "
+            "VALUES (1, '2026-01-04T10:00:00+00:00')"
+        )
+    db.close()
+
+
 async def test_a_team_name_is_unique_in_the_league(db_path):
     db = _connect(db_path)
     db.execute("INSERT INTO default_teams (name, full_name) VALUES ('Alpha', 'Alpha')")
