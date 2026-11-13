@@ -696,7 +696,7 @@ class _Render:
 @pytest.mark.parametrize("fault", [
     "drawing",
     "track registry",
-    "teams",
+    pytest.param("teams"),
     "none",
 ])
 @pytest.mark.asyncio
