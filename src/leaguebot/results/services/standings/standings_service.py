@@ -311,6 +311,34 @@ async def _scored_rows_up_to(
     return sorted(rows, key=lambda row: row["round_number"])
 
 
+async def profiles_with_a_result_in_round_on(db: aiosqlite.Connection, round_id: int) -> set[int]:
+    """The profile ids of the drivers holding an active race or qualifying result in *round_id*,
+    read on *db*; empty for a round with none. A result carrying no profile is passed over.
+
+    Who raced a round, asked of the owner of the results by a module that scores attendance from
+    it (architecture.md, "The database"), on the connection of the save it is in. Which outcome
+    the result carries is not asked: a driver disqualified or not started raced. It writes
+    nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        """
+        SELECT DISTINCT driver_profile_id FROM (
+            SELECT x.driver_profile_id
+            FROM race_session_results x
+            JOIN session_results sr ON sr.id = x.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            UNION ALL
+            SELECT x.driver_profile_id
+            FROM qualifying_session_results x
+            JOIN session_results sr ON sr.id = x.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+        ) WHERE driver_profile_id IS NOT NULL
+        """,
+        (round_id, round_id),
+    )
+    return {int(row["driver_profile_id"]) for row in await cursor.fetchall()}
+
+
 async def compute_driver_standings(
     db_path: str,
     division_id: int,

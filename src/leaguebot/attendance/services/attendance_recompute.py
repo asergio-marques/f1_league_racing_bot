@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from leaguebot.attendance.services import attendance_scoring
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.division import DivisionStatus
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.seasons.season_service import division_round_states_on, season_divisions_on
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.results.services.module.division_channels import verdicts_channels_on
 
 
 async def _recalculate_forward(
@@ -79,17 +83,17 @@ async def _recalculate_forward(
         await attendance_scoring.distribute_attendance_points(db_path, round_id, division_id, db=db)
 
         # FR-030: propagate total_points_after forward through subsequent rounds.
-        cursor = await db.execute(
-            """
-            SELECT id FROM rounds
-            WHERE division_id = ?
-              AND status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
-              AND round_number > (SELECT round_number FROM rounds WHERE id = ?)
-            ORDER BY round_number ASC
-            """,
-            (division_id, round_id),
-        )
-        subsequent_rounds = [row["id"] for row in await cursor.fetchall()]
+        # The rounds are core's to give: those of the division after this one that are
+        # finalised or awaiting their appeal verdicts, in round order.
+        states = await division_round_states_on(db, division_id)
+        named_number = states[round_id][0] if round_id in states else None
+        subsequent_rounds = [
+            later_id
+            for later_id, (number, status) in states.items()
+            if named_number is not None
+            and number > named_number
+            and status in (RoundStatus.AWAITING_APPEAL_VERDICTS.value, RoundStatus.FINAL.value)
+        ]
 
         for sub_round_id in subsequent_rounds:
             if recompute == "all":
@@ -147,20 +151,20 @@ async def recalculation_faults(
         return []
 
     async with get_connection(db_path) as db:
+        # The division's own rows are core's, its verdicts channel results', and its attendance
+        # channel attendance's: each is asked of its owner and the three are put together here.
+        divisions = [
+            d
+            for d in await season_divisions_on(db, season_id)
+            if cancelled_too or d.status != DivisionStatus.CANCELLED
+        ]
+        verdicts_channels = await verdicts_channels_on(db)
         cursor = await db.execute(
-            """
-            SELECT d.id, d.name,
-                   adc.attendance_channel_id,
-                   drc.penalty_channel_id
-            FROM divisions d
-            LEFT JOIN attendance_division_config adc ON adc.division_id = d.id
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE d.season_id = ? AND (? OR d.status != 'CANCELLED')
-            ORDER BY d.tier, d.id
-            """,
-            (season_id, cancelled_too),
+            "SELECT division_id, attendance_channel_id FROM attendance_division_config"
         )
-        division_rows = await cursor.fetchall()
+        attendance_channels = {
+            int(r["division_id"]): r["attendance_channel_id"] for r in await cursor.fetchall()
+        }
 
         cursor = await db.execute(
             """
@@ -177,20 +181,22 @@ async def recalculation_faults(
     attendance_graphics = await aspect_attaches_files(bot, "attendance")
 
     faults: list[str] = []
-    for row in division_rows:
-        division_name = row["name"] or f"division {row['id']}"
-        if row["attendance_channel_id"]:
+    for division in sorted(divisions, key=lambda d: (d.tier, d.id)):
+        division_name = division.name or f"division {division.id}"
+        attendance_channel = attendance_channels.get(division.id)
+        if attendance_channel:
             fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "attendance",
-                int(row["attendance_channel_id"]),
+                int(attendance_channel),
                 needs_attachment=attendance_graphics,
             )
             if fault is not None:
                 faults.append(fault)
-        if sanctions_possible and row["penalty_channel_id"]:
+        verdicts_channel = verdicts_channels.get(division.id)
+        if sanctions_possible and verdicts_channel:
             fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "verdicts",
-                int(row["penalty_channel_id"]),
+                verdicts_channel,
                 needs_attachment=False,
             )
             if fault is not None:

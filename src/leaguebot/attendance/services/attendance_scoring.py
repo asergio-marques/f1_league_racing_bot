@@ -19,6 +19,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import division_round_states_on
+from leaguebot.results.services.standings.standings_service import profiles_with_a_result_in_round_on
 
 
 log = logging.getLogger(__name__)
@@ -50,6 +51,23 @@ async def _shared_or_own(db_path: str, db):
         yield owned, True
 
 
+async def _is_a_live_round_of(db, round_id: int, division_id: int) -> bool:
+    """Whether the round is one of the division's and not cancelled: a cancelled round, or one
+    the division no longer holds, is scored no attendance. The rounds are core's to give."""
+    states = await division_round_states_on(db, division_id)
+    return round_id in states and states[round_id][1] != RoundStatus.CANCELLED.value
+
+
+async def _placed_profile_ids(db, division_id: int) -> tuple[set[int], set[int]]:
+    """The profile ids placed in the division's full-time teams and in its reserve team: the
+    seats are core's to give, and what a round holds against them is attendance's to sort."""
+    placed = await TeamService.placed_drivers_on(db, division_id)
+    return (
+        {p.profile_id for p in placed if not p.is_reserve},
+        {p.profile_id for p in placed if p.is_reserve},
+    )
+
+
 async def record_attendance_from_results_on(
     db: aiosqlite.Connection,
     round_id: int,
@@ -68,57 +86,32 @@ async def record_attendance_from_results_on(
     attendance lands with the penalties and points or not at all (#439).
     """
     # Guard: skip if round is cancelled.
-    cursor = await db.execute(
-        "SELECT status FROM rounds WHERE id = ?",
-        (round_id,),
-    )
-    round_row = await cursor.fetchone()
-    if round_row is None or round_row["status"] == "CANCELLED":
+    if not await _is_a_live_round_of(db, round_id, division_id):
         log.info("record_attendance_from_results_on: skipping cancelled round %s", round_id)
         return
 
     # Set of driver_profile_ids who have any result row for this round.
     # Outcome modifier is irrelevant — any row counts as attended (DSQ/DNS included).
-    cursor = await db.execute(
-        """
-        SELECT DISTINCT driver_profile_id FROM (
-            SELECT rsr.driver_profile_id
-            FROM race_session_results rsr
-            JOIN session_results sr ON sr.id = rsr.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-            UNION ALL
-            SELECT qsr.driver_profile_id
-            FROM qualifying_session_results qsr
-            JOIN session_results sr ON sr.id = qsr.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-        ) WHERE driver_profile_id IS NOT NULL
-        """,
-        (round_id, round_id),
-    )
-    attended_rows = await cursor.fetchall()
-    attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
+    attended_ids = await profiles_with_a_result_in_round_on(db, round_id)
 
     # Full-time DRA rows for this round, plus allocated reserve DRA rows
     # (assigned_team_id IS NOT NULL); unallocated reserves are excluded (FR-002).
+    full_time_ids, reserve_ids = await _placed_profile_ids(db, division_id)
     cursor = await db.execute(
         """
-        SELECT dra.id, dra.driver_profile_id, dra.attended
-        FROM driver_round_attendance dra
-        JOIN driver_season_assignments dsa
-            ON dsa.driver_profile_id = dra.driver_profile_id
-        JOIN team_seats ts ON ts.id = dsa.team_seat_id
-        JOIN team_instances ti ON ti.id = ts.team_instance_id
-        WHERE dra.round_id = ?
-          AND dra.division_id = ?
-          AND ti.division_id = ?
-          AND (
-              ti.is_reserve = 0
-              OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
-          )
+        SELECT id, driver_profile_id, attended, assigned_team_id
+        FROM driver_round_attendance
+        WHERE round_id = ?
+          AND division_id = ?
         """,
-        (round_id, division_id, division_id),
+        (round_id, division_id),
     )
-    dra_rows = await cursor.fetchall()
+    dra_rows = [
+        r
+        for r in await cursor.fetchall()
+        if r["driver_profile_id"] in full_time_ids
+        or (r["driver_profile_id"] in reserve_ids and r["assigned_team_id"] is not None)
+    ]
 
     for row in dra_rows:
         dra_id = row["id"]
@@ -157,53 +150,28 @@ async def record_attendance_from_results_full_recompute(
     its own (#439). *db_path* names the league database *db* is a connection to.
     """
     # Guard: skip if round is cancelled.
-    cursor = await db.execute(
-        "SELECT status FROM rounds WHERE id = ?",
-        (round_id,),
-    )
-    round_row = await cursor.fetchone()
-    if round_row is None or round_row["status"] == "CANCELLED":
+    if not await _is_a_live_round_of(db, round_id, division_id):
         log.info("record_attendance_from_results_full_recompute: skipping cancelled round %s", round_id)
         return
 
-    cursor = await db.execute(
-        """
-        SELECT DISTINCT driver_profile_id FROM (
-            SELECT rsr.driver_profile_id
-            FROM race_session_results rsr
-            JOIN session_results sr ON sr.id = rsr.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-            UNION ALL
-            SELECT qsr.driver_profile_id
-            FROM qualifying_session_results qsr
-            JOIN session_results sr ON sr.id = qsr.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-        ) WHERE driver_profile_id IS NOT NULL
-        """,
-        (round_id, round_id),
-    )
-    attended_rows = await cursor.fetchall()
-    attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
+    attended_ids = await profiles_with_a_result_in_round_on(db, round_id)
 
+    full_time_ids, reserve_ids = await _placed_profile_ids(db, division_id)
     cursor = await db.execute(
         """
-        SELECT dra.id, dra.driver_profile_id
-        FROM driver_round_attendance dra
-        JOIN driver_season_assignments dsa
-            ON dsa.driver_profile_id = dra.driver_profile_id
-        JOIN team_seats ts ON ts.id = dsa.team_seat_id
-        JOIN team_instances ti ON ti.id = ts.team_instance_id
-        WHERE dra.round_id = ?
-          AND dra.division_id = ?
-          AND ti.division_id = ?
-          AND (
-              ti.is_reserve = 0
-              OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
-          )
+        SELECT id, driver_profile_id, assigned_team_id
+        FROM driver_round_attendance
+        WHERE round_id = ?
+          AND division_id = ?
         """,
-        (round_id, division_id, division_id),
+        (round_id, division_id),
     )
-    dra_rows = await cursor.fetchall()
+    dra_rows = [
+        r
+        for r in await cursor.fetchall()
+        if r["driver_profile_id"] in full_time_ids
+        or (r["driver_profile_id"] in reserve_ids and r["assigned_team_id"] is not None)
+    ]
 
     for row in dra_rows:
         new_val = 1 if row["driver_profile_id"] in attended_ids else 0
@@ -272,9 +240,7 @@ async def distribute_attendance_points(
 
         # The seats are core's: who is placed in the division's full-time teams and who in its
         # reserve team. The round's rows are attendance's, and are read once and sorted by that.
-        placed = await TeamService.placed_drivers_on(db, division_id)
-        full_time_ids = {p.profile_id for p in placed if not p.is_reserve}
-        reserve_ids = {p.profile_id for p in placed if p.is_reserve}
+        full_time_ids, reserve_ids = await _placed_profile_ids(db, division_id)
         cursor = await db.execute(
             """
             SELECT id, driver_profile_id, rsvp_status, attended, assigned_team_id
