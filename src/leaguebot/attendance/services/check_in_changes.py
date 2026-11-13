@@ -378,20 +378,16 @@ async def judge_hand_post(
     """The round *round_number* of a division, and the refusal `/attendance post-check-in`
     answers with if it may not post it a call: (round id, None) to go ahead, (None, the refusal)
     otherwise. *cfg* is attendance's configuration, None where there is none."""
+    found = await season_service.round_by_number(db_path, division_id, round_number)
+    if found is None:
+        return None, f"❌ **{division_name}** has no round {round_number}."
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM rounds WHERE division_id = ? AND round_number = ?",
-            (division_id, round_number),
-        )
-        found = await cursor.fetchone()
-        if found is None:
-            return None, f"❌ **{division_name}** has no round {round_number}."
-        row = await _call_row(db, found["id"])
-        standing = await _standing(db, found["id"])
+        row = await _call_row(db, found.id)
+        standing = await _standing(db, found.id)
     if row is None:
         return None, f"❌ **{division_name}** has no round {round_number}."
     refusal = hand_post_refusal(row, standing, cfg, now=now)
-    return (None, refusal) if refusal is not None else (int(found["id"]), None)
+    return (None, refusal) if refusal is not None else (found.id, None)
 
 
 def _earlier_messages(call: RsvpEmbedMessage) -> list[tuple[str, str]]:

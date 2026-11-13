@@ -40,6 +40,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -53,7 +54,11 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
-from leaguebot.core.services.seasons.season_service import division_first_round
+from leaguebot.core.services.seasons.season_service import (
+    division_first_round,
+    division_on,
+    round_facts_on,
+)
 from leaguebot.core.utils.league_server import league_guild
 
 POST_SHEET = "post_sheet"
@@ -123,23 +128,21 @@ def sheet_post_change(modules: ModuleService) -> ChangeType:
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
             enabled = await attendance_enabled_on(db)
-            division = await (await db.execute(
-                "SELECT d.name, c.attendance_channel_id FROM divisions d "
-                "LEFT JOIN attendance_division_config c ON c.division_id = d.id WHERE d.id = ?",
+            division = await division_on(db, int(ctx.payload["division_id"]))
+            channel_row = await (await db.execute(
+                "SELECT attendance_channel_id FROM attendance_division_config WHERE division_id = ?",
                 (int(ctx.payload["division_id"]),),
             )).fetchone()
-            round_row = await (await db.execute(
-                "SELECT status FROM rounds WHERE id = ?", (int(ctx.payload["round_id"]),)
-            )).fetchone()
+            round_facts = await round_facts_on(db, int(ctx.payload["round_id"]))
         if not enabled:
             return Verdict.not_due("attendance is off")
         if division is None:
             return Verdict.not_due("the division is gone")
-        if round_row is not None and round_row["status"] == "CANCELLED":
+        if round_facts is not None and round_facts.status is RoundStatus.CANCELLED:
             return Verdict.not_due("the round was cancelled")
-        if not division["attendance_channel_id"]:
+        if channel_row is None or not channel_row["attendance_channel_id"]:
             return Verdict.refuse(
-                f"**{division['name']}** has no attendance channel set: set one with "
+                f"**{division.name}** has no attendance channel set: set one with "
                 f"`/attendance channel attendance`, then press Retry."
             )
         return Verdict.go()
@@ -173,14 +176,12 @@ async def ask_sheet_post(
 
     A command which makes its own change and wants a standing post after it asks the queue for
     that post as a change of the bot's, of a kind that may be repeated (slice 6's decision 2); the
-    command's reply is unchanged and the post follows. The division's name is read here, on a
-    connection of its own.
+    command's reply is unchanged and the post follows. The division's name is read here, through
+    core's read of the division, on a connection of its own.
     """
     async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT name FROM divisions WHERE id = ?", (division_id,)
-        )).fetchone()
-    name = row["name"] if row is not None else str(division_id)
+        division = await division_on(db, division_id)
+    name = division.name if division is not None else str(division_id)
     payload: dict[str, Any] = {
         "division_id": division_id, "division_name": name, "round_id": round_id,
         "sanctioned": sorted(int(each) for each in sanctioned),

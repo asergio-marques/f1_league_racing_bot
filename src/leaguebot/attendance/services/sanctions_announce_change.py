@@ -17,8 +17,8 @@ from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Any
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, Verdict
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -112,21 +112,16 @@ async def ask_sanctions_announce(
     sanctions: Iterable[dict[str, Any]],
 ) -> None:
     """Ask the queue to announce *sanctions*, the candidates each was owed as, applied to
-    *division_id* at *round_id*. The division's name and the round's number are read here, on a
-    connection of their own; nothing is asked where no sanction was applied."""
+    *division_id* at *round_id*. The division's name and the round's number are read here, through
+    core's read of the round; nothing is asked where no sanction was applied."""
     owed = list(sanctions)
     if not owed:
         return
-    async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT d.name AS division, r.round_number FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )).fetchone()
+    found = await season_service.round_in_division(db_path, round_id)
     payload: dict[str, Any] = {
         "round_id": round_id, "division_id": division_id,
-        "division": row["division"] if row is not None else str(division_id),
-        "round_number": row["round_number"] if row is not None else None,
+        "division": found.division_name if found is not None else str(division_id),
+        "round_number": found.round_number if found is not None else None,
         "sanctions": owed,
     }
     await queue.ask(

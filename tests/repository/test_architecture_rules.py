@@ -2486,16 +2486,11 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_config_service.py", "AttendanceService.get_current_embed_message"):
         (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "_call_row"): (4, PASS["attendance"]),
-    ("attendance/services/check_in_changes.py", "judge_hand_post"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (3, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "distribution_announcement"): (4, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "query_division_roster"): (3, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "reserve_distribution_on"): (6, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "silent_full_time_drivers"): (4, PASS["attendance"]),
-    ("attendance/services/sanctions_announce_change.py", "ask_sanctions_announce"):
-        (2, PASS["attendance"]),
-    ("attendance/services/sheet_posting.py", "ask_sheet_post"): (1, PASS["attendance"]),
-    ("attendance/services/sheet_posting.py", "sheet_post_change.check"): (2, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
         (2, PASS["image"]),
