@@ -277,7 +277,7 @@ class AttendanceService:
         everything the row needs — the driver holds a confirmed placement in this division, the
         round exists, and the answer is inside the lock — so the fact arrives at the press and
         nowhere earlier; the test-mode bulk-set form is this method's caller.
-        Seeding rows from ``assign_on``, ``move_driver`` and the mid-season confirmation
+        Seeding rows from ``assign_on``, ``move_on`` and the mid-season confirmation
         instead would put the same work in three places, each having to decide for itself which
         of the division's rounds have a call standing, and any placement route added later would
         reopen the hole.
