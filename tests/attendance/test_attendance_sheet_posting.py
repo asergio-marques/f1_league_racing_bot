@@ -696,11 +696,7 @@ class _Render:
 @pytest.mark.parametrize("fault", [
     "drawing",
     "track registry",
-    pytest.param("teams", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#285: an unreadable placements read is told as drawing the teams without names "
-        "alone",
-    )),
+    "teams",
     "none",
 ])
 @pytest.mark.asyncio
@@ -782,11 +778,6 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
         assert not drawn["team_keys"], "a badge keyed though the teams could not be read"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the sheet reads the placements twice, names on one read and shorthands on a "
-    "second whose fault goes unreported",
-)
 @pytest.mark.asyncio
 async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
     sheet_db, monkeypatch

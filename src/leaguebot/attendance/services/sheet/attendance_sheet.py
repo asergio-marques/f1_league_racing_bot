@@ -482,9 +482,8 @@ async def _sheet_attachment(
         # The team of a row is the team of the division seating the driver **at the moment of
         # generation** — the reserve team for a reserve — and never the team whose car they
         # drove in any one round (FR-020).
-        team_names = await _seat_team_names(db_path, division_id, user_ids, faults=faults)
-        # The shorthands are read from the same teams, so their fault is the names' and is told once.
-        team_keys = await _seat_team_keys(db_path, division_id, user_ids)
+        # The shorthands come from the same read as the names, so one fault covers both.
+        team_names, team_keys = await _seat_teams(db_path, division_id, user_ids, faults=faults)
 
         for row in sorted_drivers:
             key = int(row["discord_user_id"])
@@ -655,53 +654,42 @@ async def _round_grid(
     return headings, cells
 
 
-async def _seat_team_names(
+async def _seat_teams(
     db_path: str, division_id: int, user_ids: list[int], faults: list[str] | None = None
-) -> dict[int, str]:
-    """The team of the division seating each driver **now**, keyed by Discord user id.
+) -> tuple[dict[int, str], dict[int, str]]:
+    """The team of the division seating each driver **now**, as ``(names, shorthands)``, each keyed
+    by Discord user id, from one read of the division's placements.
 
-    A reserve driver's team is the reserve team, which is what the sheet draws for them —
-    not the team whose car they drove in some round (FR-020). This is the name drawn; the
-    badge is looked up by the team's shorthand, from ``_seat_team_keys`` (#381).
-    """
-    return await _seat_team_field(db_path, division_id, user_ids, "full_name", faults)
+    A reserve driver's team is the reserve team, which is what the sheet draws for them — not the
+    team whose car they drove in some round (FR-020). The name is what is drawn; the badge is
+    looked up by the team's shorthand (#381).
 
-
-async def _seat_team_keys(
-    db_path: str, division_id: int, user_ids: list[int], faults: list[str] | None = None
-) -> dict[int, str]:
-    """The shorthand of the team seating each driver now, which its badge is found by (#381)."""
-    return await _seat_team_field(db_path, division_id, user_ids, "name", faults)
-
-
-async def _seat_team_field(
-    db_path: str, division_id: int, user_ids: list[int], field: str,
-    faults: list[str] | None = None,
-) -> dict[int, str]:
-    """One field of the team seating each driver now — ``name`` or ``full_name``.
-
-    Teams that cannot be read are drawn without names: the full error goes to the host's log and
-    a clause saying so is added to *faults*."""
-    if field not in ("name", "full_name"):
-        raise ValueError(f"not a team name field: {field}")
+    Teams that cannot be read are drawn without names or badges: the full error goes to the host's
+    log and one clause naming both is added to *faults*."""
     if not user_ids:
-        return {}
+        return {}, {}
     try:
         async with get_connection(db_path) as db:
             placed = await TeamService.placed_drivers_on(db, division_id)
     except Exception as exc:  # noqa: BLE001 — a nameless team is drawn empty, never fatal
         log.warning(
             "post_attendance_sheet: the teams of division %s could not be read, so they are "
-            "drawn without names", division_id, exc_info=True,
+            "drawn without names or badges", division_id, exc_info=True,
         )
-        _note(faults, f"the teams could not be read, so they are drawn without names: {exc}")
-        return {}
+        _note(faults, f"the teams could not be read, so they are drawn without names or badges: {exc}")
+        return {}, {}
     wanted = set(user_ids)
-    return {
-        driver.discord_user_id: (driver.team_name if field == "full_name" else driver.team_key)
+    names = {
+        driver.discord_user_id: driver.team_name
         for driver in placed
-        if driver.discord_user_id in wanted and (driver.team_name if field == "full_name" else driver.team_key)
+        if driver.discord_user_id in wanted and driver.team_name
     }
+    keys = {
+        driver.discord_user_id: driver.team_key
+        for driver in placed
+        if driver.discord_user_id in wanted and driver.team_key
+    }
+    return names, keys
 
 
 async def _division_name(db_path: str, division_id: int) -> str:

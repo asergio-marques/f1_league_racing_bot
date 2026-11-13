@@ -90,11 +90,6 @@ async def test_the_opening_constructors_are_ordered_by_their_full_names(tmp_path
     assert [s.team_instance_id for s in standings] == [ids["ZEN"], ids["RBR"]]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the sheet reads the names and the shorthands on two reads, through "
-    "_seat_team_names and _seat_team_keys, rather than once through _seat_teams",
-)
 async def test_the_attendance_sheet_names_the_full_name_and_keys_the_badge_by_the_shorthand(
     tmp_path,
 ):

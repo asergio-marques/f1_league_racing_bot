@@ -177,14 +177,7 @@ def test_the_live_sheet_path_resolves_names_through_the_shared_convention():
     assert "_nationalities" in source
 
 
-#: Why the seat lookup's tests fail until the sheet reads its placements once.
-_ONE_READ = (
-    "#285: the sheet reads the placements twice, through _seat_team_names and _seat_team_keys, "
-    "rather than once through _seat_teams for names and shorthands together"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=_ONE_READ)
 @pytest.mark.asyncio
 async def test_the_seat_lookup_survives_an_unreadable_database(tmp_path):
     """A nameless team is drawn empty; it is never a reason to fail a sheet.
@@ -199,7 +192,6 @@ async def test_the_seat_lookup_survives_an_unreadable_database(tmp_path):
     assert not absent.exists()
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_READ)
 @pytest.mark.asyncio
 async def test_the_seat_lookup_is_empty_for_no_drivers(tmp_path):
     absent = tmp_path / "absent" / "no-such.db"
