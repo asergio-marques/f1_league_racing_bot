@@ -25,6 +25,8 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.drivers.driver_service import profile_id_of_current_account
+from leaguebot.core.services.seasons.season_service import division_rounds_in_order_on
 
 log = logging.getLogger(__name__)
 
@@ -390,13 +392,7 @@ class AttendanceService:
         What the test-mode bulk-set form reads an entry's id by; a profile is matched on its
         number so that an id stored as text still finds it.
         """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM driver_profiles WHERE CAST(discord_user_id AS INTEGER) = ?",
-                (discord_user_id,),
-            )
-            row = await cursor.fetchone()
-        return int(row["id"]) if row is not None else None
+        return await profile_id_of_current_account(self._db_path, discord_user_id)
 
     async def get_attendance_row_for_driver(
         self,
@@ -489,16 +485,16 @@ class AttendanceService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                """
-                SELECT rem.*
-                  FROM rsvp_embed_messages rem
-                  JOIN rounds r ON r.id = rem.round_id
-                 WHERE rem.division_id = ?
-                 ORDER BY r.scheduled_at, rem.round_id
-                """,
-                (division_id,),
+                "SELECT * FROM rsvp_embed_messages WHERE division_id = ?", (division_id,)
             )
-            calls = [_rem_from_row(r) for r in await cursor.fetchall()]
+            held = [_rem_from_row(r) for r in await cursor.fetchall()]
+            scheduled = {
+                each.id: each.scheduled_at for each in await division_rounds_in_order_on(db, division_id)
+            }
+        calls = sorted(
+            (call for call in held if call.round_id in scheduled),
+            key=lambda call: (scheduled[call.round_id], call.round_id),
+        )
         still_open = [call for call in calls if call.deadline_run_at is None]
         if still_open:
             return still_open[0]

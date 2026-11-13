@@ -236,6 +236,22 @@ async def current_account_of(db, discord_user_id) -> str:
     return str(row[0]) if row else str(discord_user_id)
 
 
+async def profile_id_of_current_account(db_path: str, discord_user_id: int) -> int | None:
+    """The id of the driver profile whose *current* account is *discord_user_id*, or None.
+
+    Unlike `resolve_driver_profile_id`, which finds a driver by any account they have held, this
+    finds one only by the account `driver_profiles` names now. The account is matched on its
+    number, so that one stored as text still finds its profile. Read on a connection of its own.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM driver_profiles WHERE CAST(discord_user_id AS INTEGER) = ?",
+            (discord_user_id,),
+        )
+        row = await cursor.fetchone()
+    return int(row["id"]) if row is not None else None
+
+
 async def current_account_map(db) -> dict[int, int]:
     """Every *past* account → its driver's current account, as ints.
 

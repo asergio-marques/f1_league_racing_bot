@@ -2481,10 +2481,6 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
-    ("attendance/services/attendance_config_service.py", "AttendanceService.driver_profile_id_for_account"):
-        (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "AttendanceService.get_current_embed_message"):
-        (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "_call_row"): (4, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (3, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "distribution_announcement"): (4, PASS["attendance"]),
