@@ -270,9 +270,11 @@ def pipeline():
 
 
 async def _recalculate(db_path: str, round_id: int = 1) -> None:
-    await attendance_recompute._recalculate_forward(
-        db_path, round_id, DIVISION_ID, recompute="round",
-    )
+    async with get_connection(db_path) as db:
+        await attendance_recompute._recalculate_forward(
+            db_path, round_id, DIVISION_ID, recompute="round", db=db
+        )
+        await db.commit()
 
 
 async def test_an_amended_round_is_fully_recomputed_not_upgraded(tmp_path, pipeline):
