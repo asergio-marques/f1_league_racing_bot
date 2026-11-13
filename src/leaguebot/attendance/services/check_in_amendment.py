@@ -40,6 +40,11 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in_call import (
+    check_in_steps,
+    close_check_in_on,
+    given_up_text,
+)
 from leaguebot.attendance.services.check_in_changes import (
     ANNOUNCE,
     CLEAN_UP_CHECK_IN,
@@ -54,9 +59,6 @@ from leaguebot.attendance.services.check_in_changes import (
     CheckInViewFactory,
     call_row,
     check_in_clean_up_steps,
-    check_in_steps,
-    close_check_in_on,
-    given_up_text,
     standing_call_row,
     take_down_steps,
 )

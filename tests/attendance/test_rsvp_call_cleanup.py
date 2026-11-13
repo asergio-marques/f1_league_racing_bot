@@ -187,7 +187,7 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
 
     The check-in channel stands on the server holding every message `_msg_ids` names for both
     rounds; the call is posted there once, and nothing stops the queue."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     bot = await league_bot(db_path)

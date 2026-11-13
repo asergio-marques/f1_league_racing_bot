@@ -516,7 +516,7 @@ async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_i
     over, its deadline long past, as an amendment's catch-up or a start-up could ask for one:
     nothing is posted or written, the answer left for the round stands, the log channel is not
     told it was given up, and the queue does not stop."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     db_path = await _make_db(

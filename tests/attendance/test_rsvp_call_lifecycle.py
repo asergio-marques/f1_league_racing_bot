@@ -252,7 +252,7 @@ async def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
 async def _ask(bot: MagicMock, *, replacing: bool = False) -> None:
     """Ask the queue for round 1's call, as its timer does or, *replacing*, as an amendment
     posts it again; then run the queue."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT,

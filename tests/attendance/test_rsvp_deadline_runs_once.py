@@ -179,7 +179,7 @@ async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_
     one after the other. The answers are cleared and the check-in marked over, and the log
     channel says once that the round counts nothing against anyone: the round is reported
     once, by the one line that gives the call up."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
     from tests.support.season_league import PRO, round_id
@@ -204,7 +204,7 @@ async def test_a_call_waiting_to_post_when_the_deadline_closes_the_check_in_post
     clearing them. A post of the round's call asked meanwhile (a repost after a take-down, a late
     post) then runs: the check-in is over, so nothing is posted, no call is recorded and no
     attendance rows are opened (owner, 2026-10-09: "Fold it in")."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
     from tests.support.season_league import PRO, round_id

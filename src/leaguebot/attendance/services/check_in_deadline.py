@@ -32,6 +32,7 @@ import discord
 from leaguebot.attendance.models.attendance import CHECK_IN_CLEAN_UP, CHECK_IN_DEADLINE
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in_call import close_check_in_on
 from leaguebot.attendance.services.check_in_changes import (
     ANNOUNCE,
     CLOSE_WITHOUT_CALL,
@@ -39,7 +40,6 @@ from leaguebot.attendance.services.check_in_changes import (
     LOCK_CALL,
     CallRow,
     call_row,
-    close_check_in_on,
     deadline_of,
     round_not_owed,
 )

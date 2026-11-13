@@ -229,10 +229,7 @@ async def _ask(bot: MagicMock, step: str) -> list[int]:
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
-    home = importlib.import_module(
-        "leaguebot.attendance.services."
-        + ("check_in_deadline" if step == "deadline" else "check_in_changes")
-    )
+    home = importlib.import_module(f"leaguebot.attendance.services.check_in_{step}")
     ask = getattr(home, f"ask_check_in_{step}")
     await ask(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
     await run_queue(bot)

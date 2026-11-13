@@ -201,7 +201,7 @@ def _drawing(league: SeasonLeague, tmp_path: Any, monkeypatch: Any) -> AsyncMock
 async def _post_the_call(league: SeasonLeague) -> list[int]:
     """Ask the queue for round 4's call as its timer does and run it; the ids sent in Pro's
     check-in channel."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,

@@ -251,10 +251,8 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.attendance_settings import attendance_config_settings
     from leaguebot.attendance.services.channel_settings import attendance_channel_settings
     from leaguebot.attendance.services.check_in_answer_changes import check_in_answer_change
-    from leaguebot.attendance.services.check_in_changes import (
-        check_in_call_change,
-        check_in_clean_up_change,
-    )
+    from leaguebot.attendance.services.check_in_call import check_in_call_change
+    from leaguebot.attendance.services.check_in_changes import check_in_clean_up_change
     from leaguebot.attendance.services.check_in_deadline import check_in_deadline_change
     from leaguebot.attendance.services.check_in_last_notice import check_in_last_notice_change
     from leaguebot.attendance.services.module_switch_settings import (
@@ -314,10 +312,8 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     Each asks the change queue, read from the bot when it fires. The bot keeps the one queue
     `build` made; a test that replaces the queue must register these handlers again."""
-    from leaguebot.attendance.services.check_in_changes import (
-        ask_check_in_call,
-        ask_check_in_clean_up,
-    )
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
     from leaguebot.attendance.services.check_in_deadline import ask_check_in_deadline
     from leaguebot.attendance.services.check_in_amendment import (
         advance_steps as check_in_advance_steps,

@@ -45,7 +45,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 
 async def _ask_and_run(league: SeasonLeague) -> None:
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
