@@ -187,9 +187,8 @@ async def test_the_driver_may_not_action_their_own_signup_review():
 )
 async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
     """A league manager presses a button of a signup review while the server configuration
-    cannot be read ("database is locked"). The fault is not turned into an answer: it leaves the
-    gate, so the press fails through the view's error handler, which reports it, and nothing is
-    granted (D7, #286)."""
+    cannot be read ("database is locked"). The gate raises the fault rather than answering False,
+    so it is never turned into a quiet refusal (D7, #286)."""
     from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(_member(MANAGER_ROLE))
