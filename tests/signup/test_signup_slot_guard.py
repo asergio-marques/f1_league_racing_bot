@@ -17,7 +17,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection
+from tests.support.change_queue import run_queue
+from tests.support.settings_league import audit_rows, interaction, last_said, settings_league
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 5512
@@ -31,18 +33,13 @@ SERVER_ID = 5512
 async def _seed(
     tmp_path, *, unassigned: int, slots=((1, "19:00"), (3, "20:00")), stage: str | None = None
 ):
-    """A server with signups closed, `unassigned` drivers waiting, and `slots` set.
+    """The settings league with signup alone on (`settings_league`), signups closed,
+    `unassigned` drivers waiting, and `slots` set.
 
     *stage* seeds an active season in that stage; left unset, the server holds none.
     """
-    path = str(tmp_path / "slot_guard.db")
-    await run_migrations(path)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
+    league = await settings_league(tmp_path, modules=("signup",))
+    async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 0)",
             (1,),
@@ -69,7 +66,7 @@ async def _seed(
                 (i, str(9000 + i)),
             )
         await db.commit()
-    return path
+    return league
 
 
 def _cog(db_path):
@@ -110,12 +107,21 @@ def _reply(interaction) -> str:
     return interaction.response.send_message.await_args.args[0]
 
 
-async def _add(cog, interaction, day=5, time="21:00"):
-    await undecorate(SignupCog.time_slot_add)(cog, interaction, _day_choice(day), time)
+async def _command(league, method: str, name: str, *args):
+    """Run `/signup <name>` (`SignupCog.<method>`) as the member, then the queue; return the
+    member's interaction."""
+    asked = interaction(league.bot, f"signup {name}")
+    await undecorate(getattr(SignupCog, method))(SignupCog(league.bot), asked, *args)
+    await run_queue(league.bot)
+    return asked
 
 
-async def _remove(cog, interaction, slot_id=1):
-    await undecorate(SignupCog.time_slot_remove)(cog, interaction, slot_id)
+async def _add(league, day=5, time="21:00"):
+    return await _command(league, "time_slot_add", "time-slot add", _day_choice(day), time)
+
+
+async def _remove(league, slot_id=1):
+    return await _command(league, "time_slot_remove", "time-slot remove", slot_id)
 
 
 async def _slot_labels(db_path):
@@ -136,54 +142,47 @@ _FIXED_STAGES = ["WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING", "ONGOING_SIGNUPS
 class TestRefusedOnceConfigurationIsConfirmed:
     @pytest.mark.parametrize("stage", _FIXED_STAGES)
     async def test_slot_add_is_refused(self, tmp_path, stage):
-        db_path = await _seed(tmp_path, unassigned=0, stage=stage)
-        before = await _slot_labels(db_path)
-        interaction = _interaction()
+        league = await _seed(tmp_path, unassigned=0, stage=stage)
+        before = await _slot_labels(league.db_path)
 
-        await _add(_cog(db_path), interaction)
+        asked = await _add(league)
 
-        assert "fixed for Season 3" in _reply(interaction)
-        assert await _slot_labels(db_path) == before, "no slot may have been added"
+        assert "fixed for Season 3" in last_said(asked)
+        assert await _slot_labels(league.db_path) == before, "no slot may have been added"
 
     async def test_slot_remove_is_refused(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=0, stage="PLACEMENTS")
-        before = await _slot_labels(db_path)
-        interaction = _interaction()
+        league = await _seed(tmp_path, unassigned=0, stage="PLACEMENTS")
+        before = await _slot_labels(league.db_path)
 
-        await _remove(_cog(db_path), interaction)
+        asked = await _remove(league)
 
-        assert "/signup time-slot remove" in _reply(interaction)
-        assert await _slot_labels(db_path) == before, "no slot may have been removed"
+        assert "/signup time-slot remove" in last_said(asked)
+        assert await _slot_labels(league.db_path) == before, "no slot may have been removed"
 
     @pytest.mark.parametrize(
-        "command, args",
+        "command, name",
         [
-            ("nationality", ()),
-            ("time_type", ()),
-            ("time_image", ()),
+            ("nationality", "nationality"),
+            ("time_type", "time-type"),
+            ("time_image", "time-image"),
         ],
     )
-    async def test_every_setting_is_refused(self, tmp_path, command, args):
-        db_path = await _seed(tmp_path, unassigned=0, stage="ONGOING")
-        cog = _cog(db_path)
-        cog.bot.signup_module_service = MagicMock()
-        cog.bot.signup_module_service.get_settings = AsyncMock()
-        interaction = _interaction()
+    async def test_every_setting_is_refused(self, tmp_path, command, name):
+        league = await _seed(tmp_path, unassigned=0, stage="ONGOING")
 
-        await undecorate(getattr(SignupCog, command))(cog, interaction, *args)
+        asked = await _command(league, command, name)
 
-        assert "fixed for Season 3" in _reply(interaction)
-        cog.bot.signup_module_service.get_settings.assert_not_awaited()
+        assert "fixed for Season 3" in last_said(asked)
+        assert await audit_rows(league.db_path) == [], "no setting may have been changed"
 
     async def test_the_channel_is_refused(self, tmp_path):
         """The league's two roles are fixed by the same rule, under `/bot` (issue #276);
         `test_league_role_commands.py` pins them."""
-        db_path = await _seed(tmp_path, unassigned=0, stage="WAITING")
-        interaction = _interaction()
+        league = await _seed(tmp_path, unassigned=0, stage="WAITING")
 
-        await undecorate(SignupCog.signup_channel)(_cog(db_path), interaction, MagicMock())
+        asked = await _command(league, "signup_channel", "channel", MagicMock())
 
-        assert "fixed for Season 3" in _reply(interaction)
+        assert "fixed for Season 3" in last_said(asked)
 
 
 # ---------------------------------------------------------------------------
@@ -193,14 +192,13 @@ class TestRefusedOnceConfigurationIsConfirmed:
 
 class TestPermittedWhileFree:
     async def test_slot_change_permitted_with_no_season(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=2)
-        cog = _cog(db_path)
+        league = await _seed(tmp_path, unassigned=2)
 
-        await _add(cog, _interaction())
-        assert "Friday 21:00 UTC" in await _slot_labels(db_path)
+        await _add(league)
+        assert "Friday 21:00 UTC" in await _slot_labels(league.db_path)
 
-        await _remove(cog, _interaction(), slot_id=1)
-        assert "Monday 19:00 UTC" not in await _slot_labels(db_path)
+        await _remove(league, slot_id=1)
+        assert "Monday 19:00 UTC" not in await _slot_labels(league.db_path)
 
     @pytest.mark.parametrize(
         "stage", ["CONFIGURATION", "COMPLETED"], ids=["configuration", "archived"]
@@ -208,11 +206,11 @@ class TestPermittedWhileFree:
     async def test_slot_change_permitted_while_nothing_is_fixed(self, tmp_path, stage):
         """A season still in Configuration has fixed nothing yet, and an archived season holds
         nothing fixed."""
-        db_path = await _seed(tmp_path, unassigned=0, stage=stage)
+        league = await _seed(tmp_path, unassigned=0, stage=stage)
 
-        await _add(_cog(db_path), _interaction())
+        await _add(league)
 
-        assert "Friday 21:00 UTC" in await _slot_labels(db_path)
+        assert "Friday 21:00 UTC" in await _slot_labels(league.db_path)
 
 
 # ---------------------------------------------------------------------------
@@ -227,8 +225,7 @@ async def test_the_fixed_configuration_check_logs_its_refusal_unless_record_is_f
     """The check answers the manager either way. With `record` left at its default it writes
     one line in the standard refusal form, naming the command; with `record=False` it writes
     none."""
-    db_path = await _seed(tmp_path, unassigned=0, stage="WAITING")
-    cog = _cog(db_path)
+    cog = _cog((await _seed(tmp_path, unassigned=0, stage="WAITING")).db_path)
     interaction = _interaction()
     interaction.client = cog.bot
     interaction.command.qualified_name = "signup time-slot add"
