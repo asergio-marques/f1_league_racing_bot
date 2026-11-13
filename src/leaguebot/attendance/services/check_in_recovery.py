@@ -34,6 +34,7 @@ import aiosqlite
 from leaguebot.attendance.models.recovery_failed import RecoveryFailed
 from leaguebot.attendance.services.check_in_changes import (
     CHECK_IN_DEADLINE,
+    CheckInViewFactory,
     ask_check_in_call,
     ask_check_in_clean_up,
     ask_check_in_deadline,
@@ -154,12 +155,14 @@ async def recover_missed_check_in_calls(bot: LeagueBot, *, queue: ChangeQueue) -
         raise RecoveryFailed(failures)
 
 
-async def recover_rsvp_views_and_deadlines(bot: LeagueBot, *, queue: ChangeQueue) -> None:
+async def recover_rsvp_views_and_deadlines(
+    bot: LeagueBot, *, queue: ChangeQueue, view_of: CheckInViewFactory
+) -> None:
     """Re-arm the check-in buttons and ask for the RSVP deadlines missed, on a restart.
 
     The buttons are armed again for every standing call (a row of `rsvp_embed_messages`), so that
     a driver's press survives a restart (FR-007). The buttons' view is the cog's, which a service
-    may not import, so it is the bot's `check_in_view`, handed by the entry point. A button that
+    may not import, so *view_of* builds it, handed by attendance's wiring. A button that
     cannot be armed is left and logged, and costs no other call its buttons.
 
     For any call whose check-in deadline has passed at the queue's clock and which carries no
@@ -198,7 +201,7 @@ async def recover_rsvp_views_and_deadlines(bot: LeagueBot, *, queue: ChangeQueue
 
     for embed in embeds:
         try:
-            bot.add_view(bot.check_in_view(int(embed["round_id"])), message_id=int(embed["message_id"]))
+            bot.add_view(view_of(int(embed["round_id"])), message_id=int(embed["message_id"]))
         except Exception as exc:
             log.warning(
                 "_recover_rsvp_views_and_deadlines: could not re-arm view for msg %s: %s",

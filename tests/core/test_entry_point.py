@@ -873,11 +873,6 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: the RSVP recovery looks the check-in view up on the bot rather than being "
-           "handed it by wiring's step",
-)
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read

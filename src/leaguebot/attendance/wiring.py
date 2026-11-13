@@ -7,9 +7,9 @@ rules, not a service's (architecture.md, "How the code is laid out"): it reads t
 builder does, so each function below is handed the bot and reads a service off it when it signs up
 or, where a lambda reads it, when it runs, which the tests that replace a service on the bot after
 registering rely on. It holds no rule of attendance's, no database code and no clock of its own:
-the recoveries are services, `check_in_recovery`'s, which it hands the bot and its queue. It signs
-the check-in buttons' view up on the bot as `check_in_view`. Nothing imports it but the entry
-point.
+the recoveries are services, `check_in_recovery`'s, which it hands the bot and its queue, the
+RSVP recovery the way to build the check-in buttons too, as the call's jobs are. Nothing imports it
+but the entry point.
 """
 from __future__ import annotations
 
@@ -34,9 +34,7 @@ def register_switch(modules: "ModuleService") -> None:
 def sign_up(bot: "LeagueBot") -> None:
     """Sign attendance up to each hook only attendance joins: none at present. The hooks several
     modules join are signed up by the entry point, in the order they are called, through the
-    functions below. It hands the bot the way to build the check-in buttons, which the restart's
-    recovery arms again and a service may not import."""
-    bot.check_in_view = _check_in_view()
+    functions below."""
 
 
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:
@@ -382,7 +380,8 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
         # Persistent RSVP embed views re-armed for all stored embed messages, and missed RSVP
         # deadline jobs run for rounds whose deadline already passed.
         ("RSVP views and deadlines",
-         lambda: check_in_recovery.recover_rsvp_views_and_deadlines(bot, queue=bot.change_queue)),
+         lambda: check_in_recovery.recover_rsvp_views_and_deadlines(
+             bot, queue=bot.change_queue, view_of=_check_in_view())),
         # The check-in messages due to come down while the bot was stopped. After the deadlines
         # above, so a check-in is distributed before it goes.
         ("missed check-in clean-ups",

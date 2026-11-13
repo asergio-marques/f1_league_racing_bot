@@ -36,7 +36,6 @@ from discord.ext import commands
 
 if TYPE_CHECKING:
     from leaguebot.attendance.services.attendance_config_service import AttendanceService
-    from leaguebot.attendance.services.check_in_changes import CheckInViewFactory
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.image.services.image_config_service import ImageConfigService
@@ -96,9 +95,6 @@ class LeagueBot(commands.Bot):
     attendance_service: AttendanceService
     #: Attendance's share of a round's review, handed to results' change types.
     attendance_after_review: AttendanceAfterReview
-    #: Builds the buttons a check-in call carries, from the cog's view, which a service may not
-    #: import. Attendance's wiring attaches it, and its restart recovery arms the buttons with it.
-    check_in_view: CheckInViewFactory
     #: Core's drawing protocol, the image module's own implementation, handed to
     #: `template_capacity_service` and `lineup_poster`.
     image_drawing: ImageDrawing
