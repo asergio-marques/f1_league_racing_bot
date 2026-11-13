@@ -483,7 +483,8 @@ async def _sheet_attachment(
         # generation** — the reserve team for a reserve — and never the team whose car they
         # drove in any one round (FR-020).
         team_names = await _seat_team_names(db_path, division_id, user_ids, faults=faults)
-        team_keys = await _seat_team_keys(db_path, division_id, user_ids, faults=faults)
+        # The shorthands are read from the same teams, so their fault is the names' and is told once.
+        team_keys = await _seat_team_keys(db_path, division_id, user_ids)
 
         for row in sorted_drivers:
             key = int(row["discord_user_id"])

@@ -693,17 +693,10 @@ class _Render:
     problem = None
 
 
-#: Why the teams case does not hold yet.
-TEAMS_TOLD_TWICE = (
-    "#285: teams that cannot be read are told twice, once for their full names and once for their "
-    "shorthands, rather than in one line"
-)
-
-
 @pytest.mark.parametrize("fault", [
     "drawing",
     "track registry",
-    pytest.param("teams", marks=pytest.mark.xfail(strict=True, reason=TEAMS_TOLD_TWICE)),
+    "teams",
     "none",
 ])
 @pytest.mark.asyncio
