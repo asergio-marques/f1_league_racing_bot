@@ -22,8 +22,8 @@ clean-up change's own, which this asks of the queue for every due round.
 The two cleanups themselves are tested elsewhere; here they are stubbed, and what is pinned is
 which rounds reach them. Both are asked of the change queue (#439): the forecast's through
 weather's `ask_forecast_clean_up`, patched in `forecast_changes`, and the check-in's through
-attendance's `ask_check_in_clean_up` (slice 6b), patched in `check_in_changes`; these record
-each ask.
+attendance's `ask_check_in_clean_up` (slice 6b), read off the change queue's asks; attendance's
+is run as its "missed check-in clean-ups" start-up step, the queue's clock its moment.
 """
 from __future__ import annotations
 
@@ -33,13 +33,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.weather import wiring as weather_wiring
 
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
+#: The kind the check-in clean-up is asked of the queue under.
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 
 
 async def _make_db(
@@ -116,29 +117,29 @@ async def _recover(
     bot, *, forecast_error: Exception | None = None
 ) -> tuple[list[int], list[int]]:
     """Run the two recoveries in the order the start-up runs them, weather's missed forecast
-    clean-ups and then attendance's missed check-in clean-ups, returning the rounds whose forecast
-    clean-up and whose check-in clean-up they asked the queue for; *forecast_error* makes the
-    forecast clean-up's ask raise."""
+    clean-ups and then attendance's "missed check-in clean-ups" start-up step, as
+    `start_up_steps(bot)` gives it, the queue's clock pinned at the host's moment the rounds are
+    timed from. Returns the rounds whose forecast clean-up and whose check-in clean-up they asked
+    the queue for; *forecast_error* makes the forecast clean-up's ask raise."""
+    from leaguebot.attendance.wiring import start_up_steps
+
     forecasts: list[int] = []
-    check_ins: list[int] = []
 
     async def _forecast(_queue, _db_path, round_id):
         if forecast_error is not None:
             raise forecast_error
         forecasts.append(round_id)
 
-    async def _check_in(_queue, _db_path, round_id, **_kwargs):
-        check_ins.append(round_id)
-
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(return_value=datetime.now(timezone.utc))
     with patch(
         "leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
         new=AsyncMock(side_effect=_forecast),
-    ), patch(
-        "leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
-        new=AsyncMock(side_effect=_check_in),
     ):
         await weather_wiring.recover_missed_forecast_clean_ups(bot)
-        await attendance_wiring.recover_missed_check_in_clean_ups(bot)
+        await dict(start_up_steps(bot))["missed check-in clean-ups"]()
+    check_ins = [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list
+                 if call.args[0] == CHECK_IN_CLEAN_UP]
     return forecasts, check_ins
 
 

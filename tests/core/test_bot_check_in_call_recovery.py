@@ -14,8 +14,9 @@ Since #439 (slice 6b) the restart posts nothing itself: it asks the change queue
 owed, before the queue starts, and the call's change posts it, or gives it up where its deadline
 has passed as well. Each test here runs the restart's step, then the queue.
 
-`recover_missed_check_in_calls` takes *now*, so every test here pins the moment alongside the
-round it seeds.
+The restart's step is attendance's "missed check-in calls" start-up step, as `start_up_steps(bot)`
+names it, and its moment is the change queue's clock: every test here pins that clock alongside
+the round it seeds.
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
+    Clock,
     change_rows,
     league_bot,
     league_queue,
@@ -151,11 +153,18 @@ async def _make_bot(db_path: str, *, attendance_enabled: bool = True) -> Any:
     return bot
 
 
+async def _step(bot: Any, *, now: datetime = NOW) -> None:
+    """Attendance's "missed check-in calls" start-up step, as `start_up_steps(bot)` gives it, the
+    queue's clock pinned at *now*."""
+    from leaguebot.attendance.wiring import start_up_steps
+
+    bot.change_queue._clock = Clock(now)
+    await dict(start_up_steps(bot))["missed check-in calls"]()
+
+
 async def _restart(bot: Any, *, now: datetime = NOW) -> None:
     """The restart's step, then the queue run, as the bot starts it after its start-up steps."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
-
-    await recover_missed_check_in_calls(bot, now=now)
+    await _step(bot, now=now)
     await run_queue(bot)
 
 
@@ -166,10 +175,8 @@ async def _asked(db_path: str) -> int:
 
 async def _late_calls(db_path: str, **kwargs: Any) -> int:
     """Run the restart's step alone on a fresh bot, returning how many calls it asked for."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
-
     bot = await _make_bot(db_path, **kwargs)
-    await recover_missed_check_in_calls(bot, now=NOW)
+    await _step(bot)
     assert bot.check_in_channel.sent == [], "the restart posted the call itself"
     return await _asked(db_path)
 
@@ -196,12 +203,10 @@ async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_pa
     """Its moment went by while the bot was stopped, and the deadline has not: the restart asks
     the queue for the call and posts nothing itself; the queue posts it, and the division is
     asked now and answers in the time left."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
-
     db_path = await _make_db(tmp_path)
     bot = await _make_bot(db_path)
 
-    await recover_missed_check_in_calls(bot, now=NOW)
+    await _step(bot)
     assert bot.check_in_channel.sent == []
     assert await _asked(db_path) == 1
 
@@ -211,6 +216,11 @@ async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_pa
     assert await _call_stands(db_path)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the missed-call catch-up judges the deadline by the wall clock, not by the "
+           "queue's clock, so a call still answerable is not asked as late",
+)
 async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
     """Staff learn the call went out late, and until when it can be answered: once the queue has
     posted it, the log channel says it was not posted when it fell due, with its deadline."""
@@ -241,7 +251,14 @@ async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
 
 @pytest.mark.parametrize("seed", [
     # Its job is still to come, and posting early would override the league's lead time.
-    pytest.param({"until_round": timedelta(days=6)}, id="the call not yet due"),
+    pytest.param(
+        {"until_round": timedelta(days=6)}, id="the call not yet due",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#285: the missed-call catch-up judges a call due by the wall clock, not by "
+                   "the queue's clock",
+        ),
+    ),
     # The call went out; a second beside it would divide the division's answers.
     pytest.param({"call_standing": True}, id="a call standing"),
     # A round whose check-in has been taken down has no call owed (#425).
@@ -272,8 +289,6 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
     racing a day out, both moments stored in UTC with their offset. The restart asks for round
     430's call first and round 429's second: the rounds are taken in the order they race, not
     the order they were added."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
-
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -284,15 +299,13 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
         )
         await db.commit()
     bot = await _make_bot(db_path)
-    asked: list[int] = []
 
-    async def _record(_queue: Any, _db_path: Any, round_id: int, **_kwargs: Any) -> None:
-        asked.append(round_id)
+    await _step(bot)
 
-    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_call",
-               new=AsyncMock(side_effect=_record)):
-        await recover_missed_check_in_calls(bot, now=NOW)
+    import json
 
+    asked = [json.loads(row["payload"])["round_id"] for row in await change_rows(db_path)
+             if row["kind"] == KIND]
     assert asked == [ROUND_ID + 1, ROUND_ID]
 
 

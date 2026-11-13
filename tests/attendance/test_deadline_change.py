@@ -21,7 +21,7 @@ from __future__ import annotations
 import inspect
 from datetime import timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import discord
 import pytest
@@ -155,19 +155,17 @@ def _refusing_edit(league: SeasonLeague, message_id: int) -> None:
 
 
 async def _restart_asks(league: SeasonLeague) -> list[int]:
-    """Run the restart's recovery of check-in deadlines, returning the rounds whose deadline it
-    asked of the queue."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+    """Run the restart's recovery of check-in deadlines, attendance's "RSVP views and deadlines"
+    start-up step as `start_up_steps(bot)` gives it at the queue's moment, returning the rounds
+    whose deadline it asked of the queue."""
+    import json
 
-    asked: list[int] = []
+    from leaguebot.attendance.wiring import start_up_steps
 
-    async def _record(_queue: Any, _db_path: Any, rid: int, **_kwargs: Any) -> None:
-        asked.append(rid)
-
-    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
-               new=AsyncMock(side_effect=_record)):
-        await recover_rsvp_views_and_deadlines(league.bot)
-    return asked
+    before = {row["id"] for row in await _deadline_changes(league)}
+    await dict(start_up_steps(league.bot))["RSVP views and deadlines"]()
+    return [json.loads(row["payload"])["round_id"] for row in await _deadline_changes(league)
+            if row["id"] not in before]
 
 
 async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_and_announces(

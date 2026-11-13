@@ -111,11 +111,12 @@ async def _call_changes(league: SeasonLeague) -> list[dict[str, Any]]:
 
 
 async def _recover(league: SeasonLeague) -> None:
-    """The restart's step for the calls that fell due while the bot was down; the queue is not
-    started."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+    """The restart's step for the calls that fell due while the bot was down, attendance's
+    "missed check-in calls" start-up step as `start_up_steps(bot)` gives it, at the queue's
+    moment; the queue is not started."""
+    from leaguebot.attendance.wiring import start_up_steps
 
-    await recover_missed_check_in_calls(league.bot, now=league.clock.now)
+    await dict(start_up_steps(league.bot))["missed check-in calls"]()
 
 
 # ---------------------------------------------------------------------------

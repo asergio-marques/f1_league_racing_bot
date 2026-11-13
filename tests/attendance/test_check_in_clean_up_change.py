@@ -17,7 +17,6 @@ from __future__ import annotations
 import inspect
 from datetime import timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -235,7 +234,9 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
     """The bot starts again with round 3's clean-up a day past and round 4's call standing for a
     race tomorrow. The restart asks the queue for round 3's clean-up and not round 4's, and
     deletes nothing itself."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_clean_ups
+    import json
+
+    from leaguebot.attendance.wiring import start_up_steps
 
     league = await _league(tmp_path)
     tomorrow = league.clock.now + timedelta(days=1)
@@ -246,15 +247,10 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
         "posted_at) VALUES (?, ?, ?, ?, ?)",
         ROUND_4, PRO, str(ROUND_4_CALL), str(CHECK_IN), league.clock.now.isoformat(),
     )
-    asked: list[int] = []
 
-    async def _record(_queue: Any, _db_path: Any, rid: int, **_kwargs: Any) -> None:
-        asked.append(rid)
+    await dict(start_up_steps(league.bot))["missed check-in clean-ups"]()
 
-    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
-               new=AsyncMock(side_effect=_record)):
-        await recover_missed_check_in_clean_ups(league.bot)
-
+    asked = [json.loads(row["payload"])["round_id"] for row in await _clean_up_changes(league)]
     assert asked == [ROUND_3]
     assert _deleted(league) == []
 

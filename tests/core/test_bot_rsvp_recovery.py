@@ -1,6 +1,6 @@
 """What a restart does about check-in — re-arming buttons, and catching up a missed deadline.
 
-Issue #208. `recover_rsvp_views_and_deadlines` runs on every start and does two things a
+Issue #208. Attendance's "RSVP views and deadlines" start-up step runs on every start and does two things a
 restart would otherwise lose: it re-arms the persistent buttons on every check-in call still
 standing, and it asks the change queue for any deadline whose moment passed while the bot was
 down (#439, slice 6b), running none itself; the queue runs it once it starts.
@@ -32,7 +32,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -183,12 +183,18 @@ async def _deadlines(db_path: str) -> int:
     return len([row for row in await change_rows(db_path) if row["kind"] == DEADLINE])
 
 
-async def _recover(bot) -> int:
-    """Run the recovery, returning how many check-in deadlines it asked of the queue. The queue
-    is not run."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+async def _step(bot) -> None:
+    """Attendance's "RSVP views and deadlines" start-up step, as `start_up_steps(bot)` gives it,
+    at the moment the bot's queue clock is pinned to."""
+    from leaguebot.attendance.wiring import start_up_steps
 
-    await recover_rsvp_views_and_deadlines(bot)
+    await dict(start_up_steps(bot))["RSVP views and deadlines"]()
+
+
+async def _recover(bot) -> int:
+    """Run the recovery's start-up step, returning how many check-in deadlines it asked of the
+    queue. The queue is not run."""
+    await _step(bot)
     return await _deadlines(bot.db_path)
 
 
@@ -359,8 +365,6 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
     for the deadline and the queue runs it for real: nobody is placed, the no-reserves notice
     goes out in the check-in channel, and the call is marked as run. The second start must find
     it done and ask nothing."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
-
     db_path = await _make_db(tmp_path, hours_until_round=1)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -371,9 +375,9 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
         await db.commit()
     bot, check_in = await _check_in_bot(db_path)
 
-    await recover_rsvp_views_and_deadlines(bot)
+    await _step(bot)
     await run_queue(bot)
-    await recover_rsvp_views_and_deadlines(bot)
+    await _step(bot)
     await run_queue(bot)
 
     assert await _deadlines(db_path) == 1, "the restart did not ask, or asked again"
@@ -494,17 +498,11 @@ async def test_a_server_with_no_standing_calls_recovers_nothing(tmp_path):
 
 async def _asked(bot) -> list[int]:
     """Run the recovery, returning the rounds whose deadline it asked of the queue."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+    import json
 
-    asked: list[int] = []
-
-    async def _ask(_queue, _db_path, round_id, **_kwargs):
-        asked.append(round_id)
-
-    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
-               new=AsyncMock(side_effect=_ask)):
-        await recover_rsvp_views_and_deadlines(bot)
-    return asked
+    await _step(bot)
+    return [json.loads(row["payload"])["round_id"] for row in await change_rows(bot.db_path)
+            if row["kind"] == DEADLINE]
 
 
 @pytest.mark.parametrize(("marked", "asked"), [(True, []), (False, [ROUND_ID])],
