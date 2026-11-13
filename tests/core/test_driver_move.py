@@ -4,6 +4,11 @@ Full-time to Reserve, team to team, or between divisions: the old seat freed and
 taken together, the roles of the seat left revoked and those of the seat taken granted, and the
 lineup of each division touched posted once. It replaces unassigning and assigning again, which
 left the driver roleless in between, posted the lineup twice and let the seat be taken.
+
+The rules of the move are pinned on `move_on`, the save every caller makes it through (the queue's
+`/driver move` and an attendance sanction alike), which names the roles to take and give and the
+lineups owed for a step and a job of their own; the roles' step and the lineups are pinned through
+the queue, below.
 """
 from __future__ import annotations
 
@@ -113,27 +118,21 @@ def _roles(db_path: str):
 
 
 def _service(db_path) -> PlacementService:
-    """The placement service on *db_path*, handed a team-role service whose grants and removals
-    are stood in for."""
-    roles = _roles(db_path)
-    roles._grant_roles = AsyncMock()
-    roles._revoke_roles = AsyncMock()
-    service = PlacementService(db_path, roles=roles)
-    return service
+    """The placement service on *db_path*, handed the team-role service the builder hands it."""
+    return PlacementService(db_path, roles=_roles(db_path))
 
 
-def _guild():
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=MagicMock())
-    return guild
-
-
-async def _move(service, to_division, team, from_division=PRO):
-    return await service.move_driver(
-        driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
-        from_division_id=from_division, to_division_id=to_division, team_name=team,
-        acting_user_id=1, acting_user_name="Manager", guild=_guild(), discord_user_id="4242",
-    )
+async def _move(service, to_division, team, from_division=PRO, *, profile_id=PROFILE_ID):
+    """The move as a change's save makes it (`move_on` on a connection, then committed): the
+    summary naming the roles to take and give and the lineups owed, no role asked of Discord."""
+    async with get_connection(service._db_path) as db:
+        summary = await service.move_on(
+            db, driver_profile_id=profile_id, season_id=SEASON_ID,
+            from_division_id=from_division, to_division_id=to_division, team_name=team,
+            acting_user_id=1, acting_user_name="Manager",
+        )
+        await db.commit()
+    return summary
 
 
 async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
@@ -144,9 +143,8 @@ async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
 
     assert await _where(db_path) == [(PRO, "Reserve")]
     assert result["from_team"] == "Alpha" and result["to_team"] == "Reserve"
-    service._roles._revoke_roles.assert_awaited_once()
-    assert service._roles._revoke_roles.await_args.args[1:] == (ROLES["Alpha"],)
-    assert service._roles._grant_roles.await_args.args[1:] == (1001, ROLES["Reserve"])
+    assert result["revoke"] == [ROLES["Alpha"]]
+    assert result["grant"] == [1001, ROLES["Reserve"]]
     assert result["lineups"] == [PRO]
 
 
@@ -158,8 +156,8 @@ async def test_a_driver_is_promoted_to_another_division(db_path):
 
     assert await _where(db_path) == [(PRO, "Bravo")]
     # The division role swaps; the team role is kept, the driver sitting in Bravo still.
-    assert service._roles._revoke_roles.await_args.args[1:] == (1002,)
-    assert service._roles._grant_roles.await_args.args[1:] == (1001, ROLES["Bravo"])
+    assert result["revoke"] == [1002]
+    assert result["grant"] == [1001, ROLES["Bravo"]]
     assert result["lineups"] == [AM, PRO]
 
 
@@ -249,15 +247,9 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
 
 async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
     from leaguebot.core.models.refusal import Refused
-    service = _service(db_path)
 
     with pytest.raises(Refused, match="Driver profile not found"):
-        await service.move_driver(
-            driver_profile_id=999, season_id=SEASON_ID,
-            from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
-            acting_user_id=1, acting_user_name="Manager", guild=_guild(),
-            discord_user_id="4242",
-        )
+        await _move(_service(db_path), PRO, "Reserve", profile_id=999)
 
 
 async def test_a_move_from_a_division_the_driver_does_not_sit_in_is_refused(db_path):
@@ -266,89 +258,6 @@ async def test_a_move_from_a_division_the_driver_does_not_sit_in_is_refused(db_p
 
     with pytest.raises(Refused, match="holds no seat in the division they are moved from"):
         await _move(_service(db_path), PRO, "Reserve", from_division=PRO)
-
-
-async def test_a_member_not_cached_is_fetched_to_swap_their_roles(db_path):
-    await _seat(db_path, PRO, "Alpha")
-    service = _service(db_path)
-    member = MagicMock()
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=None)
-    guild.fetch_member = AsyncMock(return_value=member)
-
-    await service.move_driver(
-        driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
-        from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
-        acting_user_id=1, acting_user_name="Manager", guild=guild, discord_user_id="4242",
-    )
-
-    guild.fetch_member.assert_awaited_once_with(4242)
-    assert service._roles._grant_roles.await_args.args[0] is member
-
-
-async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
-    """The move is the league's record; a member Discord cannot find has no roles to swap."""
-    import discord
-
-    await _seat(db_path, PRO, "Alpha")
-    service = _service(db_path)
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=None)
-    guild.fetch_member = AsyncMock(
-        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
-    )
-
-    result = await service.move_driver(
-        driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
-        from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
-        acting_user_id=1, acting_user_name="Manager", guild=guild, discord_user_id="4242",
-    )
-
-    assert await _where(db_path) == [(PRO, "Reserve")]
-    service._roles._grant_roles.assert_not_awaited()
-    service._roles._revoke_roles.assert_not_awaited()
-    assert result["lineups"] == [PRO]
-
-
-# ── A refused role change: the committing form attendance's sync moves through ──────────────
-
-
-async def test_a_role_discord_refuses_is_logged_and_the_move_still_saved(db_path, caplog):
-    """`move_driver`, the committing form `/attendance sync` moves a driver to Reserve through
-    until attendance's own pass (#285), `/driver move` being a change on the queue (#283): the
-    driver of Pro's Alpha is moved to its Reserve team, Discord refuses every role change
-    (Missing Permissions), each refusal is logged on the host, and the move is saved all the
-    same."""
-    import discord
-
-    await _seat(db_path, PRO, "Alpha")
-    service = PlacementService(db_path, roles=_roles(db_path))
-    roles = {}
-    for role_id in (*ROLES.values(), 1001):
-        role = MagicMock()
-        role.id = role_id
-        roles[role_id] = role
-    guild = MagicMock()
-    guild.get_role = MagicMock(side_effect=roles.get)
-    member = MagicMock()
-    member.guild = guild
-    member.roles = [roles[ROLES["Alpha"]], roles[1001]]
-    refused = discord.Forbidden(MagicMock(status=403), "Missing Permissions")
-    member.add_roles = AsyncMock(side_effect=refused)
-    member.remove_roles = AsyncMock(side_effect=refused)
-    guild.get_member = MagicMock(return_value=member)
-    guild.fetch_member = AsyncMock(return_value=member)
-
-    with caplog.at_level("WARNING", logger="leaguebot.core.services.drivers.team_role_service"):
-        await service.move_driver(
-            driver_profile_id=PROFILE_ID, season_id=SEASON_ID, from_division_id=PRO,
-            to_division_id=PRO, team_name="Reserve", acting_user_id=1,
-            acting_user_name="Manager", guild=guild, discord_user_id="4242",
-        )
-
-    assert member.add_roles.await_count + member.remove_roles.await_count > 0
-    assert any("failed to" in r.getMessage() for r in caplog.records)
-    assert await _where(db_path) == [(PRO, "Reserve")]
 
 
 # ---------------------------------------------------------------------------

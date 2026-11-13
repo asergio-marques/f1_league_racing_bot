@@ -22,12 +22,16 @@ is reported while the sack stands.
 
 **A test driver has no roles to revoke**, and **a driver who has left the server is still
 sacked**. **The audit records the state and the divisions as they were.**
+
+The rules of the sack are pinned on `sack_on`, the save every caller makes it through (the queue's
+`/driver sack` and an attendance sanction alike), which names the divisions left and the roles to
+take back for a step and a job of their own; the roles' step and the lineups are pinned through the
+queue, below.
 """
 from __future__ import annotations
 
 import json
 import os
-from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -158,55 +162,21 @@ async def _make_db(
     return db_path
 
 
-def _guild(*, member_missing: bool = False, fetch_fails: bool = False, has_role: bool = True):
-    guild = MagicMock()
-    role = MagicMock()
-    role.id = DRIVER_ROLE
-    member = MagicMock()
-    member.id = int(DISCORD_USER_ID)
-    member.roles = [role] if has_role else []
-    member.remove_roles = AsyncMock()
-
-    guild.get_member = MagicMock(return_value=None if member_missing else member)
-    if fetch_fails:
-        guild.fetch_member = AsyncMock(
-            side_effect=discord.HTTPException(MagicMock(status=404), "gone")
-        )
-    else:
-        guild.fetch_member = AsyncMock(return_value=member)
-    guild.get_role = MagicMock(return_value=role)
-    guild._member = member
-    guild._role = role
-    return guild
-
-
-
-def _roles(db_path: str):
-    """The team-role service on *db_path*, as the builder hands it to placement."""
-    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-
-    return TeamRoleService(db_path)
-
-
 def _service(db_path: str) -> PlacementService:
-    """The placement service on *db_path*, handed a team-role service whose removals are stood
-    in for, and its revoking of the placement roles stood in for too."""
-    roles = _roles(db_path)
-    roles._revoke_roles = AsyncMock(return_value=None)
-    service = PlacementService(db_path, roles=roles)
-    service.revoke_all_placement_roles = AsyncMock(return_value=None)
-    return service
+    """The placement service on *db_path*."""
+    return PlacementService(db_path)
 
 
-async def _sack(service, guild, *, season_id: int | None = SEASON_ID):
-    return await service.sack_driver(
-        PROFILE_ID,
-        season_id,
-        ACTOR_ID,
-        "Manager#0001",
-        guild,
-        DISCORD_USER_ID,
-    )
+async def _sack(service, *, season_id: int = SEASON_ID):
+    """The sack as a change's save makes it (`sack_on` on a connection, then committed): what it
+    saved, naming the divisions left and the roles to take back, no role asked of Discord."""
+    async with get_connection(service._db_path) as db:
+        saved = await service.sack_on(
+            db, driver_profile_id=PROFILE_ID, season_id=season_id, acting_user_id=ACTOR_ID,
+            acting_user_name="Manager#0001",
+        )
+        await db.commit()
+    return saved
 
 
 async def _count(db_path, sql, params=()) -> int:
@@ -238,7 +208,7 @@ async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
         await db.commit()
 
     with pytest.raises(Refused, match="placement is confirmed"):
-        await _sack(_service(db_path), _guild())
+        await _sack(_service(db_path))
 
     assert await _profile_state(db_path) == DriverState.ASSIGNED.value
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 1
@@ -262,7 +232,7 @@ async def test_any_other_state_is_refused(tmp_path, state):
     db_path = await _make_db(tmp_path, name=f"refuse_{state.value}", state=state)
 
     with pytest.raises(Refused, match=f"Unassigned or Assigned.*{state.value}"):
-        await _sack(_service(db_path), _guild())
+        await _sack(_service(db_path))
 
     assert await _profile_state(db_path) == state.value
 
@@ -276,7 +246,7 @@ async def test_a_driver_who_never_raced_is_kept_at_not_signed_up(tmp_path):
     """Issue #220: they are pending deletion, and the season's end deletes them."""
     db_path = await _make_db(tmp_path, name="sack_never_raced", former_driver=False)
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert await _profile_state(db_path) == DriverState.NOT_SIGNED_UP.value
 
@@ -285,7 +255,7 @@ async def test_a_driver_who_never_raced_keeps_their_attendance_and_results(tmp_p
     """The attendance sheet goes on listing a driver who held a seat in the division."""
     db_path = await _make_db(tmp_path, name="sack_never_raced_rows", former_driver=False)
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_round_attendance") == 1
     assert await _count(
@@ -304,7 +274,7 @@ async def test_a_former_driver_is_returned_to_not_signed_up(tmp_path):
     either fail on a foreign key or rewrite a season's results to name nobody."""
     db_path = await _make_db(tmp_path, name="former_state", former_driver=True)
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert await _profile_state(db_path) == DriverState.NOT_SIGNED_UP.value
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_profiles") == 1
@@ -314,7 +284,7 @@ async def test_a_former_drivers_signup_details_are_kept(tmp_path):
     """A former driver's signups are season history and are kept whole (issue #220)."""
     db_path = await _make_db(tmp_path, name="former_blanked", former_driver=True)
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -332,7 +302,7 @@ async def test_a_former_drivers_attendance_history_is_kept(tmp_path):
     thing that distinguishes this from the deletion path."""
     db_path = await _make_db(tmp_path, name="former_attendance", former_driver=True)
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_round_attendance") == 1
 
@@ -347,7 +317,7 @@ async def test_every_seat_is_freed(tmp_path):
     it is how a division silently runs a driver short."""
     db_path = await _make_db(tmp_path, name="sack_seats")
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert (
         await _count(
@@ -382,7 +352,7 @@ async def test_a_seat_in_a_completed_season_is_left_as_the_archive_holds_it(tmp_
         )
         await db.commit()
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert await _count(
         db_path,
@@ -401,62 +371,30 @@ async def test_a_seat_in_a_completed_season_is_left_as_the_archive_holds_it(tmp_
 async def test_the_season_assignments_are_removed(tmp_path):
     db_path = await _make_db(tmp_path, name="sack_assignments")
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 0
 
 
-async def test_the_placement_roles_are_revoked(tmp_path):
-    db_path = await _make_db(tmp_path, name="sack_roles")
-    service = _service(db_path)
-
-    await _sack(service, _guild())
-
-    service.revoke_all_placement_roles.assert_awaited_once()
-
-
-async def test_the_driver_role_is_revoked(tmp_path):
-    """Granted at approval and not covered by the placement roles, so it would otherwise
-    mark a sacked driver as signed up indefinitely."""
-    db_path = await _make_db(tmp_path, name="sack_signedup")
-    service = _service(db_path)
-
-    await _sack(service, _guild())
-
-    service._roles._revoke_roles.assert_awaited_once()
-    assert service._roles._revoke_roles.await_args.args[1] == DRIVER_ROLE
-
-
-async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
-    """Discord refuses a removal of a role the member does not hold, and it would be an
-    API call on every sack of a driver who never had one."""
-    db_path = await _make_db(tmp_path, name="sack_norole")
-    service = _service(db_path)
-
-    await _sack(service, _guild(has_role=False))
-
-    service._roles._revoke_roles.assert_not_awaited()
-
-
 async def test_a_league_with_no_driver_role_configured_revokes_nothing_extra(tmp_path):
+    """With no driver role configured, the roles the sack names to take back are the placement's
+    alone: Pro's role (999) and nothing else."""
     db_path = await _make_db(tmp_path, name="sack_noconfig", driver_role=None)
-    service = _service(db_path)
 
-    await _sack(service, _guild())
+    saved = await _sack(_service(db_path))
 
-    service._roles._revoke_roles.assert_not_awaited()
+    assert saved.revoke_role_ids == [999]
 
 
 async def test_a_test_driver_has_no_roles_to_revoke(tmp_path):
     """They are a rehearsal's fiction with no Discord member behind them, and asking
     Discord about them would fail on every sack of a test-mode roster."""
     db_path = await _make_db(tmp_path, name="sack_test_driver", is_test_driver=True)
-    service = _service(db_path)
 
-    await _sack(service, _guild())
+    saved = await _sack(_service(db_path))
 
-    service.revoke_all_placement_roles.assert_not_awaited()
-    service._roles._revoke_roles.assert_not_awaited()
+    assert saved.is_test_driver is True
+    assert saved.revoke_role_ids == []
 
 
 async def test_a_test_driver_is_still_unseated(tmp_path):
@@ -464,7 +402,7 @@ async def test_a_test_driver_is_still_unseated(tmp_path):
     shrink, and the seat has to come back."""
     db_path = await _make_db(tmp_path, name="sack_test_db", is_test_driver=True)
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     assert (
         await _count(
@@ -472,47 +410,17 @@ async def test_a_test_driver_is_still_unseated(tmp_path):
         )
         == 0
     )
-
-
-async def test_a_driver_who_left_the_server_is_still_sacked(tmp_path):
-    """Refusing would leave a departed driver holding a seat nobody could free."""
-    db_path = await _make_db(tmp_path, name="sack_departed")
-    service = _service(db_path)
-
-    await _sack(service, _guild(member_missing=True, fetch_fails=True))
-
-    assert await _profile_state(db_path) == DriverState.NOT_SIGNED_UP.value
-    assert (
-        await _count(
-            db_path, "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id IS NOT NULL"
-        )
-        == 0
-    )
-    service.revoke_all_placement_roles.assert_not_awaited()
-
-
-async def test_a_member_not_in_cache_is_fetched(tmp_path):
-    """A member the bot has not seen this session is ordinary, and treating a cache miss as
-    a departure would silently leave their roles on."""
-    db_path = await _make_db(tmp_path, name="sack_fetched")
-    service = _service(db_path)
-    guild = _guild(member_missing=True)
-
-    await _sack(service, guild)
-
-    guild.fetch_member.assert_awaited_once()
-    service.revoke_all_placement_roles.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
-# The audit, and the lineup
+# The audit
 # ---------------------------------------------------------------------------
 
 
 async def test_the_sack_is_audited(tmp_path):
     db_path = await _make_db(tmp_path, name="sack_audit")
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -529,7 +437,7 @@ async def test_the_audit_records_the_state_and_divisions_as_they_were(tmp_path):
     before the deletion rather than after."""
     db_path = await _make_db(tmp_path, name="sack_audit_before")
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -545,7 +453,7 @@ async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
     thing that says which one ran."""
     db_path = await _make_db(tmp_path, name="sack_audit_former", former_driver=True)
 
-    await _sack(_service(db_path), _guild())
+    await _sack(_service(db_path))
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -553,66 +461,6 @@ async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
         )
         row = await cursor.fetchone()
     assert json.loads(row["new_value"])["former_driver"] is True
-
-
-async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
-    """The posted lineup is what a division reads to know who is racing, and a sacked
-    driver left standing in it is the visible half of the sack not happening. The sack names
-    the division they left, for its caller to ask the change queue for its lineup (#439)."""
-    db_path = await _make_db(tmp_path, name="sack_lineup")
-    service = _service(db_path)
-    guild = _guild()
-
-    assert await _sack(service, guild) == [DIVISION_ID]
-
-
-# ---------------------------------------------------------------------------
-# A refused role change in attendance's sync's committing form; the sanction's own save (#439)
-# ---------------------------------------------------------------------------
-
-
-def _refusing_guild():
-    """The league's server, whose member 4242 holds the division's role and the driver role,
-    and from whom Discord refuses to take any role (Missing Permissions)."""
-    guild = MagicMock()
-    roles = {}
-    for role_id in (999, DRIVER_ROLE):
-        role = MagicMock()
-        role.id = role_id
-        roles[role_id] = role
-    guild.get_role = MagicMock(side_effect=roles.get)
-    member = MagicMock()
-    member.id = int(DISCORD_USER_ID)
-    member.guild = guild
-    member.roles = list(roles.values())
-    member.remove_roles = AsyncMock(
-        side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")
-    )
-    guild.get_member = MagicMock(return_value=member)
-    guild.fetch_member = AsyncMock(return_value=member)
-    guild._member = member
-    return guild
-
-
-async def test_a_role_discord_refuses_is_logged_and_the_sack_still_saved(tmp_path, caplog):
-    """`sack_driver`, the committing form `/attendance sync` sacks through until attendance's
-    own pass (#285), `/driver sack` being a change on the queue (#283): Discord refuses to take
-    the driver's roles, the refusal is logged on the host, and the sack is saved all the same:
-    the driver is back at Not Signed Up with no placement."""
-    db_path = await _make_db(tmp_path, name="sack_refused_roles")
-    service = PlacementService(db_path, roles=_roles(db_path))
-    guild = _refusing_guild()
-
-    with caplog.at_level("WARNING", logger="leaguebot.core.services.drivers.team_role_service"):
-        await _sack(service, guild)
-
-    guild._member.remove_roles.assert_awaited()
-    assert any("failed to remove role" in r.getMessage() for r in caplog.records)
-    assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 0
-    assert await _count(
-        db_path, "SELECT COUNT(*) FROM driver_profiles WHERE id = ? AND current_state = ?",
-        (PROFILE_ID, DriverState.NOT_SIGNED_UP.value),
-    ) == 1
 
 
 async def test_sack_on_reads_the_roles_before_it_frees_the_seats(tmp_path):
@@ -964,3 +812,29 @@ async def test_a_driver_sack_asked_again_while_it_waits_is_refused_as_a_repeat(t
     assert _sack_lines(await log_lines(league)) == [
         _sack_refusal(repeated(_sacking("Lewis"))), _sack_line("Lewis", LEWIS),
     ]
+
+
+async def test_a_driver_who_left_the_server_before_the_sack_runs_is_still_sacked(tmp_path):
+    """Refusing would leave a departed driver holding a seat nobody could free. The season is
+    ongoing; Lewis sits at Ferrari in Pro, holding Pro's role, Ferrari's and the driver role. The
+    league admin runs `/driver sack` of Lewis, and Lewis leaves the server before the queue runs
+    it. The sack is saved: Lewis holds no seat and is at Not Signed Up, and the log channel holds
+    today's success line alone. No role is asked of Discord for him, and his reply is today's, word
+    for word. Pro's lineup is posted once, and the lane is not stopped."""
+    from tests.core.test_driver_move import _seated
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, LEWIS, PRO
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _ongoing_sack(tmp_path)
+    asked = await _ask_sack(league, LEWIS)
+    league.absent.add(LEWIS)
+    await run_queue(league.bot)
+
+    assert LEWIS not in await _seated(league)
+    assert await _state(league, LEWIS) == DriverState.NOT_SIGNED_UP.value
+    assert _sack_lines(await log_lines(league)) == [_sack_line("Lewis", LEWIS)]
+    assert LEWIS not in league.revoked
+    assert last_said(asked) == _sacked("Lewis")
+    assert len(league.texts(DIVISIONS[PRO][3].lineup)) == 1
+    assert await stopped_job(league.db_path) is None
