@@ -57,10 +57,6 @@ CLEAN_UP_CHECK_IN = "clean_up_check_in"
 TAKE_DOWN_CALL = "take_down_call"
 
 
-def _value(ctx: StepContext, key: str, default: Any = None) -> Any:
-    """The job's own value, else the change's."""
-    return ctx.step_payload.get(key, ctx.payload.get(key, default))
-
 
 #: A round as its check-in reads it: its row, with `attendance_on` from attendance's own switch
 #: reader (`attendance_enabled_on`).
