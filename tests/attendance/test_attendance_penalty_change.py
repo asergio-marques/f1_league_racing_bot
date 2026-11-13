@@ -55,7 +55,10 @@ from tests.support.settings_league import audit_rows, last_said
 from tests.support.settings_league import interaction as member_asks
 from tests.support.undecorate import undecorate
 
-NOT_YET = "#285: a penalty changed mid-season does not yet recalculate the season's attendance"
+NOT_YET = (
+    "#285: a penalty change whose sanction cannot apply is not yet logged Incomplete, ending with "
+    "the /attendance sync command of each division with a failure"
+)
 
 #: The manager asking, as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Manager (`<@{MANAGER_ID}>`)"
@@ -355,6 +358,45 @@ async def test_a_sanction_already_applied_stands_when_the_penalty_is_lowered(tmp
     assert await _seated(league.db_path) == []
     assert len(league.verdicts()) == 2
     assert "Sanctions applied:" not in last_said(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_sanction_the_penalty_change_cannot_apply_is_logged_incomplete_with_the_sync_to_run(
+    tmp_path,
+):
+    """Season 1 is ongoing; Division 1's round 1 and Division 2's round 1 are final, the driver,
+    seated in both, accepted each and raced neither. Neither division has a Reserve team; the
+    no-show penalty is 1, auto-sack is off and auto-reserve is at 3. Manager 77 runs `/attendance
+    config no-show-penalty 5` and the queue is run, so in each division the driver is owed an
+    auto-reserve that cannot be applied. The penalty is 5, the rounds are recalculated at it and
+    the driver stays in Alpha; the queue does not stop. The setting's one line in the log channel
+    reads Incomplete, names the driver (their mention wrapped so it notifies no one) and the
+    auto-reserve with its reason, and ends with the `/attendance sync` command that finishes the
+    job, one for each division, Division 1's then Division 2's. The reply's "Still not applied"
+    lists the auto-reserve with its reason and gives the same two commands."""
+    league = await _league(tmp_path, rounds={1: "FINAL"}, no_show_penalty=1, autosack=None,
+                           autoreserve=3, reserve=False)
+    await _second_division(league)
+
+    interaction = await _ask_penalty(league, "no-show-penalty", 5)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _penalty(league.db_path, "no_show_penalty") == 5
+    assert [(round_id, points) for round_id, _, _, points, _ in await _rows(league.db_path)] == [
+        (1, 5), (OTHER_ROUND, 5),
+    ]
+    assert await _seated(league.db_path) == [DRIVER_PROFILE]
+    failure = "(Full Timer) — autoreserve: the division has no Reserve team"
+    commands = [f"`/attendance sync division:Division {number} round:1`" for number in (1, 2)]
+    [line] = _setting_lines(league, "no-show-penalty")
+    assert f"{NAMED} | /attendance config no-show-penalty | Incomplete" in line
+    assert f"`<@5101>` {failure}" in line
+    assert [each.strip() for each in line.rstrip().splitlines()[-2:]] == [
+        f"Repair the cause, then run {command}." for command in commands
+    ]
+    _, _, not_applied = last_said(interaction).partition("Still not applied")
+    assert f"• <@5101> {failure}" in not_applied
+    assert all(command in not_applied for command in commands)
 
 
 async def _pending_completion(league: _League) -> None:
