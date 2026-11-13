@@ -331,10 +331,10 @@ async def test_a_signup_setting_saves_its_value_and_audit_in_one_save(
     tmp_path, command, args, slots, query, saved, kind
 ):
     """`/signup nationality`, `time-type`, `time-image`, `time-slot add Monday 20:00` and
-    `time-slot remove 1` (Monday 20:00 saved): asked while the audit entry's write faults, the
-    value is left as it was, the manager is told nothing was saved and to run it again, and no
-    Success line is written; asked again, the value, one audit entry of its kind by the manager
-    and one Success line are saved."""
+    `time-slot remove 1` (Monday 20:00 saved): each is acknowledged as under way before the queue
+    runs; asked while the audit entry's write faults, the value is left as it was, the manager is
+    told nothing was saved and to run it again, and no Success line is written; asked again, the
+    value, one audit entry of its kind by the manager and one Success line are saved."""
     league = await _league(tmp_path, slots=slots)
     before = await _rows(league.db_path, query)
     name = {"time_slot_add": "time-slot add", "time_slot_remove": "time-slot remove"}.get(
@@ -342,6 +342,7 @@ async def test_a_signup_setting_saves_its_value_and_audit_in_one_save(
     )
 
     faulted = await _ask(league, command, *args)
+    assert said(faulted)[0].startswith("⏳ ")
     with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
