@@ -10,9 +10,10 @@ import discord
 
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
 from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import RoundFormat, read_scheduled_at
+from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView
 
@@ -697,20 +698,9 @@ async def _rebuild_embed_for_round(
     """Rebuild the RSVP embed using current DB state for *round_id* / *division_id*, *service*
     being attendance's."""
     async with get_connection(db_path) as db:
-        cur = await db.execute(
-            """
-            SELECT r.round_number, r.format, r.track_name, r.scheduled_at,
-                   s.season_number
-              FROM rounds r
-              JOIN divisions d ON d.id = r.division_id
-              JOIN seasons s ON s.id = d.season_id
-             WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        row = await cur.fetchone()
+        facts = await round_facts_on(db, round_id)
 
-    if row is None:
+    if facts is None:
         return discord.Embed(title="RSVP", color=discord.Color.red())
 
     dra_rows = await service.get_attendance_rows(round_id, division_id)
@@ -733,14 +723,12 @@ async def _rebuild_embed_for_round(
         for team in roster
     ]
 
-    scheduled_at = read_scheduled_at(row["scheduled_at"])
-
     return build_rsvp_embed(
-        season_number=row["season_number"],
-        round_number=row["round_number"],
-        track_name=row["track_name"],
-        scheduled_at=scheduled_at,
-        round_format=RoundFormat(row["format"]),
+        season_number=facts.season_number,
+        round_number=facts.round_number,
+        track_name=facts.track_name,
+        scheduled_at=facts.scheduled_at,
+        round_format=facts.format,
         teams=embed_teams,
     )
 
