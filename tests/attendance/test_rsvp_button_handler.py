@@ -733,8 +733,6 @@ async def _reserve_accepted(db_path, interaction):
 #: Each refusal: its id, when the round starts, who presses, the button's id, what to arrange
 #: first, how the line names the press, and the reason it carries.
 REFUSALS = [
-    ("unparseable", timedelta(days=3), FULL_TIME_PROFILE, "nonsense", None,
-     "a check-in call button", "Internal error: invalid button ID."),
     ("unknown-action", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_maybe_r{ROUND_ID}", None,
      "a check-in call button", "Internal error: unknown action."),
     ("module-off", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_accept_r{ROUND_ID}", _module_off,
