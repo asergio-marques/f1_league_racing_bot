@@ -31,8 +31,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in import rsvp_service
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
 SERVER_ID = 7714
 SEASON_ID = 1
@@ -229,7 +229,7 @@ async def _ask(bot: MagicMock, step: str) -> list[int]:
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
-    home = importlib.import_module(f"leaguebot.attendance.services.check_in_{step}")
+    home = importlib.import_module(f"leaguebot.attendance.services.check_in.check_in_{step}")
     ask = getattr(home, f"ask_check_in_{step}")
     await ask(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
     await run_queue(bot)
@@ -297,7 +297,7 @@ async def _queue_bot(db_path: str, *, attendance_enabled: bool) -> Any:
 async def _ask_last_notice(bot: MagicMock) -> list[int]:
     """Ask the queue for the round's last notice as its timer does; run the queue; return the
     ids posted in the check-in channel."""
-    from leaguebot.attendance.services.check_in_last_notice import ask_check_in_last_notice
+    from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 

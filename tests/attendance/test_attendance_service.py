@@ -43,7 +43,7 @@ async def test_attendance_switches_off_on_a_handed_connection(db_path):
     """Its flag down and its per-division channels cleared, its settings row kept, all on the
     caller's connection and saved only when the caller commits; it says whether attendance was
     on."""
-    from leaguebot.attendance.services.attendance_config_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.core.db.database import get_connection
 
     async with get_connection(db_path) as db:
@@ -84,7 +84,7 @@ class TestSetAttendanceChannel:
         """Division 10 (Pro) has no channels set. Its attendance channel is set to 888 on a
         connection, then committed: the division's config reads it back as the text "888", its
         RSVP channel still unset, and the setter gives back no channel replaced."""
-        from leaguebot.attendance.services.attendance_config_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         from leaguebot.attendance.services.division_channels import set_attendance_channel
         from leaguebot.core.db.database import get_connection
 
@@ -104,7 +104,7 @@ class TestSetAttendanceChannel:
 
 class TestTimingInvariantValid:
     async def test_timing_invariant_valid(self):
-        from leaguebot.attendance.services.attendance_config_service import (
+        from leaguebot.attendance.services.check_in.attendance_config_service import (
             validate_timing_invariant,
         )
         # notice_days=5, 5*24=120 > last_notice=24 > deadline=2 → valid
@@ -114,7 +114,7 @@ class TestTimingInvariantValid:
 
 class TestTimingInvariantNoticeTooSmall:
     async def test_timing_invariant_notice_too_small(self):
-        from leaguebot.attendance.services.attendance_config_service import (
+        from leaguebot.attendance.services.check_in.attendance_config_service import (
             validate_timing_invariant,
         )
         # 1*24=24, last_notice_hours=24 → 24 <= 24 → violation
@@ -125,7 +125,7 @@ class TestTimingInvariantNoticeTooSmall:
 
 class TestTimingInvariantLastZeroSentinelValid:
     async def test_timing_invariant_last_zero_sentinel_valid(self):
-        from leaguebot.attendance.services.attendance_config_service import (
+        from leaguebot.attendance.services.check_in.attendance_config_service import (
             validate_timing_invariant,
         )
         # last_notice_hours=0 is sentinel (no last-notice ping); deadline check skipped
@@ -145,7 +145,7 @@ class TestTimingInvariantLastNotAboveDeadlineRejected:
         """The last notice must fall strictly before the deadline: notice_days=5 (120h) clears
         the last notice, but last <= deadline is rejected, whether the two are equal or the
         deadline is the larger."""
-        from leaguebot.attendance.services.attendance_config_service import (
+        from leaguebot.attendance.services.check_in.attendance_config_service import (
             validate_timing_invariant,
         )
         result = validate_timing_invariant(notice_days, last, deadline)
@@ -397,7 +397,7 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
     names nothing."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from leaguebot.attendance.services.attendance_config_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.attendance.services.attendance_hooks import division_channel_faults
     from leaguebot.core.db.database import get_connection
     from tests.support.channel_faults import server_holding

@@ -39,13 +39,13 @@ import aiohttp
 import aiosqlite
 import discord
 
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_config_service import (
+from leaguebot.attendance.services.check_in import rsvp_service
+from leaguebot.attendance.services.check_in.attendance_config_service import (
     AttendanceService,
     RsvpOutcome,
     rsvp_lock,
 )
-from leaguebot.attendance.services.check_in_changes import CheckInViewFactory
+from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,

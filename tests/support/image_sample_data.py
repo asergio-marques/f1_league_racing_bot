@@ -612,7 +612,7 @@ def build_rsvp_drawing(root, *, case: str = "sprint"):
     """
     from datetime import datetime, timezone
 
-    from leaguebot.attendance.services.attendance_config_service import derive_checkin_deadline
+    from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
     from leaguebot.image.services.image_rsvp_service import resolve_drawing
 
     chosen = next(

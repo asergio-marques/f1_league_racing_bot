@@ -10,7 +10,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_sheet import _opening_attendance_rows
-from leaguebot.attendance.services.rsvp_service import query_division_roster
+from leaguebot.attendance.services.check_in.rsvp_service import query_division_roster
 
 SERVER_ID = 22080
 DIVISION_ID = 1

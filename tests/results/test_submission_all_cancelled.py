@@ -618,7 +618,7 @@ _RENAMED = pytest.param(True, id="under another name")
 def _read_check_in_renamed(monkeypatch: Any) -> str:
     """Attendance's job reading a round's check-in runs under a name of the test's own
     (`rename_module_job`), which neither results nor core knows; give that name."""
-    check_in_record = importlib.import_module("leaguebot.attendance.services.check_in_record")
+    check_in_record = importlib.import_module("leaguebot.attendance.services.check_in.check_in_record")
     rename_module_job(
         monkeypatch, steps=(check_in_record, "read_check_in_steps"),
         planner=(check_in_record, "read_check_in_on"), old=READ_CHECK_IN,
@@ -674,8 +674,8 @@ def _check_in_read_failing() -> ExitStack:
     them for as long as the record is read there."""
     stack = ExitStack()
     failing = AsyncMock(side_effect=RuntimeError("disk I/O error"))
-    for module_name in ("leaguebot.attendance.services.check_in_record",
-                        "leaguebot.attendance.services.check_in_clean_up",
+    for module_name in ("leaguebot.attendance.services.check_in.check_in_record",
+                        "leaguebot.attendance.services.check_in.check_in_clean_up",
                         "leaguebot.core.services.cancellations.cancellation_notice_service",
                         "leaguebot.core.services.cancellations.cancellation_changes",
                         "leaguebot.results.services.submission.submission_changes"):
@@ -753,7 +753,7 @@ async def test_a_round_ending_cancelled_asks_attendance_for_its_check_in_read(tm
     round 3's check-in, handed Pro's round 3: its id and number, Pro's id and name, the season's
     id and number, and its track. The reading it plans is the change's first job after the
     ending, where it stood before."""
-    from leaguebot.attendance.services import check_in_record
+    from leaguebot.attendance.services.check_in import check_in_record
 
     league = await _league(tmp_path, attendance=True)
     handed: list[tuple[bool, dict[str, Any]]] = []

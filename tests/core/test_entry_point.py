@@ -331,7 +331,7 @@ _CANCELLATION_PARTS = (
      "cancellation_refusal", "results' refusal"),
     ("rounds_called_off", "leaguebot.results.services.submission.result_submission_service",
      "close_called_off_on", "results' close"),
-    ("rounds_called_off", "leaguebot.attendance.services.check_in_clean_up",
+    ("rounds_called_off", "leaguebot.attendance.services.check_in.check_in_clean_up",
      "take_down_called_off_on", "attendance's take-down"),
     ("cancellation_notices", "leaguebot.attendance.services.cancellation_notice",
      "notices_on", "attendance's check-in notice"),
@@ -355,15 +355,15 @@ _WINDOWS_PARTS = (
 _AMENDMENT_PARTS = (
     ("round_amended", "leaguebot.weather.services.phase_withdrawal", "round_amended_on",
      "weather's withdrawal"),
-    ("round_amended", "leaguebot.attendance.services.check_in_amendment", "round_amended_on",
+    ("round_amended", "leaguebot.attendance.services.check_in.check_in_amendment", "round_amended_on",
      "attendance's reopening"),
-    ("round_armed", "leaguebot.attendance.services.check_in_amendment", "amendment_posts",
+    ("round_armed", "leaguebot.attendance.services.check_in.check_in_amendment", "amendment_posts",
      "attendance's posts"),
     ("round_armed", "leaguebot.weather.services.forecast_changes", "amendment_posts",
      "weather's posts"),
     ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
      "weather's clean-ups"),
-    ("round_clean_ups_due", "leaguebot.attendance.services.check_in_amendment",
+    ("round_clean_ups_due", "leaguebot.attendance.services.check_in.check_in_amendment",
      "amendment_clean_ups", "attendance's clean-ups"),
 )
 
@@ -856,11 +856,11 @@ _RECOVERIES_OF_THE_STEPS = {
     "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
     "missed forecast clean-ups": ("leaguebot.weather.wiring",
                                   "recover_missed_forecast_clean_ups"),
-    "missed check-in calls": ("leaguebot.attendance.services.check_in_recovery",
+    "missed check-in calls": ("leaguebot.attendance.services.check_in.check_in_recovery",
                               "recover_missed_check_in_calls"),
-    "RSVP views and deadlines": ("leaguebot.attendance.services.check_in_recovery",
+    "RSVP views and deadlines": ("leaguebot.attendance.services.check_in.check_in_recovery",
                                  "recover_rsvp_views_and_deadlines"),
-    "missed check-in clean-ups": ("leaguebot.attendance.services.check_in_recovery",
+    "missed check-in clean-ups": ("leaguebot.attendance.services.check_in.check_in_recovery",
                                   "recover_missed_check_in_clean_ups"),
 }
 
@@ -904,7 +904,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
-    `attendance.services.check_in_recovery`, each of these six also handed the bot's queue, since a
+    `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
     service does not look the queue up on the bot; each of the others in its module's wiring.
     The RSVP views' recovery is handed the way to build the check-in buttons too (`view_of`), made
     by attendance's wiring, so that `LeagueBot` declares no `check_in_view` for it to look up.

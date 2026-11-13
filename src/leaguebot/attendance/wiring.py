@@ -17,7 +17,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from leaguebot.attendance.services.check_in_changes import CheckInViewFactory
+    from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -60,14 +60,14 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
 def sign_up_to_round_amended(bot: "LeagueBot") -> None:
     """Sign attendance's reopening of its check-in up to the hook an amended round declares,
     inside the save."""
-    from leaguebot.attendance.services import check_in_amendment
+    from leaguebot.attendance.services.check_in import check_in_amendment
 
     bot.round_amended.subscribe(check_in_amendment.round_amended_on)
 
 
 def sign_up_to_round_armed(bot: "LeagueBot") -> None:
     """Sign attendance's posts up to the hook an amended round's arming again declares."""
-    from leaguebot.attendance.services import check_in_amendment
+    from leaguebot.attendance.services.check_in import check_in_amendment
 
     bot.round_armed.subscribe(check_in_amendment.amendment_posts)
 
@@ -75,7 +75,7 @@ def sign_up_to_round_armed(bot: "LeagueBot") -> None:
 def sign_up_to_round_clean_ups_due(bot: "LeagueBot") -> None:
     """Sign attendance's clean-up up to the hook the clean-ups due a day after a round are read
     through."""
-    from leaguebot.attendance.services import check_in_amendment
+    from leaguebot.attendance.services.check_in import check_in_amendment
 
     bot.round_clean_ups_due.subscribe(check_in_amendment.amendment_clean_ups)
 
@@ -91,7 +91,7 @@ def _check_in_view() -> "CheckInViewFactory":
 def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
     """Sign attendance's steps for an amendment up to the hook the steps each module defines for
     it are read through."""
-    from leaguebot.attendance.services import check_in_amendment, check_in_clean_up
+    from leaguebot.attendance.services.check_in import check_in_amendment, check_in_clean_up
 
     bot.amendment_steps.subscribe(partial(
         check_in_amendment.amendment_steps,
@@ -108,7 +108,7 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
 def sign_up_to_rounds_called_off(bot: "LeagueBot") -> None:
     """Sign attendance's take-down of the calls of the rounds called off up to the hook of the
     rounds called off, in the save."""
-    from leaguebot.attendance.services import check_in_clean_up
+    from leaguebot.attendance.services.check_in import check_in_clean_up
 
     bot.rounds_called_off.subscribe(check_in_clean_up.take_down_called_off_on)
 
@@ -125,7 +125,8 @@ def sign_up_to_cancellation_steps(bot: "LeagueBot") -> None:
     """Sign attendance's steps up to the hook the steps a cancellation plans are read through, in
     the order they run: the take-down of a call, the reading of a round's check-in record, then
     attendance's own notice."""
-    from leaguebot.attendance.services import cancellation_notice, check_in_clean_up, check_in_record
+    from leaguebot.attendance.services import cancellation_notice
+    from leaguebot.attendance.services.check_in import check_in_clean_up, check_in_record
 
     bot.cancellation_steps.subscribe(partial(
         check_in_clean_up.take_down_steps,
@@ -250,11 +251,11 @@ def register_change_types(bot: "LeagueBot") -> None:
     `/attendance sync`, the module's switch, its eight settings and its channel settings."""
     from leaguebot.attendance.services.attendance_settings import attendance_config_settings
     from leaguebot.attendance.services.channel_settings import attendance_channel_settings
-    from leaguebot.attendance.services.check_in_answer_changes import check_in_answer_change
-    from leaguebot.attendance.services.check_in_call import check_in_call_change
-    from leaguebot.attendance.services.check_in_clean_up import check_in_clean_up_change
-    from leaguebot.attendance.services.check_in_deadline import check_in_deadline_change
-    from leaguebot.attendance.services.check_in_last_notice import check_in_last_notice_change
+    from leaguebot.attendance.services.check_in.check_in_answer_changes import check_in_answer_change
+    from leaguebot.attendance.services.check_in.check_in_call import check_in_call_change
+    from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_change
+    from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_change
+    from leaguebot.attendance.services.check_in.check_in_last_notice import check_in_last_notice_change
     from leaguebot.attendance.services.module_switch_settings import (
         module_off_attendance,
         module_on_attendance,
@@ -312,13 +313,13 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     Each asks the change queue, read from the bot when it fires. The bot keeps the one queue
     `build` made; a test that replaces the queue must register these handlers again."""
-    from leaguebot.attendance.services.check_in_call import ask_check_in_call
-    from leaguebot.attendance.services.check_in_clean_up import ask_check_in_clean_up
-    from leaguebot.attendance.services.check_in_deadline import ask_check_in_deadline
-    from leaguebot.attendance.services.check_in_amendment import (
+    from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
+    from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_in_clean_up
+    from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
+    from leaguebot.attendance.services.check_in.check_in_amendment import (
         advance_steps as check_in_advance_steps,
     )
-    from leaguebot.attendance.services.check_in_last_notice import ask_check_in_last_notice
+    from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
 
     scheduler = bot.scheduler_service
@@ -357,7 +358,7 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
     start-up sweep (the entry point signs them up to `bot.starting` under attendance's switch key).
     Each recovery is looked up when its step runs, so a step stands for that function and no
     other, and is handed the bot's change queue, which a service does not look up on the bot."""
-    from leaguebot.attendance.services import check_in_recovery
+    from leaguebot.attendance.services.check_in import check_in_recovery
 
     return (
         # The check-in calls that fell due while the bot was down, their deadline still ahead,

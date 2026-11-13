@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import discord
 
-from leaguebot.attendance.services.check_in_answer_changes import ask_check_in_answer
+from leaguebot.attendance.services.check_in.check_in_answer_changes import ask_check_in_answer
 from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import refuse

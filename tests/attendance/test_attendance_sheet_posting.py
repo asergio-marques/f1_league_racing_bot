@@ -21,7 +21,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.attendance.services import attendance_sheet
-from leaguebot.attendance.services.attendance_config_service import derive_checkin_deadline
+from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
 from leaguebot.attendance.services.attendance_sheet import post_attendance_sheet
 from tests.support.change_queue import in_a_job
 

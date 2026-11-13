@@ -121,7 +121,7 @@ async def _placement(league: SeasonLeague, user_id: int) -> tuple[Any, int]:
 
 async def _ask(league: SeasonLeague) -> None:
     """Ask the queue for round 3's deadline as its timer does; the queue is not run."""
-    from leaguebot.attendance.services.check_in_deadline import ask_check_in_deadline
+    from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_deadline(league.bot.change_queue, league.db_path, ROUND_3,

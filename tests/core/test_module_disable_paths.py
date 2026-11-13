@@ -39,7 +39,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService

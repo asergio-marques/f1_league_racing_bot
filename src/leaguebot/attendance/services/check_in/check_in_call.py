@@ -44,9 +44,9 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import CHECK_IN_CALL, AttendanceConfig
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
-from leaguebot.attendance.services.check_in_changes import (
+from leaguebot.attendance.services.check_in import rsvp_service
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.check_in_changes import (
     DELETE_EARLIER,
     GIVE_UP,
     POST_CALL,
@@ -59,7 +59,7 @@ from leaguebot.attendance.services.check_in_changes import (
     scheduled_at_of,
     standing_call_row,
 )
-from leaguebot.attendance.services.check_in_clean_up import earlier_messages, forget_vanished_call
+from leaguebot.attendance.services.check_in.check_in_clean_up import earlier_messages, forget_vanished_call
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,

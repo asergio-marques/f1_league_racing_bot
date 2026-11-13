@@ -58,7 +58,7 @@ from leaguebot.core.services.queue.setting_change import Saved, Setting
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.attendance.services.attendance_config_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 

@@ -293,7 +293,7 @@ class AttendanceDouble:
         league's attendance is on; nothing while it is off."""
         if not self.league.attendance_on:
             return []
-        from leaguebot.attendance.services import check_in_record
+        from leaguebot.attendance.services.check_in import check_in_record
 
         return list(await check_in_record.read_check_in_on(db, target))
 

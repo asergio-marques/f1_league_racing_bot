@@ -15,7 +15,7 @@ from leaguebot.attendance.cogs.attendance_group import (
     AttendanceSubgroup,
     record,
 )
-from leaguebot.attendance.services.check_in_answer_changes import ask_check_in_answers
+from leaguebot.attendance.services.check_in.check_in_answer_changes import ask_check_in_answers
 from leaguebot.core.services.seasons.season_service import division_in_ongoing_season
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.input_validator import parse_user_id

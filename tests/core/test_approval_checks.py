@@ -79,7 +79,7 @@ def _faults_bot(db_path, modules):
     from types import SimpleNamespace
 
     from leaguebot.__main__ import _sign_up_to_division_channel_faults_read
-    from leaguebot.attendance.services.attendance_config_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     bot = SimpleNamespace(
         module_service=modules, db_path=db_path, attendance_service=AttendanceService(db_path)

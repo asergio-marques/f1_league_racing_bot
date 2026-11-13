@@ -3176,7 +3176,7 @@ CATCH_ALLS_ALLOWED = {
     ("attendance/services/attendance_sheet.py", "_seat_team_field"):
         "place 6, the team names the sheet's graphic draws: teams that cannot be read are drawn "
         "without names, the fault a line of the job",
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"):
+    ("attendance/services/check_in/rsvp_service.py", "_checkin_attachment"):
         "place 6, the drawing of the check-in call's graphic, which then posts without it, its "
         "fault a line of the job",
     ("core/services/rounds/calendar_post_service.py", "render_for_command"):

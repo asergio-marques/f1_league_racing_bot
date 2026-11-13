@@ -13,7 +13,7 @@ from typing import Any, TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.models.round import AttendanceWindows
 from leaguebot.core.services.modules.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.approval_checks import channel_fault

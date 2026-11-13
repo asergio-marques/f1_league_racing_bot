@@ -41,7 +41,7 @@ from leaguebot.attendance.services import (
     attendance_scoring,
     attendance_sheet,
 )
-from leaguebot.attendance.services import check_in_record
+from leaguebot.attendance.services.check_in import check_in_record
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, PlannedStep, StepFailedOnDiscord

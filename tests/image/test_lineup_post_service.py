@@ -83,7 +83,7 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
 
 def test_the_attendance_reserve_distribution_does_not_refresh_the_lineup():
     """FR-024 — it composes one round's grid, not the season's assignment."""
-    source = (SRC / "leaguebot" / "attendance" / "services" / "rsvp_service.py").read_text(encoding="utf-8")
+    source = (SRC / "leaguebot" / "attendance" / "services" / "check_in" / "rsvp_service.py").read_text(encoding="utf-8")
     assert "_refresh_lineup_post" not in source
 
 

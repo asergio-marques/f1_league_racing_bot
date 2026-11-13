@@ -50,7 +50,7 @@ import discord
 import pytest
 
 from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
@@ -263,7 +263,7 @@ async def _submit(bot, entries: str, interaction=None):
     )
     modal.entries._value = entries  # type: ignore[attr-defined]
     with patch(
-        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
+        "leaguebot.attendance.services.check_in.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ) as rebuild, patch("leaguebot.attendance.cogs.check_in_buttons.RsvpView", new=MagicMock()):
         await modal.on_submit(interaction)

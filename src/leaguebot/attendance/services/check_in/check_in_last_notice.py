@@ -29,9 +29,9 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import CHECK_IN_CALL, CHECK_IN_LAST_NOTICE
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
-from leaguebot.attendance.services.check_in_changes import (
+from leaguebot.attendance.services.check_in import rsvp_service
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.check_in_changes import (
     POST_LAST_NOTICE,
     CallRow,
     call_row,

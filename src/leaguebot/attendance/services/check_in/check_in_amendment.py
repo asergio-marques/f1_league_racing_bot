@@ -38,14 +38,14 @@ from leaguebot.attendance.models.attendance import (
     CHECK_IN_DEADLINE,
     CHECK_IN_LAST_NOTICE,
 )
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
-from leaguebot.attendance.services.check_in_call import (
+from leaguebot.attendance.services.check_in import rsvp_service
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.check_in_call import (
     check_in_steps,
     close_check_in_on,
     given_up_text,
 )
-from leaguebot.attendance.services.check_in_changes import (
+from leaguebot.attendance.services.check_in.check_in_changes import (
     ANNOUNCE,
     CLEAN_UP_CHECK_IN,
     CLOSE_WITHOUT_CALL,
@@ -60,8 +60,8 @@ from leaguebot.attendance.services.check_in_changes import (
     call_row,
     standing_call_row,
 )
-from leaguebot.attendance.services.check_in_clean_up import check_in_clean_up_steps, take_down_steps
-from leaguebot.attendance.services.check_in_deadline import check_in_deadline_steps
+from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_steps, take_down_steps
+from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_steps
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round

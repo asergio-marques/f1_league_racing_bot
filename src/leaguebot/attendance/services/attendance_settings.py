@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.attendance.models.attendance import AttendanceConfig
-from leaguebot.attendance.services.attendance_config_service import validate_timing_invariant
+from leaguebot.attendance.services.check_in.attendance_config_service import validate_timing_invariant
 from leaguebot.attendance.services.channel_settings import NOT_ENABLED
 from leaguebot.core.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
@@ -39,7 +39,7 @@ from leaguebot.core.services.queue.setting_change import Saved, Setting
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.attendance.services.attendance_config_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 

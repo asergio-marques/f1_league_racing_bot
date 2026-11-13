@@ -21,7 +21,7 @@ from leaguebot.attendance.services.attendance_sync_change import (
     faults_verdict,
     round_verdict,
 )
-from leaguebot.attendance.services.check_in_call import ask_check_in_call, judge_hand_post
+from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call, judge_hand_post
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services.seasons.season_service import round_by_number

@@ -29,8 +29,8 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import CHECK_IN_CLEAN_UP, RsvpEmbedMessage
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
-from leaguebot.attendance.services.check_in_changes import (
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.check_in_changes import (
     DELETE_MESSAGE,
     MARK_CLEARED,
     PLAN_CLEAN_UP,
@@ -38,7 +38,7 @@ from leaguebot.attendance.services.check_in_changes import (
     CallRow,
     call_row,
 )
-from leaguebot.attendance.services.check_in_record import checkin_record
+from leaguebot.attendance.services.check_in.check_in_record import checkin_record
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
 from leaguebot.core.models.change import (

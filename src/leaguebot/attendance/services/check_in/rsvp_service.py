@@ -17,7 +17,7 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
-from leaguebot.attendance.services.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.services.drivers.driver_service import driver_test_names_on
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import division_round_states_on, round_facts_on

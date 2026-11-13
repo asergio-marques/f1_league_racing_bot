@@ -1,6 +1,6 @@
 """A round's check-in record, which a cancellation writes in the log channel (#175, #283).
 
-The record is attendance's own (`attendance.services.check_in_record.checkin_record`): every driver
+The record is attendance's own (`attendance.services.check_in.check_in_record.checkin_record`): every driver
 the check-in recorded, grouped by their answer, and the reserves where they were distributed. A
 round's, a division's or a season's cancellation reads it as attendance's take-down of the round's
 call does (`check_in_clean_up.take_down_call`), before the call comes down; the take-down deletes the
@@ -130,7 +130,7 @@ def _check_in_deletes(*, refuse=None, wipe_db=None):
 
 
 def _with_attendance(bot):
-    from leaguebot.attendance.services.attendance_config_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     bot.attendance_service = AttendanceService(bot.db_path)
     return bot
@@ -163,7 +163,7 @@ async def _distribute(db_path) -> None:
 async def _audit(tmp_path, *, distribute=False, round_ids=(ROUND_ID,)):
     """Take down the call of each of *round_ids* as attendance's `take_down_call` job does, and
     give the check-in audit each read before its call came down, together."""
-    from leaguebot.attendance.services.check_in_clean_up import take_down_call
+    from leaguebot.attendance.services.check_in.check_in_clean_up import take_down_call
 
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)
@@ -222,7 +222,7 @@ async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_p
     Attendance's take-down reads that check-in first, then asks its delete steps
     (`check_in_deletes`) once for round 3 of the division: the steps here wipe the answers, and
     the audit it gives still names both drivers."""
-    from leaguebot.attendance.services.check_in_clean_up import take_down_call
+    from leaguebot.attendance.services.check_in.check_in_clean_up import take_down_call
 
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)
@@ -243,7 +243,7 @@ async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(
     refusal."""
     import discord
 
-    from leaguebot.attendance.services.check_in_clean_up import take_down_call
+    from leaguebot.attendance.services.check_in.check_in_clean_up import take_down_call
 
     from leaguebot.core.models.change import StepFailedOnDiscord
 
@@ -280,7 +280,7 @@ async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
     """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Attendance's
     `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its
     line, which a round ending with every session not held writes too (attendance :130)."""
-    from leaguebot.attendance.services.check_in_record import checkin_record
+    from leaguebot.attendance.services.check_in.check_in_record import checkin_record
     from tests.support.season_league import PRO, ongoing_league, round_id
 
     league = await ongoing_league(tmp_path, attendance=True)

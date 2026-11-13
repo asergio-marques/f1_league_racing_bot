@@ -67,7 +67,7 @@ def _report(*files: tuple[str, int, int]) -> dict:
         ("src/leaguebot/image/services/image_weather_service.py", "image"),
         ("src/leaguebot/image/utils/svg_fill.py", "image"),
         ("src/leaguebot/attendance/services/attendance_service.py", "attendance"),
-        ("src/leaguebot/attendance/services/rsvp_service.py", "attendance"),
+        ("src/leaguebot/attendance/services/check_in/rsvp_service.py", "attendance"),
         ("src/leaguebot/results/services/standings/standings_service.py", "results"),
         ("src/leaguebot/results/services/review/penalty_service.py", "results"),
         ("src/leaguebot/signup/services/wizard_service.py", "signup"),

@@ -82,7 +82,7 @@ async def _round_4_in(league: SeasonLeague, delta: timedelta) -> None:
 
 async def _ask(league: SeasonLeague, round_: int = ROUND_4, **kwargs: Any) -> None:
     """Ask the queue for *round_*'s call as its timer does; the queue is not run."""
-    from leaguebot.attendance.services.check_in_call import ask_check_in_call
+    from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, round_,

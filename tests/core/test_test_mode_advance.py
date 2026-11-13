@@ -261,10 +261,10 @@ async def _advance(cog, interaction, entry, *, passed=None, sign_up: bool = True
     the change queue for it (#439). Nor, once the check-in steps are asked of the queue too, has
     a check-in step: the check-in runners are stubbed only while the attendance module still has
     them, so that a test asserting an ask fails on the runner's call rather than on a post."""
-    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.check_in import rsvp_service
 
     defaults = {
-        f"leaguebot.attendance.services.rsvp_service.{name}": AsyncMock(return_value=None)
+        f"leaguebot.attendance.services.check_in.rsvp_service.{name}": AsyncMock(return_value=None)
         for name in _CHECK_IN_RUNNERS
         if hasattr(rsvp_service, name)
     }

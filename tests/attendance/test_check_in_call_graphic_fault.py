@@ -45,7 +45,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 
 async def _ask_and_run(league: SeasonLeague) -> None:
-    from leaguebot.attendance.services.check_in_call import ask_check_in_call
+    from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
@@ -65,7 +65,7 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     told so. (no deadline) the configuration read for the deadline raises: the graphic is drawn
     without it, the call posts with it, and the log channel is told so. (none) the graphic is drawn
     whole: no such line is written."""
-    from leaguebot.attendance.services.attendance_config_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.image.services import image_rsvp_post
 
     league = await _league(tmp_path)
