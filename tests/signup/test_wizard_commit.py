@@ -139,9 +139,9 @@ async def _correcting(tmp_path: Any, state: str, draft: dict[str, Any]) -> Seaso
                            driver_state="PENDING_DRIVER_CORRECTION")
     await league.write(
         "INSERT INTO signup_records (season_id, discord_user_id, nationality, platform, "
-        "platform_id, driver_type, notes, signup_channel_id) "
-        "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', NULL, ?)",
-        SEASON_ID, str(SIGNING_UP), KIMI_CHANNEL,
+        "platform_id, driver_type, notes) "
+        "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', NULL)",
+        SEASON_ID, str(SIGNING_UP),
     )
     return league
 
@@ -210,7 +210,7 @@ def _signup_lines(league: SeasonLeague) -> list[str]:
 
 async def test_every_answer_reaches_the_record(tmp_path):
     """Kimi has answered everything but his notes. He types "See you there"; once the queue runs
-    his signup record holds every answer, his notes and his signup channel. The record is built
+    his signup record holds every answer and his notes. The record is built
     from the draft, so it is saved before the draft is cleared: clearing first would save an
     empty one."""
     league = await _league(tmp_path)
@@ -231,7 +231,6 @@ async def test_every_answer_reaches_the_record(tmp_path):
     assert record.preferred_teammate == "George"
     assert record.lap_times == {"1": "1:23.456"}
     assert record.notes == "See you there"
-    assert record.signup_channel_id == KIMI_CHANNEL
 
 
 async def test_an_unanswered_question_arrives_as_its_empty_form(tmp_path):

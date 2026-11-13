@@ -84,10 +84,10 @@ async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
     )
     await league.write(
         "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, "
-        "nationality, platform, platform_id, driver_type, lap_times_json, signup_channel_id) "
-        "VALUES (?, ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', ?, ?)",
+        "nationality, platform, platform_id, driver_type, lap_times_json) "
+        "VALUES (?, ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', ?)",
         SEASON_ID, str(SIGNING_UP), str(SIGNING_UP),
-        json.dumps(LAP_TIMES if lap_times is None else lap_times), KIMI_CHANNEL,
+        json.dumps(LAP_TIMES if lap_times is None else lap_times),
     )
     made = league._recording(channel(KIMI_CHANNEL, league.events))
     made.guild = league.guild

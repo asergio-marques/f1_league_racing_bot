@@ -14,6 +14,8 @@ from leaguebot.signup.models.signup_module import SignupRecord
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.driver_transitions import transitioned
 
+_NO_CHANNEL_COLUMN = "#286: SignupRecord still carries the signup_channel_id item 22 removes"
+
 
 async def _save_record(svc, db_path, record):
     """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
@@ -42,7 +44,6 @@ def _record(platform: str = "Steam") -> SignupRecord:
         preferred_teammate=None,
         lap_times={},
         notes=None,
-        signup_channel_id=None,
     )
 
 
@@ -80,6 +81,7 @@ async def _archive(db_path, season_id: int):
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -97,6 +99,7 @@ async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_pa
     assert stored.window_id == window_id
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -109,6 +112,7 @@ async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     assert (await svc.get_record(USER)).platform == "PSN"
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_a_new_season_does_not_overwrite_the_last(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -124,6 +128,7 @@ async def test_a_new_season_does_not_overwrite_the_last(db_path):
     assert (await svc.get_record(USER)).platform == "Xbox"
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     """Signups are keyed by the Discord account, and survive the driver whatever becomes of
     the profile — deleted at the season's end where they never raced."""

@@ -532,10 +532,10 @@ async def test_a_corrected_answer_commits_the_correction_and_posts_a_fresh_panel
                            driver_state="PENDING_DRIVER_CORRECTION")
     await league.write(
         "INSERT INTO signup_records (season_id, discord_user_id, nationality, platform, "
-        "platform_id, driver_type, notes, signup_channel_id) "
+        "platform_id, driver_type, notes) "
         "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', "
-        "'Happy to race anywhere', ?)",
-        SEASON_ID, str(SIGNING_UP), KIMI_CHANNEL,
+        "'Happy to race anywhere')",
+        SEASON_ID, str(SIGNING_UP),
     )
     [before] = await league.rows(
         "SELECT id FROM signup_records WHERE discord_user_id = ?", str(SIGNING_UP)
