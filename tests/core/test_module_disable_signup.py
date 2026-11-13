@@ -525,6 +525,36 @@ async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
     }
 
 
+async def test_switching_signup_off_keeps_a_held_channel_s_deletion(tmp_path):
+    """Kimi (105) presses Cancel Signup part-way through signing up and the queue runs: his
+    signup channel is held, its deletion armed a day on, as he is told. Within that day league
+    manager 77 runs `/module disable signup` and the queue runs: the switch-off disarms no
+    deletion of Kimi's channel, so it is still deleted on time."""
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
+    from tests.support.season_league import SIGNUP_CHANNEL_BASE
+
+    league = await _league(tmp_path, SIGNING_UP)
+    press = member_interaction(league.bot, user=league._member(SIGNING_UP))
+    press.guild = league.guild
+    press.channel_id = SIGNUP_CHANNEL_BASE + SIGNING_UP
+    press.channel = league.channel(SIGNUP_CHANNEL_BASE + SIGNING_UP)
+    view = WithdrawButtonView(str(SIGNING_UP), league.bot.change_queue)
+    await view.withdraw_button.callback(press)
+    await run_queue(league.bot)
+    assert [call.args[:2] for call in league.bot.scheduler_service.arm_once.call_args_list
+            if call.args and call.args[0] == DELETE_TIMER] == [(DELETE_TIMER, str(SIGNING_UP))]
+
+    disarms_before = len(league.bot.scheduler_service.disarm.call_args_list)
+
+    await _switch_off(league)
+    await run_queue(league.bot)
+
+    assert await _disables(league) != []
+    disarmed = {call.args[:2] for call
+                in league.bot.scheduler_service.disarm.call_args_list[disarms_before:]}
+    assert (DELETE_TIMER, str(SIGNING_UP)) not in disarmed
+
+
 async def test_a_league_with_no_configuration_still_disables(tmp_path):
     """A module toggled on and never configured: there are no wizards, no channel and no timers,
     and the flag still has to come down. The switch-off's only job is `switch_off`, the module is
