@@ -11,7 +11,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from leaguebot.attendance.services import attendance_scoring, attendance_sheet
+from leaguebot.attendance.services.scoring import attendance_scoring
+from leaguebot.attendance.services import attendance_sheet
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import driver_test_names_on
 from leaguebot.core.services.drivers.team_service import TeamService, division_team_references

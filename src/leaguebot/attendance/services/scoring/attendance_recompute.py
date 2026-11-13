@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import aiosqlite
 
-from leaguebot.attendance.services import attendance_scoring
+from leaguebot.attendance.services.scoring import attendance_scoring
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus

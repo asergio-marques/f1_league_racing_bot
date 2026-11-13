@@ -10,7 +10,7 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_scoring import (
+from leaguebot.attendance.services.scoring.attendance_scoring import (
     record_attendance_from_results_on,
     record_attendance_from_results_full_recompute,
     distribute_attendance_points,
@@ -719,7 +719,7 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     already persisted when the second round's call failed — leaving the division scored
     to a different rule from one round to the next, with no command to put it right.
     """
-    from leaguebot.attendance.services import attendance_recompute, attendance_scoring
+    from leaguebot.attendance.services.scoring import attendance_recompute, attendance_scoring
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
     assert await _awarded(db_file, round_ids[0]) is None
@@ -753,7 +753,7 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
 @pytest.mark.asyncio
 async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
     """The other half of the same rule: nothing was broken making it atomic."""
-    from leaguebot.attendance.services import attendance_recompute
+    from leaguebot.attendance.services.scoring import attendance_recompute
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 

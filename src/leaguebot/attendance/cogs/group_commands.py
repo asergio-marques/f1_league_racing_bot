@@ -13,7 +13,7 @@ from leaguebot.attendance.cogs.attendance_group import (
     ATTENDANCE_GROUP,
     AttendanceSubgroup,
 )
-from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 from leaguebot.attendance.services.attendance_sync_change import (
     NOT_ONGOING,
     SYNC,

@@ -249,7 +249,7 @@ def _plain_bot():
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_passes_a_healthy_division(tmp_path):
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -260,7 +260,7 @@ async def test_recalculation_faults_passes_a_healthy_division(tmp_path):
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_names_a_deleted_attendance_channel(tmp_path):
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -278,7 +278,7 @@ async def test_recalculation_faults_names_a_cancelled_division_s_channels_only_w
     """Division Alpha, since cancelled, has lost its attendance channel. Asked with
     `cancelled_too`, as a points approval asks, the channel is named; asked as `/attendance
     sync` asks, with nothing, a cancelled division is passed over as it is today."""
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
     from leaguebot.core.db.database import get_connection
 
     path, season_id = await _seed_attendance_season(tmp_path)
@@ -302,7 +302,7 @@ async def test_recalculation_faults_names_a_cancelled_division_s_channels_only_w
 @pytest.mark.asyncio
 async def test_recalculation_faults_names_a_deleted_verdicts_channel(tmp_path):
     """Sanctions are announced as verdicts, so that channel is part of the cascade."""
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -318,7 +318,7 @@ async def test_recalculation_faults_names_a_deleted_verdicts_channel(tmp_path):
 async def test_recalculation_faults_ignores_the_verdicts_channel_without_thresholds(tmp_path):
     """`owed_sanctions` returns at once when both are unset, so a league
     using neither must not be refused for a channel it will never post to (#187)."""
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(
         tmp_path, autosack=None, autoreserve=None
@@ -333,7 +333,7 @@ async def test_recalculation_faults_ignores_the_verdicts_channel_without_thresho
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_ignores_an_unconfigured_attendance_channel(tmp_path):
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(
         tmp_path, attendance_channel_id=None, autosack=None, autoreserve=None
@@ -350,7 +350,7 @@ async def test_recalculation_faults_ignores_an_unconfigured_attendance_channel(t
 async def test_recalculation_faults_says_nothing_about_an_absent_guild(tmp_path):
     """The results half reports that already; saying it twice would have a manager
     repairing one thing from two lines."""
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -359,7 +359,7 @@ async def test_recalculation_faults_says_nothing_about_an_absent_guild(tmp_path)
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_path):
-    from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+    from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(
         tmp_path, autosack=None, autoreserve=None

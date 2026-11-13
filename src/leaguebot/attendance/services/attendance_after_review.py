@@ -34,13 +34,12 @@ from typing import Any, TypeVar
 import aiosqlite
 import discord
 
-from leaguebot.attendance.services import (
+from leaguebot.attendance.services.scoring import (
     attendance_pardons,
     attendance_recompute,
-    attendance_sanctions,
     attendance_scoring,
-    attendance_sheet,
 )
+from leaguebot.attendance.services import attendance_sanctions, attendance_sheet
 from leaguebot.attendance.services.check_in import check_in_record
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection

@@ -19,8 +19,8 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.attendance.services import attendance_recompute, attendance_scoring
-from leaguebot.attendance.services.attendance_scoring import distribute_attendance_points
+from leaguebot.attendance.services.scoring import attendance_recompute, attendance_scoring
+from leaguebot.attendance.services.scoring.attendance_scoring import distribute_attendance_points
 from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
 

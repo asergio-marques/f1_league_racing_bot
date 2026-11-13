@@ -43,12 +43,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.attendance.services import (
-    attendance_recompute,
-    attendance_sanctions,
-    attendance_scoring,
-    sheet_posting,
-)
+from leaguebot.attendance.services.scoring import attendance_recompute, attendance_scoring
+from leaguebot.attendance.services import attendance_sanctions, sheet_posting
 from leaguebot.attendance.services.channel_settings import NOT_ENABLED
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection

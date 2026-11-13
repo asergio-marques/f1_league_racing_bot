@@ -309,7 +309,7 @@ class AttendanceDouble:
         off."""
         if not self.league.attendance_on:
             return []
-        from leaguebot.attendance.services import attendance_recompute
+        from leaguebot.attendance.services.scoring import attendance_recompute
 
         return await attendance_recompute.recalculation_faults(
             self.league.db_path, season_id, guild, self.league.bot, cancelled_too=True
