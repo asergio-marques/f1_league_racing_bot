@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+import discord
 import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
@@ -34,6 +35,7 @@ from tests.attendance.test_attendance_sync_change import (
     OTHER_LINEUP_CHANNEL,
     OTHER_TEAM,
     SEASON_ID,
+    VERDICTS_CHANNEL,
     _amend_round_1,
     _attendance,
     _League,
@@ -43,6 +45,8 @@ from tests.attendance.test_attendance_sync_change import (
 )
 from tests.support.change_queue import (
     change_rows,
+    discard_job,
+    http_error,
     member,
     member_interaction,
     restart_queue,
@@ -523,3 +527,52 @@ async def test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restar
     assert heading == ROUND_2_HEADING
     assert len(league.sheets()) == 1
     assert len(_setting_lines(league, "no-show-penalty")) == 1
+
+
+async def test_a_penalty_change_s_card_discord_refuses_stops_the_queue_and_a_discard_names_it(
+    tmp_path,
+):
+    """Division 1's rounds 1 and 2 are final; the driver accepted both and raced neither; the
+    no-show penalty is 1 and auto-sack at 3. Manager 77 runs `/attendance config no-show-penalty
+    2` and the queue is run: the save stands (the penalty 2, both rounds recalculated at 2 points,
+    totals 2 and 4, the driver sacked) and round 2's heading is posted in the verdicts channel,
+    but Discord refuses the sack's card (Missing Access). The queue stops at the card, for Retry
+    or Discard, and nothing behind it runs: the sheet is not posted, and `/attendance config
+    absent-penalty 3`, asked meanwhile, waits with the absent penalty still 1. A league admin
+    discards the card: the queue goes on, the sheet is posted, then the absent penalty becomes 3,
+    its own recalculation posting the sheet again; the driver stays sacked, and the log channel
+    names the driver's auto-sack as applied but not announced, as `/attendance sync` names one."""
+    league = await _owed_a_sack_once_raised(tmp_path)
+    verdicts = league.channels[VERDICTS_CHANNEL]
+    post = verdicts.send.side_effect
+
+    async def _refuse_the_card(content: str = "", **kwargs: Any) -> Any:
+        if verdicts.sent:  # the heading stands, so this is the card
+            raise http_error(discord.Forbidden, status=403, text="Missing Access")
+        return await post(content, **kwargs)
+
+    verdicts.send.side_effect = _refuse_the_card
+
+    asked = await _ask_penalty(league, "no-show-penalty", 2)
+
+    assert await stopped_job(league.db_path) is not None
+    assert await _penalty(league.db_path, "no_show_penalty") == 2
+    assert [(round_id, points, total) for round_id, _, _, points, total
+            in await _rows(league.db_path)] == [(1, 2, 2), (2, 2, 4)]
+    assert await _seated(league.db_path) == []
+    assert league.verdicts() == [ROUND_2_HEADING]
+    assert league.sheets() == []
+    await _ask_penalty(league, "absent-penalty", 3)
+    assert await _penalty(league.db_path, "absent_penalty") == 1
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(league.sheets()) == 2
+    assert await _penalty(league.db_path, "absent_penalty") == 3
+    assert await _seated(league.db_path) == []
+    assert ("⚠️ The autosack of <@5101> was applied but not announced. Post its card in the "
+            "verdicts channel yourself.") in last_said(asked)
+    [discarded] = [line for line in league.log_lines() if "| Discard job #" in line]
+    assert "not done: announcing the autosack of `<@5101>` in the verdicts channel" in discarded
+
