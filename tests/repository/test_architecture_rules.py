@@ -2151,8 +2151,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
     # Results' pass
     # Attendance's pass
-    ("attendance/services/attendance_recompute.py", "_recalculate_forward"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_scoring.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),

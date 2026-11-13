@@ -70,7 +70,7 @@ async def owed_sanctions(
     a save that has just recalculated the totals: they are read there, uncommitted, where a
     connection of its own would find the old ones.
     """
-    async with attendance_scoring._shared_or_own(db_path, db) as (db, _owned):
+    async with attendance_scoring._shared_or_own(db_path, db) as db:
         autoreserve_threshold, autosack_threshold = await _thresholds_on(db)
         if not autoreserve_threshold and not autosack_threshold:
             return [], []

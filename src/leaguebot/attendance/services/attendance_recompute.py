@@ -6,6 +6,8 @@ round after it on one connection, and `recalculation_faults` says what stands be
 
 from __future__ import annotations
 
+import aiosqlite
+
 from leaguebot.attendance.services import attendance_scoring
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.division import DivisionStatus
@@ -16,7 +18,7 @@ from leaguebot.results.services.module.division_channels import verdicts_channel
 
 
 async def _recalculate_forward(
-    db_path: str, round_id: int, division_id: int, *, recompute: str, db=None
+    db_path: str, round_id: int, division_id: int, *, recompute: str, db: aiosqlite.Connection
 ) -> list[int]:
     """Recompute *round_id* and carry the running total through every finalised round after
     it, in **one transaction** (#187). Returns the ids of the rounds it touched, in order.
@@ -50,9 +52,9 @@ async def _recalculate_forward(
     The rebuild is a **full** one (FR-028), without the upgrade-only constraint, so it can
     flip a driver from present to absent. That is why it is not reached under ``"none"``.
 
-    *db* joins a transaction the caller already opened, and is then the caller's to commit
-    (see :func:`_shared_or_own`): an approval's save hands its own, so the recalculation is
-    saved with everything else the approval writes (#439).
+    *db* is the transaction of the save that asks, which commits it: an approval's save hands
+    its own, so the recalculation is saved with everything else the approval writes (#439).
+    This opens and commits no connection of its own.
 
     **Why one transaction** (#187). Every step used to open and commit a connection of its own,
     so a failure in the middle of the propagation left a division's attendance points correct up
@@ -72,38 +74,35 @@ async def _recalculate_forward(
     """
     if recompute not in {"all", "round", "none"}:
         raise ValueError(f"unknown recompute mode {recompute!r}")
-    async with attendance_scoring._shared_or_own(db_path, db) as (db, _owned):
-        # FR-028: full recompute without upgrade-only constraint.
-        if recompute in {"all", "round"}:
+    # FR-028: full recompute without upgrade-only constraint.
+    if recompute in {"all", "round"}:
+        await attendance_scoring.record_attendance_from_results_full_recompute(
+            db_path, round_id, division_id, db=db
+        )
+
+    # FR-029: pardons are already persisted — just recompute points using them.
+    await attendance_scoring.distribute_attendance_points(db_path, round_id, division_id, db=db)
+
+    # FR-030: propagate total_points_after forward through subsequent rounds.
+    # The rounds are core's to give: those of the division after this one that are
+    # finalised or awaiting their appeal verdicts, in round order.
+    states = await division_round_states_on(db, division_id)
+    named_number = states[round_id][0] if round_id in states else None
+    subsequent_rounds = [
+        later_id
+        for later_id, (number, status) in states.items()
+        if named_number is not None
+        and number > named_number
+        and status in (RoundStatus.AWAITING_APPEAL_VERDICTS.value, RoundStatus.FINAL.value)
+    ]
+
+    for sub_round_id in subsequent_rounds:
+        if recompute == "all":
             await attendance_scoring.record_attendance_from_results_full_recompute(
-                db_path, round_id, division_id, db=db
+                db_path, sub_round_id, division_id, db=db
             )
+        await attendance_scoring.distribute_attendance_points(db_path, sub_round_id, division_id, db=db)
 
-        # FR-029: pardons are already persisted — just recompute points using them.
-        await attendance_scoring.distribute_attendance_points(db_path, round_id, division_id, db=db)
-
-        # FR-030: propagate total_points_after forward through subsequent rounds.
-        # The rounds are core's to give: those of the division after this one that are
-        # finalised or awaiting their appeal verdicts, in round order.
-        states = await division_round_states_on(db, division_id)
-        named_number = states[round_id][0] if round_id in states else None
-        subsequent_rounds = [
-            later_id
-            for later_id, (number, status) in states.items()
-            if named_number is not None
-            and number > named_number
-            and status in (RoundStatus.AWAITING_APPEAL_VERDICTS.value, RoundStatus.FINAL.value)
-        ]
-
-        for sub_round_id in subsequent_rounds:
-            if recompute == "all":
-                await attendance_scoring.record_attendance_from_results_full_recompute(
-                    db_path, sub_round_id, division_id, db=db
-                )
-            await attendance_scoring.distribute_attendance_points(db_path, sub_round_id, division_id, db=db)
-
-        if _owned:
-            await db.commit()
     return [round_id, *subsequent_rounds]
 
 
