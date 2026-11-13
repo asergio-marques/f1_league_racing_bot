@@ -42,7 +42,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -193,16 +193,13 @@ class _Posts:
 
 
 async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW) -> _Posts:
-    """Run the command with the clock pinned, against the stand-in queue of `_cog`: the host's
-    clock as the cog reads it, and the queue's, which reads the same moment."""
+    """Run the command against the stand-in queue of `_cog`, the queue's clock, which the cog
+    reads the time from, pinned at *now*."""
     interaction.command = AttendanceCog.post_check_in
     interaction.client = cog.bot
 
-    clock = MagicMock(wraps=datetime)
-    clock.now = MagicMock(return_value=now)
     cog.bot.change_queue.now = MagicMock(return_value=now)
-    with patch("leaguebot.attendance.cogs.attendance_cog.datetime", clock, create=True):
-        await undecorate(AttendanceCog.post_check_in)(cog, interaction, division, round)
+    await undecorate(AttendanceCog.post_check_in)(cog, interaction, division, round)
     return _Posts(cog.bot.change_queue.ask)
 
 
