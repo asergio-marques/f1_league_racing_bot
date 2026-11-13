@@ -175,7 +175,8 @@ async def _type_reason(league: SeasonLeague) -> tuple[Any, Any]:
     """Manager 77 has pressed Request Changes on Kimi's review panel (the press deferred and
     parked as the button parks it) and types the reason in Kimi's channel, which the review cog
     hears. Gives the stored press and the reason's message."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     manager = _manager(league)
     press = _press(league)

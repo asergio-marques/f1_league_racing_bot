@@ -1195,7 +1195,8 @@ async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path)
     lane, whose `delete_reason` deletes the manager's message before `signup_notice` tells the
     channel the signup was rejected, giving the reason. His typing is revoked, the channel's
     deletion armed a day on, and the manager is told the signup was rejected."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
     from tests.support.change_queue import typed_message
 
     league = await _league(tmp_path)

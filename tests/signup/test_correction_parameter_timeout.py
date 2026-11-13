@@ -172,7 +172,8 @@ async def test_request_changes_records_the_requesting_admin(tmp_path):
     """Kimi awaits approval. Manager 77 presses Request Changes and types the reason in Kimi's
     channel. When the queue reaches the request, Kimi's wizard names 77 as the manager who
     asked, so the lapse can mention him later."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     league = await _league(tmp_path, state="PENDING_ADMIN_APPROVAL", offered_ago=None,
                            requested_by=None)

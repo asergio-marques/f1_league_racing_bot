@@ -133,7 +133,8 @@ async def _type_reason(league: SeasonLeague, action: str, reason: str,
     signup moves on to that state meanwhile, and where *moved_after_ask* is given it moves on to
     that state only once the queue has accepted the press, before the queue runs. 77 types *reason* in Kimi's channel, the review cog
     hears it, and the queue runs. Gives the stored press."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     manager = _manager(league)
     press = _press(league)
