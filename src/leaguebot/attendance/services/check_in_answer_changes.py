@@ -56,7 +56,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import RoundStatus, read_scheduled_at
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -73,7 +73,8 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.posting.standing_post_handler import edit_standing
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
-from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 
 log = logging.getLogger(__name__)
@@ -150,13 +151,12 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
     or the driver's place in it is gone. Read on *db*."""
     round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
     driver = int(payload["driver_profile_id"])
-    cursor = await db.execute(
-        "SELECT r.scheduled_at, r.status, ac.rsvp_deadline_hours FROM rounds r "
-        "CROSS JOIN attendance_config ac WHERE r.id = ?",
-        (round_id,),
-    )
-    round_row = await cursor.fetchone()
-    if round_row is None:
+    # The round is core's to give; the deadline is attendance's own. A league holding no
+    # configuration has no round to answer: it reads as gone, as the join of the two always did.
+    round_facts = await round_facts_on(db, round_id)
+    cursor = await db.execute("SELECT rsvp_deadline_hours FROM attendance_config")
+    config_row = await cursor.fetchone()
+    if round_facts is None or config_row is None:
         return _ROUND_GONE
     # A cancelled round's call is taken down with the cancellation (#175), so a press arriving
     # here raced it, or landed on a call the bot could not delete. The withdrawal is read as well
@@ -166,23 +166,14 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
         "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
         (round_id, division_id),
     )
-    if round_row["status"] == RoundStatus.CANCELLED.value or await cursor.fetchone() is None:
+    if round_facts.status == RoundStatus.CANCELLED or await cursor.fetchone() is None:
         return _CLOSED
     # Only a driver with a confirmed seat in this division may answer its call: one refusal for
     # every way of not being a driver of it (an unconfirmed placement, a seat elsewhere, none).
-    cursor = await db.execute(
-        f"""
-        SELECT ti.is_reserve
-          FROM driver_season_assignments dsa
-          JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
-          JOIN team_instances ti ON ti.id = ts.team_instance_id
-                                AND ti.division_id = dsa.division_id
-         WHERE dsa.driver_profile_id = ? AND dsa.division_id = ?
-           AND {uncommitted_seat_excluded("ts")}
-        """,  # noqa: S608
-        (driver, division_id),
+    seat = next(
+        (h for h in await TeamService.seat_holders_on(db, division_id) if h.profile_id == driver),
+        None,
     )
-    seat = await cursor.fetchone()
     if seat is None:
         return _NOT_A_MEMBER
     cursor = await db.execute(
@@ -193,9 +184,9 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
     held = await cursor.fetchone()
     return _Facts(
         found=held["rsvp_status"] if held is not None else "NO_RSVP",
-        scheduled_at=read_scheduled_at(round_row["scheduled_at"]),
-        deadline_hours=round_row["rsvp_deadline_hours"] or 0,
-        is_reserve=bool(seat["is_reserve"]),
+        scheduled_at=round_facts.scheduled_at,
+        deadline_hours=config_row["rsvp_deadline_hours"] or 0,
+        is_reserve=seat.is_reserve,
     )
 
 
