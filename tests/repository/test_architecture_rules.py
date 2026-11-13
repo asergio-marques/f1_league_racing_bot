@@ -3109,12 +3109,13 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
         )
 
 
-# ── 17. A catch-all sits in one of the five places ──────────────────────────────────────────
+# ── 17. A catch-all sits in one of the six places ──────────────────────────────────────────
 
-#: The functions whose catch-all is one of the five places and is not recognised by its shape, for
+#: The functions whose catch-all is one of the six places and is not recognised by its shape, for
 #: good, and why: the failure paths of place 1, the stated exceptions, place 3's guards around
-#: reporting and writing a log line, and the fifth place's handlers (architecture.md, "A catch-all
-#: error handler"). A handler that re-raises, that calls `report_failure`, or that sits
+#: reporting and writing a log line, and the handlers of the fifth and sixth places, work a
+#: specification gives a fallback for and a graphic's drawing riding on a post (architecture.md, "A
+#: catch-all error handler"). A handler that re-raises, that calls `report_failure`, or that sits
 #: directly in the body of a loop needs no entry.
 CATCH_ALLS_ALLOWED = {
     ("core/services/queue/change_queue.py", "ChangeQueue._work_lane"):
@@ -3253,7 +3254,7 @@ def _is_a_report(statement: ast.stmt) -> bool:
 
 def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
     """The catch-all handlers among *nodes*, each ``(file, function, node)``, that are in none of
-    the five places, counted by file and function: a handler of `Exception`, `BaseException` or
+    the six places, counted by file and function: a handler of `Exception`, `BaseException` or
     nothing, that does not end by raising again, does not hold a call of `report_failure` as a
     statement directly in its body, does not sit directly in the body of a `for` or `async for`,
     and whose function is not in `CATCH_ALLS_ALLOWED`."""
@@ -3279,7 +3280,7 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
-#: Today's catch-alls in none of the five places, under the issue that removes each: a module's
+#: Today's catch-alls in none of the six places, under the issue that removes each: a module's
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
@@ -3352,17 +3353,18 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 
-def test_a_catch_all_handler_sits_in_one_of_the_five_places():
-    """A catch-all handler (`except Exception`) is allowed in five places only (architecture.md,
+def test_a_catch_all_handler_sits_in_one_of_the_six_places():
+    """A catch-all handler (`except Exception`) is allowed in six places only (architecture.md,
     "A catch-all error handler"): on a failure path, where `report_failure` is called; around a
     list worked item by item, where it sits directly in the loop's body; around reporting a failure;
-    around a clean-up that raises the error again; and around work a specification gives a fallback
-    for. The shape tells the first, second and fourth; the failure paths of place 1 the shape does
-    not tell, the stated exceptions, place 3's guards around reporting and writing a log line, and
-    the fifth place's handlers are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach,
+    around a clean-up that raises the error again; around work a specification gives a fallback
+    for; and around the drawing of a graphic riding on a post, which falls back to text. The shape
+    tells the first, second and fourth; the failure paths of place 1 the shape does not tell, the
+    stated exceptions, place 3's guards around reporting and writing a log line, and the fifth and
+    sixth places' handlers are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach,
     listed with the issue that will fix it."""
     _check(
-        "a catch-all sits in one of the five places",
+        "a catch-all sits in one of the six places",
         _catch_alls_outside_the_places_among(_nodes()),
         KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES,
     )
@@ -3475,7 +3477,7 @@ def test_a_listed_catch_all_that_is_gone_fails_the_check():
 
     with pytest.raises(AssertionError, match="Breaches fixed but still listed"):
         _check(
-            "a catch-all sits in one of the five places",
+            "a catch-all sits in one of the six places",
             _catch_alls_outside_the_places_among(nodes),
             {(path, "handler"): (1, PASS["core"])},
         )
