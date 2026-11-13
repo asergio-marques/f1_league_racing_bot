@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,7 +12,6 @@ from discord.ext import commands
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.season import ONGOING_STAGES
-from leaguebot.attendance.models.attendance import AttendanceConfig
 from leaguebot.attendance.services.channel_settings import (
     ATTENDANCE_CHANNEL,
     NO_ACCESS,
@@ -26,10 +24,7 @@ from leaguebot.attendance.services.check_in_answer_changes import (
     ask_check_in_answers,
 )
 from leaguebot.attendance.services.check_in_changes import ask_check_in_call, judge_hand_post
-from leaguebot.attendance.services.attendance_config_service import (
-    SettingChange,
-    validate_timing_invariant,
-)
+from leaguebot.attendance.services.attendance_settings import KINDS
 from leaguebot.attendance.services.attendance_recompute import recalculation_faults, sync_attendance
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
@@ -74,7 +69,7 @@ async def _record(
     """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
 
     For a success and for nothing changed, where the line is not saved with what it records (the
-    settings' lines are: `AttendanceCog._set`). The post is bare: a line reporting that nothing went
+    settings' lines are, by their change). The post is bare: a line reporting that nothing went
     wrong is no place for a catch-all, so a post that raises reaches the command's error
     handling. A press that failed without raising has `_record_failed`, and a refusal, a cancel,
     a lapse and a fault have lines of their own (`core/utils/log_lines.py`, `report_failure`).
@@ -96,26 +91,6 @@ async def _record_failed(
         log.error(
             "could not record in the log channel that %s failed: %s", what, exc, exc_info=True
         )
-
-
-def _days(value: int | None) -> str:
-    return f"{value} day(s)"
-
-
-def _hours(value: int | None) -> str:
-    return f"{value} hour(s)"
-
-
-def _hours_or_disabled(value: int | None) -> str:
-    return "disabled" if not value else f"{value} hour(s)"
-
-
-def _points(value: int | None) -> str:
-    return f"{value} point(s)"
-
-
-def _points_or_disabled(value: int | None) -> str:
-    return "disabled" if value is None else f"{value} point(s)"
 
 
 class AttendanceCog(commands.Cog):
@@ -167,83 +142,20 @@ class AttendanceCog(commands.Cog):
             return False
         return True
 
-    async def _guard_no_active_season(self, interaction: discord.Interaction) -> bool:
-        """Return True (and refuse) if there IS an active season."""
-        season = await self.bot.season_service.get_confirmed_season()
-        if season is not None:
-            await refuse(
-                interaction,
-                "❌ Attendance configuration cannot be changed once a season's placements are confirmed.",
-                what=describe(interaction),
-            )
-            return False
-        return True
-
-    async def _configuration(self, interaction: discord.Interaction) -> AttendanceConfig | None:
-        """The attendance configuration, or None having refused a server that has none."""
-        cfg = await self.bot.attendance_service.get_config()
-        if cfg is None:
-            await refuse(
-                interaction,
-                "❌ No attendance configuration found. Enable the module first.",
-                what=describe(interaction),
-            )
-        return cfg
-
-    async def _set(
-        self,
-        interaction: discord.Interaction,
-        *,
-        column: str,
-        name: str,
-        shown: Callable[[int | None], str],
-        value: int | None,
-        reply: str,
+    async def _ask_setting(
+        self, interaction: discord.Interaction, command: str, value: int | None
     ) -> None:
-        """Set one attendance setting, or answer that it already holds *value*; record either.
+        """Ask the change queue to set the setting *command* names to *value*: a threshold's 0,
+        which disables it, is asked as None.
 
-        `AttendanceService.set_setting` holds the rule: a value the setting already holds is
-        written nowhere and audited nowhere, and is answered and recorded here as nothing
-        changed, as the results module's setters are. A change is recorded twice, as "The
-        record of what changed" asks of every change to a league's configuration: the
-        service's audit entry, ``ATTENDANCE_CONFIG_SET``, holding *column* from and to, and a
-        log line with the new value and the one it replaced. The line, either outcome's, is
-        formed here and saved by the service with the value and the entry, so a stop between
-        them cannot lose it; it is sent once the reply has gone, and one the log channel will
-        not take is left to the retry loop, the member told, as `OutputRouter.deliver_queued`
-        does for every line saved so.
+        The setting's check judges every refusal, in the words the command has always used, as it
+        is asked and again as the change starts (`attendance_settings`), so a command holds no
+        rule of its own. The queue's acknowledgement is the command's response, so nothing is
+        deferred; it writes the value, its `ATTENDANCE_CONFIG_SET` entry and its log line in one
+        save, and answers and logs after it.
         """
-        command = _command(interaction)
-
-        def line(change: SettingChange) -> str:
-            if not change.changed:
-                return _line(interaction, command, "Nothing changed", (f"{name}: {shown(value)}",))
-            return _line(
-                interaction, command, "Success",
-                (f"{name}: {shown(value)} (was {shown(change.old)})",),
-            )
-
-        # Deferred first: the save can wait on the database for longer than Discord gives an
-        # interaction to be answered, and the reply must not be lost after the change stood.
-        await interaction.response.defer(ephemeral=True)
-        change = await self.bot.attendance_service.set_setting(
-            column,
-            value,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            now=datetime.now(timezone.utc),
-            router=self.bot.output_router,
-            line=line,
-        )
-        if not change.changed:
-            await interaction.followup.send(
-                f"ℹ️ Nothing changed: the {name} is already **{shown(value)}**.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.followup.send(reply, ephemeral=True)
-        await self.bot.output_router.deliver_queued(
-            [] if change.line_id is None else [change.line_id], interaction=interaction
+        await self.bot.change_queue.ask(
+            KINDS[command], {"value": value}, interaction=interaction, what=describe(interaction)
         )
 
     # ── /attendance config rsvp-notice ────────────────────────────────────
@@ -258,32 +170,7 @@ class AttendanceCog(commands.Cog):
     async def config_rsvp_notice(
         self, interaction: discord.Interaction, days: int
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if not await self._guard_no_active_season(interaction):
-            return
-        if days < 1:
-            await refuse(
-                interaction,
-                "❌ `rsvp_notice_days` must be at least 1.",
-                what=describe(interaction),
-            )
-            return
-
-        cfg = await self._configuration(interaction)
-        if cfg is None:
-            return
-
-        error = validate_timing_invariant(days, cfg.rsvp_last_notice_hours, cfg.rsvp_deadline_hours)
-        if error:
-            await refuse(interaction, f"❌ {error}", what=describe(interaction))
-            return
-
-        await self._set(
-            interaction,
-            column="rsvp_notice_days", name="RSVP notice", shown=_days, value=days,
-            reply=f"✅ RSVP notice set to **{days}** day(s) before the race.",
-        )
+        await self._ask_setting(interaction, "rsvp-notice", days)
 
     # ── /attendance config rsvp-last-notice ───────────────────────────────
 
@@ -297,37 +184,7 @@ class AttendanceCog(commands.Cog):
     async def config_rsvp_last_notice(
         self, interaction: discord.Interaction, hours: int
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if not await self._guard_no_active_season(interaction):
-            return
-        if hours < 0:
-            await refuse(
-                interaction,
-                "❌ `rsvp_last_notice_hours` cannot be negative.",
-                what=describe(interaction),
-            )
-            return
-
-        cfg = await self._configuration(interaction)
-        if cfg is None:
-            return
-
-        error = validate_timing_invariant(cfg.rsvp_notice_days, hours, cfg.rsvp_deadline_hours)
-        if error:
-            await refuse(interaction, f"❌ {error}", what=describe(interaction))
-            return
-
-        if hours == 0:
-            msg = "✅ Last RSVP reminder **disabled** (set to 0)."
-        else:
-            msg = f"✅ Last RSVP reminder set to **{hours}** hour(s) before the race."
-        await self._set(
-            interaction,
-            column="rsvp_last_notice_hours", name="last RSVP reminder", shown=_hours_or_disabled,
-            value=hours,
-            reply=msg,
-        )
+        await self._ask_setting(interaction, "rsvp-last-notice", hours)
 
     # ── /attendance config rsvp-deadline ──────────────────────────────────
 
@@ -341,62 +198,9 @@ class AttendanceCog(commands.Cog):
     async def config_rsvp_deadline(
         self, interaction: discord.Interaction, hours: int
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if not await self._guard_no_active_season(interaction):
-            return
-        if hours < 0:
-            await refuse(
-                interaction,
-                "❌ `rsvp_deadline_hours` cannot be negative.",
-                what=describe(interaction),
-            )
-            return
-
-        cfg = await self._configuration(interaction)
-        if cfg is None:
-            return
-
-        error = validate_timing_invariant(cfg.rsvp_notice_days, cfg.rsvp_last_notice_hours, hours)
-        if error:
-            await refuse(interaction, f"❌ {error}", what=describe(interaction))
-            return
-
-        await self._set(
-            interaction,
-            column="rsvp_deadline_hours", name="RSVP deadline", shown=_hours, value=hours,
-            reply=f"✅ RSVP deadline set to **{hours}** hour(s) before the race.",
-        )
+        await self._ask_setting(interaction, "rsvp-deadline", hours)
 
     # ── /attendance config no-rsvp-penalty, absent-penalty, no-show-penalty ──
-
-    async def _set_penalty(
-        self,
-        interaction: discord.Interaction,
-        points: int,
-        *,
-        column: str,
-        name: str,
-        reply: str,
-    ) -> None:
-        """The body the three penalty setters share: refuse a negative value or a server with
-        no configuration, then set the penalty."""
-        if not await self._module_gate(interaction):
-            return
-        if points < 0:
-            await refuse(
-                interaction,
-                "❌ Penalty points cannot be negative.",
-                what=describe(interaction),
-            )
-            return
-        cfg = await self._configuration(interaction)
-        if cfg is None:
-            return
-        await self._set(
-            interaction,
-            column=column, name=name, shown=_points, value=points, reply=reply,
-        )
 
     @config.command(
         name="no-rsvp-penalty",
@@ -408,11 +212,7 @@ class AttendanceCog(commands.Cog):
     async def config_no_rsvp_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
-        await self._set_penalty(
-            interaction, points,
-            column="no_rsvp_penalty", name="no-RSVP penalty",
-            reply=f"✅ No-RSVP penalty set to **{points}** point(s).",
-        )
+        await self._ask_setting(interaction, "no-rsvp-penalty", points)
 
     @config.command(
         name="absent-penalty",
@@ -424,11 +224,7 @@ class AttendanceCog(commands.Cog):
     async def config_absent_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
-        await self._set_penalty(
-            interaction, points,
-            column="absent_penalty", name="absent penalty",
-            reply=f"✅ Absent penalty set to **{points}** point(s).",
-        )
+        await self._ask_setting(interaction, "absent-penalty", points)
 
     @config.command(
         name="no-show-penalty",
@@ -440,11 +236,7 @@ class AttendanceCog(commands.Cog):
     async def config_no_show_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
-        await self._set_penalty(
-            interaction, points,
-            column="no_show_penalty", name="no-show penalty",
-            reply=f"✅ No-show penalty set to **{points}** point(s).",
-        )
+        await self._ask_setting(interaction, "no-show-penalty", points)
 
     # ── /attendance config autosack ────────────────────────────────────────
 
@@ -458,43 +250,7 @@ class AttendanceCog(commands.Cog):
     async def config_autosack(
         self, interaction: discord.Interaction, points: int
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if points < 0:
-            await refuse(
-                interaction, "❌ Threshold cannot be negative.", what=describe(interaction)
-            )
-            return
-
-        cfg = await self._configuration(interaction)
-        if cfg is None:
-            return
-        value = None if points == 0 else points
-        if value is not None and cfg.autoreserve_threshold:
-            await refuse(
-                interaction,
-                "❌ Cannot set auto-sack while auto-reserve is active. "
-                "Disable auto-reserve first (`/attendance config autoreserve 0`).",
-                what=describe(interaction),
-            )
-            return
-        if value is None:
-            msg = "✅ Auto-sack **disabled**."
-        else:
-            # Autosack reaches every division, whichever one's points carried a driver over
-            # (issue #220); a league wanting one division alone is pointed at autoreserve.
-            msg = (
-                f"✅ Auto-sack threshold set to **{value}** point(s).\n"
-                "A driver who reaches it is removed from **every seat in every division**, "
-                "whichever division's points carried them over. To drop a driver to reserve "
-                "only in the division where they missed rounds, use "
-                "`/attendance config autoreserve` instead."
-            )
-        await self._set(
-            interaction,
-            column="autosack_threshold", name="auto-sack threshold", shown=_points_or_disabled,
-            value=value, reply=msg,
-        )
+        await self._ask_setting(interaction, "autosack", None if points == 0 else points)
 
     # ── /attendance config autoreserve ────────────────────────────────────
 
@@ -508,35 +264,7 @@ class AttendanceCog(commands.Cog):
     async def config_autoreserve(
         self, interaction: discord.Interaction, points: int
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if points < 0:
-            await refuse(
-                interaction, "❌ Threshold cannot be negative.", what=describe(interaction)
-            )
-            return
-
-        cfg = await self._configuration(interaction)
-        if cfg is None:
-            return
-        value = None if points == 0 else points
-        if value is not None and cfg.autosack_threshold:
-            await refuse(
-                interaction,
-                "❌ Cannot set auto-reserve while auto-sack is active. "
-                "Disable auto-sack first (`/attendance config autosack 0`).",
-                what=describe(interaction),
-            )
-            return
-        if value is None:
-            msg = "✅ Auto-reserve **disabled**."
-        else:
-            msg = f"✅ Auto-reserve threshold set to **{value}** point(s)."
-        await self._set(
-            interaction,
-            column="autoreserve_threshold", name="auto-reserve threshold",
-            shown=_points_or_disabled, value=value, reply=msg,
-        )
+        await self._ask_setting(interaction, "autoreserve", None if points == 0 else points)
 
     # ── /attendance config show ────────────────────────────────────────────
 

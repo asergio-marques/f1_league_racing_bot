@@ -69,18 +69,6 @@ KINDS = {
     "autoreserve": "attendance.setting.autoreserve",
 }
 
-#: Why each test fails until the eight settings are changes on the queue whose check holds the rule.
-NOT_IN_THE_SERVICE = (
-    "#285: the eight settings are not yet changes on the queue, and the rule is judged by the "
-    "cog alone, at the ask"
-)
-
-#: Why each test of a setting's run through the queue fails until the eight are changes on it.
-NOT_ON_THE_QUEUE = (
-    "#285: the eight settings are not yet changes on the queue: the command defers and saves "
-    "through set_setting itself"
-)
-
 
 async def _league(tmp_path, **config: Any):
     """The league's bot: attendance on, its configuration the packaged defaults (notice 5 days,
@@ -144,7 +132,6 @@ async def _assert_refused(bot, db_path: str, command: str, reply: str, column: s
     assert await audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_IN_THE_SERVICE)
 async def test_set_setting_refuses_a_timing_that_breaks_the_invariant(tmp_path):
     """`/attendance config rsvp-deadline 12` is asked while the last notice stands at 24 hours,
     so the deadline falls before it; before it runs, the last notice is moved to 6 hours. It is
@@ -163,7 +150,6 @@ async def test_set_setting_refuses_a_timing_that_breaks_the_invariant(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_IN_THE_SERVICE)
 async def test_set_setting_refuses_an_autosack_and_autoreserve_that_overlap(tmp_path):
     """`/attendance config autosack 3` is asked while auto-reserve is off; before it runs,
     auto-reserve is set to 2. It is refused as it starts, telling the manager to disable
@@ -182,7 +168,6 @@ async def test_set_setting_refuses_an_autosack_and_autoreserve_that_overlap(tmp_
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_IN_THE_SERVICE)
 async def test_set_setting_refuses_a_timing_change_once_a_season_is_confirmed(tmp_path):
     """`/attendance config rsvp-notice 7` is asked while no season is confirmed; before it runs,
     Season 1's placements are confirmed. It is refused as it starts, saying attendance's
@@ -284,7 +269,6 @@ SUCCESSES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "command,start,value,column,old,new,detail,reply",
     SUCCESSES,
@@ -322,7 +306,6 @@ async def test_each_setting_is_saved_through_the_queue_with_its_audit_entry_line
 FIRSTS = {case[0]: case for case in reversed(SUCCESSES)}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 @pytest.mark.parametrize("command", sorted(KINDS))
 async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, command):
     """Manager 77 runs the command and the queue is not run. They are answered at once with the
@@ -374,7 +357,6 @@ async def test_a_value_already_held_changes_nothing_and_says_so(tmp_path, comman
     assert _lines(bot) == [f"{NAMED} | /attendance config {command} | Nothing changed\n  {detail}"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_fault_in_a_setting_s_save_saves_nothing_and_the_lane_goes_on(tmp_path):
     """Manager 77 runs `/attendance config rsvp-notice 7`, and the audit entry's write faults as
     the queue runs it; `/attendance config absent-penalty 3` is asked behind it and the queue run

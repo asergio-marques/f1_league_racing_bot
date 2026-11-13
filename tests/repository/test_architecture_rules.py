@@ -2164,7 +2164,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Results' pass
     # Attendance's pass
     ("attendance/services/attendance_config_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_config_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
     ("attendance/services/attendance_recompute.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_scoring.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     ("core/services/drivers/placement_service.py", "PlacementService.move_driver"): (1, PASS["attendance"]),

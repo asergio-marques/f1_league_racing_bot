@@ -11,11 +11,9 @@ the sheet in `attendance_sheet` and the sanctions in `attendance_sanctions`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
 
 import aiosqlite
 
@@ -27,11 +25,6 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.queue import audit_service
-
-if TYPE_CHECKING:
-    from leaguebot.core.services.posting.output_router import OutputRouter
-
 
 log = logging.getLogger(__name__)
 
@@ -85,33 +78,6 @@ def derive_checkin_deadline(
     held to is carried by neither the graphic nor the embed, and is not this function's.
     """
     return scheduled_at - timedelta(hours=deadline_hours)
-
-
-#: The columns of `attendance_config` a manager sets, the only names `set_setting` writes.
-SETTING_COLUMNS: frozenset[str] = frozenset(
-    {
-        "rsvp_notice_days",
-        "rsvp_last_notice_hours",
-        "rsvp_deadline_hours",
-        "no_rsvp_penalty",
-        "absent_penalty",
-        "no_show_penalty",
-        "autosack_threshold",
-        "autoreserve_threshold",
-    }
-)
-
-
-@dataclass(frozen=True)
-class SettingChange:
-    """What `AttendanceService.set_setting` did: *changed* says whether the value was replaced,
-    and *old* is the value the setting held, ``None`` for a threshold that was disabled.
-    *line_id* is the log line saved with it, for `OutputRouter.deliver_queued` once the save
-    is made, or ``None`` where none was written."""
-
-    changed: bool
-    old: int | None
-    line_id: int | None = None
 
 
 class RsvpOutcome(Enum):
@@ -263,64 +229,6 @@ class AttendanceService:
             attendance_channel_id=row["attendance_channel_id"],
             attendance_message_id=row["attendance_message_id"],
         )
-
-    # ── Field updates ──────────────────────────────────────────────────────
-
-    async def set_setting(
-        self,
-        column: str,
-        value: int | None,
-        *,
-        actor_id: int,
-        actor_name: str,
-        now: datetime,
-        router: OutputRouter,
-        line: Callable[[SettingChange], str],
-    ) -> SettingChange:
-        """Set one of the eight settings to *value*, with its audit entry and its log line, in
-        one save (#482, #439).
-
-        The value held is read and compared on the connection that writes, so two commands
-        racing for one setting cannot both see the old value. Where it already equals *value*
-        nothing is written and no entry is recorded: the result says ``changed=False``.
-        Otherwise the column and its ``ATTENDANCE_CONFIG_SET`` entry, holding *column* from and
-        to (``None`` for a disabled threshold), are written. Either way the log line *line*
-        forms from the result is written on the same connection through *router*'s
-        `queue_log_on`, and the three are committed together, so a stop or a failure between
-        them leaves none ("The record of what changed", core specification). The line is not
-        sent here: the caller hands ``line_id`` to `OutputRouter.deliver_queued` once this has
-        returned, and the retry loop sends it should the bot stop first. The router is handed
-        in by the command, as a service looks no other service up on the bot.
-
-        *column* is checked against `SETTING_COLUMNS` before anything is read, as the name is
-        put into the statement: any other is a `ValueError`. Raises `ValueError` as well for a
-        server holding no attendance configuration, which the commands refuse before they get
-        here.
-        """
-        if column not in SETTING_COLUMNS:
-            raise ValueError(f"{column!r} is not an attendance setting")
-        async with get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(f"SELECT {column} FROM attendance_config")
-            row = await cursor.fetchone()
-            if row is None:
-                raise ValueError("No attendance configuration found.")
-            old = row[0]
-            change = SettingChange(changed=old != value, old=old)
-            if change.changed:
-                await db.execute(f"UPDATE attendance_config SET {column} = ?", (value,))
-                await audit_service.record_change_on(
-                    db,
-                    actor_id=actor_id,
-                    actor_name=actor_name,
-                    change_type="ATTENDANCE_CONFIG_SET",
-                    old_value={column: old},
-                    new_value={column: value},
-                    now=now,
-                )
-            line_id = await router.queue_log_on(db, line(change))
-            await db.commit()
-        return SettingChange(changed=change.changed, old=old, line_id=line_id)
 
     # ── driver_round_attendance CRUD ───────────────────────────────────────
 
