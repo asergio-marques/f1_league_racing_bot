@@ -411,11 +411,11 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
     reads them from the job's own result, never by its name."""
     job = "take_down_call"
     if cleared == "discarded under another name":
-        from leaguebot.attendance.services import check_in_changes
+        from leaguebot.attendance.services import check_in_clean_up
 
         rename_module_job(
-            monkeypatch, steps=(check_in_changes, "take_down_steps"),
-            planner=(check_in_changes, "take_down_called_off_on"), old=job,
+            monkeypatch, steps=(check_in_clean_up, "take_down_steps"),
+            planner=(check_in_clean_up, "take_down_called_off_on"), old=job,
         )
         job = RENAMED_JOB
     league = await ongoing_league(tmp_path, attendance=True)
@@ -449,12 +449,12 @@ async def test_a_take_down_stopped_by_a_fault_not_discord_s_still_names_the_call
     standing. A league admin discards it: the call still stands, so the reply's Not notified
     section and the success line still name the check-in call, word for word as a take-down
     discarded with nothing recorded is named."""
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_clean_up
 
     async def broken(*_args, **_kwargs):
         raise RuntimeError("the check-in could not be read")
 
-    monkeypatch.setattr(check_in_changes, "checkin_record", broken)
+    monkeypatch.setattr(check_in_clean_up, "checkin_record", broken)
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
 

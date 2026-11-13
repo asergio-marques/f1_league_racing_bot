@@ -262,7 +262,7 @@ async def _clean_up(
     The check-in channel stands on the server holding every message `_msg_ids` names for both
     rounds; with *attendance_enabled* false the module is off, in its configuration and to the
     module service alike."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
+    from leaguebot.attendance.services.check_in_clean_up import ask_check_in_clean_up
     from leaguebot.core.models.change import ChangeOrigin
 
     if not attendance_enabled:
@@ -477,16 +477,11 @@ async def _moved_league(tmp_path) -> object:
 async def _ask(league, step: str) -> None:
     """Ask the queue for round 3's *step* (`last_notice`, `deadline` or `clean_up`), as its
     timer does, and run the queue to its end."""
-    from leaguebot.attendance.services import (
-        check_in_changes,
-        check_in_deadline,
-        check_in_last_notice,
-    )
+    import importlib
+
     from leaguebot.core.models.change import ChangeOrigin
 
-    home = {"last_notice": check_in_last_notice, "deadline": check_in_deadline}.get(
-        step, check_in_changes
-    )
+    home = importlib.import_module(f"leaguebot.attendance.services.check_in_{step}")
     ask = getattr(home, f"ask_check_in_{step}")
     await ask(league.bot.change_queue, league.db_path, ROUND_3, origin=ChangeOrigin.BOT)
     await run_queue(league.bot)

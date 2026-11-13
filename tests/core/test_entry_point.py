@@ -331,7 +331,7 @@ _CANCELLATION_PARTS = (
      "cancellation_refusal", "results' refusal"),
     ("rounds_called_off", "leaguebot.results.services.submission.result_submission_service",
      "close_called_off_on", "results' close"),
-    ("rounds_called_off", "leaguebot.attendance.services.check_in_changes",
+    ("rounds_called_off", "leaguebot.attendance.services.check_in_clean_up",
      "take_down_called_off_on", "attendance's take-down"),
     ("cancellation_notices", "leaguebot.attendance.services.cancellation_notice",
      "notices_on", "attendance's check-in notice"),

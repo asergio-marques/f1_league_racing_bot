@@ -58,10 +58,9 @@ from leaguebot.attendance.services.check_in_changes import (
     TAKE_DOWN_CALL,
     CheckInViewFactory,
     call_row,
-    check_in_clean_up_steps,
     standing_call_row,
-    take_down_steps,
 )
+from leaguebot.attendance.services.check_in_clean_up import check_in_clean_up_steps, take_down_steps
 from leaguebot.attendance.services.check_in_deadline import check_in_deadline_steps
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult

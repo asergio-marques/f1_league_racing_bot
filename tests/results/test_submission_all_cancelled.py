@@ -675,7 +675,7 @@ def _check_in_read_failing() -> ExitStack:
     stack = ExitStack()
     failing = AsyncMock(side_effect=RuntimeError("disk I/O error"))
     for module_name in ("leaguebot.attendance.services.check_in_record",
-                        "leaguebot.attendance.services.check_in_changes",
+                        "leaguebot.attendance.services.check_in_clean_up",
                         "leaguebot.core.services.cancellations.cancellation_notice_service",
                         "leaguebot.core.services.cancellations.cancellation_changes",
                         "leaguebot.results.services.submission.submission_changes"):

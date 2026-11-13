@@ -3,7 +3,7 @@
 The record is attendance's own (`attendance.services.check_in_record.checkin_record`): every driver
 the check-in recorded, grouped by their answer, and the reserves where they were distributed. A
 round's, a division's or a season's cancellation reads it as attendance's take-down of the round's
-call does (`check_in_changes.take_down_call`), before the call comes down; the take-down deletes the
+call does (`check_in_clean_up.take_down_call`), before the call comes down; the take-down deletes the
 call's messages through attendance's own delete steps (`check_in_deletes`), which the tests hand of
 their own. A round ending with every session entered as not held writes the same record.
 """
@@ -163,7 +163,7 @@ async def _distribute(db_path) -> None:
 async def _audit(tmp_path, *, distribute=False, round_ids=(ROUND_ID,)):
     """Take down the call of each of *round_ids* as attendance's `take_down_call` job does, and
     give the check-in audit each read before its call came down, together."""
-    from leaguebot.attendance.services.check_in_changes import take_down_call
+    from leaguebot.attendance.services.check_in_clean_up import take_down_call
 
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)
@@ -222,7 +222,7 @@ async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_p
     Attendance's take-down reads that check-in first, then asks its delete steps
     (`check_in_deletes`) once for round 3 of the division: the steps here wipe the answers, and
     the audit it gives still names both drivers."""
-    from leaguebot.attendance.services.check_in_changes import take_down_call
+    from leaguebot.attendance.services.check_in_clean_up import take_down_call
 
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)
@@ -243,7 +243,7 @@ async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(
     refusal."""
     import discord
 
-    from leaguebot.attendance.services.check_in_changes import take_down_call
+    from leaguebot.attendance.services.check_in_clean_up import take_down_call
 
     from leaguebot.core.models.change import StepFailedOnDiscord
 

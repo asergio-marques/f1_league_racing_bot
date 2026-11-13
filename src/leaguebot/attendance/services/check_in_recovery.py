@@ -36,8 +36,8 @@ from leaguebot.attendance.models.recovery_failed import RecoveryFailed
 from leaguebot.attendance.services.check_in_call import ask_check_in_call
 from leaguebot.attendance.services.check_in_changes import (
     CheckInViewFactory,
-    ask_check_in_clean_up,
 )
+from leaguebot.attendance.services.check_in_clean_up import ask_check_in_clean_up
 from leaguebot.attendance.services.check_in_deadline import ask_check_in_deadline
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.attendance.services.test_mode_steps import check_ins_cleared

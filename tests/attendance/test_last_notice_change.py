@@ -127,7 +127,7 @@ async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is
     """Pro's check-in channel moved to 608 after round 3's call was posted in 603: the last
     notice goes to 608 and is recorded there, and the round's clean-up, a day after the race,
     deletes it from 608, the call from 603."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
+    from leaguebot.attendance.services.check_in_clean_up import ask_check_in_clean_up
     from leaguebot.core.models.change import ChangeOrigin
 
     league = await _league(tmp_path)

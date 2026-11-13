@@ -91,7 +91,7 @@ def _check_in_view() -> "CheckInViewFactory":
 def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
     """Sign attendance's steps for an amendment up to the hook the steps each module defines for
     it are read through."""
-    from leaguebot.attendance.services import check_in_amendment, check_in_changes
+    from leaguebot.attendance.services import check_in_amendment, check_in_clean_up
 
     bot.amendment_steps.subscribe(partial(
         check_in_amendment.amendment_steps,
@@ -101,16 +101,16 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
         view_of=_check_in_view(),
         seasons=bot.season_service,
         modules=bot.module_service,
-        deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
+        deletes=check_in_clean_up.check_in_deletes(bot, bot.attendance_service),
     ))
 
 
 def sign_up_to_rounds_called_off(bot: "LeagueBot") -> None:
     """Sign attendance's take-down of the calls of the rounds called off up to the hook of the
     rounds called off, in the save."""
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_clean_up
 
-    bot.rounds_called_off.subscribe(check_in_changes.take_down_called_off_on)
+    bot.rounds_called_off.subscribe(check_in_clean_up.take_down_called_off_on)
 
 
 def sign_up_to_cancellation_notices(bot: "LeagueBot") -> None:
@@ -125,13 +125,13 @@ def sign_up_to_cancellation_steps(bot: "LeagueBot") -> None:
     """Sign attendance's steps up to the hook the steps a cancellation plans are read through, in
     the order they run: the take-down of a call, the reading of a round's check-in record, then
     attendance's own notice."""
-    from leaguebot.attendance.services import cancellation_notice, check_in_changes, check_in_record
+    from leaguebot.attendance.services import cancellation_notice, check_in_clean_up, check_in_record
 
     bot.cancellation_steps.subscribe(partial(
-        check_in_changes.take_down_steps,
+        check_in_clean_up.take_down_steps,
         seasons=bot.season_service,
         modules=bot.module_service,
-        deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
+        deletes=check_in_clean_up.check_in_deletes(bot, bot.attendance_service),
     ))
     bot.cancellation_steps.subscribe(partial(
         check_in_record.read_check_in_steps,
@@ -252,7 +252,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.channel_settings import attendance_channel_settings
     from leaguebot.attendance.services.check_in_answer_changes import check_in_answer_change
     from leaguebot.attendance.services.check_in_call import check_in_call_change
-    from leaguebot.attendance.services.check_in_changes import check_in_clean_up_change
+    from leaguebot.attendance.services.check_in_clean_up import check_in_clean_up_change
     from leaguebot.attendance.services.check_in_deadline import check_in_deadline_change
     from leaguebot.attendance.services.check_in_last_notice import check_in_last_notice_change
     from leaguebot.attendance.services.module_switch_settings import (
@@ -313,7 +313,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     Each asks the change queue, read from the bot when it fires. The bot keeps the one queue
     `build` made; a test that replaces the queue must register these handlers again."""
     from leaguebot.attendance.services.check_in_call import ask_check_in_call
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
+    from leaguebot.attendance.services.check_in_clean_up import ask_check_in_clean_up
     from leaguebot.attendance.services.check_in_deadline import ask_check_in_deadline
     from leaguebot.attendance.services.check_in_amendment import (
         advance_steps as check_in_advance_steps,

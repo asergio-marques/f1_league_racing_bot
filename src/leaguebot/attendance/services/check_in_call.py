@@ -29,7 +29,7 @@ The call's posts go through core's notice handler (`send_notice`), stating the m
 notify where it is sent (architecture.md, "Posting to Discord"); the message ids a post returns
 are saved by the job's record. What the call, the last notice, the deadline and the clean-up share,
 the round's row among it, is in `check_in_changes`; the take-down of a call, which the call's
-failures use, is in `check_in_changes` until the clean-up moves it.
+failures and its replacement use, is in `check_in_clean_up`.
 """
 
 from __future__ import annotations
@@ -54,13 +54,12 @@ from leaguebot.attendance.services.check_in_changes import (
     CheckInViewFactory,
     call_row,
     deadline_of,
-    earlier_messages,
-    forget_vanished_call,
     left_to_advance,
     round_not_owed,
     scheduled_at_of,
     standing_call_row,
 )
+from leaguebot.attendance.services.check_in_clean_up import earlier_messages, forget_vanished_call
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
