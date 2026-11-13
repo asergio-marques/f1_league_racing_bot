@@ -198,8 +198,8 @@ class AttendanceDouble:
     the round's pardons for the staged review, as attendance's own do, whatever the switch, a read
     writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes none,
     `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by call,
-    whether `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id
-    was
+    whether `refresh_lineup` was asked for the text. `post_sheet` returns `sheet_posted`, what the
+    sheet's posting gives back (none by default). `record_sheet_on` records that the sheet's id was
     to be saved, and writes nothing.
     """
 
@@ -210,6 +210,7 @@ class AttendanceDouble:
         self.applied: set[int] = set()
         self.record_fails: Exception | None = None
         self.sheet_fails: list[Exception] = []
+        self.sheet_posted: dict[str, Any] | None = None
         self.apply_fails: dict[int, Exception] = {}
         self.announce_fails: dict[int, Exception] = {}
         self.lineup_fails: list[Exception] = []
@@ -320,12 +321,13 @@ class AttendanceDouble:
             raise self.recalculate_fails
 
     async def post_sheet(self, round_id: int, division_id: int, *, sanctioned: Any,
-                         as_text: bool) -> None:
+                         as_text: bool) -> dict[str, Any] | None:
         if not self.league.attendance_on:
-            return
+            return None
         self.calls.append(("post_sheet", division_id, as_text))
         if self.sheet_fails:
             raise self.sheet_fails.pop(0)
+        return self.sheet_posted
 
     async def record_sheet_on(self, db: Any, division_id: int, posted: Any) -> None:
         if not self.league.attendance_on:

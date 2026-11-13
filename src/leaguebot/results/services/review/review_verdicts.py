@@ -656,15 +656,18 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
+    # A sheet drawn without part of its graphic hands back each fault as a line of its job, for
+    # the log channel, as the sheets attendance posts itself do.
+    lines = tuple(str(fault) for fault in (result or {}).get("faults", ()))
     if not result or result.get("new") is None:
-        return StepResult(result=result or {})
+        return StepResult(result=result or {}, lines=lines)
     old = result.get("old")
     then = (
         _deletes(int(result["channel_id"]), [int(old)], "attendance sheet")
         if result.get("takes_slot") and old is not None and int(old) != int(result["new"])
         else ()
     )
-    return StepResult(result=result, then=then)
+    return StepResult(result=result, then=then, lines=lines)
 
 
 async def _division_name(db_path: str, division_id: int) -> str:

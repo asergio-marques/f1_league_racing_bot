@@ -611,6 +611,27 @@ async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_namin
     assert "/attendance channel attendance" in _sheet_stop(league)
 
 
+async def test_a_review_s_attendance_sheet_drawn_without_its_graphic_tells_the_log_channel(
+    tmp_path,
+):
+    """Attendance is on. Alex approves round 3's reports, and Pro's attendance sheet is posted
+    as text, its graphic having failed: attendance's posting hands back the fault as a line. The
+    queue does not stop, and the log channel is told the fault, as it is for the sheet the sync
+    and a season's approval and completion post."""
+    league = await review_league(tmp_path, attendance=True)
+    fault = "**Pro** — attendance sheet: the graphic could not be drawn, so it is posted as text"
+    league.attendance.sheet_posted = {
+        "new": 9001, "channel_id": 4242, "takes_slot": False, "faults": [fault],
+    }
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert ("post_sheet", DIVISION_ID, False) in league.attendance.calls
+    assert any(fault in line for line in league.bot.log_channel.sent)
+
+
 async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(tmp_path):
     """Round 3 of Pro, final, is under an amendment of its Feature Race whose report stage is
     approved, its appeals prompt standing in the amendment channel. Attendance is on and Pro was
