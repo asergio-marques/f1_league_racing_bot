@@ -1176,6 +1176,28 @@ async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path, naive):
     assert _expired(league, OTHER) == []
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the expiry's check does not read signup's switch, so a signup expires while signup "
+    "is off"
+))
+async def test_expiry_is_not_due_while_signup_is_off(tmp_path):
+    """Kimi is part-way through signing up, last active 24 hours and a minute ago, and the
+    signup module is off. His 24-hour timer fires and the queue runs: the expiry is not due. He
+    is still Pending Signup Completion, his channel is not told his signup expired, his typing
+    there is not revoked and no deletion of the channel is armed."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+    await league.switch("signup", False)
+
+    await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert _expired(league) == []
+    assert not _locked(league)
+    assert _armed(league, DELETE_TIMER) == []
+
+
 # ---------------------------------------------------------------------------
 # A rejection (C78)
 # ---------------------------------------------------------------------------
@@ -1368,6 +1390,28 @@ async def test_a_held_channel_due_while_down_is_deleted_on_start(tmp_path):
     await run_queue(league.bot)
 
     held.delete.assert_awaited_once()
+    assert await _wizard(league) is None
+
+
+async def test_a_held_channel_is_deleted_while_signup_is_off(tmp_path):
+    """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
+    channel (6405) is told his signup was withdrawn and held for 24 hours. The signup module is
+    then switched off. A day on, the channel's deletion timer fires and the queue runs: the
+    channel is deleted on time though signup is off, the one piece of signup's work that runs
+    while it is off, and nothing more is posted in it first."""
+    league = await _mid_signup(tmp_path)
+    held = league.channel(KIMI_CHANNEL)
+    await _press_cancel(league)
+    await run_queue(league.bot)
+    posted = list(held.texts)
+    await league.switch("signup", False)
+
+    league.clock.advance(hours=24)
+    await _timer_callback(league, DELETE_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    held.delete.assert_awaited_once()
+    assert held.texts == posted
     assert await _wizard(league) is None
 
 
