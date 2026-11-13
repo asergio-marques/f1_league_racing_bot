@@ -544,15 +544,64 @@ async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+#: The reason a Cancel Signup press by an approved or placed driver is not yet refused.
+_WITHDRAWS_A_PLACED_DRIVER = (
+    "#286: the withdrawal is refused only where Not Signed Up is not a transition the driver's "
+    "state allows, so an Unassigned or Assigned driver is withdrawn (#444)"
+)
+
+
+@pytest.mark.parametrize("driver_state", [
+    pytest.param("NOT_SIGNED_UP", id="not signed up"),
+    pytest.param("UNASSIGNED", id="unassigned",
+                 marks=pytest.mark.xfail(strict=True, reason=_WITHDRAWS_A_PLACED_DRIVER)),
+    pytest.param("ASSIGNED", id="assigned",
+                 marks=pytest.mark.xfail(strict=True, reason=_WITHDRAWS_A_PLACED_DRIVER)),
+])
 @pytest.mark.parametrize("view_name, button", CANCELS)
 async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(
-    tmp_path, view_name, button
+    tmp_path, view_name, button, driver_state
 ):
-    """Kimi presses a Cancel Signup left in his channel after his signup ended (Not Signed Up,
-    his wizard parked). The press is judged as the change runs: he is told "⛔ This signup has
-    already ended. Nothing was changed.", never that it was withdrawn, and one ⛔ line names
-    the Cancel Signup button of his signup wizard and the reason."""
-    league = await _kimi_at(tmp_path, "UNENGAGED", driver_state="NOT_SIGNED_UP")
+    """Kimi presses a Cancel Signup left in his channel after his signup ended, his wizard
+    parked: he is Not Signed Up; or he was approved and is Unassigned, holding the driver role;
+    or he was placed and is Assigned, in McLaren's second seat and holding the driver role and
+    McLaren's (#444). The press is judged as the change runs: he is told "⛔ This signup has
+    already ended. Nothing was changed.", never that it was withdrawn, and one ⛔ line names the
+    Cancel Signup button of his signup wizard and the reason. His state, his seat and his roles
+    are as they were."""
+    from tests.support.season_league import (
+        DRIVER_ROLE,
+        MCLAREN,
+        MCLAREN_ROLE,
+        SEASON_ID,
+        TEAMS as SEASON_TEAMS,
+        profile_id,
+    )
+
+    league = await _kimi_at(tmp_path, "UNENGAGED", driver_state=driver_state)
+    if driver_state != "NOT_SIGNED_UP":
+        await league.write(
+            "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
+            "VALUES (?, ?, 'Kimi')", SEASON_ID, str(SIGNING_UP),
+        )
+        league.roles_held.setdefault(SIGNING_UP, set()).add(DRIVER_ROLE)
+    if driver_state == "ASSIGNED":
+        await league.write(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, 2, ?)", MCLAREN, profile_id(SIGNING_UP),
+        )
+        [seat] = await league.rows(
+            "SELECT id FROM team_seats WHERE driver_profile_id = ?", profile_id(SIGNING_UP)
+        )
+        await league.write(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id, committed) VALUES (?, ?, ?, ?, 1)",
+            profile_id(SIGNING_UP), SEASON_ID, SEASON_TEAMS[MCLAREN][0], seat["id"],
+        )
+        league.roles_held[SIGNING_UP].add(MCLAREN_ROLE)
+    seats = "SELECT team_instance_id, seat_number FROM team_seats WHERE driver_profile_id = ?"
+    seated = await league.rows(seats, profile_id(SIGNING_UP))
+    held = set(league.roles_held.get(SIGNING_UP, set()))
 
     press = await _press_on(league, view_name, button)
     await run_queue(league.bot)
@@ -561,3 +610,7 @@ async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recor
     assert f"⛔ {_ALREADY_ENDED}" in answered, answered
     assert "withdrawn" not in answered, answered
     _one_refusal(league, "Cancel Signup", _ALREADY_ENDED.split(".")[0])
+    assert await _driver_state(league) == driver_state
+    assert await league.rows(seats, profile_id(SIGNING_UP)) == seated
+    assert league.revoked.get(SIGNING_UP, []) == []
+    assert league.roles_held.get(SIGNING_UP, set()) == held
