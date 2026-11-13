@@ -392,7 +392,8 @@ async def test_a_sanction_the_sync_cannot_apply_is_named_and_the_sync_still_fini
     applied. Manager 77 runs `/attendance sync` from round 1 and the queue is run. The queue does
     not stop and the round's recalculation is saved, the driver staying in Alpha. The updated
     acknowledgement lists the auto-reserve as still not applied, with its reason. The sync's one
-    line in the log channel reads Incomplete and names the driver, the sanction and the reason,
+    line in the log channel reads Incomplete and names the driver (their mention wrapped so that
+    it notifies no one), the sanction and the reason,
     ending with the `/attendance sync` command that finishes the job; no other entry repeats
     it."""
     league = await _league(tmp_path, autosack=None, autoreserve=3, reserve=False)
@@ -403,13 +404,14 @@ async def test_a_sanction_the_sync_cannot_apply_is_named_and_the_sync_still_fini
     assert await stopped_job(league.db_path) is None
     assert await _attendance(league.db_path, 1) == {"attended": 0, "points_awarded": 5}
     assert await _seated(league.db_path) == [DRIVER_PROFILE]
-    failure = "<@5101> (Full Timer) — autoreserve: the division has no Reserve team"
+    failure = "(Full Timer) — autoreserve: the division has no Reserve team"
     reply = updated_reply(interaction)
     assert "Still not applied" in reply
-    assert f"• {failure}" in reply
+    assert f"• <@5101> {failure}" in reply
     [line] = league.sync_lines()
     assert "| /attendance sync | Incomplete" in line
-    assert failure in line
+    # The log channel names the driver without notifying them.
+    assert f"`<@5101>` {failure}" in line
     assert line.rstrip().endswith("`/attendance sync division:Division 1 round:1`.")
     assert [each for each in league.log_lines() if "no Reserve team" in each] == [line]
     assert league.verdicts() == []
@@ -459,7 +461,8 @@ async def test_a_sync_is_refused_as_it_starts_where_the_league_changed_since_it_
     is opened, the season moves on to Pending completion, or the attendance channel is deleted.
     The queue is run: the sync is refused, judged again as it starts, and ends REFUSED with
     nothing written: the driver is still seated, round 1 not recalculated, no card or sheet
-    posted. The manager's reply and the one refusal line in the log channel give the reason.
+    posted. The manager's reply and the one refusal line in the log channel give the reason, the
+    line naming the manager by a mention wrapped so that it notifies no one.
     The queue does not stop."""
     league = await _league(tmp_path)
     # The bot's own member in the server, so that its channels are judged.
@@ -480,6 +483,6 @@ async def test_a_sync_is_refused_as_it_starts_where_the_league_changed_since_it_
     assert reason in updated_reply(interaction)
     refused = [line for line in league.log_lines() if "`/attendance sync` refused" in line]
     assert len(refused) == 1
-    assert refused[0].startswith("⛔ `/attendance sync` refused for Manager (<@77>) — ")
+    assert refused[0].startswith("⛔ `/attendance sync` refused for Manager (`<@77>`) — ")
     assert reason in refused[0]
     assert league.sync_lines() == []
