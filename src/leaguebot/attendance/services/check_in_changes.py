@@ -26,12 +26,7 @@ a past-dated round's call is posted rather than given up, its last notice is not
 real deadline, and its deadline places the reserves on every answer held. Under test mode the step
 that ends a check-in is the one advance fires.
 
-The last notice is `attendance.check_in.last_notice`, asked by its timer: one `post_last_notice`
-job posts it in the division's check-in channel as it then stands, naming the silent full-time
-drivers, and records its message and channel with the job's mark so that the round's clean-up
-deletes it from there. It is owed a round with a call standing and before the check-in deadline:
-asked late while the deadline is ahead, it is posted late; once the deadline has passed, or no call
-stands, it is dropped.
+The last notice is `attendance.check_in.last_notice`, in `check_in_last_notice`.
 
 The deadline is `attendance.check_in.deadline`, asked by its timer and the restart. Its `distribute`
 job places the reserves on the answers as they stood at the deadline (an answer saved after it is
@@ -106,11 +101,8 @@ from leaguebot.core.models.round import (
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.queue_records import unfinished
 from leaguebot.core.services.seasons.season_end_changes import test_mode_on
-from leaguebot.core.services.queue.change_queue import (
-    ChangeQueue,
-)
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -163,13 +155,6 @@ def _value(ctx: StepContext, key: str, default: Any = None) -> Any:
     return ctx.step_payload.get(key, ctx.payload.get(key, default))
 
 
-def _doing_notice(payload: dict[str, Any]) -> str:
-    return (
-        f"posting the last check-in notice of round {payload.get('round_number', '?')} in "
-        f"**{payload.get('division_name', '?')}**"
-    )
-
-
 def _what(payload: dict[str, Any]) -> str:
     """The call, as a line names it mid-sentence."""
     return (
@@ -190,7 +175,7 @@ def _doing(payload: dict[str, Any]) -> str:
 CallRow = Mapping[str, Any]
 
 
-async def _call_row(db: aiosqlite.Connection, round_id: int) -> CallRow | None:
+async def call_row(db: aiosqlite.Connection, round_id: int) -> CallRow | None:
     """The round, its division and season, its track and the check-in settings, as one row, read on
     *db*: core's tables through core's readers, attendance's own settings and its column on `rounds`
     by its own, or None where the round is gone."""
@@ -222,14 +207,14 @@ async def _call_row(db: aiosqlite.Connection, round_id: int) -> CallRow | None:
     }
 
 
-async def _standing(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
+async def standing_call_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
     cursor = await db.execute(
         "SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
     )
     return await cursor.fetchone()
 
 
-def _round_not_owed(row: CallRow | None) -> str | None:
+def round_not_owed(row: CallRow | None) -> str | None:
     """Why the round is owed nothing of its check-in (no call, no notice), else None."""
     if row is None:
         return "the round is gone"
@@ -250,7 +235,7 @@ def _not_due(
     """Why the round is owed no call (or no call more), else None.
 
     A call standing is left alone, unless it is the very one this call was asked to replace."""
-    reason = _round_not_owed(row)
+    reason = round_not_owed(row)
     if reason is not None:
         return reason
     if standing is not None and (replaces is None or str(standing["message_id"]) != str(replaces)):
@@ -264,7 +249,7 @@ def _not_due(
 _ON_TIME = timedelta(minutes=5)
 
 
-async def _left_to_advance(
+async def left_to_advance(
     db: aiosqlite.Connection, row: CallRow | None, kind: str, ctx: CheckContext, *, now: datetime
 ) -> str | None:
     """Why a timer's call or last notice is left to `/test-mode advance`, else None.
@@ -290,7 +275,7 @@ async def _left_to_advance(
     ):
         return None
     moments = round_event_moments(
-        _scheduled(row), weather=None,
+        scheduled_at_of(row), weather=None,
         attendance=AttendanceWindows(
             row["notice_days"] or 0, row["last_notice_hours"] or 0, row["deadline_hours"] or 0
         ),
@@ -301,40 +286,18 @@ async def _left_to_advance(
     return "test mode leaves a moment that passed before the bot came up to /test-mode advance"
 
 
-def _notice_not_due(
-    row: CallRow | None, standing: aiosqlite.Row | None, *, now: datetime,
-    advanced: bool = False, call_in_hand: bool = False,
-) -> str | None:
-    """Why the round is owed no last notice, else None: it needs a call standing to remind of,
-    and is posted late while the check-in deadline is ahead, never after it. A step *advanced* by
-    test mode is judged by no clock: the deadline that ends the check-in is the one advance fires.
-
-    A notice asked while the call it reminds of is *call_in_hand* on the queue, a late call a
-    restart asked for, is owed all the same: it waits behind the call, and is judged again as it
-    starts, when the call stands or has been given up."""
-    reason = _round_not_owed(row)
-    if reason is not None:
-        return reason
-    if standing is None and not call_in_hand:
-        return "no check-in call stands for the round"
-    assert row is not None
-    if not advanced and now >= _deadline(row):
-        return "the check-in deadline has passed"
-    return None
-
-
-def _scheduled(row: CallRow) -> datetime:
+def scheduled_at_of(row: CallRow) -> datetime:
     return read_scheduled_at(str(row["scheduled_at"]))
 
 
-def _deadline(row: CallRow) -> datetime:
-    return _scheduled(row) - timedelta(hours=row["deadline_hours"] or 0)
+def deadline_of(row: CallRow) -> datetime:
+    return scheduled_at_of(row) - timedelta(hours=row["deadline_hours"] or 0)
 
 
 def _closed_text(row: CallRow, deadline_hours: int) -> str:
     """How the moment a call can no longer be answered is told: the deadline, or with none set
     (zero disables the closing of a check-in, not the race) the round's own start."""
-    at = int((_scheduled(row) - timedelta(hours=deadline_hours)).timestamp())
+    at = int((scheduled_at_of(row) - timedelta(hours=deadline_hours)).timestamp())
     return f"closed at <t:{at}:F>" if deadline_hours > 0 else f"started at <t:{at}:F>"
 
 
@@ -372,14 +335,14 @@ def hand_post_refusal(
     if cfg is None:
         return "\u274c No attendance configuration found. Enable the module first."
     notice_days, deadline_hours = cfg.rsvp_notice_days, cfg.rsvp_deadline_hours
-    due_at = _scheduled(row) - timedelta(days=notice_days)
+    due_at = scheduled_at_of(row) - timedelta(days=notice_days)
     if now < due_at:
         return (
             f"⛔ The check-in call for round {number} of **{name}** is not due until "
             f"<t:{int(due_at.timestamp())}:F>, and is still scheduled to post then. Nothing "
             f"was posted."
         )
-    if now >= _scheduled(row) - timedelta(hours=deadline_hours):
+    if now >= scheduled_at_of(row) - timedelta(hours=deadline_hours):
         return (
             f"⛔ Round {number} of **{name}** {_closed_text(row, deadline_hours)}, so a call "
             f"posted now could not be answered. Nothing was posted."
@@ -403,8 +366,8 @@ async def judge_hand_post(
     if found is None:
         return None, f"❌ **{division_name}** has no round {round_number}."
     async with get_connection(db_path) as db:
-        row = await _call_row(db, found.id)
-        standing = await _standing(db, found.id)
+        row = await call_row(db, found.id)
+        standing = await standing_call_row(db, found.id)
     if row is None:
         return None, f"❌ **{division_name}** has no round {round_number}."
     refusal = hand_post_refusal(row, standing, cfg, now=now)
@@ -753,7 +716,7 @@ async def _amendment_standing(db: aiosqlite.Connection, round_id: int) -> dict[s
     """What an amendment's arming reads of a round's check-in: whether a call stands, whether
     one stands that no deadline has run (no distribution recorded), whether the check-in is over
     (``checkin_cleared``), and the division's name and season."""
-    row = await _call_row(db, round_id)
+    row = await call_row(db, round_id)
     if row is None:
         raise LookupError(f"round {round_id} is no longer there")
     cursor = await db.execute(
@@ -817,8 +780,8 @@ async def give_up_text_for(db_path: str, round_id: int) -> str | None:
     is owed a round that is gone, whose results are in or whose check-in is over, and a call
     standing is the round's live one."""
     async with get_connection(db_path) as db:
-        row = await _call_row(db, round_id)
-        standing = await _standing(db, round_id)
+        row = await call_row(db, round_id)
+        standing = await standing_call_row(db, round_id)
     if row is None or standing is not None:
         return None
     if row["checkin_cleared"] or row["round_status"] not in ROUND_CANCELLABLE:
@@ -881,8 +844,8 @@ def amendment_steps(
         """Whether a call stands for the round, and whether its check-in is over
         (``checkin_cleared``), read when the job runs."""
         async with get_connection(db_path) as db:
-            row = await _call_row(db, round_id)
-            standing = await _standing(db, round_id)
+            row = await call_row(db, round_id)
+            standing = await standing_call_row(db, round_id)
         if row is None:
             return False, False
         return standing is not None, bool(row["checkin_cleared"])
@@ -1012,8 +975,8 @@ def check_in_steps(
 
     async def still_due(ctx: StepContext) -> bool:
         async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, int(ctx.payload["round_id"]))
-            standing = await _standing(db, int(ctx.payload["round_id"]))
+            row = await call_row(db, int(ctx.payload["round_id"]))
+            standing = await standing_call_row(db, int(ctx.payload["round_id"]))
         reason = _not_due(row, standing, ctx.payload.get("replaces"))
         if reason is not None:
             log.info("The check-in call of round %s is no longer owed: %s.",
@@ -1022,10 +985,10 @@ def check_in_steps(
 
     async def give_up(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         round_id = int(ctx.payload["round_id"])
-        row = await _call_row(db, round_id)
+        row = await call_row(db, round_id)
         if row is None:
             return StepResult(result={"dropped": True})
-        if ctx.payload.get("advanced") or now() < _deadline(row):
+        if ctx.payload.get("advanced") or now() < deadline_of(row):
             return StepResult(result={"in_time": True}, then=(PlannedStep(POST_CALL),))
         if not await close_check_in_on(db, round_id):
             return StepResult(result={"dropped": True})
@@ -1042,7 +1005,7 @@ def check_in_steps(
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, round_id)
+            row = await call_row(db, round_id)
         if row is None:
             raise LookupError(f"round {round_id} is no longer there")
         division_id: int = row["division_id"]
@@ -1101,7 +1064,7 @@ def check_in_steps(
             season_number=row["season_number"],
             round_number=row["round_number"],
             track_name=row["track_name"],
-            scheduled_at=_scheduled(row),
+            scheduled_at=scheduled_at_of(row),
             round_format=RoundFormat(row["format"]),
             teams=[
                 {
@@ -1131,7 +1094,7 @@ def check_in_steps(
                 season_number=row["season_number"],
                 round_number=row["round_number"],
                 round_format=RoundFormat(row["format"]),
-                scheduled_at=_scheduled(row),
+                scheduled_at=scheduled_at_of(row),
                 track_name=row["track_name"],
                 race_name=row["track_gp_name"],
                 country_name=row["track_country"],
@@ -1200,7 +1163,7 @@ def check_in_steps(
                 f"  division: {division} (id={division_id})\n"
                 f"  round: {row['round_number']}\n"
                 f"  reason: the call was not posted when it fell due\n"
-                f"  deadline: <t:{int(_deadline(row).timestamp())}:F>",
+                f"  deadline: <t:{int(deadline_of(row).timestamp())}:F>",
             )
         return StepResult(
             result={
@@ -1260,8 +1223,8 @@ def check_in_call_change(
     async def check(ctx: CheckContext) -> Verdict:
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, round_id)
-            standing = await _standing(db, round_id)
+            row = await call_row(db, round_id)
+            standing = await standing_call_row(db, round_id)
         if ctx.origin is ChangeOrigin.MEMBER and row is not None:
             # A hand-posted call is judged in the command's own words, as the command judged it
             # when it asked and again here, since a queue stopped for a while can bring it up to
@@ -1272,7 +1235,7 @@ def check_in_call_change(
         reason = _not_due(row, standing, ctx.payload.get("replaces"))
         if reason is None:
             async with get_connection(ctx.db_path) as db:
-                reason = await _left_to_advance(db, row, "rsvp_notice", ctx, now=now())
+                reason = await left_to_advance(db, row, "rsvp_notice", ctx, now=now())
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
     def outcome(ctx: OutcomeContext) -> str:
@@ -1331,8 +1294,8 @@ async def ask_check_in_call(
     words, recorded as *refusal_what*.
     """
     async with get_connection(db_path) as db:
-        row = await _call_row(db, round_id)
-        standing = await _standing(db, round_id) if replacing else None
+        row = await call_row(db, round_id)
+        standing = await standing_call_row(db, round_id) if replacing else None
     if row is None:
         log.error("Check-in call: round_id=%s not found — nothing asked of the queue.", round_id)
         return
@@ -1346,134 +1309,6 @@ async def ask_check_in_call(
         CHECK_IN_CALL, payload, interaction=interaction, what=_what(payload),
         refusal_what=refusal_what, origin=origin,
     )
-
-
-def check_in_last_notice_steps(
-    service: AttendanceService, *, now: Callable[[], datetime]
-) -> dict[str, Step]:
-    """The job of a last notice, *service* being attendance's and *now* the queue's clock."""
-
-    async def still_due(ctx: StepContext) -> bool:
-        round_id = int(ctx.payload["round_id"])
-        async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, round_id)
-            standing = await _standing(db, round_id)
-        reason = _notice_not_due(
-            row, standing, now=now(), advanced=bool(ctx.payload.get("advanced"))
-        )
-        if reason is not None:
-            log.info("The last notice of round %s is no longer owed: %s.", round_id, reason)
-        return reason is None
-
-    async def post(ctx: StepContext) -> StepResult:
-        round_id = int(ctx.payload["round_id"])
-        async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, round_id)
-        if row is None:
-            raise LookupError(f"round {round_id} is no longer there")
-        division_id: int = row["division_id"]
-        division = row["division_name"]
-        config = await service.get_division_config(division_id)
-        if config is None or not config.rsvp_channel_id:
-            raise StepFailedOnDiscord(
-                f"**{division}** has no check-in channel set: set one with "
-                f"`/attendance channel rsvp`, then press Retry."
-            )
-        channel = as_text_channel(ctx.bot.get_channel(int(config.rsvp_channel_id)))
-        if channel is None:
-            raise StepFailedOnDiscord(
-                f"the configured RSVP channel ({config.rsvp_channel_id}) could not be reached: "
-                f"set one with `/attendance channel rsvp`, then press Retry."
-            )
-        silent = await rsvp_service.silent_full_time_drivers(ctx.db_path, round_id, division_id)
-        content = rsvp_service.last_notice_content(silent, int(_scheduled(row).timestamp()))
-        mentions = (
-            discord.AllowedMentions(
-                users=[discord.Object(id=int(each["discord_user_id"])) for each in silent]
-            )
-            if silent else discord.AllowedMentions.none()
-        )
-        try:
-            message = await send_notice(channel, content, mentions=mentions)
-        except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
-            raise StepFailedOnDiscord(
-                f"the last notice could not be posted: {str(exc) or type(exc).__name__}"
-            ) from exc
-        return StepResult(result={
-            "new": [message.id], "channel_id": message.channel.id,
-            "round_id": round_id, "division_id": division_id,
-        })
-
-    async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
-        saved = result.result
-        await service.update_embed_last_notice_msg_on(
-            db, int(saved["round_id"]), int(saved["division_id"]),
-            str(saved["new"][0]), str(saved["channel_id"]),
-        )
-
-    async def describe(ctx: StepContext) -> str:
-        return _doing_notice(ctx.payload)
-
-    return {
-        POST_LAST_NOTICE: Step(POST_LAST_NOTICE, StepKind.ACT, post, still_due=still_due,
-                               describe=describe, record=record),
-    }
-
-
-def check_in_last_notice_change(
-    service: AttendanceService, *, now: Callable[[], datetime]
-) -> ChangeType:
-    """`attendance.check_in.last_notice`: the bot's change that posts a round's last check-in
-    notice. Not repeatable: a round is owed one."""
-
-    async def check(ctx: CheckContext) -> Verdict:
-        round_id = int(ctx.payload["round_id"])
-        async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, round_id)
-            standing = await _standing(db, round_id)
-            # Asked while a late call is still on the queue, the notice waits behind it.
-            call_in_hand = ctx.change_id is None and standing is None and any(
-                int(each["round_id"]) == round_id
-                for each in await unfinished(ctx.db_path, [CHECK_IN_CALL])
-            )
-            reason = _notice_not_due(
-                row, standing, now=now(), advanced=bool(ctx.payload.get("advanced")),
-                call_in_hand=call_in_hand,
-            )
-            if reason is None:
-                reason = await _left_to_advance(db, row, "rsvp_last_notice", ctx, now=now())
-        return Verdict.go() if reason is None else Verdict.not_due(reason)
-
-    def outcome(_ctx: OutcomeContext) -> str:
-        return ""
-
-    return ChangeType(
-        kind=CHECK_IN_LAST_NOTICE,
-        opening=(PlannedStep(POST_LAST_NOTICE),),
-        steps=check_in_last_notice_steps(service, now=now),
-        check=check,
-        key=lambda payload: f"{CHECK_IN_LAST_NOTICE}:{payload['round_id']}",
-        doing=_doing_notice,
-        outcome=outcome,
-    )
-
-
-async def ask_check_in_last_notice(
-    queue: ChangeQueue, db_path: str, round_id: int, *, origin: ChangeOrigin
-) -> None:
-    """Ask the queue to post *round_id*'s last check-in notice, as its timer does. A round that
-    is not there asks nothing; the change's check drops a request no longer owed."""
-    async with get_connection(db_path) as db:
-        row = await _call_row(db, round_id)
-    if row is None:
-        log.error("Last check-in notice: round_id=%s not found — nothing asked of the queue.",
-                  round_id)
-        return
-    payload: dict[str, Any] = {
-        "round_id": round_id, "division_id": row["division_id"],
-        "division_name": row["division_name"], "round_number": row["round_number"],
-    }
-    await queue.ask(CHECK_IN_LAST_NOTICE, payload, what=_doing_notice(payload), origin=origin)
 
 
 #: The columns a check-in message is recorded in, each with the one naming the channel it was posted
@@ -1539,7 +1374,7 @@ def check_in_clean_up_steps() -> dict[str, Step]:
 
     async def still_due(ctx: StepContext) -> bool:
         async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, int(ctx.payload["round_id"]))
+            row = await call_row(db, int(ctx.payload["round_id"]))
         reason = _not_cleaned(row)
         if reason is not None:
             log.info("The check-in clean-up of round %s is no longer owed: %s.",
@@ -1548,7 +1383,7 @@ def check_in_clean_up_steps() -> dict[str, Step]:
 
     async def plan(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         round_id = int(ctx.payload["round_id"])
-        row = await _call_row(db, round_id)
+        row = await call_row(db, round_id)
         if row is None:
             return StepResult(result={"dropped": True})
         cursor = await db.execute(
@@ -1645,7 +1480,7 @@ def check_in_clean_up_change() -> ChangeType:
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, int(ctx.payload["round_id"]))
+            row = await call_row(db, int(ctx.payload["round_id"]))
         reason = _not_cleaned(row)
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
@@ -1669,7 +1504,7 @@ async def ask_check_in_clean_up(
     """Ask the queue to take *round_id*'s check-in down, as its timer does a day after the round.
     A round that is not there asks nothing; the change's check drops a request no longer owed."""
     async with get_connection(db_path) as db:
-        row = await _call_row(db, round_id)
+        row = await call_row(db, round_id)
     if row is None:
         log.error("Check-in clean-up: round_id=%s not found — nothing asked of the queue.",
                   round_id)
@@ -1692,7 +1527,7 @@ def _deadline_not_due(
     row: CallRow | None, stored: aiosqlite.Row | None
 ) -> str | None:
     """Why the round is owed no deadline run, else None: a deadline runs once for each call."""
-    reason = _round_not_owed(row)
+    reason = round_not_owed(row)
     if reason is not None:
         return reason
     if stored is not None and stored["deadline_run_at"] is not None:
@@ -1709,10 +1544,10 @@ def check_in_deadline_steps(
     async def still_due(ctx: StepContext) -> bool:
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, round_id)
+            row = await call_row(db, round_id)
         # Once the distribution has marked the call, what is left (the lock, the announcement) is
         # owed whatever the round's state, unless it has been called off.
-        reason = _round_not_owed(row) if ctx.step_payload.get("distributed") is None else (
+        reason = round_not_owed(row) if ctx.step_payload.get("distributed") is None else (
             None if row is not None and row["round_status"] != "CANCELLED"
             and row["attendance_on"] else "the round is off"
         )
@@ -1722,7 +1557,7 @@ def check_in_deadline_steps(
 
     async def distribute(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         round_id = int(ctx.payload["round_id"])
-        row = await _call_row(db, round_id)
+        row = await call_row(db, round_id)
         if row is None:
             return StepResult(result={"dropped": True})
         cursor = await db.execute(
@@ -1736,7 +1571,7 @@ def check_in_deadline_steps(
         division_id: int = row["division_id"]
         assignments, standby = await rsvp_service.reserve_distribution_on(
             db, round_id, division_id,
-            answered_by=None if ctx.payload.get("advanced") else _deadline(row),
+            answered_by=None if ctx.payload.get("advanced") else deadline_of(row),
         )
         await rsvp_service.write_distribution_on(
             db, round_id, division_id, assignments, standby, at=now()
@@ -1762,7 +1597,7 @@ def check_in_deadline_steps(
 
     async def close_without_call(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         round_id = int(ctx.payload["round_id"])
-        row = await _call_row(db, round_id)
+        row = await call_row(db, round_id)
         cursor = await db.execute(
             "SELECT 1 FROM driver_round_attendance WHERE round_id = ? LIMIT 1", (round_id,)
         )
@@ -1917,7 +1752,7 @@ def check_in_deadline_change(
     async def check(ctx: CheckContext) -> Verdict:
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
-            row = await _call_row(db, round_id)
+            row = await call_row(db, round_id)
             stored = await _standing_with_mark(db, round_id)
         reason = _deadline_not_due(row, stored)
         return Verdict.go() if reason is None else Verdict.not_due(reason)
@@ -1950,7 +1785,7 @@ async def ask_check_in_deadline(
     """Ask the queue to run *round_id*'s check-in deadline, as its timer does. A round that is not
     there asks nothing; the change's check drops a request no longer owed."""
     async with get_connection(db_path) as db:
-        row = await _call_row(db, round_id)
+        row = await call_row(db, round_id)
     if row is None:
         log.error("Check-in deadline: round_id=%s not found — nothing asked of the queue.",
                   round_id)

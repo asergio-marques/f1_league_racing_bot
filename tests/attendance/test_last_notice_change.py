@@ -66,7 +66,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 async def _ask(league: SeasonLeague) -> None:
     """Ask the queue for round 3's last notice as its timer does; the queue is not run."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.attendance.services.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_last_notice(league.bot.change_queue, league.db_path, ROUND_3,

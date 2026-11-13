@@ -297,7 +297,7 @@ async def _queue_bot(db_path: str, *, attendance_enabled: bool) -> Any:
 async def _ask_last_notice(bot: MagicMock) -> list[int]:
     """Ask the queue for the round's last notice as its timer does; run the queue; return the
     ids posted in the check-in channel."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.attendance.services.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 

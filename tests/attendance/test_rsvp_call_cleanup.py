@@ -477,10 +477,11 @@ async def _moved_league(tmp_path) -> object:
 async def _ask(league, step: str) -> None:
     """Ask the queue for round 3's *step* (`last_notice`, `deadline` or `clean_up`), as its
     timer does, and run the queue to its end."""
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_changes, check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
 
-    ask = getattr(check_in_changes, f"ask_check_in_{step}")
+    home = check_in_last_notice if step == "last_notice" else check_in_changes
+    ask = getattr(home, f"ask_check_in_{step}")
     await ask(league.bot.change_queue, league.db_path, ROUND_3, origin=ChangeOrigin.BOT)
     await run_queue(league.bot)
 
