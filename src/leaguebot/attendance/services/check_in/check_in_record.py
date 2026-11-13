@@ -2,7 +2,7 @@
 
 Attendance's own: every driver the check-in recorded, grouped by their answer, and the reserves
 where they were distributed. A round's, a division's or a season's cancellation reads it as
-attendance's take-down of the round's call does (`check_in_changes.take_down_call`), before the
+attendance's take-down of the round's call does (`check_in_clean_up.take_down_call`), before the
 call comes down. A round ending with every session entered as not held reads it too, through
 `read_check_in_on`, which `AttendanceAfterReview.check_in_read_on` calls: planned inside the
 save that ends the round, so that results writes the same record beneath its line without

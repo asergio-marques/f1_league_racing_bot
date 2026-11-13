@@ -19,7 +19,8 @@ import pytest
 
 from pathlib import Path
 
-from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.sanctions import attendance_sanctions
+from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.image.services.image_attendance_post import (
     SheetRender,
     attendance_enabled,
@@ -116,15 +117,15 @@ def test_the_image_path_has_no_send_site_of_its_own():
 def test_the_sheet_flow_still_has_exactly_one_send_site_and_no_delete_site():
     """The sheet it replaces is deleted by the change queue's job after the post, never by the
     posting itself."""
-    source = inspect.getsource(attendance_service.post_attendance_sheet)
-    assert source.count("channel.send(") == 2  # the file branch and the text branch
+    source = inspect.getsource(attendance_sheet.post_attendance_sheet)
+    assert source.count("post_standing(") == 2  # the file branch and the text branch
     assert ".delete()" not in source
 
 
 def test_the_graphic_is_rendered_before_anything_is_sent_or_destroyed():
-    source = inspect.getsource(attendance_service.post_attendance_sheet)
+    source = inspect.getsource(attendance_sheet.post_attendance_sheet)
     render_at = source.index("_sheet_attachment(")
-    send_at = source.index("channel.send(")
+    send_at = source.index("post_standing(")
     assert render_at < send_at
     assert ".delete()" not in source
 
@@ -134,7 +135,7 @@ def test_the_graphic_is_rendered_before_anything_is_sent_or_destroyed():
 
 def test_the_attachment_helper_swallows_every_failure():
     """Nothing raised while drawing may reach the posting, still less the sanctions."""
-    source = inspect.getsource(attendance_service._sheet_attachment)
+    source = inspect.getsource(attendance_sheet._sheet_attachment)
     assert "except Exception" in source
     assert "return None" in source
 
@@ -146,7 +147,7 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
     bot = MagicMock()
     bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("boom"))
 
-    result = await attendance_service._sheet_attachment(
+    result = await attendance_sheet._sheet_attachment(
         bot,
         guild,
         "unused.db",
@@ -162,7 +163,7 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
 @pytest.mark.asyncio
 async def test_no_bot_and_no_guild_yield_no_attachment():
     assert (
-        await attendance_service._sheet_attachment(
+        await attendance_sheet._sheet_attachment(
             None, None, "unused.db", round_id=1, division_id=7,
             sorted_drivers=[], cfg_row=None, sanctioned_profile_ids=None,
         )
@@ -170,13 +171,15 @@ async def test_no_bot_and_no_guild_yield_no_attachment():
     )
 
 
-def test_the_sanctions_are_enforced_by_a_flow_the_graphic_cannot_reach():
-    """``enforce_attendance_sanctions`` imports no image module and calls none.
+@pytest.mark.parametrize("name", ["owed_sanctions", "check_sanction", "apply_sanction_on"])
+def test_the_sanctions_are_enforced_by_a_flow_the_graphic_cannot_reach(name):
+    """Who is owed a sanction, its check and its save import no image module and call none:
+    the review's jobs and `/attendance sync`'s change enforce through these three alone.
 
     XIV.7's precondition clause: the enforcement must complete exactly as it would with the
     images module disabled, and a render that fails must find that work already done.
     """
-    source = inspect.getsource(attendance_service.enforce_attendance_sanctions)
+    source = inspect.getsource(getattr(attendance_sanctions, name))
     for forbidden in ("image_attendance_post", "image_attendance_service", "render_sheet"):
         assert forbidden not in source
 
@@ -191,7 +194,7 @@ def test_the_drawing_helper_contains_no_raise_at_all():
 
     opcodes = {
         instruction.opname
-        for instruction in dis.get_instructions(attendance_service._sheet_attachment)
+        for instruction in dis.get_instructions(attendance_sheet._sheet_attachment)
     }
     assert "RAISE_VARARGS" not in opcodes
 

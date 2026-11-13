@@ -1767,7 +1767,9 @@ async def test_the_builder_signs_weather_attendance_and_results_up_for_their_ste
         ("attendance", (1, 5, "rsvp_notice")),
         ("results", (1, 4, "results")),
     ):
-        services = f"leaguebot.{module}.services" + (".module" if module == "results" else "")
+        services = f"leaguebot.{module}.services" + {
+            "attendance": ".hooks", "results": ".module",
+        }.get(module, "")
         async def answer(db_path, rounds, *, now, _module=module, _step=step):
             asked[_module] = (db_path, rounds, now)
             return ModuleSteps(pending=[PendingStep(*_step)], passed_over=[])
@@ -1800,7 +1802,9 @@ async def test_the_builder_signs_weather_results_and_attendance_up_for_their_rev
         ("results", [("Results", "⏳")]),
         ("attendance", [("RSVP", "⚠️")]),
     ):
-        services = f"leaguebot.{module}.services" + (".module" if module == "results" else "")
+        services = f"leaguebot.{module}.services" + {
+            "attendance": ".hooks", "results": ".module",
+        }.get(module, "")
         async def answer(db_path, rounds, *, now, queued, _module=module, _marks=marks):
             asked.append((_module, db_path, rounds, now, queued))
             return {1: _marks}

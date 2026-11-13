@@ -199,18 +199,19 @@ results'. A function that needs Discord is handed the bot for that, and the revi
 class for each subgroup (`ConfigCommands`, `PointsAmendCommands`, `ReservesCommands`,
 `StandingsCommands`, `RoundsCommands`, `ChannelCommands`), each in a file of its own, as
 `architecture.md`'s cog bullet ("What each part may do") has a cog too large to read split.
-`results_group.py` holds the one group, `RESULTS_GROUP`, which each subgroup names as its parent,
-and `ResultsSubgroup`, which declares for the type checker what a subgroup takes from the cog (the
+`results_group.py` holds the one group, `RESULTS_GROUP`, its six subgroups beneath it, and
+`ResultsSubgroup`, which declares for the type checker what a subgroup takes from the cog (the
 bot and the gates). *Rejected:* a `Protocol` in its place, which cannot be a base beside
 `commands.Cog`, whose metaclass it conflicts with (`ResultsSubgroup`'s docstring). `ResultsCog`
 keeps what the subgroups share: the bot, the `on_message` listener that turns a message typed in a
 round's channels into a turn, and the gates (`_module_gate`, `_answer_nothing_changed`,
 `_sync_gate`).
 
-**A subgroup joins `/results` as its file is imported**, and Discord is sent them in that order, so
-`results_cog.py` imports them in the order a league sees them (the comment above the imports;
-`test_the_results_subgroups_are_sent_in_their_listed_order`). `test_results_command_tree.py` pins
-the whole tree, and that every command is bound to the cog that is loaded.
+The subgroups are declared together in `results_group.py`, as `architecture.md`'s cog bullet has
+it (`test_the_results_subgroups_are_sent_in_their_listed_order`,
+`test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first`).
+`test_results_command_tree.py` pins the whole tree, and that every command is bound to the cog that
+is loaded.
 
 ### The wiring, the helpers and the models
 
@@ -554,7 +555,7 @@ are `architecture.md`'s fifth place ("Errors and failures"), each returning the 
 hands back (`PostedTable.fault`, `SentVerdict`)
 (`test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log`,
 `test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log`,
-`test_a_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why_in_the_log`).
+`test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why`).
 
 **Results' posts off the queue** are `architecture.md`'s exceptions alone ("Every post is made in a
 job"): its replies, the configuration picker's edit of the message pressed (`_ConfigSelectView`),

@@ -175,7 +175,7 @@ def resolve_drawing(
     """Resolve every value a check-in graphic draws.
 
     *deadline_at* is the moment the check-in locks, and arrives **already derived** from
-    ``attendance_service.derive_checkin_deadline``. No arithmetic over times happens in this
+    ``attendance_config_service.derive_checkin_deadline``. No arithmetic over times happens in this
     module: XIV.7 admits the deadline as a derived presentation only on the condition that the
     derivation lives in the service owning the figures.
 

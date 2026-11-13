@@ -276,7 +276,7 @@ def _real_call(league: Any, monkeypatch: Any) -> None:
     its message and the round's NO_RSVP rows — is written by the call's own job in its save
     (#439, slice 6b, C28): the attendance service's writers on a handed connection (its `_on`
     forms) are attendance's own, and its committing writers are left as the league's doubles."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.image.services import image_rsvp_post
 
     monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
@@ -290,7 +290,7 @@ def _real_call(league: Any, monkeypatch: Any) -> None:
 def _attendance_as_it_is(league: Any, monkeypatch: Any) -> None:
     """`_real_call`, the attendance service's committing writers made real as well, so that the
     call's record is written whichever of them the code that posts it uses."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     _real_call(league, monkeypatch)
     attendance = AttendanceService(league.db_path)
@@ -1886,7 +1886,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
     the new one to post. The bot restarts before the amendment's job posts the call, and the
     start-up recovery posts it late. When the job runs, the call stands: it is neither taken down
     nor posted again, and the division is called once."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+    from leaguebot.attendance.wiring import start_up_steps
 
     league = await ongoing_league(tmp_path, attendance=True)
     if path == "first post":
@@ -1895,7 +1895,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
         await _amended(league, scheduled_at=_at(league, days=3))
         await _run_through(league, "take_down_call")
 
-    await recover_missed_check_in_calls(league.bot, now=league.clock.now)
+    await dict(start_up_steps(league.bot))["missed check-in calls"]()
     assert reposts.posted == []
     await run_queue(league.bot)
 

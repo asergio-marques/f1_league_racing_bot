@@ -14,7 +14,7 @@ from discord import app_commands
 from leaguebot.results.cogs.results_group import (
     MODULE_OFF,
     RACE_SESSION_CHOICES,
-    RESULTS_GROUP,
+    AMEND_GROUP,
     SESSION_CHOICES,
     ResultsSubgroup,
 )
@@ -148,9 +148,7 @@ class PointsAmendCommands(ResultsSubgroup):
     # cannot be switched off again. That is accepted: nothing blocks `/season complete` on
     # it, so the season still ends and the modification store is simply never applied.
 
-    amend_group = app_commands.Group(
-        name="amend", description="Mid-season points amendment management", parent=RESULTS_GROUP
-    )
+    amend_group = AMEND_GROUP
 
     @amend_group.command(name="toggle", description="Enable or disable amendment mode for the current season.")
     @league_manager_only

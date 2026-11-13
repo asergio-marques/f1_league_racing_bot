@@ -500,7 +500,7 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
 _FINAL_POSTS = [
     pytest.param("final_standings", "leaguebot.results.services.standings.season_standings_posts",
                  PRO_CH.standings, PRO_NOT_POSTED, id="results' final standings"),
-    pytest.param("final_sheet", "leaguebot.attendance.services.sheet_posting",
+    pytest.param("final_sheet", "leaguebot.attendance.services.sheet.sheet_posting",
                  PRO_CH.attendance, PRO_SHEET_NOT_POSTED, id="attendance's final sheet"),
 ]
 

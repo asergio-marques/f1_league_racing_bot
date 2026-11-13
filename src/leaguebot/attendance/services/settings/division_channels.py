@@ -2,7 +2,7 @@
 
 `/attendance channel rsvp` and `/attendance channel attendance` set them, each in its own column of
 `attendance_division_config`, which the attendance module owns
-(`attendance/services/channel_settings.py` holds the settings that call these). Two separate
+(`attendance/services/settings/channel_settings.py` holds the settings that call these). Two separate
 upserts naming one column each, so that setting one never blanks its neighbour.
 
 **Each writes on the connection it is handed and never commits**: the setting's save owns the

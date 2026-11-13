@@ -258,7 +258,7 @@ class TemplateCapacityService:
         guard.** The two look alike and measure different things. A reserve holds no row in a
         classification ever, so ``_guard_standings_capacity`` excludes them; but the sheet
         draws a reserve the moment one is allocated to a round, and
-        ``attendance_service`` selects on ``ti.is_reserve = 1 AND dra.assigned_team_id IS NOT
+        ``attendance_scoring`` selects on ``ti.is_reserve = 1 AND dra.assigned_team_id IS NOT
         NULL`` to do it. In the worst case every reserve on the books is allocated and takes a
         row, so counting them all is the correct ceiling rather than an over-count — and the
         team being filled is likewise immaterial here, a reserve placement being exactly the

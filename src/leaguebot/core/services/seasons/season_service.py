@@ -26,6 +26,7 @@ from leaguebot.core.models.round import (
     stored_scheduled_at,
 )
 from leaguebot.core.models.season import (
+    ONGOING_STAGES,
     Season,
     SeasonStage,
     SeasonStatus,
@@ -1357,6 +1358,29 @@ async def division_first_round(db_path: str, division_id: int) -> Round | None:
     return _row_to_round(row) if row else None
 
 
+async def division_in_ongoing_season(db_path: str, name: str) -> Division | None:
+    """The division of a season being raced that *name* names, without regard to case, or None.
+
+    A season being raced is one in an ongoing stage (`ONGOING_STAGES`), the stages a check-in
+    belongs to. For a module reading core's tables only through core's services, where the caller
+    has the database path and no `SeasonService`: a maintainer typing a division's name into a
+    command is not copying it letter for letter. It writes nothing.
+    """
+    ongoing = [stage.value for stage in ONGOING_STAGES]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT d.id, d.season_id, d.name, d.mention_role_id, d.status, d.tier, "
+            "d.lineup_channel_id, d.calendar_channel_id, d.lineup_message_id, "
+            "d.calendar_message_id "
+            "FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            f"WHERE s.stage IN ({','.join('?' for _ in ongoing)}) "
+            "AND LOWER(d.name) = LOWER(?) LIMIT 1",
+            (*ongoing, name),
+        )
+        row = await cursor.fetchone()
+    return _row_to_division(row) if row else None
+
+
 async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list[int]:
     """*division_id*'s round ids, newest round number first, read on *db*.
 
@@ -1372,6 +1396,28 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
         (division_id,),
     )
     return [int(row["id"]) for row in await cursor.fetchall()]
+
+
+async def division_round_states_on(
+    db: aiosqlite.Connection, division_id: int
+) -> dict[int, tuple[int, str]]:
+    """Each round of *division_id* as ``{round id: (round number, status)}``, in round order, read
+    on *db*; empty for none.
+
+    For a module reading core's tables only through core's code (architecture.md, "The
+    database") that asks only where a round stands and which comes before which: the round's
+    cancellation, and the finalised rounds before it. It reads the number and the status and
+    nothing else, so that a round's format or date it has no use for is not parsed.
+    `division_rounds_in_order_on` is the whole round. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, round_number, status FROM rounds WHERE division_id = ? ORDER BY round_number",
+        (division_id,),
+    )
+    return {
+        int(row["id"]): (int(row["round_number"]), str(row["status"]))
+        for row in await cursor.fetchall()
+    }
 
 
 async def active_season_rounds_on(db: aiosqlite.Connection) -> list[tuple[int, int]]:
@@ -1481,6 +1527,23 @@ async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | 
             "status FROM rounds "
             "WHERE id = ? AND division_id = ?",
             (round_id, division_id),
+        )
+        row = await cursor.fetchone()
+    return _row_to_round(row) if row else None
+
+
+async def round_by_number(db_path: str, division_id: int, round_number: int) -> Round | None:
+    """Round *round_number* of *division_id*, or None where the division has no such round.
+
+    For a module's command that names a round as a league numbers it and needs the round's id and
+    status to judge the request (`/attendance sync`), reading core's tables through core.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
+            "status FROM rounds "
+            "WHERE division_id = ? AND round_number = ?",
+            (division_id, round_number),
         )
         row = await cursor.fetchone()
     return _row_to_round(row) if row else None
@@ -1632,6 +1695,39 @@ async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
             (RoundStatus.NOT_RUN.value, stored_scheduled_at(now)),
         )
         return [_row_to_round(row) for row in await cursor.fetchall()]
+
+
+async def rounds_of_ongoing_seasons(db_path: str, statuses: Iterable[str]) -> list[Round]:
+    """Each round of a season in an ongoing stage (`ONGOING_STAGES`) whose status is one of
+    *statuses*, earliest first, a round of a cancelled division left out.
+
+    For a module catching up what came due while the bot was down: attendance's calls and
+    deadlines, which a season is owed while it is raced. A round whose stored moment cannot be
+    read is passed over, as one that can be placed nowhere. The stored moments are ISO 8601 text
+    in UTC written with their offset (`stored_scheduled_at`), so text order is time order. It
+    writes nothing.
+    """
+    ongoing = [stage.value for stage in ONGOING_STAGES]
+    wanted = sorted(set(statuses))
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
+            "r.status FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            f"WHERE s.stage IN ({','.join('?' for _ in ongoing)}) "
+            f"AND r.status IN ({','.join('?' for _ in wanted)}) "
+            "AND d.status != 'CANCELLED' "
+            "ORDER BY r.scheduled_at, r.id",
+            (*ongoing, *wanted),
+        )
+        rows = await cursor.fetchall()
+    rounds: list[Round] = []
+    for row in rows:
+        try:
+            rounds.append(_row_to_round(row))
+        except ValueError:
+            continue
+    return rounds
 
 
 # ------------------------------------------------------------------

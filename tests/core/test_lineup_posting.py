@@ -379,7 +379,7 @@ async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tup
     4 without an RSVP, is on the threshold. Alex approves round 3's reports with a penalty for
     Lewis: he is moved to the Reserve team, and the review's own job posts Pro's lineup. Returns
     the league and Alex's interaction."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService

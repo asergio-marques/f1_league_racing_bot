@@ -108,7 +108,7 @@ async def _run(db_path, channel=None, *, attendance=True):
     does, it reads the switch itself, so the pins below hold either way."""
     import inspect
 
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from leaguebot.results.services.round_amendment.amendment_writes import run_amendment_review_stages
 
     async with get_connection(db_path) as db:

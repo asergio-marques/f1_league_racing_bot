@@ -1,7 +1,7 @@
 """Attach the check-in call graphic (041, US3).
 
 **This module has exactly one caller**, and that is the whole of its design. ``try_attach`` is
-reached from the initial post in the check-in call's ``post_call`` job (``check_in_changes``) and from nowhere else: not
+reached from the initial post in the check-in call's ``post_call`` job (``check_in_call``) and from nowhere else: not
 from the button callbacks, not from the reserve distribution, not from the deadline handler,
 not from the embed rebuild. Each of those edits the embed in place, and the attachment rides
 through untouched.
@@ -78,7 +78,7 @@ async def try_attach(
         import discord
 
         from leaguebot.image.models.image_module import PostingOrigin
-        from leaguebot.attendance.services.attendance_service import derive_checkin_deadline
+        from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
         from leaguebot.image.services.image_rsvp_service import build_fill_spec, resolve_drawing
         from leaguebot.image.services.image_render_service import (
             resolve_configured_directories,

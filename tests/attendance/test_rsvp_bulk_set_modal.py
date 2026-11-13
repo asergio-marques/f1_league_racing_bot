@@ -49,8 +49,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.attendance.cogs.attendance_cog import _RsvpBulkSetModal
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
@@ -263,9 +263,9 @@ async def _submit(bot, entries: str, interaction=None):
     )
     modal.entries._value = entries  # type: ignore[attr-defined]
     with patch(
-        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
+        "leaguebot.attendance.services.check_in.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
-    ) as rebuild, patch("leaguebot.attendance.services.rsvp_service.RsvpView", new=MagicMock()):
+    ) as rebuild, patch("leaguebot.attendance.cogs.check_in_buttons.RsvpView", new=MagicMock()):
         await modal.on_submit(interaction)
         await run_queue(bot)
     return interaction, rebuild
@@ -763,10 +763,14 @@ async def test_a_paste_with_nothing_saved_is_refused(tmp_path):
 
 
 async def test_every_answer_of_a_paste_is_saved_at_the_time_the_form_read(tmp_path):
-    """The service takes the time rather than reading the clock: the form reads it once and
-    hands the same moment to every answer it saves, so both drivers' accepts carry one time,
-    with its zone."""
+    """The service takes the time rather than reading the clock: the form reads it once, from
+    the queue's clock, and hands the same moment to every answer it saves. The queue's clock, the
+    bot's, stands an hour past the host's, the check-in deadline of round 21 still days ahead at
+    both; a maintainer submits accepts for the two drivers, and both carry the queue's moment,
+    with its zone, not the host's."""
     bot = await _bot(await _make_db(tmp_path, name="bulk_now"))
+    queue_now = datetime.now(timezone.utc) + timedelta(hours=1)
+    league_queue(bot, bot.db_path, now=queue_now)
 
     await _submit(bot, "900000001, accept\n900000002, accept")
 
@@ -780,3 +784,4 @@ async def test_every_answer_of_a_paste_is_saved_at_the_time_the_form_read(tmp_pa
     assert stamps[0] is not None
     assert datetime.fromisoformat(stamps[0]).tzinfo is not None
     assert stamps[0] == stamps[1]
+    assert datetime.fromisoformat(stamps[0]) == queue_now

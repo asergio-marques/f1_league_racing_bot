@@ -78,7 +78,7 @@ async def test_the_builder_signs_results_division_lines_up_before_attendance_s(t
     from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.__main__ import _sign_up_to_division_lines_read
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.core.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "lines.db")

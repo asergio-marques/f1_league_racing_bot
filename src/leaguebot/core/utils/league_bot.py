@@ -35,7 +35,7 @@ import discord
 from discord.ext import commands
 
 if TYPE_CHECKING:
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.image.services.image_config_service import ImageConfigService

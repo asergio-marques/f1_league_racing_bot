@@ -96,7 +96,7 @@ async def _stopped_at(league: Any) -> str | None:
 def _real_attendance(league: Any, monkeypatch: Any) -> None:
     """Attendance's own service in place of the league's double, drawing no check-in picture,
     so that a call posted is posted and recorded as attendance posts and records it."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.image.services import image_rsvp_post
 
     monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))

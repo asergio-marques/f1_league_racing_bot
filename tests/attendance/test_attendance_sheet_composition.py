@@ -9,13 +9,11 @@ after an autosack or an autoreserve left out the very drivers it had just sancti
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import _sheet_rows, enforce_attendance_sanctions
-from tests.attendance.test_attendance_sanctions import _asking_for_sheets
+from leaguebot.attendance.services.sheet.attendance_sheet import _sheet_rows
 
 SERVER_ID = 22170
 PRO, AM = 1, 2
@@ -122,63 +120,3 @@ async def test_the_full_sheet_after_round_two(db_path):
     listed on 3; driver 5, a Reserve never placed, is not listed; driver 6, seated but not yet
     scored, is listed on nought."""
     assert await _listed(db_path, 102) == {1: 2, 2: 6, 3: 4, 4: 3, 6: 0}
-
-
-async def _seat_driver_two_in_pro_past_the_threshold(db_path, *, am_scored: bool = True):
-    """Driver 2 seated in Pro, past the autosack threshold at Pro's round 2, and holding an Am seat."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) VALUES (10, 9, 2)"
-        )
-        await db.execute(
-            "INSERT INTO driver_season_assignments "
-            "(driver_profile_id, season_id, division_id, team_seat_id, committed) VALUES (2, 1, 1, ?, 1)",
-            (cursor.lastrowid,),
-        )
-        await db.execute(
-            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
-            "total_points_after) VALUES (102, 1, 2, 12)"
-        )
-        if am_scored:
-            await db.execute(
-                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
-                "total_points_after) VALUES (201, 2, 2, 0)"
-            )
-        await db.commit()
-
-
-async def _enforce(db_path, *, sack=None):
-    """Enforce Pro's sanctions at round 102; gives each sheet asked of the change queue, as
-    (division, round, the drivers it marks)."""
-    bot = MagicMock()
-    bot.user.id = 1
-    bot.output_router.post_log = AsyncMock()
-    # The sack of driver 2 names the lineups it owes (#439): both divisions they sat in.
-    bot.placement_service.sack_driver = sack or AsyncMock(return_value=[PRO, AM])
-    bot.lineup_poster._refresh_lineup_post = AsyncMock()
-    bot.change_queue.ask = AsyncMock()
-
-    with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",
-               new=AsyncMock()), _asking_for_sheets() as asked:
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1,
-                                           queue=bot.change_queue)
-    return asked
-
-
-async def test_a_division_that_has_posted_no_sheet_is_not_reposted(db_path):
-    """There is no sheet in it to correct."""
-    await _seat_driver_two_in_pro_past_the_threshold(db_path, am_scored=False)
-
-    asked = await _enforce(db_path)
-
-    assert [division for division, _round, _marked in asked] == [PRO]
-
-
-async def test_a_sack_that_fails_reposts_no_other_division(db_path):
-    """Only a driver actually sacked has been taken out of the other divisions."""
-    await _seat_driver_two_in_pro_past_the_threshold(db_path)
-
-    asked = await _enforce(db_path, sack=AsyncMock(side_effect=ValueError("already gone")))
-
-    assert asked == []
-

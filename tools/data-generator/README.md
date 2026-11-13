@@ -312,7 +312,7 @@ answered. Divisions must therefore have been through the check-in generator firs
 that has not is refused at the question rather than generated as an empty round.
 
 **Reserves are placed in teams the way the bot places them.** The distribution is a port of
-`run_reserve_distribution` in `src/leaguebot/attendance/services/rsvp_service.py` — the same six priority tiers,
+`run_reserve_distribution` in `src/leaguebot/attendance/services/check_in/rsvp_service.py` — the same six priority tiers,
 the same demotion once a team holds a reserve so that no team takes a second while another
 still needs its first, and the same re-sort before every placement. Two things differ, both
 because this runs offline: there are no constructors' standings to break a tie with, so the

@@ -14,7 +14,7 @@ from discord import app_commands
 from leaguebot.results.cogs.results_group import (
     MODULE_OFF,
     RACE_SESSION_CHOICES,
-    RESULTS_GROUP,
+    CONFIG_GROUP,
     SESSION_CHOICES,
     ResultsSubgroup,
 )
@@ -271,9 +271,7 @@ class ConfigCommands(ResultsSubgroup):
     # /results config group
     # ------------------------------------------------------------------
 
-    config_group = app_commands.Group(
-        name="config", description="Points configuration management", parent=RESULTS_GROUP
-    )
+    config_group = CONFIG_GROUP
 
     @config_group.command(name="add", description="Add a named points configuration to this server.")
     @app_commands.describe(name="Unique config name, e.g. '100%'")

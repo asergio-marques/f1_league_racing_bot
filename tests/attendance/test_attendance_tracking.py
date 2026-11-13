@@ -10,7 +10,7 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import (
+from leaguebot.attendance.services.scoring.attendance_scoring import (
     record_attendance_from_results_on,
     record_attendance_from_results_full_recompute,
     distribute_attendance_points,
@@ -314,6 +314,14 @@ async def _make_single_driver_db(tmp_path, *, rsvp_status: str, attended: int) -
     return db_file
 
 
+async def _distribute(db_file: str, round_id: int, division_id: int) -> None:
+    """The round's points distributed on a connection the test holds and commits, as each caller
+    in the bot hands the distribution its own and saves it."""
+    async with get_connection(db_file) as db:
+        await distribute_attendance_points(db_file, round_id, division_id, db=db)
+        await db.commit()
+
+
 async def _points(db_file: str) -> int:
     async with get_connection(db_file) as db:
         cur = await db.execute(
@@ -359,7 +367,7 @@ async def test_points_follow_the_check_in_and_the_attendance(
     Case D: ACCEPTED + absent = no_show_penalty (3).
     Case E: TENTATIVE or DECLINED + absent = absent_penalty (1)."""
     db = await _make_single_driver_db(tmp_path, rsvp_status=rsvp_status, attended=attended)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
+    await _distribute(db, round_id=1, division_id=10)
     assert await _points(db) == expected
 
 
@@ -394,7 +402,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
             )
         await db.commit()
 
-    await distribute_attendance_points(db_file, round_id=1, division_id=10)
+    await _distribute(db_file, round_id=1, division_id=10)
 
     expected = {1: 2, 2: 3, 3: 0, 4: 3, 5: 1, 6: 1}
     async with get_connection(db_file) as db:
@@ -432,7 +440,7 @@ async def test_point_distribution_with_pardons(tmp_path):
         )
         await db.commit()
 
-    await distribute_attendance_points(db_file, round_id=1, division_id=10)
+    await _distribute(db_file, round_id=1, division_id=10)
 
     async with get_connection(db_file) as db:
         cur = await db.execute("SELECT points_awarded FROM driver_round_attendance WHERE driver_profile_id = 1")
@@ -467,7 +475,7 @@ async def test_total_points_after_accumulates_across_rounds(tmp_path):
         )
         await db.commit()
 
-    await distribute_attendance_points(db_file, round_id=2, division_id=10)
+    await _distribute(db_file, round_id=2, division_id=10)
 
     async with get_connection(db_file) as db:
         cur = await db.execute(
@@ -529,7 +537,7 @@ async def test_an_allocated_reserve_who_accepted_is_scored_as_a_full_timer(
     """Allocated reserve + ACCEPTED + absent = no_show_penalty (3).
     Allocated reserve + ACCEPTED + attended = 0."""
     db = await _make_reserve_driver_db(tmp_path, attended=attended, assigned_team_id=1)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
+    await _distribute(db, round_id=1, division_id=10)
     assert await _points(db) == expected
 
 
@@ -537,7 +545,7 @@ async def test_an_allocated_reserve_who_accepted_is_scored_as_a_full_timer(
 async def test_non_allocated_reserve_absent_unaffected(tmp_path):
     """Non-allocated reserve (assigned_team_id NULL) stays excluded from scoring."""
     db = await _make_reserve_driver_db(tmp_path, attended=0, assigned_team_id=None)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
+    await _distribute(db, round_id=1, division_id=10)
     # points_awarded must remain NULL — the driver was not processed
     async with aiosqlite.connect(db) as conn:
         conn.row_factory = aiosqlite.Row
@@ -554,7 +562,7 @@ async def test_allocated_reserve_no_show_pardon_waives_penalty(tmp_path):
     db = await _make_reserve_driver_db(
         tmp_path, attended=0, assigned_team_id=1, with_no_show_pardon=True
     )
-    await distribute_attendance_points(db, round_id=1, division_id=10)
+    await _distribute(db, round_id=1, division_id=10)
     assert await _points(db) == 0
 
 
@@ -591,7 +599,7 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
             db_file, round_id=1, division_id=10, db=db
         )
         await db.commit()
-    await distribute_attendance_points(db_file, round_id=1, division_id=10)
+    await _distribute(db_file, round_id=1, division_id=10)
 
     async with get_connection(db_file) as db:
         # Pardon must still exist
@@ -711,12 +719,12 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     already persisted when the second round's call failed — leaving the division scored
     to a different rule from one round to the next, with no command to put it right.
     """
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services.scoring import attendance_recompute, attendance_scoring
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
     assert await _awarded(db_file, round_ids[0]) is None
 
-    real = attendance_service.distribute_attendance_points
+    real = attendance_scoring.distribute_attendance_points
     calls: list[int] = []
 
     async def failing_after_the_first(db_path, round_id, division_id, *, db=None):
@@ -726,13 +734,15 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
         return await real(db_path, round_id, division_id, db=db)
 
     monkeypatch.setattr(
-        attendance_service, "distribute_attendance_points", failing_after_the_first
+        attendance_scoring, "distribute_attendance_points", failing_after_the_first
     )
 
     with pytest.raises(RuntimeError):
-        await attendance_service._recalculate_forward(
-            db_file, round_ids[0], division_id, recompute="round",
-        )
+        async with get_connection(db_file) as db:
+            await attendance_recompute._recalculate_forward(
+                db_file, round_ids[0], division_id, recompute="round", db=db
+            )
+            await db.commit()
 
     assert len(calls) == 2, "the propagation did not reach a second round"
     assert await _awarded(db_file, round_ids[0]) is None, (
@@ -743,29 +753,19 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
 @pytest.mark.asyncio
 async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
     """The other half of the same rule: nothing was broken making it atomic."""
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services.scoring import attendance_recompute
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
-    await attendance_service._recalculate_forward(
-        db_file, round_ids[0], division_id, recompute="round",
-    )
+    async with get_connection(db_file) as db:
+        await attendance_recompute._recalculate_forward(
+            db_file, round_ids[0], division_id, recompute="round", db=db
+        )
+        await db.commit()
 
     # NO_RSVP and did not attend: no_rsvp_penalty + absent_penalty (2 + 1).
     assert await _awarded(db_file, round_ids[0]) == 3
     assert await _awarded(db_file, round_ids[1]) == 3
-
-
-@pytest.mark.asyncio
-async def test_distribute_attendance_points_still_commits_on_its_own(tmp_path):
-    """Every other caller passes no connection and must keep working unchanged."""
-    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
-
-    await distribute_attendance_points(
-        db_file, round_id=round_ids[0], division_id=division_id
-    )
-
-    assert await _awarded(db_file, round_ids[0]) == 3
 
 
 @pytest.mark.asyncio

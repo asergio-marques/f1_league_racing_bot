@@ -7,12 +7,11 @@ is in their history beside the one they finished in.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.core.test_driver_move import (
+    _NOW,
     AM,
     PRO,
     PROFILE_ID,
@@ -105,13 +104,13 @@ async def test_a_driver_released_from_a_division_keeps_its_history(tmp_path):
 
 async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(db_path):
     await _seat(db_path, PRO, "Alpha")
-    service = _service(db_path)
-    service.revoke_all_placement_roles = AsyncMock()
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=None)
-    guild.fetch_member = AsyncMock(return_value=None)
 
-    await service.sack_driver(PROFILE_ID, SEASON_ID, 1, "Manager", guild, "4242")
+    async with get_connection(db_path) as db:
+        await _service(db_path).sack_on(
+            db, driver_profile_id=PROFILE_ID, season_id=SEASON_ID, acting_user_id=1,
+            acting_user_name="Manager", now=_NOW,
+        )
+        await db.commit()
 
     assert await _history(db_path) == ["Pro"]
 

@@ -5,8 +5,9 @@ database, so jobs survive restarts. A job whose moment passed while the bot was 
 on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, the misfire grace
 a job has unless it is armed with none). Later than that, APScheduler skips it with a warning in
 the host's log, and whatever should be caught up after a longer stop is caught up by each
-module's start-up steps, signed up by its wiring. A one-off timer and an overdue results submission are armed with no
-lateness limit, and fire at once on start whatever the stop. What becomes of a job missed in a
+module's start-up steps, signed up by its wiring. A one-off timer, an overdue results submission
+and a round's four check-in timers are armed with no lateness limit, and fire at once on start
+whatever the stop. What becomes of a job missed in a
 longer stop is its kind's handler's to decide (`docs/design/architecture.md`, "Timed work and
 restarts").
 
@@ -476,6 +477,11 @@ class SchedulerService:
 
         A fourth job, ``rsvp_cleanup``, takes the round's call, last notice and distribution
         message down `POST_RACE_CLEANUP_DELAY` after the round's start.
+
+        Each of the four is armed with no lateness limit (`misfire_grace_time=None`), so one whose
+        moment passed while the bot was down fires when it is back, and its handler, the
+        check-in's change, judges what late means: a last notice is sent late while the deadline
+        is ahead, and a call or a deadline is asked as it would be on time.
         """
         moments = round_event_moments(
             rnd.scheduled_at,
@@ -501,6 +507,7 @@ class SchedulerService:
                     trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                     id=job_id,
                     replace_existing=True,
+                    misfire_grace_time=None,
                     name=f"{label} s{season_number} d{division_tier} r{rnd.round_number}",
                     kwargs={"kind": kind, "key": rnd.id},
                 )
@@ -550,6 +557,7 @@ class SchedulerService:
                     trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
                     id=rsvp_job_id,
                     replace_existing=True,
+                    misfire_grace_time=None,
                     name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
                     kwargs={"kind": "rsvp_cleanup", "key": rnd.id},
                 )

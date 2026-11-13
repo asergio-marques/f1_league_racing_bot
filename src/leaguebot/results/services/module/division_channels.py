@@ -54,6 +54,20 @@ async def _channels_of(db_path: str) -> dict[int, Any]:
         return {row["division_id"]: row for row in await cursor.fetchall()}
 
 
+async def verdicts_channels_on(db: aiosqlite.Connection) -> dict[int, int]:
+    """The verdicts channel of each division that has one, by division id, read on *db*; a
+    division with none is absent.
+
+    Asked of results by a module that checks a division's channels before posting to them
+    (architecture.md, "The database"). It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT division_id, penalty_channel_id FROM division_results_config "
+        "WHERE penalty_channel_id IS NOT NULL AND penalty_channel_id != ''"
+    )
+    return {int(row["division_id"]): int(row["penalty_channel_id"]) for row in await cursor.fetchall()}
+
+
 async def set_division_results_channel(
     db: aiosqlite.Connection, division_id: int, channel_id: int | None
 ) -> int | None:

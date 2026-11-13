@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
+from leaguebot.attendance.cogs.check_in_buttons import handle_rsvp_button
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -219,7 +219,7 @@ async def test_test_rsvp_s_entries_are_saved_and_the_call_redrawn_once(tmp_path)
     submitted; the queue then saves both answers in one change and redraws the call (7001) once,
     and the maintainer's reply says both entries were applied and the call is redrawn on the
     queue."""
-    from leaguebot.attendance.cogs.attendance_cog import _RsvpBulkSetModal
+    from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
 
     league = await _league(tmp_path)
     await league.set_test_mode(True)
@@ -316,7 +316,7 @@ async def test_a_discarded_redraw_of_a_paste_says_the_call_could_not_be_redrawn(
     """As above, but a maintainer's `/attendance test rsvp` paste of Max's accept: the redraw is
     refused and discarded, and the maintainer's reply says the call could not be redrawn because
     its redraw was discarded; the log channel's success line ends by saying that it was not redrawn."""
-    from leaguebot.attendance.cogs.attendance_cog import _RsvpBulkSetModal
+    from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
 
     league = await _league(tmp_path)
     await league.set_test_mode(True)

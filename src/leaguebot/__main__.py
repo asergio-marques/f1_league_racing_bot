@@ -1078,7 +1078,7 @@ async def build(settings: Settings) -> LeagueBot:
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     bot.signup_module_service = SignupModuleService(settings.db_path)
     bot.wizard_service = WizardService(
@@ -1090,7 +1090,7 @@ async def build(settings: Settings) -> LeagueBot:
     )
     bot.attendance_service = AttendanceService(settings.db_path)
 
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through, the team-role service and the lineup poster; results' change types reach
@@ -1188,7 +1188,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
     from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView, ApprovalView
     from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
-    from leaguebot.attendance.services.rsvp_service import RsvpView
+    from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 
     for _view in (
         SignupButtonView(bot.change_queue),
@@ -1203,7 +1203,7 @@ async def build(settings: Settings) -> LeagueBot:
         PenaltyReviewView(),
         ApprovalView(),
         AppealsReviewView(),
-        RsvpView(),  # stub registration; message_id-specific re-arm done in _recover_rsvp_views_and_deadlines
+        RsvpView(),  # stub registration; the message-specific re-arm is the start-up step "RSVP views and deadlines"
     ):
         bot.add_view(_view)
 

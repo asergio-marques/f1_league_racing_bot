@@ -198,8 +198,8 @@ class AttendanceDouble:
     the round's pardons for the staged review, as attendance's own do, whatever the switch, a read
     writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes none,
     `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by call,
-    whether `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id
-    was
+    whether `refresh_lineup` was asked for the text. `post_sheet` returns `sheet_posted`, what the
+    sheet's posting gives back (none by default). `record_sheet_on` records that the sheet's id was
     to be saved, and writes nothing.
     """
 
@@ -210,6 +210,7 @@ class AttendanceDouble:
         self.applied: set[int] = set()
         self.record_fails: Exception | None = None
         self.sheet_fails: list[Exception] = []
+        self.sheet_posted: dict[str, Any] | None = None
         self.apply_fails: dict[int, Exception] = {}
         self.announce_fails: dict[int, Exception] = {}
         self.lineup_fails: list[Exception] = []
@@ -292,7 +293,7 @@ class AttendanceDouble:
         league's attendance is on; nothing while it is off."""
         if not self.league.attendance_on:
             return []
-        from leaguebot.attendance.services import check_in_record
+        from leaguebot.attendance.services.check_in import check_in_record
 
         return list(await check_in_record.read_check_in_on(db, target))
 
@@ -308,9 +309,9 @@ class AttendanceDouble:
         off."""
         if not self.league.attendance_on:
             return []
-        from leaguebot.attendance.services import attendance_service
+        from leaguebot.attendance.services.scoring import attendance_recompute
 
-        return await attendance_service.recalculation_faults(
+        return await attendance_recompute.recalculation_faults(
             self.league.db_path, season_id, guild, self.league.bot, cancelled_too=True
         )
 
@@ -320,12 +321,13 @@ class AttendanceDouble:
             raise self.recalculate_fails
 
     async def post_sheet(self, round_id: int, division_id: int, *, sanctioned: Any,
-                         as_text: bool) -> None:
+                         as_text: bool) -> dict[str, Any] | None:
         if not self.league.attendance_on:
-            return
+            return None
         self.calls.append(("post_sheet", division_id, as_text))
         if self.sheet_fails:
             raise self.sheet_fails.pop(0)
+        return self.sheet_posted
 
     async def record_sheet_on(self, db: Any, division_id: int, posted: Any) -> None:
         if not self.league.attendance_on:
@@ -365,7 +367,8 @@ class AttendanceDouble:
             raise failure
 
     async def apply_sanction_on(self, db: Any, round_id: int, division_id: int,
-                                candidate: dict[str, Any]) -> dict[str, Any] | None:
+                                candidate: dict[str, Any], *,
+                                now: datetime) -> dict[str, Any] | None:
         if not self.league.attendance_on:
             return None
         profile = candidate["driver_profile_id"]
@@ -408,9 +411,9 @@ class AttendanceDouble:
             raise self.lineup_fails.pop(0)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
-        from leaguebot.attendance.services import attendance_service
+        from leaguebot.attendance.services.sanctions import attendance_sanctions
 
-        return await attendance_service.sync_hint(self.league.db_path, division_id, round_id)
+        return await attendance_sanctions.sync_hint(self.league.db_path, division_id, round_id)
 
 
 #: The roles a sanction names to take back and to give: an autosack the division's and the
@@ -743,7 +746,7 @@ def attendance_after_review_of(db_path: str) -> Any:
     attendance's part of the round through it."""
     from types import SimpleNamespace
 
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     return AttendanceAfterReview(SimpleNamespace(db_path=db_path), None)
 

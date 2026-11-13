@@ -1,8 +1,11 @@
 """The `/results` group, and what the subgroups beneath it share.
 
-`RESULTS_GROUP` is the one `/results` group; each subgroup's class names it as its parent, so the
-subgroups sit under one group whichever file declares them. The session choices and the form
-refusal are the words two or more of the subgroups use.
+`RESULTS_GROUP` is the one `/results` group, and its six subgroups are declared here beneath it, in
+the order a league sees them; each subgroup's class takes its own as a class attribute. A group's
+children are kept in the order they join it, and Discord is sent them in that order, so declaring
+the subgroups in one file fixes the order whichever subgroup's file is imported first
+(`test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first`). The session choices
+and the form refusal are the words two or more of the subgroups use.
 """
 from __future__ import annotations
 
@@ -14,6 +17,26 @@ from discord import app_commands
 from leaguebot.core.utils.league_bot import LeagueBot
 
 RESULTS_GROUP = app_commands.Group(name="results", description="Results & Standings commands")
+CONFIG_GROUP = app_commands.Group(
+    name="config", description="Points configuration management", parent=RESULTS_GROUP
+)
+AMEND_GROUP = app_commands.Group(
+    name="amend", description="Mid-season points amendment management", parent=RESULTS_GROUP
+)
+RESERVES_GROUP = app_commands.Group(
+    name="reserves", description="Reserve driver visibility in standings", parent=RESULTS_GROUP
+)
+STANDINGS_GROUP = app_commands.Group(
+    name="standings", description="Standings commands", parent=RESULTS_GROUP
+)
+ROUNDS_GROUP = app_commands.Group(
+    name="rounds", description="Round results commands", parent=RESULTS_GROUP
+)
+CHANNEL_GROUP = app_commands.Group(
+    name="channel",
+    description="Set the channels a division's results are posted to",
+    parent=RESULTS_GROUP,
+)
 
 SESSION_CHOICES = [
     app_commands.Choice(name="Sprint Qualifying", value="SPRINT_QUALIFYING"),

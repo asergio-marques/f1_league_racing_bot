@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -128,6 +128,40 @@ async def in_hand(
             (*kinds, excluding, excluding),
         )
         return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
+
+
+async def done_step_results_before(
+    db_path: str, kind: str, step_name: str, before: int,
+    matching: Mapping[str, Any] | None = None,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Each change of *kind* asked before the change whose id is *before* whose step *step_name* is
+    done, as its payload and that step's saved result (an empty dict where it saved none), newest
+    first. With *matching*, only the changes whose payload holds each of its values (by key, at
+    the top level), filtered as the queue reads rather than after.
+
+    For a change type whose step must know what an earlier change's step left, the queue being
+    durable and the earlier change done by now: a redraw that learns from the nearest earlier
+    answer to its call whether that one left the drawing to a later one, and so asks for the
+    answers to its own call alone, never every answer ever queued. Read on a connection of its own,
+    as :func:`unfinished` is.
+    """
+    wanted = dict(matching or {})
+    for key in wanted:
+        if not key.isidentifier():
+            raise ValueError(f"cannot match a payload on {key!r}")
+    where = "".join(f" AND json_extract(c.payload, '$.{key}') = ?" for key in wanted)  # noqa: S608
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT c.payload, s.result FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id "
+            "WHERE c.kind = ? AND c.id < ? AND s.name = ? AND s.done_at IS NOT NULL"
+            f"{where} ORDER BY c.id DESC",  # noqa: S608 — identifiers only
+            (kind, before, step_name, *wanted.values()),
+        )
+        return [
+            (json.loads(row["payload"]), json.loads(row["result"] or "null") or {})
+            for row in await cursor.fetchall()
+        ]
 
 
 @dataclass(frozen=True)

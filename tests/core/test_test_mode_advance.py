@@ -261,10 +261,10 @@ async def _advance(cog, interaction, entry, *, passed=None, sign_up: bool = True
     the change queue for it (#439). Nor, once the check-in steps are asked of the queue too, has
     a check-in step: the check-in runners are stubbed only while the attendance module still has
     them, so that a test asserting an ask fails on the runner's call rather than on a post."""
-    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.check_in import rsvp_service
 
     defaults = {
-        f"leaguebot.attendance.services.rsvp_service.{name}": AsyncMock(return_value=None)
+        f"leaguebot.attendance.services.check_in.rsvp_service.{name}": AsyncMock(return_value=None)
         for name in _CHECK_IN_RUNNERS
         if hasattr(rsvp_service, name)
     }
@@ -1395,6 +1395,47 @@ async def test_an_advanced_last_notice_is_posted_after_the_real_deadline(tmp_pat
 
     [posted] = _sent(league)
     assert (await _call_row(league))["last_notice_msg_id"] == str(posted)
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_advance_posts_the_call_then_the_last_notice_after_their_timers_fired_late(tmp_path):
+    """Test mode is on. Round 4 is three hours off and no call was ever posted for it: its call
+    and its last notice both fell due while the bot was down, its check-in deadline an hour
+    ahead. As the bot starts again the call's timer and then the last notice's fire, handed round
+    4, and the queue runs. Then the maintainer advances round 4's call (5) and the queue runs,
+    then its last notice (6) and the queue runs. Pro's check-in channel holds the call and then
+    the last notice, one each, the notice recorded against the call, and the queue does not
+    stop."""
+    from datetime import timedelta as delta
+
+    from tests.attendance.test_check_in_call_change import (
+        ROUND_4,
+        _call_league,
+        _round_4_in,
+        _sent,
+        timer_of,
+    )
+    from tests.support.change_queue import run_queue, stopped_job
+
+    league = await _call_league(tmp_path)
+    await _round_4_in(league, delta(hours=3))
+    await league.set_test_mode(True)
+    await timer_of(league, "rsvp_notice")(ROUND_4)
+    await timer_of(league, "rsvp_last_notice")(ROUND_4)
+    await run_queue(league.bot)
+
+    await _ask_as_advance(league, 5, ROUND_4, 4)
+    await run_queue(league.bot)
+    await _ask_as_advance(league, 6, ROUND_4, 4)
+    await run_queue(league.bot)
+
+    call, notice = _sent(league)
+    [row] = await league.rows(
+        "SELECT message_id, last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
+        ROUND_4,
+    )
+    assert row["message_id"] == str(call)
+    assert row["last_notice_msg_id"] == str(notice)
     assert await stopped_job(league.db_path) is None
 
 

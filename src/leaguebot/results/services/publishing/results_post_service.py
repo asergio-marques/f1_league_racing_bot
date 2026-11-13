@@ -1516,7 +1516,7 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
 
     Names both sync commands, because the cascade posts two things a league reads
     separately — the round's own results and the division's standings — and each has its
-    own command. Modelled on ``attendance_service.sync_hint``, which does the same for a
+    own command. Modelled on ``attendance_sanctions.sync_hint``, which does the same for a
     run of sanctions that did not all apply (#239).
 
     **Except once the season is pending completion**, where both sync commands are refused

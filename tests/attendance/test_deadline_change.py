@@ -19,9 +19,9 @@ lock or announcement stops the queue, and a discarded announcement is named and 
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import discord
 import pytest
@@ -121,7 +121,7 @@ async def _placement(league: SeasonLeague, user_id: int) -> tuple[Any, int]:
 
 async def _ask(league: SeasonLeague) -> None:
     """Ask the queue for round 3's deadline as its timer does; the queue is not run."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_deadline
+    from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_deadline(league.bot.change_queue, league.db_path, ROUND_3,
@@ -155,19 +155,17 @@ def _refusing_edit(league: SeasonLeague, message_id: int) -> None:
 
 
 async def _restart_asks(league: SeasonLeague) -> list[int]:
-    """Run the restart's recovery of check-in deadlines, returning the rounds whose deadline it
-    asked of the queue."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+    """Run the restart's recovery of check-in deadlines, attendance's "RSVP views and deadlines"
+    start-up step as `start_up_steps(bot)` gives it at the queue's moment, returning the rounds
+    whose deadline it asked of the queue."""
+    import json
 
-    asked: list[int] = []
+    from leaguebot.attendance.wiring import start_up_steps
 
-    async def _record(_queue: Any, _db_path: Any, rid: int, **_kwargs: Any) -> None:
-        asked.append(rid)
-
-    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
-               new=AsyncMock(side_effect=_record)):
-        await recover_rsvp_views_and_deadlines(league.bot)
-    return asked
+    before = {row["id"] for row in await _deadline_changes(league)}
+    await dict(start_up_steps(league.bot))["RSVP views and deadlines"]()
+    return [json.loads(row["payload"])["round_id"] for row in await _deadline_changes(league)
+            if row["id"] not in before]
 
 
 async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_and_announces(
@@ -177,20 +175,23 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
     `distribute`, `lock_call`, `announce` — taking the buttons off the call (7001) and posting
     one announcement in Pro's check-in channel, recorded on the call with the deadline marked
     as run: with no mark and no message, the deadline has not run, so it runs. The deadline
-    timer's callback asks the queue rather than running the deadline."""
+    timer's callback asks the queue rather than running the deadline. The queue's clock is moved
+    three minutes on, away from the host's, before the queue runs: the deadline is marked as run
+    at the queue's clock."""
     from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
     await _ask(league)
     assert _sent(league) == [] and _edited(league) == []
+    league.clock.advance(minutes=3)
     await run_queue(league.bot)
 
     assert _edited(league) == [CALL]
     [posted] = _sent(league)
     row = await _call_row(league)
     assert row["distribution_msg_id"] == str(posted)
-    assert row["deadline_run_at"] is not None
+    assert datetime.fromisoformat(row["deadline_run_at"]) == league.clock.now
     [change] = await _deadline_changes(league)
     assert [step["name"] for step in await step_rows(league.db_path, change["id"])] == [
         "distribute", "lock_call", "announce",
@@ -399,3 +400,30 @@ async def test_the_announcement_goes_to_the_division_s_current_check_in_channel_
     assert (row["distribution_msg_id"], row["distribution_channel_id"]) == (
         str(posted), str(MOVED),
     )
+
+
+@pytest.mark.parametrize("queue_ran_first", [
+    pytest.param(False, id="the timer asks before the queue runs"),
+    pytest.param(True, id="the timer asks after the queue has run"),
+])
+async def test_a_deadline_missed_asked_by_the_restart_and_its_timer_announces_once(
+    tmp_path, queue_ran_first,
+):
+    """Round 3's deadline passed an hour ago while the bot was down, its timer armed with no
+    lateness limit. The bot comes back: attendance's start-up step for check-in deadlines asks
+    for it, and its timer, firing as the scheduler is resumed, asks for it too, either while the
+    restart's ask still waits on the queue or once the queue has run it. Pro's check-in channel
+    is sent one reserve announcement, and the queue holds one deadline change for round 3."""
+    from leaguebot.attendance.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+
+    await dict(start_up_steps(league.bot))["RSVP views and deadlines"]()
+    if queue_ran_first:
+        await run_queue(league.bot)
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert len(_sent(league)) == 1
+    assert len(await _deadline_changes(league)) == 1
+    assert (await _call_row(league))["deadline_run_at"] is not None

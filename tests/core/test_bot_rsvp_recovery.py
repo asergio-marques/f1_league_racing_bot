@@ -1,6 +1,6 @@
 """What a restart does about check-in — re-arming buttons, and catching up a missed deadline.
 
-Issue #208. `recover_rsvp_views_and_deadlines` runs on every start and does two things a
+Issue #208. Attendance's "RSVP views and deadlines" start-up step runs on every start and does two things a
 restart would otherwise lose: it re-arms the persistent buttons on every check-in call still
 standing, and it asks the change queue for any deadline whose moment passed while the bot was
 down (#439, slice 6b), running none itself; the queue runs it once it starts.
@@ -32,7 +32,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -62,6 +62,7 @@ async def _make_db(
     *,
     attendance_enabled: bool = True,
     season_status: str = "ACTIVE",
+    season_stage: str | None = None,
     round_status: str = "NOT_RUN",
     deadline_hours: int = 6,
     hours_until_round: int = -1,
@@ -100,6 +101,9 @@ async def _make_db(
             "VALUES (?, 1, '2026-01-01', ?)",
             (SEASON_ID, season_status),
         )
+        if season_stage is not None:
+            await db.execute("UPDATE seasons SET stage = ? WHERE id = ?",
+                             (season_stage, SEASON_ID))
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
             "VALUES (?, ?, 'Division 1', 1, 555)",
@@ -179,12 +183,18 @@ async def _deadlines(db_path: str) -> int:
     return len([row for row in await change_rows(db_path) if row["kind"] == DEADLINE])
 
 
-async def _recover(bot) -> int:
-    """Run the recovery, returning how many check-in deadlines it asked of the queue. The queue
-    is not run."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+async def _step(bot) -> None:
+    """Attendance's "RSVP views and deadlines" start-up step, as `start_up_steps(bot)` gives it,
+    at the moment the bot's queue clock is pinned to."""
+    from leaguebot.attendance.wiring import start_up_steps
 
-    await recover_rsvp_views_and_deadlines(bot)
+    await dict(start_up_steps(bot))["RSVP views and deadlines"]()
+
+
+async def _recover(bot) -> int:
+    """Run the recovery's start-up step, returning how many check-in deadlines it asked of the
+    queue. The queue is not run."""
+    await _step(bot)
     return await _deadlines(bot.db_path)
 
 
@@ -216,18 +226,25 @@ async def test_a_switched_off_module_s_buttons_are_not_re_armed(tmp_path):
     bot.add_view.assert_not_called()
 
 
-async def test_a_failure_fetching_the_embeds_stops_the_recovery_quietly(tmp_path, caplog):
-    """It runs during startup, so raising would take the bot down over a check-in call. The
-    recovery stops there: no button is re-armed and no deadline asked of the queue."""
+async def test_a_database_the_recovery_cannot_read_is_reported_in_the_log_channel(tmp_path):
+    """The restart finds a standing call, but the database holding the rounds cannot be opened.
+    Run through the start-up sweep, attendance's "RSVP views and deadlines" step re-arms no
+    button and asks no deadline, and the sweep posts one line to the log channel, its failure
+    line for that step, rather than the fault going to the host's log alone."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import run_attendance_start_up_step
+
     db_path = await _make_db(tmp_path)
-    bot = await _bot(db_path, embed_error=RuntimeError("database is locked"))
+    bot = await _bot(db_path)
+    bot.db_path = os.path.join(str(tmp_path), "missing", "nowhere.db")
 
-    with caplog.at_level("ERROR"):
-        asked = await _recover(bot)
+    lines, error = await run_attendance_start_up_step(bot, "RSVP views and deadlines")
 
-    assert asked == 0
+    assert error is not None
+    assert lines == [start_up_failure_line("RSVP views and deadlines", error)]
     bot.add_view.assert_not_called()
-    assert "failed to fetch embed messages" in caplog.text
+    assert await _deadlines(db_path) == 0
 
 
 async def test_a_view_that_cannot_be_re_armed_does_not_stop_the_rest(tmp_path, caplog):
@@ -271,6 +288,18 @@ async def test_a_deadline_exactly_now_is_run(tmp_path):
     as missed rather than as pending: it is asked of the queue."""
     db_path = await _make_db(tmp_path, hours_until_round=6, deadline_hours=6)
     bot = await _bot(db_path)
+
+    assert await _recover(bot) == 1
+
+
+async def test_the_deadline_catch_up_reads_the_queue_s_clock(tmp_path):
+    """Round 5 starts in two days by the host's clock, its six-hour check-in deadline still
+    ahead and its call standing, while the queue's clock, the bot's, stands 45 hours on: three
+    hours past the deadline. The restart's "RSVP views and deadlines" step judges the deadline
+    passed at the queue's clock, and asks the queue for it once."""
+    db_path = await _make_db(tmp_path, hours_until_round=48, deadline_hours=6)
+    bot = await _bot(db_path)
+    league_queue(bot, db_path, now=datetime.now(timezone.utc) + timedelta(hours=45))
 
     assert await _recover(bot) == 1
 
@@ -343,8 +372,6 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
     for the deadline and the queue runs it for real: nobody is placed, the no-reserves notice
     goes out in the check-in channel, and the call is marked as run. The second start must find
     it done and ask nothing."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
-
     db_path = await _make_db(tmp_path, hours_until_round=1)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -355,9 +382,9 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
         await db.commit()
     bot, check_in = await _check_in_bot(db_path)
 
-    await recover_rsvp_views_and_deadlines(bot)
+    await _step(bot)
     await run_queue(bot)
-    await recover_rsvp_views_and_deadlines(bot)
+    await _step(bot)
     await run_queue(bot)
 
     assert await _deadlines(db_path) == 1, "the restart did not ask, or asked again"
@@ -369,10 +396,15 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
     pytest.param({"round_status": "CANCELLED"}, id="a cancelled round"),
     # A season in setup has not started; its check-in calls are not yet owed.
     pytest.param({"season_status": "SETUP"}, id="a season not running"),
+    # A season raced to its end, awaiting completion, is not in an ongoing stage: its missed
+    # deadline is not caught up, as its missed call is not (decided 2026-11-13).
+    pytest.param(
+        {"season_stage": "PENDING_COMPLETION"}, id="a season pending completion",
+    ),
 ])
 async def test_a_round_not_to_be_run_has_no_deadline_to_catch_up(tmp_path, status):
-    """A round called off, or one of a season not yet running, has its passed deadline left
-    alone: the restart asks nothing."""
+    """A round called off, or one of a season not yet running or awaiting completion, has its
+    passed deadline left alone: the restart asks nothing."""
     db_path = await _make_db(tmp_path, hours_until_round=-1, **status)
     bot = await _bot(db_path)
 
@@ -387,25 +419,51 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
-async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog):
-    """The recovery runs before the bot is ready; an exception here would leave the league
-    with no bot at all rather than one missing a distribution. Asking the queue for the
-    deadline raises: the restart logs an error naming the round, and goes on."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
+    """Division 1 has two calls standing whose deadlines passed while the bot was down: round 3
+    (id 5) raced an hour ago and round 4 (id 6) half an hour ago. At the restart the queue
+    refuses round 5's deadline. Run through the start-up sweep, attendance's "RSVP views and
+    deadlines" step still asks round 6's deadline, and the sweep posts one line to the log
+    channel, its failure line for that step; the error the step raised names round 5 alone,
+    with the queue's error."""
+    import json
+
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
 
     db_path = await _make_db(tmp_path, hours_until_round=-1)
+    later = datetime.now(timezone.utc) - timedelta(minutes=30)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (?, ?, 4, 'NORMAL', 'Monza Circuit', ?, 'NOT_RUN')",
+            (ROUND_ID + 1, DIVISION_ID, later.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+            "posted_at) VALUES (?, ?, ?, '770001', ?)",
+            (ROUND_ID + 1, DIVISION_ID, str(MESSAGE_ID + 1), later.isoformat()),
+        )
+        await db.commit()
     bot = await _bot(db_path)
+    refused = RuntimeError("the database is locked")
+    ask = bot.change_queue.ask
 
-    with caplog.at_level("ERROR"), patch(
-        "leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
-        new=AsyncMock(side_effect=RuntimeError("database is locked")),
-    ):
-        await recover_rsvp_views_and_deadlines(bot)
+    async def refusing(kind, payload, **kwargs):
+        if kind == DEADLINE and payload["round_id"] == ROUND_ID:
+            raise refused
+        return await ask(kind, payload, **kwargs)
 
-    assert any(
-        record.levelname == "ERROR" and str(ROUND_ID) in record.getMessage()
-        for record in caplog.records
-    )
+    bot.change_queue.ask = refusing
+
+    lines, error = await run_attendance_start_up_step(bot, "RSVP views and deadlines")
+
+    asked = [json.loads(row["payload"])["round_id"] for row in await change_rows(db_path)
+             if row["kind"] == DEADLINE]
+    assert asked == [ROUND_ID + 1]
+    assert round_failures(error, module="attendance") == {ROUND_ID: refused}
+    assert lines == [start_up_failure_line("RSVP views and deadlines", error)]
 
 
 async def test_a_round_whose_timestamp_will_not_parse_is_skipped(tmp_path):
@@ -437,17 +495,11 @@ async def test_a_server_with_no_standing_calls_recovers_nothing(tmp_path):
 
 async def _asked(bot) -> list[int]:
     """Run the recovery, returning the rounds whose deadline it asked of the queue."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+    import json
 
-    asked: list[int] = []
-
-    async def _ask(_queue, _db_path, round_id, **_kwargs):
-        asked.append(round_id)
-
-    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
-               new=AsyncMock(side_effect=_ask)):
-        await recover_rsvp_views_and_deadlines(bot)
-    return asked
+    await _step(bot)
+    return [json.loads(row["payload"])["round_id"] for row in await change_rows(bot.db_path)
+            if row["kind"] == DEADLINE]
 
 
 @pytest.mark.parametrize(("marked", "asked"), [(True, []), (False, [ROUND_ID])],

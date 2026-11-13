@@ -8,7 +8,7 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
-from leaguebot.results.cogs.results_group import RESULTS_GROUP, ResultsSubgroup
+from leaguebot.results.cogs.results_group import ROUNDS_GROUP, ResultsSubgroup
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.interaction_errors import describe
@@ -102,9 +102,7 @@ class _AmendSessionsView(LeagueView):
 
 
 class RoundsCommands(ResultsSubgroup):
-    rounds_group = app_commands.Group(
-        name="rounds", description="Round results commands", parent=RESULTS_GROUP
-    )
+    rounds_group = ROUNDS_GROUP
 
     @rounds_group.command(name="sync", description="Force a results repost for all rounds in a division.")
     @app_commands.describe(division="Division name")

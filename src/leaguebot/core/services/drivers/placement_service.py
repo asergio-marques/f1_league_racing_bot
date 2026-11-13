@@ -6,15 +6,15 @@ the image templates could draw a seat (`TemplateCapacityService`) and the team-r
 reads a team's role (`TeamRoleService`); its own queries join `team_role_configs` for the roles a
 driver's placements carry, and read the driver role from the settings row. A change that moves a
 seat names the divisions whose lineup is owed and the roles to give or take; it posts no lineup
-(`LineupPoster`), and the change queue's jobs give and take the roles. A placement made or sacked
-outside the queue (`move_driver`, `sack_driver`, `revoke_all_placement_roles`) gives and takes them
-itself, through the team-role service's logging helpers.
+(`LineupPoster`), and the change queue's jobs give and take the roles.
+`revoke_all_placement_roles` takes a
+member's placement roles itself, through the team-role service's logging helpers.
 """
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import aiosqlite
 import discord
@@ -452,11 +452,12 @@ class PlacementService:
         team_name: str,
         acting_user_id: int,
         acting_user_name: str,
+        now: datetime,
     ) -> dict:
         """Move a committed driver from their seat to a team of the same or another division, on *db*.
 
         `move_seat_on`, and the `DRIVER_MOVE` audit entry written with it on the same
-        connection, stamped with the wall clock and committed by no one here, so that a
+        connection, stamped with *now* (UTC) and committed by no one here, so that a
         sanction's save carries the move with the rest of its writes. Refused and
         returned as `move_seat_on` refuses and returns.
         """
@@ -473,7 +474,7 @@ class PlacementService:
             (
                 acting_user_id, acting_user_name, audit["division_id"],
                 json.dumps(audit["old_value"]), json.dumps(audit["new_value"]),
-                datetime.now(timezone.utc).isoformat(),
+                now.isoformat(),
             ),
         )
         return summary
@@ -481,67 +482,12 @@ class PlacementService:
     async def guard_move(self, to_division_id: int, season_id: int, team_name: str) -> None:
         """Refuse a move into *team_name* of *to_division_id* that would outgrow a template.
 
-        The capacity guards `move_driver` makes before it writes: the reserve block, the
+        The capacity guards a move makes before it writes: the reserve block, the
         attendance sheet's rows, the driver standings' and an image template's. Public so that
         a sanction's check, a job of its own, can ask them before the move is saved, since they
         read templates off the loop and cannot run inside a save. Raises Refused.
         """
         await self._capacity.guard_image_capacity(to_division_id, season_id, team_name)
-
-    async def move_driver(
-        self,
-        driver_profile_id: int,
-        season_id: int,
-        from_division_id: int,
-        to_division_id: int,
-        team_name: str,
-        acting_user_id: int,
-        acting_user_name: str,
-        guild: discord.Guild | None,
-        discord_user_id: str,
-    ) -> dict:
-        """Move a committed driver from their seat in one division to a team of the same or another.
-
-        One change: the old seat freed and the new one taken in a single transaction (`move_on`),
-        the roles of the seat left revoked where no other seat of the driver maps to them, the roles
-        of the seat taken granted, and the lineup of each division touched posted once. A driver
-        moved to another division leaves the points they scored in the division they left, those
-        being counted per division. The roles are changed swallowing Discord's refusals: this is the
-        committing form `/attendance sync` moves a driver through, with no queue to report to.
-        `/driver move` is a change on the queue (`driver_changes`), and a sanction's own role change
-        raises.
-
-        Refused as `move_on` and `guard_move` refuse.
-
-        Returns a summary dict: from_division, to_division, from_team, to_team, lineups.
-        """
-        await self.guard_move(to_division_id, season_id, team_name)
-
-        async with get_connection(self._db_path) as db:
-            summary = await self.move_on(
-                db, driver_profile_id=driver_profile_id, season_id=season_id,
-                from_division_id=from_division_id, to_division_id=to_division_id,
-                team_name=team_name, acting_user_id=acting_user_id,
-                acting_user_name=acting_user_name,
-            )
-            await db.commit()
-
-        if guild is not None and not summary["is_test_driver"]:
-            member = guild.get_member(int(discord_user_id))
-            if member is None:
-                try:
-                    member = await guild.fetch_member(int(discord_user_id))
-                except discord.HTTPException:
-                    member = None
-            if member is not None:
-                if summary["revoke"]:
-                    await self._roles._revoke_roles(member, *summary["revoke"])
-                await self._roles._grant_roles(member, *summary["grant"])
-
-        return {
-            key: summary[key]
-            for key in ("from_division", "to_division", "from_team", "to_team", "lineups")
-        }
 
     # ------------------------------------------------------------------
     # Assign driver
@@ -1129,11 +1075,12 @@ class PlacementService:
         season_id: int,
         acting_user_id: int,
         acting_user_name: str,
+        now: datetime,
     ) -> SackSaved:
         """Sack a committed driver on *db*: free every seat, return to Not Signed Up, audit it.
 
         `sack_seats_on`, and the `DRIVER_SACK` audit entry written with it on the same
-        connection, stamped with the wall clock and committed by no one here, so that a
+        connection, stamped with *now* (UTC) and committed by no one here, so that a
         sanction's save carries the sack with the rest of its writes. Refused and
         returned as `sack_seats_on` refuses and returns.
         """
@@ -1149,72 +1096,10 @@ class PlacementService:
                 acting_user_name,
                 json.dumps(saved.audit["old_value"]),
                 json.dumps(saved.audit["new_value"]),
-                datetime.now(timezone.utc).isoformat(),
+                now.isoformat(),
             ),
         )
         return saved
-
-    async def sack_driver(
-        self,
-        driver_profile_id: int,
-        season_id: int,
-        acting_user_id: int,
-        acting_user_name: str,
-        guild: discord.Guild,
-        discord_user_id: str,
-    ) -> list[int]:
-        """Sack a committed driver: revoke every role, free every seat, return to Not Signed Up.
-
-        Returns the divisions the driver left, whose lineups the caller asks the change queue
-        to post; the sack posts none.
-
-        Sacking is for a driver whose placement is confirmed — an uncommitted one is unassigned or
-        rejected instead — and is available only while the season is ongoing, which the command
-        checks. The profile is **never deleted here**: a driver without the former-driver flag who
-        reaches Not Signed Up is pending deletion, and is deleted by the driver pass that ends the
-        season. Their attendance, results and standings rows are therefore kept, and so is every
-        signup they made.
-
-        The season's placements are removed (`sack_on`), so the driver holds no seat and gains
-        no history entry for the season. The roles are revoked first, swallowing Discord's
-        refusals: this is the committing form `/attendance sync` sacks a driver through, with no
-        queue to report to. `/driver sack` is a change on the queue (`driver_changes`), which
-        takes the roles after the save, and a sanction's own role change raises. Raises
-        Refused as `judge_sack_on` does.
-        """
-        async with get_connection(self._db_path) as db:
-            judged = await self.judge_sack_on(
-                db, driver_profile_id=driver_profile_id, season_id=season_id,
-            )
-        is_test_driver: bool = judged["is_test_driver"]
-
-        # Revoke all roles before DB mutation: the placements are what they are computed from.
-        member = guild.get_member(int(discord_user_id))
-        if member is None:
-            try:
-                member = await guild.fetch_member(int(discord_user_id))
-            except discord.HTTPException:
-                member = None
-
-        if member is not None and not is_test_driver:
-            await self.revoke_all_placement_roles(driver_profile_id, season_id, member)
-            # Revoke the driver role granted at approval
-            async with get_connection(self._db_path) as db:
-                cur = await db.execute("SELECT driver_role_id FROM server_configs")
-                cfg_row = await cur.fetchone()
-            if cfg_row and cfg_row["driver_role_id"]:
-                driver_role = guild.get_role(cfg_row["driver_role_id"])
-                if driver_role is not None and driver_role in member.roles:
-                    await self._roles._revoke_roles(member, driver_role.id)
-
-        async with get_connection(self._db_path) as db:
-            saved = await self.sack_on(
-                db, driver_profile_id=driver_profile_id, season_id=season_id,
-                acting_user_id=acting_user_id, acting_user_name=acting_user_name,
-            )
-            await db.commit()
-
-        return saved.divisions
 
     # ------------------------------------------------------------------
     # Division resolution helper (used by cogs)

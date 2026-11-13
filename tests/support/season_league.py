@@ -85,7 +85,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     SERVER_ID,
@@ -265,7 +265,7 @@ class SeasonLeague:
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
         set_guilds(bot, [guild])
-        bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
+        bot.attendance_service.get_config_or_defaults = AsyncMock(side_effect=self._attendance)
         bot.attendance_after_review.check_in_read_on = AttendanceAfterReview(
             bot, MagicMock()
         ).check_in_read_on
@@ -872,7 +872,7 @@ async def ongoing_league(
                 await db.execute(_PHASE_DONE[phase], (rid,))
         await db.commit()
 
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     league.bot.attendance_service.get_embed_message = AttendanceService(
         league.db_path
@@ -938,7 +938,7 @@ def attendance_from_the_database(league: SeasonLeague) -> None:
     """The league's attendance service reading its configuration from the database, in place of
     the league's stub, and held by the check-in's change types: the builder's own service with
     the stub dropped, which its change types already hold."""
-    vars(league.bot.attendance_service).pop("get_or_create_config", None)
+    vars(league.bot.attendance_service).pop("get_config_or_defaults", None)
 
 
 def removed_jobs(rid: int) -> list[str]:

@@ -20,7 +20,7 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.rsvp_service import (
+from leaguebot.attendance.services.check_in.rsvp_service import (
     reserve_distribution_on,
     write_distribution_on,
 )
@@ -46,7 +46,7 @@ async def _distribute(round_id: int, division_id: int, bot: MagicMock) -> bool:
     written (each run is the whole answer), then committed. Returns whether any were placed."""
     async with get_connection(bot.db_path) as db:
         assignments, standby = await reserve_distribution_on(db, round_id, division_id)
-        await write_distribution_on(db, round_id, division_id, assignments, standby)
+        await write_distribution_on(db, round_id, division_id, assignments, standby, at=_NOW)
         await db.commit()
     return bool(assignments or standby)
 
@@ -674,7 +674,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_bulk_insert_and_get(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await _write(
@@ -689,7 +689,7 @@ class TestAttendanceServiceCrud:
     async def test_bulk_insert_idempotent(self, tmp_path):
         """INSERT OR IGNORE: calling twice should not raise or duplicate."""
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await _write(svc, db_path, "bulk_insert_attendance_rows", 1, 10, [100, 200])
@@ -700,7 +700,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_upsert_sets_accepted_at_for_accepted(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await _write(svc, db_path, "bulk_insert_attendance_rows", 1, 10, [100])
@@ -713,7 +713,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_upsert_clears_accepted_at_for_declined(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await _write(svc, db_path, "bulk_insert_attendance_rows", 1, 10, [100])
@@ -731,7 +731,7 @@ class TestAttendanceServiceCrud:
         was posted. A driver placed into the division afterwards answers a call with no row of
         their own, and this used to be two bare UPDATEs that discarded the answer in silence."""
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "ACCEPTED", now=_NOW)
@@ -746,7 +746,7 @@ class TestAttendanceServiceCrud:
         case of it — the reserve distribution orders by that column and a row born with a
         timestamp it never earned would jump the queue."""
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "DECLINED", now=_NOW)
@@ -762,7 +762,7 @@ class TestAttendanceServiceCrud:
         message stand over a write that changed nothing. A press gets the same from
         `answer_rsvp_on`."""
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
         inserted = await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "ACCEPTED", now=_NOW)
@@ -772,7 +772,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_get_attendance_row_for_driver_returns_none_when_missing(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
         row = await svc.get_attendance_row_for_driver(99, 10, 999)
         assert row is None
@@ -780,10 +780,10 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_insert_and_get_embed_message(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "999000111", "555000222")
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "999000111", "555000222", posted_at=_NOW)
         em = await svc.get_embed_message(round_id=1, division_id=10)
         assert em is not None
         assert em.message_id == "999000111"
@@ -793,11 +793,11 @@ class TestAttendanceServiceCrud:
     async def test_insert_embed_message_upserts(self, tmp_path):
         """Re-inserting same (round, division) should update message_id, not raise."""
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "first_msg", "111")
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "second_msg", "111")  # upsert
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "first_msg", "111", posted_at=_NOW)
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "second_msg", "111", posted_at=_NOW)  # upsert
         em = await svc.get_embed_message(round_id=1, division_id=10)
         assert em is not None
         assert em.message_id == "second_msg"
@@ -805,7 +805,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_get_embed_message_returns_none_when_missing(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
         em = await svc.get_embed_message(round_id=99, division_id=10)
         assert em is None
@@ -813,11 +813,11 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_get_all_embed_messages(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "msg_a", "ch1")
-        await _write(svc, db_path, "insert_embed_message", 2, 10, "msg_b", "ch1")
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "msg_a", "ch1", posted_at=_NOW)
+        await _write(svc, db_path, "insert_embed_message", 2, 10, "msg_b", "ch1", posted_at=_NOW)
         all_msgs = await svc.get_all_embed_messages()
         assert len(all_msgs) == 2
         mids = {m.message_id for m in all_msgs}

@@ -146,7 +146,7 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     `bot.channels` holds the server's channels; `bot.broken` names channels whose lookup raises
     an error that is not Discord's; `bot.clock` is the queue's "now".
     """
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.__main__ import register_module_switches
     from leaguebot.core.services.modules.module_service import ModuleService
 

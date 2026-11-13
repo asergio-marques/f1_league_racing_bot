@@ -9,7 +9,7 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
-from leaguebot.results.cogs.results_group import RESULTS_GROUP, ResultsSubgroup
+from leaguebot.results.cogs.results_group import CHANNEL_GROUP, ResultsSubgroup
 from leaguebot.results.services.module.channel_settings import (
     NO_ACCESS,
     NOT_ENABLED,
@@ -37,11 +37,7 @@ class ChannelCommands(ResultsSubgroup):
     # /results channel group
     # ------------------------------------------------------------------
 
-    channel_group = app_commands.Group(
-        name="channel",
-        description="Set the channels a division's results are posted to",
-        parent=RESULTS_GROUP,
-    )
+    channel_group = CHANNEL_GROUP
 
     async def _set_division_channel(
         self,

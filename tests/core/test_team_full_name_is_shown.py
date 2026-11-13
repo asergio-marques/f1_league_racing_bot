@@ -7,8 +7,9 @@ name; what keys artwork, a seat or a role mapping is the shorthand.
 """
 from __future__ import annotations
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import _seat_team_keys, _seat_team_names
 from leaguebot.results.services.standings.standings_service import opening_team_standings
 from leaguebot.core.services.drivers.team_service import (
     team_artwork_keys_for_instances,
@@ -92,10 +93,12 @@ async def test_the_opening_constructors_are_ordered_by_their_full_names(tmp_path
 async def test_the_attendance_sheet_names_the_full_name_and_keys_the_badge_by_the_shorthand(
     tmp_path,
 ):
+    """The names and the shorthands come from the one read of the placements."""
+    from leaguebot.attendance.services.sheet.attendance_sheet import _seat_teams
+
     db_path, _ids = await _league(tmp_path)
 
-    names = await _seat_team_names(db_path, DIVISION_ID, [DRIVER])
-    keys = await _seat_team_keys(db_path, DIVISION_ID, [DRIVER])
+    names, keys = await _seat_teams(db_path, DIVISION_ID, [DRIVER])
 
     assert names == {DRIVER: "Oracle Red Bull Racing"}
     assert keys == {DRIVER: "RBR"}

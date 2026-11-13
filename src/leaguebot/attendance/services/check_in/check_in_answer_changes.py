@@ -12,7 +12,7 @@ a reserve who has accepted.
 - `save_answer` (a save) writes the answer through `answer_rsvp_on`. A press that changes nothing,
   a write that took no row and a lock found at the save write their log line here, and the member's
   reply says what became of it.
-- `redraw` (an edit) draws the call again from every answer, with a fresh `RsvpView`, and writes the
+- `redraw` (an edit) draws the call again from every answer, with a fresh view of the buttons (built by the `view_of` wiring hands in), and writes the
   answer's success line, naming a call it could not redraw because it is gone. A burst of answers
   to one call makes one redraw: one whose turn comes with a later answer to the same call in hand
   leaves the drawing to that one, and that one draws the call whatever became of its own answer
@@ -30,7 +30,6 @@ drivers it cannot find) and passes those over; the save passes over an entry it 
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -40,13 +39,13 @@ import aiohttp
 import aiosqlite
 import discord
 
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_service import (
+from leaguebot.attendance.services.check_in import rsvp_service
+from leaguebot.attendance.services.check_in.attendance_config_service import (
     AttendanceService,
     RsvpOutcome,
     rsvp_lock,
 )
-from leaguebot.attendance.services.check_in_changes import edit_check_in_message
+from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
@@ -56,11 +55,12 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import RoundStatus, read_scheduled_at
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
 from leaguebot.core.services.queue.queue_records import (
+    done_step_results_before,
     in_hand,
 )
 from leaguebot.core.services.queue.change_types import (
@@ -70,9 +70,11 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.posting.notice_handler import edit_notice
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
-from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 
 log = logging.getLogger(__name__)
@@ -146,16 +148,20 @@ def _aware(moment: str | datetime) -> datetime:
 
 async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | str:
     """The facts the press is judged on, or the refusal the press is answered with where the round
-    or the driver's place in it is gone. Read on *db*."""
+    or the driver's place in it is gone. Read on *db*.
+
+    **A driver is a member of the division where they hold a confirmed seat in it and have a
+    placement there:** the seat holders, filtered by placement. A seat held with no placement row
+    in the division is refused as not a member, as a join of the placement to its seat refuses it;
+    a reader of the seats alone would let such a driver answer the call."""
     round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
     driver = int(payload["driver_profile_id"])
-    cursor = await db.execute(
-        "SELECT r.scheduled_at, r.status, ac.rsvp_deadline_hours FROM rounds r "
-        "CROSS JOIN attendance_config ac WHERE r.id = ?",
-        (round_id,),
-    )
-    round_row = await cursor.fetchone()
-    if round_row is None:
+    # The round is core's to give; the deadline is attendance's own. A league holding no
+    # configuration has no round to answer: it reads as gone, as the join of the two always did.
+    round_facts = await round_facts_on(db, round_id)
+    cursor = await db.execute("SELECT rsvp_deadline_hours FROM attendance_config")
+    config_row = await cursor.fetchone()
+    if round_facts is None or config_row is None:
         return _ROUND_GONE
     # A cancelled round's call is taken down with the cancellation (#175), so a press arriving
     # here raced it, or landed on a call the bot could not delete. The withdrawal is read as well
@@ -165,23 +171,18 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
         "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
         (round_id, division_id),
     )
-    if round_row["status"] == RoundStatus.CANCELLED.value or await cursor.fetchone() is None:
+    if round_facts.status == RoundStatus.CANCELLED or await cursor.fetchone() is None:
         return _CLOSED
     # Only a driver with a confirmed seat in this division may answer its call: one refusal for
     # every way of not being a driver of it (an unconfirmed placement, a seat elsewhere, none).
-    cursor = await db.execute(
-        f"""
-        SELECT ti.is_reserve
-          FROM driver_season_assignments dsa
-          JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
-          JOIN team_instances ti ON ti.id = ts.team_instance_id
-                                AND ti.division_id = dsa.division_id
-         WHERE dsa.driver_profile_id = ? AND dsa.division_id = ?
-           AND {uncommitted_seat_excluded("ts")}
-        """,  # noqa: S608
-        (driver, division_id),
+    placed = {p.profile_id for p in await TeamService.placed_drivers_on(db, division_id)}
+    seat = next(
+        (
+            h for h in await TeamService.seat_holders_on(db, division_id)
+            if h.profile_id == driver and h.profile_id in placed
+        ),
+        None,
     )
-    seat = await cursor.fetchone()
     if seat is None:
         return _NOT_A_MEMBER
     cursor = await db.execute(
@@ -192,9 +193,9 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
     held = await cursor.fetchone()
     return _Facts(
         found=held["rsvp_status"] if held is not None else "NO_RSVP",
-        scheduled_at=read_scheduled_at(round_row["scheduled_at"]),
-        deadline_hours=round_row["rsvp_deadline_hours"] or 0,
-        is_reserve=bool(seat["is_reserve"]),
+        scheduled_at=round_facts.scheduled_at,
+        deadline_hours=config_row["rsvp_deadline_hours"] or 0,
+        is_reserve=seat.is_reserve,
     )
 
 
@@ -271,23 +272,19 @@ async def _left_the_drawing(ctx: StepContext) -> bool:
     redraw as it was saved, since the queue is durable and the earlier change is done by now.
     """
     round_id, division_id = int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
-    async with get_connection(ctx.db_path) as db:
-        cursor = await db.execute(
-            "SELECT c.payload, s.result FROM queued_change_steps s "
-            "JOIN queued_changes c ON c.id = s.change_id "
-            "WHERE c.kind = ? AND c.id < ? AND s.name = ? AND s.done_at IS NOT NULL "
-            "ORDER BY c.id DESC",
-            (CHECK_IN_ANSWER, ctx.change_id, REDRAW),
-        )
-        async for row in cursor:
-            earlier = json.loads(row["payload"])
-            if earlier["round_id"] == round_id and earlier["division_id"] == division_id:
-                return bool(json.loads(row["result"] or "{}").get("later"))
+    for _earlier, result in await done_step_results_before(
+        ctx.db_path, CHECK_IN_ANSWER, REDRAW, ctx.change_id,
+        matching={"round_id": round_id, "division_id": division_id},
+    ):
+        return bool(result.get("later"))
     return False
 
 
-def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
-    """The jobs of a check-in answer, *service* being attendance's."""
+def check_in_answer_steps(
+    service: AttendanceService, view_of: CheckInViewFactory
+) -> dict[str, Step]:
+    """The jobs of a check-in answer, *service* being attendance's and *view_of* the way to build
+    the buttons of the call it redraws."""
 
     async def save_answer(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
@@ -402,9 +399,12 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
             return gone
         try:
             message = await channel.fetch_message(int(standing["message_id"]))
-            embed = await rsvp_service._rebuild_embed_for_round(round_id, division_id, ctx.bot)
-            await edit_check_in_message(
-                message, embed=embed, view=rsvp_service.RsvpView(round_id=round_id)
+            embed = await rsvp_service._rebuild_embed_for_round(
+                round_id, division_id, ctx.db_path, service
+            )
+            await edit_notice(
+                message, mentions=discord.AllowedMentions.none(),
+                embed=embed, view=view_of(round_id),
             )
         except discord.NotFound:
             if owes:
@@ -460,7 +460,9 @@ def _bulk_outcome(ctx: OutcomeContext, saved: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def check_in_answer_change(service: AttendanceService) -> ChangeType:
+def check_in_answer_change(
+    service: AttendanceService, view_of: CheckInViewFactory
+) -> ChangeType:
     """`attendance.check_in.answer`: a member's change that saves one driver's answer to a round's
     check-in call and redraws the call. Repeatable: a driver may answer again."""
 
@@ -516,7 +518,7 @@ def check_in_answer_change(service: AttendanceService) -> ChangeType:
     return ChangeType(
         kind=CHECK_IN_ANSWER,
         opening=(PlannedStep(SAVE_ANSWER), PlannedStep(REDRAW)),
-        steps=check_in_answer_steps(service),
+        steps=check_in_answer_steps(service, view_of),
         check=check,
         key=lambda payload: (
             f"{CHECK_IN_ANSWER}:{payload['round_id']}:"
@@ -552,27 +554,22 @@ async def ask_check_in_answer(
     """
     async with get_connection(db_path) as db:
         profile_id = await resolve_driver_profile_id(interaction.user.id, db)
-        cursor = await db.execute(
-            "SELECT r.division_id, r.round_number, d.name AS division_name FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        round_row = await cursor.fetchone()
+        facts = await round_facts_on(db, round_id)
     if profile_id is None:
         await refuse(interaction, _NOT_REGISTERED, what=f"{button} of a check-in call")
         return
-    if round_row is None:
+    if facts is None:
         await refuse(interaction, _ROUND_GONE, what=f"{button} of a check-in call")
         return
     payload: dict[str, Any] = {
-        "round_id": round_id, "division_id": round_row["division_id"],
+        "round_id": round_id, "division_id": facts.division_id,
         "driver_profile_id": profile_id, "status": status,
         "pressed_at": _aware(interaction.created_at).isoformat(),
-        "round_number": round_row["round_number"], "division_name": round_row["division_name"],
+        "round_number": facts.round_number, "division_name": facts.division_name,
     }
     what = (
-        f"{button} of the check-in call for round {round_row['round_number']} "
-        f"of {round_row['division_name']}"
+        f"{button} of the check-in call for round {facts.round_number} "
+        f"of {facts.division_name}"
     )
     await queue.ask(
         CHECK_IN_ANSWER, payload, interaction=interaction, what=what, origin=ChangeOrigin.MEMBER

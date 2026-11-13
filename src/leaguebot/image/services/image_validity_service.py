@@ -1332,7 +1332,7 @@ async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
     text and limped on regardless.
 
     **Why it lives in the image module rather than beside its caller** (#187). Its callers
-    are the pre-flight checks of `results_post_service` and `attendance_service`, and a
+    are the pre-flight checks of `results_post_service` and `attendance_sheet`, and a
     posting service may hand an occasion to the image module and act on what it returns but
     may not read the image module's configuration — the layering
     ``tests/image/test_image_module_flow.py`` holds with

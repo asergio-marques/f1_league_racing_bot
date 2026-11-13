@@ -73,7 +73,7 @@ def _make_cog(
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
     bot.attendance_service = MagicMock()
-    bot.attendance_service.get_or_create_config = AsyncMock(
+    bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=attendance_config
         or SimpleNamespace(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
@@ -256,7 +256,7 @@ async def test_a_disabled_module_s_configuration_is_not_even_read():
     with _weather(cog) as weather_read:
         await cog._approval_windows()
 
-    cog.bot.attendance_service.get_or_create_config.assert_not_awaited()
+    cog.bot.attendance_service.get_config_or_defaults.assert_not_awaited()
     weather_read.assert_not_awaited()
 
 

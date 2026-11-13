@@ -318,7 +318,7 @@ def test_without_a_block_group_the_limit_fields_alone_are_emptied():
         (0, 10, (LIMIT_LABEL_SACK, 10)),
         (6, 0, (LIMIT_LABEL_RESERVE, 6)),
         # Not a state the config commands can produce: each refuses to be set while the other
-        # is active. Auto-sack still wins, because `enforce_attendance_sanctions` tests it
+        # is active. Auto-sack still wins, because `owed_sanctions` tests it
         # first and moves on to the next driver.
         (6, 10, (LIMIT_LABEL_SACK, 10)),
     ],

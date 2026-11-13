@@ -285,3 +285,26 @@ async def test_results_hands_the_review_each_division_s_channel_lines(tmp_path):
             "  Verdicts channel: *(not configured)*",
         ],
     }
+
+
+async def test_verdicts_channels_on_names_each_division_that_has_one(tmp_path):
+    """Division 11 has verdicts channel 700; Am's verdicts channel was cleared to NULL, Club's
+    saved as an empty string, and Rookie has only a results channel. Only division 11's is named,
+    the others being absent."""
+    from leaguebot.results.services.module.division_channels import verdicts_channels_on
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (12, 1, 'Am', 1, 12), (13, 1, 'Club', 1, 13), (14, 1, 'Rookie', 1, 14)"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "penalty_channel_id) VALUES (?, NULL, '700'), (12, NULL, NULL), (13, NULL, ''), "
+            "(14, 800, NULL)",
+            (DIVISION_ID,),
+        )
+        await db.commit()
+
+        assert await verdicts_channels_on(db) == {DIVISION_ID: 700}

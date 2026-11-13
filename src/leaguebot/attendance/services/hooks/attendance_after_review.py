@@ -34,9 +34,15 @@ from typing import Any, TypeVar
 import aiosqlite
 import discord
 
-from leaguebot.attendance.services import attendance_service as _att
-from leaguebot.attendance.services import check_in_record
-from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
+from leaguebot.attendance.services.scoring import (
+    attendance_pardons,
+    attendance_recompute,
+    attendance_scoring,
+)
+from leaguebot.attendance.services.sanctions import attendance_sanctions
+from leaguebot.attendance.services.sheet import attendance_sheet
+from leaguebot.attendance.services.check_in import check_in_record
+from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, PlannedStep, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
@@ -117,7 +123,7 @@ class AttendanceAfterReview:
     ) -> None:
         if not await attendance_enabled_on(db):
             return
-        await _att.record_attendance_from_results_on(db, round_id, division_id)
+        await attendance_scoring.record_attendance_from_results_on(db, round_id, division_id)
         for pardon in pardons:
             await db.execute(
                 "INSERT OR IGNORE INTO attendance_pardons "
@@ -126,7 +132,7 @@ class AttendanceAfterReview:
                 (pardon.attendance_id, pardon.pardon_type, pardon.justification,
                  pardon.grantor_id, now.isoformat()),
             )
-        await _att._recalculate_forward(
+        await attendance_recompute._recalculate_forward(
             self._db_path, round_id, division_id, recompute="none", db=db
         )
 
@@ -140,37 +146,37 @@ class AttendanceAfterReview:
     ) -> None:
         if not await attendance_enabled_on(db):
             return
-        await _att._rewrite_round_pardons_on(db, round_id, list(pardons), now)
+        await attendance_pardons._rewrite_round_pardons_on(db, round_id, list(pardons), now)
 
     async def pardons_of_on(self, db: aiosqlite.Connection, round_id: int) -> Any:
-        return await _att.pardons_of_on(db, round_id)
+        return await attendance_pardons.pardons_of_on(db, round_id)
 
     async def put_back_pardons_on(
         self, db: aiosqlite.Connection, round_id: int, saved: Any
     ) -> None:
         if not await attendance_enabled_on(db):
             return
-        await _att.put_back_pardons_on(db, round_id, saved)
+        await attendance_pardons.put_back_pardons_on(db, round_id, saved)
 
     async def attendance_row_of(
         self, round_id: int, division_id: int, profile_id: int
     ) -> dict[str, Any] | None:
         async with get_connection(self._db_path) as db:
-            return await _att.attendance_row_of(db, round_id, division_id, profile_id)
+            return await attendance_scoring.attendance_row_of(db, round_id, division_id, profile_id)
 
     async def latest_scored_round(self, division_id: int) -> int | None:
         async with get_connection(self._db_path) as db:
-            return await _att.latest_scored_round(db, division_id)
+            return await attendance_scoring.latest_scored_round(db, division_id)
 
     async def recorded_pardons(self, round_id: int) -> list[dict[str, Any]]:
-        return await _att.recorded_pardons(self._db_path, round_id)
+        return await attendance_pardons.recorded_pardons(self._db_path, round_id)
 
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:
         if not await attendance_enabled_on(db):
             return
-        await _att._recalculate_forward(
+        await attendance_recompute._recalculate_forward(
             self._db_path, round_id, division_id, recompute="round", db=db
         )
 
@@ -184,7 +190,7 @@ class AttendanceAfterReview:
     async def recalculation_faults(self, season_id: int, guild: discord.Guild | None) -> list[str]:
         if not await self.enabled():
             return []
-        return await _att.recalculation_faults(
+        return await attendance_recompute.recalculation_faults(
             self._db_path, season_id, guild, self._bot, cancelled_too=True
         )
 
@@ -193,24 +199,24 @@ class AttendanceAfterReview:
     ) -> dict[str, Any] | None:
         if not await self.enabled():
             return None
-        posted = await _att.post_attendance_sheet(
+        posted = await attendance_sheet.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
             as_text=as_text,
         )
-        return _att.sheet_result(posted)
+        return attendance_sheet.sheet_result(posted)
 
     async def record_sheet_on(
         self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
     ) -> None:
         if not await attendance_enabled_on(db):
             return
-        await _att.record_sheet_on(db, division_id, posted)
+        await attendance_sheet.record_sheet_on(db, division_id, posted)
 
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:
         if not await self.enabled():
             return []
-        owed, _signed_off = await _att.owed_sanctions(self._db_path, round_id, division_id)
+        owed, _signed_off = await attendance_sanctions.owed_sanctions(self._db_path, round_id, division_id)
         return owed
 
     async def check_sanction(
@@ -219,16 +225,16 @@ class AttendanceAfterReview:
         if not await self.enabled():
             return
         try:
-            await _att.check_sanction(
+            await attendance_sanctions.check_sanction(
                 self._db_path, self._placement, round_id, division_id, candidate
             )
-        except (_att.SanctionNotApplicable, Refused) as error:
+        except (attendance_sanctions.SanctionNotApplicable, Refused) as error:
             # Worded as a failure the queue stops on, so its notice names what to repair.
             raise StepFailedOnDiscord(str(error)) from None
 
     async def apply_sanction_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int,
-        candidate: dict[str, Any],
+        candidate: dict[str, Any], *, now: datetime,
     ) -> dict[str, Any] | None:
         if not await attendance_enabled_on(db):
             return None
@@ -236,11 +242,11 @@ class AttendanceAfterReview:
         # Sanctions are enforced by a bot that has logged in, which is when it has a user.
         assert bot_user is not None, "sanctions enforced before the bot logged in"
         try:
-            return await _att.apply_sanction_on(
+            return await attendance_sanctions.apply_sanction_on(
                 db, self._placement, round_id, division_id, candidate,
-                actor_id=bot_user.id, actor_name=str(bot_user),
+                actor_id=bot_user.id, actor_name=str(bot_user), now=now,
             )
-        except _att.SanctionNotApplicable as error:
+        except attendance_sanctions.SanctionNotApplicable as error:
             raise StepFailedOnDiscord(str(error)) from None
 
     async def change_sanction_roles(
@@ -274,10 +280,10 @@ class AttendanceAfterReview:
             return None
         from leaguebot.results.services.review import verdict_announcement_service as vas
 
-        autoreserve, autosack = await _att._thresholds(self._db_path)
+        autoreserve, autosack = await attendance_sanctions._thresholds(self._db_path)
         sanction = candidate["sanction"]
         driver_discord_id = int(candidate["driver_user_id"])
-        display_name = await _att._display_name_of(self._db_path, candidate["driver_profile_id"])
+        display_name = await attendance_sanctions._display_name_of(self._db_path, driver_discord_id)
         driver_ref = f"<@{driver_discord_id}>"
         if display_name:
             driver_ref += f" ({display_name})"
@@ -303,4 +309,4 @@ class AttendanceAfterReview:
         return lineup_posting.posted_result(posted)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
-        return await _att.sync_hint(self._db_path, division_id, round_id)
+        return await attendance_sanctions.sync_hint(self._db_path, division_id, round_id)

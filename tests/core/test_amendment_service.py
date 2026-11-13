@@ -110,7 +110,7 @@ def _attendance_as_it_is(league, monkeypatch) -> None:
     recorded as attendance posts it, whichever of the bot's code posts it."""
     from unittest.mock import AsyncMock
 
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.image.services import image_rsvp_post
 
     monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
@@ -1240,7 +1240,7 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     is on, and answers through the real hook the builder hands the approval."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)

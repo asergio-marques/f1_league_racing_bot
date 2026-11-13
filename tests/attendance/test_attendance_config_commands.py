@@ -1,43 +1,28 @@
-"""Every `/attendance config` setter reaches a service method that exists — issue #119.
+"""`/attendance config show`, and the names the setters are typed by — issue #119.
 
 `/attendance config rsvp-absent-penalty` called `update_rsvp_absent_penalty`, a name that
 lived only between migrations 034 and 038. Migration 038 renamed the column back to
-`no_show_penalty` and carried the service with it; the cog was left behind. The command
-acknowledged the interaction and then raised `AttributeError` on every invocation, so the
-penalty a driver pays for accepting a check-in and then not appearing was pinned at its
-enable-time default of 1 for every league, unreachable by any command.
+`no_show_penalty` and carried the service with it; the cog was left behind, and the penalty a
+driver pays for accepting a check-in and then not appearing was unreachable by any command.
 
-Five months of a green suite did not catch it, because nothing here exercised an
-`/attendance config` callback at all: the service end was covered
-(`test_attendance_service.py`), the cog end was not, and the `# type: ignore[attr-defined]`
-on the call kept a type checker quiet too.
+The eight setters are changes on the queue (#285), and what each does — its change, its audit
+entry, its log line, its reply, a value already held, a fault in the save and every refusal — is
+pinned against the real queue in `test_attendance_setting_changes.py`, which drives every one of
+the eight, so the next rename that stops halfway is caught on whichever command it lands. What is
+left here is `config show`, which changes nothing and records nothing, and the setters' names.
 
-**`spec=` is the whole mechanism of these tests.** Every service double is built with
+**`spec=` is the whole mechanism of these tests.** The service double is built with
 `AsyncMock(spec=AttendanceService)`, so calling a method the real service does not define
-raises `AttributeError` instead of being silently recorded. A bare `AsyncMock` would accept
-`update_rsvp_absent_penalty` and pass happily — which is precisely the hole being closed.
-Do not relax the `spec=` to make a future test easier to write.
-
-`set_setting` is the one method set on the double by hand, because it answers from the
-configuration the test gives (#482): it reports a value already held as unchanged and any
-other as a change from the value held, and writes the log line the command forms through the
-router it is handed, as the real service does. Its calls are held to the real method's
-signature by `test_every_config_command_calls_a_method_the_service_defines`.
-
-The coverage is deliberately wider than the one broken command: all eight setters are driven,
-so the next rename that stops halfway is caught on whichever command it lands.
+raises `AttributeError` instead of being silently recorded. Do not relax the `spec=` to make a
+future test easier to write.
 """
 from __future__ import annotations
 
-import inspect
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.models.attendance import AttendanceConfig
-from leaguebot.attendance.services.attendance_service import AttendanceService, SettingChange
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
 SERVER_ID = 9119
 
@@ -45,7 +30,6 @@ SERVER_ID = 9119
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
-
 
 def _config(**overrides) -> AttendanceConfig:
     """A default attendance configuration, with the timing invariant satisfied."""
@@ -63,35 +47,15 @@ def _config(**overrides) -> AttendanceConfig:
     values.update(overrides)
     return AttendanceConfig(**values)
 
-
-def _holding(cfg: AttendanceConfig):
-    """`set_setting` as the service answers it for a server holding *cfg*.
-
-    A value the setting already holds is reported unchanged; any other as a change from the
-    value held. Either way the line the command forms is written through the router it hands
-    in, as the real service writes it in the save.
-    """
-    async def set_setting(column, value, *, router, line, **_kwargs):
-        held = getattr(cfg, column)
-        change = SettingChange(changed=held != value, old=held)
-        line_id = await router.queue_log_on(None, line(change))
-        return SettingChange(changed=change.changed, old=held, line_id=line_id)
-
-    return set_setting
-
-
 def _make_cog(*, cfg: AttendanceConfig | None = None) -> AttendanceCog:
     """An `AttendanceCog` whose bot carries a spec-bound attendance service.
 
-    The module reads as enabled and no season is active, so every command under test runs
-    past its guards and on to the service call the test is actually about.
+    The module reads as enabled and no season is active, so `config show` runs past its guard
+    and on to the read the test is actually about.
     """
     bot = MagicMock()
     bot.attendance_service = AsyncMock(spec=AttendanceService)
     bot.attendance_service.get_config.return_value = cfg if cfg is not None else _config()
-    bot.attendance_service.set_setting = AsyncMock(
-        side_effect=_holding(cfg if cfg is not None else _config())
-    )
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
@@ -100,8 +64,6 @@ def _make_cog(*, cfg: AttendanceConfig | None = None) -> AttendanceCog:
     bot.change_queue.wait_out_the_hold = AsyncMock(return_value=False)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.output_router.queue_log_on = AsyncMock(return_value=1)
-    bot.output_router.deliver_queued = AsyncMock(return_value=None)
     return AttendanceCog(bot)
 
 
@@ -136,85 +98,9 @@ async def _invoke(command, cog: AttendanceCog, interaction, *args) -> None:
     await command.callback.__wrapped__(cog, interaction, *args)
 
 
-@pytest.fixture(autouse=True)
-def audit(monkeypatch) -> AsyncMock:
-    """Any audit entry written through core's audit service, caught rather than written: these
-    tests have no database. The setters' entry is `set_setting`'s to write, beside the value
-    (#482), so a setter that writes one of its own here writes it twice."""
-    record = AsyncMock(return_value=None)
-    monkeypatch.setattr("leaguebot.core.services.queue.audit_service.record_change_on", record)
-    return record
-
-
-def _written(cog: AttendanceCog) -> list[str]:
-    """Every attendance service method the command called, its reads of the configuration
-    aside: what a refused command must leave empty."""
-    return [c[0] for c in cog.bot.attendance_service.method_calls if c[0] != "get_config"]
-
-
-def _set_setting_call(cog: AttendanceCog):
-    """The one `set_setting` call the command made, checked against the real method."""
-    cog.bot.attendance_service.set_setting.assert_awaited_once()
-    call = cog.bot.attendance_service.set_setting.await_args
-    inspect.signature(AttendanceService.set_setting).bind(None, *call.args, **call.kwargs)
-    return call
-
-
-def _lines(cog: AttendanceCog) -> list[str]:
-    """Every line the command wrote to the log channel: posted, or saved with its change."""
-    router = cog.bot.output_router
-    return [str(c.args[0]) for c in router.post_log.await_args_list] + [
-        str(c.args[1]) for c in router.queue_log_on.await_args_list
-    ]
-
-
-#: Every `/attendance config` setter: the command, the value to pass, the column the cog must
-#: ask `set_setting` to write and the value to store. `config show` is excluded — it writes
-#: nothing.
-CONFIG_SETTERS = [
-    (AttendanceCog.config_rsvp_notice, 7, "rsvp_notice_days", 7),
-    (AttendanceCog.config_rsvp_last_notice, 12, "rsvp_last_notice_hours", 12),
-    (AttendanceCog.config_rsvp_deadline, 3, "rsvp_deadline_hours", 3),
-    (AttendanceCog.config_no_rsvp_penalty, 2, "no_rsvp_penalty", 2),
-    (AttendanceCog.config_absent_penalty, 3, "absent_penalty", 3),
-    (AttendanceCog.config_no_show_penalty, 4, "no_show_penalty", 4),
-    (AttendanceCog.config_autosack, 8, "autosack_threshold", 8),
-    (AttendanceCog.config_autoreserve, 5, "autoreserve_threshold", 5),
-]
-
-#: Ids that name the command as a league types it, so a failure reads as the command.
-CONFIG_SETTER_IDS = [
-    "rsvp-notice",
-    "rsvp-last-notice",
-    "rsvp-deadline",
-    "no-rsvp-penalty",
-    "absent-penalty",
-    "no-show-penalty",
-    "autosack",
-    "autoreserve",
-]
-
-
 # ---------------------------------------------------------------------------
-# The defect itself
+# The names
 # ---------------------------------------------------------------------------
-
-
-async def test_the_no_show_penalty_command_writes_the_penalty():
-    """Issue #119: the command called a service method that does not exist.
-
-    Before the fix this raises `AttributeError: Mock object has no attribute
-    'update_rsvp_absent_penalty'` — the same failure a league saw as an interaction that
-    never responded.
-    """
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
-
-    assert _set_setting_call(cog).args == ("no_show_penalty", 4)
-    interaction.followup.send.assert_awaited_once()
-    assert "4" in interaction.followup.send.await_args.args[0]
 
 
 async def test_the_no_show_penalty_command_is_named_for_the_column_it_writes():
@@ -225,210 +111,6 @@ async def test_the_no_show_penalty_command_is_named_for_the_column_it_writes():
     """
     assert AttendanceCog.config_no_show_penalty.name == "no-show-penalty"
 
-
-# ---------------------------------------------------------------------------
-# The general form — the hole #119 fell through
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "command,value,column,expected", CONFIG_SETTERS, ids=CONFIG_SETTER_IDS
-)
-async def test_every_config_command_calls_a_method_the_service_defines(
-    command, value, column, expected
-):
-    """Each setter asks `set_setting` to write its own column, with the manager and the time,
-    and the call fits the real service's method.
-
-    Binding the call to the real signature is what makes this an assertion rather than a
-    formality: a call the service could not take, after a rename, fails here.
-    """
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, value)
-
-    call = _set_setting_call(cog)
-    assert call.args == (column, expected)
-    assert call.kwargs["actor_id"] == 42
-    assert call.kwargs["actor_name"] == str(interaction.user)
-    assert isinstance(call.kwargs["now"], datetime)
-    assert call.kwargs["now"].tzinfo is not None
-
-
-@pytest.mark.parametrize(
-    "command,value,column,expected", CONFIG_SETTERS, ids=CONFIG_SETTER_IDS
-)
-async def test_every_config_command_is_refused_while_the_module_is_disabled(
-    command, value, column, expected
-):
-    """A disabled module writes nothing, whichever setter is used: it refuses before it so much
-    as reads the configuration."""
-    cog = _make_cog()
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, value)
-
-    assert cog.bot.attendance_service.method_calls == []
-    interaction.response.send_message.assert_awaited_once()
-    assert "not enabled" in interaction.response.send_message.await_args.args[0]
-
-
-# ---------------------------------------------------------------------------
-# Rejections — nothing is written when the value is refused
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        AttendanceCog.config_no_rsvp_penalty,
-        AttendanceCog.config_absent_penalty,
-        AttendanceCog.config_no_show_penalty,
-    ],
-    ids=["no-rsvp-penalty", "absent-penalty", "no-show-penalty"],
-)
-async def test_a_negative_penalty_is_refused_and_nothing_is_written(command):
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, -1)
-
-    assert _written(cog) == []
-    interaction.response.send_message.assert_awaited_once()
-    assert "negative" in interaction.response.send_message.await_args.args[0]
-
-
-async def test_the_timing_commands_are_refused_while_a_season_is_active():
-    """Timing cannot move mid-season; the penalties can, and are covered above."""
-    cog = _make_cog()
-    cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=MagicMock())
-    interaction = _interaction()
-
-    await _invoke(AttendanceCog.config_rsvp_deadline, cog, interaction, 3)
-
-    assert _written(cog) == []
-    assert "placements are confirmed" in interaction.response.send_message.await_args.args[0]
-
-
-async def test_a_timing_value_breaking_the_invariant_is_not_written():
-    """Notice × 24 must exceed the last notice; a value that breaks it is refused."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(AttendanceCog.config_rsvp_notice, cog, interaction, 1)
-
-    assert _written(cog) == []
-    interaction.response.send_message.assert_awaited_once()
-
-
-async def test_autosack_is_refused_while_autoreserve_is_set():
-    """The two thresholds are mutually exclusive — one must be cleared before the other is set."""
-    cog = _make_cog(cfg=_config(autoreserve_threshold=5))
-    interaction = _interaction()
-
-    await _invoke(AttendanceCog.config_autosack, cog, interaction, 8)
-
-    assert _written(cog) == []
-    assert "auto-reserve" in interaction.response.send_message.await_args.args[0]
-
-
-@pytest.mark.parametrize(
-    "command,column",
-    [
-        (AttendanceCog.config_autosack, "autosack_threshold"),
-        (AttendanceCog.config_autoreserve, "autoreserve_threshold"),
-    ],
-    ids=["autosack", "autoreserve"],
-)
-async def test_a_threshold_of_zero_disables_it(command, column):
-    """0 is the disable sentinel for both thresholds, stored as NULL.
-
-    The threshold starts set, so that 0 changes it: one already disabled changes nothing.
-    """
-    cog = _make_cog(cfg=_config(**{column: 6}))
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, 0)
-
-    assert _set_setting_call(cog).args == (column, None)
-
-
-# ---------------------------------------------------------------------------
-# The "not configured yet" refusal — issue #208
-# ---------------------------------------------------------------------------
-#
-# Every setter reads the current configuration before writing: the three timing setters to
-# validate against the other two, and all eight to tell a value already held from a change and
-# to audit the value replaced (#482). A league that has not enabled the module has no row, and
-# each must say so rather than reaching `validate_timing_invariant`, or the comparison, with
-# `None` and raising `AttributeError` at the league — the same shape of fault as issue #119.
-
-
-@pytest.mark.parametrize(
-    "command,value,column,expected", CONFIG_SETTERS, ids=CONFIG_SETTER_IDS
-)
-async def test_a_config_command_refuses_a_server_with_no_configuration(
-    command, value, column, expected
-):
-    cog = _make_cog()
-    cog.bot.attendance_service.get_config.return_value = None
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, value)
-
-    assert "No attendance configuration found" in interaction.response.send_message.await_args.args[0]
-
-
-@pytest.mark.parametrize(
-    "command,value,column,expected", CONFIG_SETTERS, ids=CONFIG_SETTER_IDS
-)
-async def test_nothing_is_written_for_a_server_with_no_configuration(
-    command, value, column, expected
-):
-    """The refusal must also be a refusal to write, not merely a message beside a write."""
-    cog = _make_cog()
-    cog.bot.attendance_service.get_config.return_value = None
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, value)
-
-    assert _written(cog) == []
-
-
-# ---------------------------------------------------------------------------
-# The lower bounds on the timing commands
-# ---------------------------------------------------------------------------
-
-
-async def test_an_rsvp_notice_of_less_than_a_day_is_refused():
-    """`attendance_module_specification.md` gives the notice in whole days, so zero days
-    would schedule the call for the round's own moment and there would be nothing to
-    notice."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(AttendanceCog.config_rsvp_notice, cog, interaction, 0)
-
-    assert "at least 1" in interaction.response.send_message.await_args.args[0]
-    assert _written(cog) == []
-
-
-@pytest.mark.parametrize(
-    "command",
-    [AttendanceCog.config_rsvp_last_notice, AttendanceCog.config_rsvp_deadline],
-    ids=["rsvp-last-notice", "rsvp-deadline"],
-)
-async def test_a_negative_number_of_hours_is_refused(command):
-    """Zero is meaningful for both — it disables the last notice, and it makes the deadline
-    the round start — so the bound is below zero, not at it."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, -1)
-
-    assert _written(cog) == []
 
 
 # ---------------------------------------------------------------------------
@@ -505,105 +187,6 @@ async def test_show_is_refused_while_the_module_is_disabled():
     cog.bot.attendance_service.get_config.assert_not_awaited()
 
 
-async def test_setting_autosack_says_it_reaches_every_division_and_names_autoreserve():
-    """Issue #220: a league wanting one division alone must be pointed at autoreserve."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(AttendanceCog.config_autosack, cog, interaction, 8)
-
-    reply = interaction.followup.send.await_args.args[0]
-    assert "every seat in every division" in reply
-    assert "/attendance config autoreserve" in reply
-
-
-# ---------------------------------------------------------------------------
-# Every outcome is recorded in the log channel (#482)
-# ---------------------------------------------------------------------------
-#
-# The core specification's "The record of what changed": every command that acts records its
-# success, its refusal and its failure, and every change to a league's configuration is
-# recorded twice — an audit entry and a log line. A value already held records that nothing
-# changed. `config show` changes nothing and records nothing.
-
-S = AttendanceCog
-
-#: Every way a setter is refused: the command, its name, the value, how the bot stands, and
-#: the reason the line must carry.
-REFUSALS = [
-    *[
-        (command, name, value, {"module": False}, "The Attendance module is not enabled.")
-        for (command, value, _m, _e), name in zip(CONFIG_SETTERS, CONFIG_SETTER_IDS)
-    ],
-    *[
-        (command, name, value, {"season": True}, "Attendance configuration cannot be changed")
-        for command, name, value in [
-            (S.config_rsvp_notice, "rsvp-notice", 7),
-            (S.config_rsvp_last_notice, "rsvp-last-notice", 12),
-            (S.config_rsvp_deadline, "rsvp-deadline", 3),
-        ]
-    ],
-    (S.config_rsvp_notice, "rsvp-notice", 0, {}, "`rsvp_notice_days` must be at least 1."),
-    (S.config_rsvp_last_notice, "rsvp-last-notice", -1, {}, "cannot be negative"),
-    (S.config_rsvp_deadline, "rsvp-deadline", -1, {}, "cannot be negative"),
-    (S.config_no_rsvp_penalty, "no-rsvp-penalty", -1, {}, "Penalty points cannot be negative."),
-    (S.config_absent_penalty, "absent-penalty", -1, {}, "Penalty points cannot be negative."),
-    (S.config_no_show_penalty, "no-show-penalty", -1, {}, "Penalty points cannot be negative."),
-    (S.config_autosack, "autosack", -1, {}, "Threshold cannot be negative."),
-    (S.config_autoreserve, "autoreserve", -1, {}, "Threshold cannot be negative."),
-    *[
-        (command, name, value, {"cfg": None}, "No attendance configuration found.")
-        for (command, value, _m, _e), name in zip(CONFIG_SETTERS, CONFIG_SETTER_IDS)
-    ],
-    (S.config_rsvp_notice, "rsvp-notice", 1, {}, "must be greater than `rsvp_last_notice_hours`"),
-    (S.config_rsvp_last_notice, "rsvp-last-notice", 200, {},
-     "must be greater than `rsvp_last_notice_hours` (200h)"),
-    (S.config_rsvp_deadline, "rsvp-deadline", 30, {},
-     "must be greater than `rsvp_deadline_hours` (30h)"),
-    (
-        S.config_autosack, "autosack", 8, {"cfg": {"autoreserve_threshold": 5}},
-        "Cannot set auto-sack while auto-reserve is active.",
-    ),
-    (
-        S.config_autoreserve, "autoreserve", 5, {"cfg": {"autosack_threshold": 8}},
-        "Cannot set auto-reserve while auto-sack is active.",
-    ),
-]
-
-
-def _refusal_id(case) -> str:
-    _command, name, value, state, _reason = case
-    return f"{name}-{value}-{'-'.join(state) or 'value'}"
-
-
-@pytest.mark.parametrize("case", REFUSALS, ids=[_refusal_id(c) for c in REFUSALS])
-async def test_every_refusal_of_a_setter_is_recorded(case):
-    """A1: each refusal keeps its reply and writes one "⛔ … refused for Name (<@id>) — …" line."""
-    command, name, value, state, reason = case
-    if "cfg" in state and state["cfg"] is None:
-        cog = _make_cog()
-        cog.bot.attendance_service.get_config.return_value = None
-    else:
-        cog = _make_cog(cfg=_config(**state.get("cfg", {})))
-    if state.get("module") is False:
-        cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    if state.get("season"):
-        cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=MagicMock())
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, value)
-
-    interaction.response.send_message.assert_awaited_once()
-    reply = interaction.response.send_message.await_args.args[0]
-    assert reply.startswith("❌")
-    lines = _lines(cog)
-    assert len(lines) == 1
-    assert lines[0].startswith(
-        f"⛔ `/attendance config {name}` refused for Manager (<@42>) — "
-    )
-    assert reason in lines[0]
-
-
 async def test_show_records_nothing_while_the_module_is_disabled():
     """A2: `config show` changes nothing, so its refusal is answered and not recorded."""
     cog = _make_cog()
@@ -614,152 +197,3 @@ async def test_show_records_nothing_while_the_module_is_disabled():
 
     assert "not enabled" in interaction.response.send_message.await_args.args[0]
     cog.bot.output_router.post_log.assert_not_awaited()
-
-
-#: Each setter's success: the command, its name, the configuration it starts from, the value
-#: typed, the column, the value stored and the line's detail.
-SUCCESSES = [
-    (S.config_rsvp_notice, "rsvp-notice", {}, 7, "rsvp_notice_days", 5, 7,
-     "RSVP notice: 7 day(s) (was 5 day(s))"),
-    (S.config_rsvp_last_notice, "rsvp-last-notice", {}, 12, "rsvp_last_notice_hours", 24, 12,
-     "last RSVP reminder: 12 hour(s) (was 24 hour(s))"),
-    (S.config_rsvp_last_notice, "rsvp-last-notice", {}, 0, "rsvp_last_notice_hours", 24, 0,
-     "last RSVP reminder: disabled (was 24 hour(s))"),
-    (S.config_rsvp_deadline, "rsvp-deadline", {}, 3, "rsvp_deadline_hours", 2, 3,
-     "RSVP deadline: 3 hour(s) (was 2 hour(s))"),
-    (S.config_no_rsvp_penalty, "no-rsvp-penalty", {}, 2, "no_rsvp_penalty", 1, 2,
-     "no-RSVP penalty: 2 point(s) (was 1 point(s))"),
-    (S.config_absent_penalty, "absent-penalty", {}, 3, "absent_penalty", 1, 3,
-     "absent penalty: 3 point(s) (was 1 point(s))"),
-    # A penalty of zero stops the charge for that case entirely: it is a value, not a disable
-    # sentinel, so it is written as zero.
-    (S.config_no_show_penalty, "no-show-penalty", {}, 0, "no_show_penalty", 1, 0,
-     "no-show penalty: 0 point(s) (was 1 point(s))"),
-    (S.config_autosack, "autosack", {}, 8, "autosack_threshold", None, 8,
-     "auto-sack threshold: 8 point(s) (was disabled)"),
-    (S.config_autosack, "autosack", {"autosack_threshold": 8}, 0, "autosack_threshold", 8, None,
-     "auto-sack threshold: disabled (was 8 point(s))"),
-    (S.config_autoreserve, "autoreserve", {}, 5, "autoreserve_threshold", None, 5,
-     "auto-reserve threshold: 5 point(s) (was disabled)"),
-    (S.config_autoreserve, "autoreserve", {"autoreserve_threshold": 5}, 0,
-     "autoreserve_threshold", 5, None, "auto-reserve threshold: disabled (was 5 point(s))"),
-]
-
-
-@pytest.mark.parametrize(
-    "command,name,start,value,column,old,new,detail",
-    SUCCESSES,
-    ids=[f"{c[1]}-{c[3]}" for c in SUCCESSES],
-)
-async def test_a_setter_records_its_change_twice(
-    audit, command, name, start, value, column, old, new, detail
-):
-    """A3: a change is handed to `set_setting`, which writes the value and its audit entry in
-    one save, and records one success line with the value it replaced. The cog writes no audit
-    entry of its own."""
-    cog = _make_cog(cfg=_config(**start))
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, value)
-
-    assert _set_setting_call(cog).args == (column, new)
-    audit.assert_not_awaited()
-    assert _lines(cog) == [
-        f"Manager (<@42>) | /attendance config {name} | Success\n  {detail}"
-    ]
-
-
-#: Each setter given the value the default configuration already holds: the command, its name,
-#: the value typed, the column, the value as stored, and the line's detail.
-UNCHANGED = [
-    (S.config_rsvp_notice, "rsvp-notice", 5, "rsvp_notice_days", 5, "RSVP notice: 5 day(s)"),
-    (S.config_rsvp_last_notice, "rsvp-last-notice", 24, "rsvp_last_notice_hours", 24,
-     "last RSVP reminder: 24 hour(s)"),
-    (S.config_rsvp_deadline, "rsvp-deadline", 2, "rsvp_deadline_hours", 2,
-     "RSVP deadline: 2 hour(s)"),
-    (S.config_no_rsvp_penalty, "no-rsvp-penalty", 1, "no_rsvp_penalty", 1,
-     "no-RSVP penalty: 1 point(s)"),
-    (S.config_absent_penalty, "absent-penalty", 1, "absent_penalty", 1,
-     "absent penalty: 1 point(s)"),
-    (S.config_no_show_penalty, "no-show-penalty", 1, "no_show_penalty", 1,
-     "no-show penalty: 1 point(s)"),
-    (S.config_autosack, "autosack", 0, "autosack_threshold", None,
-     "auto-sack threshold: disabled"),
-    (S.config_autoreserve, "autoreserve", 0, "autoreserve_threshold", None,
-     "auto-reserve threshold: disabled"),
-]
-
-
-@pytest.mark.parametrize(
-    "command,name,value,column,stored,detail", UNCHANGED, ids=[c[1] for c in UNCHANGED]
-)
-async def test_a_value_already_held_records_that_nothing_changed(
-    audit, command, name, value, column, stored, detail
-):
-    """A4: the value is handed to `set_setting`, which finds it already held and writes
-    nothing; the cog writes no audit entry and says so, by follow-up, the interaction having
-    been deferred before the save."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(command, cog, interaction, value)
-
-    assert _set_setting_call(cog).args == (column, stored)
-    assert _written(cog) == ["set_setting"]
-    audit.assert_not_awaited()
-    interaction.response.send_message.assert_not_awaited()
-    interaction.followup.send.assert_awaited_once()
-    assert interaction.followup.send.await_args.args[0].startswith("ℹ️ Nothing changed: ")
-    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
-    assert _lines(cog) == [
-        f"Manager (<@42>) | /attendance config {name} | Nothing changed\n  {detail}"
-    ]
-
-
-async def test_a_save_that_raises_is_not_swallowed():
-    """P2: the cog lets the service's error propagate. The setting's log line is written bare,
-    in the setting's save, so a save that raises (its line among the writes) reaches the
-    command's error handling rather than vanishing, with no reply claiming the change and no
-    line sent. Only the four catch-alls the architecture allows may swallow, and a line
-    reporting that nothing went wrong is none of them. That the real save commits nothing when
-    its line cannot be written is `test_attendance_config_record.py`'s to pin."""
-    cog = _make_cog()
-    cog.bot.attendance_service.set_setting = AsyncMock(
-        side_effect=RuntimeError("log channel down")
-    )
-    interaction = _interaction()
-
-    with pytest.raises(RuntimeError, match="log channel down"):
-        await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
-
-    interaction.followup.send.assert_not_awaited()
-    cog.bot.output_router.deliver_queued.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "command,value,column,stored",
-    CONFIG_SETTERS + [(S.config_no_show_penalty, 1, "no_show_penalty", 1)],
-    ids=CONFIG_SETTER_IDS + ["no-show-penalty-held"],
-)
-async def test_a_setter_defers_before_it_saves(command, value, column, stored):
-    """A save can wait on the database longer than Discord gives an interaction to be
-    answered, so each setter defers first: the change, or the value already held, is then
-    answered by follow-up however long the save takes, and never lost to an expired
-    interaction after it stood."""
-    cog = _make_cog()
-    interaction = _interaction()
-    answer = cog.bot.attendance_service.set_setting.side_effect
-    deferred_at_save: list[bool] = []
-
-    async def set_setting(column, value, **kwargs):
-        deferred_at_save.append(interaction.response.defer.await_count == 1)
-        return await answer(column, value, **kwargs)
-
-    cog.bot.attendance_service.set_setting.side_effect = set_setting
-
-    await _invoke(command, cog, interaction, value)
-
-    assert deferred_at_save == [True]
-    interaction.response.defer.assert_awaited_once_with(ephemeral=True)
-    interaction.response.send_message.assert_not_awaited()
-    interaction.followup.send.assert_awaited_once()

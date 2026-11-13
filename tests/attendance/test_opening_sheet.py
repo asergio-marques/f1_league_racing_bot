@@ -43,7 +43,7 @@ async def db_path(tmp_path):
 async def test_the_opening_sheet_is_posted_for_every_division(db_path):
     """Div A and Div B, one round and one seated driver each: each division's opening
     attendance sheet is posted once, under the opening's heading."""
-    from leaguebot.attendance.services import sheet_posting as service
+    from leaguebot.attendance.services.sheet import sheet_posting as service
 
     _season_id, division_ids = await seed_season(db_path, divisions=("Div A", "Div B"))
     attendance = AsyncMock()
@@ -64,7 +64,7 @@ async def test_the_opening_sheet_is_posted_for_every_division(db_path):
 
 async def test_the_opening_sheet_is_drawn_against_the_division_s_first_round(db_path):
     """Not because it stands after it — the grid of rounds is read from the calendar."""
-    from leaguebot.attendance.services import sheet_posting as service
+    from leaguebot.attendance.services.sheet import sheet_posting as service
 
     _season_id, division_ids = await seed_season(db_path)
     async with get_connection(db_path) as db:
@@ -88,7 +88,7 @@ async def test_the_opening_sheet_is_drawn_against_the_division_s_first_round(db_
 
 async def test_a_division_with_no_rounds_posts_no_opening_sheet(db_path):
     """Div A's only round deleted: its opening sheet posts nothing."""
-    from leaguebot.attendance.services import sheet_posting as service
+    from leaguebot.attendance.services.sheet import sheet_posting as service
 
     _season_id, division_ids = await seed_season(db_path)
     async with get_connection(db_path) as db:
@@ -109,7 +109,7 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     """Discord refuses Div A's opening attendance sheet: what the sheet's posting raises (it
     always raises, so it is asked for no `raise_on_failure`) reaches the job, for the queue to
     stop on."""
-    from leaguebot.attendance.services import sheet_posting as service
+    from leaguebot.attendance.services.sheet import sheet_posting as service
     from leaguebot.core.models.change import StepFailedOnDiscord
 
     _season_id, division_ids = await seed_season(db_path)
@@ -128,7 +128,7 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
 async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_path):
     """Div A's final attendance sheet, drawn against its round 2 and retried as text: attendance's
     posting, which always raises, is asked for it as the final classification, and as text."""
-    from leaguebot.attendance.services import sheet_posting as service
+    from leaguebot.attendance.services.sheet import sheet_posting as service
 
     _season_id, division_ids = await seed_season(db_path)
     division_id = division_ids[0]
@@ -136,7 +136,7 @@ async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_
     attendance = AsyncMock(return_value=None)
 
     with patch(
-        "leaguebot.attendance.services.attendance_service.post_attendance_sheet", attendance
+        "leaguebot.attendance.services.sheet.attendance_sheet.post_attendance_sheet", attendance
     ):
         await service.post_final_sheet(
             bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=True

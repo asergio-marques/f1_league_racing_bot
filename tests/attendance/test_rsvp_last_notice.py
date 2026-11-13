@@ -207,7 +207,7 @@ async def _make_bot(db_path: str, *, visible: bool = True) -> MagicMock:
 async def _ask(bot: MagicMock, round_id: int = ROUND_ID) -> None:
     """Ask the queue for *round_id*'s last notice as its timer does, as the bot; run the
     queue."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_last_notice(bot.change_queue, bot.db_path, round_id,
@@ -291,6 +291,29 @@ async def test_every_silent_driver_is_named_not_only_the_first(tmp_path):
     body = _posted(bot)
     assert f"<@{FULL_TIME_A}>" in body
     assert f"<@{FULL_TIME_B}>" in body
+
+
+async def test_the_last_notice_names_the_silent_drivers_in_seat_order(tmp_path):
+    """Both full-time drivers of Alpha are silent, the driver in seat 2 having had their check-in
+    row made before the driver in seat 1's. The notice names seat 1's driver first: the order is
+    the team's seats, as the notice has always given it, never the order the rows were made in."""
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "DELETE FROM driver_round_attendance WHERE driver_profile_id = ?", (FULL_TIME_A,)
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, rsvp_status) VALUES (?, ?, ?, 'NO_RSVP')",
+            (ROUND_ID, DIVISION_ID, FULL_TIME_A),
+        )
+        await db.commit()
+    bot = await _make_bot(db_path)
+
+    await _ask(bot)
+
+    body = _posted(bot)
+    assert body.index(f"<@{FULL_TIME_A}>") < body.index(f"<@{FULL_TIME_B}>")
 
 
 async def test_a_silent_reserve_is_not_named(tmp_path):
@@ -473,7 +496,7 @@ async def _no_call_league(tmp_path):
 
 
 async def _ask_last_notice(league) -> None:
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
     from tests.support.season_league import PRO, round_id

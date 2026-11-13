@@ -22,8 +22,8 @@ clean-up change's own, which this asks of the queue for every due round.
 The two cleanups themselves are tested elsewhere; here they are stubbed, and what is pinned is
 which rounds reach them. Both are asked of the change queue (#439): the forecast's through
 weather's `ask_forecast_clean_up`, patched in `forecast_changes`, and the check-in's through
-attendance's `ask_check_in_clean_up` (slice 6b), patched in `check_in_changes`; these record
-each ask.
+attendance's `ask_check_in_clean_up` (slice 6b), read off the change queue's asks; attendance's
+is run as its "missed check-in clean-ups" start-up step, the queue's clock its moment.
 """
 from __future__ import annotations
 
@@ -33,13 +33,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.weather import wiring as weather_wiring
 
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
+#: The kind the check-in clean-up is asked of the queue under.
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 
 
 async def _make_db(
@@ -49,6 +50,7 @@ async def _make_db(
     round_status: str = "FINAL",
     division_status: str = "ACTIVE",
     season_status: str = "ACTIVE",
+    season_stage: str | None = None,
     forecast: bool = True,
     check_in: bool = True,
     phases: tuple[int, ...] = (3,),
@@ -71,6 +73,9 @@ async def _make_db(
             "VALUES (?, 1, '2026-01-01', ?)",
             (SEASON_ID, season_status),
         )
+        if season_stage is not None:
+            await db.execute("UPDATE seasons SET stage = ? WHERE id = ?",
+                             (season_stage, SEASON_ID))
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, status) "
             "VALUES (?, ?, 'Division 1', 1, 555, ?)",
@@ -112,29 +117,29 @@ async def _recover(
     bot, *, forecast_error: Exception | None = None
 ) -> tuple[list[int], list[int]]:
     """Run the two recoveries in the order the start-up runs them, weather's missed forecast
-    clean-ups and then attendance's missed check-in clean-ups, returning the rounds whose forecast
-    clean-up and whose check-in clean-up they asked the queue for; *forecast_error* makes the
-    forecast clean-up's ask raise."""
+    clean-ups and then attendance's "missed check-in clean-ups" start-up step, as
+    `start_up_steps(bot)` gives it, the queue's clock pinned at the host's moment the rounds are
+    timed from. Returns the rounds whose forecast clean-up and whose check-in clean-up they asked
+    the queue for; *forecast_error* makes the forecast clean-up's ask raise."""
+    from leaguebot.attendance.wiring import start_up_steps
+
     forecasts: list[int] = []
-    check_ins: list[int] = []
 
     async def _forecast(_queue, _db_path, round_id):
         if forecast_error is not None:
             raise forecast_error
         forecasts.append(round_id)
 
-    async def _check_in(_queue, _db_path, round_id, **_kwargs):
-        check_ins.append(round_id)
-
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(return_value=datetime.now(timezone.utc))
     with patch(
         "leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
         new=AsyncMock(side_effect=_forecast),
-    ), patch(
-        "leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
-        new=AsyncMock(side_effect=_check_in),
     ):
         await weather_wiring.recover_missed_forecast_clean_ups(bot)
-        await attendance_wiring.recover_missed_check_in_clean_ups(bot)
+        await dict(start_up_steps(bot))["missed check-in clean-ups"]()
+    check_ins = [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list
+                 if call.args[0] == CHECK_IN_CLEAN_UP]
     return forecasts, check_ins
 
 
@@ -149,6 +154,9 @@ async def _recover(
     pytest.param({"hours_since_start": 24}, id="exactly a day past"),
     # The live jobs outlive the season's completion, and the catch-up does as they would.
     pytest.param({"season_status": "COMPLETED"}, id="a completed season"),
+    # A season awaiting completion is not in an ongoing stage, but its last round's check-in
+    # still comes down a day after the race, as its timer would take it (decided 2026-11-13).
+    pytest.param({"season_stage": "PENDING_COMPLETION"}, id="a season pending completion"),
     # Round 21 started 25 hours ago, its Phase 3 forecast and its call standing, and ended
     # cancelled because every session of it was entered as not held: the catch-up asks both its
     # clean-ups, as for any round a day past (#439, slice 8, Part E; attendance :75; weather :143).
@@ -196,6 +204,25 @@ async def test_a_round_under_a_day_past_is_left_to_its_own_job(tmp_path):
     db_path = await _make_db(tmp_path, hours_since_start=23)
 
     assert await _recover(_bot(db_path)) == ([], [])
+
+
+async def test_the_check_in_clean_up_catch_up_reads_the_queue_s_clock(tmp_path):
+    """Round 21 started two hours ago by the host's clock, its call standing, while the queue's
+    clock, the bot's, stands a day and three hours after its start. Attendance's "missed check-in
+    clean-ups" start-up step judges the round a day past at the queue's clock, and asks the queue
+    for its check-in clean-up."""
+    from leaguebot.attendance.wiring import start_up_steps
+
+    bot = _bot(await _make_db(tmp_path, hours_since_start=2, forecast=False))
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(
+        return_value=datetime.now(timezone.utc) + timedelta(hours=25)
+    )
+
+    await dict(start_up_steps(bot))["missed check-in clean-ups"]()
+
+    assert [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list
+            if call.args[0] == CHECK_IN_CLEAN_UP] == [ROUND_ID]
 
 
 async def test_only_what_is_standing_is_cleaned(tmp_path):
@@ -303,8 +330,75 @@ async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path, caplog):
     assert "forecast cleanup failed" in caplog.text
 
 
-async def test_a_database_it_cannot_read_stops_the_recovery_quietly(tmp_path, caplog):
-    bot = _bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
+def _swept_bot(db_path: str) -> MagicMock:
+    """The bot as the start-up sweep hands it to attendance's step: its change queue asked by an
+    `AsyncMock`, its clock the host's, which the seeded rounds are timed from."""
+    bot = _bot(db_path)
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(return_value=datetime.now(timezone.utc))
+    return bot
 
-    assert await _recover(bot) == ([], [])
-    assert "failed to read the messages still standing" in caplog.text
+
+async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
+    tmp_path,
+):
+    """The database holding the standing check-in calls cannot be opened. Run through the
+    start-up sweep, attendance's "missed check-in clean-ups" step asks no clean-up, and the sweep
+    posts one line to the log channel, its failure line for that step, rather than the fault
+    going to the host's log alone."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import run_attendance_start_up_step
+
+    bot = _swept_bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
+
+    lines, error = await run_attendance_start_up_step(bot, "missed check-in clean-ups")
+
+    assert error is not None
+    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
+    bot.change_queue.ask.assert_not_called()
+
+
+async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
+    tmp_path,
+):
+    """Division 1 has two check-in calls standing: round 21's, raced 25 hours ago, and round
+    22's, raced 30 hours ago. At the restart the queue refuses round 22's clean-up. Run through
+    the start-up sweep, attendance's "missed check-in clean-ups" step still asks round 21's, and
+    the sweep posts one line to the log channel, its failure line for that step; the error the
+    step raised names round 22 alone, with the queue's error."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
+
+    db_path = await _make_db(tmp_path, forecast=False)
+    earlier = datetime.now(timezone.utc) - timedelta(hours=30)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (22, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'FINAL')",
+            (DIVISION_ID, earlier.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages "
+            "(round_id, division_id, message_id, channel_id, posted_at) "
+            "VALUES (22, ?, '901', '700', ?)",
+            (DIVISION_ID, earlier.isoformat()),
+        )
+        await db.commit()
+    bot = _swept_bot(db_path)
+    refused = RuntimeError("the database is locked")
+
+    async def ask(kind, payload, **_):
+        if payload["round_id"] == 22:
+            raise refused
+        return 1
+
+    bot.change_queue.ask = AsyncMock(side_effect=ask)
+
+    lines, error = await run_attendance_start_up_step(bot, "missed check-in clean-ups")
+
+    asked = [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list]
+    assert asked == [22, ROUND_ID]
+    assert round_failures(error, module="attendance") == {22: refused}
+    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]

@@ -259,7 +259,7 @@ async def test_a_module_s_channels_are_gathered_only_by_asking_the_module(db_pat
             id="results",
         ),
         pytest.param(
-            "leaguebot.attendance.services.division_channels", (), (26, 27, 28),
+            "leaguebot.attendance.services.settings.division_channels", (), (26, 27, 28),
             id="attendance",
         ),
         pytest.param(

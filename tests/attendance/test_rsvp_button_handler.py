@@ -63,9 +63,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
+from leaguebot.attendance.cogs.check_in_buttons import handle_rsvp_button
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
     league_bot,
@@ -343,14 +343,19 @@ async def _ignore_answers(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_an_unparseable_button_id_says_so_rather_than_raising(tmp_path):
-    """The id is round-tripped through Discord and comes back as whatever is on the button.
-    A malformed one must not take the interaction down with an unhandled exception."""
+async def test_an_unparseable_check_in_button_id_is_a_fault_not_a_refusal(tmp_path):
+    """The bot writes every check-in button's id itself, so one it cannot read is a fault of the
+    bot's, not anything the driver did: the handler raises, and the view's `on_error` reports it
+    through `report_failure`, as every other fault in a press is reported. It answers the driver
+    nothing and writes no refusal line of its own. An action it does not know stays a refusal
+    (`test_an_unknown_action_says_so`): a button an older version of the bot left behind."""
     interaction = await _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
 
-    await _press(interaction, "nonsense")
+    with pytest.raises(Exception):
+        await handle_rsvp_button(interaction, "nonsense")
 
-    assert "invalid button ID" in _reply(interaction)
+    interaction.response.send_message.assert_not_awaited()
+    assert _logged(interaction) == []
 
 
 async def test_an_unknown_action_says_so(tmp_path):
@@ -667,7 +672,7 @@ async def test_the_call_is_edited_in_place_when_an_answer_changes(tmp_path):
     interaction.client.get_channel = MagicMock(return_value=channel)
 
     with patch(
-        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
+        "leaguebot.attendance.services.check_in.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ):
         await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
@@ -728,8 +733,6 @@ async def _reserve_accepted(db_path, interaction):
 #: Each refusal: its id, when the round starts, who presses, the button's id, what to arrange
 #: first, how the line names the press, and the reason it carries.
 REFUSALS = [
-    ("unparseable", timedelta(days=3), FULL_TIME_PROFILE, "nonsense", None,
-     "a check-in call button", "Internal error: invalid button ID."),
     ("unknown-action", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_maybe_r{ROUND_ID}", None,
      "a check-in call button", "Internal error: unknown action."),
     ("module-off", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_accept_r{ROUND_ID}", _module_off,
@@ -806,7 +809,7 @@ async def test_an_answer_given_is_recorded_with_the_one_it_replaced(tmp_path):
     )
 
     with patch(
-        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
+        "leaguebot.attendance.services.check_in.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ):
         await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
@@ -889,7 +892,7 @@ async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
     )
 
     with patch(
-        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
+        "leaguebot.attendance.services.check_in.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ):
         await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
@@ -1019,7 +1022,7 @@ async def test_answer_rsvp_applies_the_lock_rules(
     """Each lock rule either side of its moment: a full-time driver locks at the deadline, a
     reserve who has accepted at the deadline, any other reserve at the start, and a deadline
     of 0 is the start. A lock is checked before the answer held, as the handler always has."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.check_in.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _seed_answer(db_path, profile, held)
@@ -1035,7 +1038,7 @@ async def test_answer_rsvp_applies_the_lock_rules(
 
 async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
     """An accept is stamped with the `now` it is given, which orders the reserves."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.check_in.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
 
@@ -1048,7 +1051,7 @@ async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
 
 async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_path):
     """Pressing Accept again changes nothing, and leaves a reserve's place in the queue."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.check_in.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     earlier = (NOW - timedelta(days=1)).isoformat()
@@ -1062,7 +1065,7 @@ async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_p
 
 
 async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_path):
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.check_in.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _seed_answer(
@@ -1076,7 +1079,7 @@ async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_pat
 
 
 async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_path):
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.check_in.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
 
@@ -1089,7 +1092,7 @@ async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_pa
 
 async def test_answer_rsvp_reports_an_answer_it_could_not_write(tmp_path):
     """A write that changes no row is reported as not recorded, never as recorded."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
+    from leaguebot.attendance.services.check_in.attendance_config_service import RsvpOutcome
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _ignore_answers(db_path)

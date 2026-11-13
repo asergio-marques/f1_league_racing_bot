@@ -31,8 +31,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.check_in import rsvp_service
+from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
 SERVER_ID = 7714
 SEASON_ID = 1
@@ -229,8 +229,8 @@ async def _ask(bot: MagicMock, step: str) -> list[int]:
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
-    check_in_changes = importlib.import_module("leaguebot.attendance.services.check_in_changes")
-    ask = getattr(check_in_changes, f"ask_check_in_{step}")
+    home = importlib.import_module(f"leaguebot.attendance.services.check_in.check_in_{step}")
+    ask = getattr(home, f"ask_check_in_{step}")
     await ask(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
     await run_queue(bot)
     return [mid for kind, cid, mid in bot.events if kind == "send" and cid == RSVP_CHANNEL_ID]
@@ -297,7 +297,7 @@ async def _queue_bot(db_path: str, *, attendance_enabled: bool) -> Any:
 async def _ask_last_notice(bot: MagicMock) -> list[int]:
     """Ask the queue for the round's last notice as its timer does; run the queue; return the
     ids posted in the check-in channel."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
@@ -375,7 +375,7 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
     """Attendance is off and the round's deadline passed while the bot was down: the restart
     re-arms no button and asks nothing of the queue, and once the queue runs no reserve is
     placed."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+    from leaguebot.attendance.wiring import start_up_steps
     from tests.support.change_queue import change_rows, run_queue
 
     # A deadline already in the past, so the catch-up would fire were it not gated.
@@ -384,7 +384,7 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
     await _seed_embed_message(db_path)
     bot = await _queue_bot(db_path, attendance_enabled=False)
 
-    await recover_rsvp_views_and_deadlines(bot)
+    await dict(start_up_steps(bot))["RSVP views and deadlines"]()
     assert await change_rows(db_path) == [], "a restart asked the queue for a disabled module"
     await run_queue(bot)
 
@@ -397,7 +397,7 @@ async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_pat
     """Attendance is on and the round's deadline passed while the bot was down: the restart
     re-arms the call's buttons and asks the queue for the deadline, placing no reserve itself;
     once the queue runs, the reserve who accepted is placed."""
-    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+    from leaguebot.attendance.wiring import start_up_steps
     from tests.support.change_queue import run_queue
 
     db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
@@ -405,7 +405,7 @@ async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_pat
     await _seed_embed_message(db_path)
     bot = await _queue_bot(db_path, attendance_enabled=True)
 
-    await recover_rsvp_views_and_deadlines(bot)
+    await dict(start_up_steps(bot))["RSVP views and deadlines"]()
 
     bot.add_view.assert_called()
     _, _, distributed = await _counts(db_path)
@@ -434,7 +434,7 @@ def _make_interaction(bot: MagicMock) -> MagicMock:
 
 
 async def test_a_button_press_records_nothing_while_attendance_is_disabled(tmp_path):
-    from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
+    from leaguebot.attendance.cogs.check_in_buttons import handle_rsvp_button
 
     db_path = await _make_db(tmp_path, attendance_enabled=False)
     await _seed_rsvp_rows(db_path, reserve_accepted=False)

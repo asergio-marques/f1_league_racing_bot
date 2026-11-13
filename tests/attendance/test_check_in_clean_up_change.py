@@ -17,7 +17,6 @@ from __future__ import annotations
 import inspect
 from datetime import timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -63,7 +62,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 async def _ask(league: SeasonLeague) -> None:
     """Ask the queue for round 3's clean-up as its timer does; the queue is not run."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
+    from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_in_clean_up
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_clean_up(league.bot.change_queue, league.db_path, ROUND_3,
@@ -235,7 +234,9 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
     """The bot starts again with round 3's clean-up a day past and round 4's call standing for a
     race tomorrow. The restart asks the queue for round 3's clean-up and not round 4's, and
     deletes nothing itself."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_clean_ups
+    import json
+
+    from leaguebot.attendance.wiring import start_up_steps
 
     league = await _league(tmp_path)
     tomorrow = league.clock.now + timedelta(days=1)
@@ -246,15 +247,10 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
         "posted_at) VALUES (?, ?, ?, ?, ?)",
         ROUND_4, PRO, str(ROUND_4_CALL), str(CHECK_IN), league.clock.now.isoformat(),
     )
-    asked: list[int] = []
 
-    async def _record(_queue: Any, _db_path: Any, rid: int, **_kwargs: Any) -> None:
-        asked.append(rid)
+    await dict(start_up_steps(league.bot))["missed check-in clean-ups"]()
 
-    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
-               new=AsyncMock(side_effect=_record)):
-        await recover_missed_check_in_clean_ups(league.bot)
-
+    asked = [json.loads(row["payload"])["round_id"] for row in await _clean_up_changes(league)]
     assert asked == [ROUND_3]
     assert _deleted(league) == []
 
@@ -284,3 +280,31 @@ async def test_the_clean_up_leaves_the_other_round_of_a_double_header_standing(t
     assert {ROUND_4_CALL, ROUND_4_NOTICE} <= set(league.channel(CHECK_IN).messages)
     assert len(await _call_rows(league, ROUND_4)) == 1
     assert not await _cleared(league, ROUND_4)
+
+
+@pytest.mark.parametrize("queue_ran_first", [
+    pytest.param(False, id="the timer asks before the queue runs"),
+    pytest.param(True, id="the timer asks after the queue has run"),
+])
+async def test_a_clean_up_missed_asked_by_the_restart_and_its_timer_takes_down_once(
+    tmp_path, queue_ran_first,
+):
+    """Round 3 was raced 25 hours ago and its clean-up fell due while the bot was down, its timer
+    armed with no lateness limit. The bot comes back: attendance's start-up step for missed
+    clean-ups asks for it, and its timer, firing as the scheduler is resumed, asks for it too,
+    either while the restart's ask still waits on the queue or once the queue has run it. The
+    call (7001), last notice (7002) and announcement (7003) are each deleted once, the round's
+    check-in is marked over, and the queue holds one clean-up change."""
+    from leaguebot.attendance.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+
+    await dict(start_up_steps(league.bot))["missed check-in clean-ups"]()
+    if queue_ran_first:
+        await run_queue(league.bot)
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert sorted(_deleted(league)) == sorted(CALL_MESSAGES)
+    assert await _cleared(league)
+    assert len(await _clean_up_changes(league)) == 1

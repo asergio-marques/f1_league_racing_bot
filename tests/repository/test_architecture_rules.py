@@ -170,15 +170,10 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/wiring.py", "recover_missed_check_in_calls"): (2, PASS["attendance"]),
-    ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
-    ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
-    ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),
@@ -601,11 +596,9 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Each owned by the pass whose handler must first judge a missed event of its kind.
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (1, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["image"]),
     # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`.
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (1, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService._arm_forecast_cleanup"): (1, PASS["weather"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["signup"]),
 }
@@ -808,9 +801,9 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
-    ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
+    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
+    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("results/services/publishing/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
     ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("results/services/standings/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
@@ -1011,12 +1004,9 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
-    ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
     ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
@@ -1532,13 +1522,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_service.py", "apply_sanction"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (3, PASS["attendance"]),
-    ("attendance/services/channel_settings.py", "_channel_setting.check"): (1, PASS["attendance"]),
-    ("attendance/services/check_in_changes.py", "_forget_vanished_call.forget"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
-    ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
     ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
@@ -2168,12 +2151,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
     # Results' pass
     # Attendance's pass
-    ("attendance/services/attendance_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    ("core/services/drivers/placement_service.py", "PlacementService.move_driver"): (1, PASS["attendance"]),
-    ("core/services/drivers/placement_service.py", "PlacementService.sack_driver"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
@@ -2392,7 +2369,7 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
     ),
-    ("attendance/services/test_mode_steps.py", "check_ins_cleared"): (
+    ("attendance/services/hooks/test_mode_steps.py", "check_ins_cleared"): (
         "rounds",
         "reads `rounds.checkin_cleared`, the attendance module's own column",
     ),
@@ -2500,54 +2477,8 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/wiring.py", "recover_missed_check_in_calls"): (4, PASS["attendance"]),
-    ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
-    ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (4, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (1, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.driver_profile_id_for_account"):
-        (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.get_current_embed_message"):
-        (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_display_name_on"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_division_name"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_opening_attendance_rows"):
-        (3, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_recalculate_forward"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_round_grid"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_round_number"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_sanction_facts_on"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_seat_team_field"): (4, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_sheet_rows"): (6, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "distribute_attendance_points"):
-        (9, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"):
-        (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "owed_sanctions"): (9, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "recalculation_faults"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "record_attendance_from_results_full_recompute"):
-        (8, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "record_attendance_from_results_on"):
-        (8, PASS["attendance"]),
-    ("attendance/services/check_in_answer_changes.py", "_facts"): (4, PASS["attendance"]),
-    ("attendance/services/check_in_answer_changes.py", "_left_the_drawing"):
-        (2, PASS["attendance"]),
-    ("attendance/services/check_in_answer_changes.py", "ask_check_in_answer"):
-        (2, PASS["attendance"]),
-    ("attendance/services/check_in_changes.py", "_call_row"): (4, PASS["attendance"]),
-    ("attendance/services/check_in_changes.py", "judge_hand_post"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (3, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "distribution_announcement"): (4, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "query_division_roster"): (3, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "reserve_distribution_on"): (6, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "silent_full_time_drivers"): (4, PASS["attendance"]),
-    ("attendance/services/sanctions_announce_change.py", "ask_sanctions_announce"):
-        (2, PASS["attendance"]),
-    ("attendance/services/sheet_posting.py", "ask_sheet_post"): (1, PASS["attendance"]),
-    ("attendance/services/sheet_posting.py", "sheet_post_change.check"): (2, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
         (2, PASS["image"]),
@@ -3030,11 +2961,6 @@ KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_service.py", "AttendanceService.insert_embed_message_on"):
-        (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "write_distribution_on"): (1, PASS["attendance"]),
-    ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
-    ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
     ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
@@ -3130,12 +3056,13 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
         )
 
 
-# ── 17. A catch-all sits in one of the five places ──────────────────────────────────────────
+# ── 17. A catch-all sits in one of the six places ──────────────────────────────────────────
 
-#: The functions whose catch-all is one of the five places and is not recognised by its shape, for
+#: The functions whose catch-all is one of the six places and is not recognised by its shape, for
 #: good, and why: the failure paths of place 1, the stated exceptions, place 3's guards around
-#: reporting and writing a log line, and the fifth place's handlers (architecture.md, "A catch-all
-#: error handler"). A handler that re-raises, that calls `report_failure`, or that sits
+#: reporting and writing a log line, and the handlers of the fifth and sixth places, work a
+#: specification gives a fallback for and a graphic's drawing riding on a post (architecture.md, "A
+#: catch-all error handler"). A handler that re-raises, that calls `report_failure`, or that sits
 #: directly in the body of a loop needs no entry.
 CATCH_ALLS_ALLOWED = {
     ("core/services/queue/change_queue.py", "ChangeQueue._work_lane"):
@@ -3238,6 +3165,18 @@ CATCH_ALLS_ALLOWED = {
         "review goes on",
     ("core/services/rounds/calendar_post_service.py", "post_division_calendar"):
         "place 5, a calendar that cannot be drawn is posted as text and its fault is the job's line",
+    ("attendance/services/sheet/attendance_sheet.py", "_sheet_attachment"):
+        "place 6, the drawing of the sheet's graphic, which then posts as text, its fault a line "
+        "of the job",
+    ("attendance/services/sheet/attendance_sheet.py", "_round_grid"):
+        "place 6, the track registry the sheet's graphic draws its flags from: a registry that "
+        "cannot be read draws the headings without flags, its fault a line of the job",
+    ("attendance/services/sheet/attendance_sheet.py", "_seat_teams"):
+        "place 6, the team names and shorthands the sheet's graphic draws, read once: teams that "
+        "cannot be read are drawn without names or badges, the fault a line of the job",
+    ("attendance/services/check_in/rsvp_service.py", "_checkin_attachment"):
+        "place 6, the drawing of the check-in call's graphic, which then posts without it, its "
+        "fault a line of the job",
     ("core/services/rounds/calendar_post_service.py", "render_for_command"):
         "place 5, a commanded calendar that cannot be drawn is refused, its fault the review's line",
     ("image/services/image_drawing.py", "ImageDrawing.calendar_wanted"):
@@ -3274,7 +3213,7 @@ def _is_a_report(statement: ast.stmt) -> bool:
 
 def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
     """The catch-all handlers among *nodes*, each ``(file, function, node)``, that are in none of
-    the five places, counted by file and function: a handler of `Exception`, `BaseException` or
+    the six places, counted by file and function: a handler of `Exception`, `BaseException` or
     nothing, that does not end by raising again, does not hold a call of `report_failure` as a
     statement directly in its body, does not sit directly in the body of a `for` or `async for`,
     and whose function is not in `CATCH_ALLS_ALLOWED`."""
@@ -3300,22 +3239,12 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
-#: Today's catch-alls in none of the five places, under the issue that removes each: a module's
+#: Today's catch-alls in none of the six places, under the issue that removes each: a module's
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/wiring.py", "recover_missed_check_in_calls"): (1, PASS["attendance"]),
-    ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (1, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
-    ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (5, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_round_grid"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_seat_team_field"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "_sheet_attachment"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"):
-        (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
@@ -3376,17 +3305,18 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 
-def test_a_catch_all_handler_sits_in_one_of_the_five_places():
-    """A catch-all handler (`except Exception`) is allowed in five places only (architecture.md,
+def test_a_catch_all_handler_sits_in_one_of_the_six_places():
+    """A catch-all handler (`except Exception`) is allowed in six places only (architecture.md,
     "A catch-all error handler"): on a failure path, where `report_failure` is called; around a
     list worked item by item, where it sits directly in the loop's body; around reporting a failure;
-    around a clean-up that raises the error again; and around work a specification gives a fallback
-    for. The shape tells the first, second and fourth; the failure paths of place 1 the shape does
-    not tell, the stated exceptions, place 3's guards around reporting and writing a log line, and
-    the fifth place's handlers are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach,
+    around a clean-up that raises the error again; around work a specification gives a fallback
+    for; and around the drawing of a graphic riding on a post, which falls back to text. The shape
+    tells the first, second and fourth; the failure paths of place 1 the shape does not tell, the
+    stated exceptions, place 3's guards around reporting and writing a log line, and the fifth and
+    sixth places' handlers are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach,
     listed with the issue that will fix it."""
     _check(
-        "a catch-all sits in one of the five places",
+        "a catch-all sits in one of the six places",
         _catch_alls_outside_the_places_among(_nodes()),
         KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES,
     )
@@ -3499,7 +3429,7 @@ def test_a_listed_catch_all_that_is_gone_fails_the_check():
 
     with pytest.raises(AssertionError, match="Breaches fixed but still listed"):
         _check(
-            "a catch-all sits in one of the five places",
+            "a catch-all sits in one of the six places",
             _catch_alls_outside_the_places_among(nodes),
             {(path, "handler"): (1, PASS["core"])},
         )

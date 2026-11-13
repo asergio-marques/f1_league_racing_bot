@@ -813,7 +813,7 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     """Constitution X.6: re-enabling a module starts fresh. A league that set its own
     windows, penalties and thresholds finds the packaged ones after turning the module off
     and on again, through the commands themselves."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from tests.support.change_queue import run_queue
 
     league, cog = await _league(tmp_path, "results")
@@ -838,6 +838,30 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     assert (cfg.no_rsvp_penalty, cfg.absent_penalty, cfg.no_show_penalty) == (1, 1, 1)
     assert cfg.autoreserve_threshold is None
     assert cfg.autosack_threshold is None
+
+
+async def test_enabling_attendance_leaves_the_schema_s_own_defaults(tmp_path):
+    """The packaged values are held once, as the column defaults of `attendance_config`, and the
+    enable's save names none of them: a configuration it writes holds exactly the values the
+    schema declares, so the two cannot drift apart."""
+    from tests.support.change_queue import run_queue
+
+    league, cog = await _league(tmp_path, "results")
+
+    await cog._enable_attendance(_asked(league, "enable"))
+    await run_queue(league.bot)
+
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("PRAGMA table_info(attendance_config)")
+        declared = {row["name"]: row["dflt_value"] for row in await cursor.fetchall()}
+        cursor = await db.execute("SELECT * FROM attendance_config")
+        stored = dict(await cursor.fetchone())
+    for column in (
+        "rsvp_notice_days", "rsvp_last_notice_hours", "rsvp_deadline_hours", "no_rsvp_penalty",
+        "absent_penalty", "no_show_penalty", "autoreserve_threshold", "autosack_threshold",
+    ):
+        default = declared[column]
+        assert stored[column] == (None if default is None else int(default)), column
 
 
 async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off(tmp_path):

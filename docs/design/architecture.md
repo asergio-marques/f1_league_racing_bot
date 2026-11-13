@@ -141,12 +141,15 @@ point, which would then hold every module's registrations and grow with each mod
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
   large, its workflows move into services before it is split. The split keeps the group in one cog:
-  the cog class is composed from one file per subgroup. The cog holds the one group as a class
-  attribute, each subgroup's class declares its subgroup with that group as its parent, and
-  discord.py binds a cog's group to the cog together with every child beneath it, wherever the child
-  was declared. What matters is that the cog holds the parent group, not which class declares the
-  subgroup. A class that has one subclass and shares no behaviour is the price, accepted for keeping
-  each file to one subgroup. A module's commands sit under its own top-level group, never under one
+  the cog class is composed from one file per subgroup. The subgroups are declared together, in the
+  group's own file, in the order a league sees them, and each subgroup's class takes its own as a
+  class attribute. A group's children are kept in the order they join it and Discord is sent them in
+  that order, so declaring them in one file fixes the order whichever subgroup's file a process
+  imports first. The cog holds the one group as a class attribute, and discord.py binds a cog's
+  group to the cog together with every child beneath it, wherever the child was declared. What
+  matters is that the cog holds the parent group, not which class declares the subgroup. A class
+  that has one subclass and shares no behaviour is the price, accepted for keeping each file to one
+  subgroup. A module's commands sit under its own top-level group, never under one
   of core's: `/weather channel`, not `/division weather-channel`. So do its tools for test mode,
   which sit under the module's group and work only while test mode is on, rather than under
   `/test-mode`. A command's name then says which module owns it, and the module's code stays in its
@@ -158,7 +161,8 @@ point, which would then hold every module's registrations and grow with each mod
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
   core's groups as it loads, which works, but leaves a module's commands under names that are
   core's. *Rejected:* a cog for each subgroup, bound to the group by hand, which fights the library
-  for no gain (`steward_module.md` §5).
+  for no gain (`steward_module.md` §5). *Rejected:* each subgroup's class declaring its own, which
+  holds the order only while nothing imports a subgroup's file before the cog.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks
@@ -552,6 +556,15 @@ line writes and the commit; stopping the lane for a setting, which would hold ev
 a fault that either the member cures by asking again (a save rolled back) or that nothing later on
 the lane depends on (a step after it).
 
+One kind of setting is not wholly so: a change that recalculates and posts as `/attendance sync`
+does follows the sync's rule whatever starts it, a setting included. Its cards, lineups and sheets
+are the sync's own jobs and stop the lane where Discord refuses them, for a league manager to Retry
+or a league admin to Discard, since a sanction card lost is worse than a lane held; its check, its
+reads before the save, its save and the roles' job, which the sync's also ends on a fault, end on a
+fault as above. Such a change still declares the tables it writes, as every setting does. What a
+league sees of the exception is the core specification's "How a change is carried out" and the
+README's account of a job that fails stopping its lane, not this file's.
+
 `/bot init` (a change type of its own; see "The record is the queue's") ends on a fault rather than
 stopping the lane, both in its one SAVE step (`Step.on_fault`) and in a check that raises as a
 member's `/bot init` starts (`ChangeType.on_check_fault`): no league admin role is set while no
@@ -825,6 +838,22 @@ second writer.
   refuses a row that contradicts itself (as the season's stage triggers do).
 - Everything else is service code.
 
+**A rule that compares one setting with another is judged by the service that writes the
+setting,** never only in the command. A command may judge it too, to refuse before anything is
+asked, but a change ahead on the queue may have moved the other setting since, so the service
+judges it again as the change starts, in its check (see "Checked before it is queued, and again
+before it runs"; the `Setting` docstring). A timing that must stay shorter than another, or two
+thresholds that must not overlap, are examples.
+
+**A stored copy of a derived figure has one function that recomputes it,** which runs on the
+connection its caller was handed, in one transaction, and a named test pins each caller's use of
+it. A running total kept beside the rows it sums is such a copy. A module's design file names each
+copy it keeps and the function that recomputes it.
+
+*Rejected:* a recompute whose steps each open and commit a connection of their own, which a stop
+leaves right up to one round and stale from the next, with nothing a league can run to repeat it
+(attendance's `_recalculate_forward` docstring).
+
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by rebuilding
 the table, so which rules go in the schema is settled before more tables are added.
 
@@ -889,11 +918,11 @@ convenience: if it were lost, the bot could rebuild every job from the database.
 **Each kind of job's handler decides what happens if it is missed.** When the bot was down at the
 moment a job was due, the handler its module provides for that kind of job (below) decides what
 becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks.
-The handler records a skip on its own module's record of the event (its own table, or its own
-columns on a core table), as a change on the queue like any other, so the late job, or the change it
-asks for, finds nothing due. Every job is to be armed with no limit on how late it may run
-(`misfire_grace_time=None`), so that the scheduler never drops one on its own and its default
-grace never decides; the jobs armed otherwise are those the lateness check in
+Where a skip needs a record, the handler writes it on its own module's record of the event (its
+own table, or its own columns on a core table), as a change on the queue like any other, so the
+late job, or the change it asks for, finds nothing due. Every job is to be armed with no limit on
+how late it may run (`misfire_grace_time=None`), so that the scheduler never drops one on its own
+and its default grace never decides; the jobs armed otherwise are those the lateness check in
 `tests/repository/test_architecture_rules.py` lists. What each kind does when missed is a rule a
 league notices, so it belongs to the specifications (the core specification's "When the bot
 stops", and the stewarding specification's [STW-RST-001] to [STW-RST-003]).
@@ -905,6 +934,12 @@ recovery against another's), and would put a module's rule in core. Each module 
 its turn, and the order a rule gives holds within the module, as [STW-RST-001]'s does for stewarding.
 *Rejected:* declaring for each kind of job whether a missed one runs late or is skipped, for the
 sweep to apply, which puts a module's rule in core.
+
+**A handler of a job armed with no lateness limit judges lateness itself,** against its own due
+moment and the `now` it is handed ("The time is always passed in"), since the scheduler does not,
+and a job caught up by the sweep and the same job fired late take that one judgement. A skip that
+needs no record is the change, or its step, found no longer due and dropped, as any change the bot
+asks is when its work is not due (the host's log says so).
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
@@ -1250,7 +1285,7 @@ everything it covers.
 *Rejected:* a `LeagueCog` base class. It would hold two lines of code, and an error handler added
 to it would switch off the one failure path for every command.
 
-**A catch-all error handler** (`except Exception`) is allowed in only five places, and in the
+**A catch-all error handler** (`except Exception`) is allowed in only six places, and in the
 stated exceptions below them:
 
 1. on one of the failure paths above. That includes a command, button or form that catches
@@ -1291,9 +1326,14 @@ stated exceptions below them:
 5. around work a specification gives a fallback for, as a picture that cannot be drawn is posted or
    shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
    posting it hands back, so that the fallback is recorded where the job's lines go, as the season
-   review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does.
+   review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does;
+6. around the drawing alone of a graphic that rides on a post, where the post then goes out
+   without it (Constitution XIV.7). It differs from the fifth place in holding no post: the catch
+   holds the drawing only, so that a graphic never prevents the post it rides on. The full error
+   goes to the host's log, and the fault is returned as a line of the job that posts, so that the
+   league is told its graphic could not be drawn.
 
-Beyond the five places, a stated exception has a catch-all of its own, each with its reason. The
+Beyond the six places, a stated exception has a catch-all of its own, each with its reason. The
 callback a change type may give for a Discard of a change before it started
 (`ChangeType.on_discarded`) is not a failure path but a stated exception: the catch-all around it
 (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the log
@@ -1493,12 +1533,12 @@ later on its own.
   it, read or set), core reading a module's service on the bot (an attribute `LeagueBot` types
   from a module's package, read from a file of core), SQLite's clock in a statement, a service
   reading the wall clock (the change queue's own default clock is the one place allowed,
-  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
+  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the six places (one that raises again, calls
   `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
   loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
-  1, the stated exceptions, place 3's guards around reporting and writing a log line and the fifth
-  place's handlers), and a save outside a queued change. The job check and the check of cogs
-  handling their own errors are absolute, with no list of breaches left to grow, and the log
+  1, the stated exceptions, place 3's guards around reporting and writing a log line, and the fifth
+  and sixth places' handlers), and a save outside a queued change. The job check and the check of
+  cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
   channel's check holds its six places for good; every other check lists today's breaches, each
   under the work that removes it. The check of a save outside a queued change counts each
   function's `.commit()` and `.executescript()` calls, and a function writing on a handed

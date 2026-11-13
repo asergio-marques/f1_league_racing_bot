@@ -24,7 +24,8 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.attendance.services import rsvp_service
+from leaguebot.attendance.cogs.check_in_buttons import RsvpView
+from leaguebot.attendance.services.check_in import rsvp_service
 from leaguebot.image.services import image_rsvp_post
 from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach
 from tests.support.change_queue import http_error, run_queue, stopped_job
@@ -164,7 +165,7 @@ def test_no_path_that_edits_the_embed_can_reach_the_image_module(function_name):
 
 
 def test_the_button_view_reaches_no_image_module():
-    source = inspect.getsource(rsvp_service.RsvpView)
+    source = inspect.getsource(RsvpView)
     for image_module in _IMAGE_MODULES:
         assert image_module not in source
 
@@ -200,7 +201,7 @@ def _drawing(league: SeasonLeague, tmp_path: Any, monkeypatch: Any) -> AsyncMock
 async def _post_the_call(league: SeasonLeague) -> list[int]:
     """Ask the queue for round 4's call as its timer does and run it; the ids sent in Pro's
     check-in channel."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
@@ -334,7 +335,7 @@ async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeagu
 
 
 async def _run_the_deadline(league: SeasonLeague) -> None:
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_deadline
+    from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_deadline(league.bot.change_queue, league.db_path, ROUND_3,

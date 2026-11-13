@@ -10,7 +10,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.models.team import DefaultTeam, SeatedDriver, TeamInstance
+from leaguebot.core.models.team import DefaultTeam, PlacedDriver, SeatedDriver, SeatHolder, TeamInstance
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.input_validator import NAME, parse_role_mention, parse_user_mention
 
@@ -442,6 +442,89 @@ class TeamService:
         return seated
 
     @staticmethod
+    async def seat_holders_on(db: aiosqlite.Connection, division_id: int) -> list[SeatHolder]:
+        """`seated_drivers_on`, with each driver's profile: the drivers holding a seat of
+        *division_id*, the reserve team's included, a seat held on a placement not yet confirmed
+        counting as empty, read on *db*. It writes nothing and commits nothing."""
+        from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
+
+        cursor = await db.execute(
+            f"""
+            SELECT ts.driver_profile_id, dp.discord_user_id, ti.full_name AS team_name, ti.is_reserve
+            FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+            WHERE ti.division_id = ?
+              AND ts.driver_profile_id IS NOT NULL
+              AND {uncommitted_seat_excluded("ts")}
+            ORDER BY ts.id
+            """,
+            (division_id,),
+        )
+        holders: list[SeatHolder] = []
+        for row in await cursor.fetchall():
+            try:
+                user_id = int(row["discord_user_id"])
+            except (TypeError, ValueError):
+                continue
+            holders.append(
+                SeatHolder(
+                    int(row["driver_profile_id"]), user_id, row["team_name"] or "",
+                    bool(row["is_reserve"]),
+                )
+            )
+        return holders
+
+    @staticmethod
+    async def placed_drivers_on(db: aiosqlite.Connection, division_id: int) -> list[PlacedDriver]:
+        """The drivers whose placement names a seat of a team of *division_id*, the reserve team's
+        included, each as the placement reads, read on *db*; empty for a division with none.
+
+        Where `seated_drivers_on` reads the seat's own occupant, this reads the seat each driver's
+        placement (`driver_season_assignments.team_seat_id`) names, and carries what a module
+        reading by profile needs: the profile, the current account and the driver's state. A driver
+        placed in two divisions is read in each by the seat that division holds. It writes nothing
+        and commits nothing.
+        """
+        cursor = await db.execute(
+            """
+            SELECT dsa.driver_profile_id, dp.discord_user_id, dp.current_state,
+                   ti.full_name AS team_name, ti.name AS team_key, ti.is_reserve
+            FROM driver_season_assignments dsa
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+            WHERE ti.division_id = ?
+            ORDER BY dsa.id
+            """,
+            (division_id,),
+        )
+        return [
+            PlacedDriver(
+                profile_id=int(row["driver_profile_id"]),
+                discord_user_id=int(row["discord_user_id"]),
+                current_state=str(row["current_state"]),
+                team_name=row["team_name"] or "",
+                team_key=row["team_key"] or "",
+                is_reserve=bool(row["is_reserve"]),
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    @staticmethod
+    async def divisions_placed_in_on(
+        db: aiosqlite.Connection, profile_id: int, season_id: int
+    ) -> list[int]:
+        """The divisions of *season_id* the driver *profile_id* is placed in, in id order, read on
+        *db*; empty for a driver placed in none."""
+        cursor = await db.execute(
+            "SELECT division_id FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? ORDER BY division_id",
+            (profile_id, season_id),
+        )
+        return [int(row["division_id"]) for row in await cursor.fetchall()]
+
+    @staticmethod
     async def teams_with_roles_on(db: aiosqlite.Connection) -> list[dict]:
         """`get_teams_with_roles` read on *db*, a connection the caller holds."""
         cursor = await db.execute(
@@ -539,45 +622,54 @@ class TeamService:
         (FR-009). The **server's** default team list is a separate thing and stays sorted
         by name: it is a configuration listing and no ordinal is read from it.
         """
+        async with get_connection(self._db_path) as db:
+            return await self.division_teams_on(db, division_id, committed_only=committed_only)
+
+    @staticmethod
+    async def division_teams_on(
+        db: aiosqlite.Connection, division_id: int, *, committed_only: bool = False
+    ) -> list[dict]:
+        """`get_division_teams` on *db*: the teams of *division_id* with their seats, in insertion
+        order, the reserve team last, read on the connection a caller already holds. It writes
+        nothing and commits nothing."""
         from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
-        async with get_connection(self._db_path) as db:
-            instance_rows = await (
+        instance_rows = await (
+            await db.execute(
+                "SELECT id, name, full_name, max_seats, is_reserve "
+                "FROM team_instances WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
+                (division_id,),
+            )
+        ).fetchall()
+        teams = []
+        for inst in instance_rows:
+            # *committed_only* reads a seat held by a driver whose placement is not yet
+            # confirmed as empty: that driver is outside the championship.
+            seat_rows = await (
                 await db.execute(
-                    "SELECT id, name, full_name, max_seats, is_reserve "
-                    "FROM team_instances WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
-                    (division_id,),
+                    "SELECT ts.seat_number, dp.id AS driver_profile_id, dp.discord_user_id "
+                    "FROM team_seats ts "
+                    "LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id "
+                    + (f"AND {uncommitted_seat_excluded('ts')} " if committed_only else "")
+                    + "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
+                    (inst["id"],),
                 )
             ).fetchall()
-            teams = []
-            for inst in instance_rows:
-                # *committed_only* reads a seat held by a driver whose placement is not yet
-                # confirmed as empty: that driver is outside the championship.
-                seat_rows = await (
-                    await db.execute(
-                        "SELECT ts.seat_number, dp.id AS driver_profile_id, dp.discord_user_id "
-                        "FROM team_seats ts "
-                        "LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id "
-                        + (f"AND {uncommitted_seat_excluded('ts')} " if committed_only else "")
-                        + "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                        (inst["id"],),
-                    )
-                ).fetchall()
-                teams.append({
-                    "id": inst["id"],
-                    "name": inst["name"],
-                    "full_name": inst["full_name"],
-                    "max_seats": inst["max_seats"],
-                    "is_reserve": bool(inst["is_reserve"]),
-                    "seats": [
-                        {
-                            "seat_number": s["seat_number"],
-                            "driver_profile_id": s["driver_profile_id"],
-                            "discord_user_id": s["discord_user_id"],
-                        }
-                        for s in seat_rows
-                    ],
-                })
+            teams.append({
+                "id": inst["id"],
+                "name": inst["name"],
+                "full_name": inst["full_name"],
+                "max_seats": inst["max_seats"],
+                "is_reserve": bool(inst["is_reserve"]),
+                "seats": [
+                    {
+                        "seat_number": s["seat_number"],
+                        "driver_profile_id": s["driver_profile_id"],
+                        "discord_user_id": s["discord_user_id"],
+                    }
+                    for s in seat_rows
+                ],
+            })
         return teams
 
 

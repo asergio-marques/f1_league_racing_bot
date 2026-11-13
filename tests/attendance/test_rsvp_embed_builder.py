@@ -19,7 +19,7 @@ import pytest
 import discord
 
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.attendance.services.rsvp_service import build_rsvp_embed, _STATUS_INDICATOR
+from leaguebot.attendance.services.check_in.rsvp_service import build_rsvp_embed, _STATUS_INDICATOR
 
 
 _FIXED_DT = datetime(2025, 7, 20, 18, 0, 0, tzinfo=timezone.utc)

@@ -252,7 +252,7 @@ async def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
 async def _ask(bot: MagicMock, *, replacing: bool = False) -> None:
     """Ask the queue for round 1's call, as its timer does or, *replacing*, as an amendment
     posts it again; then run the queue."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT,
@@ -663,7 +663,7 @@ async def _second_reserve(db_path: str) -> None:
 
 async def _ask_deadline(bot: MagicMock) -> None:
     """Ask the queue for round 1's deadline as its timer does, and run the queue."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_deadline
+    from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_deadline(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
@@ -866,7 +866,7 @@ async def test_reopening_a_check_in_on_the_connection_handed_commits_nothing(tmp
     Alpha, and a second reserve on standby, both having accepted. Reopening the check-in on a
     connection marks the round not cleared and undoes the distribution, keeping both answers.
     Nothing of it outlasts a rollback."""
-    from leaguebot.attendance.services.rsvp_service import reopen_check_in_on
+    from leaguebot.attendance.services.check_in.rsvp_service import reopen_check_in_on
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
@@ -905,7 +905,7 @@ async def test_clearing_a_round_s_answers_on_the_connection_handed_commits_nothi
     """Round 1's reserve placed in Alpha, a second reserve on standby, both having accepted.
     Clearing the round's check-in answers on a connection deletes both answers, their placements
     with them. Nothing of it outlasts a rollback."""
-    from leaguebot.attendance.services.rsvp_service import clear_check_in_answers_on
+    from leaguebot.attendance.services.check_in.rsvp_service import clear_check_in_answers_on
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:

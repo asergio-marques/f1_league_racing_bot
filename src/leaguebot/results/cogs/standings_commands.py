@@ -14,13 +14,11 @@ from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_server import guild_of
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import season_for_command
-from leaguebot.results.cogs.results_group import RESULTS_GROUP, ResultsSubgroup
+from leaguebot.results.cogs.results_group import STANDINGS_GROUP, ResultsSubgroup
 
 
 class StandingsCommands(ResultsSubgroup):
-    standings_group = app_commands.Group(
-        name="standings", description="Standings commands", parent=RESULTS_GROUP
-    )
+    standings_group = STANDINGS_GROUP
 
     @standings_group.command(name="sync", description="Force a standings repost for a division.")
     @app_commands.describe(division="Division name")

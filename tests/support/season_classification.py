@@ -92,7 +92,7 @@ def classification_posts(standings: Any = None, attendance: Any = None) -> tuple
     return (
         patch("leaguebot.results.services.publishing.results_post_service.produce_standings", standings),
         patch(
-            "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
+            "leaguebot.attendance.services.sheet.attendance_sheet.post_attendance_sheet",
             attendance or AsyncMock(return_value=None),
         ),
     )

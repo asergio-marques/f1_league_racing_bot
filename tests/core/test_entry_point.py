@@ -331,9 +331,9 @@ _CANCELLATION_PARTS = (
      "cancellation_refusal", "results' refusal"),
     ("rounds_called_off", "leaguebot.results.services.submission.result_submission_service",
      "close_called_off_on", "results' close"),
-    ("rounds_called_off", "leaguebot.attendance.services.check_in_changes",
+    ("rounds_called_off", "leaguebot.attendance.services.check_in.check_in_clean_up",
      "take_down_called_off_on", "attendance's take-down"),
-    ("cancellation_notices", "leaguebot.attendance.services.cancellation_notice",
+    ("cancellation_notices", "leaguebot.attendance.services.hooks.cancellation_notice",
      "notices_on", "attendance's check-in notice"),
     ("cancellation_notices", "leaguebot.weather.services.cancellation_notice",
      "notices_on", "weather's forecast note"),
@@ -345,7 +345,7 @@ _CANCELLATION_PARTS = (
 #: Each module's subscriber to a round's timing windows read, as the module names it, and what the
 #: test calls it, in the order the builder signs them up.
 _WINDOWS_PARTS = (
-    ("leaguebot.attendance.services.attendance_service", "round_window", "attendance's window"),
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_window", "attendance's window"),
     ("leaguebot.weather.services.weather_config_service", "round_window", "weather's window"),
 )
 
@@ -355,15 +355,15 @@ _WINDOWS_PARTS = (
 _AMENDMENT_PARTS = (
     ("round_amended", "leaguebot.weather.services.phase_withdrawal", "round_amended_on",
      "weather's withdrawal"),
-    ("round_amended", "leaguebot.attendance.services.check_in_changes", "round_amended_on",
+    ("round_amended", "leaguebot.attendance.services.check_in.check_in_amendment", "round_amended_on",
      "attendance's reopening"),
-    ("round_armed", "leaguebot.attendance.services.check_in_changes", "amendment_posts",
+    ("round_armed", "leaguebot.attendance.services.check_in.check_in_amendment", "amendment_posts",
      "attendance's posts"),
     ("round_armed", "leaguebot.weather.services.forecast_changes", "amendment_posts",
      "weather's posts"),
     ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
      "weather's clean-ups"),
-    ("round_clean_ups_due", "leaguebot.attendance.services.check_in_changes",
+    ("round_clean_ups_due", "leaguebot.attendance.services.check_in.check_in_amendment",
      "amendment_clean_ups", "attendance's clean-ups"),
 )
 
@@ -391,13 +391,13 @@ _SEASON_END_PARTS = (
 #: test calls it, in the order the builder signs them up. Each deletes or re-points the module's
 #: own rows on the delete's connection.
 _DELETE_PARTS = (
-    ("rounds_deleted", "leaguebot.attendance.services.attendance_service", "rounds_deleted_on",
+    ("rounds_deleted", "leaguebot.attendance.services.hooks.attendance_hooks", "rounds_deleted_on",
      "attendance's rounds"),
     ("rounds_deleted", "leaguebot.results.services.module.results_purge_service", "rounds_deleted_on",
      "results' rounds"),
     ("rounds_deleted", "leaguebot.weather.services.forecast_cleanup_service", "rounds_deleted_on",
      "weather's rounds"),
-    ("divisions_deleted", "leaguebot.attendance.services.attendance_service",
+    ("divisions_deleted", "leaguebot.attendance.services.hooks.attendance_hooks",
      "divisions_deleted_on", "attendance's divisions"),
     ("divisions_deleted", "leaguebot.results.services.module.results_purge_service",
      "divisions_deleted_on", "results' divisions"),
@@ -405,11 +405,11 @@ _DELETE_PARTS = (
      "results' season"),
     ("season_deleted", "leaguebot.signup.services.signup_module_service", "season_deleted_on",
      "signup's season"),
-    ("profiles_deleted", "leaguebot.attendance.services.attendance_service",
+    ("profiles_deleted", "leaguebot.attendance.services.hooks.attendance_hooks",
      "profiles_deleted_on", "attendance's drivers deleted"),
     ("profiles_deleted", "leaguebot.results.services.module.results_purge_service",
      "profiles_deleted_on", "results' drivers deleted"),
-    ("profiles_merged", "leaguebot.attendance.services.attendance_service",
+    ("profiles_merged", "leaguebot.attendance.services.hooks.attendance_hooks",
      "profiles_merged_on", "attendance's drivers merged"),
     ("profiles_merged", "leaguebot.results.services.module.results_purge_service",
      "profiles_merged_on", "results' drivers merged"),
@@ -429,7 +429,7 @@ _DELETE_PAYLOADS = {
 _PACK_PARTS = (
     ("leaguebot.signup.services.signup_module_service", "bot_packed_on", "signup's pack"),
     ("leaguebot.weather.services.forecast_cleanup_service", "bot_packed_on", "weather's pack"),
-    ("leaguebot.attendance.services.attendance_service", "bot_packed_on", "attendance's pack"),
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "bot_packed_on", "attendance's pack"),
     ("leaguebot.results.services.module.results_purge_service", "bot_packed_on", "results' pack"),
 )
 
@@ -455,7 +455,7 @@ _TEST_MODE_PARTS = (
 _PLACEMENTS_PARTS = (
     ("leaguebot.results.services.standings.season_standings_posts", "placements_confirmed_on",
      "results' opening standings"),
-    ("leaguebot.attendance.services.sheet_posting", "placements_confirmed_on",
+    ("leaguebot.attendance.services.sheet.sheet_posting", "placements_confirmed_on",
      "attendance's opening sheet"),
 )
 
@@ -465,7 +465,7 @@ _PLACEMENTS_PARTS = (
 _SEASON_COMPLETED_PARTS = (
     ("leaguebot.results.services.standings.season_standings_posts", "season_completed_on",
      "results' final standings"),
-    ("leaguebot.attendance.services.sheet_posting", "season_completed_on",
+    ("leaguebot.attendance.services.sheet.sheet_posting", "season_completed_on",
      "attendance's final sheet"),
 )
 
@@ -843,7 +843,8 @@ _MODULE_STEPS = {
 
 
 #: The module steps whose recovery is a function handed the bot, with where that function
-#: lives and its name: in its module's wiring, or, for results' three recoveries, its services.
+#: lives and its name: in its module's wiring, or, for results' and attendance's three
+#: recoveries each, the module's services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
     "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
@@ -855,10 +856,11 @@ _RECOVERIES_OF_THE_STEPS = {
     "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
     "missed forecast clean-ups": ("leaguebot.weather.wiring",
                                   "recover_missed_forecast_clean_ups"),
-    "missed check-in calls": ("leaguebot.attendance.wiring", "recover_missed_check_in_calls"),
-    "RSVP views and deadlines": ("leaguebot.attendance.wiring",
+    "missed check-in calls": ("leaguebot.attendance.services.check_in.check_in_recovery",
+                              "recover_missed_check_in_calls"),
+    "RSVP views and deadlines": ("leaguebot.attendance.services.check_in.check_in_recovery",
                                  "recover_rsvp_views_and_deadlines"),
-    "missed check-in clean-ups": ("leaguebot.attendance.wiring",
+    "missed check-in clean-ups": ("leaguebot.attendance.services.check_in.check_in_recovery",
                                   "recover_missed_check_in_clean_ups"),
 }
 
@@ -866,7 +868,8 @@ _RECOVERIES_OF_THE_STEPS = {
 #: The steps whose recovery is handed the bot's change queue as well, which a service does not look
 #: up on the bot (architecture.md, "Services stay attached to the bot, and are built in one place").
 _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
-    {"orphaned amend channels", "orphaned submission channels", "missed round starts"}
+    {"orphaned amend channels", "orphaned submission channels", "missed round starts",
+     "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups"}
 )
 
 
@@ -900,8 +903,12 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
     and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
-    step hands its recovery the bot: results' three in results' services, which are also handed the
-    bot's queue, each of the others in its module's wiring. Nothing is posted to the log channel.
+    step hands its recovery the bot: results' three in results' services and attendance's three in
+    `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
+    service does not look the queue up on the bot; each of the others in its module's wiring.
+    The RSVP views' recovery is handed the way to build the check-in buttons too (`view_of`), made
+    by attendance's wiring, so that `LeagueBot` declares no `check_in_view` for it to look up.
+    Nothing is posted to the log channel.
     """
     import importlib
     from contextlib import asynccontextmanager
@@ -1019,6 +1026,14 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     # the one the `results` job's handler is handed.
     [caught_up] = [kwargs for function, _args, kwargs in ran if function == "recover_missed_round_starts"]
     assert caught_up.pop("came_up_at")() == bot.came_up_at
+    # The recovery of the check-in calls' buttons is handed the way to build them, a callable the
+    # wiring makes, rather than looking it up on the bot: core declares no `check_in_view`.
+    [re_armed] = [kwargs for function, _args, kwargs in ran
+                  if function == "recover_rsvp_views_and_deadlines"]
+    assert callable(re_armed.pop("view_of"))
+    from leaguebot.core.utils.league_bot import LeagueBot
+    assert not hasattr(LeagueBot, "check_in_view")
+    assert "check_in_view" not in LeagueBot.__annotations__
     assert ran == [expected[step] for step in order]
     assert lines == []
 
@@ -1178,7 +1193,7 @@ async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, m
 #: in the order the builder signs them up: the order the review reads them in.
 _REVIEW_SECTION_PARTS = (
     ("leaguebot.signup.services.signup_module_service", "review_section", "signup's section"),
-    ("leaguebot.attendance.services.attendance_service", "review_section",
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "review_section",
      "attendance's section"),
     ("leaguebot.results.services.points.season_points_service", "review_section", "results' section"),
     ("leaguebot.weather.services.weather_config_service", "review_section", "weather's section"),

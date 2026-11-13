@@ -42,7 +42,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -193,14 +193,13 @@ class _Posts:
 
 
 async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW) -> _Posts:
-    """Run the command with the clock pinned, against the stand-in queue of `_cog`."""
+    """Run the command against the stand-in queue of `_cog`, the queue's clock, which the cog
+    reads the time from, pinned at *now*."""
     interaction.command = AttendanceCog.post_check_in
     interaction.client = cog.bot
 
-    clock = MagicMock(wraps=datetime)
-    clock.now = MagicMock(return_value=now)
-    with patch("leaguebot.attendance.cogs.attendance_cog.datetime", clock):
-        await undecorate(AttendanceCog.post_check_in)(cog, interaction, division, round)
+    cog.bot.change_queue.now = MagicMock(return_value=now)
+    await undecorate(AttendanceCog.post_check_in)(cog, interaction, division, round)
     return _Posts(cog.bot.change_queue.ask)
 
 
@@ -427,6 +426,24 @@ async def test_it_posts_the_call_for_the_named_round(tmp_path, offset, deadline_
     posts = await _invoke(cog, interaction)
 
     posts.assert_asked_once(interaction)
+
+
+async def test_the_window_is_judged_at_the_queue_s_clock(tmp_path):
+    """Round 1 starts eleven days from now by the host's clock, so its call (five days' notice)
+    is not yet due there; the queue's clock, the bot's, stands ten days on, a day before the
+    round, inside the window. The command judges the window at the queue's clock and asks the
+    queue for the round's call with the manager's interaction."""
+    queue_now = datetime.now(timezone.utc) + timedelta(days=10)
+    db_path = await _make_db(tmp_path, scheduled_at=queue_now + timedelta(days=1))
+    cog = _cog(db_path)
+    cog.bot.change_queue.now = MagicMock(return_value=queue_now)
+    interaction = _interaction()
+    interaction.command = AttendanceCog.post_check_in
+    interaction.client = cog.bot
+
+    await undecorate(AttendanceCog.post_check_in)(cog, interaction, "division 1", 1)
+
+    _Posts(cog.bot.change_queue.ask).assert_asked_once(interaction)
 
 
 async def test_a_call_that_fails_to_post_is_reported_as_failed(tmp_path):

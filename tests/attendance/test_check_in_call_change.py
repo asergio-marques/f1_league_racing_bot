@@ -18,7 +18,7 @@ leaves alone a call already in hand; under test mode it asks none (the #429 rule
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -82,7 +82,7 @@ async def _round_4_in(league: SeasonLeague, delta: timedelta) -> None:
 
 async def _ask(league: SeasonLeague, round_: int = ROUND_4, **kwargs: Any) -> None:
     """Ask the queue for *round_*'s call as its timer does; the queue is not run."""
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, round_,
@@ -111,11 +111,23 @@ async def _call_changes(league: SeasonLeague) -> list[dict[str, Any]]:
 
 
 async def _recover(league: SeasonLeague) -> None:
-    """The restart's step for the calls that fell due while the bot was down; the queue is not
-    started."""
-    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+    """The restart's step for the calls that fell due while the bot was down, attendance's
+    "missed check-in calls" start-up step as `start_up_steps(bot)` gives it, at the queue's
+    moment; the queue is not started."""
+    from leaguebot.attendance.wiring import start_up_steps
 
-    await recover_missed_check_in_calls(league.bot, now=league.clock.now)
+    await dict(start_up_steps(league.bot))["missed check-in calls"]()
+
+
+def timer_of(league: SeasonLeague, kind: str) -> Any:
+    """The handler attendance signs up for the check-in timer *kind* (`rsvp_notice`,
+    `rsvp_last_notice`, `rsvp_deadline` or `rsvp_cleanup`), as the scheduler fires it, handed a
+    round's id."""
+    from leaguebot.attendance.wiring import register_scheduler_callbacks
+
+    register_scheduler_callbacks(league.bot)
+    return [call.args[1] for call in league.bot.scheduler_service.register_timer.call_args_list
+            if call.args[0] == kind][-1]
 
 
 # ---------------------------------------------------------------------------
@@ -144,15 +156,18 @@ async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
 
 async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its_mark(tmp_path):
     """The call's message and channel, and a NO_RSVP row for each of Pro's seated drivers, are
-    saved with the posting job's mark."""
+    saved with the posting job's mark. The queue's clock is moved three minutes on, away from the
+    host's, before the queue runs: the call is recorded as posted at the queue's clock."""
     league = await _call_league(tmp_path)
 
     await _ask(league)
+    league.clock.advance(minutes=3)
     await run_queue(league.bot)
 
     [posted] = _sent(league)
     [row] = await _call_record(league)
     assert (row["message_id"], row["channel_id"]) == (str(posted), str(CHECK_IN))
+    assert datetime.fromisoformat(row["posted_at"]) == league.clock.now
     assert await _answers(league) == {profile_id(LEWIS): "NO_RSVP", profile_id(MAX): "NO_RSVP"}
     [change] = await _call_changes(league)
     [post] = [step for step in await step_rows(league.db_path, change["id"])
@@ -448,3 +463,22 @@ async def test_the_start_up_asks_no_late_call_under_test_mode(tmp_path):
 
     assert await _call_changes(league) == []
     assert _sent(league) == []
+
+
+async def test_a_call_timer_overdue_at_a_restart_under_test_mode_posts_no_late_call(tmp_path):
+    """Test mode is on. Round 4's call fell due two days ago while the bot was down, its
+    check-in deadline still ahead. As the bot starts again the call's timer fires, handed round 4,
+    and the queue runs: no call is posted or recorded, the round's check-in is left open for
+    `/test-mode advance` to post the call in its turn (core spec, "Test mode"), and the queue does
+    not stop."""
+    league = await _call_league(tmp_path)
+    await league.set_test_mode(True)
+
+    await timer_of(league, "rsvp_notice")(ROUND_4)
+    await run_queue(league.bot)
+
+    assert _sent(league) == []
+    assert await _call_record(league) == []
+    [round_] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", ROUND_4)
+    assert round_["checkin_cleared"] == 0
+    assert await stopped_job(league.db_path) is None

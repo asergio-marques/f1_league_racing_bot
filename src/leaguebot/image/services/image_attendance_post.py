@@ -1,6 +1,6 @@
 """Post a division's attendance sheet as a graphic (041, US2).
 
-**This module renders and never posts.** ``attendance_service.post_attendance_sheet`` owns the
+**This module renders and never posts.** ``attendance_sheet.post_attendance_sheet`` owns the
 posting — one send site, the replacement produced and posted before the message it replaces
 is deleted (Constitution XIV.8; the deletion is the change queue's job after the post) — and this
 hands it a file to attach. That is the
@@ -12,7 +12,7 @@ A failed render therefore needs no fallback machinery at all: it returns ``None`
 send site posts the textual sheet it would have posted anyway.
 
 **The sheet never gates a sanction** (XIV.7). Nothing in this module is reached before
-``enforce_attendance_sanctions``; the graphic is downstream of every state change it depicts and
+`owed_sanctions` and `apply_sanction_on` have saved the sanctions; the graphic is downstream of every state change it depicts and
 is never a precondition of one.
 """
 from __future__ import annotations

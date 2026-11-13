@@ -30,7 +30,8 @@ the graphics; `send_notice` and `delete_notice` are what those jobs call.
 **`send_notice` is also the season review's posting point** (`season_review_changes`): its
 pictures, report sections and question are sent through it with their other parts (*parts*), so
 that core keeps one send of its own rather than a second beside it for the review alone.
-`edit_notice` edits a notice in place; no job of the bot edits one yet.
+`edit_notice` edits a notice in place: the check-in call is, as drivers answer and when its
+buttons come off at the deadline.
 
 A cancellation's own notice is posted and found through `cancellation_notice_service`
 (`post_cancellation_notice`, `require_division`), core's own part of a cancellation, not through
@@ -47,8 +48,10 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 
 @posts_in_a_job
-async def send_notice(channel, text: str, *, mentions: discord.AllowedMentions, **parts):
+async def send_notice(channel, text: str | None, *, mentions: discord.AllowedMentions, **parts):
     """Send the notice *text* to *channel* and give the message, raising whatever Discord raises.
+    *text* is None for a notice that is its parts alone, the check-in call's embed with no role to
+    mention.
 
     *mentions* says whom the notice may notify, and is required: a caller that wants nobody
     notified says so with ``AllowedMentions.none()``. *parts* are the message's other parts (a

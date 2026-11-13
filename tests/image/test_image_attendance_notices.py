@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.image.services import image_attendance_post, image_rsvp_post
 from leaguebot.image.services.image_attendance_service import (
     DriverRecord,
@@ -146,12 +146,12 @@ def test_neither_hook_can_post_into_a_channel_a_driver_reads():
 
 def test_the_sheet_reports_its_notices_before_it_returns_an_attachment():
     """A degradation must be reported even on the path that succeeds."""
-    source = inspect.getsource(attendance_service._sheet_attachment)
+    source = inspect.getsource(attendance_sheet._sheet_attachment)
     assert source.index("report_notices(") < source.index("return discord.File")
 
 
 def test_the_sheet_report_names_the_division_and_the_round():
-    source = inspect.getsource(attendance_service._sheet_attachment)
+    source = inspect.getsource(attendance_sheet._sheet_attachment)
     assert "division_name" in source and "round_number" in source
     assert "attendance after round" in source
 
@@ -166,13 +166,13 @@ def test_the_call_report_names_the_division_and_the_round():
 
 def test_the_live_sheet_path_reads_the_nationality_switch():
     """Without this the suppression is unreachable in production (FR-031)."""
-    source = inspect.getsource(attendance_service._sheet_attachment)
+    source = inspect.getsource(attendance_sheet._sheet_attachment)
     assert "_nationality_collected" in source
     assert "nationality_collected=" in source
 
 
 def test_the_live_sheet_path_resolves_names_through_the_shared_convention():
-    source = inspect.getsource(attendance_service._sheet_attachment)
+    source = inspect.getsource(attendance_sheet._sheet_attachment)
     assert "_driver_names" in source
     assert "_nationalities" in source
 
@@ -186,12 +186,12 @@ async def test_the_seat_lookup_survives_an_unreadable_database(tmp_path):
     directory pytest ran from — so the lookup met an empty database rather than none at all.
     """
     absent = tmp_path / "absent" / "no-such.db"
-    result = await attendance_service._seat_team_names(str(absent), 7, [1, 2])
-    assert result == {}
+    result = await attendance_sheet._seat_teams(str(absent), 7, [1, 2])
+    assert result == ({}, {})
     assert not absent.exists()
 
 
 @pytest.mark.asyncio
 async def test_the_seat_lookup_is_empty_for_no_drivers(tmp_path):
     absent = tmp_path / "absent" / "no-such.db"
-    assert await attendance_service._seat_team_names(str(absent), 7, []) == {}
+    assert await attendance_sheet._seat_teams(str(absent), 7, []) == ({}, {})
