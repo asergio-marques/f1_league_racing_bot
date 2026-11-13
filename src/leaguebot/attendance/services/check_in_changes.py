@@ -1103,6 +1103,7 @@ def check_in_steps(
         # The check-in graphic is drawn once, on the first try (Constitution XIV r8): a retry
         # posts the text. It is the one generation call of the module (XIV.17).
         attachment = None
+        faults: list[str] = []
         if ctx.tries == 0:
             attachment = await rsvp_service._checkin_attachment(
                 ctx.bot,
@@ -1117,6 +1118,7 @@ def check_in_steps(
                 track_name=row["track_name"],
                 race_name=row["track_gp_name"],
                 country_name=row["track_country"],
+                faults=faults,
             )
         try:
             posted_id = await post_standing(
@@ -1160,7 +1162,10 @@ def check_in_steps(
                 })
                 for message_id, channel_id in _earlier_messages(coming_down)
             )
-        lines: tuple[str, ...] = ()
+        lines: tuple[str, ...] = tuple(
+            f"**{division}** — check-in call of round {row['round_number']}: {fault}"
+            for fault in faults
+        )
         if ctx.actor_id is not None and ctx.kind == CHECK_IN_CALL:
             # Only the call's own change was asked by the command: an amendment that borrows this
             # step to repost the call has its own line, and nobody ran /attendance post-check-in.

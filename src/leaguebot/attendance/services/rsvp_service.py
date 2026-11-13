@@ -254,12 +254,17 @@ async def _checkin_attachment(
     track_name,
     race_name,
     country_name,
+    faults: list[str] | None = None,
 ):
     """The check-in graphic to attach, or None to post the call without one.
 
     Every failure returns None and the call posts exactly as the textual flow composes it —
     role mention, embed, three buttons — because a graphic that displaces nothing has no text
     to restore (XIV.7). The round's attendance rows are opened afterwards either way.
+
+    The full error of each fault goes to the host's log, and a clause saying what was left out is
+    added to *faults*, if given, for the call's job to write as a line (architecture.md, "Errors
+    and failures", place 6).
     """
     try:
         from leaguebot.image.services.image_rsvp_post import try_attach
@@ -272,6 +277,10 @@ async def _checkin_attachment(
                 "_checkin_attachment: the RSVP deadline could not be read for division %d, so the "
                 "check-in graphic is drawn without it", division_id, exc_info=True,
             )
+            if faults is not None:
+                faults.append(
+                    "the deadline could not be read, so the check-in graphic is drawn without it"
+                )
 
         return await try_attach(
             bot,
@@ -291,6 +300,8 @@ async def _checkin_attachment(
             "_checkin_attachment: the check-in graphic could not be drawn for division %d: %s",
             division_id, exc, exc_info=True,
         )
+        if faults is not None:
+            faults.append(f"the graphic could not be drawn, so the call is posted without it: {exc}")
         return None
 
 
