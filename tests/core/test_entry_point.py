@@ -873,6 +873,11 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the RSVP recovery looks the check-in view up on the bot rather than being "
+           "handed it by wiring's step",
+)
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read
@@ -906,6 +911,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in_recovery`, each of these six also handed the bot's queue, since a
     service does not look the queue up on the bot; each of the others in its module's wiring.
+    The RSVP views' recovery is handed the way to build the check-in buttons too (`view_of`), made
+    by attendance's wiring, so that `LeagueBot` declares no `check_in_view` for it to look up.
     Nothing is posted to the log channel.
     """
     import importlib
@@ -1024,6 +1031,14 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     # the one the `results` job's handler is handed.
     [caught_up] = [kwargs for function, _args, kwargs in ran if function == "recover_missed_round_starts"]
     assert caught_up.pop("came_up_at")() == bot.came_up_at
+    # The recovery of the check-in calls' buttons is handed the way to build them, a callable the
+    # wiring makes, rather than looking it up on the bot: core declares no `check_in_view`.
+    [re_armed] = [kwargs for function, _args, kwargs in ran
+                  if function == "recover_rsvp_views_and_deadlines"]
+    assert callable(re_armed.pop("view_of"))
+    from leaguebot.core.utils.league_bot import LeagueBot
+    assert not hasattr(LeagueBot, "check_in_view")
+    assert "check_in_view" not in LeagueBot.__annotations__
     assert ran == [expected[step] for step in order]
     assert lines == []
 
