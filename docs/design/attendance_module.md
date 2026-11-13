@@ -87,12 +87,12 @@ the pardons and the penalties set) and `total_points_after` (the driver's runnin
 round). A driver's total is the sum of their rounds, but the sheet and the sanctions read the copy,
 so a copy left behind would publish a figure worked out from an old one.
 
-One function recomputes them, `attendance_recompute._recalculate_forward`: it rebuilds the round
-asked, as much of its `attended` flags as the caller asks for (`recompute`: `"all"`, `"round"` or
-`"none"`, its docstring says what each leaves alone), distributes the points of the round and carries
-the total through every finalised round after it, **on the connection its caller was handed and in
-one transaction**, so that a stop leaves the copies of all the rounds as they were or all of them
-carried. Three callers use it, and a named test pins each caller's use:
+One function recomputes them, as `architecture.md`'s "The database" has a stored copy kept:
+`attendance_recompute._recalculate_forward`. It rebuilds the round asked, as much of its `attended`
+flags as the caller asks for (`recompute`: `"all"`, `"round"` or `"none"`, its docstring says what
+each leaves alone), distributes the points of the round and carries the total through every
+finalised round after it, so that a stop leaves the copies of all the rounds as they were or all of
+them carried. Its three callers:
 
 | Caller | Mode | Pinned by |
 |---|---|---|
@@ -103,22 +103,22 @@ carried. Three callers use it, and a named test pins each caller's use:
 Neither the recompute nor the distribution it calls opens a connection or commits: each is handed
 the save's, so a call handed none is refused by the type check and not lost on close.
 
-*Rejected:* one total for the season in place of a total at each round. The sum was once taken over
-every other finalised round, which wrote the whole season's figure onto the round recomputed and
-onto every round the carry then touched; each round's copy is kept so that a figure that looks wrong
-can be traced round by round, which a flattened one cannot be (`distribute_attendance_points`'
-docstring).
+*Rejected:* one total for the season in place of a total at each round: each round's copy is kept
+so that a figure that looks wrong can be traced round by round, which a flattened one cannot be
+(`distribute_attendance_points`' docstring). *Rejected:* a recompute whose steps each open and
+commit a connection of their own, which a stop leaves right up to one round and stale from the
+next (`_recalculate_forward`'s docstring).
 
 ### The packaged defaults are written once
 
-The module's packaged settings are the column defaults of `attendance_config`. The switch-on's
-save writes `INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1, 1)`, naming the
+The module's packaged settings are the column defaults of `attendance_config`. The switch-on's save
+writes `INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1, 1)`, naming the
 flag alone and leaving the eight values to the schema, so a module turned off and on again starts
 from the packaged values, not from the ones it was left with, and the defaults live in one place.
 `get_config_or_defaults` reads the same defaults off the schema where no row is stored, so a read
-creates no row. A read hook, the window core asks for when a round is armed, is a reader and
-writes nothing (`attendance_hooks.round_window`).
-Pinned by `test_re_enabling_attendance_starts_from_the_packaged_defaults`,
+creates no row. A read hook, the window core asks for when a round is armed, is a reader and writes
+nothing (`attendance_hooks.round_window`). Pinned by
+`test_re_enabling_attendance_starts_from_the_packaged_defaults`,
 `test_enabling_attendance_leaves_the_schema_s_own_defaults` and
 `test_reading_a_round_s_window_writes_nothing`.
 
@@ -175,16 +175,16 @@ table names a service by its file.
 `check_in_changes` holds the call, its last notice, its deadline and its clean-up in one file: they
 share one record, the call's row.
 
-**Every service is module functions** but two classes. `AttendanceService` carries the database
-path and the reads and writes of the check-in's own rows. `AttendanceAfterReview` carries the bot
-(for Discord) and the services results' protocol needs, and implements it. `LeagueBot` holds them as
-`attendance_service` and `attendance_after_review`; every other service is a function handed what
-it needs when the builder registers it. The jobs and the hooks are handed
-the services they use (`architecture.md`, "Services stay attached to the bot"), so that a job never
-looks one up on the bot, and a function that needs Discord is handed the bot for that.
+**Every service is module functions** but two classes. `AttendanceService` carries the database path
+and the reads and writes of the check-in's own rows. `AttendanceAfterReview` carries the bot (for
+Discord) and the services results' protocol needs, and implements it. `LeagueBot` holds them as
+`attendance_service` and `attendance_after_review`; every other service is a function handed what it
+needs when the builder registers it. The jobs and the hooks are handed the services they use
+(`architecture.md`, "Services stay attached to the bot"), so that a job never looks one up on the
+bot, and a function that needs Discord is handed the bot for that.
 
-`derive_checkin_deadline`, the moment a round's check-in closes, stays in `attendance_config_service`,
-where the image module draws the deadline from it.
+`derive_checkin_deadline`, the moment a round's check-in closes, stays in
+`attendance_config_service`, where the image module draws the deadline from it.
 
 ### The cog
 
@@ -197,12 +197,12 @@ carrying the value, and the rules that compare one setting with another are the 
 change is carried out", below).
 
 The check-in's buttons are the cog layer's too. `RsvpView` and its buttons sit beside
-`handle_rsvp_button`, the one function that reads the id a button carries (`rsvp_{action}_r{round_id}`,
-written in `_RsvpButton` and read in `handle_rsvp_button`, the only two places that know the
-format). A service that posts or redraws a call is handed a way to build the view
-(`CheckInViewFactory`), by `wiring`, as a service may not import a cog. The entry point registers
-one `RsvpView` as a stub, and the start-up step "RSVP views and deadlines" arms the view of each
-standing call.
+`handle_rsvp_button`, the one function that reads the id a button carries
+(`rsvp_{action}_r{round_id}`, written in `_RsvpButton` and read in `handle_rsvp_button`, the only
+two places that know the format). A service that posts or redraws a call is handed a way to build
+the view (`CheckInViewFactory`), by `wiring`, as a service may not import a cog. The entry point
+registers one `RsvpView` as a stub, and the start-up step "RSVP views and deadlines" arms the view
+of each standing call.
 
 ### The wiring and the models
 
@@ -213,8 +213,8 @@ for each hook several modules join, `register_change_types`, `register_scheduler
 function of `check_in_recovery`, handed the bot and its queue, and every `now` a change type or a
 hook is handed is the queue's clock (`bot.change_queue.now`).
 
-`attendance/models/` holds plain data: the four dataclasses of the tables, and `RecoveryFailed` (below,
-"Errors and failures").
+`attendance/models/` holds plain data: the dataclasses of four of its tables, the names of the
+check-in's four kinds of change, and `RecoveryFailed` (below, "Errors and failures").
 
 ---
 
@@ -249,17 +249,15 @@ clock; a value already held writes nothing and says so. The refusals are the che
 command's order and words, made at the ask and again as the change starts, since a change ahead of
 it may have moved the season or another setting on.
 
-**The rules that compare one setting with another are the service's**, as `architecture.md`, "Where a
-rule goes", has it: the timing invariant (the first notice before the last, the last before the
-deadline: `validate_timing_invariant`) and the exclusion of autosack and autoreserve. The command
-may refuse first, but the change judges them again in its check as it starts, since a change ahead
-of it on the queue may have moved the other setting; settings run one at a time on the lane, so
-what the check reads is what the save finds. The refusal of a timing once a season's placements are
-confirmed compares no setting and is the change's check too. Pinned by
-`test_set_setting_refuses_a_timing_that_breaks_the_invariant`,
+**The rules that compare one setting with another are the service's** (`architecture.md`, "Where
+a rule goes"): the timing invariant (the first notice before the last, the last before the
+deadline: `validate_timing_invariant`) and the exclusion of autosack and autoreserve, judged in the
+setting's check; settings run one at a time on the lane, so what the check reads is what the save
+finds. The refusal of a timing once a season's placements are confirmed compares no setting and is
+the change's check too. Pinned by `test_set_setting_refuses_a_timing_that_breaks_the_invariant`,
 `test_set_setting_refuses_an_autosack_and_autoreserve_that_overlap` and
-`test_set_setting_refuses_a_timing_change_once_a_season_is_confirmed`. A threshold of 0 is carried as
-`None`, as the column stores it.
+`test_set_setting_refuses_a_timing_change_once_a_season_is_confirmed`. A threshold of 0 is carried
+as `None`, as the column stores it.
 
 ### The sync is one change
 
@@ -269,12 +267,12 @@ are ordered by what each may fail at:
 1. **The reserve's capacity,** read before the save, because the guards an autoreserve's move meets
    read templates off the loop, which a save may not wait on. It concerns the team and not the
    driver, so one answer serves every autoreserve of the run.
-2. **One save:** every finalised round from the one named is recalculated from its results
+2. **One save:** the rounds the specification names are recalculated from their results
    (`recompute="all"`), then the sanctions the latest of them owes are applied, through core's
-   placement functions on the same connection, so a stop leaves both done or neither. Who is owed is
-   read there, on the totals just written. A sanction that cannot apply is named and the next
-   driver taken (`SanctionNotApplicable`): the sync is the recovery for sanctions that did not all
-   apply, so one that cannot never stops the others, and the change still finishes.
+   placement functions on the same connection, so a stop leaves both done or neither. Who is owed
+   is read there, on the totals just written. A sanction that cannot apply is named and the next
+   driver taken (`SanctionNotApplicable`, or core's `Refused`), as the specification's
+   "Resynchronising attendance" has it.
 3. **The roles** of each driver sanctioned, ending on a fault rather than stopping the lane: the
    sanction stands, and the fault goes to the host's log.
 4. **The cards, the lineups and the sheets,** results', core's and attendance's own jobs, which stop
@@ -282,27 +280,25 @@ are ordered by what each may fail at:
 5. **The closing line,** written last, so that it carries what a discard left undone.
 
 The cards, lineups and sheets are jobs of the change and not work done after it, so a stop between
-the sanctions and their cards is finished by the queue when the bot is back, and **a second sync
-announces nothing already announced**: a driver sacked is no longer owed a sanction and one already
-in Reserve is passed over, so it plans no card. Pinned by
-`test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart` and
+the sanctions and their cards is finished by the queue when the bot is back. A second sync plans no
+card for what the first announced, since what it owes is read off the placements the first saved.
+Pinned by `test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart` and
 `test_a_second_sync_announces_nothing_already_announced`.
 
-The command's refusals are the check's: the module on, the season ongoing (`ONGOING_STAGES`), no
-amendment open in the division, the round's penalties approved, the channels reachable. The command
-makes them before it asks; the change makes them again as it starts, and one it now fails ends
-refused and the lane goes on.
+The command's refusals (the specification's "Resynchronising attendance") are the change's check
+(`sync_verdict`), made before the ask and again as the change starts.
 
 ### The answer is judged when it is pressed
 
 A press asks `attendance.check_in.answer`, and **the lock is judged at the moment the press was
 made, never at the moment its turn comes** (Constitution XIII). A driver who pressed in time has
-answered in time, though the queue reaches the press after the deadline. The check judges it as it is
-asked and again as it starts; the save judges it a third time with the write (`answer_rsvp_on`), on
-the answer the driver then holds, since that decides the lock of a reserve who has accepted. One
+answered in time, though the queue reaches the press after the deadline. The check judges it as it
+is asked and again as it starts; the save judges it a third time with the write (`answer_rsvp_on`),
+on the answer the driver then holds, since that decides the lock of a reserve who has accepted. One
 change at a time on the lane is what makes the second press wait for the first. A burst of answers
 to one call makes one redraw: the answer whose turn comes with a later one to the same call in hand
-leaves the drawing to that one. Pinned by `test_an_answer_pressed_before_the_lock_counts_though_it_runs_after`,
+leaves the drawing to that one. Pinned by
+`test_an_answer_pressed_before_the_lock_counts_though_it_runs_after`,
 `test_an_answer_pressed_after_the_lock_is_refused` and `test_a_double_press_makes_one_redraw`.
 
 The maintainer's form asks the same kind with every entry of a paste, judged by no lock, as a
@@ -314,8 +310,9 @@ A discard of a job lets the queue go on past a stop, so a job whose dropping wou
 wrong is refused its discard and moved only by a retry. Two of attendance's are: `distribute`, which
 places the reserves (dropped, they would never be placed) and `mark_cleared`, which marks the
 round's check-in over (dropped, the next restart would take the round's answers for a call whose
-messages had not been cleared and delete them). Pinned by `test_placing_the_reserves_cannot_be_discarded`
-and `test_marking_the_check_in_over_cannot_be_discarded`. A refused announcement, lock or deletion
+messages had not been cleared and delete them). Pinned by
+`test_placing_the_reserves_cannot_be_discarded` and
+`test_marking_the_check_in_over_cannot_be_discarded`. A refused announcement, lock or deletion
 stops the queue and may be discarded; a discarded announcement leaves the placements, and is not run
 again at a restart, since the call's mark says the deadline has run.
 
@@ -332,10 +329,9 @@ A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_dea
 `schedule_round_cleanups` for the next-day clean-up) from the three lead times attendance's
 `round_window` hook hands core. Attendance registers a callback for each kind (`register_timer`); a
 callback reads the round again and asks the matching change, as the bot's, so a timer that fires
-after its work was changed does nothing. All four are armed with no lateness limit
-(`misfire_grace_time=None`), as `architecture.md` has every job armed, so the scheduler never drops
-one and **each handler judges lateness itself**, against its own due moment and the `now` the queue
-hands it. Pinned by `test_a_check_in_timer_is_armed_with_no_lateness_limit`.
+after its work was changed does nothing. All four are armed with no lateness limit, and each
+handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
+`test_a_check_in_timer_is_armed_with_no_lateness_limit`.
 
 What each does when its moment passed while the bot was down is the attendance specification's
 ("RSVP notices"); the table says which function judges it, and against which moment.
@@ -347,15 +343,16 @@ What each does when its moment passed while the bot was down is the attendance s
 | the deadline | `_deadline_not_due` | as the change starts, against the call's mark that the deadline has run |
 | the clean-up | `_not_cleaned` | as the change starts, against the round's mark that the check-in is over |
 
-**A skip is a change dropped as not due, with a line in the host's log**, not a record of its own: a
-skip needs none, as the next ask finds the same state. Pinned by
-`test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back` and
-`test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the_call_stands`.
+**A last notice past its deadline, or with no call standing, is a change dropped as not due**, with
+a line in the host's log; a call past its deadline is given up instead, which closes the round's
+check-in and tells the log channel (`give_up`). Pinned by
+`test_a_last_notice_reached_after_the_deadline_is_dropped` and
+`test_a_last_notice_with_no_call_standing_is_dropped`.
 
-**Test mode's rule** (the core specification, "Test mode") is carried by judging lateness at the ask,
-where a timer fires (`_left_to_advance`, `ctx.change_id is None`): a request accepted on time is
-never dropped as the change starts, for the delay of a stopped or busy lane, while one whose moment
-passed with the bot down is left to `/test-mode advance`. Pinned by
+**Test mode's rule** (the core specification, "Test mode") is carried by judging lateness at the
+ask, where a timer fires (`_left_to_advance`, `ctx.change_id is None`): a request accepted on time
+is never dropped as the change starts, for the delay of a stopped or busy lane, while one whose
+moment passed with the bot down is left to `/test-mode advance`. Pinned by
 `test_a_call_timer_overdue_at_a_restart_under_test_mode_posts_no_late_call`,
 `test_a_last_notice_timer_overdue_at_a_restart_under_test_mode_posts_nothing` and
 `test_a_timer_fired_on_time_under_test_mode_is_posted_however_late_the_queue_starts_it`.
@@ -365,23 +362,23 @@ passed with the bot down is left to `/test-mode advance`. Pinned by
 Attendance's turn of the start-up sweep is three steps named in `wiring.start_up_steps`, each a
 function of `check_in_recovery` handed the bot and the queue, in the order they run:
 
-1. **missed check-in calls** (`recover_missed_check_in_calls`): a call that fell due while the bot was
-   down, its deadline ahead, is asked as late, in the order its rounds race;
+1. **missed check-in calls** (`recover_missed_check_in_calls`): a call that fell due while the bot
+   was down, its deadline ahead, is asked as late, in the order its rounds race;
 2. **RSVP views and deadlines** (`recover_rsvp_views_and_deadlines`): the buttons of every standing
    call are armed again, and a deadline that passed while the bot was down is asked;
-3. **missed check-in clean-ups** (`recover_missed_check_in_clean_ups`): a check-in due to come down a
-   day after its round is asked to.
+3. **missed check-in clean-ups** (`recover_missed_check_in_clean_ups`): a check-in due to come
+   down a day after its round is asked to.
 
-The calls come before the deadlines, as a call comes before its deadline, and the clean-ups after, so
-a check-in is distributed before it goes. A recovery posts nothing: it asks the queue, which runs
+The calls come before the deadlines, as a call comes before its deadline, and the clean-ups after,
+so a check-in is distributed before it goes. A recovery posts nothing: it asks the queue, which runs
 what is asked once it starts, and every moment it judges is read at the queue's clock.
 
-**What a league's rounds are judged by.** The call and the deadline are caught up for the rounds of a
-season in an ongoing stage (`ONGOING_STAGES`), which core's `rounds_of_ongoing_seasons` reads; the
-clean-up for every season but a cancelled one, as its timer is. A recovery reads
-core's tables only through core's readers and its own tables, `attendance_config` and
-`rsvp_embed_messages`, itself. Pinned by `test_no_late_call_for_a_round_left_alone` (a season pending
-completion is owed no call), `test_a_round_a_day_past_has_both_its_cleanups_run` and
+**What a league's rounds are judged by.** The call and the deadline are caught up for the rounds of
+a season in an ongoing stage (`ONGOING_STAGES`), which core's `rounds_of_ongoing_seasons` reads;
+the clean-up for every season but a cancelled one, as its timer is. A recovery reads core's tables
+only through core's readers and its own tables, `attendance_config` and `rsvp_embed_messages`,
+itself. Pinned by `test_no_late_call_for_a_round_left_alone` (a season pending completion is owed
+no call), `test_a_round_a_day_past_has_both_its_cleanups_run` and
 `test_a_cancelled_round_is_left_alone`.
 
 **A call, a deadline or a clean-up asked both by the sweep and by its timer is done once.** The
@@ -409,26 +406,26 @@ a job of a change, and goes through core's handler for its kind of post.
 
 The call is a notice and not a standing post: it is edited in place as drivers answer, and its id is
 kept to be edited and deleted again. A call that replaces one standing plans a `delete_earlier` job
-for each of the earlier call's messages **after** the new call's, so the earlier call comes down only
-once the new one has landed and is recorded. Pinned by
+for each of the earlier call's messages **after** the new call's, so the earlier call comes down
+only once the new one has landed and is recorded. Pinned by
 `test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_after_it` and
 `test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so`.
 
 ### Pictures and their fallbacks
 
-The call, the last notice and the sheet may carry a picture the image module draws. A call's or a
+The call and the sheet may carry a picture the image module draws. A call's or a
 sheet's graphic is tried on the first try alone and text on every later one (Constitution XIV.8), so
 a stop on a post Discord refused is retried as text.
 
 A graphic that cannot be drawn is not a failure of the post: the call goes out without it and the
-sheet as text, and **the fault is returned as a line of the job**, naming the division and what was
-left out, so the league is told in the log channel, the full error going to the host's log. The catch
-holds the drawing only, never the post (`architecture.md`, "A catch-all error handler", sixth
+sheet as text, and **the fault is returned as a line of the job**, naming the division and what
+was left out, so the league is told in the log channel, the full error going to the host's log. The
+catch holds the drawing only, never the post (`architecture.md`, "A catch-all error handler", sixth
 place), and it is in four functions: `_checkin_attachment` (the call's graphic),
 `_sheet_attachment` (the sheet's graphic), `_round_grid` (the track registry the graphic draws its
 flags from: a registry that cannot be read draws the headings without flags) and `_seat_team_field`
-(the team names it draws: teams that cannot be read are drawn without names). A sheet's faults of
-the same drawing are told as one line of the job, not once for each. Pinned by
+(the team names it draws: teams that cannot be read are drawn without names). The team names and
+their shorthands are read from the same teams, so a fault reading them is told once. Pinned by
 `test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job` and
 `test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job`.
 
@@ -440,12 +437,15 @@ queue's, retried when the database can be read. Pinned by
 
 ### The sheet
 
-A division's sheet is posted by the `post_sheet` job: inside the sync, and as the `opening_sheet` and
-`final_sheet` steps of core's approvals of a season's placements and of its completion, under the
-occasion's heading. The job stops the queue where Discord refuses the post or where the division
-has no attendance channel, to be set and retried. The rows are the drivers core seats in the
-division, read through core's readers (`seat_holders_on`), and the sheet is drawn against the last
-round with results.
+A division's sheet is posted by one of three jobs, each raising where it cannot post:
+`post_sheet`, which the sync plans among its jobs, and `opening_sheet` and `final_sheet`,
+attendance's jobs in core's approval of a season's placements and in its completion, under the
+occasion's heading. Each stops the queue where Discord refuses the post or the division has no
+attendance channel, to be set and retried. The rows are the drivers core seats full-time in the
+division (`seat_holders_on`), and every driver with a total recorded in the division up to the
+round, so that one sacked or moved to Reserve stays on the sheet (`_sheet_rows`' docstring). The
+opening sheet is drawn against the division's first round, the final sheet against the round the
+completion hands it, and the sync's against the last round it recalculated.
 
 ---
 
@@ -492,16 +492,19 @@ queue's clock) and has its roles changed (`change_sanction_roles`) in three call
 ### What attendance reads of others
 
 Attendance reads core's and results' tables only through their owners' readers (`architecture.md`,
-"Each table is read and written by its owner alone"): a round, its division and season from core's
-round facts (`round_facts_on`), the drivers a division seats from `seat_holders_on`, a driver by
-Discord account and a division's placements from core, the rounds of a season in an ongoing stage
-from `rounds_of_ongoing_seasons`, who raced a round from results'
-`profiles_with_a_result_in_round_on`, a division's verdicts channel from results'
-`verdicts_channels_on`, and the constructors' positions going into a round from results'
-`team_positions_in_round_on`. A reader answers as the join it replaced did, so that a move to a
-reader changes nobody a league calls, scores or sanctions: a check-in press is judged by the seat
-holders (`seat_holders_on`) filtered by the placements (`placed_drivers_on`), so that a driver
-holding a seat in the division with no placement row there is refused as not a member
+"Each table is read and written by its owner alone"), among them: a round, its division and season
+from core's round facts (`round_facts_on`), the drivers a division seats from `seat_holders_on`, a
+division's teams (`division_teams_on`), a driver by Discord account and a division's placements from
+core, drivers' test-mode names (`driver_test_names_on`), the order of a division's rounds
+(`division_round_states_on`, `division_rounds_in_order_on`), the track registry (`tracks_by_name`),
+the rounds of a season in an ongoing stage from `rounds_of_ongoing_seasons`; and from results, who
+raced a round (`profiles_with_a_result_in_round_on`), a division's verdicts channel
+(`verdicts_channels_on`), the constructors' positions going into a round
+(`team_positions_in_round_on`) and an amendment open in a division (`open_amendment_in_division`). A
+reader answers as a join on the tables would, so that reading through it changes nobody a league
+calls, scores or sanctions: a check-in press is judged by the seat holders (`seat_holders_on`)
+filtered by the placements (`placed_drivers_on`), so that a driver holding a seat in the division
+with no placement row there is refused as not a member
 (`test_the_seat_read_through_core_judges_a_driver_as_the_old_join_did`,
 `test_both_seat_joins_read_the_drivers_core_s_reader_seats`).
 
@@ -535,21 +538,22 @@ nothing says so but that line. Pinned by
 `test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is` and
 `test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`.
 
-**What a stop leaves.** A job that fails stops its lane, and a job Discord refuses is tried again.
-The sync's roles are the one exception: they end on a fault, the sanction stands, and the fault goes
-to the host's log (the specification's "Sanctions that do not apply"). The call's refusal says what is left for the round
+**What a stop leaves** is `architecture.md`'s ("Errors and failures"). The sync's roles are the one
+exception: they end on a fault, the sanction stands, and the fault goes to the host's log (the
+specification's "Resynchronising attendance"). The call's refusal says what is left for the round
 (`left_for_the_queue`).
 
 **The catch-alls** of attendance sit in the places `architecture.md` allows, and each is named for
 good in `CATCH_ALLS_ALLOWED` where the shape does not tell its place: `_record_failed`, around
-recording a failure that might itself fail (place 3); the four drawings of a graphic above (place 6);
-the loop of each recovery, one round failing never stopping the rest (place 2); and the advance's
-ask of a change, which names the fault to the command that reports it.
+recording a failure that might itself fail (place 3); the four drawings of a graphic above (place
+6); the loop of each recovery, one round failing never stopping the rest (place 2); and the
+advance's ask of a change, which raises the fault again as `AdvanceStepFailed` for the command to
+report, a handler in a place by its shape.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops"):
 
-- **a change cut off** is finished by the queue from its first job not done, so a sync that saved its
-  sanctions finishes their cards, each announced once;
+- **a change cut off** is finished by the queue from its first job not done, so a sync that saved
+  its sanctions finishes their cards, each announced once;
 - **a call, a last notice or a deadline that fell due** is caught up, as above;
 - **the buttons of a standing call** are armed again for every row;
 - **a check-in due to come down** is taken down.
@@ -562,7 +566,7 @@ Each is stated where it lives and pinned by the test named.
 
 | Constraint | Stated in | Pinned by |
 |---|---|---|
-| The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_switch_settings`' docstring | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
+| The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_on_attendance`'s save | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
 | A read of a round's window creates no row | `attendance_hooks.round_window` | `test_reading_a_round_s_window_writes_nothing` |
 | A cross-setting rule is judged by the setting's change as it starts | `attendance_settings`' docstring | `test_set_setting_refuses_a_timing_that_breaks_the_invariant` and its two companions |
 | A stored copy has one recompute, run on its caller's connection | `_recalculate_forward`'s docstring | the three tests of "The stored copies of derived figures" |

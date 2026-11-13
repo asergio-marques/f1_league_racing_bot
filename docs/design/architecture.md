@@ -827,17 +827,19 @@ second writer.
 
 **A rule that compares one setting with another is judged by the service that writes the
 setting,** never only in the command. A command may judge it too, to refuse before anything is
-asked, but a change ahead in the queue may have moved the other setting since, so the service judges
-it again as the change starts, in its check (see "Checked before it is queued, and again before it
-runs"; the `Setting` docstring). A timing that must stay shorter than another, or two thresholds that must not
-overlap, are examples.
+asked, but a change ahead on the queue may have moved the other setting since, so the service
+judges it again as the change starts, in its check (see "Checked before it is queued, and again
+before it runs"; the `Setting` docstring). A timing that must stay shorter than another, or two
+thresholds that must not overlap, are examples.
 
 **A stored copy of a derived figure has one function that recomputes it,** which runs on the
-connection its caller was handed, and a named test pins each caller's use of it. A running total
-kept beside the rows it sums is such a copy: where one path recomputed only the round it changed
-and another carried the total through the rounds after, the copies after an amended round went
-stale. A module's design file names each copy it keeps and the
-function that recomputes it.
+connection its caller was handed, in one transaction, and a named test pins each caller's use of
+it. A running total kept beside the rows it sums is such a copy. A module's design file names each
+copy it keeps and the function that recomputes it.
+
+*Rejected:* a recompute whose steps each open and commit a connection of their own, which a stop
+leaves right up to one round and stale from the next, with nothing a league can run to repeat it
+(attendance's `_recalculate_forward` docstring).
 
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by rebuilding
 the table, so which rules go in the schema is settled before more tables are added.
@@ -903,11 +905,11 @@ convenience: if it were lost, the bot could rebuild every job from the database.
 **Each kind of job's handler decides what happens if it is missed.** When the bot was down at the
 moment a job was due, the handler its module provides for that kind of job (below) decides what
 becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks.
-The handler records a skip on its own module's record of the event (its own table, or its own
-columns on a core table), as a change on the queue like any other, so the late job, or the change it
-asks for, finds nothing due. Every job is to be armed with no limit on how late it may run
-(`misfire_grace_time=None`), so that the scheduler never drops one on its own and its default
-grace never decides; the jobs armed otherwise are those the lateness check in
+Where a skip needs a record, the handler writes it on its own module's record of the event (its
+own table, or its own columns on a core table), as a change on the queue like any other, so the
+late job, or the change it asks for, finds nothing due. Every job is to be armed with no limit on
+how late it may run (`misfire_grace_time=None`), so that the scheduler never drops one on its own
+and its default grace never decides; the jobs armed otherwise are those the lateness check in
 `tests/repository/test_architecture_rules.py` lists. What each kind does when missed is a rule a
 league notices, so it belongs to the specifications (the core specification's "When the bot
 stops", and the stewarding specification's [STW-RST-001] to [STW-RST-003]).
@@ -921,10 +923,10 @@ its turn, and the order a rule gives holds within the module, as [STW-RST-001]'s
 sweep to apply, which puts a module's rule in core.
 
 **A handler of a job armed with no lateness limit judges lateness itself,** against its own due
-moment and the `now` it is handed ("The time is always passed in"), since the scheduler no longer
-does, and a job caught up by the sweep and the same job fired late take that one judgement. A skip
-that needs no record is the change, or its step, found no longer due and dropped, as any bot's
-change whose work is not due is (the host's log says so).
+moment and the `now` it is handed ("The time is always passed in"), since the scheduler does not,
+and a job caught up by the sweep and the same job fired late take that one judgement. A skip that
+needs no record is the change, or its step, found no longer due and dropped, as any change the bot
+asks is when its work is not due (the host's log says so).
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
@@ -1312,10 +1314,11 @@ stated exceptions below them:
    shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
    posting it hands back, so that the fallback is recorded where the job's lines go, as the season
    review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does;
-6. around the drawing of a graphic that rides on a post, where the post then goes out as text alone
-   (Constitution XIV.7): the full error goes to the host's log, and the fault is returned as a line of the job that posts,
-   so that the league is told its graphic could not be drawn. The catch holds the drawing only,
-   never the post.
+6. around the drawing alone of a graphic that rides on a post, where the post then goes out
+   without it (Constitution XIV.7). It differs from the fifth place in holding no post: the catch
+   holds the drawing only, so that a graphic never prevents the post it rides on. The full error
+   goes to the host's log, and the fault is returned as a line of the job that posts, so that the
+   league is told its graphic could not be drawn.
 
 Beyond the six places, a stated exception has a catch-all of its own, each with its reason. The
 callback a change type may give for a Discard of a change before it started
@@ -1521,8 +1524,8 @@ later on its own.
   `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
   loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
   1, the stated exceptions, place 3's guards around reporting and writing a log line, and the fifth
-  and sixth places' handlers), and a save outside a queued change. The job check and the check of cogs
-  handling their own errors are absolute, with no list of breaches left to grow, and the log
+  and sixth places' handlers), and a save outside a queued change. The job check and the check of
+  cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
   channel's check holds its six places for good; every other check lists today's breaches, each
   under the work that removes it. The check of a save outside a queued change counts each
   function's `.commit()` and `.executescript()` calls, and a function writing on a handed
