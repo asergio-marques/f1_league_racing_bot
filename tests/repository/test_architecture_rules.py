@@ -2968,8 +2968,6 @@ KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
-    ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
     ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),

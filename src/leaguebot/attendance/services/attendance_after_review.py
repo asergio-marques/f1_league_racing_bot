@@ -234,7 +234,7 @@ class AttendanceAfterReview:
 
     async def apply_sanction_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int,
-        candidate: dict[str, Any],
+        candidate: dict[str, Any], *, now: datetime,
     ) -> dict[str, Any] | None:
         if not await attendance_enabled_on(db):
             return None
@@ -244,7 +244,7 @@ class AttendanceAfterReview:
         try:
             return await attendance_sanctions.apply_sanction_on(
                 db, self._placement, round_id, division_id, candidate,
-                actor_id=bot_user.id, actor_name=str(bot_user),
+                actor_id=bot_user.id, actor_name=str(bot_user), now=now,
             )
         except attendance_sanctions.SanctionNotApplicable as error:
             raise StepFailedOnDiscord(str(error)) from None

@@ -11,6 +11,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.core.test_driver_move import (
+    _NOW,
     AM,
     PRO,
     PROFILE_ID,
@@ -107,7 +108,7 @@ async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(
     async with get_connection(db_path) as db:
         await _service(db_path).sack_on(
             db, driver_profile_id=PROFILE_ID, season_id=SEASON_ID, acting_user_id=1,
-            acting_user_name="Manager",
+            acting_user_name="Manager", now=_NOW,
         )
         await db.commit()
 

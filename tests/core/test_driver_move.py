@@ -12,6 +12,7 @@ the queue, below.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -25,6 +26,7 @@ SERVER_ID = 22090
 SEASON_ID = 1
 PRO, AM = 11, 12
 PROFILE_ID = 5
+_NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 ROLES = {"Alpha": 501, "Bravo": 502, "Reserve": 509}
 
 
@@ -129,7 +131,7 @@ async def _move(service, to_division, team, from_division=PRO, *, profile_id=PRO
         summary = await service.move_on(
             db, driver_profile_id=profile_id, season_id=SEASON_ID,
             from_division_id=from_division, to_division_id=to_division, team_name=team,
-            acting_user_id=1, acting_user_name="Manager",
+            acting_user_id=1, acting_user_name="Manager", now=_NOW,
         )
         await db.commit()
     return summary

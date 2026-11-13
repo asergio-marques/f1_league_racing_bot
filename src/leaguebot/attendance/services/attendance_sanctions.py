@@ -8,6 +8,7 @@ sanction is `sanctions_announce_change`'s.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from leaguebot.attendance.services import attendance_scoring, attendance_sheet
@@ -200,6 +201,7 @@ async def apply_sanction_on(
     *,
     actor_id: int,
     actor_name: str,
+    now: datetime,
 ) -> dict[str, Any]:
     """Save one driver's sanction on *db* and return its line and the roles to change.
 
@@ -208,7 +210,8 @@ async def apply_sanction_on(
     guarded (`check_sanction`'s). The result holds the log line and ``roles``: ``None`` for a
     test driver, who holds none, else the driver's ``user_id`` and ``profile_id`` with the
     role ids to ``revoke`` and to ``grant``, which a job of its own changes (#439).
-    **Raises** `SanctionNotApplicable` for a division with no Reserve team, and what the
+    The audit entry is stamped with *now* (UTC), the queue's clock. **Raises**
+    `SanctionNotApplicable` for a division with no Reserve team, and what the
     placement service raises where the driver can no longer be sanctioned.
     """
     profile_id = candidate["driver_profile_id"]
@@ -221,7 +224,7 @@ async def apply_sanction_on(
     if candidate["sanction"] == "AUTOSACK":
         saved = await placement.sack_on(
             db, driver_profile_id=profile_id, season_id=season_id,
-            acting_user_id=actor_id, acting_user_name=actor_name,
+            acting_user_id=actor_id, acting_user_name=actor_name, now=now,
         )
         roles = None if saved.is_test_driver else {
             "user_id": user_id, "profile_id": profile_id,
@@ -238,6 +241,7 @@ async def apply_sanction_on(
         db, driver_profile_id=profile_id, season_id=season_id,
         from_division_id=division_id, to_division_id=division_id,
         team_name=reserve_team_name, acting_user_id=actor_id, acting_user_name=actor_name,
+        now=now,
     )
     roles = None if moved["is_test_driver"] else {
         "user_id": user_id, "profile_id": profile_id,

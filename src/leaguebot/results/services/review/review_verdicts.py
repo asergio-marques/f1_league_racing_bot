@@ -121,7 +121,7 @@ def verdict_steps(
     now: Callable[[], datetime], attendance: AttendanceAfterReview
 ) -> dict[str, Step]:
     """The jobs of this module, keyed by their names, for a change type's `steps`. *now* is the
-    queue's clock, which stamps the heading's record and the lineup's audit; *attendance* the hook
+    queue's clock, which stamps the heading's record, the lineup's audit and a sanction's; *attendance* the hook
     the builder handed the change type, which the jobs use and never look up on the bot."""
 
     def bound(fn: Any) -> Any:
@@ -133,7 +133,7 @@ def verdict_steps(
 
     def bound_save(fn: Any) -> Any:
         async def run(db: Any, ctx: StepContext) -> Any:
-            return await fn(db, ctx, attendance)
+            return await fn(db, ctx, attendance, now())
 
         return run
 
@@ -826,7 +826,9 @@ async def _sanction_heading_on(db: Any, ctx: StepContext) -> tuple[PlannedStep, 
     return (PlannedStep(ANNOUNCE_HEADING, heading),)
 
 
-async def _apply_sanction(db: Any, ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
+async def _apply_sanction(
+    db: Any, ctx: StepContext, hook: AttendanceAfterReview, now: datetime
+) -> StepResult:
     """Save one driver's sanction on the queue's save and plan what follows it: the change of
     their roles, and where it is the first to apply with no heading standing, the heading over
     the cards.
@@ -834,12 +836,15 @@ async def _apply_sanction(db: Any, ctx: StepContext, hook: AttendanceAfterReview
     The sanction, its audit and the cards' heading are all read and written on *db*, so a fault
     in any of them rolls the save back whole and the sanction is still owed on Retry. The roles
     are a job of their own (`sanction_roles`), planned ahead of the card, so a role Discord
-    refuses stops the queue with the sanction saved and the card waiting."""
+    refuses stops the queue with the sanction saved and the card waiting. Its audit entry is
+    stamped with *now*, the queue's clock."""
     payload = ctx.step_payload
     round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
     try:
         heading = await _sanction_heading_on(db, ctx)
-        applied = await hook.apply_sanction_on(db, round_id, division_id, payload["candidate"])
+        applied = await hook.apply_sanction_on(
+            db, round_id, division_id, payload["candidate"], now=now
+        )
     except Exception as error:
         raise _failure(error, payload.get("hint") or _SYNC)
     # None is the hook's word that attendance is off and nothing was applied: no roles change and

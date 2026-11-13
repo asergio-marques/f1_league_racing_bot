@@ -365,7 +365,8 @@ class AttendanceDouble:
             raise failure
 
     async def apply_sanction_on(self, db: Any, round_id: int, division_id: int,
-                                candidate: dict[str, Any]) -> dict[str, Any] | None:
+                                candidate: dict[str, Any], *,
+                                now: datetime) -> dict[str, Any] | None:
         if not self.league.attendance_on:
             return None
         profile = candidate["driver_profile_id"]

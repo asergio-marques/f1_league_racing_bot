@@ -139,9 +139,10 @@ class AttendanceAfterReview(Protocol):
 
     async def apply_sanction_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int,
-        candidate: dict[str, Any],
+        candidate: dict[str, Any], *, now: datetime,
     ) -> dict[str, Any] | None:
-        """Save one candidate's sanction on the save handed, committing nothing, as the bot.
+        """Save one candidate's sanction on the save handed, committing nothing, as the bot, its
+        audit entry stamped with *now* (UTC), the queue's clock.
 
         Every read and write is on *db*, and nothing else is awaited: no role is changed and
         nothing posted. Returns ``line``, the log line the job carries, and ``roles``, None for

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import aiosqlite
 import discord
@@ -452,11 +452,12 @@ class PlacementService:
         team_name: str,
         acting_user_id: int,
         acting_user_name: str,
+        now: datetime,
     ) -> dict:
         """Move a committed driver from their seat to a team of the same or another division, on *db*.
 
         `move_seat_on`, and the `DRIVER_MOVE` audit entry written with it on the same
-        connection, stamped with the wall clock and committed by no one here, so that a
+        connection, stamped with *now* (UTC) and committed by no one here, so that a
         sanction's save carries the move with the rest of its writes. Refused and
         returned as `move_seat_on` refuses and returns.
         """
@@ -473,7 +474,7 @@ class PlacementService:
             (
                 acting_user_id, acting_user_name, audit["division_id"],
                 json.dumps(audit["old_value"]), json.dumps(audit["new_value"]),
-                datetime.now(timezone.utc).isoformat(),
+                now.isoformat(),
             ),
         )
         return summary
@@ -1074,11 +1075,12 @@ class PlacementService:
         season_id: int,
         acting_user_id: int,
         acting_user_name: str,
+        now: datetime,
     ) -> SackSaved:
         """Sack a committed driver on *db*: free every seat, return to Not Signed Up, audit it.
 
         `sack_seats_on`, and the `DRIVER_SACK` audit entry written with it on the same
-        connection, stamped with the wall clock and committed by no one here, so that a
+        connection, stamped with *now* (UTC) and committed by no one here, so that a
         sanction's save carries the sack with the rest of its writes. Refused and
         returned as `sack_seats_on` refuses and returns.
         """
@@ -1094,7 +1096,7 @@ class PlacementService:
                 acting_user_name,
                 json.dumps(saved.audit["old_value"]),
                 json.dumps(saved.audit["new_value"]),
-                datetime.now(timezone.utc).isoformat(),
+                now.isoformat(),
             ),
         )
         return saved

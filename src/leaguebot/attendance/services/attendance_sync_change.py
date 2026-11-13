@@ -320,7 +320,7 @@ def attendance_sync_change(
             try:
                 done = await attendance_sanctions.apply_sanction_on(
                     db, placement, latest, division_id, candidate,
-                    actor_id=acting.id, actor_name=str(acting),
+                    actor_id=acting.id, actor_name=str(acting), now=now(),
                 )
             except (attendance_sanctions.SanctionNotApplicable, Refused) as error:
                 failed.append({**entry, "reason": str(error)})

@@ -413,7 +413,7 @@ async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path
         await hook.check_sanction(LATEST_ROUND, DIVISION_ID, owed)
     async with get_connection(db_path) as db:
         with pytest.raises(Exception):
-            await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+            await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed, now=NOW)
         await db.rollback()
 
     assert owed["sanction"] == "AUTORESERVE"
@@ -435,7 +435,7 @@ async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp
     async with get_connection(db_path) as db:
         for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
                            key=lambda c: c["driver_profile_id"]):
-            await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+            await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed, now=NOW)
         await db.commit()
 
     placement.sack_on.assert_awaited_once()
@@ -464,7 +464,7 @@ async def test_apply_sanction_on_returns_each_line_and_the_roles_and_posts_nothi
         for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
                            key=lambda c: c["driver_profile_id"]):
             saved[owed["driver_profile_id"]] = await hook.apply_sanction_on(
-                db, LATEST_ROUND, DIVISION_ID, owed
+                db, LATEST_ROUND, DIVISION_ID, owed, now=NOW
             )
         await db.commit()
 
@@ -497,7 +497,7 @@ async def test_apply_sanction_on_sacks_on_the_save_it_is_handed_and_commits_noth
     [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
 
     async with get_connection(db_path) as db:
-        saved = await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+        saved = await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed, now=NOW)
         row = await (await db.execute(
             "SELECT current_state FROM driver_profiles WHERE id = ?", (LEWIS,)
         )).fetchone()
@@ -521,7 +521,7 @@ async def test_apply_sanction_on_moves_to_reserve_and_names_the_roles_to_swap(tm
     [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
 
     async with get_connection(db_path) as db:
-        saved = await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+        saved = await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed, now=NOW)
         await db.commit()
 
     async with get_connection(db_path) as db:
@@ -760,7 +760,7 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
         await hook.rewrite_pardons_on(db, AMENDED_ROUND, [], NOW)
         await hook.put_back_pardons_on(db, AMENDED_ROUND, saved)
         await hook.recalculate_on(db, AMENDED_ROUND, DIVISION_ID)
-        assert await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed) is None, (
+        assert await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed, now=NOW) is None, (
             "None is how the job knows nothing was applied"
         )
         assert list(await hook.check_in_read_on(db, {

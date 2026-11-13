@@ -1036,7 +1036,7 @@ async def test_a_fault_working_out_the_cards_heading_rolls_the_sanction_back(
         await db.commit()
 
     async def _apply_on(db: Any, _round_id: int, _division_id: int,
-                        owed: dict[str, Any]) -> dict[str, Any]:
+                        owed: dict[str, Any], *, now: Any) -> dict[str, Any]:
         await db.execute("INSERT INTO sanction_written VALUES (?)", (owed["driver_profile_id"],))
         return {"line": "ATTENDANCE_AUTORESERVE | x", "roles": None}
 

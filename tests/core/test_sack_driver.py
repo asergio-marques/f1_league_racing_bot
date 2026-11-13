@@ -39,7 +39,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.placement_service import PlacementService
-from tests.core.test_driver_move import _end_the_races, _unconfirm_lewis
+from tests.core.test_driver_move import _NOW, _end_the_races, _unconfirm_lewis
 from tests.support.teams import seed_team_instances
 
 
@@ -173,7 +173,7 @@ async def _sack(service, *, season_id: int = SEASON_ID):
     async with get_connection(service._db_path) as db:
         saved = await service.sack_on(
             db, driver_profile_id=PROFILE_ID, season_id=season_id, acting_user_id=ACTOR_ID,
-            acting_user_name="Manager#0001",
+            acting_user_name="Manager#0001", now=_NOW,
         )
         await db.commit()
     return saved
@@ -475,7 +475,7 @@ async def test_sack_on_reads_the_roles_before_it_frees_the_seats(tmp_path):
     async with get_connection(db_path) as db:
         saved = await service.sack_on(
             db, driver_profile_id=PROFILE_ID, season_id=SEASON_ID, acting_user_id=ACTOR_ID,
-            acting_user_name="Manager#0001",
+            acting_user_name="Manager#0001", now=_NOW,
         )
         placed = await (await db.execute(
             "SELECT COUNT(*) FROM driver_season_assignments WHERE driver_profile_id = ?",
