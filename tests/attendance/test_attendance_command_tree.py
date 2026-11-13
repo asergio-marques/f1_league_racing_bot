@@ -9,8 +9,12 @@ syncs: the copies it makes for the instance, each bound to that instance. No gat
 """
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from unittest.mock import MagicMock
 
+import pytest
 from discord import app_commands
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
@@ -133,11 +137,41 @@ def test_every_attendance_command_is_bound_to_the_cog_that_is_loaded():
     assert all(command.binding is cog for command in commands)
 
 
+#: The order a league has always seen `/attendance`'s subgroups and commands in.
+LISTED_ORDER = ["config", "channel", "test", "sync", "post-check-in"]
+
+#: Imports one subgroup's file before the cog, as a test that reaches the subgroup alone does
+#: when its worker collects it first, and prints the order the cog's group is sent in.
+_IMPORTED_FIRST = """
+import importlib, sys
+from unittest.mock import MagicMock
+importlib.import_module(sys.argv[1])
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+(group,) = AttendanceCog(MagicMock()).get_app_commands()
+print(",".join(command.name for command in group.commands))
+"""
+
+
 def test_the_attendance_group_is_sent_its_subgroups_and_commands_in_their_listed_order():
     """Discord is sent `/attendance`'s subgroups and commands in the order they joined the group:
     the order a league has always seen them in."""
     (group,) = AttendanceCog(MagicMock()).get_app_commands()
-    assert [command.name for command in group.commands] == [
-        "config", "channel", "test", "sync", "post-check-in",
-    ]
+    assert [command.name for command in group.commands] == LISTED_ORDER
+
+
+@pytest.mark.parametrize("module", [
+    "leaguebot.attendance.cogs.test_commands",
+    "leaguebot.attendance.cogs.channel_commands",
+    "leaguebot.attendance.cogs.group_commands",
+])
+def test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first(module):
+    """The subgroups are declared together in `attendance_group.py`, so the order does not hang on
+    which file a process imports first. It did while each subgroup's file declared its own: a
+    worker that collected a test of the `test` subgroup's form before the cog sent `test` first.
+    A fresh interpreter, since the order is fixed once per process."""
+    ran = subprocess.run(
+        [sys.executable, "-c", _IMPORTED_FIRST, module],
+        capture_output=True, text=True, check=True, env=os.environ.copy(),
+    )
+    assert ran.stdout.strip().split(",") == LISTED_ORDER
 

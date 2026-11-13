@@ -19,9 +19,8 @@ from discord.ext import commands
 
 from leaguebot.attendance.cogs.attendance_group import ATTENDANCE_GROUP
 
-# A subgroup joins `/attendance` as its file is imported, and Discord is sent them in that order,
-# the commands on the group itself last, so these imports stand in the order they are listed, not
-# alphabetically.
+# The subgroups join `/attendance` in `attendance_group.py`, in the order a league sees them, and
+# the commands on the group itself after them, so the order of these imports does not matter.
 from leaguebot.attendance.cogs.config_commands import ConfigCommands
 from leaguebot.attendance.cogs.channel_commands import ChannelCommands
 from leaguebot.attendance.cogs.test_commands import TestCommands

@@ -8,7 +8,7 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
-from leaguebot.attendance.cogs.attendance_group import ATTENDANCE_GROUP, AttendanceSubgroup
+from leaguebot.attendance.cogs.attendance_group import CHANNEL_GROUP, AttendanceSubgroup
 from leaguebot.attendance.services.settings.channel_settings import (
     ATTENDANCE_CHANNEL,
     NO_ACCESS,
@@ -26,11 +26,7 @@ _CHANNEL_KINDS = {"rsvp": RSVP_CHANNEL, "attendance": ATTENDANCE_CHANNEL}
 
 
 class ChannelCommands(AttendanceSubgroup):
-    channel_group = app_commands.Group(
-        name="channel",
-        description="Set the channels a division's check-in calls and attendance are posted to.",
-        parent=ATTENDANCE_GROUP,
-    )
+    channel_group = CHANNEL_GROUP
 
     # ── /attendance channel rsvp and attendance ───────────────────────────
     #

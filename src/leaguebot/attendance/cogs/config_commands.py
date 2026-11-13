@@ -10,7 +10,7 @@ from discord import app_commands
 
 from leaguebot.attendance.cogs.attendance_group import (
     AFTER_THE_CATCH_UP,
-    ATTENDANCE_GROUP,
+    CONFIG_GROUP,
     AttendanceSubgroup,
 )
 from leaguebot.attendance.services.settings.attendance_settings import KINDS
@@ -19,11 +19,7 @@ from leaguebot.core.utils.interaction_errors import describe
 
 
 class ConfigCommands(AttendanceSubgroup):
-    config = app_commands.Group(
-        name="config",
-        description="Configure attendance module settings.",
-        parent=ATTENDANCE_GROUP,
-    )
+    config = CONFIG_GROUP
 
     async def _ask_setting(
         self, interaction: discord.Interaction, command: str, value: int | None

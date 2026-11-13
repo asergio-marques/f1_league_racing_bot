@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 
 from leaguebot.attendance.cogs.attendance_group import (
-    ATTENDANCE_GROUP,
+    TEST_GROUP,
     AttendanceSubgroup,
     record,
 )
@@ -26,11 +26,7 @@ from leaguebot.core.utils.log_lines import refuse
 
 
 class TestCommands(AttendanceSubgroup):
-    test_group = app_commands.Group(
-        name="test",
-        description="Test-mode attendance utilities.",
-        parent=ATTENDANCE_GROUP,
-    )
+    test_group = TEST_GROUP
 
     # ── /attendance test rsvp ─────────────────────────────────────────────
 
