@@ -294,3 +294,55 @@ async def test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the
     assert row["message_id"] == str(call)
     assert row["last_notice_msg_id"] == str(notice)
     assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.parametrize("which", ["call", "last notice"])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: under test mode a timer's call or last notice is judged late as its change "
+           "starts, not as it is asked, so one asked on time and started late is dropped",
+)
+async def test_a_timer_fired_on_time_under_test_mode_is_posted_however_late_the_queue_starts_it(
+    tmp_path, which,
+):
+    """Test mode is on and the bot has been up throughout. The queue is stopped at another job.
+    For "call", round 4's check-in call falls due now (the race five days off, no call posted
+    yet); for "last notice", round 3's last notice falls due now (the race a day off, its call
+    standing as message 7001). The timer fires on time, handed the round, and its change waits
+    behind the stopped job. Ten minutes later the stop is cleared and the queue runs on: the call,
+    or the last notice, is posted in Pro's check-in channel and recorded, and the queue does not
+    stop. Only a moment that passed while the bot was down is left to `/test-mode advance` (core
+    spec, "Test mode"); one whose timer fired on time is never dropped for the queue's delay."""
+    from tests.attendance.test_check_in_call_change import (
+        ROUND_4,
+        _call_league,
+        _round_4_in,
+        timer_of,
+    )
+    from tests.support.change_queue import retry_job
+
+    if which == "call":
+        league = await _call_league(tmp_path)
+        await _round_4_in(league, timedelta(days=5))
+        kind, round_ = "rsvp_notice", ROUND_4
+    else:
+        league = await _league(tmp_path)
+        when = league.clock.now + timedelta(days=1)
+        await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                           when.astimezone(timezone.utc).isoformat(), ROUND_3)
+        kind, round_ = "rsvp_last_notice", ROUND_3
+    await league.set_test_mode(True)
+    holder = await block_queue(league)
+
+    await timer_of(league, kind)(round_)
+    league.clock.advance(minutes=10)
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    [posted] = _sent(league)
+    [row] = await league.rows(
+        "SELECT message_id, last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
+        round_,
+    )
+    assert row["message_id" if which == "call" else "last_notice_msg_id"] == str(posted)
+    assert await stopped_job(league.db_path) is None
