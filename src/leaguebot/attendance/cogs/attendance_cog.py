@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 import discord
@@ -464,7 +463,7 @@ class AttendanceCog(commands.Cog):
             div.id,
             div.name,
             round,
-            now=datetime.now(timezone.utc),
+            now=self.bot.change_queue.now(),
         )
         if refusal is not None or round_id is None:
             await refuse(interaction, refusal or "", what=describe(interaction))
@@ -729,7 +728,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
             )
             return
 
-        now = datetime.now(timezone.utc)
+        now = self._bot.change_queue.now()
         entries: list[dict[str, Any]] = []
         errors: list[str] = []
 

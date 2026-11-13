@@ -637,14 +637,14 @@ async def write_distribution_on(
     assignments: list[tuple[int, int]],
     standby_ids: list[int],
     *,
-    at: datetime | None = None,
+    at: datetime,
 ) -> None:
     """Replace the round's placements in *division_id* with *assignments* and *standby_ids* on
     *db*, committing nothing.
 
     Every placement of the round in the division is cleared, then the new ones written, so no
     reader ever sees a reserve holding both a team and a standby place, or a team from a run that
-    no longer stands. The call is marked as run (`deadline_run_at`, at *at*, else now) in the same
+    no longer stands. The call is marked as run (`deadline_run_at`, at *at*) in the same
     write.
 
     **Each run is the whole answer** (#429). A round's distribution can run more than once —
@@ -663,7 +663,7 @@ async def write_distribution_on(
     await db.execute(
         "UPDATE rsvp_embed_messages SET deadline_run_at = ? "
         "WHERE round_id = ? AND division_id = ?",
-        ((at or datetime.now(timezone.utc)).isoformat(), round_id, division_id),
+        (at.isoformat(), round_id, division_id),
     )
     for dra_id, team_id in assignments:
         await db.execute(

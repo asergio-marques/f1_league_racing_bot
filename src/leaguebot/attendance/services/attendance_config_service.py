@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import aiosqlite
 
@@ -437,10 +437,10 @@ class AttendanceService:
         message_id: str,
         channel_id: str,
         *,
-        posted_at: datetime | None = None,
+        posted_at: datetime,
     ) -> None:
         """Store (or replace) the RSVP embed message IDs for a (round, division) pair on *db*,
-        committing nothing, the call posted at *posted_at* (now where none is given): the call's record is saved with the
+        committing nothing, the call posted at *posted_at*: the call's record is saved with the
         mark of the job that posted it. A call replacing one recorded for the pair takes its record
         in this one statement, its last notice and distribution announcement cleared: they were
         the earlier call's, and the new one has none yet."""
@@ -459,7 +459,7 @@ class AttendanceService:
                           deadline_run_at = NULL
             """,
             (round_id, division_id, message_id, channel_id,
-             (posted_at or datetime.now(timezone.utc)).isoformat()),
+             posted_at.isoformat()),
         )
 
     async def get_embed_message(

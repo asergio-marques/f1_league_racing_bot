@@ -46,7 +46,7 @@ async def _distribute(round_id: int, division_id: int, bot: MagicMock) -> bool:
     written (each run is the whole answer), then committed. Returns whether any were placed."""
     async with get_connection(bot.db_path) as db:
         assignments, standby = await reserve_distribution_on(db, round_id, division_id)
-        await write_distribution_on(db, round_id, division_id, assignments, standby)
+        await write_distribution_on(db, round_id, division_id, assignments, standby, at=_NOW)
         await db.commit()
     return bool(assignments or standby)
 
@@ -783,7 +783,7 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "999000111", "555000222")
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "999000111", "555000222", posted_at=_NOW)
         em = await svc.get_embed_message(round_id=1, division_id=10)
         assert em is not None
         assert em.message_id == "999000111"
@@ -796,8 +796,8 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "first_msg", "111")
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "second_msg", "111")  # upsert
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "first_msg", "111", posted_at=_NOW)
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "second_msg", "111", posted_at=_NOW)  # upsert
         em = await svc.get_embed_message(round_id=1, division_id=10)
         assert em is not None
         assert em.message_id == "second_msg"
@@ -816,8 +816,8 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_config_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await _write(svc, db_path, "insert_embed_message", 1, 10, "msg_a", "ch1")
-        await _write(svc, db_path, "insert_embed_message", 2, 10, "msg_b", "ch1")
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "msg_a", "ch1", posted_at=_NOW)
+        await _write(svc, db_path, "insert_embed_message", 2, 10, "msg_b", "ch1", posted_at=_NOW)
         all_msgs = await svc.get_all_embed_messages()
         assert len(all_msgs) == 2
         mids = {m.message_id for m in all_msgs}
