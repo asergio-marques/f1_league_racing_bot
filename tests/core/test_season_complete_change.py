@@ -1690,6 +1690,34 @@ async def test_a_driver_returned_by_the_window_s_close_is_told_before_their_chan
     assert await _status(league) == "COMPLETED"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: the season end's notice is posted through the wizard service, naming no mentions",
+)
+async def test_a_season_end_notice_mentions_only_the_driver(tmp_path):
+    """Kimi is part-way through signing up when the season is completed. When the queue runs, his
+    signup channel is told the season has ended in one post that may notify Kimi alone, never a
+    role or @everyone, and his channel's deletion is armed 24 hours after the queue's clock."""
+    from datetime import timedelta
+
+    from tests.support.mentions import notified
+
+    league = await pending_completion_league(tmp_path)
+    await signing_up(league)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    held = league.channel(SIGNUP_CHANNEL_BASE + SIGNING_UP)
+    [sent] = held.send.call_args_list
+    assert notified(sent.kwargs.get("allowed_mentions")) == {
+        "everyone": False, "users": {SIGNING_UP}, "roles": set(),
+    }
+    assert ("signup_channel_delete", str(SIGNING_UP), league.clock.now + timedelta(hours=24)) in [
+        call.args for call in league.bot.scheduler_service.arm_once.call_args_list
+    ]
+
+
 async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcome_says_so(
     tmp_path,
 ):
