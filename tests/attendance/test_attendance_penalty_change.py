@@ -18,6 +18,8 @@ Alpha, accepting each approved round and racing none), with the real queue and "
 """
 from __future__ import annotations
 
+import dataclasses
+import sqlite3
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -25,6 +27,8 @@ import discord
 import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+from leaguebot.attendance.services.settings.attendance_settings import PENALTY_COLUMNS
+from leaguebot.attendance.services.settings.penalty_recalculation import CHECK_CAPACITY
 from leaguebot.core.db.database import get_connection
 from tests.attendance.test_attendance_sync_change import (
     DIVISION_ID,
@@ -49,6 +53,7 @@ from tests.support.change_queue import (
     http_error,
     member,
     member_interaction,
+    register,
     restart_queue,
     run_queue,
     stopped_job,
@@ -576,3 +581,48 @@ async def test_a_penalty_change_s_card_discord_refuses_stops_the_queue_and_a_dis
     [discarded] = [line for line in league.log_lines() if "| Discard job #" in line]
     assert "not done: announcing the autosack of `<@5101>` in the verdicts channel" in discarded
 
+
+def _capacity_read_faults(league: _League) -> None:
+    """The no-show penalty's change reads the Reserve capacity with a database that faults
+    (`OperationalError`), whatever the season holds."""
+    kind = next(kind for kind, column in PENALTY_COLUMNS.items() if column == "no_show_penalty")
+    change = next(each for each in league.bot.change_queue.types if each.kind == kind)
+
+    async def _unreadable(_ctx: Any) -> Any:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    read = dataclasses.replace(change.steps[CHECK_CAPACITY], run=_unreadable)
+    register(league.bot, dataclasses.replace(change, steps={**change.steps, CHECK_CAPACITY: read}))
+
+
+@pytest.mark.parametrize("ongoing", [True, False], ids=["season-ongoing", "no-season-ongoing"])
+async def test_a_capacity_read_that_faults_ends_on_a_fault_and_never_stops_the_lane(
+    tmp_path, ongoing,
+):
+    """Division 1's round 1 is final; the driver accepted it and did not race; the no-show
+    penalty is 1 and auto-sack at 3. Season 1 is ongoing, or has moved on to Pending completion
+    (*ongoing*). Reading the Reserve teams' capacity, the change's job before its save, faults.
+    Manager 77 runs `/attendance config no-show-penalty 5` and the queue is run. The queue does
+    not stop, and the log channel has the read's failure line, naming the manager and the fault.
+    With the season ongoing the save refuses to recalculate on a capacity nobody read and is
+    undone whole: the penalty stays 1, no audit entry is written, round 1 is not recalculated,
+    the driver is still seated, and the manager is told nothing was saved. With no season ongoing
+    the value is saved alone: the penalty is 5 and round 1 is not recalculated."""
+    league = await _league(tmp_path, rounds={1: "FINAL"}, no_show_penalty=1)
+    if not ongoing:
+        await _pending_completion(league)
+    _capacity_read_faults(league)
+
+    interaction = await _ask_penalty(league, "no-show-penalty", 5)
+
+    assert await stopped_job(league.db_path) is None
+    assert any(line.startswith("❌") and f"failed for {NAMED} — OperationalError" in line
+               for line in league.log_lines())
+    assert await _attendance(league.db_path, 1) == {"attended": None, "points_awarded": None}
+    assert await _seated(league.db_path) == [DRIVER_PROFILE]
+    if ongoing:
+        assert await _penalty(league.db_path, "no_show_penalty") == 1
+        assert await audit_rows(league.db_path) == []
+        assert "Nothing was saved." in last_said(interaction)
+    else:
+        assert await _penalty(league.db_path, "no_show_penalty") == 5
