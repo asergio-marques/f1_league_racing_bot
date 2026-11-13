@@ -40,7 +40,7 @@ def sign_up(bot: "LeagueBot") -> None:
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:
     """Sign attendance's window up to the hook a round's timing windows read declares. It is
     handed whether the round is being amended and checks its own switch."""
-    from leaguebot.attendance.services import attendance_hooks
+    from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.round_windows_read.subscribe(partial(
         attendance_hooks.round_window, bot.attendance_service, bot.module_service
@@ -50,7 +50,7 @@ def sign_up_to_round_windows(bot: "LeagueBot") -> None:
 def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     """Sign attendance's section up to the hook a season review gathers its lines through: handed
     which review is gathered, the season and its divisions, it checks its own switch."""
-    from leaguebot.attendance.services import attendance_hooks
+    from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.review_sections_read.subscribe(partial(
         attendance_hooks.review_section, bot.attendance_service, bot.module_service
@@ -116,7 +116,7 @@ def sign_up_to_rounds_called_off(bot: "LeagueBot") -> None:
 def sign_up_to_cancellation_notices(bot: "LeagueBot") -> None:
     """Sign attendance's check-in notice up to the hook the notices told of a division are read
     through."""
-    from leaguebot.attendance.services import cancellation_notice
+    from leaguebot.attendance.services.hooks import cancellation_notice
 
     bot.cancellation_notices.subscribe(cancellation_notice.notices_on)
 
@@ -125,7 +125,7 @@ def sign_up_to_cancellation_steps(bot: "LeagueBot") -> None:
     """Sign attendance's steps up to the hook the steps a cancellation plans are read through, in
     the order they run: the take-down of a call, the reading of a round's check-in record, then
     attendance's own notice."""
-    from leaguebot.attendance.services import cancellation_notice
+    from leaguebot.attendance.services.hooks import cancellation_notice
     from leaguebot.attendance.services.check_in import check_in_clean_up, check_in_record
 
     bot.cancellation_steps.subscribe(partial(
@@ -148,7 +148,7 @@ def sign_up_to_cancellation_steps(bot: "LeagueBot") -> None:
 def sign_up_to_deletes(bot: "LeagueBot") -> None:
     """Sign attendance's deleting of its own rows up to the hooks a round, a division, a driver
     deleted or a driver merged declares, on the delete's connection, inside its save."""
-    from leaguebot.attendance.services import attendance_hooks
+    from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.rounds_deleted.subscribe(attendance_hooks.rounds_deleted_on)
     bot.divisions_deleted.subscribe(attendance_hooks.divisions_deleted_on)
@@ -159,7 +159,7 @@ def sign_up_to_deletes(bot: "LeagueBot") -> None:
 def sign_up_to_pack(bot: "LeagueBot") -> None:
     """Sign attendance's clearing of its own rows tied to the server the bot leaves up to the hook
     the bot packed declares, on the pack's connection."""
-    from leaguebot.attendance.services import attendance_hooks
+    from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.bot_packed.subscribe(attendance_hooks.bot_packed_on)
 
@@ -167,7 +167,7 @@ def sign_up_to_pack(bot: "LeagueBot") -> None:
 def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
     """Sign attendance's two lines up to the hook the placements review gathers each division's
     module lines through, handed its service and the module service."""
-    from leaguebot.attendance.services import attendance_hooks
+    from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.division_lines_read.subscribe(
         partial(attendance_hooks.division_lines, bot.attendance_service, bot.module_service)
@@ -193,7 +193,7 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
     """Sign attendance's lines naming its own channels not set or not on the server up to the hook
     a division's channel faults are read through, handed its service and the module service."""
-    from leaguebot.attendance.services import attendance_hooks
+    from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.division_channel_faults_read.subscribe(
         partial(
@@ -205,7 +205,7 @@ def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
 def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
     """Sign attendance's rows of its own configuration up to the hook a season's fingerprint is
     taken through; it reads its channels by division, as the season service reads them."""
-    from leaguebot.attendance.services import fingerprint_areas
+    from leaguebot.attendance.services.hooks import fingerprint_areas
 
     bot.fingerprint_areas_read.subscribe(
         partial(fingerprint_areas.fingerprint_areas, bot.season_service)
@@ -214,7 +214,7 @@ def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
 
 def sign_up_to_pending_steps_read(bot: "LeagueBot") -> None:
     """Sign attendance's pending steps up to the hook `/test-mode advance` reads them through."""
-    from leaguebot.attendance.services import test_mode_steps
+    from leaguebot.attendance.services.hooks import test_mode_steps
 
     bot.pending_steps_read.subscribe(test_mode_steps.pending_steps)
 
@@ -222,7 +222,7 @@ def sign_up_to_pending_steps_read(bot: "LeagueBot") -> None:
 def sign_up_to_review_marks_read(bot: "LeagueBot") -> None:
     """Sign attendance's marks up to the hook `/test-mode review` reads each module's marks
     through."""
-    from leaguebot.attendance.services import test_mode_steps
+    from leaguebot.attendance.services.hooks import test_mode_steps
 
     bot.review_marks_read.subscribe(test_mode_steps.review_marks)
 

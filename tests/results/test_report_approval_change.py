@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
+from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
@@ -446,7 +446,7 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
     the live one. Alex approves round 3's reports: the `attendance_sheet` job posts the new sheet
     and its save records it, the old one still standing; then a `delete_message` job of the
     review deletes the old sheet."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from tests.support.review_league import channel
 
     sheet_channel, old_sheet = 707, 8805
@@ -1588,7 +1588,7 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro. Alex
     approves round 3's reports: Lewis is moved to Pro's Reserve team, and Pro's lineup is posted
     once, by the review's own job, not by the move as well (core spec: "posted once")."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.services.drivers.lineup_posting import LineupPosted, LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService

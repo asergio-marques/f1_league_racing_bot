@@ -82,8 +82,8 @@ def pro(role_id: int | None = ROLE_ID) -> Any:
 
 def notice_module(module: str) -> Any:
     """The module *module* ("attendance", "weather" or "results") keeps its cancellation notice
-    in; results' sits in its `publishing` folder."""
-    folder = ".publishing" if module == "results" else ""
+    in; attendance's sits in its `hooks` folder and results' in its `publishing` folder."""
+    folder = {"attendance": ".hooks", "results": ".publishing"}.get(module, "")
     return importlib.import_module(f"leaguebot.{module}.services{folder}.cancellation_notice")
 
 

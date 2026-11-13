@@ -528,7 +528,7 @@ def attendance_hook_double() -> Any:
 #: The season service is doubled only where a league gives one.
 _DOUBLED_AT_BUILD = {
     "scheduler": ("leaguebot.core.services.scheduler_service", "SchedulerService"),
-    "attendance_hook": ("leaguebot.attendance.services.attendance_after_review",
+    "attendance_hook": ("leaguebot.attendance.services.hooks.attendance_after_review",
                         "AttendanceAfterReview"),
     "season_service": ("leaguebot.core.services.seasons.season_service", "SeasonService"),
 }

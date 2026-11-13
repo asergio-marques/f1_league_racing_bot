@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType

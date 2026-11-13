@@ -1240,7 +1240,7 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     is on, and answers through the real hook the builder hands the approval."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)

@@ -124,7 +124,7 @@ async def test_attendance_hands_back_its_own_pending_steps(tmp_path, state, pend
     deadline until it has run (marked, or its announcement posted) and the clean-up while the
     call stands; never a step already asked of the change queue. It passes nothing over, and
     while it is off it hands back nothing."""
-    from leaguebot.attendance.services.test_mode_steps import pending_steps
+    from leaguebot.attendance.services.hooks.test_mode_steps import pending_steps
 
     db_path = str(tmp_path / "attendance_steps.db")
     await _seed(db_path, **state)
@@ -176,7 +176,7 @@ async def test_attendance_hands_the_review_its_own_marks(tmp_path, state, queued
     where its job is queued, it is already asked of the change queue, or there is no scheduler to
     ask, and ⚠️ where the scheduler holds no job for it. While attendance is off, it hands back
     nothing."""
-    from leaguebot.attendance.services.test_mode_steps import review_marks
+    from leaguebot.attendance.services.hooks.test_mode_steps import review_marks
 
     db_path = str(tmp_path / "attendance_marks.db")
     await _seed(db_path, **state)

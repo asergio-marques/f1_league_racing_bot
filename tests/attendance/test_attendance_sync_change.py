@@ -33,7 +33,7 @@ import discord
 import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
-from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (

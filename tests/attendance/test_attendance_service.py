@@ -398,7 +398,7 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
     from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.attendance.services.attendance_hooks import division_channel_faults
+    from leaguebot.attendance.services.hooks.attendance_hooks import division_channel_faults
     from leaguebot.core.db.database import get_connection
     from tests.support.channel_faults import server_holding
 

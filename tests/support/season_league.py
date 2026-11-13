@@ -85,7 +85,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     SERVER_ID,

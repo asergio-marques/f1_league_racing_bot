@@ -30,7 +30,7 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
     2026-10-06, "Refuse at the press"). Attendance answers through the real hook it is handed.
     Whether attendance is on is asked of the module switches the check is handed, not of the
     bot's own, which say it is off."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from leaguebot.results.services.points.points_amendment_faults import approval_faults
 
     league = await points_league(tmp_path, cancelled_division=True, attendance=True)

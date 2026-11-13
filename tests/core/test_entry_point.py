@@ -333,7 +333,7 @@ _CANCELLATION_PARTS = (
      "close_called_off_on", "results' close"),
     ("rounds_called_off", "leaguebot.attendance.services.check_in.check_in_clean_up",
      "take_down_called_off_on", "attendance's take-down"),
-    ("cancellation_notices", "leaguebot.attendance.services.cancellation_notice",
+    ("cancellation_notices", "leaguebot.attendance.services.hooks.cancellation_notice",
      "notices_on", "attendance's check-in notice"),
     ("cancellation_notices", "leaguebot.weather.services.cancellation_notice",
      "notices_on", "weather's forecast note"),
@@ -345,7 +345,7 @@ _CANCELLATION_PARTS = (
 #: Each module's subscriber to a round's timing windows read, as the module names it, and what the
 #: test calls it, in the order the builder signs them up.
 _WINDOWS_PARTS = (
-    ("leaguebot.attendance.services.attendance_hooks", "round_window", "attendance's window"),
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_window", "attendance's window"),
     ("leaguebot.weather.services.weather_config_service", "round_window", "weather's window"),
 )
 
@@ -391,13 +391,13 @@ _SEASON_END_PARTS = (
 #: test calls it, in the order the builder signs them up. Each deletes or re-points the module's
 #: own rows on the delete's connection.
 _DELETE_PARTS = (
-    ("rounds_deleted", "leaguebot.attendance.services.attendance_hooks", "rounds_deleted_on",
+    ("rounds_deleted", "leaguebot.attendance.services.hooks.attendance_hooks", "rounds_deleted_on",
      "attendance's rounds"),
     ("rounds_deleted", "leaguebot.results.services.module.results_purge_service", "rounds_deleted_on",
      "results' rounds"),
     ("rounds_deleted", "leaguebot.weather.services.forecast_cleanup_service", "rounds_deleted_on",
      "weather's rounds"),
-    ("divisions_deleted", "leaguebot.attendance.services.attendance_hooks",
+    ("divisions_deleted", "leaguebot.attendance.services.hooks.attendance_hooks",
      "divisions_deleted_on", "attendance's divisions"),
     ("divisions_deleted", "leaguebot.results.services.module.results_purge_service",
      "divisions_deleted_on", "results' divisions"),
@@ -405,11 +405,11 @@ _DELETE_PARTS = (
      "results' season"),
     ("season_deleted", "leaguebot.signup.services.signup_module_service", "season_deleted_on",
      "signup's season"),
-    ("profiles_deleted", "leaguebot.attendance.services.attendance_hooks",
+    ("profiles_deleted", "leaguebot.attendance.services.hooks.attendance_hooks",
      "profiles_deleted_on", "attendance's drivers deleted"),
     ("profiles_deleted", "leaguebot.results.services.module.results_purge_service",
      "profiles_deleted_on", "results' drivers deleted"),
-    ("profiles_merged", "leaguebot.attendance.services.attendance_hooks",
+    ("profiles_merged", "leaguebot.attendance.services.hooks.attendance_hooks",
      "profiles_merged_on", "attendance's drivers merged"),
     ("profiles_merged", "leaguebot.results.services.module.results_purge_service",
      "profiles_merged_on", "results' drivers merged"),
@@ -429,7 +429,7 @@ _DELETE_PAYLOADS = {
 _PACK_PARTS = (
     ("leaguebot.signup.services.signup_module_service", "bot_packed_on", "signup's pack"),
     ("leaguebot.weather.services.forecast_cleanup_service", "bot_packed_on", "weather's pack"),
-    ("leaguebot.attendance.services.attendance_hooks", "bot_packed_on", "attendance's pack"),
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "bot_packed_on", "attendance's pack"),
     ("leaguebot.results.services.module.results_purge_service", "bot_packed_on", "results' pack"),
 )
 
@@ -1193,7 +1193,7 @@ async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, m
 #: in the order the builder signs them up: the order the review reads them in.
 _REVIEW_SECTION_PARTS = (
     ("leaguebot.signup.services.signup_module_service", "review_section", "signup's section"),
-    ("leaguebot.attendance.services.attendance_hooks", "review_section",
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "review_section",
      "attendance's section"),
     ("leaguebot.results.services.points.season_points_service", "review_section", "results' section"),
     ("leaguebot.weather.services.weather_config_service", "review_section", "weather's section"),

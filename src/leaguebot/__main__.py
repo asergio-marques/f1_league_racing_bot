@@ -1090,7 +1090,7 @@ async def build(settings: Settings) -> LeagueBot:
     )
     bot.attendance_service = AttendanceService(settings.db_path)
 
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through, the team-role service and the lineup poster; results' change types reach

@@ -746,7 +746,7 @@ def attendance_after_review_of(db_path: str) -> Any:
     attendance's part of the round through it."""
     from types import SimpleNamespace
 
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     return AttendanceAfterReview(SimpleNamespace(db_path=db_path), None)
 

@@ -1,7 +1,7 @@
 """Attendance's share of a round's review, as the hook the builder hands results' change types
 (#439, slice 2, plan 2.6).
 
-`AttendanceAfterReview`, in `leaguebot.attendance.services.attendance_after_review`, is built once
+`AttendanceAfterReview`, in `leaguebot.attendance.services.hooks.attendance_after_review`, is built once
 by the entry point and handed the placement service, the team-role service and the lineup
 poster. Results' change types call it; it calls
 attendance's own functions. These tests run the real hook against a database built by the
@@ -44,7 +44,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
+from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.review.review_state import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
@@ -310,7 +310,7 @@ async def _state(db_path: str, profile: int) -> tuple[str, int]:
 def _hook(bot: Any, placement: Any, **handed: Any) -> Any:
     """Attendance's hook for *bot*, handed *placement* and, where given, the team-role service
     (``roles``) and the lineup poster (``lineups``)."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     return AttendanceAfterReview(bot, placement, **handed)
 

@@ -2,7 +2,7 @@
 
 `AttendanceAfterReview` is the protocol the builder hands to results, whose change types take it, so
 that results imports nothing of attendance: the change types call these methods and attendance
-implements them (`leaguebot.attendance.services.attendance_after_review`). It is attached to the bot
+implements them (`leaguebot.attendance.services.hooks.attendance_after_review`). It is attached to the bot
 as `bot.attendance_after_review` and declared on `LeagueBot`. Its duties are recording a round's
 attendance and pardons, recalculating after an amendment, posting the sheet, the sanctions,
 redrawing a lineup, reading a not-held round's check-in and naming what would stop a points
