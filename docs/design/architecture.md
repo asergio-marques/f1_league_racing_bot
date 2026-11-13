@@ -825,6 +825,19 @@ second writer.
   refuses a row that contradicts itself (as the season's stage triggers do).
 - Everything else is service code.
 
+**A rule that compares one setting with another is judged by the service that writes the
+setting, on the connection it writes on,** never only in the command. A command may judge it too,
+to refuse before anything is asked, but a change ahead in the queue may have moved the other setting
+since, so the service judges it again as the save runs (see "Checked before it is queued, and again
+before it runs"). A timing that must stay shorter than another, or two thresholds that must not
+overlap, are examples.
+
+**A stored copy of a derived figure has one function that recomputes it,** which runs on the
+connection its caller was handed, and a named test pins each caller's use of it. A running total
+kept beside the rows it sums is such a copy: where two paths each recomputed it for themselves, one
+went stale when the other's rule changed. A module's design file names each copy it keeps and the
+function that recomputes it.
+
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by rebuilding
 the table, so which rules go in the schema is settled before more tables are added.
 
@@ -905,6 +918,12 @@ recovery against another's), and would put a module's rule in core. Each module 
 its turn, and the order a rule gives holds within the module, as [STW-RST-001]'s does for stewarding.
 *Rejected:* declaring for each kind of job whether a missed one runs late or is skipped, for the
 sweep to apply, which puts a module's rule in core.
+
+**A handler of a job armed with no lateness limit judges lateness itself,** against its own due
+moment and the `now` it is handed ("The time is always passed in"), since the scheduler no longer
+does, and a job caught up by the sweep and the same job fired late take that one judgement. A skip
+that needs no record is a change ended as not due, with a line saying so in the log channel, as any
+change that finds its work not due ends.
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
@@ -1250,7 +1269,7 @@ everything it covers.
 *Rejected:* a `LeagueCog` base class. It would hold two lines of code, and an error handler added
 to it would switch off the one failure path for every command.
 
-**A catch-all error handler** (`except Exception`) is allowed in only five places, and in the
+**A catch-all error handler** (`except Exception`) is allowed in only six places, and in the
 stated exceptions below them:
 
 1. on one of the failure paths above. That includes a command, button or form that catches
@@ -1291,9 +1310,13 @@ stated exceptions below them:
 5. around work a specification gives a fallback for, as a picture that cannot be drawn is posted or
    shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
    posting it hands back, so that the fallback is recorded where the job's lines go, as the season
-   review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does.
+   review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does;
+6. around the drawing of a graphic that rides on a post, where the post then goes out as text alone:
+   the full error goes to the host's log, and the fault is returned as a line of the job that posts,
+   so that the league is told its graphic could not be drawn. The catch holds the drawing only,
+   never the post.
 
-Beyond the five places, a stated exception has a catch-all of its own, each with its reason. The
+Beyond the six places, a stated exception has a catch-all of its own, each with its reason. The
 callback a change type may give for a Discard of a change before it started
 (`ChangeType.on_discarded`) is not a failure path but a stated exception: the catch-all around it
 (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the log
@@ -1493,11 +1516,11 @@ later on its own.
   it, read or set), core reading a module's service on the bot (an attribute `LeagueBot` types
   from a module's package, read from a file of core), SQLite's clock in a statement, a service
   reading the wall clock (the change queue's own default clock is the one place allowed,
-  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
+  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the six places (one that raises again, calls
   `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
   loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
-  1, the stated exceptions, place 3's guards around reporting and writing a log line and the fifth
-  place's handlers), and a save outside a queued change. The job check and the check of cogs
+  1, the stated exceptions, place 3's guards around reporting and writing a log line, and the fifth
+  and sixth places' handlers), and a save outside a queued change. The job check and the check of cogs
   handling their own errors are absolute, with no list of breaches left to grow, and the log
   channel's check holds its six places for good; every other check lists today's breaches, each
   under the work that removes it. The check of a save outside a queued change counts each
