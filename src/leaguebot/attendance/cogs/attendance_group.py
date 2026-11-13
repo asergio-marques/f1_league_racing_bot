@@ -4,7 +4,7 @@
 beneath it, in the order a league sees them; each subgroup's class takes its own as a class
 attribute. A group's children are kept in the order they join it, and Discord is sent them in that
 order, so declaring the subgroups in one file fixes the order whichever subgroup's file is imported
-first (`test_the_attendance_group_is_sent_its_subgroups_and_commands_in_their_listed_order`). What
+first (`test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first`). What
 else is here is what two or more of them use: the wait for the catch-up after a restart, the line
 the log channel is written, and the stub of what a subgroup takes from the cog it is composed into.
 """

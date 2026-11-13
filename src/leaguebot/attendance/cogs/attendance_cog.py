@@ -4,10 +4,10 @@ The subgroups' commands live in `config_commands.py`, `channel_commands.py` and
 `test_commands.py`, one file for each subgroup, and the commands on the group itself in
 `group_commands.py`, under the one `/attendance` group declared in `attendance_group.py`. The cog
 stays one cog for one group: it holds `/attendance` as a class attribute, each subgroup's class
-declares its subgroup with that group as its parent, and discord.py binds a cog's group to the cog
-together with every child beneath it, so every command runs with this cog's `self`. A cog too
-large to read in one file is split by subgroup rather than into a cog for each, as the
-architecture's cog bullet gives it (`docs/design/architecture.md`).
+takes its subgroup, declared beneath that group in `attendance_group.py`, and discord.py binds a
+cog's group to the cog together with every child beneath it, so every command runs with this cog's
+`self`. A cog too large to read in one file is split by subgroup rather than into a cog for each,
+as the architecture's cog bullet gives it (`docs/design/architecture.md`).
 
 What is left here is what the subgroups share: the cog's bot and the gate their commands call.
 The check-in's buttons are in `check_in_buttons.py`.

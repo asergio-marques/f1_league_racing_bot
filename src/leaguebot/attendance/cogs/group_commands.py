@@ -1,7 +1,7 @@
 """`GroupCommands`: the commands on `/attendance` itself, `sync` and `post-check-in`.
 
-They join the group after its subgroups, which is the order Discord is sent them in, so this file
-is imported after the subgroups' (`attendance_cog.py`).
+They join the group after its subgroups, which `attendance_group.py` declares, so Discord is sent
+them last whichever file is imported first.
 """
 from __future__ import annotations
 
