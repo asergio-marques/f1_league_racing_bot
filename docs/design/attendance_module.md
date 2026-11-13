@@ -572,9 +572,9 @@ stop notice saying what is left for the round (`left_for_the_queue`).
 **The catch-alls** of attendance sit in the places `architecture.md` allows, and each is named for
 good in `CATCH_ALLS_ALLOWED` where the shape does not tell its place: `record_failed` (in
 `attendance_group.py`), around recording a failure that might itself fail (place 3); the four
-drawings of a graphic above (place 6); the loop of each recovery, one round failing never
-stopping the rest (place 2); and the advance's ask of a change, which raises the fault again as `AdvanceStepFailed` for the command to
-report, a handler in a place by its shape.
+drawings of a graphic above (place 6); the loop of each recovery, one round failing never stopping
+the rest (place 2); and the advance's ask of a change, which raises the fault again as
+`AdvanceStepFailed` for the command to report, a handler in a place by its shape.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops"):
 
