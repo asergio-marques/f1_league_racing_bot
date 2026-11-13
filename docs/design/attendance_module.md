@@ -297,7 +297,8 @@ the setting, which the sync's would drift from.
 **A change that recalculates and posts as `/attendance sync` does follows the sync's rule
 whatever starts it, a setting included.** Its cards, lineups and sheets are the sync's own jobs and
 stop the league lane where Discord refuses them, for the manager to Retry or Discard, rather than
-end on a fault as a setting's later steps do (`architecture.md`, the settings exception): a
+end on a fault as a setting's later steps do (`architecture.md`, the settings exception, and the core
+specification's "How a change is carried out", which holds what a league sees): a
 sanction card lost is worse than a lane held. Its check, its read of the Reserve capacity, its
 save (rolled back whole where it faults, and refusing to recalculate on a capacity nobody read)
 and the roles' job, as the sync's, still end on a fault; and the sanctions it could not apply

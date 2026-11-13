@@ -561,7 +561,7 @@ does follows the sync's rule whatever starts it, a setting included. Its cards, 
 are the sync's own jobs and stop the lane where Discord refuses them, for the manager to Retry or
 Discard, since a sanction card lost is worse than a lane held; its check, its read of the Reserve
 capacity (a read, not a post, and one that opens every such change, a value held included), its
-save and the roles' job, which the sync's also ends on a fault, end on a fault as above. Such a change still declares the tables it writes, as every setting does.
+save and the roles' job, which the sync's also ends on a fault, end on a fault as above. Such a change still declares the tables it writes, as every setting does. What a league sees of the exception is the core specification's "How a change is carried out" and the README's account of a job that fails stopping its lane, not this file's.
 
 `/bot init` (a change type of its own; see "The record is the queue's") ends on a fault rather than
 stopping the lane, both in its one SAVE step (`Step.on_fault`) and in a check that raises as a
