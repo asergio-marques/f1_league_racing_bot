@@ -110,12 +110,11 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
+        # The packaged values are the column defaults of `attendance_config`, held once there:
+        # the row is replaced naming only the flag (whose own default is off), so the eight
+        # settings come back as the schema declares them.
         await db.execute(
-            "INSERT OR REPLACE INTO attendance_config "
-            "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-            "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
-            "autoreserve_threshold, autosack_threshold) "
-            "VALUES (1, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)"
+            "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1, 1)"
         )
         return Saved(
             changed=True,
