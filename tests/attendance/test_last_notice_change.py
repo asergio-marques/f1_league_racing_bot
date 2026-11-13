@@ -297,11 +297,6 @@ async def test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the
 
 
 @pytest.mark.parametrize("which", ["call", "last notice"])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#285: under test mode a timer's call or last notice is judged late as its change "
-           "starts, not as it is asked, so one asked on time and started late is dropped",
-)
 async def test_a_timer_fired_on_time_under_test_mode_is_posted_however_late_the_queue_starts_it(
     tmp_path, which,
 ):

@@ -272,12 +272,17 @@ async def _left_to_advance(
     **Under test mode a restart posts neither late** (core specification, "Test mode"): the timers
     are armed with no lateness limit, so one that fell due while the bot was down fires when it is
     back, and the change judges its own moment against *now*, the queue's clock. A bot's request
-    that is not advance's and comes more than `_ON_TIME` after the moment of *kind* (`rsvp_notice`
-    or `rsvp_last_notice`) is not due, and the round's check-in is left open for the advance to
-    take in its turn. A call replacing another, an amendment's, is not judged so.
+    that is not advance's and is asked more than `_ON_TIME` after the moment of *kind*
+    (`rsvp_notice` or `rsvp_last_notice`) is not due, and the round's check-in is left open for
+    the advance to take in its turn. A call replacing another, an amendment's, is not judged so.
+
+    Lateness is judged **at the ask only** (`ctx.change_id` is None), where a timer fires: a
+    request accepted on time is never dropped as the change starts for the queue's delay, a
+    stopped or busy lane having kept it waiting while the bot was up.
     """
     if (
         row is None
+        or ctx.change_id is not None
         or ctx.origin is not ChangeOrigin.BOT
         or ctx.payload.get("advanced")
         or ctx.payload.get("replaces") is not None
