@@ -177,7 +177,6 @@ def test_the_live_sheet_path_resolves_names_through_the_shared_convention():
     assert "_nationalities" in source
 
 
-
 @pytest.mark.asyncio
 async def test_the_seat_lookup_survives_an_unreadable_database(tmp_path):
     """A nameless team is drawn empty; it is never a reason to fail a sheet.
