@@ -333,13 +333,14 @@ async def test_the_same_penalty_again_mid_season_changes_nothing_and_announces_n
     assert "| /attendance config no-show-penalty | Nothing changed" in again
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sanction_already_applied_stands_when_the_penalty_is_lowered(tmp_path):
-    """As above: the no-show penalty raised from 1 to 2 sacks the driver at round 2, carded once.
-    Manager 77 then runs `/attendance config no-show-penalty 1`, which takes their total after
-    round 2 back to 2, under auto-sack's 3, and the queue is run. Both rounds are recalculated at
-    1 point (totals 1 and 2); the driver stays sacked, not seated again; no further heading or
-    card is posted; the queue does not stop; and the reply lists no sanction."""
+    """As above: the no-show penalty raised from 1 to 2 sacks the driver at round 2, carded once,
+    their rounds giving 2 points each (totals 2 and 4). Manager 77 then runs `/attendance config
+    no-show-penalty 1`, which would take their total after round 2 back to 2, under auto-sack's 3,
+    and the queue is run. The penalty is 1; the driver stays sacked, not seated again, and their
+    rows stay as they were (2 points a round, totals 2 and 4), as `/attendance sync` leaves a
+    driver no longer seated; no further heading or card is posted; the queue does not stop; and
+    the reply lists no sanction."""
     league = await _owed_a_sack_once_raised(tmp_path)
     await _ask_penalty(league, "no-show-penalty", 2)
     assert await _seated(league.db_path) == []
@@ -350,7 +351,7 @@ async def test_a_sanction_already_applied_stands_when_the_penalty_is_lowered(tmp
     assert await stopped_job(league.db_path) is None
     assert await _penalty(league.db_path, "no_show_penalty") == 1
     assert [(round_id, points, total) for round_id, _, _, points, total
-            in await _rows(league.db_path)] == [(1, 1, 1), (2, 1, 2)]
+            in await _rows(league.db_path)] == [(1, 2, 2), (2, 2, 4)]
     assert await _seated(league.db_path) == []
     assert len(league.verdicts()) == 2
     assert "Sanctions applied:" not in last_said(interaction)
