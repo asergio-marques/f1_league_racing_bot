@@ -12,6 +12,9 @@ from typing import Any
 
 from leaguebot.attendance.services import attendance_scoring, attendance_sheet
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.drivers.driver_service import driver_test_names_on
+from leaguebot.core.services.drivers.team_service import TeamService, division_team_references
+from leaguebot.core.services.seasons.season_service import division_on
 
 
 class SanctionNotApplicable(Exception):
@@ -36,17 +39,14 @@ async def _thresholds(db_path: str) -> tuple[int | None, int | None]:
         return await _thresholds_on(db)
 
 
-async def _display_name_on(db, profile_id: int) -> str | None:
-    cursor = await db.execute(
-        "SELECT test_display_name FROM driver_profiles WHERE id = ?", (profile_id,)
-    )
-    row = await cursor.fetchone()
-    return None if row is None else row["test_display_name"]
+async def _display_name_on(db, discord_user_id: int) -> str | None:
+    """The test display name of the driver holding *discord_user_id*, None where they have none."""
+    return (await driver_test_names_on(db, [discord_user_id])).get(discord_user_id)
 
 
-async def _display_name_of(db_path: str, profile_id: int) -> str | None:
+async def _display_name_of(db_path: str, discord_user_id: int) -> str | None:
     async with get_connection(db_path) as db:
-        return await _display_name_on(db, profile_id)
+        return await _display_name_on(db, discord_user_id)
 
 
 async def owed_sanctions(
@@ -74,74 +74,53 @@ async def owed_sanctions(
         if not autoreserve_threshold and not autosack_threshold:
             return [], []
         if season_id is None:
-            row = await (
-                await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
-            ).fetchone()
-            if row is None:
+            division = await division_on(db, division_id)
+            if division is None:
                 return [], []
-            season_id = int(row["season_id"])
+            season_id = division.season_id
         cursor = await db.execute(
             """
-            SELECT dra.driver_profile_id, dra.total_points_after,
-                   dp.discord_user_id, dp.current_state
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND ti.is_reserve = 0
-              AND dra.total_points_after IS NOT NULL
+            SELECT driver_profile_id, total_points_after FROM driver_round_attendance
+            WHERE round_id = ? AND division_id = ? AND total_points_after IS NOT NULL
             """,
-            (round_id, division_id, division_id),
+            (round_id, division_id),
         )
-        driver_rows = await cursor.fetchall()
+        totals = {int(row["driver_profile_id"]): row["total_points_after"] for row in await cursor.fetchall()}
+        placed = [
+            driver
+            for driver in await TeamService.placed_drivers_on(db, division_id)
+            if driver.profile_id in totals and not driver.is_reserve
+        ]
 
         owed: list[dict] = []
         signed_off: list[tuple[int, int]] = []
-        for row in driver_rows:
-            profile_id = row["driver_profile_id"]
-            total = row["total_points_after"] or 0
+        for driver in placed:
+            profile_id = driver.profile_id
+            total = totals[profile_id] or 0
             if autosack_threshold and total >= autosack_threshold:
-                if row["current_state"] == "NOT_SIGNED_UP":
+                if driver.current_state == "NOT_SIGNED_UP":
                     signed_off.append((profile_id, total))
                     continue
                 # Autosack takes every seat in every division (issue #220), so every division
                 # the driver sits in has its sheet posted again, not only this one.
-                cursor = await db.execute(
-                    "SELECT division_id FROM driver_season_assignments "
-                    "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
-                    (profile_id, season_id, division_id),
-                )
                 owed.append({
                     "driver_profile_id": profile_id,
-                    "driver_user_id": int(row["discord_user_id"]),
+                    "driver_user_id": driver.discord_user_id,
                     "sanction": "AUTOSACK",
-                    "other_divisions": [o["division_id"] for o in await cursor.fetchall()],
+                    "other_divisions": [
+                        other
+                        for other in await TeamService.divisions_placed_in_on(db, profile_id, season_id)
+                        if other != division_id
+                    ],
                 })
                 continue  # autosack supersedes autoreserve (FR-025)
             if autoreserve_threshold and total >= autoreserve_threshold:
-                cursor = await db.execute(
-                    """
-                    SELECT ti.is_reserve
-                    FROM driver_season_assignments dsa
-                    JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                    JOIN team_instances ti ON ti.id = ts.team_instance_id
-                    WHERE dsa.driver_profile_id = ?
-                      AND dsa.season_id = ?
-                      AND dsa.division_id = ?
-                    """,
-                    (profile_id, season_id, division_id),
-                )
-                seat_row = await cursor.fetchone()
-                if seat_row and seat_row["is_reserve"]:
-                    continue  # already in Reserve — skip (FR-026)
+                # A driver placed in the division but not in its Reserve team is owed the move;
+                # one the division's own Reserve team already holds is skipped (FR-026), which
+                # the filter above has already left out.
                 owed.append({
                     "driver_profile_id": profile_id,
-                    "driver_user_id": int(row["discord_user_id"]),
+                    "driver_user_id": driver.discord_user_id,
                     "sanction": "AUTORESERVE",
                     "other_divisions": [],
                 })
@@ -172,12 +151,10 @@ async def _sanction_facts_on(db, division_id: int, round_id: int, candidate: dic
     """The season, the driver's total, the division's Reserve team (None where it has none) and
     the driver as a line names them, read on *db*."""
     if season_id is None:
-        row = await (
-            await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
-        ).fetchone()
-        if row is None:
+        division = await division_on(db, division_id)
+        if division is None:
             raise SanctionNotApplicable(f"division {division_id} is not in a season")
-        season_id = int(row["season_id"])
+        season_id = division.season_id
     profile_id = candidate["driver_profile_id"]
     row = await (await db.execute(
         "SELECT total_points_after FROM driver_round_attendance "
@@ -185,15 +162,15 @@ async def _sanction_facts_on(db, division_id: int, round_id: int, candidate: dic
         (round_id, division_id, profile_id),
     )).fetchone()
     total = (row["total_points_after"] if row else None) or 0
-    reserve_row = await (await db.execute(
-        "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 1 LIMIT 1",
-        (division_id,),
-    )).fetchone()
+    reserve_name = next(
+        (team["name"] for team in await division_team_references(db, division_id) if team["is_reserve"]),
+        None,
+    )
     driver = f"<@{candidate['driver_user_id']}>"
-    display_name = await _display_name_on(db, profile_id)
+    display_name = await _display_name_on(db, int(candidate["driver_user_id"]))
     if display_name:
         driver += f" ({display_name})"
-    return season_id, total, (reserve_row["name"] if reserve_row else None), driver
+    return season_id, total, reserve_name, driver
 
 
 async def check_sanction(

@@ -283,7 +283,7 @@ class AttendanceAfterReview:
         autoreserve, autosack = await attendance_sanctions._thresholds(self._db_path)
         sanction = candidate["sanction"]
         driver_discord_id = int(candidate["driver_user_id"])
-        display_name = await attendance_sanctions._display_name_of(self._db_path, candidate["driver_profile_id"])
+        display_name = await attendance_sanctions._display_name_of(self._db_path, driver_discord_id)
         driver_ref = f"<@{driver_discord_id}>"
         if display_name:
             driver_ref += f" ({display_name})"

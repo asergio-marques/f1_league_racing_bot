@@ -42,6 +42,19 @@ class SeatedDriver:
     is_reserve: bool
 
 
+@dataclass(frozen=True)
+class PlacedDriver:
+    """A driver whose placement names a seat of a division, as the placement reads: the driver by
+    profile (``profile_id``), their current account and state, and the team of the seat the
+    placement names, by full name, with whether it is the reserve team."""
+
+    profile_id: int
+    discord_user_id: int
+    current_state: str
+    team_name: str
+    is_reserve: bool
+
+
 @dataclass
 class TeamRoleConfig:
     """Server-scoped mapping of team name → Discord role ID."""

@@ -309,7 +309,9 @@ def attendance_sync_change(
             entry = {
                 "driver_profile_id": profile_id,
                 "driver_user_id": int(candidate["driver_user_id"]),
-                "name": await attendance_sanctions._display_name_on(db, profile_id),
+                "name": await attendance_sanctions._display_name_on(
+                    db, int(candidate["driver_user_id"])
+                ),
                 "sanction": "autosack" if candidate["sanction"] == "AUTOSACK" else "autoreserve",
             }
             if candidate["sanction"] == "AUTORESERVE" and capacity.get("refusal"):
