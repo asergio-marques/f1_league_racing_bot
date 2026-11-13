@@ -60,9 +60,8 @@ For a season's end on the queue (slice 5), `ongoing_league` also takes *test_mod
 driver roles, each role taken back recorded in `league.revoked` and refused for a member in
 `league.revoke_fails`; each signing-up driver's signup channel standing on the server
 (`signup_channel`), recording each closing notice it is sent in `league.notices` and each lock
-of it in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say, whether
-the wizard service's double or signup's own closing jobs post there; and the window's close
-raising `league.close_fails`.
+of it in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say, whichever
+code posts there; and the window's close raising `league.close_fails`.
 `approved_unplaced` adds a driver approved and never placed (`UNASSIGNED`), holding the driver
 role. `pending_completion_league` builds the season with every round final and both divisions finished,
 results accepted for three rounds; `setup_league` the season before its placements are confirmed,
@@ -1121,11 +1120,10 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     """What a season's end reads beyond the season itself.
 
     Always: the real signup module and driver services, the window's recording of its close
-    raising `league.close_fails` where set; a wizard service double (`bot.wizard_service`) whose
-    `trigger_channel_hold` and `lock_signup_channel` post and lock through the driver's signup
-    channel (`signup_channel`), which records each closing notice in `league.notices` and each
-    lock in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say; and the
-    scheduler's job store under *tmp_path*, for the backup to be found beside it.
+    raising `league.close_fails` where set; and the scheduler's job store under *tmp_path*, for
+    the backup to be found beside it. A driver's signup channel (`signup_channel`) records each
+    closing notice it is sent in `league.notices` and each lock in `league.locked`, refusing as
+    `league.hold_fails` and `league.lock_fails` say.
 
     *test_mode*: test mode on, the test driver (104) seated at McLaren, and a saved test-mode
     backup of the league and of the job store present (`backup_saved`).
@@ -1134,14 +1132,12 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     *held*: the league's driver role (820) set, and every real driver holding their division
     role, their team role and the driver role; the test driver holds none.
 
-    The three services are swapped on the bot after the league's queue has registered the real
-    change types, which therefore read them when they run, not when registered: the signup module
-    and driver services through `lambda: bot.signup_module_service` and `lambda: bot.driver_service`,
-    the wizard service through the season's end's hold and lock, which read `bot.wizard_service`
-    when called. The builder keeps those reads late (#283).
+    The two services are swapped on the bot after the league's queue has registered the real
+    change types, which therefore read them when they run, not when registered: through
+    `lambda: bot.signup_module_service` and `lambda: bot.driver_service`. The builder keeps those
+    reads late (#283).
     """
     bot = league.bot
-    _wizard_double(league)
     _signup_services(league)
     bot.scheduler_service.jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
     if test_mode:
@@ -1167,35 +1163,7 @@ def backup_saved(league: SeasonLeague) -> bool:
     return backup_path(league.db_path).is_file()
 
 
-def _wizard_double(league: SeasonLeague) -> None:
-    """A wizard service double whose `trigger_channel_hold` and `lock_signup_channel` act through
-    the driver's signup channel double (`signup_channel`), as the real ones do: the notice is that
-    channel's send and the lock its permission edit, so `league.notices` and `league.locked`
-    record what the channel was sent and how it was locked, by whichever code posts there. A
-    driver with no signup channel on the server is found with nothing to tell (`channel_id`
-    None)."""
 
-    async def _hold(user_id: Any, _guild: Any, notice: str, **kwargs: Any) -> Any:
-        uid = int(user_id)
-        held = league.channels.get(SIGNUP_CHANNEL_BASE + uid)
-        if held is None:
-            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
-        await held.send(notice)
-        lock = kwargs.get("lock", True)
-        if lock:
-            await held.set_permissions(league._member(uid), send_messages=False)
-        return SimpleNamespace(channel_id=held.id, posted=True, locked=lock, reason=None)
-
-    async def _lock(user_id: Any, _guild: Any) -> None:
-        uid = int(user_id)
-        held = league.channels.get(SIGNUP_CHANNEL_BASE + uid)
-        if held is not None:
-            await held.set_permissions(league._member(uid), send_messages=False)
-
-    wizard = MagicMock()
-    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
-    wizard.lock_signup_channel = AsyncMock(side_effect=_lock)
-    league.bot.wizard_service = wizard
 
 
 def _locks(kwargs: dict[str, Any]) -> bool:

@@ -1697,7 +1697,8 @@ async def test_a_driver_returned_by_the_window_s_close_is_told_before_their_chan
 async def test_a_season_end_notice_mentions_only_the_driver(tmp_path):
     """Kimi is part-way through signing up when the season is completed. When the queue runs, his
     signup channel is told the season has ended in one post that may notify Kimi alone, never a
-    role or @everyone, and his channel's deletion is armed 24 hours after the queue's clock."""
+    role or @everyone, his inactivity timer is disarmed, and his channel's deletion is armed 24
+    hours after the queue's clock."""
     from datetime import timedelta
 
     from tests.support.mentions import notified
@@ -1708,6 +1709,9 @@ async def test_a_season_end_notice_mentions_only_the_driver(tmp_path):
 
     await run_queue(league.bot)
 
+    assert ("signup_inactivity", str(SIGNING_UP)) in [
+        call.args for call in league.bot.scheduler_service.disarm.call_args_list
+    ]
     held = league.channel(SIGNUP_CHANNEL_BASE + SIGNING_UP)
     [sent] = held.send.call_args_list
     assert notified(sent.kwargs.get("allowed_mentions")) == {
