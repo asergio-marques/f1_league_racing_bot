@@ -254,8 +254,8 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.check_in_changes import (
         check_in_call_change,
         check_in_clean_up_change,
-        check_in_deadline_change,
     )
+    from leaguebot.attendance.services.check_in_deadline import check_in_deadline_change
     from leaguebot.attendance.services.check_in_last_notice import check_in_last_notice_change
     from leaguebot.attendance.services.module_switch_settings import (
         module_off_attendance,
@@ -317,8 +317,8 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.check_in_changes import (
         ask_check_in_call,
         ask_check_in_clean_up,
-        ask_check_in_deadline,
     )
+    from leaguebot.attendance.services.check_in_deadline import ask_check_in_deadline
     from leaguebot.attendance.services.check_in_amendment import (
         advance_steps as check_in_advance_steps,
     )

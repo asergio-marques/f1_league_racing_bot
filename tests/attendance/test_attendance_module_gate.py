@@ -229,8 +229,11 @@ async def _ask(bot: MagicMock, step: str) -> list[int]:
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
-    check_in_changes = importlib.import_module("leaguebot.attendance.services.check_in_changes")
-    ask = getattr(check_in_changes, f"ask_check_in_{step}")
+    home = importlib.import_module(
+        "leaguebot.attendance.services."
+        + ("check_in_deadline" if step == "deadline" else "check_in_changes")
+    )
+    ask = getattr(home, f"ask_check_in_{step}")
     await ask(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
     await run_queue(bot)
     return [mid for kind, cid, mid in bot.events if kind == "send" and cid == RSVP_CHANNEL_ID]

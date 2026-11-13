@@ -335,7 +335,7 @@ async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeagu
 
 
 async def _run_the_deadline(league: SeasonLeague) -> None:
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_deadline
+    from leaguebot.attendance.services.check_in_deadline import ask_check_in_deadline
     from leaguebot.core.models.change import ChangeOrigin
 
     await ask_check_in_deadline(league.bot.change_queue, league.db_path, ROUND_3,

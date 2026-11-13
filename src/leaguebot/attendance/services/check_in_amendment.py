@@ -54,13 +54,13 @@ from leaguebot.attendance.services.check_in_changes import (
     CheckInViewFactory,
     call_row,
     check_in_clean_up_steps,
-    check_in_deadline_steps,
     check_in_steps,
     close_check_in_on,
     given_up_text,
     standing_call_row,
     take_down_steps,
 )
+from leaguebot.attendance.services.check_in_deadline import check_in_deadline_steps
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round
