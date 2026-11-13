@@ -430,6 +430,63 @@ async def test_a_sanction_the_sync_cannot_apply_is_named_and_the_sync_still_fini
     assert league.verdicts() == []
 
 
+@pytest.mark.parametrize("other_profile", [100, 102],
+                         ids=["refused-driver-read-first", "refused-driver-read-second"])
+async def test_a_sanction_the_sync_cannot_apply_never_stops_the_others(tmp_path, other_profile):
+    """Round 1 is final and its driver owes an auto-sack. A second driver of Division 1 (profile
+    *other_profile*, a test driver, Discord user 5102), seated in Alpha but with their placement
+    not yet confirmed, accepted round 1 and did not race it either, so is owed an auto-sack too,
+    which cannot be applied: only a confirmed placement can be sacked. The refused driver is read
+    before the other, and after them. Manager 77 runs `/attendance sync` from round 1 and the
+    queue is run. The queue does not stop. The first driver is sacked and carded, whichever was
+    read first; the second stays seated. The updated acknowledgement lists the first under
+    "Sanctions applied" and the second under "Still not applied", with the reason; the sync's one
+    line reads Incomplete with one sanction applied; and the log channel is told of no no-op."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, '5102', 'ASSIGNED', 1, 'Second Timer')",
+            (other_profile,),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (21, ?, 2, ?)",
+            (ALPHA, other_profile),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id, committed) VALUES (?, ?, ?, 21, 0)",
+            (other_profile, SEASON_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (1, ?, ?, 'ACCEPTED')",
+            (DIVISION_ID, other_profile),
+        )
+        await db.commit()
+
+    interaction = await _sync(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _seated(league.db_path) == [other_profile]
+    heading, card = league.verdicts()
+    assert heading == HEADING
+    reply = updated_reply(interaction)
+    applied, _, not_applied = reply.partition("Still not applied")
+    assert "Sanctions applied:" in applied
+    assert "• <@5101> (Full Timer) — autosack" in applied
+    assert "<@5102>" not in applied
+    assert "• <@5102> (Second Timer) — autosack: Only a driver whose placement is confirmed" \
+        in not_applied
+    assert "<@5101>" not in not_applied
+    [line] = league.sync_lines()
+    assert "| /attendance sync | Incomplete" in line
+    assert "sanctions applied: 1" in line
+    assert not any("No-op" in each for each in league.log_lines())
+
+
 async def _amend_round_1(league: _League) -> str:
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -596,7 +653,9 @@ async def test_a_driver_already_signed_off_is_passed_over_with_a_no_op_line(tmp_
     of 5, has already been signed off (Not Signed Up) though still seated in Alpha. Manager 77 runs
     `/attendance sync` from round 1 and the queue is run. The queue does not stop; the driver is
     not sacked again, so stays seated as they were; no heading or card is posted; the sync's line
-    says no sanction was applied; and the log channel is told of the no-op."""
+    reads Success, an expected no-op being no failure, and says no sanction was applied; the
+    updated acknowledgement lists nothing as still not applied; and the log channel is told of
+    the no-op."""
     league = await _league(tmp_path)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -605,13 +664,15 @@ async def test_a_driver_already_signed_off_is_passed_over_with_a_no_op_line(tmp_
         )
         await db.commit()
 
-    await _sync(league)
+    interaction = await _sync(league)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
     assert await _seated(league.db_path) == [DRIVER_PROFILE]
     assert league.verdicts() == []
+    assert "Still not applied" not in updated_reply(interaction)
     [line] = league.sync_lines()
+    assert "| /attendance sync | Success" in line
     assert "sanctions applied: 0" in line
     assert any("ATTENDANCE_AUTOSACK | No-op" in each for each in league.log_lines())
 
