@@ -1,4 +1,10 @@
-"""RSVP service — notice dispatch, last-notice, deadline, distribution, embed builder."""
+"""The check-in call's embed and graphic, its roster, the last notice's text and the reserves' distribution.
+
+`build_rsvp_embed` draws the call and `_checkin_attachment` its graphic, `query_division_roster` lists
+the drivers it is for, `silent_full_time_drivers` and `last_notice_content` make the last notice, and
+`reserve_distribution_on` places the reserves at the deadline, with `distribution_announcement` its
+text. The call, the last notice and the deadline themselves are changes of `check_in_changes`, which
+use these."""
 from __future__ import annotations
 
 import logging
