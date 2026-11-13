@@ -26,7 +26,11 @@ sync` from the division's first approved round would give it:
   in a division recalculated, and a channel the recalculation posts to that cannot be reached.
   Neither is judged for a value already held, which changes nothing.
 - **The Reserve team's capacity** is read before the save (`CHECK_CAPACITY`), as the sync reads it,
-  for each division recalculated, and not at all for a value already held.
+  for each division recalculated, and not at all for a value already held. The read is the one step
+  of the change's own that is not a post, and it ends on a fault like the setting's check and
+  save rather than stopping the lane, as it opens every penalty change, one with nothing to
+  recalculate included: where it faulted and the save does recalculate, the save raises and is
+  rolled back whole, so the value is not saved and the member asks again.
 - **The tables it writes** are declared (`WRITES`): the setting's, the recalculation's and the
   sanctions', the authoriser confining the save to them as it does any setting.
 
@@ -63,6 +67,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.queue.setting_change import SAVE
 from leaguebot.core.services.seasons import season_service
+from leaguebot.core.utils.interaction_errors import failure_line
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 
@@ -210,6 +215,14 @@ def penalty_change(
     async def describe_capacity(_ctx: StepContext) -> str:
         return "checking the Reserve teams can take a driver"
 
+    def capacity_unread(ctx: StepContext, error: BaseException) -> StepResult:
+        """A fault in the read ends the job, as any setting's step does, and marks the capacity
+        unread: the save then refuses to recalculate on a capacity nobody read."""
+        return StepResult(
+            result={"capacity": {}, "unread": True},
+            lines=(failure_line(ctx.what, ctx.named, error),),
+        )
+
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The setting's save, then the season's recalculation on the same connection."""
         saved = await base_save.run(db, ctx)
@@ -218,6 +231,9 @@ def penalty_change(
         season_id, divisions = await _recalculated_on(db)
         if not divisions:
             return saved
+        if any((view.result or {}).get("unread") for view in ctx.steps
+               if view.name == CHECK_CAPACITY):
+            raise RuntimeError("the Reserve capacity was not read, so nothing was recalculated")
         acting = ctx.bot.user
         # Sanctions are enforced by a bot that has logged in, which is when it has a user.
         assert acting is not None, "sanctions enforced before the bot logged in"
@@ -282,7 +298,7 @@ def penalty_change(
         **change.steps,
         SAVE: dataclasses.replace(change.steps[SAVE], run=save),
         CHECK_CAPACITY: Step(CHECK_CAPACITY, StepKind.ACT, check_capacity,
-                             describe=describe_capacity),
+                             describe=describe_capacity, on_fault=capacity_unread),
         **sync.posting_steps(
             roles=roles, lineups=lineups, attendance=attendance, modules=modules, now=now
         ),
