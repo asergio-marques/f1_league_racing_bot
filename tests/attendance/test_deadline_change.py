@@ -399,3 +399,30 @@ async def test_the_announcement_goes_to_the_division_s_current_check_in_channel_
     assert (row["distribution_msg_id"], row["distribution_channel_id"]) == (
         str(posted), str(MOVED),
     )
+
+
+@pytest.mark.parametrize("queue_ran_first", [
+    pytest.param(False, id="the timer asks before the queue runs"),
+    pytest.param(True, id="the timer asks after the queue has run"),
+])
+async def test_a_deadline_missed_asked_by_the_restart_and_its_timer_announces_once(
+    tmp_path, queue_ran_first,
+):
+    """Round 3's deadline passed an hour ago while the bot was down, its timer armed with no
+    lateness limit. The bot comes back: attendance's start-up step for check-in deadlines asks
+    for it, and its timer, firing as the scheduler is resumed, asks for it too, either while the
+    restart's ask still waits on the queue or once the queue has run it. Pro's check-in channel
+    is sent one reserve announcement, and the queue holds one deadline change for round 3."""
+    from leaguebot.attendance.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+
+    await dict(start_up_steps(league.bot))["RSVP views and deadlines"]()
+    if queue_ran_first:
+        await run_queue(league.bot)
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert len(_sent(league)) == 1
+    assert len(await _deadline_changes(league)) == 1
+    assert (await _call_row(league))["deadline_run_at"] is not None

@@ -284,3 +284,35 @@ async def test_the_clean_up_leaves_the_other_round_of_a_double_header_standing(t
     assert {ROUND_4_CALL, ROUND_4_NOTICE} <= set(league.channel(CHECK_IN).messages)
     assert len(await _call_rows(league, ROUND_4)) == 1
     assert not await _cleared(league, ROUND_4)
+
+
+@pytest.mark.parametrize("queue_ran_first", [
+    pytest.param(False, id="the timer asks before the queue runs"),
+    pytest.param(True, id="the timer asks after the queue has run", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#285: a clean-up asked once the round's check-in is marked over is still saved "
+               "as a second change, rather than dropped as no longer due",
+    )),
+])
+async def test_a_clean_up_missed_asked_by_the_restart_and_its_timer_takes_down_once(
+    tmp_path, queue_ran_first,
+):
+    """Round 3 was raced 25 hours ago and its clean-up fell due while the bot was down, its timer
+    armed with no lateness limit. The bot comes back: attendance's start-up step for missed
+    clean-ups asks for it, and its timer, firing as the scheduler is resumed, asks for it too,
+    either while the restart's ask still waits on the queue or once the queue has run it. The
+    call (7001), last notice (7002) and announcement (7003) are each deleted once, the round's
+    check-in is marked over, and the queue holds one clean-up change."""
+    from leaguebot.attendance.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+
+    await dict(start_up_steps(league.bot))["missed check-in clean-ups"]()
+    if queue_ran_first:
+        await run_queue(league.bot)
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert sorted(_deleted(league)) == sorted(CALL_MESSAGES)
+    assert await _cleared(league)
+    assert len(await _clean_up_changes(league)) == 1
