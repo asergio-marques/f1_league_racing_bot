@@ -696,7 +696,11 @@ class _Render:
 @pytest.mark.parametrize("fault", [
     "drawing",
     "track registry",
-    pytest.param("teams"),
+    pytest.param("teams", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#285: an unreadable placements read is told as drawing the teams without names "
+        "alone",
+    )),
     "none",
 ])
 @pytest.mark.asyncio
@@ -704,9 +708,10 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     sheet_db, monkeypatch, fault
 ):
     """Division 1's sheet after round 3, the images module on. (drawing) the graphic's drawing
-    raises; (track registry) the track registry cannot be read; (teams) the teams cannot be read;
-    (none) nothing fails. The sheet posts each time, and the job's result and lines carry one line
-    naming the division and what the graphic fell back from, and none where nothing failed."""
+    raises; (track registry) the track registry cannot be read; (teams) the teams cannot be read,
+    and the drawing is then given neither team names nor badges; (none) nothing fails. The sheet
+    posts each time, and the job's result and lines carry one line naming the division and what
+    the graphic fell back from, and none where nothing failed."""
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers.team_service import TeamService
@@ -733,8 +738,16 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     monkeypatch.setattr(image_results_post, "_nationalities", _empty)
     if fault == "track registry":
         monkeypatch.setattr(calendar_post_service, "tracks_by_name", _unreadable)
+    drawn: dict = {}
     if fault == "teams":
+        from leaguebot.image.services import image_attendance_service
+
+        def _resolve(**kwargs):
+            drawn.update(kwargs)
+            return SimpleNamespace()
+
         monkeypatch.setattr(TeamService, "placed_drivers_on", _unreadable)
+        monkeypatch.setattr(image_attendance_service, "resolve_drawing", _resolve)
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
@@ -753,7 +766,10 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
             "the track registry could not be read, so the round headings are drawn without their "
             "flags: track registry unreadable"
         ],
-        "teams": ["the teams could not be read, so they are drawn without names: teams unreadable"],
+        "teams": [
+            "the teams could not be read, so they are drawn without names or badges: "
+            "teams unreadable"
+        ],
         "none": [],
     }[fault]
     lines = [f"**Division 1** — attendance sheet: {clause}" for clause in expected]
@@ -761,6 +777,9 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     assert list(posted.faults) == lines
     assert result.get("faults", []) == lines
     assert list(attendance_sheet.sheet_lines(result)) == lines
+    if fault == "teams":
+        assert not drawn["team_names"], "a team named though the teams could not be read"
+        assert not drawn["team_keys"], "a badge keyed though the teams could not be read"
 
 
 @pytest.mark.xfail(
