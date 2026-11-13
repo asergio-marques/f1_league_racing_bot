@@ -556,6 +556,12 @@ line writes and the commit; stopping the lane for a setting, which would hold ev
 a fault that either the member cures by asking again (a save rolled back) or that nothing later on
 the lane depends on (a step after it).
 
+One kind of setting is not wholly so: a change that recalculates and posts as `/attendance sync`
+does follows the sync's rule whatever starts it, a setting included. Its cards, lineups and sheets
+are the sync's own jobs and stop the lane where Discord refuses them, for the manager to Retry or
+Discard, since a sanction card lost is worse than a lane held; only its save ends on a fault as
+above. Such a change still declares the tables it writes, as every setting does.
+
 `/bot init` (a change type of its own; see "The record is the queue's") ends on a fault rather than
 stopping the lane, both in its one SAVE step (`Step.on_fault`) and in a check that raises as a
 member's `/bot init` starts (`ChangeType.on_check_fault`): no league admin role is set while no

@@ -207,14 +207,11 @@ keeps what the subgroups share: the bot, the `on_message` listener that turns a 
 round's channels into a turn, and the gates (`_module_gate`, `_answer_nothing_changed`,
 `_sync_gate`).
 
-**The subgroups are declared together**, in `results_group.py`, in the order a league sees them,
-and each subgroup's class takes its own as a class attribute. Discord is sent a group's children in
-the order they join it, so declaring them in one file fixes the order whichever subgroup's file a
-process imports first (`test_the_results_subgroups_are_sent_in_their_listed_order`,
-`test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first`). *Rejected:* each
-subgroup's file declaring its own, with the cog importing them in order, which holds the order only
-while nothing imports a subgroup's file before the cog. `test_results_command_tree.py` pins the
-whole tree, and that every command is bound to the cog that is loaded.
+The subgroups are declared together in `results_group.py`, as `architecture.md`'s cog bullet has
+it (`test_the_results_subgroups_are_sent_in_their_listed_order`,
+`test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first`).
+`test_results_command_tree.py` pins the whole tree, and that every command is bound to the cog that
+is loaded.
 
 ### The wiring, the helpers and the models
 

@@ -213,12 +213,8 @@ anything is asked, in the words the specification gives, asks the change, and ho
 own: each of the eight settings is one call, `_ask_setting`, carrying the value, and the rules that
 compare one setting with another are the service's ("How a change is carried out", below).
 
-**The subgroups are declared together**, in `attendance_group.py`, in the order a league sees them,
-and each subgroup's class takes its own as a class attribute. Discord is sent a group's children in
-the order they join it, the commands on the group after its subgroups, so declaring them in one
-file fixes the order whichever subgroup's file a process imports first.
-*Rejected:* each subgroup's file declaring its own, with the cog importing them in order, which
-holds the order only while nothing imports a subgroup's file before the cog, as a test does.
+The subgroups are declared together in `attendance_group.py`, as `architecture.md`'s cog bullet
+has it, the commands on the group coming after its subgroups.
 `tests/attendance/test_attendance_command_tree.py` pins the whole tree.
 
 The check-in's buttons are the cog layer's too, in `check_in_buttons.py`. `RsvpView` and its buttons
@@ -258,7 +254,8 @@ a league is told.
 | `attendance.check_in.clean_up` | the `rsvp_cleanup` timer, the restart, `/test-mode advance` | `plan`, `delete_message` for each message, `mark_cleared` |
 | `attendance.check_in.answer` | a press of a button, the maintainer's form | `save_answer` (or `save_answers`), `redraw` |
 | `attendance.sync` | `/attendance sync` | the reserve's capacity, one save, the roles, the cards, lineups and sheets, the closing line |
-| `attendance.setting.<name>` for the eight settings, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.on:attendance`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
+| `attendance.setting.<name>` for the five settings that are not penalties, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.on:attendance`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
+| `attendance.setting.no_rsvp_penalty`, `attendance.setting.absent_penalty`, `attendance.setting.no_show_penalty` | the commands | the Reserve capacity, one save (the value and the season's recalculation), then the roles, cards, lineups, sheets and deletions the sync's jobs make |
 
 Attendance also contributes jobs to changes core owns, through the hooks of a round amended, a
 cancellation and a season approved or completed: the reopening of a round's check-in inside the
@@ -285,17 +282,24 @@ the change's check too. Pinned by `test_set_setting_refuses_a_timing_that_breaks
 `test_set_setting_refuses_a_timing_change_once_a_season_is_confirmed`. A threshold of 0 is carried
 as `None`, as the column stores it.
 
-**A penalty changed while a season is ongoing recalculates the season** (`penalty_recalculation`).
+**A penalty changed while a season is ongoing recalculates the season** (`penalty_recalculation`;
+the attendance specification's "Attendance points" and "Resynchronising attendance" hold the rule).
 The three penalties are the one `Setting` kind that does more than save its column: the setting's
-save goes on, on the same connection, to recalculate every approved round of every live division
-through the sync's own per-division save (`recalculate_division_on`), and so applies the sanctions
-the division's latest round owes and plans the sync's own jobs for the roles, cards, lineups and
-sheets. The value and the recalculation are one save, so a stop never leaves the penalty saved
-with the figures at the old one; the Reserve team's capacity is read before it, as the sync reads
-it; and the check adds the sync's refusals (an amendment open, a channel unreachable) for a value
-that changes something. A sheet or lineup two divisions' sanctions both owe is posted once, against
-its division's latest round. *Rejected:* a second copy of the recalculation for the setting, which
-the sync's would drift from. Pinned by
+save goes on, on the same connection, to the sync's own per-division save
+(`recalculate_division_on`), and plans the sync's own jobs for the roles, cards, lineups and
+sheets. The value and the recalculation are one save, so a stop never leaves the penalty saved with
+the figures at the old one; the Reserve team's capacity is read before it, for a value that
+changes something, and the check adds the sync's refusals. The change declares the tables it writes
+like any setting. *Rejected:* a second copy of the recalculation for the setting, which the sync's
+would drift from.
+
+**A change that recalculates and posts as `/attendance sync` does follows the sync's rule
+whatever starts it, a setting included.** Its cards, lineups and sheets are the sync's own jobs and
+stop the league lane where Discord refuses them, for the manager to Retry or Discard, rather than
+end on a fault as a setting's later steps do (`architecture.md`, the settings exception): a
+sanction card lost is worse than a lane held. Its save, rolled back whole where it faults, still
+ends on a fault, and the sanctions it could not apply are reported as the sync reports them (its
+line reads Incomplete and ends with the sync to run). Pinned by
 `test_a_driver_the_new_penalty_takes_over_the_limit_is_sanctioned_at_the_latest_round` and
 `test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart`.
 
