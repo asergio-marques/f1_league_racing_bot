@@ -8,7 +8,7 @@ const BUILD = { ...base, stage: 'build' }
 const ARCH = (o = {}) => ({ rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [], followUps: [], notes: [], ...o })
 const PRODUCT = (o = {}) => ({ specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], followUps: [], notes: [], ...o })
 const followUp = title => ({ title, kind: 'bug', why: 'w', evidence: [] })
-const CHECK = { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['attendance'], commit: 'abc123' }
+const CHECK = { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['signup'], commit: 'abc123' }
 
 module.exports = {
   // Something the plan does not need comes back as a draft for the tracker, tagged with the checker
