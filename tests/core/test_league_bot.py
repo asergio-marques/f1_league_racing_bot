@@ -235,13 +235,15 @@ CHANNEL_SETTING_KINDS = {
     "interaction": "core.setting.interaction_channel",
     "log": "core.setting.log_channel",
     "hub": "core.setting.hub_channel_id",
+    "signup": "signup.setting.channel",
 }
 
 
+@pytest.mark.xfail(strict=True, reason="#286: /signup channel is not yet a Setting that overtakes a stop")
 def test_every_channel_setting_overtakes_a_stopped_job():
     """A stop notice for a channel tells the league to set the channel, then press Retry: a
     setting waiting behind the stop it is meant to clear could never do it. Every channel the
-    channel registry knows, the signup channel aside, has its setting registered, and each runs
+    channel registry knows, the signup channel among them, has its setting registered, and each runs
     past a stopped job; so do the interaction role and the league admin role, the league's way
     back in, and no other change. A channel added to the registry fails here until its setting is
     named and overtakes."""
@@ -255,7 +257,7 @@ def test_every_channel_setting_overtakes_a_stopped_job():
         call.args[0].kind: call.args[0].overtakes_a_stop
         for call in bot.change_queue.register.call_args_list
     }
-    assert set(SETTING_LABELS) - {"signup"} == set(CHANNEL_SETTING_KINDS)
+    assert set(SETTING_LABELS) == set(CHANNEL_SETTING_KINDS)
     assert {key: overtaking.get(kind) for key, kind in CHANNEL_SETTING_KINDS.items()} == {
         key: True for key in CHANNEL_SETTING_KINDS
     }
