@@ -559,6 +559,31 @@ async def test_a_close_time_missed_while_down_closes_on_start(tmp_path):
     assert _armed(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: signup's start-up step arms core's signup close job, not a signup.close_timer, for "
+    "a close time still ahead"
+))
+async def test_a_close_time_still_ahead_is_armed_on_start(tmp_path):
+    """The window is open with its close time a day on, and the bot starts with no close timer
+    standing, as after a discarded arming. Signup's "signup close timer" start-up step runs, and
+    the queue runs: signups stay open, nothing is closed or audited as an automatic close, and
+    the close timer is armed once, for the close time; what the reply to a discarded arming
+    promises ("the bot also arms it when it next starts")."""
+    from leaguebot.signup.wiring import start_up_steps
+
+    close_at = (datetime.now(timezone.utc) + timedelta(days=1)).replace(microsecond=0)
+    league = await _close_league(tmp_path, close_at=close_at.isoformat())
+
+    await dict(start_up_steps(league.bot))["signup close timer"]()
+    await run_queue(league.bot)
+
+    [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+    assert window["signups_open"]
+    assert "SIGNUP_AUTO_CLOSE" not in await _audit_types(league.db_path)
+    [(_, _key, run_at)] = _armed(league)
+    assert run_at == close_at
+
+
 # ── One parser, two entry points ──────────────────────────────────────────
 
 
