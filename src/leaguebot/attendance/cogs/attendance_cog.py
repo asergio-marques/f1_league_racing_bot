@@ -25,7 +25,16 @@ from leaguebot.attendance.services.check_in_answer_changes import (
 )
 from leaguebot.attendance.services.check_in_changes import ask_check_in_call, judge_hand_post
 from leaguebot.attendance.services.attendance_settings import KINDS
-from leaguebot.attendance.services.attendance_recompute import recalculation_faults, sync_attendance
+from leaguebot.attendance.services.attendance_recompute import recalculation_faults
+from leaguebot.attendance.services.attendance_sync_change import (
+    NOT_ONGOING,
+    SYNC,
+    amendment_verdict,
+    faults_verdict,
+    round_verdict,
+)
+from leaguebot.core.services.seasons.season_service import round_by_number
+from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
@@ -332,113 +341,56 @@ class AttendanceCog(commands.Cog):
         ongoing stages — a sanction then has no seat to take — for a round not yet finalised,
         and where a channel the recalculation posts to cannot be reached, the gate an
         amendment's recalculation holds to (#187).
+
+        **It is one change on the queue** (`attendance_sync_change`): what can be judged is judged
+        here, to answer at once, and again by the change as it starts. The manager is answered
+        with the queue's acknowledgement, and then with what the sync did; nothing is deferred,
+        the acknowledgement being the response.
         """
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
+
+        async def refused(reply: str, reason: str | None = None) -> None:
+            # Answered by a follow-up, as the command's refusals always were; an interaction
+            # the queue acknowledges is not deferred, so the response is taken only here.
+            await interaction.response.defer(ephemeral=True)
+            await refuse(interaction, reply, what=describe(interaction), reason=reason)
 
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
-            await refuse(
-                interaction,
-                "\u26d4 `/attendance sync` is available only while the season is ongoing.",
-                what=describe(interaction),
-            )
+            await refused(NOT_ONGOING)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division '{division}' not found.",
-                what=describe(interaction),
-            )
+            await refused(f"\u274c Division '{division}' not found.")
             return
 
         db_path = self.bot.db_path
-
-        # **Not while a round of the division is being amended** (#345, decided 2026-09-21). The
-        # recalculation reads the results, which hold an open amendment's corrections before
-        # they are approved, and publishes the sheet and applies the sanctions it finds —
-        # neither of which a cancelled or lapsed amendment then takes back.
-        from leaguebot.results.services.round_amendment.amendment_writes import (
-            amendment_wait_text,
-            open_amendment_in_division,
-        )
-
-        held = await open_amendment_in_division(db_path, div.id)
-        if held is not None:
-            await refuse(
-                interaction,
-                f"\u23f8\ufe0f Round {held['round_number']} of **{div.name}** is being amended "
-                f"in <#{held['channel_id']}>, and its corrections are not approved yet, so its "
-                f"attendance cannot be recalculated until that ends — {amendment_wait_text()}. "
-                "Run this again then.",
-                what=describe(interaction),
+        verdict = amendment_verdict(await open_amendment_in_division(db_path, div.id), div.name)
+        found = None
+        if verdict is None:
+            found = await round_by_number(db_path, div.id, round)
+            verdict = round_verdict(None if found is None else str(found.status), div.name, round)
+        if verdict is None:
+            verdict = faults_verdict(
+                await recalculation_faults(db_path, season.id, interaction.guild, self.bot)
             )
+        if verdict is not None:
+            await refused(verdict.reply, verdict.reason or None)
             return
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, status FROM rounds WHERE division_id = ? AND round_number = ?",
-                (div.id, round),
-            )
-            round_row = await cursor.fetchone()
-        if round_row is None:
-            await refuse(
-                interaction,
-                f"\u274c **{div.name}** has no round {round}.",
-                what=describe(interaction),
-            )
-            return
-        if round_row["status"] not in ("AWAITING_APPEAL_VERDICTS", "FINAL"):
-            await refuse(
-                interaction,
-                f"\u26d4 Round {round} of **{div.name}** has not had its penalties approved "
-                f"yet, so it holds no attendance to recalculate.",
-                what=describe(interaction),
-            )
-            return
-
-        faults = await recalculation_faults(
-            db_path, season.id, interaction.guild, self.bot
-        )
-        if faults:
-            await refuse(
-                interaction,
-                "\u26d4 Nothing was changed \u2014 the attendance could not be posted:\n\u2022 "
-                + "\n\u2022 ".join(faults),
-                what=describe(interaction),
-                reason="the attendance could not be posted:\n"
-                + "\n".join(f"\u2022 {fault}" for fault in faults),
-            )
-            return
-
-        outcome = await sync_attendance(
-            self.bot, guild_of(interaction), db_path, div.id, round_row["id"], season.id,
-            queue=self.bot.change_queue,
-        )
-
-        lines = [f"\u2705 Attendance of **{div.name}** recalculated from round {round} on."]
-        if outcome.applied:
-            lines.append("Sanctions applied:")
-            lines += [f"\u2022 {driver} \u2014 {sanction}" for driver, sanction in outcome.applied]
-            lines.append("Their announcements follow on the change queue.")
-        elif outcome.complete:
-            lines.append("No sanction was owed.")
-        if not outcome.complete:
-            lines.append("\u26a0\ufe0f Still not applied:")
-            lines += [f"\u2022 {line}" for line in outcome.failure_lines()]
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
-
-        result = "Success" if outcome.complete else "Incomplete"
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            f"| /attendance sync | {result}\n"
-            f"  division: {div.name}\n"
-            f"  from round: {round}\n"
-            f"  sanctions applied: {len(outcome.applied)}",
+        # One change: the recalculation and the sanctions it owes are saved together, and the
+        # cards, the lineups and the sheets follow as jobs of it (`attendance_sync_change`).
+        assert found is not None
+        await self.bot.change_queue.ask(
+            SYNC,
+            {
+                "division_id": div.id, "division": div.name, "round_id": found.id,
+                "round_number": round, "season_id": season.id,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     # ── /attendance post-check-in ──────────────────────────────────────────

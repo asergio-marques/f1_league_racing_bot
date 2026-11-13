@@ -14,7 +14,7 @@ from typing import Any, TYPE_CHECKING
 
 import discord
 
-from leaguebot.attendance.services import attendance_sheet
+from leaguebot.attendance.services import attendance_scoring, attendance_sheet
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -87,7 +87,7 @@ async def _display_name_of(db_path: str, profile_id: int) -> str | None:
 
 
 async def owed_sanctions(
-    db_path: str, round_id: int, division_id: int, season_id: int | None = None
+    db_path: str, round_id: int, division_id: int, season_id: int | None = None, *, db=None
 ) -> tuple[list[dict], list[tuple[int, int]]]:
     """The sanctions the division's drivers owe at *round_id*, and who is passed over.
 
@@ -102,12 +102,14 @@ async def owed_sanctions(
 
     A driver sanctioned drops out of the first list, which is what makes a sanction safe to try
     again: one run applies only what is still owed. Reads only; the one source of who is owed,
-    for the committing run below and for the review's jobs (#439).
+    for the review's jobs and for `/attendance sync`'s change (#439). *db* is the connection of
+    a save that has just recalculated the totals: they are read there, uncommitted, where a
+    connection of its own would find the old ones.
     """
-    autoreserve_threshold, autosack_threshold = await _thresholds(db_path)
-    if not autoreserve_threshold and not autosack_threshold:
-        return [], []
-    async with get_connection(db_path) as db:
+    async with attendance_scoring._shared_or_own(db_path, db) as (db, _owned):
+        autoreserve_threshold, autosack_threshold = await _thresholds_on(db)
+        if not autoreserve_threshold and not autosack_threshold:
+            return [], []
         if season_id is None:
             row = await (
                 await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
@@ -515,12 +517,20 @@ async def enforce_attendance_sanctions(
     return outcome
 
 
-async def sync_hint(db_path: str, division_id: int, round_id: int) -> str:
-    """The line telling a manager how to finish a run of sanctions that did not all apply."""
+def sync_hint_text(division_name: str, round_number: int | str) -> str:
+    """The line telling a manager how to finish a run of sanctions that did not all apply, the
+    division and the round named as they are typed."""
     return (
-        "Repair the cause, then run `/attendance sync "
-        f"division:{await attendance_sheet._division_name(db_path, division_id)} "
-        f"round:{await attendance_sheet._round_number(db_path, round_id)}`."
+        f"Repair the cause, then run `/attendance sync division:{division_name} "
+        f"round:{round_number}`."
+    )
+
+
+async def sync_hint(db_path: str, division_id: int, round_id: int) -> str:
+    """`sync_hint_text` of the division and the round, read."""
+    return sync_hint_text(
+        await attendance_sheet._division_name(db_path, division_id),
+        await attendance_sheet._round_number(db_path, round_id),
     )
 
 

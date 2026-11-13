@@ -253,7 +253,7 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 
 def register_change_types(bot: "LeagueBot") -> None:
     """Make the queue known attendance's kinds of change: the sheet post, the four check-in jobs
-    and the answer, the sanctions announcement, the module's switch, its eight settings and its
+    and the answer, the sanctions announcement, `/attendance sync`, the module's switch, its eight settings and its
     channel settings."""
     from leaguebot.attendance.services.attendance_settings import attendance_config_settings
     from leaguebot.attendance.services.channel_settings import attendance_channel_settings
@@ -271,6 +271,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.sanctions_announce_change import (
         sanctions_announce_change,
     )
+    from leaguebot.attendance.services.attendance_sync_change import attendance_sync_change
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.queue.setting_change import setting_change
 
@@ -292,6 +293,13 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         sanctions_announce_change(
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
+    bot.change_queue.register(
+        attendance_sync_change(
+            placement=bot.placement_service, roles=bot.team_role_service,
+            lineups=bot.lineup_poster, attendance=bot.attendance_after_review,
+            modules=bot.module_service, now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(

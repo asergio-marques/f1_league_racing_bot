@@ -1486,6 +1486,23 @@ async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | 
     return _row_to_round(row) if row else None
 
 
+async def round_by_number(db_path: str, division_id: int, round_number: int) -> Round | None:
+    """Round *round_number* of *division_id*, or None where the division has no such round.
+
+    For a module's command that names a round as a league numbers it and needs the round's id and
+    status to judge the request (`/attendance sync`), reading core's tables through core.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
+            "status FROM rounds "
+            "WHERE division_id = ? AND round_number = ?",
+            (division_id, round_number),
+        )
+        row = await cursor.fetchone()
+    return _row_to_round(row) if row else None
+
+
 async def round_called(db_path: str, round_id: int) -> str:
     """How a league reads *round_id*: "round 3 in **Pro**", or "a round no longer there".
 

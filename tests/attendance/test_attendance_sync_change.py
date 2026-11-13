@@ -75,13 +75,6 @@ HEADING = "**Season 1 Division 1 Round 1**"
 #: The change `/attendance sync` asks of the queue.
 SYNC_KIND = "attendance.sync"
 
-#: Why each test fails until the sync is one change.
-NOT_A_CHANGE = (
-    "#285: /attendance sync is not yet one change on the queue: the command recalculates and "
-    "applies the sanctions itself, committing each, and asks for their cards apart"
-)
-
-
 class _League:
     """The bot, its server and the channels the sync posts to."""
 
@@ -271,7 +264,6 @@ async def _attendance(db_path: str, round_id: int) -> dict[str, Any]:
         return dict(await cursor.fetchone())
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 @pytest.mark.parametrize(
     "no_show_penalty,applied,told",
     [(5, 1, ["Sanctions applied:", "• <@5101> (Full Timer) — autosack"]),
@@ -314,7 +306,6 @@ async def test_a_sync_is_one_change_acknowledged_at_once_and_logged_once_done(
     assert f"sanctions applied: {applied}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 async def test_a_sync_recalculates_from_the_named_round_on_and_leaves_earlier_rounds_alone(
     tmp_path,
 ):
@@ -347,7 +338,6 @@ async def test_a_sync_recalculates_from_the_named_round_on_and_leaves_earlier_ro
     assert "— 2 attendance points" not in sheet
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 async def test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart(tmp_path):
     """Round 1 is final and its driver owes an auto-sack. Manager 77 runs `/attendance sync`
     from round 1, and the queue runs one job at a time: at no point is the round seen
@@ -384,7 +374,6 @@ async def test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart(
     assert len(league.sync_lines()) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 async def test_a_second_sync_announces_nothing_already_announced(tmp_path):
     """Round 1 is final and its driver owes an auto-sack. Manager 77 runs `/attendance sync`
     from round 1 and the queue is run: the driver is sacked, and the verdicts channel is sent the
@@ -408,7 +397,6 @@ async def test_a_second_sync_announces_nothing_already_announced(tmp_path):
     assert "sanctions applied: 0" in second
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 async def test_a_sanction_the_sync_cannot_apply_is_named_and_the_sync_still_finishes(tmp_path):
     """Round 1 is final; Division 1 has no Reserve team, and its driver, given the no-show penalty
     of 5 against an auto-reserve of 3 with auto-sack off, is owed an auto-reserve that cannot be
@@ -473,7 +461,6 @@ CHANGED_SINCE = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 @pytest.mark.parametrize("changed", list(CHANGED_SINCE), ids=list(CHANGED_SINCE))
 async def test_a_sync_is_refused_as_it_starts_where_the_league_changed_since_it_was_asked(
     tmp_path, changed
@@ -511,7 +498,6 @@ async def test_a_sync_is_refused_as_it_starts_where_the_league_changed_since_it_
     assert league.sync_lines() == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 async def test_a_sync_s_card_discord_refuses_stops_the_queue_and_a_discard_names_it(tmp_path):
     """Round 1 is final and its driver owes an auto-sack. Manager 77 runs `/attendance sync`
     from round 1 and the queue is run: the round's heading is posted in the verdicts channel, but
@@ -549,7 +535,6 @@ async def test_a_sync_s_card_discord_refuses_stops_the_queue_and_a_discard_names
 DIVISION_ROLE, ALPHA_ROLE, DRIVER_ROLE = 555, 9010, 9020
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 async def test_a_role_change_discord_refuses_leaves_the_sync_s_sack_applied_and_the_queue_running(
     tmp_path, caplog
 ):
