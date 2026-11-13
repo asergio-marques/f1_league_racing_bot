@@ -141,12 +141,15 @@ point, which would then hold every module's registrations and grow with each mod
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
   large, its workflows move into services before it is split. The split keeps the group in one cog:
-  the cog class is composed from one file per subgroup. The cog holds the one group as a class
-  attribute, each subgroup's class declares its subgroup with that group as its parent, and
-  discord.py binds a cog's group to the cog together with every child beneath it, wherever the child
-  was declared. What matters is that the cog holds the parent group, not which class declares the
-  subgroup. A class that has one subclass and shares no behaviour is the price, accepted for keeping
-  each file to one subgroup. A module's commands sit under its own top-level group, never under one
+  the cog class is composed from one file per subgroup. The subgroups are declared together, in the
+  group's own file, in the order a league sees them, and each subgroup's class takes its own as a
+  class attribute. A group's children are kept in the order they join it and Discord is sent them in
+  that order, so declaring them in one file fixes the order whichever subgroup's file a process
+  imports first. The cog holds the one group as a class attribute, and discord.py binds a cog's
+  group to the cog together with every child beneath it, wherever the child was declared. What
+  matters is that the cog holds the parent group, not which class declares the subgroup. A class
+  that has one subclass and shares no behaviour is the price, accepted for keeping each file to one
+  subgroup. A module's commands sit under its own top-level group, never under one
   of core's: `/weather channel`, not `/division weather-channel`. So do its tools for test mode,
   which sit under the module's group and work only while test mode is on, rather than under
   `/test-mode`. A command's name then says which module owns it, and the module's code stays in its
@@ -158,7 +161,8 @@ point, which would then hold every module's registrations and grow with each mod
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
   core's groups as it loads, which works, but leaves a module's commands under names that are
   core's. *Rejected:* a cog for each subgroup, bound to the group by hand, which fights the library
-  for no gain (`steward_module.md` §5).
+  for no gain (`steward_module.md` §5). *Rejected:* each subgroup's class declaring its own, which
+  holds the order only while nothing imports a subgroup's file before the cog.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks

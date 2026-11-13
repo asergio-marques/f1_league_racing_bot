@@ -202,8 +202,7 @@ bot, and a function that needs Discord is handed the bot for that.
 `/attendance` is one group in one cog, `AttendanceCog` (`attendance/cogs/attendance_cog.py`),
 composed from one class for each subgroup (`ConfigCommands`, `ChannelCommands`, `TestCommands`),
 each in a file of its own, and `GroupCommands`, the commands on the group itself, as
-`architecture.md`'s cog bullet ("What each part may do") has a cog too large to read split, its
-subgroups declared in one file rather than each in its subgroup's class (below).
+`architecture.md`'s cog bullet ("What each part may do") has a cog too large to read split.
 `attendance_group.py` holds the one group, `ATTENDANCE_GROUP`, its three subgroups beneath it, the
 wait for the catch-up after a restart, the success line the log channel is written (`record`), and
 `AttendanceSubgroup`, which declares for the type checker what a subgroup takes from the cog.

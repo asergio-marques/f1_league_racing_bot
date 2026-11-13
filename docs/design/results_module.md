@@ -199,18 +199,22 @@ results'. A function that needs Discord is handed the bot for that, and the revi
 class for each subgroup (`ConfigCommands`, `PointsAmendCommands`, `ReservesCommands`,
 `StandingsCommands`, `RoundsCommands`, `ChannelCommands`), each in a file of its own, as
 `architecture.md`'s cog bullet ("What each part may do") has a cog too large to read split.
-`results_group.py` holds the one group, `RESULTS_GROUP`, which each subgroup names as its parent,
-and `ResultsSubgroup`, which declares for the type checker what a subgroup takes from the cog (the
+`results_group.py` holds the one group, `RESULTS_GROUP`, its six subgroups beneath it, and
+`ResultsSubgroup`, which declares for the type checker what a subgroup takes from the cog (the
 bot and the gates). *Rejected:* a `Protocol` in its place, which cannot be a base beside
 `commands.Cog`, whose metaclass it conflicts with (`ResultsSubgroup`'s docstring). `ResultsCog`
 keeps what the subgroups share: the bot, the `on_message` listener that turns a message typed in a
 round's channels into a turn, and the gates (`_module_gate`, `_answer_nothing_changed`,
 `_sync_gate`).
 
-**A subgroup joins `/results` as its file is imported**, and Discord is sent them in that order, so
-`results_cog.py` imports them in the order a league sees them (the comment above the imports;
-`test_the_results_subgroups_are_sent_in_their_listed_order`). `test_results_command_tree.py` pins
-the whole tree, and that every command is bound to the cog that is loaded.
+**The subgroups are declared together**, in `results_group.py`, in the order a league sees them,
+and each subgroup's class takes its own as a class attribute. Discord is sent a group's children in
+the order they join it, so declaring them in one file fixes the order whichever subgroup's file a
+process imports first (`test_the_results_subgroups_are_sent_in_their_listed_order`,
+`test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first`). *Rejected:* each
+subgroup's file declaring its own, with the cog importing them in order, which holds the order only
+while nothing imports a subgroup's file before the cog. `test_results_command_tree.py` pins the
+whole tree, and that every command is bound to the cog that is loaded.
 
 ### The wiring, the helpers and the models
 
