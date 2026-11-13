@@ -318,21 +318,33 @@ async def test_a_sync_is_one_change_acknowledged_at_once_and_logged_once_done(
 async def test_a_sync_recalculates_from_the_named_round_on_and_leaves_earlier_rounds_alone(
     tmp_path,
 ):
-    """Rounds 1 and 2 of Division 1 are final and round 3 is not yet run; the driver accepted
-    rounds 1 and 2 and raced neither, and neither has been recalculated. Manager 77 runs
-    `/attendance sync` from round 2, as one change, and the queue is run. Round 2 is recalculated:
-    the driver did not attend and is given the no-show penalty of 5; round 1 is left as it was;
-    and the driver, over the auto-sack threshold at round 2, is sacked."""
-    league = await _league(tmp_path, rounds={1: "FINAL", 2: "FINAL", 3: "NOT_RUN"})
+    """Rounds 1, 2 and 3 of Division 1 are final and round 4 is not yet run; the driver accepted
+    rounds 1 to 3 and raced none, and none has been recalculated. The no-show penalty is 2 and
+    auto-sack is at 3, so the sack is owed only once round 3 counts: round 2 alone gives 2 points.
+    Manager 77 runs `/attendance sync` from round 2, as one change, and the queue is run. Rounds 2
+    and 3, every approved round from the one named on, are recalculated, each with the no-show
+    penalty; round 1, before it, is left as it was, and round 4, not run, has no row and is given
+    none. The driver is sacked against round 3, the latest of them, and the one sheet posted is
+    round 3's: it gives the driver's total after round 3, 4 points, not round 2's 2."""
+    league = await _league(
+        tmp_path, rounds={1: "FINAL", 2: "FINAL", 3: "FINAL", 4: "NOT_RUN"}, no_show_penalty=2,
+    )
 
     await _sync(league, round_number=2)
     await run_queue(league.bot)
 
     assert len(await _sync_changes(league.db_path)) == 1
     assert await stopped_job(league.db_path) is None
-    assert await _attendance(league.db_path, 2) == {"attended": 0, "points_awarded": 5}
+    assert await _attendance(league.db_path, 2) == {"attended": 0, "points_awarded": 2}
+    assert await _attendance(league.db_path, 3) == {"attended": 0, "points_awarded": 2}
     assert await _attendance(league.db_path, 1) == {"attended": None, "points_awarded": None}
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM driver_round_attendance WHERE round_id = 4")
+        assert (await cursor.fetchone())[0] == 0
     assert await _seated(league.db_path) == []
+    [sheet] = league.sheets()
+    assert "4 attendance points" in sheet
+    assert "— 2 attendance points" not in sheet
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
