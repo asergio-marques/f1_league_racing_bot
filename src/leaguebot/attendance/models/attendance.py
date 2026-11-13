@@ -41,16 +41,6 @@ class DriverRoundAttendance:
 
 
 @dataclass
-class AttendancePardon:
-    id: int
-    attendance_id: int
-    pardon_type: str            # 'NO_RSVP' | 'NO_RSVP_ABSENT' | 'RSVP_ABSENT'
-    justification: str
-    granted_by: int             # Discord user ID
-    granted_at: str             # ISO-8601 UTC
-
-
-@dataclass
 class RsvpEmbedMessage:
     id: int
     round_id: int

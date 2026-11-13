@@ -1203,7 +1203,7 @@ async def build(settings: Settings) -> LeagueBot:
         PenaltyReviewView(),
         ApprovalView(),
         AppealsReviewView(),
-        RsvpView(),  # stub registration; message_id-specific re-arm done in _recover_rsvp_views_and_deadlines
+        RsvpView(),  # stub registration; the message-specific re-arm is the start-up step "RSVP views and deadlines"
     ):
         bot.add_view(_view)
 

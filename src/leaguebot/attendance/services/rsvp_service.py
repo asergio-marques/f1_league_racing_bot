@@ -160,8 +160,9 @@ class _RsvpButton(discord.ui.Button):
 #
 # It is deliberately a gate and **not** a job cancellation (issue #114). Cancelling the three
 # RSVP jobs when the module is switched off looks equivalent and is not: only ``/season
-# approve`` ever creates them, and it cannot be run again on an active season, so a cancel
-# loses the season's check-ins for good — the mistake issue #117 made for weather, in reverse.
+# approve`` and a round's amendment ever arm them, and neither re-arms the season's rounds
+# once the module is back on, so a cancel loses the season's check-ins for good — the mistake
+# issue #117 made for weather, in reverse.
 # Gated, the jobs stay booked and fire into nothing, which costs a query each and is
 # recoverable. They stay dormant for the rest of the season because ``/module enable
 # attendance`` refuses once a season's placements are confirmed; that is the enable guard's business, not
