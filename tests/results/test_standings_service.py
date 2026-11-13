@@ -813,6 +813,43 @@ async def test_no_reference_round_returns_none_not_an_empty_mapping(db_path):
     assert await previous_standing_positions(db_path, division_id, rounds[0]) is None
 
 
+async def test_team_positions_in_round_on_reads_each_team_s_position_after_the_round(db_path):
+    """A division of two rounds and three teams, Alpha, Bravo and Charlie. After round 1 Bravo
+    stands 1st and Alpha 2nd; Charlie stands twice, 4th and 3rd (under a second division's rows).
+    Read on one connection, round 1 gives each team its position, Charlie's the better of its two;
+    round 2, which holds no team standings, reads empty."""
+    from leaguebot.results.services.standings.standings_service import team_positions_in_round_on
+
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 2)
+        other = (await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) "
+            "SELECT season_id, 'Div 2', 777, 888 FROM divisions WHERE id = ?",
+            (division_id,),
+        )).lastrowid
+        teams = {}
+        for name in ("Alpha", "Bravo", "Charlie"):
+            teams[name] = (await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name) VALUES (?, ?, ?)",
+                (division_id, name, name),
+            )).lastrowid
+        for division, team, position in (
+            (division_id, "Bravo", 1), (division_id, "Alpha", 2),
+            (division_id, "Charlie", 4), (other, "Charlie", 3),
+        ):
+            await db.execute(
+                "INSERT INTO team_standings_snapshots "
+                "(round_id, division_id, team_instance_id, standing_position) VALUES (?, ?, ?, ?)",
+                (rounds[0], division, teams[team], position),
+            )
+        await db.commit()
+
+        assert await team_positions_in_round_on(db, rounds[0]) == {
+            teams["Bravo"]: 1, teams["Alpha"]: 2, teams["Charlie"]: 3,
+        }
+        assert await team_positions_in_round_on(db, rounds[1]) == {}
+
+
 # ---------------------------------------------------------------------------
 # The opening classification — the grid before a round has been run
 # ---------------------------------------------------------------------------

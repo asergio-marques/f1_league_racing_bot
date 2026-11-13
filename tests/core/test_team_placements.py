@@ -101,3 +101,44 @@ async def test_driver_identities_on_names_each_profile_and_omits_an_unknown_one(
             3: ("103", "Test Three"),
         }
         assert await driver_identities_on(db, []) == {}
+
+
+async def test_division_teams_on_reads_as_get_division_teams_and_sees_its_own_connection_s_write(
+    league,
+):
+    """Pro's teams are read on a held connection: Alpha first and the reserve team last, each with
+    its seats in seat order, as `get_division_teams` reads them on its own. Alpha then has its full
+    name changed on that connection, not yet committed, and the read on it gives the new name. With
+    *committed_only*, driver 2's seat, taken on a placement not yet confirmed, reads as empty, while
+    driver 5's, which has no placement row, is still read as held."""
+    service = TeamService(league)
+    expected = await service.get_division_teams(PRO)
+    alpha_seats = [
+        {"seat_number": 1, "driver_profile_id": 1, "discord_user_id": "101"},
+        {"seat_number": 2, "driver_profile_id": 2, "discord_user_id": "102"},
+        {"seat_number": 3, "driver_profile_id": 5, "discord_user_id": "105"},
+    ]
+    reserve = {
+        "id": 1, "name": "Reserve", "full_name": "Reserve Pool", "max_seats": 2,
+        "is_reserve": True,
+        "seats": [{"seat_number": 1, "driver_profile_id": 3, "discord_user_id": "103"}],
+    }
+    alpha = {
+        "id": 2, "name": "Alpha", "full_name": "Alpha Motorsport", "max_seats": 2,
+        "is_reserve": False, "seats": alpha_seats,
+    }
+    assert expected == [alpha, reserve]
+
+    async with get_connection(league) as db:
+        assert await TeamService.division_teams_on(db, PRO) == expected
+        await db.execute("UPDATE team_instances SET full_name = 'Alpha Racing' WHERE id = 2")
+        renamed = await TeamService.division_teams_on(db, PRO)
+        committed = await TeamService.division_teams_on(db, PRO, committed_only=True)
+
+    assert renamed == [{**alpha, "full_name": "Alpha Racing"}, reserve]
+    assert committed[0]["seats"] == [
+        alpha_seats[0],
+        {"seat_number": 2, "driver_profile_id": None, "discord_user_id": None},
+        alpha_seats[2],
+    ]
+    assert committed[1] == reserve
