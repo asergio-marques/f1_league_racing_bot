@@ -294,18 +294,16 @@ penalty saved with the figures at the old one; the Reserve team's capacity is re
 declares the tables it writes like any setting. *Rejected:* a second copy of the recalculation for
 the setting, which the sync's would drift from.
 
-**A change that recalculates and posts as `/attendance sync` does follows the sync's rule
-whatever starts it, a setting included.** Its cards, lineups and sheets are the sync's own jobs and
-stop the league lane where Discord refuses them, for the manager to Retry or Discard, rather than
-end on a fault as a setting's later steps do (`architecture.md`, the settings exception, and the core
-specification's "How a change is carried out", which holds what a league sees): a
-sanction card lost is worse than a lane held. Its check, its read of the Reserve capacity, its
-save (rolled back whole where it faults, and refusing to recalculate on a capacity nobody read)
-and the roles' job, as the sync's, still end on a fault; and the sanctions it could not apply
-are reported as the sync reports them (the attendance specification's "Sanctions"). Pinned by
-`test_a_sanction_the_penalty_change_cannot_apply_is_logged_incomplete_with_the_sync_to_run` for the
-report and `test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart` for the jobs
-being the change's own.
+**Its posts are the sync's** (`posting_steps`), so they stop the lane where Discord refuses them,
+under `architecture.md`'s settings exception for a change that recalculates and posts as the sync
+does. What attendance adds: the save refuses to recalculate on a Reserve capacity nobody read,
+rolling back whole, so the value is never saved with figures the capacity check did not judge; and
+the sanctions it could not apply are reported as the sync reports them. Pinned by
+`test_a_penalty_change_s_card_discord_refuses_stops_the_queue_and_a_discard_names_it` (the stop),
+`test_a_capacity_read_that_faults_ends_on_a_fault_and_never_stops_the_lane` (the unread capacity),
+`test_a_sanction_the_penalty_change_cannot_apply_is_logged_incomplete_with_the_sync_to_run` (the
+report) and `test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart` (the jobs
+being the change's own).
 
 ### The sync is one change
 
@@ -467,14 +465,14 @@ sheet's graphic is tried on the first try alone and text on every later one (Con
 a stop on a post Discord refused is retried as text.
 
 A graphic that cannot be drawn is not a failure of the post: the call goes out without it and the
-sheet as text, and **the fault is returned as a line of the job**, naming the division and what
-was left out, so the league is told in the log channel, the full error going to the host's log. The
+sheet as text, and **the fault is returned as a line of the job**, naming the division and what was
+left out, so the league is told in the log channel, the full error going to the host's log. The
 catch holds the drawing only, never the post (`architecture.md`, "A catch-all error handler", sixth
-place), and it is in four functions: `_checkin_attachment` (the call's graphic),
-`_sheet_attachment` (the sheet's graphic), `_round_grid` (the track registry the graphic draws its
-flags from: a registry that cannot be read draws the headings without flags) and `_seat_teams`
-(the team names and badges it draws: teams that cannot be read are drawn without either). The
-names and the shorthands come from one read of the placements, so a fault reading them is told once. Pinned by
+place), and it is in four functions: `_checkin_attachment` (the call's graphic), `_sheet_attachment`
+(the sheet's graphic), `_round_grid` (the track registry the graphic draws its flags from: a
+registry that cannot be read draws the headings without flags) and `_seat_teams` (the team names and
+badges it draws: teams that cannot be read are drawn without either). The names and the shorthands
+come from one read of the placements, so a fault reading them is told once. Pinned by
 `test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job` and
 `test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job`.
 
