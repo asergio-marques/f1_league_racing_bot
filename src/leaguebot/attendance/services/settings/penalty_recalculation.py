@@ -14,7 +14,8 @@ sync` from the division's first approved round would give it:
   new value takes over a threshold at an earlier round is sanctioned once, under the latest
   round's heading, and a sanction already applied is never undone by a lowered penalty.
 - **Later jobs.** The roles, the cards, the lineups and the sheets are the sync's own jobs
-  (`posting_steps`), planned by the save, which stop the lane where Discord refuses them. This is
+  (`posting_steps`), planned by the save. The cards, the lineups and the sheets stop the lane where
+  Discord refuses them; the roles' job ends on a fault, as the sync's does. That stop is
   the one departure from `setting_change`'s rule that a setting never holds up the queue: a
   change that recalculates and posts as `/attendance sync` does follows the sync's rule whatever
   starts it, a lost sanction card being worse than a held lane. A sheet or a lineup two

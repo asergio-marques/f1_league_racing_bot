@@ -297,10 +297,10 @@ would drift from.
 whatever starts it, a setting included.** Its cards, lineups and sheets are the sync's own jobs and
 stop the league lane where Discord refuses them, for the manager to Retry or Discard, rather than
 end on a fault as a setting's later steps do (`architecture.md`, the settings exception): a
-sanction card lost is worse than a lane held. Its check, its read of the Reserve capacity and its
-save, rolled back whole where it faults, still end on a fault, the save refusing to recalculate on
-a capacity nobody read; and the sanctions it could not apply are reported as the sync reports them
-(its line reads Incomplete and ends with the sync to run). Pinned by
+sanction card lost is worse than a lane held. Its check, its read of the Reserve capacity, its
+save (rolled back whole where it faults, and refusing to recalculate on a capacity nobody read)
+and the roles' job, as the sync's, still end on a fault; and the sanctions it could not apply
+are reported as the sync reports them (its line reads Incomplete and ends with the sync to run). Pinned by
 `test_a_driver_the_new_penalty_takes_over_the_limit_is_sanctioned_at_the_latest_round` and
 `test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart`.
 
