@@ -141,6 +141,8 @@ Three penalties, all starting at 1 point, all settable at any time — these are
 
 Set a penalty to `0` to stop charging for that case entirely.
 
+**Changing a penalty mid-season recalculates the season you are in.** Every round whose penalties have been approved is worked out again at the new value, in every division, just as `/attendance sync` would do it; each division's sheet is posted again, and anyone the new value takes over a limit is sanctioned once, at the latest round. Lowering a penalty never undoes a sanction already applied. If a round's results are being amended, finish the amendment first: the change is refused until then.
+
 **How a round adds up**, for a full-time driver:
 
 | They answered | They raced | They are charged |
