@@ -64,6 +64,7 @@ CORRECTION_TIMER = "correction_lapse"
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 REVIEWER = 77
 AWAITING = "AWAITING_CORRECTION_PARAMETER"
+_NO_SCHEDULER = "#286: WizardService still takes the scheduler, which it will not hold"
 
 #: The lapse the correction window records, naming the manager who asked (owner, 2026-09-30,
 #: "Log both as lapses").
@@ -128,8 +129,7 @@ async def _restart(league: SeasonLeague) -> None:
     from tests.support.season_league import wizard_service
 
     wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service,
-        change_queue=league.bot.change_queue,
+        league.bot, league.db_path, change_queue=league.bot.change_queue,
     )
     await wizards.recover_correction_timeouts()
 
@@ -200,6 +200,7 @@ async def test_request_changes_records_the_requesting_admin(tmp_path):
 # ── The restart ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_a_restart_returns_the_driver_to_pending_admin_approval(tmp_path):
     """Kimi's choices were posted five minutes ago and the bot restarts. The restart asks the
     lapse as the bot on the league lane, posting nothing; when the queue runs Kimi is back
@@ -217,6 +218,7 @@ async def test_a_restart_returns_the_driver_to_pending_admin_approval(tmp_path):
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_a_restart_reverts_even_within_the_five_minutes(tmp_path):
     """Kimi's choices were posted a minute ago and the bot restarts. The release is
     unconditional, not re-armed for what was left: when the queue runs Kimi is back awaiting
@@ -229,6 +231,7 @@ async def test_a_restart_reverts_even_within_the_five_minutes(tmp_path):
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_path):
     """Manager 77 asked for a correction of Kimi's signup and the bot restarted before a
     parameter was chosen. When the queue runs the lapse, 77 is mentioned in Kimi's channel and
@@ -242,6 +245,7 @@ async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_pat
     assert CORRECTION_LAPSE in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_a_restart_says_that_the_bot_restarted(tmp_path):
     """The two lapse reasons read differently, so a manager knows which happened: the notice a
     restart's lapse posts in Kimi's channel says the bot restarted, and the log records it as
@@ -255,6 +259,7 @@ async def test_a_restart_says_that_the_bot_restarted(tmp_path):
     assert CORRECTION_LAPSE in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_a_driver_stranded_before_the_fix_is_released_without_a_mention(tmp_path):
     """Kimi's wizard names no manager who asked (written before the key existed). The restart's
     lapse still releases him and posts in his channel, and mentions no one as `<@None>`."""
@@ -268,6 +273,7 @@ async def test_a_driver_stranded_before_the_fix_is_released_without_a_mention(tm
     assert "<@None>" not in _posted(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_a_driver_not_awaiting_a_parameter_is_left_alone(tmp_path):
     """Kimi awaits approval, not a correction parameter, and the bot restarts. No lapse is
     asked and nothing is posted in his channel."""
@@ -280,6 +286,7 @@ async def test_a_driver_not_awaiting_a_parameter_is_left_alone(tmp_path):
     assert _posted(league) == ""
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
     """Without the panel the manager has the driver back but no buttons to act on: the
     restart's lapse posts one fresh review panel in Kimi's channel. The reposted panel quotes

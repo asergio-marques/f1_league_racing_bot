@@ -1335,14 +1335,15 @@ async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
     return rows[0]["wizard_state"] if rows else None
 
 
-def wizard_service(bot: Any, db_path: str, scheduler: Any, *, change_queue: Any) -> Any:
+def wizard_service(bot: Any, db_path: str, *, change_queue: Any) -> Any:
     """The signup wizard service as the builder makes it, holding *bot* from the moment it is
     built (#283), and handed the signup module service it reads wizards through, *bot*'s own,
-    rather than looking it up on the bot (#286)."""
+    rather than looking it up on the bot; it holds no scheduler, its start-up catch-up having
+    moved to signup's `closing_steps` (#286)."""
     from leaguebot.signup.services.wizard_service import WizardService
 
     return WizardService(
-        db_path, scheduler, bot.signup_module_service, change_queue=change_queue, bot=bot
+        db_path, bot.signup_module_service, change_queue=change_queue, bot=bot
     )
 
 

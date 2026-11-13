@@ -35,6 +35,8 @@ SERVER_ID = 14208
 DRIVER = "4242"
 OLD_CHANNEL = 7199
 
+_NO_SCHEDULER = "#286: WizardService still takes the scheduler, which it will not hold"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -121,7 +123,7 @@ def _service(
     # Built as the builder builds it, handed the signup module service it reads wizards through
     # and passes to the views it makes (#286), the bot then carrying none of its own.
     bot.signup_module_service = None
-    return WizardService(":memory:", MagicMock(), signup, change_queue=MagicMock(), bot=bot)
+    return WizardService(":memory:", signup, change_queue=MagicMock(), bot=bot)
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +131,7 @@ def _service(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 @pytest.mark.parametrize(
     "state,step,instruction",
     [
@@ -148,6 +151,7 @@ def test_each_question_names_its_step_and_how_to_answer(state, step, instruction
     assert instruction in prompt
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 def test_the_availability_question_lists_the_slots_by_their_numbers():
     """The driver types the ordinals; the durable slot id never reaches them (#126)."""
     snapshot = _snapshot(slots=[_slot(1, "Monday 19:00 UTC", "Mon_19_00"), _slot(2, "Friday 21:00 UTC", "Fri_21_00")])
@@ -159,6 +163,7 @@ def test_the_availability_question_lists_the_slots_by_their_numbers():
     assert "Mon_19_00" not in prompt
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 def test_a_lap_time_question_names_the_track_and_counts_through_them():
     snapshot = _snapshot(tracks=["27", "11"])
     wizard = _wizard(WizardState.COLLECTING_LAP_TIME, index=0, snapshot=snapshot)
@@ -171,6 +176,7 @@ def test_a_lap_time_question_names_the_track_and_counts_through_them():
     assert "`M:ss.mmm`" in prompt
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 def test_an_unnamed_track_falls_back_to_its_id():
     snapshot = _snapshot(tracks=["27", "11"])
     wizard = _wizard(WizardState.COLLECTING_LAP_TIME, index=1, snapshot=snapshot)
@@ -182,6 +188,7 @@ def test_an_unnamed_track_falls_back_to_its_id():
     assert "(2/2: 11)" in prompt
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 def test_a_short_qualifying_league_is_asked_for_that():
     snapshot = _snapshot(tracks=["27"], time_type="SHORT_QUALIFICATION")
 
@@ -192,6 +199,7 @@ def test_a_short_qualifying_league_is_asked_for_that():
     assert "Short Qualification" in prompt
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 def test_a_screenshot_is_asked_for_where_the_league_requires_one():
     with_image = _snapshot(tracks=["27"], image=True)
     without = _snapshot(tracks=["27"], image=False)
@@ -205,6 +213,7 @@ def test_a_screenshot_is_asked_for_where_the_league_requires_one():
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 def test_a_state_with_no_question_says_so_rather_than_raising():
     assert _service()._prompt_for_state(WizardState.UNENGAGED, _snapshot()) == "Ready for next step."
 
@@ -214,6 +223,7 @@ def test_a_state_with_no_question_says_so_rather_than_raising():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 @pytest.mark.parametrize(
     "state,view_name",
     [
