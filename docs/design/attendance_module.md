@@ -63,16 +63,16 @@ write.
 | | `attendance_hooks` | a deleted division's row; every sheet id cleared when the bot is packed |
 | `driver_round_attendance` | `attendance_config_service` | a round's rows as its call is posted (`bulk_insert_attendance_rows_on`) and a driver's answer (`upsert_rsvp_status_on`, `answer_rsvp_on`) |
 | | `rsvp_service` | the reserves' placement, made at the deadline and cleared when an amended round reopens its check-in, and a round's answers cleared when a call is given up (`clear_check_in_answers_on`) |
-| | `check_in_changes` | the answers of drivers the division no longer holds, deleted when a call replaces one |
+| | `check_in_call` | the answers of drivers the division no longer holds, deleted when a call replaces one |
 | | `attendance_scoring` | `attended`, `points_awarded` and `total_points_after` |
 | | `attendance_hooks` | a deleted round's, a deleted driver's and a merged driver's rows |
 | `rsvp_embed_messages` | `attendance_config_service` | the call's row, and the ids of the last notice and the distribution |
 | | `rsvp_service` | `deadline_run_at` |
-| | `check_in_changes` | a message forgotten as it comes down, a row deleted with its call |
+| | `check_in_clean_up` | a message forgotten as it comes down, a row deleted with its call |
 | | `attendance_hooks` | a deleted round's rows; every row cleared when the bot is packed |
 | `attendance_pardons` | `attendance_pardons` | a round's pardons held, rewritten and put back by an amendment |
 | | `attendance_after_review` | the pardons of a round's first approval |
-| `rounds.checkin_cleared` | `check_in_changes` | raised when the check-in is closed |
+| `rounds.checkin_cleared` | `check_in_call`, `check_in_clean_up` | raised when the check-in is closed |
 | | `rsvp_service` | lowered when an amended round reopens its check-in |
 
 The files are the topics the module's work falls into, and a writer sits in the file whose topic it
@@ -158,22 +158,31 @@ Answers to `architecture.md`, "How the code is laid out". Attendance's code sits
 
 ### Services, by topic
 
-Attendance's services are one folder of module functions, grouped by topic and named for it. The
-table names a service by its file.
+Attendance's services are grouped by topic into six packages under `attendance/services/`, as
+`architecture.md` lets a module's design file group them. They are module functions, named for the
+topic. The table names a service by its file.
 
-| Topic | Services | Chiefly writes |
+| Folder | Services | Chiefly writes |
 |---|---|---|
-| The check-in's answers and rows | `attendance_config_service` (`AttendanceService`: the settings read, a round's rows, an answer decided and written, the call's rows, and `rsvp_lock` and `derive_checkin_deadline`, the rules of the lock and of the deadline), `check_in_answer_changes` (an answer asked as a change, and the form's paste) | `driver_round_attendance`, `rsvp_embed_messages` |
-| The call and what follows it | `check_in_changes` (the call, the last notice, the deadline and the clean-up as changes, the amendment's, the cancellation's and the advance's steps, and what a restart asks), `rsvp_service` (the embed built, the roster, the reserves distributed, the last notice's text, the call's graphic), `check_in_record` (the audit of a round's check-in, read before a call comes down) | `rsvp_embed_messages`, `driver_round_attendance` (the reserves), `rounds.checkin_cleared` |
-| Scoring | `attendance_scoring` (who attended and the points a round confers), `attendance_recompute` (the one recompute of the stored copies, and what stands in the way of a recalculation), `attendance_pardons` | `driver_round_attendance`, `attendance_pardons` |
-| Sanctions | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
-| The sheet | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id) |
-| Settings | `attendance_settings` (the eight), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config` |
-| What core's hooks ask | `attendance_hooks` (the deletes, the round's window, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
-| Start-up | `check_in_recovery` | none: it asks the queue |
+| `check_in/` | `attendance_config_service` (`AttendanceService`: the settings read, a round's rows, an answer decided and written, the call's rows, and `rsvp_lock` and `derive_checkin_deadline`, the rules of the lock and of the deadline), `check_in_answer_changes` (an answer asked as a change, and the form's paste), `rsvp_service` (the embed built, the roster, the reserves distributed, the last notice's text, the call's graphic), `check_in_record` (the audit of a round's check-in, read before a call comes down), `check_in_recovery` (start-up: it asks the queue), and the check-in's five changes, below | `driver_round_attendance`, `rsvp_embed_messages`, `rounds.checkin_cleared` |
+| `scoring/` | `attendance_scoring` (who attended and the points a round confers), `attendance_recompute` (the one recompute of the stored copies, and what stands in the way of a recalculation), `attendance_pardons` | `driver_round_attendance`, `attendance_pardons` |
+| `sanctions/` | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
+| `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id) |
+| `settings/` | `attendance_settings` (the eight), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config` |
+| `hooks/` | `attendance_hooks` (the deletes, the round's window, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
 
-`check_in_changes` holds the call, its last notice, its deadline and its clean-up in one file: they
-share one record, the call's row.
+**The check-in is five changes, each in a file of its own,** and the file they share:
+
+| File | Holds |
+|---|---|
+| `check_in_call` | the call: its hand-post refusal and judgement, the call's steps and change, and what closes a check-in |
+| `check_in_last_notice` | the last notice's steps and change |
+| `check_in_deadline` | the deadline's steps and change: the reserves placed, the call locked, the placements announced, and a round's deadline with no call standing |
+| `check_in_clean_up` | the clean-up's steps and change, and the take-down of a call: for a cancellation, an amendment and a call's failure |
+| `check_in_amendment` | the amendment's steps and its three events, and `/test-mode advance`'s step for each of attendance's kinds of round job |
+| `check_in_changes` | what the five read alike, so that none imports another for it: the names of their jobs, the round as a check-in reads it (`call_row`, `round_not_owed`, the moments `scheduled_at_of` and `deadline_of`), the judgement of a timer's ask under test mode (`left_to_advance`) and the factory of a call's buttons (`CheckInViewFactory`) |
+
+The five share one record, the call's row, and read it through `check_in_changes`.
 
 **Every service is module functions** but two classes. `AttendanceService` carries the database path
 and the reads and writes of the check-in's own rows. `AttendanceAfterReview` carries the bot (for
@@ -188,16 +197,28 @@ bot, and a function that needs Discord is handed the bot for that.
 
 ### The cog
 
-`/attendance` is one group in one cog, `AttendanceCog` (`attendance/cogs/attendance_cog.py`), with
-three subgroups: `config` (the eight settings and `show`), `channel` (`rsvp` and `attendance`) and
+`/attendance` is one group in one cog, `AttendanceCog` (`attendance/cogs/attendance_cog.py`),
+composed from one class for each subgroup (`ConfigCommands`, `ChannelCommands`, `TestCommands`),
+each in a file of its own, and `GroupCommands`, the commands on the group itself, as
+`architecture.md`'s cog bullet ("What each part may do") has a cog too large to read split.
+`attendance_group.py` holds the one group, `ATTENDANCE_GROUP`, which each subgroup names as its
+parent, and `AttendanceSubgroup`, which declares for the type checker what a subgroup takes from
+the cog (the bot and the gate).
+`AttendanceCog` keeps what the subgroups share: the bot and the gate (`_module_gate`). The
+subgroups are `config` (the eight settings and `show`), `channel` (`rsvp` and `attendance`) and
 `test` (`rsvp`, the maintainer's form); `sync` and `post-check-in` sit on the group. A command
 judges what it can refuse before anything is asked, in the words the specification gives, asks the
 change, and holds no rule of its own: each of the eight settings is one call, `_ask_setting`,
 carrying the value, and the rules that compare one setting with another are the service's ("How a
 change is carried out", below).
 
-The check-in's buttons are the cog layer's too. `RsvpView` and its buttons sit beside
-`handle_rsvp_button`, the one function that reads the id a button carries
+**A subgroup joins `/attendance` as its file is imported**, and Discord is sent them in that order,
+the commands on the group last, so `attendance_cog.py` imports them in the order a league sees them
+(the comment above the imports). `tests/attendance/test_attendance_command_tree.py` pins the
+whole tree.
+
+The check-in's buttons are the cog layer's too, in `check_in_buttons.py`. `RsvpView` and its buttons
+sit beside `handle_rsvp_button`, the one function that reads the id a button carries
 (`rsvp_{action}_r{round_id}`, written in `_RsvpButton` and read in `handle_rsvp_button`, the only
 two places that know the format). A service that posts or redraws a call is handed a way to build
 the view (`CheckInViewFactory`), by `wiring`, as a service may not import a cog. The entry point
@@ -467,8 +488,8 @@ Attendance declares no hook of its own. Core declares them and attendance subscr
 | `starting` | `wiring.start_up_steps` | its three start-up steps (above) |
 | `round_windows_read` | `attendance_hooks.round_window` | hands its three lead times, or none where the module is off |
 | `review_sections_read` | `attendance_hooks.review_section` | its section of a season review |
-| `round_amended`, `round_armed`, `round_clean_ups_due` | `check_in_changes.round_amended_on`, `amendment_posts`, `amendment_clean_ups` | reopens the check-in inside the amendment's save; posts the call again when the round is armed; hands the clean-ups due |
-| `amendment_steps` | `check_in_changes.amendment_steps` | the steps an amendment asks of the check-in |
+| `round_amended`, `round_armed`, `round_clean_ups_due` | `check_in_amendment.round_amended_on`, `amendment_posts`, `amendment_clean_ups` | reopens the check-in inside the amendment's save; posts the call again when the round is armed; hands the clean-ups due |
+| `amendment_steps` | `check_in_amendment.amendment_steps` | the steps an amendment asks of the check-in |
 | `rounds_called_off`, `cancellation_notices`, `cancellation_steps` | `take_down_called_off_on`, `notices_on`, `take_down_steps`, `read_check_in_steps`, `notify_checkin_steps` | takes down the calls, reads the check-in's record before they come down and plans its own notice |
 | `rounds_deleted`, `divisions_deleted`, `profiles_deleted`, `profiles_merged`, `bot_packed` | `attendance_hooks` | see "The database" |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `attendance_hooks`, `division_channels` | its channels, read for the reviews, the channel registry and the factory reset |
@@ -578,13 +599,13 @@ Each is stated where it lives and pinned by the test named.
 | A sanction the sync cannot apply never stops the others | `attendance_sync_change`'s docstring | `test_a_sanction_the_sync_cannot_apply_never_stops_the_others` |
 | A refused role change leaves the sync's sack applied and the queue running | `attendance_sync_change`'s docstring | `test_a_role_change_discord_refuses_leaves_the_sync_s_sack_applied_and_the_queue_running` |
 | An answer is judged at the press, not as its turn comes | `check_in_answer_changes`' docstring | `test_an_answer_pressed_before_the_lock_counts_though_it_runs_after` |
-| The earlier call comes down only after the new one is posted and recorded | `check_in_changes`' docstring | `test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_after_it` |
+| The earlier call comes down only after the new one is posted and recorded | `check_in_call`'s docstring | `test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_after_it` |
 | A round is owed one call, however many are asked at once | `check_in_call_change`'s docstring | `test_two_calls_posted_at_once_for_one_round_post_one` |
 | `distribute` and `mark_cleared` cannot be discarded | `would_never_be_placed` and `would_lose_the_answers`, the readers of what a drop would leave | `test_placing_the_reserves_cannot_be_discarded`, `test_marking_the_check_in_over_cannot_be_discarded` |
 | The four timers are armed with no lateness limit, and the handlers judge lateness | `schedule_attendance_round`'s docstring | `test_a_check_in_timer_is_armed_with_no_lateness_limit` |
 | A missed last notice is sent late, while the deadline is ahead | `_notice_not_due`'s docstring | `test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back` |
 | A last notice asked before its late call posts waits behind the call | `_notice_not_due`'s docstring | `test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the_call_stands` |
-| Under test mode lateness is judged at the ask only | `_left_to_advance`'s docstring | `test_a_timer_fired_on_time_under_test_mode_is_posted_however_late_the_queue_starts_it` |
+| Under test mode lateness is judged at the ask only | `left_to_advance`'s docstring | `test_a_timer_fired_on_time_under_test_mode_is_posted_however_late_the_queue_starts_it` |
 | The recoveries judge a season by the stages the call, the deadline and the clean-up are each owed in | `check_in_recovery`'s docstring | `test_no_late_call_for_a_round_left_alone`, `test_a_round_a_day_past_has_both_its_cleanups_run` |
 | A failed recovery stops none of the other rounds and is reported once | `check_in_recovery`'s docstring | `test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is` |
 | Calls are recovered before deadlines, and clean-ups after both | the comments in `wiring.start_up_steps` | `test_the_builder_orders_the_start_up_steps` |
