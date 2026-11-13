@@ -56,9 +56,6 @@ from tests.support.settings_league import interaction as member_asks
 from tests.support.undecorate import undecorate
 
 NOT_YET = "#285: a penalty changed mid-season does not yet recalculate the season's attendance"
-NOT_REFUSED_YET = (
-    "#285: a penalty change is not yet refused where the season's recalculation cannot run"
-)
 
 #: The manager asking, as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Manager (`<@{MANAGER_ID}>`)"
@@ -205,7 +202,6 @@ PENALTIES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("command,column,rsvp,per_round", PENALTIES,
                          ids=[case[0] for case in PENALTIES])
 async def test_a_penalty_changed_mid_season_recalculates_every_approved_round_as_a_sync_would(
@@ -241,7 +237,6 @@ async def test_a_penalty_changed_mid_season_recalculates_every_approved_round_as
     assert await _rows(league.db_path) == recalculated
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_each_division_recalculated_has_its_sheet_reposted_and_the_reply_names_them(
     tmp_path,
 ):
@@ -286,7 +281,6 @@ async def _owed_a_sack_once_raised(tmp_path: Any) -> _League:
 OVER_THE_LIMIT_AT = {"round-2": 2, "round-1": 4}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("first_over", list(OVER_THE_LIMIT_AT), ids=list(OVER_THE_LIMIT_AT))
 async def test_a_driver_the_new_penalty_takes_over_the_limit_is_sanctioned_at_the_latest_round(
     tmp_path, first_over,
@@ -314,7 +308,6 @@ async def test_a_driver_the_new_penalty_takes_over_the_limit_is_sanctioned_at_th
     assert "• <@5101> (Full Timer) — autosack" in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_same_penalty_again_mid_season_changes_nothing_and_announces_nothing(tmp_path):
     """As above: the no-show penalty raised from 1 to 2 sacks the driver at round 2, carded once
     and the sheet posted once. Manager 77 then runs `/attendance config no-show-penalty 2` again
@@ -416,7 +409,6 @@ IN_THE_WAY = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_REFUSED_YET)
 @pytest.mark.parametrize("when", ["at-the-ask", "as-it-starts"])
 @pytest.mark.parametrize("in_the_way", list(IN_THE_WAY), ids=list(IN_THE_WAY))
 async def test_a_penalty_change_is_refused_where_the_season_cannot_be_recalculated(
@@ -461,7 +453,6 @@ async def test_a_penalty_change_is_refused_where_the_season_cannot_be_recalculat
     assert league.verdicts() == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_stop_between_the_penalty_s_save_and_its_jobs_finishes_on_restart(tmp_path):
     """Division 1's rounds 1 and 2 are final; the driver accepted both and raced neither, the
     no-show penalty is 1 and auto-sack at 3. Manager 77 runs `/attendance config no-show-penalty

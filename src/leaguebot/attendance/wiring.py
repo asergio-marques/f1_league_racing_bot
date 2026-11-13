@@ -250,8 +250,10 @@ def register_change_types(bot: "LeagueBot") -> None:
     """Make the queue known attendance's kinds of change: the four check-in jobs and the answer,
     `/attendance sync`, the module's switch, its eight settings and its channel settings."""
     from leaguebot.attendance.services.settings.attendance_settings import (
+        PENALTY_COLUMNS,
         attendance_config_settings,
     )
+    from leaguebot.attendance.services.settings.penalty_recalculation import penalty_change
     from leaguebot.attendance.services.settings.channel_settings import attendance_channel_settings
     from leaguebot.attendance.services.check_in.check_in_answer_changes import (
         check_in_answer_change,
@@ -305,7 +307,15 @@ def register_change_types(bot: "LeagueBot") -> None:
     for setting in attendance_config_settings(
         modules=bot.module_service, seasons=bot.season_service, attendance=bot.attendance_service,
     ):
-        bot.change_queue.register(setting_change(setting))
+        change = setting_change(setting)
+        if setting.kind in PENALTY_COLUMNS:
+            change = penalty_change(
+                change, column=PENALTY_COLUMNS[setting.kind], placement=bot.placement_service,
+                roles=bot.team_role_service, lineups=bot.lineup_poster,
+                attendance=bot.attendance_after_review, modules=bot.module_service,
+                now=lambda: bot.change_queue.now(),
+            )
+        bot.change_queue.register(change)
     for setting in attendance_channel_settings(
         modules=bot.module_service, seasons=bot.season_service,
         channel_of=lambda channel_id: bot.get_channel(channel_id),

@@ -211,6 +211,14 @@ SPECS: tuple[_Spec, ...] = (
 #: The kind of change of each `/attendance config` command, by the command's word.
 KINDS: dict[str, str] = {spec.command: spec.kind for spec in SPECS}
 
+#: The column of each penalty's kind of change: the three settings a season's recalculation
+#: follows while it is ongoing (`penalty_recalculation`).
+PENALTY_COLUMNS: dict[str, str] = {
+    spec.kind: spec.column
+    for spec in SPECS
+    if spec.command in ("no-rsvp-penalty", "absent-penalty", "no-show-penalty")
+}
+
 #: The columns of `attendance_config` a manager sets: the only names the saves write.
 SETTING_COLUMNS: frozenset[str] = frozenset(spec.column for spec in SPECS)
 
@@ -292,4 +300,4 @@ def attendance_config_settings(
     )
 
 
-__all__ = ["KINDS", "KIND_PREFIX", "SETTING_COLUMNS", "attendance_config_settings"]
+__all__ = ["KINDS", "KIND_PREFIX", "PENALTY_COLUMNS", "SETTING_COLUMNS", "attendance_config_settings"]
