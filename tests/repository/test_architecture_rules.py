@@ -1004,12 +1004,9 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_sheet.py", "post_attendance_sheet"): (2, PASS["attendance"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
-    ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
     ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),

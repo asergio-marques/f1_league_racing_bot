@@ -46,10 +46,7 @@ from leaguebot.attendance.services.attendance_config_service import (
     RsvpOutcome,
     rsvp_lock,
 )
-from leaguebot.attendance.services.check_in_changes import (
-    CheckInViewFactory,
-    edit_check_in_message,
-)
+from leaguebot.attendance.services.check_in_changes import CheckInViewFactory
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
@@ -73,6 +70,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.posting.standing_post_handler import edit_standing
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
@@ -411,8 +409,9 @@ def check_in_answer_steps(
             embed = await rsvp_service._rebuild_embed_for_round(
                 round_id, division_id, ctx.db_path, service
             )
-            await edit_check_in_message(
-                message, embed=embed, view=view_of(round_id)
+            await edit_standing(
+                message, mentions=discord.AllowedMentions.none(),
+                embed=embed, view=view_of(round_id),
             )
         except discord.NotFound:
             if owes:

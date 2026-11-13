@@ -21,6 +21,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -226,11 +227,15 @@ async def post_attendance_sheet(
             # carries names precisely so that it carries no mention.
             # A season-boundary graphic goes out bare: the phrase naming the occasion is
             # drawn on the sheet, so a heading above it would only say it twice.
-            new_msg = await channel.send(
-                heading if occasion.names_a_round else None, file=attachment
+            new_message_id = await post_standing(
+                channel, heading if occasion.names_a_round else None,
+                mentions=discord.AllowedMentions.none(), file=attachment,
             )
         else:
-            new_msg = await channel.send(content)
+            # The text names its drivers by mention, and notifies them, as it always has.
+            new_message_id = await post_standing(
+                channel, content, mentions=discord.AllowedMentions(users=True)
+            )
     except discord.HTTPException as exc:
         log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
         raise StepFailedOnDiscord(
@@ -247,7 +252,7 @@ async def post_attendance_sheet(
     # it, so it neither claims the slot nor deletes what is in it. Claiming the slot would
     # only hand some later posting the means to delete the season's last word.
     return PostedSheet(
-        message_id=new_msg.id, channel_id=channel_id, previous=prior_msg_id,
+        message_id=new_message_id, channel_id=channel_id, previous=prior_msg_id,
         takes_slot=occasion.takes_the_live_slot,
         faults=await _fault_lines(db_path, division_id, faults),
     )

@@ -78,7 +78,7 @@ class _FakeChannel:
         self.sent_file = None
         self._next_id = 5000
 
-    async def send(self, content, file=None):
+    async def send(self, content, file=None, allowed_mentions=None):
         if self.send_fails:
             self.journal.append("send:FAILED")
             raise _HTTPFailure()

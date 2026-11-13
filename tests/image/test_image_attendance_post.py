@@ -117,14 +117,14 @@ def test_the_sheet_flow_still_has_exactly_one_send_site_and_no_delete_site():
     """The sheet it replaces is deleted by the change queue's job after the post, never by the
     posting itself."""
     source = inspect.getsource(attendance_sheet.post_attendance_sheet)
-    assert source.count("channel.send(") == 2  # the file branch and the text branch
+    assert source.count("post_standing(") == 2  # the file branch and the text branch
     assert ".delete()" not in source
 
 
 def test_the_graphic_is_rendered_before_anything_is_sent_or_destroyed():
     source = inspect.getsource(attendance_sheet.post_attendance_sheet)
     render_at = source.index("_sheet_attachment(")
-    send_at = source.index("channel.send(")
+    send_at = source.index("post_standing(")
     assert render_at < send_at
     assert ".delete()" not in source
 

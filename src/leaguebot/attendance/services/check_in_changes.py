@@ -55,8 +55,9 @@ messages had not been cleared and delete them, so a Discard on it is refused and
 moves it.
 
 The posts of a check-in (the call, and the last notice and announcement that follow) go through
-`post_check_in_message`, the module's one send site, which keeps the mentions the post may notify
-stated where it is sent; the call's edit goes through `edit_check_in_message`.
+core's notice handler (`send_notice`, the call's own `post_standing`), each stating the mentions the post may notify
+where it is sent, and the call's edit through `edit_standing` (architecture.md, "Posting to Discord"): the
+message ids a post returns are saved by the job's record.
 """
 
 from __future__ import annotations
@@ -113,7 +114,8 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.services.posting.notice_handler import delete_notice
+from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
+from leaguebot.core.services.posting.standing_post_handler import edit_standing, post_standing
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now
 from leaguebot.core.services.test_mode.test_mode_service import (
@@ -123,7 +125,6 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     PhaseEntry,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
@@ -177,40 +178,6 @@ def _doing(payload: dict[str, Any]) -> str:
     every member-facing *doing* is."""
     what = _what(payload)
     return what[:1].upper() + what[1:]
-
-
-@posts_in_a_job
-async def post_check_in_message(
-    channel: discord.TextChannel,
-    *,
-    content: str | None,
-    mentions: discord.AllowedMentions,
-    embed: discord.Embed | None = None,
-    view: discord.ui.View | None = None,
-    file: discord.File | None = None,
-) -> discord.Message:
-    """Post one message of a round's check-in, the module's one send site.
-
-    *mentions* is who the message may notify, stated by the caller and sent with it: the
-    division's role for a call, the silent drivers for a last notice.
-    """
-    kwargs: dict[str, Any] = {"content": content, "allowed_mentions": mentions}
-    if embed is not None:
-        kwargs["embed"] = embed
-    if view is not None:
-        kwargs["view"] = view
-    if file is not None:
-        kwargs["file"] = file
-    return await channel.send(**kwargs)
-
-
-@posts_in_a_job
-async def edit_check_in_message(
-    message: discord.Message, *, embed: discord.Embed, view: discord.ui.View | None
-) -> None:
-    """Edit one message of a round's check-in, the module's one edit site: the call, drawn again
-    without its buttons (*view* None) once its deadline has run."""
-    await message.edit(embed=embed, view=view)
 
 
 #: A round as its check-in reads it: its row, with `attendance_on` from attendance's own switch
@@ -1152,13 +1119,13 @@ def check_in_steps(
                 country_name=row["track_country"],
             )
         try:
-            message = await post_check_in_message(
+            posted_id = await post_standing(
                 channel,
-                content=f"<@&{role}>\n" if role else None,
+                f"<@&{role}>\n" if role else None,
+                mentions=discord.AllowedMentions(roles=bool(role)),
                 embed=embed,
                 view=view_of(round_id),
                 file=attachment,
-                mentions=discord.AllowedMentions(roles=bool(role)),
             )
         except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             # A fault on the connection (a timeout among them) is handled as Discord refusing is.
@@ -1213,7 +1180,7 @@ def check_in_steps(
             )
         return StepResult(
             result={
-                "new": [message.id], "channel_id": message.channel.id,
+                "new": [posted_id], "channel_id": channel.id,
                 "round_id": round_id, "division_id": division_id, "driver_ids": driver_ids,
                 "replacing": earlier is not None or amending,
             },
@@ -1403,7 +1370,7 @@ def check_in_last_notice_steps(
             if silent else discord.AllowedMentions.none()
         )
         try:
-            message = await post_check_in_message(channel, content=content, mentions=mentions)
+            message = await send_notice(channel, content, mentions=mentions)
         except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             raise StepFailedOnDiscord(
                 f"the last notice could not be posted: {str(exc) or type(exc).__name__}"
@@ -1822,7 +1789,7 @@ def check_in_deadline_steps(
             int(payload["round_id"]), int(payload["division_id"]), ctx.db_path, service
         )
         try:
-            await edit_check_in_message(message, embed=embed, view=None)
+            await edit_standing(message, mentions=discord.AllowedMentions.none(), embed=embed, view=None)
         except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             if isinstance(exc, discord.NotFound):
                 raise
@@ -1864,7 +1831,7 @@ def check_in_deadline_steps(
                 f"set one with `/attendance channel rsvp`, then press Retry."
             )
         try:
-            message = await post_check_in_message(channel, content=text, mentions=mentions)
+            message = await send_notice(channel, text, mentions=mentions)
         except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             raise StepFailedOnDiscord(
                 f"the reserve announcement could not be posted: {str(exc) or type(exc).__name__}"
