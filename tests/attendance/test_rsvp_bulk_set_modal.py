@@ -301,6 +301,23 @@ async def test_a_single_entry_is_applied(tmp_path):
     assert "Applied 1 update(s)" in _replied(interaction)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the form's answers are judged at the host's clock, not the queue's",
+)
+async def test_the_answers_are_judged_at_the_queue_s_clock(tmp_path):
+    """Round 21 starts three days from now by the host's clock, its two-hour check-in deadline
+    well ahead there; the queue's clock, the bot's, stands three days and an hour on, past both.
+    A maintainer submits "900000001, accept" for the full-time driver: the answer is judged at
+    the queue's clock, where the driver is locked at the deadline, so nothing is applied."""
+    bot = await _bot(await _make_db(tmp_path))
+    league_queue(bot, bot.db_path, now=datetime.now(timezone.utc) + timedelta(days=3, hours=1))
+
+    await _submit(bot, "900000001, accept")
+
+    assert (await _applied(bot)) == []
+
+
 async def test_every_entry_of_a_paste_is_applied(tmp_path):
     """Twenty test drivers into a particular state without twenty button presses is the
     whole reason the modal exists."""
