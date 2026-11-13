@@ -1525,8 +1525,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_sanctions.py", "apply_sanction"): (2, PASS["attendance"]),
-    ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"): (3, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
     ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
@@ -2156,11 +2154,8 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
     # Results' pass
     # Attendance's pass
-    ("attendance/services/attendance_config_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
     ("attendance/services/attendance_recompute.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_scoring.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    ("core/services/drivers/placement_service.py", "PlacementService.move_driver"): (1, PASS["attendance"]),
-    ("core/services/drivers/placement_service.py", "PlacementService.sack_driver"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
@@ -2505,8 +2500,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_sheet.py", "_sheet_rows"): (6, PASS["attendance"]),
     ("attendance/services/attendance_scoring.py", "distribute_attendance_points"):
         (9, PASS["attendance"]),
-    ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"):
-        (1, PASS["attendance"]),
     ("attendance/services/attendance_sanctions.py", "owed_sanctions"): (9, PASS["attendance"]),
     ("attendance/services/attendance_sheet.py", "post_attendance_sheet"): (2, PASS["attendance"]),
     ("attendance/services/attendance_recompute.py", "recalculation_faults"): (2, PASS["attendance"]),
@@ -3290,8 +3283,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_sheet.py", "_round_grid"): (1, PASS["attendance"]),
     ("attendance/services/attendance_sheet.py", "_seat_team_field"): (1, PASS["attendance"]),
     ("attendance/services/attendance_sheet.py", "_sheet_attachment"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_sanctions.py", "enforce_attendance_sanctions"):
-        (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),

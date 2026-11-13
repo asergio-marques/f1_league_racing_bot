@@ -157,7 +157,7 @@ class AttendanceService:
 
         The defaults are the schema's own column defaults, read from it, so that the module
         keeps one copy of them: the row the module's switch-on writes leaves them to the schema.
-        A read hook uses this rather than `get_or_create_config`, which writes the row.
+        A read hook uses this, so that a read never creates the row.
         """
         existing = await self.get_config()
         if existing is not None:
@@ -186,17 +186,6 @@ class AttendanceService:
             autoreserve_threshold=_nullable("autoreserve_threshold"),
             autosack_threshold=_nullable("autosack_threshold"),
         )
-
-    async def get_or_create_config(self) -> AttendanceConfig:
-        existing = await self.get_config()
-        if existing is not None:
-            return existing
-        async with get_connection(self._db_path) as db:
-            await db.execute("INSERT OR IGNORE INTO attendance_config (id) VALUES (1)")
-            await db.commit()
-        result = await self.get_config()
-        assert result is not None
-        return result
 
     async def switch_off_on(self, db: aiosqlite.Connection) -> bool:
         """Turn the module off on *db* without committing, and say whether it was on.

@@ -1,23 +1,14 @@
 """Recalculating a division's attendance from a round forward, and what stands in its way.
 
 `_recalculate_forward` recomputes a round and carries the running total through every finalised
-round after it on one connection; `sync_attendance` is what `/attendance sync` does with it, and
-`recalculation_faults` says what stands between a season and a recalculation.
+round after it on one connection, and `recalculation_faults` says what stands between a season and a recalculation.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import discord
-
-from leaguebot.attendance.services import attendance_sanctions, attendance_scoring
-from leaguebot.attendance.services.attendance_sanctions import SanctionOutcome
+from leaguebot.attendance.services import attendance_scoring
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.league_bot import LeagueBot
-
-if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
 
 
 async def _recalculate_forward(
@@ -112,40 +103,6 @@ async def _recalculate_forward(
     return [round_id, *subsequent_rounds]
 
 
-async def sync_attendance(
-    bot: LeagueBot,
-    guild: discord.Guild,
-    db_path: str,
-    division_id: int,
-    from_round_id: int,
-    season_id: int,
-    *,
-    queue: "ChangeQueue",
-) -> SanctionOutcome:
-    """What `/attendance sync` does: recalculate from a round forward, then finish the job.
-
-    Decided 2026-09-18 (#239), as the recovery for sanctions that did not all apply. Every
-    finalised round from *from_round_id* on is recomputed from its results and its points
-    redistributed, in one transaction; the change queue (*queue*, handed in by the command) is then
-    asked to post the division's sheet for the latest of them, the channel holding one sheet; and
-    the sanctions are enforced against that latest round, where the running totals now stand,
-    asking the same queue for the lineups and sheets they touch (#439).
-
-    **Safe to run again.** A driver already sacked is no longer a candidate and one already
-    in Reserve is passed over, so a second run applies only what the first did not.
-    """
-    touched = await _recalculate_forward(
-        db_path, from_round_id, division_id, recompute="all"
-    )
-    latest = touched[-1]
-    from leaguebot.attendance.services import sheet_posting
-
-    await sheet_posting.ask_sheet_post(queue, db_path, division_id, latest)
-    return await attendance_sanctions.enforce_attendance_sanctions(
-        bot, guild, db_path, latest, division_id, season_id, queue=queue
-    )
-
-
 async def recalculation_faults(
     db_path: str,
     season_id: int,
@@ -165,7 +122,7 @@ async def recalculation_faults(
     the same false success as the reposting.
 
     **The verdicts channel is asked for only where sanctions could actually fall.**
-    ``enforce_attendance_sanctions`` returns immediately when both the autosack and
+    `owed_sanctions` is empty when both the autosack and
     autoreserve thresholds are unset, so a league using neither must not be refused for a
     channel it will never post to.
 

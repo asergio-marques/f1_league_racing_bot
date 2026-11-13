@@ -12,7 +12,7 @@ A failed render therefore needs no fallback machinery at all: it returns ``None`
 send site posts the textual sheet it would have posted anyway.
 
 **The sheet never gates a sanction** (XIV.7). Nothing in this module is reached before
-``enforce_attendance_sanctions``; the graphic is downstream of every state change it depicts and
+`owed_sanctions` and `apply_sanction_on` have saved the sanctions; the graphic is downstream of every state change it depicts and
 is never a precondition of one.
 """
 from __future__ import annotations

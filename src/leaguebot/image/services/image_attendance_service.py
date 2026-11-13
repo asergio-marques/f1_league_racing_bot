@@ -203,7 +203,7 @@ def active_limit(
     ever a number and the sheet has one plate and one set of marks rather than two of each.
 
     Auto-sack wins where a database somehow holds both, because that is what the enforcement
-    does: ``enforce_attendance_sanctions`` tests the sack threshold first and moves on to the
+    does: `owed_sanctions` tests the sack threshold first and moves on to the
     next driver, so a sheet marking against the reserve limit would warn of a sanction that
     could no longer be the one applied.
 
@@ -223,7 +223,7 @@ def mark_for(total: int | None, limit: int | None) -> str | None:
     is close to losing their seat and not which of the two ways they would lose it, exactly as
     ``SANCTION_ANNOTATION`` does once they have.
 
-    ``>=`` at the limit, matching ``enforce_attendance_sanctions``: the sheet must not draw a
+    ``>=`` at the limit, matching `owed_sanctions`: the sheet must not draw a
     driver as merely close when the same number has already sanctioned them.
 
     **A total of zero never marks.** The near band is otherwise anchored below zero for a limit

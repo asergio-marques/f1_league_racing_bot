@@ -634,7 +634,7 @@ async def _after_a_sanction(ctx: StepContext) -> bool:
         return bool(applied)
     # A sheet, and the lineup of another division, are redrawn for the drivers they mark: a sacked
     # driver's other division is redrawn only where that driver's own sack applied, as
-    # `enforce_attendance_sanctions` has it.
+    # the sync's change has it.
     return bool(applied & {int(p) for p in ctx.step_payload.get("sanctioned", [])})
 
 

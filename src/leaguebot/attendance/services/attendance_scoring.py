@@ -230,7 +230,7 @@ async def distribute_attendance_points(
 
     It follows that the latest round is where a division's current total stands, and that is
     the round a sheet is drawn against and the sanctions enforced upon — see
-    :func:`_recalculate_forward` and :func:`sync_attendance`.
+    :func:`_recalculate_forward` and the sync's change.
 
     *db* joins a transaction the caller already opened, and is then the caller's to commit;
     see :func:`_shared_or_own`.
