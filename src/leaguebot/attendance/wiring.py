@@ -260,7 +260,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         module_off_attendance,
         module_on_attendance,
     )
-    from leaguebot.attendance.services.attendance_sync_change import attendance_sync_change
+    from leaguebot.attendance.services.sanctions.attendance_sync_change import attendance_sync_change
     from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(

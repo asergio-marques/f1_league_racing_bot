@@ -411,7 +411,7 @@ class AttendanceDouble:
             raise self.lineup_fails.pop(0)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
-        from leaguebot.attendance.services import attendance_sanctions
+        from leaguebot.attendance.services.sanctions import attendance_sanctions
 
         return await attendance_sanctions.sync_hint(self.league.db_path, division_id, round_id)
 

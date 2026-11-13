@@ -39,7 +39,8 @@ from leaguebot.attendance.services.scoring import (
     attendance_recompute,
     attendance_scoring,
 )
-from leaguebot.attendance.services import attendance_sanctions, attendance_sheet
+from leaguebot.attendance.services.sanctions import attendance_sanctions
+from leaguebot.attendance.services import attendance_sheet
 from leaguebot.attendance.services.check_in import check_in_record
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection

@@ -14,7 +14,7 @@ from leaguebot.attendance.cogs.attendance_group import (
     AttendanceSubgroup,
 )
 from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
-from leaguebot.attendance.services.attendance_sync_change import (
+from leaguebot.attendance.services.sanctions.attendance_sync_change import (
     NOT_ONGOING,
     SYNC,
     amendment_verdict,
