@@ -16,6 +16,9 @@ from typing import Any
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons.season_service import division_round_states_on
 
 
 log = logging.getLogger(__name__)
@@ -236,16 +239,20 @@ async def distribute_attendance_points(
     see :func:`_shared_or_own`.
     """
     async with _shared_or_own(db_path, db) as (db, _owned):
-        # Guard: skip if round is cancelled (no penalties for cancelled rounds).
-        cursor = await db.execute(
-            "SELECT status, round_number FROM rounds WHERE id = ?",
-            (round_id,),
-        )
-        round_row = await cursor.fetchone()
-        if round_row is None or round_row["status"] == "CANCELLED":
+        # Guard: skip if round is cancelled (no penalties for cancelled rounds). The division's
+        # rounds are core's to give; the round's number and the rounds before it come off them.
+        states = await division_round_states_on(db, division_id)
+        if round_id not in states or states[round_id][1] == RoundStatus.CANCELLED.value:
             log.info("distribute_attendance_points: skipping cancelled round %s", round_id)
             return
-        this_round_number: int = round_row["round_number"]
+        this_round_number: int = states[round_id][0]
+        finalised_before = [
+            earlier_id
+            for earlier_id, (number, status) in states.items()
+            if number < this_round_number
+            and earlier_id != round_id
+            and status in (RoundStatus.AWAITING_APPEAL_VERDICTS.value, RoundStatus.FINAL.value)
+        ]
 
         # Load penalty config for this division's server.
         cursor = await db.execute(
@@ -263,24 +270,43 @@ async def distribute_attendance_points(
         absent_pen: int = cfg_row["absent_penalty"] or 0
         no_show_pen: int = cfg_row["no_show_penalty"] or 0
 
-        # Load full-time DRA rows for this round.
+        # The seats are core's: who is placed in the division's full-time teams and who in its
+        # reserve team. The round's rows are attendance's, and are read once and sorted by that.
+        placed = await TeamService.placed_drivers_on(db, division_id)
+        full_time_ids = {p.profile_id for p in placed if not p.is_reserve}
+        reserve_ids = {p.profile_id for p in placed if p.is_reserve}
         cursor = await db.execute(
             """
-            SELECT dra.id, dra.driver_profile_id, dra.rsvp_status, dra.attended
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND ti.is_reserve = 0
-              AND dra.attended IS NOT NULL
+            SELECT id, driver_profile_id, rsvp_status, attended, assigned_team_id
+            FROM driver_round_attendance
+            WHERE round_id = ?
+              AND division_id = ?
+              AND attended IS NOT NULL
             """,
-            (round_id, division_id, division_id),
+            (round_id, division_id),
         )
-        dra_rows = await cursor.fetchall()
+        round_rows = await cursor.fetchall()
+        dra_rows = [r for r in round_rows if r["driver_profile_id"] in full_time_ids]
+
+        # What each driver was given in the finalised rounds before this one. Those rounds are not
+        # this one's, so what this one writes below cannot move it.
+        prior_totals: dict[int, int] = {}
+        if finalised_before:
+            marks = ",".join("?" * len(finalised_before))
+            cursor = await db.execute(
+                f"""
+                SELECT driver_profile_id, SUM(points_awarded) AS prior_total
+                FROM driver_round_attendance
+                WHERE division_id = ?
+                  AND round_id IN ({marks})
+                  AND points_awarded IS NOT NULL
+                GROUP BY driver_profile_id
+                """,  # noqa: S608
+                (division_id, *finalised_before),
+            )
+            prior_totals = {
+                int(r["driver_profile_id"]): int(r["prior_total"]) for r in await cursor.fetchall()
+            }
 
         for row in dra_rows:
             dra_id = row["id"]
@@ -316,22 +342,7 @@ async def distribute_attendance_points(
             net = max(0, net)  # never negative
 
             # Compute cumulative total across all finalized rounds in division.
-            c3 = await db.execute(
-                """
-                SELECT COALESCE(SUM(dra2.points_awarded), 0) AS prior_total
-                FROM driver_round_attendance dra2
-                JOIN rounds r ON r.id = dra2.round_id
-                WHERE dra2.driver_profile_id = ?
-                  AND dra2.division_id = ?
-                  AND r.status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
-                  AND r.round_number < ?
-                  AND dra2.round_id != ?
-                  AND dra2.points_awarded IS NOT NULL
-                """,
-                (row["driver_profile_id"], division_id, this_round_number, round_id),
-            )
-            prior_row = await c3.fetchone()
-            prior_total: int = prior_row["prior_total"] if prior_row else 0
+            prior_total = prior_totals.get(row["driver_profile_id"], 0)
             total_after = prior_total + net
 
             await db.execute(
@@ -343,30 +354,17 @@ async def distribute_attendance_points(
                 (net, total_after, dra_id),
             )
 
-        # Load allocated-reserve DRA rows: reserve-seated drivers that were
-        # distributed into a full-time seat for this round
-        # (assigned_team_id IS NOT NULL) and RSVP'd ACCEPTED.
+        # Allocated-reserve DRA rows: reserve-seated drivers that were distributed into a
+        # full-time seat for this round (assigned_team_id IS NOT NULL) and RSVP'd ACCEPTED.
         # Only no_show_penalty applies; non-allocated or non-ACCEPTED reserves
         # remain excluded from attendance scoring.
-        cursor = await db.execute(
-            """
-            SELECT dra.id, dra.driver_profile_id, dra.attended
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND ti.is_reserve = 1
-              AND dra.assigned_team_id IS NOT NULL
-              AND dra.rsvp_status = 'ACCEPTED'
-              AND dra.attended IS NOT NULL
-            """,
-            (round_id, division_id, division_id),
-        )
-        reserve_dra_rows = await cursor.fetchall()
+        reserve_dra_rows = [
+            r
+            for r in round_rows
+            if r["driver_profile_id"] in reserve_ids
+            and r["assigned_team_id"] is not None
+            and r["rsvp_status"] == "ACCEPTED"
+        ]
 
         for row in reserve_dra_rows:
             dra_id = row["id"]
@@ -384,22 +382,7 @@ async def distribute_attendance_points(
                 net -= no_show_pen
             net = max(0, net)
 
-            c3 = await db.execute(
-                """
-                SELECT COALESCE(SUM(dra2.points_awarded), 0) AS prior_total
-                FROM driver_round_attendance dra2
-                JOIN rounds r ON r.id = dra2.round_id
-                WHERE dra2.driver_profile_id = ?
-                  AND dra2.division_id = ?
-                  AND r.status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
-                  AND r.round_number < ?
-                  AND dra2.round_id != ?
-                  AND dra2.points_awarded IS NOT NULL
-                """,
-                (row["driver_profile_id"], division_id, this_round_number, round_id),
-            )
-            prior_row = await c3.fetchone()
-            prior_total = prior_row["prior_total"] if prior_row else 0
+            prior_total = prior_totals.get(row["driver_profile_id"], 0)
             total_after = prior_total + net
 
             await db.execute(

@@ -1398,6 +1398,28 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
     return [int(row["id"]) for row in await cursor.fetchall()]
 
 
+async def division_round_states_on(
+    db: aiosqlite.Connection, division_id: int
+) -> dict[int, tuple[int, str]]:
+    """Each round of *division_id* as ``{round id: (round number, status)}``, in round order, read
+    on *db*; empty for none.
+
+    For a module reading core's tables only through core's code (architecture.md, "The
+    database") that asks only where a round stands and which comes before which: the round's
+    cancellation, and the finalised rounds before it. It reads the number and the status and
+    nothing else, so that a round's format or date it has no use for is not parsed.
+    `division_rounds_in_order_on` is the whole round. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, round_number, status FROM rounds WHERE division_id = ? ORDER BY round_number",
+        (division_id,),
+    )
+    return {
+        int(row["id"]): (int(row["round_number"]), str(row["status"]))
+        for row in await cursor.fetchall()
+    }
+
+
 async def active_season_rounds_on(db: aiosqlite.Connection) -> list[tuple[int, int]]:
     """The ``(round_id, division_id)`` of every round of an ACTIVE season, in round id order,
     read on *db*; empty where no season is active.
