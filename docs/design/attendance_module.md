@@ -372,7 +372,7 @@ check-in and tells the log channel (`give_up`). Pinned by
 `test_a_last_notice_with_no_call_standing_is_dropped`.
 
 **Test mode's rule** (the core specification, "Test mode") is carried by judging lateness at the
-ask, where a timer fires (`_left_to_advance`, `ctx.change_id is None`): a request accepted on time
+ask, where a timer fires (`left_to_advance`, `ctx.change_id is None`): a request accepted on time
 is never dropped as the change starts, for the delay of a stopped or busy lane, while one whose
 moment passed with the bot down is left to `/test-mode advance`. Pinned by
 `test_a_call_timer_overdue_at_a_restart_under_test_mode_posts_no_late_call`,
@@ -569,10 +569,10 @@ specification's "Resynchronising attendance"). A call that cannot be posted stop
 stop notice saying what is left for the round (`left_for_the_queue`).
 
 **The catch-alls** of attendance sit in the places `architecture.md` allows, and each is named for
-good in `CATCH_ALLS_ALLOWED` where the shape does not tell its place: `_record_failed`, around
-recording a failure that might itself fail (place 3); the four drawings of a graphic above (place
-6); the loop of each recovery, one round failing never stopping the rest (place 2); and the
-advance's ask of a change, which raises the fault again as `AdvanceStepFailed` for the command to
+good in `CATCH_ALLS_ALLOWED` where the shape does not tell its place: `record_failed` (in
+`attendance_group.py`), around recording a failure that might itself fail (place 3); the four
+drawings of a graphic above (place 6); the loop of each recovery, one round failing never
+stopping the rest (place 2); and the advance's ask of a change, which raises the fault again as `AdvanceStepFailed` for the command to
 report, a handler in a place by its shape.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops"):
