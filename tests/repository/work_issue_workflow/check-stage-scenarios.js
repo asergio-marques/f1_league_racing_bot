@@ -22,7 +22,7 @@ module.exports = {
   },
   // The product owner's own engineering questions still go to the issue reviewer's triage.
   checkProductRaisedStillTriaged: {
-    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['image'], commit: 'abc123' },
+    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['signup'], commit: 'abc123' },
     respond(label) {
       if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [], notes: [] }
       if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [q('engineering', 'which table?')], notes: [] }
@@ -33,7 +33,7 @@ module.exports = {
   },
   // A question passed on that the product owner neither settles nor asks reaches the owner as asked.
   checkPassedOnLeftOutReachesOwner: {
-    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['image'], commit: 'abc123' },
+    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['signup'], commit: 'abc123' },
     respond(label) {
       if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [q('business', 'biz from arch?')], notes: [] }
       if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], notes: [] }
@@ -43,7 +43,7 @@ module.exports = {
   },
   // A product owner that returns nothing settles nothing passed on to it.
   checkPassedOnWithDeadProductReachesOwner: {
-    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['image'], commit: 'abc123' },
+    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['signup'], commit: 'abc123' },
     respond(label) {
       if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [q('business', 'biz from arch?')], notes: [] }
       if (label === 'check:product') return undefined
@@ -54,23 +54,23 @@ module.exports = {
   // A module with no design file gives a design agent nothing to check the plan against: none runs,
   // and the check says each module is held to architecture.md alone.
   noDesignFileRunsNoDesignAgent: {
-    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['image', 'weather'], commit: 'abc123' },
+    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['signup', 'weather'], commit: 'abc123' },
     respond(label) {
       if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [], notes: [] }
       if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], notes: [] }
       throw new Error('unexpected agent ' + label)
     },
     expect: (r, { labels, logs }) => !labels.includes('check:design') && r.failed.length === 0
-      && r.design.modules.map(m => m.module).join() === 'image,weather' && r.design.modules.every(m => !m.exists && !m.designChanges.length)
+      && r.design.modules.map(m => m.module).join() === 'signup,weather' && r.design.modules.every(m => !m.exists && !m.designChanges.length)
       && r.design.notes.join().includes('architecture.md') && logs.some(l => l.includes('no design agent runs')),
   },
   // Where one module has a design file, the design agent runs, and is told which have none.
   oneDesignFileRunsTheDesignAgent: {
-    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['image', 'steward'], commit: 'abc123' },
+    args: { stage: 'check', issue: '#999', plan: 'PLAN TEXT', modules: ['signup', 'steward'], commit: 'abc123' },
     respond(label, prompt) {
       if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [], notes: [] }
       if (label === 'check:design') {
-        if (!prompt.includes('steward: docs/design/steward_module.md') || !prompt.includes('image: none yet')) throw new Error('design agent not told which modules have a file')
+        if (!prompt.includes('steward: docs/design/steward_module.md') || !prompt.includes('signup: none yet')) throw new Error('design agent not told which modules have a file')
         return { modules: [], questions: [], raised: [], notes: [] }
       }
       if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], notes: [] }
