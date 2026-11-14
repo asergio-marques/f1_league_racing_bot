@@ -504,9 +504,9 @@ async def test_open_signups_are_reported_as_open(tmp_path):
     assert _fields(interaction)["Signups Open"] == "Yes"
 
 
-#: The commands answered off the change queue that wait for the catch-up after a restart (#440):
-#: the `/signup` commands that set something, the `/attendance config` setters, `/attendance sync`,
-#: `/bot pack`, `/bot factory-reset` and the `/test-mode backup` commands that change something.
+#: The commands that wear the wait for the catch-up after a restart (#440): the `/signup` commands
+#: that set something, the `/attendance config` setters, `/attendance sync`, `/bot pack`,
+#: `/bot factory-reset` and the `/test-mode backup` commands that change something.
 _HELD_FOR_THE_CATCH_UP = {
     "signup channel", "signup nationality", "signup time-type", "signup time-image",
     "signup time-slot add", "signup time-slot remove", "signup close-time add",
@@ -537,8 +537,8 @@ def _the_wait_of(callback):
 
 async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
     """The bot has restarted and holds its change queue for the catch-up. Of every command the
-    signup, attendance, bot and test-mode cogs carry, exactly the twenty-three that change the league
-    without asking the queue wear the wait, `/attendance sync` among them; `/attendance config show`
+    signup, attendance, bot and test-mode cogs carry, exactly the twenty-three listed in
+    `_HELD_FOR_THE_CATCH_UP` wear the wait, `/attendance sync` among them; `/attendance config show`
     and `/test-mode backup status`, which change nothing, do not. A league manager then invokes one held
     command of each cog (`/signup nationality`, `/attendance config no-rsvp-penalty`, `/bot pack`,
     `/test-mode backup lock`): none acts while the queue is held, and once the catch-up ends and the
