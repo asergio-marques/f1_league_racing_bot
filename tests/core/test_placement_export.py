@@ -231,8 +231,8 @@ class TestExportRow:
     async def test_a_tie_goes_to_whoever_submitted_first_not_whoever_was_corrected_last(
         self, tmp_path
     ):
-        """The seed tiebreak reads the moment a signup was sent in. A correction amends the
-        record and moves its last update, and must not cost the driver their place."""
+        """The seed tiebreak reads the moment a signup was sent in (`created_at`), so a
+        correction that amends the record later must not cost the driver their place."""
         db_path = await _seed(
             tmp_path,
             [

@@ -437,7 +437,8 @@ sweep of everything that came due while the bot was stopped:
   module over, with a line in the host's log, where it is off, save for any step the module marks
   `runs_while_off`, which runs whatever the switch says, and otherwise runs the module's own steps
   in the module's own order. A module marks a step so only where it finishes work the module
-  announced while on (signup's deletion of a held channel past its `held_until`). Each enabled module catches up its own missed events in its
+  announced while on (signup's deletion of a held channel past its `held_until`). Each enabled
+  module catches up its own missed events in its
   turn: no pass interleaves the events of different modules by time (`architecture.md`, "Timed work
   and restarts"). *Rejected:* one list of every module's steps in core's hands, which ran a
   disabled module's recoveries and left the order of the modules' steps among themselves to the
@@ -471,7 +472,7 @@ own design pass.
 | core | expired review prompts | asks each standing review's take-down, and routes its Approve view again |
 | core | hub | routes the hub's buttons again and asks the panel's refresh |
 | signup | signup close timer | asks the close of a signup window whose close passed, or the arming of the timer of one still ahead |
-| signup | wizards | asks the ending of each signup whose channel is gone, the release of each driver awaiting a correction parameter, the expiry of each signup left unanswered for 24 hours; arms nothing |
+| signup | wizards | asks the ending of each signup whose channel is gone, the release of each driver awaiting a correction parameter, and the expiry of each signup left unanswered for 24 hours; arms nothing |
 | signup | held signup channels | asks the deletion of each hold past its `held_until`, whatever signup's switch says (`runs_while_off`); arms nothing |
 | results | amendment sweep | arms results' standing sweep of lapsed amendments |
 | results | orphaned amend channels | asks each open amendment's lapse; before the submission channels, for the reason its comment gives |

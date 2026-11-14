@@ -1060,7 +1060,8 @@ source code.
 for the bot starting, one at a time, then turns to each module in the order the builder named them and
 reads its switch (`ModuleService.is_enabled`). A disabled module is passed over, with a line in the
 host's log, save for a step it marks `runs_while_off`, which runs all the same; an enabled module's
-turn runs its own start-up steps, one at a time, in the order its wiring gives. A timed event that was missed is caught up in its module's turn, by the handler its
+turn runs its own start-up steps, one at a time, in the order its wiring gives. A timed event that
+was missed is caught up in its module's turn, by the handler its
 module provides for the kind of job, so a job run on time and one caught up take one path; a module's
 start-up work that is no missed event (a review posted again, an interrupted submission reopened, the
 hub's panel posted again, as the core specification's "When the bot stops" lists) is a step of the same
