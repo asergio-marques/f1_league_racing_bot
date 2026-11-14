@@ -411,6 +411,30 @@ async def test_no_driver_is_lost_in_the_chunking(tmp_path):
         assert f"Driver Number {n}" in sent
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: a blank line in a driver's notes still splits their entry across messages",
+)
+async def test_a_blank_line_in_a_driver_s_notes_never_splits_their_entry(tmp_path):
+    """The list is divided only between drivers, and a blank line marks the gap between two.
+    A driver's notes are typed by the driver and may hold a blank line of their own, which
+    must not read as that gap: otherwise a message ends inside the driver's entry, and the
+    next begins with the rest of their notes and no name on it."""
+    interaction = _interaction()
+    first = _seeded(1, "Driver A", notes="a" * 600)
+    second = _seeded(2, "Driver B", notes="x" * 800 + "\n\n" + "y" * 800)
+    cog = _make_cog(listed=[first, second])
+
+    await _list(cog, interaction)
+
+    messages = _messages(interaction)
+    assert len(messages) > 1
+    holding_b = [m for m in messages if "Driver B" in m]
+    assert len(holding_b) == 1
+    assert "x" * 800 in holding_b[0]
+    assert "y" * 800 in holding_b[0]
+
+
 # ---------------------------------------------------------------------------
 # The export
 # ---------------------------------------------------------------------------
