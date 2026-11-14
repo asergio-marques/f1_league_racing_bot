@@ -419,16 +419,17 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#287: attendance's RecoveryFailed names no round, nor does the sweep's line"))
 async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
     """Division 1 has two calls standing whose deadlines passed while the bot was down: round 3
     (id 5) raced an hour ago and round 4 (id 6) half an hour ago. At the restart the queue
     refuses round 5's deadline. Run through the start-up sweep, attendance's "RSVP views and
     deadlines" step still asks round 6's deadline, and the sweep posts one line to the log
-    channel, its failure line for that step; the error the step raised names round 5 alone,
-    with the queue's error."""
+    channel, its failure line for that step, naming round 5 in core's form, "round 3 in
+    **Division 1**" (#287, B11); the error the step raised names round 5 alone, with the queue's
+    error."""
     import json
-
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
 
     from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
 
@@ -463,7 +464,10 @@ async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
              if row["kind"] == DEADLINE]
     assert asked == [ROUND_ID + 1]
     assert round_failures(error, module="attendance") == {ROUND_ID: refused}
-    assert lines == [start_up_failure_line("RSVP views and deadlines", error)]
+    assert lines == [
+        "❌ The bot's start-up step `RSVP views and deadlines` failed for round 3 in "
+        "**Division 1** — RecoveryFailed. The details are in the host's log."
+    ]
 
 
 async def test_a_round_whose_timestamp_will_not_parse_is_skipped(tmp_path):

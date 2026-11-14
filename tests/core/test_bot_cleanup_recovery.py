@@ -413,16 +413,17 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
     bot.change_queue.ask.assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#287: attendance's RecoveryFailed names no round, nor does the sweep's line"))
 async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):
     """Division 1 has two check-in calls standing: round 21's, raced 25 hours ago, and round
     22's, raced 30 hours ago. At the restart the queue refuses round 22's clean-up. Run through
     the start-up sweep, attendance's "missed check-in clean-ups" step still asks round 21's, and
-    the sweep posts one line to the log channel, its failure line for that step; the error the
-    step raised names round 22 alone, with the queue's error."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    the sweep posts one line to the log channel, its failure line for that step, naming round 22
+    in core's form, "round 2 in **Division 1**" (#287, B11); the error the step raised names round
+    22 alone, with the queue's error."""
     from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
 
     db_path = await _make_db(tmp_path, forecast=False)
@@ -455,7 +456,10 @@ async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_rou
     asked = [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list]
     assert asked == [22, ROUND_ID]
     assert round_failures(error, module="attendance") == {22: refused}
-    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
+    assert lines == [
+        "❌ The bot's start-up step `missed check-in clean-ups` failed for round 2 in "
+        "**Division 1** — RecoveryFailed. The details are in the host's log."
+    ]
 
 
 async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
