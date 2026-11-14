@@ -1,13 +1,14 @@
-"""The wait of a command answered off the change queue for the catch-up after a restart.
+"""The wait of a command for the catch-up after a restart.
 
-A command that goes through the queue waits inside `ChangeQueue.ask`. One answered off it (`/bot
-pack`, `/bot factory-reset`, the `/test-mode backup` commands that change something, the
-`/attendance config` commands that set something, `/attendance sync`, whose recalculation is written
-off the queue, and the `/signup` commands that set something) never asks, so it
-would act on a league the start-up sweep has not finished catching up. `after_the_catch_up`, worn
-directly above the `def` and below the tier guard, makes it wait first (core specification, "When
-the bot stops"). A helper never reads the queue off the bot, so each cog hands the decorator the
-way to its own: `after_the_catch_up(lambda cog: cog.bot.change_queue)`, once in each cog's file.
+A command that goes through the queue waits inside `ChangeQueue.ask`. One that never asks (`/bot
+pack`, `/bot factory-reset`, the `/test-mode backup` commands that change something, `/attendance
+sync`, whose recalculation is written off the queue) would act on a league the start-up sweep has
+not finished catching up, so it wears the wait; so do the `/attendance config` and `/signup`
+setters, which do ask the queue, so that none of them acts before the catch-up has ended.
+`after_the_catch_up`, worn directly above the `def` and below the tier guard, makes a command wait
+first (core specification, "When the bot stops"). A helper never reads the queue off the bot, so
+each cog hands the decorator the way to its own: `after_the_catch_up(lambda cog:
+cog.bot.change_queue)`, once in each cog's file.
 
 While it waits the interaction is deferred, so Discord shows "thinking…". The command was written
 to answer at once, by `response.send_message` or its own `response.defer`, and a deferred
