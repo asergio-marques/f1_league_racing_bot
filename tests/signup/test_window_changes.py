@@ -1037,6 +1037,68 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     assert await league.rows("SELECT * FROM signup_module_config") == []
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: the switch-off forgets the closed notice it posted, so after signup is switched back "
+    "on the next /signup open leaves it standing beside the Sign Up button"
+))
+async def test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on(tmp_path):
+    """The window is open in the signup channel (620) and the season is in Configuration, the
+    league's base role (819) and driver role (820) set and one availability slot saved. Manager 77
+    runs `/module disable signup`, which closes the window and posts "Signups are now closed" in
+    620. He runs `/module enable signup`, then `/signup channel` for 620 again: the channel holds
+    that one closed notice, never two. The season's configuration is confirmed (the season waiting
+    for its window) and he runs `/signup open`: the information message with its Sign Up button is
+    posted and the closed notice is taken down, so the channel shows signups open and nothing
+    saying they are closed."""
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from tests.support.season_league import BASE_ROLE as LEAGUE_BASE_ROLE
+    from tests.support.season_league import DRIVER_ROLE as LEAGUE_DRIVER_ROLE
+    from tests.support.settings_league import interaction as settings_interaction
+
+    league = await _close_league(tmp_path, stage="CONFIGURATION")
+    await league.write("UPDATE server_configs SET base_role_id = ?, driver_role_id = ?",
+                       LEAGUE_BASE_ROLE, LEAGUE_DRIVER_ROLE)
+    driver_role = league._role(LEAGUE_DRIVER_ROLE)
+    driver_role.managed = False
+    driver_role.is_default.return_value = False
+    driver_role.guild.me.guild_permissions.manage_roles = True
+    driver_role.guild.me.top_role.__gt__ = lambda _self, _other: True
+    await league.write(
+        "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (1, '19:00')"
+    )
+    modules = ModuleCog.__new__(ModuleCog)
+    modules.bot = league.bot
+    switching = _manager(league)
+    switching.command = MagicMock(qualified_name="module disable")
+    await modules._disable_signup(switching)
+    await run_queue(league.bot)
+    assert len(_closed_notices(league)) == 1
+
+    switching = _manager(league)
+    switching.command = MagicMock(qualified_name="module enable")
+    await modules._enable_signup(switching)
+    await run_queue(league.bot)
+    setting = settings_interaction(league.bot, "signup channel")
+    setting.guild = league.guild
+    await undecorate(SignupCog.signup_channel)(
+        SignupCog(league.bot), setting, league.channel(LEAGUE_SIGNUP_CHANNEL)
+    )
+    await run_queue(league.bot)
+    assert (await _window(league))["signup_channel_id"] == LEAGUE_SIGNUP_CHANNEL
+    assert len(_closed_notices(league)) == 1
+
+    await league.write("UPDATE seasons SET stage = 'WAITING' WHERE id = ?", SEASON_ID)
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    opening = _manager(league)
+    opening.command = MagicMock(qualified_name="signup open")
+    await undecorate(SignupCog.signup_open)(cog, opening, None, None)
+    await run_queue(league.bot)
+
+    assert (await _window(league))["signups_open"]
+    assert _closed_notices(league) == []
+
+
 async def test_a_close_posts_the_drivers_notices_on_the_league_lane(tmp_path):
     """Kimi and a second driver are still filling in the wizard; Discord refuses posts in Kimi's
     signup channel alone. Manager 77 confirms the close and the queue runs: the close is one
