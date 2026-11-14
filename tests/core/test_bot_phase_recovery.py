@@ -383,7 +383,6 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert sweep["lines"] == [start_up_failure_line(MISSED_PHASES, error)]
 
 
-@pytest.mark.xfail(strict=True, reason="#287: a live round whose start cannot be read is its own failure")
 async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(tmp_path):
     """Round 1 is past its Phase 1 horizon with Phase 1 not drawn; round 2, of the same live
     division, has its start stored without its offset, which no writer produces and the bot refuses

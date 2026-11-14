@@ -1713,13 +1713,15 @@ async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
         return [_row_to_round(row) for row in await cursor.fetchall()]
 
 
-async def rounds_of_the_active_season(db_path: str) -> list[Round]:
-    """Each round of the ACTIVE season that is not cancelled, of a division not cancelled,
-    earliest first.
+async def rounds_of_the_active_season(db_path: str) -> tuple[list[Round], list[int]]:
+    """The rounds of the ACTIVE season that are not cancelled, of a division not cancelled,
+    earliest first and, at the same moment, by id; and, apart, the ids of such rounds whose stored
+    moment cannot be read, in id order.
 
     For a module catching up what came due while the bot was down: weather's missed phases, which
-    a season is owed while it is live, whatever stage it is in. A round whose stored moment cannot
-    be read is passed over, as one that can be placed nowhere. It writes nothing.
+    a season is owed while it is live, whatever stage it is in. A round that can be placed nowhere
+    is not passed over in silence: its id is handed back for the caller to report as that round's
+    own failure, the rounds that can be read being asked all the same. It writes nothing.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -1731,12 +1733,13 @@ async def rounds_of_the_active_season(db_path: str) -> list[Round]:
         )
         rows = await cursor.fetchall()
     rounds: list[Round] = []
+    unreadable: list[int] = []
     for row in rows:
         try:
             rounds.append(_row_to_round(row))
         except ValueError:
-            continue
-    return rounds
+            unreadable.append(row[0])
+    return rounds, sorted(unreadable)
 
 
 async def rounds_of_ongoing_seasons(db_path: str, statuses: Iterable[str]) -> list[Round]:

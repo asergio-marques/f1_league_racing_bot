@@ -105,7 +105,6 @@ async def test_set_round_status_on_respects_its_guard(tmp_path) -> None:
     }
 
 
-@pytest.mark.xfail(strict=True, reason="#287: the reader hands back the live rounds whose start cannot be read")
 async def test_rounds_of_the_active_season_keeps_only_live_rounds(tmp_path) -> None:
     """Weather's start-up catch-up of missed phases asks for the rounds of the ACTIVE season that
     are still live, earliest first and, at the same moment, by id: a cancelled round and a round

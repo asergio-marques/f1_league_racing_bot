@@ -73,16 +73,22 @@ async def recover_missed_phases(db_path: str, *, queue: ChangeQueue) -> None:
     (`rounds_of_the_active_season`, and the race time judged here at the queue's clock). It is the
     race time rather than the round's status that decides, since a round leaves ``NOT_RUN`` only
     by its result-submission job. The phases a round has drawn are read through weather's own
-    `phases_drawn_on`.
+    `phases_drawn_on`. A live round whose start cannot be read is that round's own failure, as it is
+    for the clean-ups: it is recorded, and the rounds that can be read are all asked.
     """
     now = queue.now()
-    rounds = [each for each in await rounds_of_the_active_season(db_path)
-              if each.scheduled_at > now]
+    live, unreadable = await rounds_of_the_active_season(db_path)
+    rounds = [each for each in live if each.scheduled_at > now]
     async with get_connection(db_path) as db:
         drawn = await phases_drawn_on(db, [each.id for each in rounds])
     config: WeatherPipelineConfig | None = None
 
-    failures: dict[int, BaseException] = {}
+    failures: dict[int, BaseException] = {
+        round_id: ValueError(f"the start of round {round_id} cannot be read")
+        for round_id in unreadable
+    }
+    for round_id in unreadable:
+        log.error("Recovery: round %s cannot be read, its phases are not caught up", round_id)
     for each in rounds:
         if config is None:
             config = await weather_config_service.get_weather_pipeline_config(db_path)
