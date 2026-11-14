@@ -253,9 +253,10 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     reason is written to the log channel. With the images module off, or its weather pictures
     off, no picture was due: the text is posted and nothing about a picture is written, even
     where the round could not have been read for one (weather spec, "Image generation";
-    criterion 4). Where round 3 is a mystery round, its notice is posted in place of Phase 1, and
-    a picture that cannot find its round names it the mystery round notice, never a phase
-    (weather spec, "Mystery rounds"; criterion 13)."""
+    criterion 4). Where round 3 is a mystery round, its notice is posted in place of Phase 1
+    (weather spec, "Mystery rounds"), and a picture that cannot find its round names it the
+    mystery round notice, never a phase (image spec, "Weather image generation", "Generation and
+    posting"; criterion 13)."""
     from leaguebot.image.services import image_weather_post
 
     mystery = cause.startswith("mystery")

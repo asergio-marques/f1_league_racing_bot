@@ -204,8 +204,9 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
 
 
 def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
-    """A mystery round's notice is named in every message as the mystery round notice, never as
-    phase 0 and never as the "mystery notice" (weather spec, "Mystery rounds"; #287, B12)."""
+    """A mystery round's notice is named in a picture's failure line as the mystery round notice,
+    never as phase 0 and never as the "mystery notice" (image spec, "Weather image generation",
+    "Generation and posting"; #287, B12)."""
     what = describe(division_name="D", round_number=1, phase=0)
     assert what == "round 1 in **D**, the mystery round notice"
     assert "phase 0" not in what
