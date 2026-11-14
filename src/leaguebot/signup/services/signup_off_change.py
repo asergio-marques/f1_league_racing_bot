@@ -5,10 +5,13 @@ is results': where the window is open, the jobs of a close come first, in the or
 them (`window_changes`, `closing_steps`) -- each driver still filling in the wizard returned and
 told, the Sign Up button taken down, "Signups are now closed" posted -- and the last job,
 `switch_off`, is one save: it forgets the signup channel and the window beside it, brings the
-module's flag down and audits the switch-off; once it is saved the job `disarm_timers` cancels the
-close timer and every wizard's timers (never inside the save, so that one that fails keeps them);
-where the window was not recorded closed (the closed notice or the drivers' return was discarded)
-it also moves the season on, as the closed notice's record would have. A job Discord refuses stops
+module's flag down and audits the switch-off; once it is saved the job `disarm_timers` takes away
+the close timer and the timers of each wizard still engaged (never inside the save, so that one
+that fails keeps them). The deletion a held signup channel waits on is none of an engaged wizard's:
+its driver has left the wizard, and the channel is still deleted on time with the module off (the
+specification's disable rule). The season is not moved: the switch-off is refused at every stage
+but Configuration (`configuration_fixed_refusal`), where a window's closing moves no stage, so a
+window left open by a discarded close leaves the season where it stands. A job Discord refuses stops
 the queue instead of being named and stepped over, and a Discard names what was not done in the
 reply and the line. Where the window was open the line is written by a job of its own after the
 switch-off, so that a switch-off discarded after the close's jobs ran still leaves a line saying
@@ -62,7 +65,6 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.modules.hub_service import HUB_REFRESH
 from leaguebot.core.services.seasons.season_lifecycle_service import (
-    advance_on_window_close_on,
     configuration_fixed,
     configuration_fixed_refusal,
 )
@@ -195,10 +197,6 @@ def signup_off_change(
         config = await cursor.fetchone()
         channel_id = None if config is None else config["signup_channel_id"]
         window_open = ctx.payload["window"] is not None
-        if window_open and not window_was_closed(ctx.steps):
-            # The closed notice's record moves the season on; without it the module's going off
-            # must, or the season is left in a stage waiting on a window nothing can close.
-            await advance_on_window_close_on(db)
         await signup_module_service().delete_config_on(db)
         # The window's record is stamped closed with the module's going off, or the next opening
         # would make a second open window, which the schema refuses.
