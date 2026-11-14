@@ -218,8 +218,11 @@ async def attach_forecast(
     reason, and every notice the render gave, is handed back as a line for the log channel, which
     the caller writes in its own save, naming the forecast it pertains to (FR-059).
 
-    The one catch-all here is around the drawing, a graphic riding on a post: a fault in any of
-    it is a line, never a break in the forecast.
+    There are two catch-alls. The outer is around the drawing, a graphic riding on a post
+    (architecture.md, "A catch-all error handler", place 6): a fault in any of it is a line, never a
+    break in the forecast. The inner is around reading the round to name the line of a switch that
+    could not be read (place 3, naming something in a line must not fail the line): a round that
+    cannot be read leaves the line naming the phase alone, and the switch's reason still reaches it.
     """
     import discord
 

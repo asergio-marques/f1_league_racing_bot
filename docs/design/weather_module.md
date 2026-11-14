@@ -368,9 +368,10 @@ the first try alone, from the words weather hands it (`ForecastValues`, declared
 reading none of weather's tables. Where `attach_forecast` returns no file, the forecast goes as
 text. It hands back, with the file or without, the lines saying why a picture that was due was not
 drawn, which reasons and when none is due being the specification's "Image generation". The two
-switches are asked first, so that nothing is read for a picture not due. The one catch-all of the
-graphic sits around its drawing (`architecture.md`, "Errors and failures", the catch-all around a
-graphic that rides on a post). The post job puts the lines on its `StepResult`, so they reach the
+switches are asked first, so that nothing is read for a picture not due. The graphic holds two catch-alls
+(`architecture.md`, "Errors and failures"): one around its drawing, the place for a graphic that
+rides on a post, and one around reading the round to name the line of a switch that could not be
+read, the place for naming something in a line, which leaves the line naming the phase alone. The post job puts the lines on its `StepResult`, so they reach the
 log channel in the save that records the post. The render is given no bot, so a render's notices
 come back as those lines alone and are posted once. A graphic Discord refuses stops the queue for
 Retry.
