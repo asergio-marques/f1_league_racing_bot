@@ -70,11 +70,6 @@ async def _stored_on(db: "aiosqlite.Connection") -> str | None:
     return None if row is None else row["close_at"]
 
 
-async def _set_on(db: "aiosqlite.Connection", close_at: str | None) -> None:
-    await db.execute("UPDATE signup_module_config SET close_at = ?", (close_at,))
-    await db.execute("UPDATE signup_windows SET close_at = ? WHERE closed_at IS NULL", (close_at,))
-
-
 def _arm(scheduler: Callable[[], "SchedulerService"]) -> After:
     """The step that arms the close timer for the close time just saved."""
 
@@ -162,7 +157,7 @@ def close_time_settings(
 
     async def save_add(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
         close_at = str(payload["close_at"])
-        await _set_on(db, close_at)
+        await signup.set_close_at_on(db, close_at)
         return Saved(
             changed=True,
             audits=(AuditRecord("SIGNUP_CLOSE_TIME_ADD", "", close_at),),
@@ -173,7 +168,7 @@ def close_time_settings(
 
     async def save_cancel(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
         previous = await _stored_on(db)
-        await _set_on(db, None)
+        await signup.set_close_at_on(db, None)
         return Saved(
             changed=True,
             audits=(AuditRecord("SIGNUP_CLOSE_TIME_CANCEL", previous, ""),),
@@ -190,7 +185,7 @@ def close_time_settings(
                 details=(f"close_time: {previous}", "reason: it is already the armed time"),
                 result={"close_at": previous},
             )
-        await _set_on(db, close_at)
+        await signup.set_close_at_on(db, close_at)
         return Saved(
             changed=True,
             audits=(AuditRecord("SIGNUP_CLOSE_TIME_MODIFY", previous, close_at),),

@@ -508,12 +508,6 @@ class SignupModuleService:
             row = await cursor.fetchone()
         return None if row is None else int(row["closed_notice_message_id"])
 
-    async def set_close_at(self, close_at_iso: str | None) -> None:
-        """Persist (or clear) the auto-close ISO 8601 UTC timestamp."""
-        async with get_connection(self._db_path) as db:
-            await self.set_close_at_on(db, close_at_iso)
-            await db.commit()
-
     async def set_close_at_on(
         self, db: aiosqlite.Connection, close_at_iso: str | None
     ) -> None:
