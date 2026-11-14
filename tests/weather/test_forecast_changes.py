@@ -287,6 +287,53 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         assert reason in written
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#287: weather hands the forecast's picture no values, and image reads them from weather's "
+    "tables"
+))
+@pytest.mark.parametrize("phase", [1, 2, 3])
+async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws(
+    tmp_path, monkeypatch, phase,
+):
+    """Pro's round 3, at Silverstone with a short qualifying then a long race, has its earlier
+    phases posted; *phase* is then asked and run through the queue with the picture's drawing
+    stood in for. The picture is handed, as values, what the forecast's text is composed from:
+    the phase's description, the likelihood of rain Phase 1 drew as text, and from Phase 2 on each
+    session's label and drawn weather type in run order, with Phase 3's slots and their summary
+    (#287, W288)."""
+    from leaguebot.image.services import image_weather_post
+    from leaguebot.weather.utils.message_builder import (
+        format_rain_probability,
+        format_session_weather_type,
+        format_slot_sequence,
+    )
+
+    league = await _league(tmp_path)
+    await _posted(league, *range(1, phase))
+    drawn = AsyncMock(return_value=(None, ()))
+    monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
+
+    await _ask(league, phase)
+    await run_queue(league.bot)
+
+    values = drawn.await_args.kwargs["values"]
+    [first] = await league.rows("SELECT payload FROM phase_results WHERE round_id = ? "
+                                "AND phase_number = 1 AND status = 'ACTIVE'", ROUND)
+    [own] = await league.rows("SELECT payload FROM phase_results WHERE round_id = ? "
+                              "AND phase_number = ? AND status = 'ACTIVE'", ROUND, phase)
+    draws = json.loads(own["payload"]).get("session_draws", [])
+    assert values.description == {1: "Initial chance of rain", 2: "Initial session forecast",
+                                   3: "Final session forecast"}[phase]
+    assert values.rain_probability == format_rain_probability(json.loads(first["payload"])["rpc"])
+    kinds = {2: "slot", 3: "slot_type"}
+    assert [(s.label, s.weather_type, tuple(s.slots), s.summary) for s in values.sessions] == [
+        (label, format_session_weather_type(draw[kinds[phase]]),
+         tuple(draw.get("slots", ())), format_slot_sequence(draw["slots"]) if phase == 3 else None)
+        for label, draw in zip(("Qualifying", "Race"), draws)
+    ]
+    assert len(values.sessions) == (0 if phase == 1 else 2)
+
+
 @pytest.mark.parametrize("phase", [2, 3])
 async def test_a_phase_posts_before_the_superseded_forecast_is_deleted_by_a_job(tmp_path, phase):
     league = await _league(tmp_path)

@@ -50,8 +50,20 @@ def _bot(*, module_on=True, aspect_on=True, template_valid=True):
 
 #: Why the enablement cannot yet be read through `attach_forecast`'s answer.
 _HANDS_BACK_NO_LINES = (
-    "#287: attach_forecast hands back the file alone and reports its reasons itself"
+    "#287: attach_forecast takes no values from weather, hands back the file alone and reports "
+    "its reasons itself"
 )
+
+
+def _values(description="Initial session forecast", rain_probability="30%", sessions=()):
+    """What weather hands the picture: the phase's description, Phase 1's likelihood of rain as
+    text, and each session's label, weather type, slot labels and their summary, in run order
+    (#287, W288)."""
+    from leaguebot.image.models.forecast_values import ForecastValues
+
+    return ForecastValues(
+        description=description, rain_probability=rain_probability, sessions=tuple(sessions),
+    )
 
 
 def _drawing(template_key="weather_p2_template", **facts):
@@ -69,8 +81,51 @@ async def _attach(bot, monkeypatch, drawing, *, phase=2, png=None):
     monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
     if png is not None:
         monkeypatch.setattr(post, "render_forecast", AsyncMock(return_value=ForecastRender(png=png)))
-    file, lines = await post.attach_forecast(bot, round_id=1, phase=phase)
+    file, lines = await post.attach_forecast(bot, round_id=1, phase=phase, values=_values())
     return file, list(lines)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#287: the picture reads Phase 1's likelihood and the sessions' draws from weather's tables, "
+    "not from the values weather hands it"
+))
+async def test_the_drawing_is_made_from_the_values_weather_hands_it(tmp_path):
+    """Pro's round 3, a normal round with two sessions, has a standing Phase 1 draw of a 90%
+    likelihood of rain and each session's Phase 2 type stored as sunny. Weather hands the picture
+    of its Phase 3 forecast the values it composed: "Final session forecast", 30%, Qualifying
+    mixed with Rain then Light Cloud, and Race wet with Rain. The drawing carries what was handed,
+    in that order, and nothing read from weather's tables; the heading still names the round's
+    division and number (#287, W288)."""
+    from leaguebot.image.models.forecast_values import ForecastSession
+    from leaguebot.image.services.image_weather_post import build_drawing_for_round
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    round_ = round_id(PRO, 3)
+    await league.write("UPDATE rounds SET format = 'NORMAL' WHERE id = ?", round_)
+    await league.write(
+        "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
+        "VALUES (?, 1, '{\"rpc\": 0.9}', 'ACTIVE', '2026-11-20T00:00:00+00:00')", round_,
+    )
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type, phase2_slot_type) "
+                           "VALUES (?, ?, 'sunny')", round_, session)
+    handed = _values("Final session forecast", "30%", (
+        ForecastSession(label="Qualifying", weather_type="Mixed",
+                        slots=("Rain", "Light Cloud"), summary="Rain → Light Cloud"),
+        ForecastSession(label="Race", weather_type="Rain", slots=("Rain",), summary="Rain"),
+    ))
+
+    drawing = await build_drawing_for_round(league.bot, round_, 3, values=handed)
+
+    assert drawing.phase_description == "Final session forecast"
+    assert drawing.rain_probability == "30%"
+    assert [(s.ordinal, s.name, s.weather_type, s.summary, [x.label for x in s.slots])
+            for s in drawing.sessions] == [
+        (1, "Qualifying", "Mixed", "Rain → Light Cloud", ["Rain", "Light Cloud"]),
+        (2, "Race", "Rain", "Rain", ["Rain"]),
+    ]
+    assert drawing.round_number == "3" and drawing.division_name
 
 
 @pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
