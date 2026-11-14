@@ -230,9 +230,8 @@ async def test_a_database_the_recovery_cannot_read_is_reported_in_the_log_channe
     """The restart finds a standing call, but the database holding the rounds cannot be opened.
     Run through the start-up sweep, attendance's "RSVP views and deadlines" step re-arms no
     button and asks no deadline, and the sweep posts one line to the log channel, its failure
-    line for that step, rather than the fault going to the host's log alone."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    line for that step, rather than the fault going to the host's log alone. The step fails as a
+    whole, for no round, so the line is today's, naming none (#287, B11)."""
     from tests.support.start_up_sweep import run_attendance_start_up_step
 
     db_path = await _make_db(tmp_path)
@@ -242,7 +241,10 @@ async def test_a_database_the_recovery_cannot_read_is_reported_in_the_log_channe
     lines, error = await run_attendance_start_up_step(bot, "RSVP views and deadlines")
 
     assert error is not None
-    assert lines == [start_up_failure_line("RSVP views and deadlines", error)]
+    assert lines == [
+        "❌ The bot's start-up step `RSVP views and deadlines` failed — OperationalError. "
+        "The details are in the host's log."
+    ]
     bot.add_view.assert_not_called()
     assert await _deadlines(db_path) == 0
 

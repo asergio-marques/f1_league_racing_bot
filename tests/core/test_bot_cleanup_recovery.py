@@ -399,9 +399,8 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
     """The database holding the standing check-in calls cannot be opened. Run through the
     start-up sweep, attendance's "missed check-in clean-ups" step asks no clean-up, and the sweep
     posts one line to the log channel, its failure line for that step, rather than the fault
-    going to the host's log alone."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    going to the host's log alone. The step fails as a whole, for no round, so the line is today's,
+    naming none (#287, B11)."""
     from tests.support.start_up_sweep import run_attendance_start_up_step
 
     bot = _swept_bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
@@ -409,7 +408,10 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
     lines, error = await run_attendance_start_up_step(bot, "missed check-in clean-ups")
 
     assert error is not None
-    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
+    assert lines == [
+        "❌ The bot's start-up step `missed check-in clean-ups` failed — OperationalError. "
+        "The details are in the host's log."
+    ]
     bot.change_queue.ask.assert_not_called()
 
 
@@ -468,9 +470,8 @@ async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported
     """The database holding the standing forecasts cannot be opened. Run through the start-up
     sweep, weather's "missed forecast clean-ups" step asks no clean-up, and the sweep posts one
     line to the log channel, its failure line for that step, rather than the fault going to the
-    host's log alone."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    host's log alone. The step fails as a whole, for no round, so the line is today's, naming none
+    (#287, B11)."""
     bot = _swept_bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
     asked = AsyncMock(return_value=None)
 
@@ -478,7 +479,10 @@ async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported
         lines, error = await run_weather_start_up_step(bot, MISSED_FORECAST_CLEAN_UPS)
 
     assert error is not None
-    assert lines == [start_up_failure_line(MISSED_FORECAST_CLEAN_UPS, error)]
+    assert lines == [
+        "❌ The bot's start-up step `missed forecast clean-ups` failed — OperationalError. "
+        "The details are in the host's log."
+    ]
     asked.assert_not_awaited()
 
 
