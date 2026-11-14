@@ -6,9 +6,10 @@ queue, the scheduler service and the log channel's `post_log`. It starts the sch
 so the job store is readable (``has_job``, ``get_jobs`` and ``remove_job`` see what is stored, which
 the signup close recovery relies on) while no job runs. Inside the queue's `sweeping()` it runs
 core's own steps in the order they signed up, then turns to each module in sign-up order: it reads
-the module's switch, passes the module over, with a line in the host's log, where it is off, and
-otherwise runs the module's steps one at a time in the module's own order. Each enabled module thus
-catches up its own missed timed events in its turn; nothing interleaves the events of different
+the module's switch and runs the module's steps one at a time in the module's own order; where the
+module is off it passes the module over, with a line in the host's log, save for the steps the
+module marked with `runs_while_off`, which it runs, in the module's order, all the same. Each
+enabled module thus catches up its own missed timed events in its turn; nothing interleaves the events of different
 modules by time. The hold the queue keeps on every ask is released on leaving `sweeping()`; then the
 queue starts, and the scheduler resumes last: no scheduled job runs until start-up has ended, which
 is also why a restart's take-down of a standing season review is always asked before that review's
@@ -41,7 +42,7 @@ from collections.abc import Awaitable, Callable
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.scheduler_service import SchedulerService
-from leaguebot.core.utils.hooks import StartingHook
+from leaguebot.core.utils.hooks import StartingHook, runs_whatever_the_switch_says
 from leaguebot.core.utils.interaction_errors import start_up_failure_line
 
 log = logging.getLogger(__name__)
@@ -100,15 +101,15 @@ async def start_up(
                         log.exception("Start-up step %r failed", f"{owner} switch")
                         await _tell_the_log_channel(f"{owner} switch", error, post_log)
                         continue
-                    if not enabled:
-                        log.info("Start-up passed over the %s module, which is off", key)
-                        continue
                     try:
                         steps = steps_of()
                     except Exception as error:
                         log.exception("Start-up step %r failed", f"{owner} start-up steps")
                         await _tell_the_log_channel(f"{owner} start-up steps", error, post_log)
                         continue
+                    if not enabled:
+                        log.info("Start-up passed over the %s module, which is off", key)
+                        steps = [step for step in steps if runs_whatever_the_switch_says(step)]
                     for name, run in steps:
                         try:
                             await run()

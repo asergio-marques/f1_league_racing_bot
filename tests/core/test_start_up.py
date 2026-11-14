@@ -215,8 +215,6 @@ async def test_a_disabled_module_s_steps_are_passed_over(caplog):
     assert record.lines == []
 
 
-@pytest.mark.xfail(strict=True, reason="#286: a module cannot name a start-up step that runs "
-                   "whatever its switch says")
 @pytest.mark.parametrize(("on", "ran"), [
     (False, ["held channels"]),
     (True, ["amendment sweep", "held channels", "orphaned amend channels"]),

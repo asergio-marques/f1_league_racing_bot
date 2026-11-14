@@ -3,7 +3,7 @@
 It signs signup up to the hooks core declares, registers signup's switch reader, change types and
 the handlers of its three timers of a signup, the handler of its kind of timed job with the signup
 close, clears what it holds in memory, and offers the start-up steps that call
-`recover_missed_close` and `recover_wizards` in the services, and the closure that cancels a
+`recover_missed_close`, `recover_wizards` and `recover_held_channels` in the services, and the closure that cancels a
 driver's timers. It is under the entry point's rules, not a service's (architecture.md, "How the
 code is laid out"): it reads the bot as the builder does, so each function below is handed the bot
 and reads a service off it when it signs up or, where a lambda reads it, when it runs, which the
@@ -17,6 +17,8 @@ import logging
 from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
+
+from leaguebot.core.utils.hooks import runs_while_off
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
@@ -465,6 +467,9 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
         # by `build`. Looked up when the step runs, so the step stands for that function.
         ("signup close timer", lambda: _recover_missed_close(bot)),
         ("wizards", lambda: _recover_wizards(bot)),
+        # Marked: a hold announced while signup was on is deleted at the next start whatever the
+        # switch says; the wizards' catch-up, which ends and expires signups, is not.
+        runs_while_off(("held signup channels", lambda: _recover_held_channels(bot))),
     )
 
 
@@ -479,3 +484,9 @@ async def _recover_wizards(bot: "LeagueBot") -> None:
     from leaguebot.signup.services import closing_steps
 
     await closing_steps.recover_wizards(bot, queue=bot.change_queue)
+
+
+async def _recover_held_channels(bot: "LeagueBot") -> None:
+    from leaguebot.signup.services import closing_steps
+
+    await closing_steps.recover_held_channels(bot, queue=bot.change_queue)

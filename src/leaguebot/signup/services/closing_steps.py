@@ -144,7 +144,7 @@ __all__ = [
     "DELETE_BUTTON", "DELETE_REASON",
     "DELETE_TIMER", "DISARM_TIMERS",
     "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
-    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry", "recover_correction_timeouts", "recover_gone_channels", "recover_wizards",
+    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry", "recover_correction_timeouts", "recover_gone_channels", "recover_held_channels", "recover_wizards",
     "closing_change", "closing_steps", "driver_returned_jobs", "drivers_returned_on",
     "reason_delete_change", "season_end_closes", "season_end_driver_steps", "take_reason_down", "window_close_jobs",
     "window_close_steps", "disarm_timers_step", "disarming",
@@ -460,11 +460,10 @@ async def recover_wizards(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
     driver parked awaiting a correction parameter is released (`recover_correction_timeouts`); and
     each signup left unanswered for 24 hours, judged against *queue*'s clock, so that a caught-up
     expiry and one run on time take one path, has its expiry asked (`ask_expiry`). The change's
-    check drops what the driver has since moved on from. Each hold on a signup channel that ran out
-    meanwhile (``held_until``) has its deletion asked (`ask_channel_delete`), which the change's
-    check drops where the channel is no longer the driver's. It arms nothing: a deadline still ahead
+    check drops what the driver has since moved on from. It arms nothing: a deadline still ahead
     is a timer the scheduler's own store keeps through the restart, and an expiry asked of a wizard
-    with no activity recorded is asked at once. SC-005.
+    with no activity recorded is asked at once. The holds on signup channels are caught up apart,
+    by `recover_held_channels`, which runs whatever signup's switch says. SC-005.
     """
     gone = await recover_gone_channels(bot, queue=queue)
     await recover_correction_timeouts(bot.db_path, queue, skip=gone)
@@ -475,15 +474,6 @@ async def recover_wizards(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
             "WHERE wizard_state != 'UNENGAGED'"
         )
         wizards = await cursor.fetchall()
-        cursor = await db.execute(
-            "SELECT discord_user_id, held_until FROM signup_wizard_records "
-            "WHERE held_until IS NOT NULL"
-        )
-        holds = await cursor.fetchall()
-    for hold in holds:
-        # A hold that ran out while the bot was down: its timer may not have survived.
-        if datetime.fromisoformat(hold["held_until"]) <= now:
-            await ask_channel_delete(queue, bot.db_path, str(hold["discord_user_id"]))
     for wizard in wizards:
         user_id = str(wizard["discord_user_id"])
         if user_id in gone:
@@ -495,6 +485,29 @@ async def recover_wizards(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
             if last + HOLD > now:
                 continue
         await ask_expiry(queue, bot.db_path, user_id)
+
+
+async def recover_held_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
+    """Signup's catch-up of the holds on signup channels that ran out while the bot was down, as
+    the bot and before the queue starts: each hold whose ``held_until`` is past *queue*'s clock has
+    its deletion asked (`ask_channel_delete`), whose change drops it where the channel is no longer
+    the driver's. A hold's timer may not have survived the restart.
+
+    **It runs whatever signup's switch says** (the wiring marks it `runs_while_off`): the hold is
+    work signup announced while it was on, to the driver the channel told it would be deleted
+    after 24 hours, and nothing else would carry it out once signup is off. It posts nothing: the
+    deletion's change is the one that stays quiet while signup is off. Contrast the wizards'
+    catch-up, which ends and expires signups and so runs only while signup is on."""
+    now = queue.now()
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, held_until FROM signup_wizard_records "
+            "WHERE held_until IS NOT NULL"
+        )
+        holds = await cursor.fetchall()
+    for hold in holds:
+        if datetime.fromisoformat(hold["held_until"]) <= now:
+            await ask_channel_delete(queue, bot.db_path, str(hold["discord_user_id"]))
 
 
 async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> set[str]:

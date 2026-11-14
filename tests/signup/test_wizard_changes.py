@@ -1406,8 +1406,6 @@ async def test_a_held_channel_is_deleted_while_signup_is_off(tmp_path):
     assert await _wizard(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#286: signup's catch-up of held channels runs only while "
-                   "signup is on, as part of the wizards' catch-up")
 async def test_a_held_channel_due_while_signup_is_off_is_deleted_on_start(tmp_path):
     """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
     channel (6405) is told his signup was withdrawn and held for 24 hours. The signup module is
