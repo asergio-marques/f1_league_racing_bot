@@ -57,10 +57,12 @@ class ForecastRender:
         return self.png is not None
 
 
-async def weather_enabled(bot: LeagueBot, template_key: str) -> tuple[bool, str | None]:
+async def weather_enabled(bot: LeagueBot, template_key: str | None) -> tuple[bool, str | None]:
     """Whether the graphic is to be drawn from *template_key*, and why not where it was due.
 
-    True where the module is on, the ``weather`` aspect is on, and *template_key* is valid. The
+    True where the module is on, the ``weather`` aspect is on, and *template_key* is valid; with
+    no *template_key* the two switches alone are asked, so that nothing is read for a picture
+    before it is known to be due. The
     reason is None wherever no picture was due (the module or its weather aspect off) and
     otherwise says why a picture that was due is not drawn: the template's reason, or the fault
     that kept a switch from being read.
@@ -75,6 +77,8 @@ async def weather_enabled(bot: LeagueBot, template_key: str) -> tuple[bool, str 
         toggles = await bot.image_config_service.get_toggles()
         if not toggles.get(WEATHER_ASPECT):
             return False, None
+        if template_key is None:
+            return True, None
         reports = await bot.image_validity_service.template_reports()
         report = reports.get(template_key)
         if report is not None and report.valid:
@@ -162,7 +166,6 @@ async def render_forecast(
                 build_fill_spec, drawing, directories, directory_faults
             ),
             posting_origin=origin,
-            bot=bot,
             division_name=drawing.division_name,
             filename_stem=stem_for_drawing(drawing),
         )
@@ -208,7 +211,8 @@ async def attach_forecast(
     template invalid, the round unreadable, the render failed — hands back no file, and the caller
     posts the textual forecast it was going to post anyway (XIV.7).
 
-    A picture that was not due (the module or its weather aspect off) says nothing. Every other
+    The two switches are asked before anything else is read, so that a picture that was not due
+    (the module or its weather aspect off) says nothing, whatever else could not be read. Every other
     reason, and every notice the render gave, is handed back as a line for the log channel, which
     the caller writes in its own save, naming the forecast it pertains to (FR-059).
 
@@ -219,9 +223,13 @@ async def attach_forecast(
 
     what = f"phase {phase}"
     try:
+        due, why = await weather_enabled(bot, None)
+        if not due:
+            return None, () if why is None else (_fault(what, why),)
+
         drawing = await build_drawing_for_round(bot, round_id, phase, values=values)
         if drawing is None:
-            return None, ()
+            return None, (_fault(what, "the round could not be found"),)
 
         what = describe(
             division_name=drawing.division_name,
