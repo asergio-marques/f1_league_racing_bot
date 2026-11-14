@@ -12,20 +12,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
 from leaguebot.core.models.round import AttendanceWindows
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 
 #: The packaged defaults: call 5 days out, reminder 24 hours out, deadline 2 hours out.
 DEFAULT_ATTENDANCE = AttendanceWindows(notice_days=5, last_notice_hours=24, deadline_hours=2)
-
-#: Why each test below fails until attendance judges its own part of an amendment.
-NOT_YET_ATTENDANCE_S = (
-    "#287: the check-in's part of an amendment is still judged in core's judge_amendment, not by "
-    "attendance's judge_check_in"
-)
 
 
 def _judged(moment: datetime, windows: AttendanceWindows | None = DEFAULT_ATTENDANCE):
@@ -40,7 +32,6 @@ def _judged(moment: datetime, windows: AttendanceWindows | None = DEFAULT_ATTEND
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_delay_is_allowed_however_close_the_round_stood():
     """The participation case: a league delays a round by a week to get more drivers.
 
@@ -54,7 +45,6 @@ def test_a_delay_is_allowed_however_close_the_round_stood():
     assert all(w.rearm for w in judgement.windows.values())
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_bringing_a_round_inside_its_check_in_deadline_is_refused():
     """A round brought to an hour away, its deadline two hours before it, an hour ago: a check-in
     that opens and closes in the same instant asks a question nobody can answer, so it is refused
@@ -63,14 +53,12 @@ def test_bringing_a_round_inside_its_check_in_deadline_is_refused():
     assert any("check-in deadline" in r for r in judgement.part.refusals)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_deadline_falling_exactly_now_counts_as_passed():
     """A round brought to two hours away, its deadline landing exactly now: refused, the same
     threshold `approval_window_service` holds to, so the two cannot disagree."""
     assert _judged(NOW + timedelta(hours=2)).part.refusals
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_round_just_beyond_its_deadline_is_allowed_and_warns():
     """A round brought to three hours away, inside its call window but not its deadline, as a
     round an hour away delayed by two is: nothing refused, and the league warned what it costs.
@@ -85,7 +73,6 @@ def test_a_round_just_beyond_its_deadline_is_allowed_and_warns():
     assert judgement.windows["deadline"].rearm
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_the_deadline_is_not_judged_while_attendance_is_disabled():
     """With the module off the round has no check-in to lose: a round brought to an hour away is
     refused nothing for it, and none of its windows is judged."""
@@ -94,7 +81,6 @@ def test_the_deadline_is_not_judged_while_attendance_is_disabled():
     assert judgement.windows == {}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_deadline_of_zero_hours_is_the_rounds_own_moment():
     """A deadline of zero hours, the round brought to thirty minutes away: nothing refused, and
     the deadline falls at the round's own moment. Zero is the documented meaning of the setting,
@@ -105,7 +91,6 @@ def test_a_deadline_of_zero_hours_is_the_rounds_own_moment():
     assert judgement.windows["deadline"].fire_at == NOW + timedelta(minutes=30)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_disabled_last_notice_carries_no_window():
     """A last notice of zero hours disables the reminder outright, exactly as the scheduler reads
     it: a round 30 days out carries no last-notice window."""
@@ -118,7 +103,6 @@ def test_a_disabled_last_notice_carries_no_window():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_round_moved_well_out_has_its_check_in_called_again():
     """The amended moment 30 days out, the default windows (the round's earlier moment is not
     judged): its call is posted again, and its check-in does not stay closed."""
@@ -127,7 +111,6 @@ def test_a_round_moved_well_out_has_its_check_in_called_again():
     assert not judgement.stays_closed
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_round_nudged_within_its_closed_check_in_stays_closed():
     """The amended moment an hour away, the default windows: the same input as
     `test_bringing_a_round_inside_its_check_in_deadline_is_refused`, here asserting what the save

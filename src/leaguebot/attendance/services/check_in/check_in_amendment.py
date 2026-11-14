@@ -60,11 +60,12 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     call_row,
     standing_call_row,
 )
+from leaguebot.attendance.services.check_in.check_in_amendment_rules import judge_check_in
 from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_steps, take_down_steps
 from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_steps
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.amendment import RoundArming
+from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, CheckInJobs, Round
 from leaguebot.core.services.queue.change_queue import ChangeQueue
@@ -84,6 +85,24 @@ if TYPE_CHECKING:
     from leaguebot.core.services.posting.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
+
+
+async def amendment_judged(
+    db: aiosqlite.Connection | None,
+    rnd: Round,
+    changes: Mapping[str, Any],
+    *,
+    moment: datetime,
+    now: datetime,
+    attendance: AttendanceWindows | None,
+    **_context: Any,
+) -> AmendmentPart:
+    """Attendance's part of judging an amendment of *rnd* that leaves it at *moment*, at *now*, by
+    the lead times *attendance* (none where the module is off): the check-in's deadline refusal,
+    its two warnings, and whether the check-in is reopened, which it keeps for the save
+    (`round_amended_on`). Pure: it reads nothing on *db*. Subscribed to core's
+    `amendment_judged`."""
+    return judge_check_in(moment=moment, now=now, windows=attendance).part
 
 
 async def round_amended_on(

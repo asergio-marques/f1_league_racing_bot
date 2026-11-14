@@ -1,7 +1,11 @@
 """A round amended, as the forecasts answer it (#287).
 
-Weather takes part in an amendment through core's `round_armed`: when the round is armed again,
-`round_armed` plans the posts the round now owes of weather's and says whether the round's
+Weather takes part in an amendment through two of core's hooks. `amendment_judged` is weather's
+part of the judgement: the two refusals for a forecast already posted, the note of what the
+amendment does to the forecasts, and the phases it withdraws, which weather keeps for the
+amendment's save (`phase_withdrawal.round_amended_on`). `judge_forecasts` is pure: the phases
+drawn are read by `amendment_judged`, on the connection core hands it. When the round is armed
+again, `round_armed` plans the posts the round now owes of weather's and says whether the round's
 forecasts are armed, and with what. Core makes the scheduler's calls from that answer, holding no
 switch and no rule of weather's.
 """
@@ -9,14 +13,23 @@ switch and no rule of weather's.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.models.amendment import RoundArming
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.core.models.change import PlannedStep
-from leaguebot.core.models.round import ForecastJobs, Round, RoundFormat, WeatherWindows
+from leaguebot.core.models.round import (
+    AttendanceWindows,
+    ForecastJobs,
+    Round,
+    RoundFormat,
+    WeatherWindows,
+)
+from leaguebot.core.services.rounds.round_moments import round_event_moments
 from leaguebot.weather.services.draw_guard import weather_enabled_on
 from leaguebot.weather.services.forecast_changes import (
     DELETE_FORECAST,
@@ -24,6 +37,120 @@ from leaguebot.weather.services.forecast_changes import (
     RERUN_PHASE,
 )
 from leaguebot.weather.services.round_phases import first_horizon_ahead, phases_drawn_on, phases_due
+
+
+@dataclass(frozen=True)
+class PhaseWindow:
+    """What becomes of one forecast phase once its round is amended.
+
+    *stands* is the answer to the one question: the phase would have run already under the
+    round's new moment, so the forecast posted for it stays and none is drawn in its place.
+    *fire_at* is the moment it falls at under the new arrangement.
+    """
+
+    label: str
+    fire_at: datetime
+    stands: bool
+
+    @property
+    def rearm(self) -> bool:
+        """The complement of *stands*: the phase is still ahead, and is withdrawn and drawn
+        again."""
+        return not self.stands
+
+
+@dataclass(frozen=True)
+class ForecastJudgement:
+    """The forecasts' judgement of an amendment: weather's *part*, and its *phases* by number
+    (1, 2, 3), none where no horizons are configured."""
+
+    part: AmendmentPart
+    phases: dict[int, PhaseWindow] = field(default_factory=dict)
+
+
+def judge_forecasts(
+    changes: Mapping[str, Any],
+    *,
+    moment: datetime,
+    now: datetime,
+    windows: WeatherWindows | None,
+    drawn: Mapping[int, bool],
+) -> ForecastJudgement:
+    """Weather's part of an amendment *changes* that leaves the round at *moment*, judged at *now*.
+
+    For each phase it asks: would this have run already, were the round always to have stood at
+    its new moment? Where it would, the forecast stands; where it would not, it is withdrawn and
+    drawn again, and the part keeps those phases as ``withdrawn``. A forecast already posted was
+    drawn for the round's circuit and sessions and cannot be unsaid, but only where it still
+    stands once the amendment is in: a track change is refused for the first forecast, and a
+    format change for the second. Judged on what was performed (*drawn*, by phase number) and not
+    on the module's switch; with no *windows* nothing can be said of withdrawal, so *drawn* alone
+    decides. The note names the phases withdrawn, or says the forecasts stand.
+
+    Pure: nothing is read, written or posted.
+    """
+    phases: dict[int, PhaseWindow] = {}
+    if windows is not None:
+        moments = round_event_moments(moment, weather=windows, attendance=None)
+        for number in (1, 2, 3):
+            fire_at = moments[f"weather_p{number}"]
+            phases[number] = PhaseWindow(
+                label=f"Weather Phase {number}", fire_at=fire_at, stands=fire_at <= now
+            )
+
+    def still_stands(number: int) -> bool:
+        outcome = phases.get(number)
+        return outcome is None or outcome.stands
+
+    refusals: list[str] = []
+    if "track_name" in changes and drawn.get(1, False) and still_stands(1):
+        refusals.append(
+            "The first forecast for this round has already been posted, and it was drawn for "
+            "its present circuit. Amend the round's moment as well to put the forecasts back "
+            "in question."
+        )
+    if "format" in changes and drawn.get(2, False) and still_stands(2):
+        refusals.append(
+            "The second forecast for this round has already been posted, and it was drawn for "
+            "its present sessions. Amend the round's moment as well to put the forecasts back "
+            "in question."
+        )
+    withdrawn = sorted(number for number, outcome in phases.items() if outcome.rearm)
+    if withdrawn:
+        named = ", ".join(f"Phase {number}" for number in withdrawn)
+        note = f"This will withdraw and redraw {named} for this round."
+    else:
+        note = "The forecasts already posted for this round will stand."
+    part = AmendmentPart(refusals=tuple(refusals), notes=(note,), kept={"withdrawn": withdrawn})
+    return ForecastJudgement(part=part, phases=phases)
+
+
+async def amendment_judged(
+    db: aiosqlite.Connection | None,
+    rnd: Round,
+    changes: Mapping[str, Any],
+    *,
+    moment: datetime,
+    now: datetime,
+    attendance: AttendanceWindows | None,
+    weather: WeatherWindows | None,
+    db_path: str | None = None,
+    **_context: Any,
+) -> AmendmentPart:
+    """Weather's part of judging an amendment of *rnd* that leaves it at *moment*, at *now*, by the
+    horizons *weather*, from the phases drawn as read on *db*: the connection of the save that
+    judges it again, which has written what it has not yet committed, or, where none is handed,
+    one opened on *db_path*. Subscribed to core's `amendment_judged`."""
+    if db is not None:
+        drawn = await phases_drawn_on(db, [rnd.id])
+    else:
+        if db_path is None:
+            raise ValueError("no connection and no database path to read the phases drawn on")
+        async with get_connection(db_path) as own:
+            drawn = await phases_drawn_on(own, [rnd.id])
+    return judge_forecasts(
+        changes, moment=moment, now=now, windows=weather, drawn=drawn.get(rnd.id, {})
+    ).part
 
 
 async def round_armed(
