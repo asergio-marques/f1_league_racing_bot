@@ -80,6 +80,13 @@ _REVIEW_LABELS = {
 }
 
 
+def _without_blank_lines(typed: str | None) -> str:
+    """*typed*, a driver's own words, with each run of blank lines made one line break: a blank
+    line inside it would read as the gap between two drivers, where the unassigned list's
+    records are divided."""
+    return re.sub(r"\n{2,}", "\n", (typed or "").strip())
+
+
 def _parse_time(raw: str) -> str | None:
     """Parse a time of day to a normalised ``HH:MM``. Returns None on failure.
 
@@ -807,7 +814,9 @@ class SignupCog(commands.Cog):
         lines: list[str] = [f"**Unsettled Signups — Seeded** ({len(drivers)} total)\n"]
         for d in drivers:
             preferred = ", ".join(d["preferred_teams"]) if d["preferred_teams"] else "—"
-            teammate = d["preferred_teammate"] or "—"
+            # What a driver types (the teammate and the notes) may hold a blank line, which would
+            # read as the gap between two drivers, where the records are divided.
+            teammate = _without_blank_lines(d["preferred_teammate"]) or "—"
             chosen = set(d["availability_slot_ids"])
             # An answer naming a slot the league has since removed is reported as unknown
             # rather than printed raw: the durable ID is a storage form no league should see.
@@ -823,10 +832,7 @@ class SignupCog(commands.Cog):
                 f"  Teams: {preferred} | Teammate: {teammate}"
             )
             if d["notes"]:
-                # The notes are typed by the driver: a blank line inside them would read as the
-                # gap between two drivers, where the records are divided.
-                notes = re.sub(r"\n{2,}", "\n", d["notes"].strip())
-                lines[-1] += f"\n  Notes: {notes}"
+                lines[-1] += f"\n  Notes: {_without_blank_lines(d['notes'])}"
 
         # Discord has a 2000-char limit; the records are divided between drivers only.
         for part in chunk_message("\n\n".join(lines), records=True):

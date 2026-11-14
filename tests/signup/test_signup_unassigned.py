@@ -411,19 +411,7 @@ async def test_no_driver_is_lost_in_the_chunking(tmp_path):
         assert f"Driver Number {n}" in sent
 
 
-@pytest.mark.parametrize(
-    "field",
-    [
-        "notes",
-        pytest.param(
-            "teammate",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#286: only the notes' blank lines are collapsed, not the teammate's",
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("field", ["notes", "teammate"])
 async def test_a_blank_line_in_a_driver_s_notes_never_splits_their_entry(tmp_path, field):
     """The list is divided only between drivers, and a blank line marks the gap between two.
     What a driver types (their notes, and the preferred teammate they name) may hold a blank
