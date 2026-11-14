@@ -223,7 +223,7 @@ The services sit flat in `signup/services/`, each file a topic. The table groups
 | The window | `window_changes`, `window_close`, `information_post` | `signup.open` and `signup.close`, and the window's close at a season's end; the close timer, its handler and its catch-up; the one post of the information message |
 | The wizard | `wizard_changes`, `wizard_answers`, `wizard_service` | the start, the end, a held channel's deletion and a member leaving; the answers, the submission and the review panel; `WizardService`, the channel's making and lock, the prompts and the review panel's text |
 | The review | `review_changes` | Approve, Request Changes, the correction choices and their lapse |
-| A channel's closing | `closing_steps` | the jobs that close a driver's channel (notice, lock, deletion armed), `signup.closing`, the timers' names and asks, the window's closing jobs, and the wizards' start-up catch-up |
+| A channel's closing | `closing_steps` | the jobs that close a driver's channel (notice, lock, deletion armed), `signup.closing`, the timers' names and asks, the window's closing jobs, and the start-up catch-ups of the wizards and of the held channels |
 | Posting | `signup_posting`, `signup_views` | the one place signup posts (below); every view and button signup posts, with the pending reasons |
 | Seams with core | `signup_prerequisites`, `held_channel_moves`, `channel_uses`, `fingerprint_areas` | what a season's confirmation and configuration lack; the held channel's move to a new account; the channels signup holds; signup's area of a season's fingerprint |
 
@@ -452,7 +452,7 @@ wiring, and each callback asks a change of the queue, as the bot, which reads th
 | `signup.close_timer` | one key, `"window"` | `signup.open`'s `arm_close`, the close-time group, `signup.close_timer.arm` | the handler reads the stored close time against the queue's clock before it asks (`close_when_due`); `signup.close` then reads the window | the close is asked at start, or the timer armed again for a time still ahead (`recover_missed_close`) |
 | `signup_inactivity` | the account | the start, each answer, a correction's choice | `last_activity_at` plus 24 hours, and an answer typed in time still waiting (`end_change`'s check) | the expiry is asked at start (`recover_wizards`) |
 | `correction_lapse` | the account | `signup.choices`' `arm_lapse`, five minutes from `correction_offered_at` | the driver still Awaiting Correction Parameter, no choice pressed in time waiting (`lapse_change`'s check) | the lapse is asked at start for every driver awaiting a choice, as the specification's "Wizard flow" has a restart do (`recover_correction_timeouts`) |
-| `signup_channel_delete` | the account | a closing's `arm_deletion`, or its `close_signup` at a season's end; the held channel's move | the wizard still naming the channel, `held_until` passed (`channel_delete_change`'s check) | the deletion is asked at start for each hold past its end (`recover_wizards`) |
+| `signup_channel_delete` | the account | a closing's `arm_deletion`, or its `close_signup` at a season's end; the held channel's move | the wizard still naming the channel, `held_until` passed (`channel_delete_change`'s check) | the deletion is asked at start for each hold past its end (`recover_held_channels`) |
 
 A timer that fires early, or after its work changed, finds it not due and is dropped, so the row,
 not the timer, says when work is due (`test_a_close_time_cancelled_does_not_close_signups`).
@@ -474,19 +474,26 @@ switch-off disarms only the timers of wizards still engaged (`signup_off_change`
 by `test_a_held_channel_is_deleted_while_signup_is_off` and
 `test_switching_signup_off_keeps_a_held_channel_s_deletion`.
 
-### The two start-up steps
+Start-up honours the same exception: the "held signup channels" step is marked `runs_while_off`, so
+the sweep runs it whatever signup's switch says, and the wizards' catch-up, which ends, expires and
+releases, is not so marked (`recover_held_channels`' docstring). Pinned by
+`test_a_held_channel_due_while_signup_is_off_is_deleted_on_start` and
+`test_a_restart_while_signup_is_off_ends_releases_and_expires_no_signup`.
 
-Signup's turn of the start-up sweep is two steps named in `wiring.start_up_steps`, run only while
-signup is on (`core.md`, "Start-up"), in this order:
+### The three start-up steps
+
+Signup's turn of the start-up sweep is three steps named in `wiring.start_up_steps`, the first two run
+only while signup is on and the third whatever its switch says (`core.md`, "Start-up"), in this order:
 
 1. **signup close timer** (`window_close.recover_missed_close`): a close time passed while the bot
    was down asks the close; one still ahead asks the timer's arming, so an arming a Discard dropped
    is made good;
 2. **wizards** (`closing_steps.recover_wizards`): a signup whose channel was deleted while the bot
    was down is ended first (`recover_gone_channels`), each driver awaiting a correction choice has
-   its lapse asked (`recover_correction_timeouts`), each hold past its end has its deletion asked,
-   and each signup left unanswered for 24 hours has its expiry asked, every moment judged against
-   the queue's clock.
+   its lapse asked (`recover_correction_timeouts`), and each signup left unanswered for 24 hours
+   has its expiry asked, every moment judged against the queue's clock;
+3. **held signup channels** (`closing_steps.recover_held_channels`), marked `runs_while_off`: each
+   hold past its `held_until` has its deletion asked, signup on or off.
 
 Each asks the queue as the bot and posts nothing; the change's check drops what the driver has
 since moved on from. They arm nothing themselves (the close timer's arming is a change they ask): a
@@ -494,6 +501,7 @@ deadline still ahead is a timer the scheduler's store keeps through the restart 
 docstring). Pinned by `test_a_close_time_missed_while_down_closes_on_start`,
 `test_a_close_time_still_ahead_is_armed_on_start`,
 `test_a_held_channel_due_while_down_is_deleted_on_start`,
+`test_a_held_channel_due_while_signup_is_off_is_deleted_on_start`,
 `test_a_restart_asks_the_expiry_of_each_lapsed_signup`,
 `test_a_restart_ends_a_signup_whose_channel_was_deleted_while_the_bot_was_down` and
 `test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice`.
@@ -543,7 +551,7 @@ several modules join a hook the entry point calls the function in its order.
 
 | Hook | Signup's function | What signup does |
 |---|---|---|
-| `starting` | `wiring.start_up_steps` | its two start-up steps (above) |
+| `starting` | `wiring.start_up_steps` | its three start-up steps (above) |
 | `base_role_changed` | `SignupModuleService.move_base_role_overwrite` | carries the signup channel's overwrite to the new base role |
 | `configuration_confirmed` | `configuration_confirmed_on` | the season's copy of the configuration, in the confirmation's save |
 | `confirmation_refused`, `configuration_faults_read` | `signup_prerequisites.confirmation_refusals`, `configuration_faults` | what a season's approval and configuration lack while signup is on |
@@ -606,7 +614,7 @@ Answers to `architecture.md`, "Errors and failures".
 | A command, button or form | the base classes and `report_failure`; a refusal is `refuse`, one reply and one line |
 | A change | its check refuses a member's request and drops the bot's where the work is no longer due; a job that fails stops its lane, with Retry and Discard |
 | A timed job | the scheduler's job runner: each callback asks its change |
-| A start-up step | the sweep's containment (`core.md`, "Start-up"); inside `recover_gone_channels` and `recover_correction_timeouts`, one driver's ask failing stops none of the others, while `recover_wizards`' own loops over the holds and the expiries catch nothing |
+| A start-up step | the sweep's containment (`core.md`, "Start-up"); inside `recover_gone_channels` and `recover_correction_timeouts`, one driver's ask failing stops none of the others, while `recover_held_channels`' loop over the holds and `recover_wizards`' over the expiries catch nothing |
 
 **Refusals are raised and caught by name.** A setting's save raises core's `Refused` where what its
 check judged has gone (`NOT_CONFIGURED`, a slot no longer there); a driver's transition the state
@@ -658,6 +666,7 @@ Each is stated where it lives and pinned by the test named.
 | A signup channel gone is replaced though the configuration is fixed | `channel_setting`'s docstring | `test_a_signup_channel_deleted_mid_season_is_replaced` |
 | A channel replaced while signups are open carries the Sign Up button | `channel_setting`'s docstring | `test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button` |
 | A held channel is deleted on time with signup off | `channel_delete_change`'s docstring | `test_a_held_channel_is_deleted_while_signup_is_off`, `test_switching_signup_off_keeps_a_held_channel_s_deletion` |
+| The held channels' start-up step runs with signup off, the wizards' does not | `recover_held_channels`' docstring and the wiring's comment | `test_a_held_channel_due_while_signup_is_off_is_deleted_on_start`, `test_a_restart_while_signup_is_off_ends_releases_and_expires_no_signup` |
 | The league lane's disarm leaves a closing's deletion standing | `cancel_wizard_timers`' docstring | `test_the_closing_s_deletion_survives_the_disarm_whichever_lane_runs_first` |
 | A notice refused on the driver's lane stops that lane alone | `closing_steps`' docstring | `test_a_closing_notice_asked_back_runs_on_the_driver_s_lane_and_a_refusal_stops_only_it` |
 | The undiscardable jobs | each job's `undiscardable` reader | the tests of "The steps that cannot be discarded" |
