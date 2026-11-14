@@ -482,6 +482,35 @@ async def test_a_forecast_whose_race_passed_while_its_post_stood_stopped_is_drop
     assert await _done(league, 2) == 1
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: a draw retried after its race is still drawn, recorded and logged",
+)
+async def test_a_draw_that_stood_stopped_until_its_race_passed_is_dropped_when_retried(tmp_path):
+    """Phase 1 asked, and its draw's save fails, stopping the queue at the draw; the queue stays
+    stopped past round 3's race. The fault mended, Retry: nothing drawn or recorded, no
+    calculation line written, nothing posted, and the queue goes on (weather spec, "Supersession
+    and cleanup")."""
+    league = await _league(tmp_path)
+    await league.write(
+        "CREATE TRIGGER refuse_draw BEFORE INSERT ON phase_results "
+        "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
+    )
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "draw_forecast"
+
+    await league.write("DROP TRIGGER refuse_draw")
+    league.clock.advance(days=91)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _draws(league, 1) == 0
+    assert await _done(league, 1) == 0
+    assert "Phase 1 Calculation Log" not in await _said(league)
+    assert _events(league) == []
+
+
 async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_phases_not_at_all(
     tmp_path,
 ):
