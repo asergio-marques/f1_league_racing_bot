@@ -43,14 +43,14 @@ The standing draw of a phase being one is the schema's too, as a key, not the se
 
 ### Weather's own columns on core's tables
 
-Core's tables carry seven columns that are weather's alone, on four of them (`OWN_COLUMNS`), and core reads none of
+Four of core's tables carry seven columns that are weather's alone (`OWN_COLUMNS`), and core reads none of
 them: what each means for a round is weather's rule.
 
 | Column | Meaning |
 |---|---|
-| `rounds.phase1_done`, `phase2_done`, `phase3_done` | the phase has been drawn and not withdrawn since |
+| `rounds.phase1_done`, `phase2_done`, `phase3_done` | a draw of the phase stands: it has been drawn and not withdrawn since |
+| `rounds.mystery_notice_given` | a mystery round's notice has been recorded; the notice is no forecast, so it raises no phase flag |
 | `sessions.phase2_slot_type` | the phase 2 draw for the session: `rain`, `mixed` or `sunny` |
-| `sessions.phase3_slots` | the phase 3 draw for the session: a JSON list of one weather word per slot |
 | `divisions.forecast_channel_id` | the channel the division's forecasts are posted in |
 | `server_configs.weather_module_enabled` | the module's switch |
 
@@ -59,8 +59,19 @@ name one (`READS_OF_OWN_COLUMNS`: `round_phases.phases_drawn_on` for the flags, 
 for the channel, `round_phases.phase2_slot_types_on` for the slot type), and a round, a division, a
 season, a track or a round's sessions through core's readers (`round_facts_on`, `division_on`,
 `get_track_by_name`, `sessions_of_round_on`). No weather service writes a core table's column that is
-not its own. The image module reads `sessions.phase2_slot_type` and `phase3_slots`, and `phase_results.payload`,
-to draw the forecast graphic (see "How modules and core fit together").
+not its own. The image module reads none of weather's tables: weather hands it the forecast's words,
+composed, to draw the graphic (see "How modules and core fit together"). Phase 3's slots are held in
+the phase 3 draw's `payload` alone, so no column carries them.
+
+**One flag says a draw stands, and another says a notice was given.** A mystery round's notice is no
+forecast (weather specification, "How a forecast names itself"), so it does not raise `phase1_done`:
+what weather says is drawn, to the amendment's judgement, to the start-up recovery, to `/test-mode
+advance` and to `/season status`, is read through `phases_drawn_on` alone, where `PhasesDrawn`
+holds the three phases and the notice apart and `first_done` says which of them is a round's first
+forecast. Were the notice to raise `phase1_done`, a mystery round changed to another type would be
+refused for a forecast never drawn, and its Phase 1 would never fire. The notice's flag is lowered
+as the notice's record is dropped (`forget_forecast_on`), so a round that is mystery again is owed
+its notice again. Core carries none of the four flags.
 
 ### The switch
 
@@ -81,11 +92,12 @@ already posted and the draws already made are kept by a switch-off.
 | `phase_results` | `phase1_service`, `phase2_service`, `phase3_service` | a phase's draw, with its flag, in the draw's save |
 | | `phase_withdrawal` | a withdrawn phase's rows set `INVALIDATED`, inside an amendment's save |
 | | `forecast_cleanup_service` (`rounds_deleted_on`) | a deleted round's rows |
-| `forecast_messages` | `forecast_cleanup_service` | a row as a post is recorded (`store_forecast_message_on`), dropped as its message is deleted (`forget_forecast_on`), a deleted round's rows, and every row when the bot is packed (`bot_packed_on`) |
+| `forecast_messages` | `forecast_cleanup_service` | a row as a post is recorded (`store_forecast_message_on`), dropped as its message is deleted (`forget_forecast_on`, which lowers `mystery_notice_given` with a notice's row), a deleted round's rows, and every row when the bot is packed (`bot_packed_on`) |
 | `weather_pipeline_config` | `weather_config_service` (`set_deadline_on`) | one horizon, in a setting's save |
-| `rounds.phaseN_done` | the draws; `mystery_notice_service` (phase 1's flag, for the notice) | raised with the draw |
+| `rounds.phaseN_done` | the draws | raised with the draw |
 | | `phase_withdrawal` | lowered with the withdrawal |
-| `sessions.phase2_slot_type`, `phase3_slots` | `phase2_service`, `phase3_service`; `phase_withdrawal` | written with the draw; cleared with the withdrawal |
+| `rounds.mystery_notice_given` | `mystery_notice_service` | raised in the save that goes before the notice's post |
+| `sessions.phase2_slot_type` | `phase2_service`; `phase_withdrawal` | written with the draw; cleared with the withdrawal |
 | `divisions.forecast_channel_id` | `forecast_channel` (`set_division_forecast_channel`) | the channel, in the setting's save |
 | `server_configs.weather_module_enabled` | `module_switch_settings` | the flag, naming only it |
 
@@ -96,8 +108,8 @@ save, an amendment's withdrawal the amendment's, a setting's write the setting's
 
 Weather keeps one thing twice that cannot be worked out again: **a draw's outputs.** Phase 2 and 3
 are random draws, so the figures are not a function of any other row. The draw's `payload` in
-`phase_results` is the record; `sessions.phase2_slot_type` and `phase3_slots` hold the same outputs
-where the image module and phase 3 read them, and `rounds.phaseN_done` says the draw stands.
+`phase_results` is the record; `sessions.phase2_slot_type` holds phase 2's outputs where phase 3
+reads them, and `rounds.phaseN_done` says the draw stands.
 It is a stored copy that cannot be recomputed, in `architecture.md`'s "The database" sense; its
 writers are these.
 
@@ -105,8 +117,8 @@ writers are these.
 |---|---|---|
 | `draw_phase1_on` | the phase 1 result and `phase1_done` | `test_the_draw_writes_only_on_the_connection_it_is_handed`, in `tests/weather/test_phase1_draw.py` |
 | `draw_phase2_on` | the phase 2 result, every session's slot type and `phase2_done` | `test_the_draw_writes_only_on_the_connection_it_is_handed`, in `tests/weather/test_phase2_draw.py` |
-| `draw_phase3_on` | the phase 3 result, every session's slots and `phase3_done` | `test_the_draw_writes_only_on_the_connection_it_is_handed`, in `tests/weather/test_phase3_draw.py` |
-| `withdraw_phases_on` | the rows invalidated, the sessions' draws cleared and the flags lowered | `test_withdrawing_phases_writes_only_those_phases_on_the_connection_handed` |
+| `draw_phase3_on` | the phase 3 result and `phase3_done` | `test_the_draw_writes_only_on_the_connection_it_is_handed`, in `tests/weather/test_phase3_draw.py` |
+| `withdraw_phases_on` | the rows invalidated, the sessions' slot types cleared and the flags lowered | `test_withdrawing_phases_writes_only_those_phases_on_the_connection_handed` |
 
 The one case where the text a league reads is a copy, the forecast's words, is not stored at all: it
 is composed from the stored payload when the forecast is sent ("Constraints a later reader might
@@ -121,7 +133,7 @@ one of those removes weather's rows first, which is what weather signs up to cor
 |---|---|---|
 | `rounds_deleted` | `forecast_cleanup_service.rounds_deleted_on` | deletes the rounds' forecast rows and draws; the flags and the session columns go with the rounds and sessions core deletes |
 | `bot_packed` | `forecast_cleanup_service.bot_packed_on` | forgets every posted forecast, so nothing edits a message of a server the bot has left |
-| `test_mode_flushed` | `forecast_cleanup_service.forecast_deletes` | plans the deletion of every forecast test mode posted |
+| `test_mode_flushed` | `forecast_changes.test_mode_flushed_on` | hands back the `flush_forecasts` job, which plans the deletion of every forecast test mode posted (see "The forecast change and its steps") |
 
 The forecast channel is a column of `divisions`, so it goes with its division. Each hook works on the
 delete's own connection and commits nothing (`architecture.md`, "Deletes are proven by a test, and
@@ -145,14 +157,14 @@ design file groups them.
 
 | Service | What it owns |
 |---|---|
-| `forecast_changes` | the `weather.forecast` and `weather.forecast.clean_up` changes, their jobs, the timer handlers and `/test-mode advance`'s steps, and the words for weather's jobs left undone |
+| `forecast_changes` | the `weather.forecast` and `weather.forecast.clean_up` changes, their jobs, the timer handlers and `/test-mode advance`'s steps, the jobs weather defines for a season's end and the test-mode flush, the steps it plans in an amendment, and the words for weather's jobs left undone |
 | `forecast_amendment` | weather's part of an amendment: its judgement, and its answer when the round is armed again |
 | `forecast_recovery` | the two start-up steps |
 | `forecast_cleanup_service` | what is recorded of a posted forecast, the send of a forecast, and the plan to delete forecasts |
 | `phase1_service`, `phase2_service`, `phase3_service` | the three draws |
-| `mystery_notice_service` | the record of a mystery round's notice |
+| `mystery_notice_service` | the record of a mystery round's notice, which posts nothing |
 | `draw_guard` | the one reader of a round as weather judges it, the guards a draw holds to, and the switch's reader |
-| `round_phases` | weather's record of the phases a round has had drawn, and the phases due at a moment |
+| `round_phases` | weather's record of the phases a round has had drawn (`phases_drawn_on`), the slot types phase 2 drew, the phases due at a moment and whether a round's first horizon is still ahead |
 | `phase_withdrawal` | the withdrawal of phases inside an amendment's save |
 | `forecast_channel` | the forecast channel's writer and readers |
 | `weather_config_service` | the three horizons, their reading, ordering and writing |
@@ -194,19 +206,39 @@ change, so that a stop between any two resumes where it stopped:
 
 1. **`draw_forecast`**, a save: the phase is drawn and recorded, its flag set and its calculation
    line written to the log channel, in one save (weather specification, "Supersession and cleanup").
-   A phase whose earlier phase has not been drawn plans the earlier phase first.
+   A phase whose earlier phase has not been drawn plans the earlier phase first. A Phase 1 that
+   cannot be drawn, for a round naming no circuit, a circuit that cannot be resolved or an
+   impossible distribution, writes nothing but its BLOCKED line, which reaches the log channel as
+   the specification's "Phase 1" says. A mystery round's notice is this job too, with phase 0: it
+   records `mystery_notice_given` and draws nothing.
 2. **`post_forecast`**: the forecast is posted. Its record saves the message's ids and channel, and it
-   plans the deletion of the forecast it supersedes.
+   plans the deletion of the forecast it supersedes. The picture, where one is due, is handed the
+   forecast's words, composed here (`forecast_values`), and any reason one was due but not drawn
+   comes back as a line of this job, written to the log channel (see "Posting to Discord").
 3. **`delete_forecast`**: the deletion of one superseded or cleaned-up forecast, the record dropping
-   the row. A forecast posted in parts plans a shared `delete_replaced` job for each earlier part.
+   the row. A forecast posted in parts plans a `delete_forecast_part` job for each earlier part.
+   That job is the shared standing-post delete under weather's own name and words
+   (`DELETE_FORECAST_PART`, from `standing_posts.delete_replaced_step`), so that core's shared step
+   names no forecast: a part a league admin discards is worded by weather, whether it was found at a
+   season's end or in an amendment.
+
+**The test-mode flush is weather's job.** `flush_forecasts` plans a `delete_forecast` for each forecast
+test mode posted, so that a refusal of one stops the queue there. Core names it nowhere: a change
+that switches test mode off asks the `test_mode_flushed` hook for the jobs to plan, and weather's
+`test_mode_flushed_on` hands this one back. The abort plans it before the save that switches test
+mode off, so core hands the hook a flag, which weather puts in the job's payload, and the job reads
+as it comes up that test mode is still on, clearing nothing where it is not. Weather defines the
+step for a season's end (`season_end_steps`), with its own words for it left undone.
 
 A phase draws once: the change is not repeatable, its key is `weather.forecast:<round>:<phase>`, and
-its check drops a second ask as not due once the draw stands. The check and the post's own guard each
-judge whether the work is still due through one function (`draw_guard.lapse` with the round's format
-and race time): the module on, the round there and not cancelled, its division not cancelled, its
-format still the one the forecast is for, its race not yet run. A forecast late for its race is
-dropped as the change starts and again as the post comes up, a draw already made being kept (weather
-specification, "Supersession and cleanup").
+its check drops a second ask as not due once the draw stands. The check, the draw's own guard
+and the post's each judge whether the work is still due through one function (`_not_due`, over
+`draw_guard.lapse` with the round's format and race time): the module on, the round there and not
+cancelled, its division not cancelled, its format still the one the forecast is for, its race not
+yet run. A forecast late for its race is dropped as the change starts, and a draw stopped before
+its race and tried after it is dropped as it comes up, drawing, recording and logging nothing; a
+post is dropped likewise, a draw already made being kept (weather specification, "Supersession and
+cleanup"). Every moment is judged at the queue's clock.
 
 ### The clean-up change
 
@@ -233,6 +265,16 @@ round (`clean_up_forecast`). The step names, their payloads and the changes weat
 queue's record: they do not move for a design, so that a change stopped before a deploy retries
 after it.
 
+**A mystery round's notice is no forecast, in an amendment either.** A round whose format is changed
+to another type has its notice taken down by a `delete_forecast` job of phase 0, which
+`forecast_amendment.round_armed` plans first, whatever weather's switch: the notice is no forecast, so
+no invalidation notice is posted for it, and the round's forecasts follow as any round's, a phase
+whose horizon has passed being drawn at once while its race is ahead. A mystery round whose date is
+moved keeps its notice: nothing is deleted or posted again, and none of its phases is withdrawn, since
+none was drawn. The deletion goes through the standing-post handler, so Discord refusing it stops
+the queue for Retry or Discard, and the record it closes is the notice's, `mystery_notice_given`
+being lowered with its row.
+
 ### The cancellation notice
 
 A round, division or season called off posts weather's note through `cancellation_notice`, a job of
@@ -254,7 +296,8 @@ Answers to `architecture.md`, "Timed work and restarts".
 
 ### The kinds, and their arming
 
-Weather has four kinds of timer: `weather_p1`, `weather_p2`, `weather_p3` and `cleanup`. Core's
+Weather has four kinds of timer: `weather_p1`, `weather_p2`, `weather_p3` and `cleanup`. A mystery
+round's `weather_p1` is its notice and its two others do nothing. Core's
 scheduler service arms them (`schedule_round`, and `schedule_round_cleanups` for the clean-up alone)
 from the horizons weather hands core and the moments `round_event_moments` places. **All four are
 armed with no lateness limit** (`misfire_grace_time=None`), so a timer missed while the bot was down
@@ -321,9 +364,16 @@ A forecast is found again through `forecast_messages.message_ids` and `channel_i
 in parts deletes every part, and one posted before the channel was recorded is looked for in the
 division's present channel.
 
-**The graphic falls back to text.** The image module draws the forecast's graphic, on the first try
-alone. Where `attach_forecast` returns nothing, the forecast goes as text; the image module reports a
-render problem of its own. A graphic Discord refuses stops the queue for Retry.
+**The graphic falls back to text, and says why.** The image module draws the forecast's graphic, on
+the first try alone, from the words weather hands it (`ForecastValues`, declared by image) and
+reading none of weather's tables. Where `attach_forecast` returns no file, the forecast goes as
+text. It hands back, with the file or without, the lines saying why a picture that was due was not
+drawn: an invalid drawing file, a switch or a round that cannot be read, a render's problem, a notice
+the render gave, and a fault in the drawing itself, the one catch-all of the graphic (`architecture.md`,
+"Errors and failures", the catch-all around a graphic that rides on a post). The post job puts them on
+its `StepResult`, so they reach the log channel in the save that records the post. A picture that
+was never due, because the league has switched pictures off, says nothing. A graphic Discord
+refuses stops the queue for Retry.
 
 ---
 
@@ -339,16 +389,17 @@ several modules join a hook the entry point signs them up in the order they are 
 | Hook | Weather's function | What weather does |
 |---|---|---|
 | `starting` | `wiring.start_up_steps` | its two start-up steps |
-| `round_windows_read` | `weather_config_service.round_window` | hands its three horizons, or none where the module is off and the round is not being amended |
+| `round_windows_read` | `weather_config_service.round_window` | hands its three horizons, or none where the module is off and the round is not being amended; the season's approval and review read them, and an amendment does not |
 | `phases_drawn_read` | `round_phases.phases_drawn` | says which phases of a round are drawn; `/season status` reads it |
-| `amendment_judged` | `forecast_amendment.amendment_judged` | weather's part of judging a round's amendment: the two refusals for a forecast already posted, its note, and the phases it withdraws |
+| `amendment_judged` | `forecast_amendment.amendment_judged` | weather's part of judging a round's amendment: the two refusals for a forecast already drawn, its note, the phases it withdraws and its own horizons, all kept in the part |
 | `round_amended` | `phase_withdrawal.round_amended_on` | withdraws the phases, inside the amendment's save |
-| `round_armed` | `forecast_amendment.round_armed` | answers what the round's forecasts are armed with, and the steps owed |
+| `round_armed` | `forecast_amendment.round_armed` | answers what the round's forecasts are armed with (`ForecastJobs`), and the steps owed |
 | `round_clean_ups_due` | `forecast_changes.amendment_clean_ups` | the clean-ups due |
-| `amendment_steps`, `amendment_step_failure` | `forecast_changes.amendment_steps`, `forecast_failure` | the steps an amendment asks of weather, and its words for one left undone |
+| `amendment_steps`, `amendment_step_failure` | `forecast_changes.amendment_steps`, `forecast_failure` | the steps an amendment asks of weather, and its words for one left undone; the entry point signs the second up, weather then attendance |
 | `cancellation_notices`, `cancellation_steps` | `cancellation_notice` | its note |
-| `season_end_steps` | `forecast_changes.season_end_steps` | the deletion of forecasts left standing at the season's end, with its words |
-| `rounds_deleted`, `bot_packed`, `test_mode_flushed` | `forecast_cleanup_service` | see "The database" |
+| `season_end_steps` | `forecast_changes.season_end_steps` | the deletion of forecasts left standing at the season's end, and `flush_forecasts`, each with its words |
+| `test_mode_flushed` | `forecast_changes.test_mode_flushed_on` | hands back the `flush_forecasts` job |
+| `rounds_deleted`, `bot_packed` | `forecast_cleanup_service` | see "The database" |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `forecast_channel` | its channel, read for the reviews, the channel registry and the factory reset |
 | `review_sections_read` | `weather_config_service.review_section` | its section of a season review |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channels and horizons in the season's fingerprint, whatever its switch |
@@ -361,18 +412,29 @@ Weather's switch is the keyed hook `ModuleService.register_switch` under `"weath
 Core judges what is its own: unknown fields, an empty change, the round's status, a move into the
 past, a round already started, and a mystery round given a circuit alone. It then asks each module for its part through
 `amendment_judged`, attendance's and then weather's, handing the round, the changes, the new moment,
-one UTC `now`, the windows and the save's connection or none. Weather answers an `AmendmentPart`
-(the refusals, its note, and `withdrawn`, which core keeps for the amendment's save). Core merges the
-parts, giving the refusals in core's head rules, each module's in sign-up order, then core's tail
-rules. A key two modules keep is a fault.
+one UTC `now` and the save's connection or none. **Core hands no module's windows, and keeps none by
+name:** each module reads its own horizons (on the save's connection in a save, and through its own
+reader outside one) and keeps them in its part. Weather answers an `AmendmentPart` (the refusals, its
+note, `withdrawn`, and `weather_windows`, which core keeps for the amendment's save and the arming).
+Core merges the parts, giving the refusals in core's head rules, each module's in sign-up order,
+then core's tail rules. A key two modules keep is a fault.
+
+What the judgement keeps is the queue's record: the `judge` job's result is `{judged, kept}`, `kept`
+being the parts' merged `kept`, which core stores as it is given and reads for no module. The save
+and the arming hand it back, and weather reads its horizons from it (`windows_kept`), **reading them
+afresh where it finds none**: an amendment stopped across an update holds a record with no window of
+weather's own, and nothing raises. The note names only the phases drawn and put back in question, and
+promises a redraw only while weather is on; where none is drawn it says nothing of forecasts. A
+mystery round's notice is never named.
 
 When the round is armed again, each module answers `round_armed` with a `RoundArming`, its steps and
 its jobs; weather's `ForecastJobs` carry the windows and `skip_phases`, the phases whose draw the
 amendment makes at once and whose timer therefore must not draw it again, since a timer with no
 lateness limit would. Core makes the scheduler's calls, in a fixed order, from the answers;
 it holds no rule of weather's about which jobs a round owes. A round already raced, or ended not held,
-is armed its clean-ups alone by `schedule_round_cleanups`, which core calls from the modules' switches. What the queue stores of an amendment (the
-windows by name, the steps and their payloads) is core's record.
+is armed its clean-ups alone by `schedule_round_cleanups`, which core calls from the modules'
+switches, the clean-up's delay being the one shared delay, so no window is read. What the queue
+stores of an amendment (the judgement's `kept`, the steps and their payloads) is core's record.
 
 ### What weather reads of others
 
@@ -385,8 +447,12 @@ round's facts and its division (`round_facts_on`, `division_on`), a round's sess
 ### The dependency table and the image module
 
 Weather needs no other module (no entry in `NEEDS`). It may ask the image module to draw a forecast's
-graphic (`image_weather_post.attach_forecast`), and uses no other module. The image module reads
-weather's draw to draw it.
+graphic (`image_weather_post.attach_forecast`), and uses no other module. The image module reads none
+of weather's tables: weather hands it the words, composed as the text composes them
+(`forecast_changes.forecast_values`), in a model image declares (`ForecastValues`: the phase's
+description, the likelihood of rain as text, and each session's label, weather type and slots in
+the order they are run), so that image imports no other module and holds no second copy of weather's
+wording. For `/images test`, image composes sample words of its own.
 
 ### The forecast provider
 
@@ -415,12 +481,13 @@ Answers to `architecture.md`, "Errors and failures".
 | A change | the check refuses a manager's request and drops the bot's where the work is no longer due; a job Discord refuses raises `StepFailedOnDiscord`, which stops the lane with the stop notice, Retry and Discard; a fault of the bot's own is raised as it is |
 | A timed job | the timer's handler asks the change; a handler whose ask raises reaches the host's log |
 | A start-up step | `RecoveryFailed`, above |
-| A graphic | the fallback above: the forecast goes as text |
+| A graphic | the fallback above: the forecast goes as text, and the reason reaches the log channel |
 
 **What a Discard leaves** is worded by weather's `forecast_failure` for each of its steps, handed to
 core's `amendment_step_failure` so that core names none of them. A discarded draw is made when the bot
 next starts, while its round is still to be run; a discarded post leaves the draw standing in the log
-channel; a discarded deletion is left to delete by hand, by its link.
+channel; a discarded deletion is left to delete by hand, by its link, a mystery round's notice
+being named as such and never as a withdrawn forecast.
 
 ---
 
@@ -434,6 +501,8 @@ Each is stated where it lives and pinned by the test named.
 | A forecast is deleted from the channel it was posted in, not the division's present one | `forecast_cleanup_service`' module docstring | `test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves` |
 | The deletion of a superseded forecast is a job of its own, after the post | `forecast_changes`' docstring | `test_a_phase_posts_before_the_superseded_forecast_is_deleted_by_a_job` |
 | A mystery round writes no `phase_results` and tags nobody | `mystery_notice_service`'s docstring | `test_the_mystery_notice_notifies_nobody` |
+| A mystery round's notice is recorded in a flag of its own, never in `phase1_done` | `round_phases`' module docstring | `test_the_notice_s_record_writes_only_on_the_connection_it_is_handed` |
+| A mystery round changed to another type has its notice taken down by the amendment, and one whose date is moved keeps it | `forecast_amendment.round_armed`'s docstring | `test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down`, `test_a_mystery_round_whose_date_is_moved_keeps_its_notice` |
 | A phase has one standing draw | the schema's partial unique index | `test_a_second_standing_draw_for_one_phase_is_refused` |
 | A draw and its calculation line are one save | `forecast_changes`' module docstring | `test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted` |
 | The horizons are the league's own, and no fixed moment is named | `phase1_service`'s docstring | `test_the_league_s_own_horizons_are_used_not_the_packaged_ones` |
