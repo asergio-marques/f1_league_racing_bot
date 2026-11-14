@@ -186,7 +186,7 @@ def close_timer_arm_change(*, arm_once: Callable[[str, str, datetime], None]) ->
         stored = None if row is None else row["close_at"]
         if enabled and row is not None and row["signups_open"] and stored == ctx.payload["close_at"]:
             return Verdict.go()
-        return Verdict.refuse("The close time is no longer the one to arm.")
+        return Verdict.not_due("the close time is no longer the one to arm")
 
     async def arm(ctx: StepContext) -> StepResult:
         arm_once(CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of(str(ctx.payload["close_at"])))

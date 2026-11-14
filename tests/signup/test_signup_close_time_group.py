@@ -638,11 +638,6 @@ async def test_a_close_time_still_ahead_is_armed_on_start(tmp_path):
     assert run_at == close_at
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: a start-up arming no longer wanted is refused, stopping the league's lane, "
-    "rather than dropped as not due",
-)
 @pytest.mark.parametrize(
     "since",
     [
