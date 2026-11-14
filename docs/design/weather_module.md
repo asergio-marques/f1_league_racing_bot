@@ -446,7 +446,8 @@ stores of an amendment (the judgement's `kept`, the steps and their payloads) is
 
 Core's readers, as `architecture.md`'s "Each table is read and written by its owner alone" asks: a
 round's facts and its division (`round_facts_on`, `division_on`), a round's sessions in id order
-(`sessions_of_round_on`), a round as core names it, read on the save's connection (`round_called_on`), a track by name (`get_track_by_name`), the rounds of the active season
+(`sessions_of_round_on`), a round as core names it, read on the save's connection (`round_called_on`), the rounds a start-up catch-up failed for, each as core
+names it (`rounds_called`), a track by name (`get_track_by_name`), the rounds of the active season
 (`rounds_of_the_active_season`). The composed read of a round as weather judges it is
 `draw_guard.weather_round_on`, core's half beside weather's own.
 

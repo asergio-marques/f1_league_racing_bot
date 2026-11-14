@@ -118,7 +118,7 @@ flag alone and leaving the eight values to the schema, so a module turned off an
 from the packaged values, not from the ones it was left with, and the defaults live in one place.
 `get_config_or_defaults` reads the same defaults off the schema where no row is stored, so a read
 creates no row. A read hook, the window core asks for when a round is armed, is a reader and writes
-nothing (`attendance_hooks.lead_times`). Pinned by
+nothing (`attendance_hooks.round_window`). Pinned by
 `test_re_enabling_attendance_starts_from_the_packaged_defaults`,
 `test_enabling_attendance_leaves_the_schema_s_own_defaults` and
 `test_reading_a_round_s_window_writes_nothing`.
@@ -373,7 +373,7 @@ Answers to `architecture.md`, "Timed work and restarts".
 A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_deadline` and
 `rsvp_cleanup`, armed by core's scheduler service (`schedule_attendance_round`, and
 `schedule_round_cleanups` for the next-day clean-up) from the three lead times attendance's
-`lead_times` hook, on `round_windows_read`, hands core. Attendance registers a callback for each kind (`register_timer`); a
+`round_window` hook, on `round_windows_read`, hands core. Attendance registers a callback for each kind (`register_timer`); a
 callback asks the matching change, as the bot's, and the change's check reads the round again, so a
 timer that fires after its work was changed does nothing. All four are armed with no lateness limit,
 and each handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
@@ -511,9 +511,9 @@ Attendance declares no hook of its own. Core declares them and attendance subscr
 | Hook | Attendance's function | What attendance does |
 |---|---|---|
 | `starting` | `wiring.start_up_steps` | its three start-up steps (above) |
-| `round_windows_read` | `attendance_hooks.lead_times` | hands its three lead times, or none where the module is off; the season's approval and review read them, and an amendment does not |
+| `round_windows_read` | `attendance_hooks.round_window` | hands its three lead times, or none where the module is off; the season's approval and review read them, and an amendment does not |
 | `review_sections_read` | `attendance_hooks.review_section` | its section of a season review |
-| `amendment_judged` | `check_in_amendment.amendment_judged` | attendance's part of judging a round's amendment: the deadline refusal, its two warnings, and the check-in it reopens, which it keeps for the amendment's save (`check_in_amendment_rules.judge_check_in` is pure). Core hands it no lead times: it reads its own (on the save's connection in a save, through its own reader outside one) and keeps them in its part as `attendance_windows`, which core stores opaquely and hands back to `round_armed` and to its steps (`windows_kept`), read afresh where the record holds none |
+| `amendment_judged` | `check_in_amendment.amendment_judged` | attendance's part of judging a round's amendment: the deadline refusal, its two warnings, and the check-in it reopens, which it keeps for the amendment's save (`check_in_amendment_rules.judge_check_in` is pure). Core hands it no lead times: it reads its own (on the save's connection in a save, through its own reader outside one) and keeps them in its part as `attendance_windows`, which core keeps as `architecture.md`, "Timed work and restarts", has it and hands back to `round_armed` and to its steps (`windows_kept`), read afresh where the record holds none |
 | `round_amended`, `round_armed`, `round_clean_ups_due` | `check_in_amendment.round_amended_on`, `amendment_posts`, `amendment_clean_ups` | reopens the check-in inside the amendment's save; answers what the round's check-in is armed with (`CheckInJobs`, at the lead times its part kept, and only while attendance is on) and posts the call again; hands the clean-ups due |
 | `amendment_steps`, `amendment_step_failure` | `check_in_amendment.amendment_steps`, `check_in_failure` | the steps an amendment asks of the check-in, and its words for one left undone, so that core's outcome names none of them; the entry point signs the hook up, weather then attendance |
 | `rounds_called_off`, `cancellation_notices`, `cancellation_steps` | `take_down_called_off_on`, `notices_on`, `take_down_steps`, `read_check_in_steps`, `notify_checkin_steps` | takes down the calls, reads the check-in's record before they come down and plans its own notice |
@@ -620,7 +620,7 @@ Each is stated where it lives and pinned by the test named.
 |---|---|---|
 | `/attendance`'s subgroups join the group in one file, in the order a league sees them | `attendance_group.py`'s docstring | `test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first` |
 | The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_on_attendance`'s save | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
-| A read of a round's window creates no row | `attendance_hooks.lead_times` | `test_reading_a_round_s_window_writes_nothing` |
+| A read of a round's window creates no row | `attendance_hooks.round_window` | `test_reading_a_round_s_window_writes_nothing` |
 | A cross-setting rule is judged by the setting's change as it starts | `attendance_settings`' docstring | `test_set_setting_refuses_a_timing_that_breaks_the_invariant` and its two companions |
 | A stored copy has one recompute, run on its caller's connection | `_recalculate_forward`'s docstring | the four tests of "The stored copies of derived figures" |
 | The sync's recalculation and sanctions are one save, its cards later jobs | `attendance_sync_change`'s docstring | `test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart` |
