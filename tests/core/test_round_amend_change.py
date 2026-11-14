@@ -2759,11 +2759,6 @@ async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_th
 
 
 @pytest.mark.parametrize("cleared", ["retried", "discarded"])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: a mystery round whose notice has posted is refused a change of type, and its "
-           "notice is never taken down by the amendment",
-)
 async def test_a_mystery_round_s_notice_discord_will_not_delete_stops_the_queue_keeping_it(
     tmp_path, cleared,
 ):
