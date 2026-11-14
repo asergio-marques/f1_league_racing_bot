@@ -411,6 +411,61 @@ async def test_a_division_s_and_a_round_s_statuses_match_their_enums(db_path):
     assert _check_list(db_path, "rounds", "status") == {s.value for s in RoundStatus}
 
 
+#: Why a test fails until `phase_results` holds its own rules (#287, C6).
+_PHASE_RESULTS_UNRULED = (
+    "#287: phase_results has no PhaseResultStatus enum, no CHECKs and no unique standing draw"
+)
+
+
+def _draw(db: sqlite3.Connection, phase: int, status: str = "ACTIVE") -> None:
+    """Store a draw of *phase* for round 1 of Pro, in *status*."""
+    db.execute(
+        "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
+        "VALUES (1, ?, '{}', ?, '2026-01-01T00:00:00+00:00')",
+        (phase, status),
+    )
+
+
+def _round_of_pro(db: sqlite3.Connection) -> None:
+    """Round 1 of Pro, a race at Silverstone not yet run."""
+    db.execute(
+        "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
+        "VALUES (1, 10, 1, 'NORMAL', 'Silverstone Circuit', '2026-02-01T18:00:00+00:00')"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_PHASE_RESULTS_UNRULED)
+async def test_phase_result_statuses_match_the_schema(db_path):
+    """A stored draw's status is written twice, in the CHECK list on `phase_results.status` and in
+    weather's `PhaseResultStatus`, and must not drift; its phase number's CHECK list allows
+    Phases 1, 2 and 3 alone, so a draw of Phase 0 or 4 is refused."""
+    from leaguebot.weather.models.forecast import PhaseResultStatus
+
+    assert _check_list(db_path, "phase_results", "status") == {s.value for s in PhaseResultStatus}
+    db = _connect(db_path)
+    _round_of_pro(db)
+    for phase in (0, 4):
+        with pytest.raises(sqlite3.IntegrityError):
+            _draw(db, phase)
+    db.close()
+
+
+@pytest.mark.xfail(strict=True, reason=_PHASE_RESULTS_UNRULED)
+async def test_a_second_standing_draw_for_one_phase_is_refused(db_path):
+    """Round 1 of Pro has a standing (ACTIVE) Phase 1 draw and a withdrawn (INVALIDATED) one. A
+    second withdrawn Phase 1 draw and a standing Phase 2 draw are stored beside them, and a second
+    standing Phase 1 draw is refused by the schema."""
+    db = _connect(db_path)
+    _round_of_pro(db)
+    _draw(db, 1)
+    _draw(db, 1, "INVALIDATED")
+    _draw(db, 1, "INVALIDATED")
+    _draw(db, 2)
+    with pytest.raises(sqlite3.IntegrityError):
+        _draw(db, 1)
+    db.close()
+
+
 async def test_the_queue_holds_one_running_change(db_path):
     """One change runs at a time on a lane: an identity rule, so the schema holds it, not the
     worker. Here every change is on the league lane, which a change naming no lane is on."""
