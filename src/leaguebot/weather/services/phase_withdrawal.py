@@ -28,8 +28,9 @@ async def withdraw_phases_on(
     Only the phases given are touched, and a phase that still stands keeps its flag, which is
     what lets the rules refuse a later track change on the strength of a forecast that is
     genuinely still posted. Each withdrawn phase has its flag cleared and its results
-    invalidated; Phase 2 chose the slot type and Phase 3 the slots, so each clears the session
-    data of its own and a Phase 2 that stands keeps its choice even where Phase 3 is drawn again.
+    invalidated; only a withdrawn Phase 2 clears session data, the slot type it chose, so a Phase 2
+    that stands keeps its choice even where Phase 3 is drawn again. Phase 3's slots live in its
+    draw alone.
     """
     withdrawn = sorted(set(phases))
     for phase in withdrawn:

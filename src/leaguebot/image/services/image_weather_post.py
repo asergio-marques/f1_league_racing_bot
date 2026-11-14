@@ -33,6 +33,8 @@ from leaguebot.core.utils.league_bot import LeagueBot
 if TYPE_CHECKING:
     import discord
 
+    from leaguebot.image.services.image_weather_service import WeatherDrawing
+
 log = logging.getLogger(__name__)
 
 WEATHER_ASPECT = "weather"
@@ -62,10 +64,9 @@ async def weather_enabled(bot: LeagueBot, template_key: str | None) -> tuple[boo
 
     True where the module is on, the ``weather`` aspect is on, and *template_key* is valid; with
     no *template_key* the two switches alone are asked, so that nothing is read for a picture
-    before it is known to be due. The
-    reason is None wherever no picture was due (the module or its weather aspect off) and
-    otherwise says why a picture that was due is not drawn: the template's reason, or the fault
-    that kept a switch from being read.
+    before it is known to be due. The reason is None wherever no picture was due (the module or
+    its weather aspect off) and otherwise says why a picture that was due is not drawn: the
+    template's reason, or the fault that kept a switch from being read.
 
     The template is named per call because weather is drawn from six, and one being invalid
     must not stop the other five: a league whose sprint phase 3 file is too small still gets a
@@ -261,7 +262,7 @@ async def attach_forecast(
         return None, (_fault(what, str(exc)),)
 
 
-def _named(drawing, phase: int) -> str:
+def _named(drawing: WeatherDrawing, phase: int) -> str:
     """What a report names of *drawing*'s forecast: its round, as a league reads it, and its phase."""
     return describe(
         division_name=drawing.division_name,
