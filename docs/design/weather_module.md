@@ -303,7 +303,8 @@ is raised as it is. Pinned by `test_one_round_failing_its_recovery_stops_none_of
 The clean-up of a round falls a day after its race, a delay `clean_up_moment` holds once
 (`POST_RACE_CLEANUP_DELAY`), for the forecast's clean-up and attendance's check-in clean-up alike, and
 for the scheduler's timer, the restart and the amendment's arming of each. Pinned by
-`test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock`.
+`test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay`, and for the forecast's
+restart step by `test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock`.
 
 ---
 
