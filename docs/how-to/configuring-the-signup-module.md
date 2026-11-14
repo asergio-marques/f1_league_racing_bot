@@ -128,7 +128,7 @@ Times go in as `20:00` or as `8:00pm`; both work. The list numbers them in day-a
 
 **The numbers move, and that is fine.** They are positions in the list, not permanent labels. Add a Monday morning slot and everything after it counts up by one; delete `#2` and the old `#3` becomes the new `#2`. What your drivers told you does not move with them — their availability is recorded against the slot itself, so editing the list never changes anyone's answer and the export always marks the times they actually chose. Remove a slot and put it back at the same day and time, and the drivers who chose it are on it again.
 
-**The list is fixed once the season's configuration is confirmed.** So is every other setting in this guide — the channel, both roles, nationality, time type and time image, and turning the module on or off. They work while no season is active, or while the season is in configuration, and are refused from confirmation until that season ends: the season's signups are made under them. Get the list right before you run `/season config-review`.
+**The list is fixed once the season's configuration is confirmed.** So is every other setting in this guide — the channel, both roles, nationality, time type and time image, and turning the module on or off. They work while no season is active, or while the season is in configuration, and are refused from confirmation until that season ends: the season's signups are made under them. The one exception is a signup channel deleted from the server, which `/signup channel` replaces at any time. Get the list right before you run `/season config-review`.
 
 ---
 
