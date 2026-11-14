@@ -31,13 +31,14 @@ declared in `core/db/migrations/001_baseline.sql`.
 A withdrawn draw is not deleted: its row is kept as `INVALIDATED` beside the standing one, which is
 why the unique index is partial. The ordering of the three horizons (a phase 1 further out than
 phase 2, and phase 2 further out than phase 3) is a rule between settings, so it is judged by the
-setting's check (`weather_settings`, through `deadline_refusal`), as the change starts, and not by
+setting's check (`weather_settings`, through `deadline_refusal`), at the ask and again as the change
+starts, and not by
 the write or the schema (`architecture.md`, "The database": a rule that compares one setting with
 another).
 
 **A phase's status is an enum, and the schema repeats it.** `PhaseResultStatus`
-(`weather/models/forecast.py`) holds `ACTIVE` and `INVALIDATED`, the list is not expected to grow,
-so the schema carries it as a `CHECK` and a test ties the two
+(`weather/models/forecast.py`) holds `ACTIVE` and `INVALIDATED`, and the schema carries it as a
+`CHECK` (`architecture.md`, "Where a rule goes: the schema or a service") and a test ties the two
 (`test_phase_result_statuses_match_the_schema`). The standing draw of a phase being one is the
 schema's too, as a key, not the service's: `test_a_second_standing_draw_for_one_phase_is_refused`.
 
@@ -187,12 +188,11 @@ check. `view` checks the switch, reads the horizons and replies, asking nothing 
 
 ### The wiring and the models
 
-`wiring.py` is under the entry point's rules, not a service's (`architecture.md`, "How the code is
-laid out"): it reads the bot as the builder does, signs weather up to each hook, registers its
-change types, its timer handlers and the steps of `/test-mode advance`, and names its start-up
-steps. It holds no rule of weather's and no database code of its own. The models are plain data:
+`wiring.py` is weather's part of the builder, as `architecture.md`'s "How the code is laid out"
+describes a module's wiring. The models are plain data:
 `PhaseResultStatus` and `Drawn` (`forecast.py`), `WeatherPipelineConfig` and `RecoveryFailed`. The
-utils are pure: `math_utils` draws, `message_builder` composes a forecast's words.
+utils are plain helpers: `math_utils` makes the random draws, and `message_builder` composes a
+forecast's words.
 
 ---
 
@@ -236,7 +236,7 @@ A phase draws once: the change is not repeatable, its key is `weather.forecast:<
 its check drops a second ask as not due once the draw stands. The change's check and the steps'
 own guards (`draw_still_due`, `post_still_due`) each judge whether the work is still due through one
 function, `_not_due`, which adds the round's format and race time to `draw_guard.lapse`; the draw's
-`round_if_due` holds to `lapse` alone. What is dropped then, and what a dropped post leaves, is the
+`round_if_due` judges no race time. What is dropped then, and what a dropped post leaves, is the
 weather specification's "Supersession and cleanup". Every moment is judged at the queue's clock.
 
 ### The clean-up change
@@ -265,9 +265,9 @@ the round (`clean_up_forecast`).
 **A mystery round's notice is no forecast, in an amendment either** (weather specification, "Mystery
 rounds" and "Changes to a round after generation"). The notice's taking down is a `delete_forecast`
 job of phase 0, which `forecast_amendment.round_armed` plans first. The deletion goes through the
-standing-post handler, so Discord refusing it stops the queue for Retry or Discard, and the record
-it closes is the notice's, `mystery_notice_given` being lowered with its row. The specification's
-sections say when the notice comes down and what is posted instead.
+standing-post handler, and the record it closes is the notice's, `mystery_notice_given` being
+lowered with its row. The specification's sections say when the notice comes down and what is posted
+instead.
 
 ### The cancellation notice
 
@@ -281,7 +281,10 @@ queue for Retry. A round called off has its weather timers removed by core's can
 
 A draw with its calculation line; a draw's flag, its payload and its session columns ("The stored
 copies"); a posted forecast's row with the job's mark. Each is one save on the connection the step
-is handed, and a test pins each.
+is handed. The draw's is pinned by
+`test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted`, the
+copies' by the tests in "The stored copies", and the record with its mark is the queue's
+(`architecture.md`, "Posts are remembered").
 
 ---
 
@@ -339,14 +342,16 @@ core's own steps, then each enabled module's turn", says what the sweep does wit
 log reads the same names in the message with the faults. A start time that cannot be read is that
 round's failure, found by each step in its own way: the missed phases from the ids
 `rounds_of_the_active_season` hands back apart from the live rounds, and the clean-ups from
-`round_facts_on` raising for it. Each step records it. A database that cannot be read is raised as
-it is. Pinned by `test_one_round_failing_its_recovery_stops_none_of_the_others`,
+`round_facts_on` raising for it. Each step records it, as it records any fault in a round's ask. A
+database that cannot be read for the reads made before the rounds are gone through is raised as it
+is. Pinned by `test_one_round_failing_its_recovery_stops_none_of_the_others`,
 `test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone` and
 `test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone`.
 
 ### One shared delay for the clean-up
 
-The clean-up of a round falls a day after its race, a delay `clean_up_moment` holds once
+The clean-up of a round falls when the weather specification's "Supersession and cleanup" says, a
+delay `clean_up_moment` holds once
 (`POST_RACE_CLEANUP_DELAY`), for the forecast's clean-up and attendance's check-in clean-up alike,
 and for the scheduler's timer, the restart and the amendment's arming of each. Pinned by
 `test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay`, and for the forecast's
@@ -361,8 +366,12 @@ Answers to `architecture.md`, "Posting to Discord".
 A forecast is a standing post: posted through the standing-post handler (`post_standing`),
 superseded by the next phase's, and deleted through the same handler (`delete_standing`) from the
 channel and message ids recorded when it was posted, whether it went as text or as a graphic. The
-mystery notice is a standing post of the same kind. The note of a cancellation is a notice, sent
-silently.
+mystery notice is a standing post of the same kind. Two posts are notices, sent through the notice
+handler (`send_notice`) with mentions as the weather specification's "Changes to a round after
+generation" has them: the note that a round, division or season was called off
+(`cancellation_notice`), and the notice that the forecasts no longer stand
+(`notify_invalidation`). Neither is edited or deleted later, so neither keeps its id. A phase's
+calculation and BLOCKED lines are log lines ("The forecast change and its steps").
 
 A forecast is found again through `forecast_messages.message_ids` and `channel_id`: a forecast
 posted in parts deletes every part, and one posted before the channel was recorded is looked for in
@@ -392,14 +401,14 @@ Answers to `architecture.md`, "How modules and core fit together".
 
 ### The hooks weather signs up to
 
-Weather declares no hook of its own. Core declares them and weather subscribes in `wiring.py`; where
-several modules join a hook the entry point signs them up in the order they are called.
+Weather declares no hook of its own. It signs up as `architecture.md`'s "How modules and core fit
+together" has a module sign up, through `wiring.py`.
 
 | Hook | Weather's function | What weather does |
 |---|---|---|
 | `starting` | `wiring.start_up_steps` | its two start-up steps |
-| `round_windows_read` | `weather_config_service.round_window` | hands its three horizons, or none where the module is off; the season's approval and review read them, and an amendment does not |
-| `phases_drawn_read` | `round_phases.phases_drawn` | says which phases of a round are drawn; `/season status` reads it |
+| `round_windows_read` | `weather_config_service.round_window` | hands its three horizons, or none where the module is off |
+| `phases_drawn_read` | `round_phases.phases_drawn` | says which phases of a round are drawn |
 | `amendment_judged` | `forecast_amendment.amendment_judged` | weather's part of judging a round's amendment: the two refusals for a forecast already drawn, its note, the phases it withdraws and its own horizons, all kept in the part |
 | `round_amended` | `phase_withdrawal.round_amended_on` | withdraws the phases, inside the amendment's save |
 | `round_armed` | `forecast_amendment.round_armed` | answers what the round's forecasts are armed with (`ForecastJobs`), and the steps owed |
@@ -424,9 +433,8 @@ reads its own horizons, on the save's connection in a save and through its own r
 and answers an `AmendmentPart`: the two refusals for a forecast already drawn, its note,
 `withdrawn`, and `weather_windows`. It reads its horizons back from what core keeps
 (`windows_kept`), reading them afresh where it finds none, so an amendment stopped across an update
-raises nothing. The note names only the phases drawn and put back in question, and promises a redraw
-only while weather is on, as the weather specification's "Changes to a round after generation" has
-it.
+raises nothing. What the note names is the weather specification's "Changes to a round after
+generation".
 
 When the round is armed again, weather answers `round_armed` with its steps and its `ForecastJobs`:
 the windows and `skip_phases`, the phases the amendment draws at once, whose timer, having no
@@ -483,7 +491,7 @@ Answers to `architecture.md`, "Errors and failures".
 
 | Starting point | Weather's part |
 |---|---|
-| A command | the cog refuses through `refuse` in its own words (`NOT_ENABLED`, a division not found); a failure it does not catch reaches the base classes' `report_failure` |
+| A command | the cog refuses through `refuse`, with weather's `NOT_ENABLED` and core's words for no season and a division not found; `config view` answers through its reply alone; a failure the cog does not catch reaches the base classes' `report_failure` |
 | A change | the check refuses a manager's request and drops the bot's where the work is no longer due; a job Discord refuses raises `StepFailedOnDiscord`, which stops the lane with the stop notice, Retry and Discard; a fault of the bot's own is raised as it is |
 | A timed job | the timer's handler asks the change; a handler whose ask raises reaches the host's log |
 | A start-up step | `RecoveryFailed`, above |
@@ -506,7 +514,7 @@ Each is stated where it lives and pinned by the test named.
 | A forecast's text is composed when it is sent, from the stored draw, not stored | `forecast_text`'s docstring | `test_the_forecast_text_is_built_from_the_recorded_draw` |
 | A forecast is deleted from the channel it was posted in, not the division's present one | `forecast_cleanup_service`' module docstring | `test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves` |
 | The deletion of a superseded forecast is a job of its own, after the post | `forecast_changes`' docstring | `test_a_phase_posts_before_the_superseded_forecast_is_deleted_by_a_job` |
-| A mystery round writes no `phase_results` and tags nobody | `mystery_notice_service`'s docstring | `test_the_mystery_notice_notifies_nobody` |
+| A mystery round's notice tags nobody | `mystery_notice_service`'s docstring | `test_the_mystery_notice_notifies_nobody` |
 | A mystery round's notice is recorded in a flag of its own, never in `phase1_done` | `round_phases`' module docstring | `test_the_notice_s_record_writes_only_on_the_connection_it_is_handed` |
 | A mystery round changed to another type has its notice taken down by the amendment, and one whose date is moved keeps it | `forecast_amendment.round_armed`'s docstring | `test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down`, `test_a_mystery_round_whose_date_is_moved_keeps_its_notice` |
 | A phase has one standing draw | the schema's partial unique index | `test_a_second_standing_draw_for_one_phase_is_refused` |
