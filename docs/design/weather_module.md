@@ -437,7 +437,7 @@ Each is stated where it lives and pinned by the test named.
 | A phase has one standing draw | the schema's partial unique index | `test_a_second_standing_draw_for_one_phase_is_refused` |
 | A draw and its calculation line are one save | `forecast_changes`' module docstring | `test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted` |
 | The horizons are the league's own, and no fixed moment is named | `phase1_service`'s docstring | `test_the_league_s_own_horizons_are_used_not_the_packaged_ones` |
-| The four timers have no lateness limit; the work's own check judges lateness | `SchedulerService.arm_once`'s docstring, and architecture.md's "Timed work and restarts" | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
+| The four timers have no lateness limit; the work's own check judges lateness | architecture.md's "Timed work and restarts", and `SchedulerService.schedule_round`'s docstring (under `skip_phases`) | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
 | A recovery judges every moment at the queue's clock | `forecast_recovery`'s docstring | `test_the_missed_phases_catch_up_reads_the_queue_s_clock` |
 | A failed recovery stops none of the other rounds and is reported once | `forecast_recovery`'s docstring | `test_one_round_failing_its_recovery_stops_none_of_the_others` |
 | A phase the amendment draws at once is skipped by its timer | `ForecastJobs`' docstring | `test_core_arms_what_a_module_s_arming_answer_hands_back` |
