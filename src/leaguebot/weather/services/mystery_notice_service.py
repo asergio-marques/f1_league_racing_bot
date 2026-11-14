@@ -1,7 +1,8 @@
-"""Mystery Notice service — posts a fixed informational notice at the phase 1 horizon.
+"""Mystery Notice service — records the fixed informational notice given at the phase 1 horizon.
 
 It stands in the place of the phase 1 message and shares its horizon, which the league
-configures; see ``phase1_service`` for why no horizon is named as fixed.
+configures; see ``phase1_service`` for why no horizon is named as fixed. It records the notice and
+posts nothing: the post is made by the forecast change, after the record (`forecast_changes`).
 
 Called when a Mystery round's ``weather_p1_s{S}_d{D}_r{N}_id{round_id}`` job fires —
 `ask_forecast` reads the round's format as it does (a mystery round's phase 1 is its notice) — and

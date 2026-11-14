@@ -1,15 +1,17 @@
-"""ForecastCleanupService — track and delete per-phase forecast messages.
+"""Track and delete per-phase forecast messages: the functions that record where a forecast was
+posted, post a weather occasion, and plan its deletion.
 
 Feature 007: Forecast Message Cleanup.
 
 Deletes are the inverse of writes: they use the channel and message ids stored when the forecast was
-posted, whether it went out as text or as a graphic, each sent from here through the standing-post
-handler.
+posted, whether it went out as text or as a graphic. A forecast is posted from here
+(`post_phase_message`) and deleted from here (`_discord_delete`), each through the standing-post
+handler; the notice of a cancellation is posted elsewhere (`cancellation_notice`).
 
 Public API:
   store_forecast_message_on — persist a message ID, on the save the post job's record has
   forget_forecast_on      — drop a message ID once its message is deleted
-  post_phase_message      — the one send site of a weather posting
+  post_phase_message      — the send of a forecast, or of a mystery round's notice
   forecast_deletes        — the delete jobs a clean-up or a flush plans, one for each
                             recorded forecast
 """
@@ -221,7 +223,7 @@ async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) ->
 
 
 # ---------------------------------------------------------------------------
-# 042 — the one send site every weather posting takes
+# 042 — the send of a forecast and of a mystery round's notice
 # ---------------------------------------------------------------------------
 
 @posts_in_a_job
@@ -239,8 +241,9 @@ async def post_phase_message(
     """Post one weather occasion, and nothing else: the job that calls it records the message and
     deletes the one it supersedes.
 
-    The single send site for all four of the module's weather postings — the three phases and
-    the notice of a mystery round — and for both manners in which each may be drawn.
+    The send for the four occasions the forecast change posts — the three phases and the notice
+    of a mystery round — and for both manners in which each may be drawn. The cancellation's note
+    is posted by `cancellation_notice`.
 
     **A transport failure stops the queue at the post job**, whose next try posts the text (XIV.8,
     FR-057): a message Discord refuses, a channel the bot cannot fetch and one that is not a text

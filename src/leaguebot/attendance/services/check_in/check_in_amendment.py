@@ -1,15 +1,21 @@
 """A round amended, as the check-in answers it, and the steps test mode's advance asks.
 
 An amendment moves a round and so what its check-in owes, and attendance takes part in it through
-three of core's events, subscribed in wiring:
+these of core's events, subscribed in wiring:
 
+- `amendment_judged` is attendance's part of the judgement (`check_in_amendment_rules`): the
+  deadline refusal and the check-in's two warnings, and whether the check-in is reopened, kept for
+  the save;
 - `round_amended_on` reopens the round's check-in in the amendment's save where the amendment
   reopened it, handing back whether a call stood when the save was made and whether the check-in
   was reopened, kept with the save for the arming to read;
-- `amendment_posts`, when the round is armed again, plans the posts the round now owes of
-  attendance's, in order: the standing call taken down and posted again, or a call posted where
-  none stands, and the deadline run where it passed;
-- `amendment_clean_ups` hands core the clean-ups due.
+- `amendment_posts`, when the round is armed again (`round_armed`), answers a `RoundArming`: the
+  posts the round now owes of attendance's, in order (the standing call taken down and posted
+  again, or a call posted where none stands, and the deadline run where it passed) and the
+  check-in's timers (`CheckInJobs`), armed only while attendance is on;
+- `amendment_clean_ups` hands core the clean-ups due;
+- `check_in_failure` words a step of its own an outcome names as left undone
+  (`amendment_step_failure`).
 
 `amendment_steps` is what an amendment asks of the check-in: the steps of the call, the deadline
 and the clean-up it plans, with the take-down of the call it replaces. `give_up_text_for` words

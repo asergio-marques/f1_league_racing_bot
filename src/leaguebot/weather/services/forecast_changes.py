@@ -2,14 +2,16 @@
 supersedes, three jobs of one change (#439, slice 6).
 
 Weather's timers, its start-up recovery and test mode's advance each ask the queue for a
-forecast (`ask_forecast`); the mystery rule is decided here and nowhere else (architecture.md,
-"Timed work and restarts"): the scheduler hands each phase's timer straight to this module's
-handler without reading the round's format, and a mystery round's phase 1 is its notice (phase 0),
-and its phases 2 and 3 nothing. The change's jobs are:
+forecast (`ask_forecast`). The scheduler hands each phase's timer straight to this module's
+handler without reading the round's format, and the mystery rule is read here, at that ask: a
+mystery round's phase 1 is its notice (phase 0), and its phases 2 and 3 nothing. The same rule is
+read where weather answers an amendment's arming (`forecast_amendment`, `round_phases.phases_due`),
+for the forecasts' timers of a round armed again and for the phases the amendment draws at once
+(architecture.md, "Timed work and restarts"). The change's jobs are:
 
 - `draw_forecast` (a save): the phase is drawn and recorded, its flag set and its calculation line
-  written to the log channel, all in the one save (weather spec :165). A phase whose earlier
-  phase is not done plans the earlier phase first.
+  written to the log channel, all in the one save (weather specification, "Supersession and
+  cleanup"). A phase whose earlier phase is not done plans the earlier phase first.
 - `post_forecast`: the forecast is posted, text composed when it is sent (`forecast_text`), the
   picture on the first try alone. Its record saves the message's id with the job's mark, and it
   plans the deletion of the forecast it supersedes (phase 2 supersedes 1, 3 supersedes 2). A
@@ -21,9 +23,9 @@ and its phases 2 and 3 nothing. The change's jobs are:
   forecasts still stands, a day after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
   `delete_forecast` for each, so that each deletion is a job of its own.
 
-A forecast whose turn comes after its round's race is dropped, at the draw and again at the post
-(its draw is kept). The draws are reached through their modules as they run, so that a test sees
-them. A forecast is not repeatable: a phase is done once.
+A forecast whose turn comes after its round's race is dropped as the change starts (its check) and
+again as the post comes up, a draw already made being kept. The draws are reached through their
+modules as they run, so that a test sees them. A forecast is not repeatable: a phase is done once.
 """
 
 from __future__ import annotations

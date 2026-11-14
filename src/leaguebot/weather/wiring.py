@@ -2,7 +2,8 @@
 
 It signs weather up to the hooks core declares, registers weather's switch reader, change types and
 settings, the handlers of its kinds of timed job with the steps `/test-mode advance` runs for them,
-and names the steps its start-up runs. It is under the entry point's rules, not a
+and names the steps its start-up runs, each a function of the forecast recovery service handed the
+database's path and the change queue. It is under the entry point's rules, not a
 service's (architecture.md, "How the code is laid out"): it reads the bot as the builder does, so
 each function below is handed the bot and reads a service off it when it signs up or, where a
 lambda reads it, when it runs, which the tests that replace a service on the bot after registering
