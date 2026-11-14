@@ -102,7 +102,7 @@ async def _lapse_pending_reason(key: tuple[int, int], entry: dict) -> None:
             f"⌛ No reason arrived within five minutes. {nothing_done}; the signup still awaits review.",
             ephemeral=True,
         )
-    except Exception:  # noqa: BLE001 — the lapse is still recorded
+    except discord.HTTPException:
         log.warning("could not tell the manager that their %s reason lapsed", label, exc_info=True)
     await record_abandoned(
         bot_of(interaction),

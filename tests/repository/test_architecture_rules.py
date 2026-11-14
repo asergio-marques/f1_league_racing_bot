@@ -3224,10 +3224,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
     ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
-    ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.move_base_role_overwrite"):
-        (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_lapse_pending_reason"): (1, PASS["signup"]),
 }
 
 

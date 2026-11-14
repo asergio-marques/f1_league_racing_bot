@@ -323,9 +323,10 @@ class SignupModuleService:
         then add" on one role would briefly revoke it, and outright if the grant failed.
 
         Nothing is done without a signup channel, which exists only while the module is
-        enabled. A failure is logged and never raised: Discord refuses an overwrite for
-        reasons that have nothing to do with the setting, and the role the league chose is
-        still the right one to have stored. The channel is repairable by hand.
+        enabled. A refusal from Discord (`discord.HTTPException`) is logged and never raised:
+        Discord refuses an overwrite for reasons that have nothing to do with the setting, and
+        the role the league chose is still the right one to have stored. The channel is
+        repairable by hand.
         """
         cfg = await self.get_config()
         if cfg is None or cfg.signup_channel_id is None:
@@ -344,7 +345,7 @@ class SignupModuleService:
                 send_messages=False,
                 use_application_commands=True,
             )
-        except Exception:  # noqa: BLE001 — see the docstring
+        except discord.HTTPException:
             log.warning("move_base_role_overwrite: could not update the signup channel", exc_info=True)
 
     # ── Settings ──────────────────────────────────────────────────────

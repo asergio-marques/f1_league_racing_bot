@@ -247,7 +247,7 @@ class ConfirmCloseView(LeagueView):
         )
         try:
             await self._asked.edit_original_response(view=None)
-        except Exception:  # noqa: BLE001 — the lapse is recorded whether or not the reply goes
+        except discord.HTTPException:
             log.warning("could not take the close confirmation's buttons down", exc_info=True)
 
 
