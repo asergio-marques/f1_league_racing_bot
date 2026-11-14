@@ -376,8 +376,8 @@ recur:
 - **An amendment is judged by core and by each module.** `judged_with_the_modules` asks
   `amendment_judged` of each module, handing no module's windows: each reads and keeps its own in its
   `AmendmentPart`. The `judge` job's record is `{judged, kept}`, the parts' `kept` merged and stored
-  as given, named by no module, and handed back by the save and the arming to the module that
-  kept it; a module finding none of its own in a record made before an update reads afresh. The
+  as given, named by no module, and handed back by the save and the arming to every module, each
+  reading only its own; a module finding none of its own in a record made before an update reads afresh. The
   steps a module plans for an amendment are worded by the module (`amendment_step_failure`), so
   core's outcome names none of them.
 - **A test-mode flush is whatever the modules hand back.** A change that switches test mode off or
@@ -461,7 +461,11 @@ sweep of everything that came due while the bot was stopped:
   builder.
 - **Each step, each switch read, each module's list of steps and the queue's start is contained**:
   one that raises is logged with its traceback and reported to the log channel by one line
-  (`start_up_failure_line`), and the rest carry on, the module's later steps included. A module whose
+  (`start_up_failure_line`), and the rest carry on, the module's later steps included. Where the
+  error carries `rounds_called` (the protocol `RoundsFailed`, `core/models/recovery.py`: each round
+  a step failed for, named as core names it), the line names them, and never asks for a module's own
+  error type, so each module's `RecoveryFailed` is its own; an error carrying none is a step that
+  failed as a whole, and its line names no round. A module whose
   switch or list cannot be read is passed over; a switch not signed up is a fault in the assembly and
   is reported, never read as off.
 - **The hold is released when the sweep has asked its own**, on leaving `sweeping()`, and again in an

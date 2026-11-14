@@ -979,8 +979,9 @@ and the re-arming of a round still to be run, whether a module's work is armed, 
 module's answer through `round_armed`**: each module hands back its steps and the jobs it owes, and
 the arming step makes the scheduler's calls with what each hands back, so that core holds no
 module's rule about which jobs a moved round still to be run owes. What a module keeps from its part of
-the amendment's judgement, its own windows included, core stores as it is given and hands back to the
-same module, reading it for none: core names no module's windows.
+the amendment's judgement, its own windows included, core stores as it is given and hands the merged
+record back to every module, each reading only its own, reading it for none itself: core names no
+module's windows.
 `schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
 round raced, or ended cancelled because every session was entered as not held; core makes that call
 from the modules' switches, the clean-up's delay being the one shared delay, so no module's window is read.
@@ -1080,7 +1081,9 @@ start-up work that is no missed event (a review posted again, an interrupted sub
 hub's panel posted again, as the core specification's "When the bot stops" lists) is a step of the same
 turn. A change a step makes is asked of the queue, like any other. Each step is kept separate, as are
 each switch read, each module's list of steps and the queue's start: one that fails is logged with its
-traceback and reported to the log channel in one line, and the rest carry on. A step holds no module's
+traceback and reported to the log channel in one line, naming the rounds it failed for where the
+error carries them (`RoundsFailed`, `core/models/recovery.py`), so that core names no module's error
+type; the rest carry on. A step holds no module's
 rule: the step for putting a round's review back, which results' wiring offers, calls the results
 service that decides it, and that decision is asked of the queue as a change like any other.
 

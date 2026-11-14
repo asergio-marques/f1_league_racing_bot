@@ -469,7 +469,8 @@ and reads `queue_records.ever_asked` as the durable mark that a last paste finis
 docstring).
 
 **A failed recovery reports once.** A round that cannot be recovered stops none of the others; once
-every round is gone through, the step raises one `RecoveryFailed` naming each, which the start-up
+every round is gone through, the step raises one `RecoveryFailed` naming each and carrying `rounds_called`, each as core names it
+(`RoundsFailed`, `core/models/recovery.py`), which the start-up
 sweep reports to the log channel in one line
 (`test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are`).
 
