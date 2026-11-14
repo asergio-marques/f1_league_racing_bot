@@ -377,12 +377,12 @@ says. The two switches are asked first, so that nothing is read for a picture no
 has the catch-alls `architecture.md` allows it ("Errors and failures"): one around its drawing, the
 place for a graphic that rides on a post, and one around reading the round to name the line of a
 switch that could not be read, the place for naming something in a line, which leaves the line
-naming the phase alone. A line names the round, and its phase or the notice, as the image
-specification's "Generation and posting" has it, through `describe`. Weather hands the notice's
-picture as phase 0, so its line names the notice without the round being read. The post job puts
-the lines on its `StepResult`, so they reach the log channel in the save that records the post. The
-render is given no bot, so a render's notices come back as those lines alone and are posted once. A
-graphic Discord refuses stops the queue for Retry.
+naming the phase, or the notice, alone. A line names the round, and its phase or the notice, as the
+image specification's "Weather image generation", "Generation and posting" has it, through
+`describe`. Weather hands the notice's picture as phase 0, so its line names the notice without the
+round being read. The post job puts the lines on its `StepResult`, so they reach the log channel in
+the save that records the post. The render is given no bot, so a render's notices come back as those
+lines alone and are posted once. A graphic Discord refuses stops the queue for Retry.
 
 ---
 
