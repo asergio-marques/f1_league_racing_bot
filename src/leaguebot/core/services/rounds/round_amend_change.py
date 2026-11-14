@@ -48,6 +48,8 @@ from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
     ROUND_RACED_AWAITING_VERDICTS,
     AttendanceWindows,
+    CheckInJobs,
+    ForecastJobs,
     Round,
     RoundFormat,
     RoundStatus,
@@ -67,7 +69,6 @@ from leaguebot.core.services.rounds.round_moments import (
     results_left_to_advance,
     round_event_moments,
 )
-from leaguebot.core.services.rounds.round_moments import phases_due as round_moments_phases_due
 from leaguebot.core.services.rounds.round_steps import JUDGE, named_now, round_number_now as number_now
 from leaguebot.core.services.cancellations import cancellation_notice_service as notices
 from leaguebot.core.services.cancellations.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
@@ -525,20 +526,6 @@ def _round_change(
             ),
         )
 
-    def first_horizon_ahead(rnd: Round, weather: dict[str, Any]) -> bool:
-        """Whether the round as it stands now still has its first forecast horizon to come. Read
-        when the arming runs, not when the amendment was judged: a discarded save arms the round
-        at its old moment, and a stop can hold the arming for hours."""
-        moments = round_event_moments(
-            rnd.scheduled_at, weather=WeatherWindows(**weather), attendance=None
-        )
-        return now() < moments["weather_p1"]
-
-    def phases_due(rnd: Round, weather: dict[str, Any], drawn: Mapping[int, bool]) -> list[int]:
-        """The forecast phases to draw at once, as the round stands at the queue's clock, the
-        phases *drawn* and the windows `judge` read (`round_moments.phases_due`)."""
-        return round_moments_phases_due(rnd, WeatherWindows(**weather), now(), drawn=drawn)
-
     async def arm_due(ctx: StepContext) -> bool:
         """The arming is due where the timed work was removed and the round may still be
         cancelled, whatever became of the save: a round cancelled, or whose results were entered,
@@ -556,8 +543,9 @@ def _round_change(
         refusal arms the round again at its old moment: a timer armed for a moment already past
         would only fire late. So, judged at the queue's clock: a round still to be run
         whose moment has passed has its results submission run at once through the scheduler,
-        its phases due are drawn at once (`phases_due`), and its call, where none stands and its
-        check-in is not over, is posted where it has fallen due (`call_fell_due`).
+        and what each module owes is its own answer to the round armed again (`plan_posts`): the
+        forecast phases due are drawn at once, and the call, where none stands and its check-in
+        is not over, is posted where it has fallen due.
 
         Under test mode the results submission is not run at once: `/test-mode advance` runs a test
         season's rounds in their turn. Where results is on and weather off no `results` job is armed
@@ -580,7 +568,6 @@ def _round_change(
         if found is None:
             raise LookupError(f"division {rnd.division_id} is no longer there")
         season_number, tier = int(found["season_number"]), int(found["tier"])
-        weather = judgement["windows"]["weather"]
         weather_on = await modules.is_weather_enabled()
         if rearm and ctx.payload.get("cleanups_only"):
             # A round raced, or ended cancelled as not held: only the clean-ups of a day after it
@@ -597,46 +584,43 @@ def _round_change(
                     forecast=weather_on, check_in=check_in_on, now=now(),
                 )
             return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
-        drawn = (await read_phases_drawn(phases_drawn_read, [rnd.id])).get(rnd.id, {})
-        draw = phases_due(rnd, weather, drawn) if weather_on else []
-        planned = await plan_posts(ctx, rnd, judgement, draw=draw)
-        if weather_on and (
-            rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather)
-        ):
+        planned, jobs = await plan_posts(ctx, rnd, judgement)
+        forecasts = next((each for each in jobs if isinstance(each, ForecastJobs)), None)
+        check_in = next((each for each in jobs if isinstance(each, CheckInJobs)), None)
+        if forecasts is not None:
             scheduler.schedule_round(
                 rnd,
                 season_number=season_number,
                 division_tier=tier,
-                phase_1_days=weather["phase_1_days"],
-                phase_2_days=weather["phase_2_days"],
-                phase_3_hours=weather["phase_3_hours"],
+                phase_1_days=forecasts.windows.phase_1_days,
+                phase_2_days=forecasts.windows.phase_2_days,
+                phase_3_hours=forecasts.windows.phase_3_hours,
                 # Drawn at once by a job of the amendment's: a timer armed for a horizon already
                 # passed has no lateness limit and would fire at once, asking for it a second time.
-                skip_phases=frozenset(draw),
+                skip_phases=forecasts.skip_phases,
             )
         else:
-            # Weather off, or a mystery round moved inside its first horizon, whose notice already
-            # told the drivers and which must not be fired retroactively: its forecasts are not
-            # armed, but its results submission is, or the round would never leave Not run.
-            # Not under test mode with results on and weather off, which leaves the round to
-            # `/test-mode advance` as the season's approval does (`results_left_to_advance`).
+            # No forecasts armed, whether weather is off or a mystery round moved inside its first
+            # horizon, whose notice already told the drivers and which must not be fired
+            # retroactively: the round's results submission is armed, or it would never leave
+            # Not run. Not under test mode with results on and weather off, which leaves the round
+            # to `/test-mode advance` as the season's approval does (`results_left_to_advance`).
             if not results_left_to_advance(
                 test_mode=bool(found["test_mode"]),
                 results_on=await modules.is_results_enabled(),
-                weather_on=weather_on,
+                weather_on=await modules.is_weather_enabled(),
             ):
                 scheduler.schedule_result_submission_jobs(
                     [rnd], division_meta={rnd.division_id: (season_number, tier)}
                 )
-        attendance = judgement["windows"]["attendance"]
-        if attendance is not None and await modules.is_attendance_enabled():
+        if check_in is not None:
             scheduler.schedule_attendance_round(
                 rnd,
                 season_number=season_number,
                 division_tier=tier,
-                notice_days=attendance["notice_days"],
-                last_notice_hours=attendance["last_notice_hours"],
-                deadline_hours=attendance["deadline_hours"],
+                notice_days=check_in.windows.notice_days,
+                last_notice_hours=check_in.windows.last_notice_hours,
+                deadline_hours=check_in.windows.deadline_hours,
                 now=now(),
             )
         result_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)["results"]
@@ -662,17 +646,18 @@ def _round_change(
         return tuple(step for steps in handed for step in steps or ())
 
     async def plan_posts(
-        ctx: StepContext, rnd: Round, judgement: dict[str, Any], *, draw: list[int]
-    ) -> tuple[PlannedStep, ...]:
-        """The posts the amendment owes, which the modules plan in today's order: the check-in
-        call taken down and posted again, its deadline run, each withdrawn forecast that was posted
-        deleted, the notice that the forecasts no longer stand, each phase in *draw* drawn, and the
-        clean-ups due a day after the round (`plan_clean_ups`). Planned once the round is armed,
-        which is where the amendment stood before them, but read before the timed work is
-        scheduled; what the save withdraws, from what each module's part of it kept (`apply`), and
-        only where it was saved.
+        ctx: StepContext, rnd: Round, judgement: dict[str, Any]
+    ) -> tuple[tuple[PlannedStep, ...], tuple[ForecastJobs | CheckInJobs, ...]]:
+        """The posts the amendment owes and the timed work to arm, as each module answers the
+        round armed again (`RoundArming`): its steps, which the queue runs in today's order (the
+        check-in call taken down and posted again, its deadline run, each withdrawn forecast that
+        was posted deleted, the notice that the forecasts no longer stand, each phase due drawn
+        at once) and then the clean-ups due a day after the round (`plan_clean_ups`), and its
+        jobs, which `arm` hands the scheduler. Planned once the round is armed, which is where the
+        amendment stood before them, but read before the timed work is scheduled; what the save
+        withdraws, from what each module's part of it kept (`apply`), and only where it was saved.
 
-        What each module plans, and how it reads its own tables, is its own (`round_armed`)."""
+        What each module plans and arms, and how it reads its own tables, is its own."""
         windows = judgement["windows"]
         attendance = windows["attendance"]
         kept = (view(ctx, APPLY).result or {}) if saved(ctx) else {}
@@ -680,10 +665,12 @@ def _round_change(
             handed = await round_armed.call(
                 db, rnd.id, rnd=rnd, kept=kept,
                 attendance=AttendanceWindows(**attendance) if attendance is not None else None,
-                weather=WeatherWindows(**windows["weather"]), draw=draw, now=now,
+                weather=WeatherWindows(**windows["weather"]), now=now,
             )
-        planned = [step for steps in handed for step in steps or ()]
-        return (*planned, *await plan_clean_ups(ctx, rnd, kept=kept))
+        answers = [each for each in handed if each is not None]
+        planned = [step for each in answers for step in each.steps]
+        jobs = tuple(each.jobs for each in answers if each.jobs is not None)
+        return (*planned, *await plan_clean_ups(ctx, rnd, kept=kept)), jobs
 
     async def never_runs(ctx: StepContext) -> str:
         return (

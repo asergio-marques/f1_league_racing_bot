@@ -886,8 +886,6 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#287: a module's answer to the round armed again is "
-                   "not yet a RoundArming carrying its steps")
 async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_renumbering(
     tmp_path, reposts,
 ):
@@ -2880,14 +2878,7 @@ async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, s
 # forecasts and `CheckInJobs` for the check-in. Core's arming makes the scheduler's calls, in
 # today's order, from what it is handed.
 
-#: Why each test below fails until core arms from the modules' answers.
-NOT_YET_THE_ARMING_ANSWER = (
-    "#287: core still arms the forecasts and the check-in from the switches and the windows it "
-    "stored, not from each module's RoundArming answer"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_ARMING_ANSWER)
 async def test_core_arms_what_a_module_s_arming_answer_hands_back(tmp_path):
     """Weather and attendance both off. In place of the modules' own answers, one module answers
     the round armed again with forecast jobs at horizons of 4 days, 1 day and 3 hours, its Phase 2
@@ -2942,7 +2933,6 @@ async def test_core_arms_what_a_module_s_arming_answer_hands_back(tmp_path):
     assert scheduler.schedule_result_submission_jobs.call_args_list == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_ARMING_ANSWER)
 async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp_path):
     """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, but no module answers
     the round armed again. Pro's round 3 is moved to 60 days out. Neither its forecasts nor its

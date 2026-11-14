@@ -9,11 +9,14 @@ module answers with.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, tuple_rows_in
+from leaguebot.core.models.round import Round, RoundFormat, WeatherWindows
+from leaguebot.core.services.rounds.round_moments import round_event_moments
 
 
 async def phases_drawn_on(
@@ -58,3 +61,24 @@ async def phases_drawn(
         return await phases_drawn_on(db, round_ids)
     async with get_connection(db_path) as own:
         return await phases_drawn_on(own, round_ids)
+
+
+def phases_due(
+    rnd: Round, weather: WeatherWindows, at: datetime, *, drawn: Mapping[int, bool]
+) -> list[int]:
+    """The forecast phases to draw at once at *at*: each not yet drawn (*drawn*, by phase number,
+    as `phases_drawn_on` gives it for the round) whose horizon has passed, for a round whose
+    moment is still ahead and which is no mystery round."""
+    moment = rnd.scheduled_at
+    if rnd.format == RoundFormat.MYSTERY or moment <= at:
+        return []
+    moments = round_event_moments(moment, weather=weather, attendance=None)
+    horizons = {n: moments[f"weather_p{n}"] for n in (1, 2, 3)}
+    return [n for n, horizon in horizons.items() if not drawn.get(n, False) and horizon <= at]
+
+
+def first_horizon_ahead(rnd: Round, weather: WeatherWindows, at: datetime) -> bool:
+    """Whether the round as it stands has its first forecast horizon still to come at *at*: a
+    mystery round moved inside it has had its notice, which must not be fired retroactively."""
+    moments = round_event_moments(rnd.scheduled_at, weather=weather, attendance=None)
+    return at < moments["weather_p1"]

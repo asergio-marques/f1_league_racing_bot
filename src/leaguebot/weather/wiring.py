@@ -89,10 +89,11 @@ def sign_up_to_round_amended(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_round_armed(bot: "LeagueBot") -> None:
-    """Sign weather's posts up to the hook an amended round's arming again declares."""
-    from leaguebot.weather.services import forecast_changes
+    """Sign weather's posts and its forecasts' timers up to the hook an amended round's arming again
+    declares."""
+    from leaguebot.weather.services import forecast_amendment
 
-    bot.round_armed.subscribe(forecast_changes.amendment_posts)
+    bot.round_armed.subscribe(forecast_amendment.round_armed)
 
 
 def sign_up_to_round_clean_ups_due(bot: "LeagueBot") -> None:

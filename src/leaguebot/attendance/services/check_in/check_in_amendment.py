@@ -62,9 +62,11 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
 )
 from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_steps, take_down_steps
 from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_steps
+from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.amendment import RoundArming
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
-from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round
+from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, CheckInJobs, Round
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
@@ -129,11 +131,11 @@ async def amendment_posts(
     attendance: AttendanceWindows | None,
     now: Callable[[], datetime],
     **_context: Any,
-) -> tuple[PlannedStep, ...]:
-    """The posts an amendment owes of attendance's, in order, planned as the round is armed
-    again, reading the round's call on *db*: the check-in call taken down and posted again, or
-    posted where none stands, and the deadline run where it passed. Subscribed to core's
-    `round_armed`.
+) -> RoundArming:
+    """What attendance owes the round armed again, reading the round's call on *db*: the posts, in
+    order (the check-in call taken down and posted again, or posted where none stands, and the
+    deadline run where it passed), and the check-in's timers at the lead times *attendance*, armed
+    only while attendance is on. Subscribed to core's `round_armed`.
 
     A call that stood at the save (*kept*, `round_amended_on`) is taken down and its post planned
     with it, the post judging when it runs whether the call is due then: the take-down can stop on
@@ -164,7 +166,11 @@ async def amendment_posts(
     if (attendance is not None and call_left and found["undistributed"]
             and _deadline_passed(rnd, attendance, now)):
         planned.append(PlannedStep(DISTRIBUTE))
-    return tuple(planned)
+    armed = attendance is not None and await attendance_enabled_on(db)
+    return RoundArming(
+        steps=tuple(planned),
+        jobs=CheckInJobs(windows=attendance) if armed and attendance is not None else None,
+    )
 
 
 async def amendment_clean_ups(

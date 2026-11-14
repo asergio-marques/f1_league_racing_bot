@@ -68,7 +68,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.services.seasons.season_service import division_on, round_facts_on
-from leaguebot.core.services.rounds.round_moments import clean_up_moment, phases_due
+from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now, round_number_now
 from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceOutcome,
@@ -92,7 +92,7 @@ from leaguebot.weather.services.draw_guard import (
     weather_round_on,
 )
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
-from leaguebot.weather.services.round_phases import phases_drawn_on
+from leaguebot.weather.services.round_phases import phases_drawn_on, phases_due
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.weather.utils.message_builder import forecast_text, invalidation_message
 
@@ -789,23 +789,6 @@ def forecast_failure(view: StepView, _steps: Sequence[StepView]) -> tuple[str, s
         return ("forecast channel", f"a part of the {view.payload['what']} could not be "
                 f"deleted, and a league admin discarded it; delete it by hand ({link})")
     return None
-
-
-async def amendment_posts(
-    _db: aiosqlite.Connection, _round_id: int, *, kept: Mapping[str, Any], draw: Sequence[int],
-    **_context: Any,
-) -> tuple[PlannedStep, ...]:
-    """The posts an amendment owes of weather's, in order, planned as the round is armed again:
-    the deletion of each withdrawn forecast that was posted, the notice that the forecasts no
-    longer stand, and the draw of each phase in *draw*. *kept* is what weather's part of the
-    save kept (`phase_withdrawal.round_amended_on`) with the track, and is empty where the save
-    was not made. Subscribed to core's `round_armed`."""
-    posted = kept.get("posted", [])
-    planned = [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
-    if posted:
-        planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": kept["track"]}))
-    planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
-    return tuple(planned)
 
 
 async def amendment_clean_ups(

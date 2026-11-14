@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-from leaguebot.core.models.round import AttendanceWindows, Round, RoundFormat, WeatherWindows
+from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 from leaguebot.core.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
@@ -63,22 +63,6 @@ async def read_phases_drawn(
     for part in await phases_drawn_read.call(round_ids, db=db):
         drawn.update(part or {})
     return drawn
-
-
-def phases_due(
-    rnd: Round, weather: WeatherWindows, at: datetime, *, drawn: Mapping[int, bool]
-) -> list[int]:
-    """The forecast phases to draw at once at *at*: each not yet drawn (*drawn*, by phase number,
-    as `read_phases_drawn` gives it for the round) whose horizon has passed, for a round whose
-    moment is still ahead and which is no mystery round."""
-    moment = rnd.scheduled_at
-    if rnd.format == RoundFormat.MYSTERY or moment <= at:
-        return []
-    moments = round_event_moments(moment, weather=weather, attendance=None)
-    horizons = {
-        n: moments[f"weather_p{n}"] for n in (1, 2, 3)
-    }
-    return [n for n, horizon in horizons.items() if not drawn.get(n, False) and horizon <= at]
 
 
 def results_left_to_advance(*, test_mode: bool, results_on: bool, weather_on: bool) -> bool:
