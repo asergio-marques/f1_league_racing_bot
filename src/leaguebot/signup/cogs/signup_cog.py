@@ -847,7 +847,10 @@ class SignupCog(commands.Cog):
                 f"  Teams: {preferred} | Teammate: {teammate}"
             )
             if d["notes"]:
-                lines[-1] += f"\n  Notes: {d['notes']}"
+                # The notes are typed by the driver: a blank line inside them would read as the
+                # gap between two drivers, where the records are divided.
+                notes = re.sub(r"\n{2,}", "\n", d["notes"].strip())
+                lines[-1] += f"\n  Notes: {notes}"
 
         # Discord has a 2000-char limit; the records are divided between drivers only.
         for part in chunk_message("\n\n".join(lines), records=True):

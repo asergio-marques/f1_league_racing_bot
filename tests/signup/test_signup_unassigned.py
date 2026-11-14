@@ -411,10 +411,6 @@ async def test_no_driver_is_lost_in_the_chunking(tmp_path):
         assert f"Driver Number {n}" in sent
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: a blank line in a driver's notes still splits their entry across messages",
-)
 async def test_a_blank_line_in_a_driver_s_notes_never_splits_their_entry(tmp_path):
     """The list is divided only between drivers, and a blank line marks the gap between two.
     A driver's notes are typed by the driver and may hold a blank line of their own, which
