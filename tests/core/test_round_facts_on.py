@@ -8,10 +8,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage, SeasonStatus
+from leaguebot.core.models.session import Session, SessionType
 from leaguebot.core.services.seasons.season_service import (
     active_season_rounds_on,
     RoundFacts,
@@ -225,3 +228,30 @@ async def test_the_rounds_of_an_active_season_alone_are_read_with_their_division
             )
         await db.commit()
         assert await active_season_rounds_on(db) == [(3, 20), (5, 20)]
+
+
+@pytest.mark.xfail(strict=True, reason="#287: core has no sessions_of_round_on reader yet")
+async def test_sessions_of_round_on_reads_in_id_order(tmp_path):
+    from leaguebot.core.services.seasons.season_service import sessions_of_round_on
+
+    path = str(tmp_path / "league.db")
+    round_id = await _seed(path)
+    async with get_connection(path) as db:
+        other = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at, status) "
+            "VALUES (4, 6, 'NORMAL', '2026-03-01T18:00:00+00:00', 'NOT_RUN')"
+        )
+        # Written out of id order, uncommitted, with another round's session among them.
+        await db.execute(
+            "INSERT INTO sessions (id, round_id, session_type) VALUES "
+            "(9, ?, 'LONG_FEATURE_RACE'), (3, ?, 'SHORT_SPRINT_QUALIFYING'), "
+            "(5, ?, 'LONG_RACE'), (6, ?, 'LONG_SPRINT_RACE')",
+            (round_id, round_id, int(other.lastrowid), round_id),
+        )
+        sessions = await sessions_of_round_on(db, round_id)
+        assert sessions == [
+            Session(id=3, round_id=round_id, session_type=SessionType.SHORT_SPRINT_QUALIFYING),
+            Session(id=6, round_id=round_id, session_type=SessionType.LONG_SPRINT_RACE),
+            Session(id=9, round_id=round_id, session_type=SessionType.LONG_FEATURE_RACE),
+        ]
+        assert await sessions_of_round_on(db, round_id + 50) == []
