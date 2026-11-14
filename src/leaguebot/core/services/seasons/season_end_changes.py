@@ -71,7 +71,6 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.queue_records import (
     in_hand,
 )
@@ -410,12 +409,6 @@ def shared_not_done(
             roles.append(f"<@{each['user_id']}>")
         elif view.name == FLUSH_FORECASTS:
             lines.append(FORECASTS_KEPT)
-        elif view.name == standing_posts.DELETE_REPLACED:
-            # A calendar's earlier post is named by the cancellation's own outcome; here only a
-            # part of a forecast posted in parts.
-            part = standing_posts.not_deleted(view)
-            if part is not None and "forecast" in str(each.get("what", "")):
-                lines.append(part)
         elif view.name == SIGNUP_NOTICE:
             if str(each["user_id"]) in closed:
                 lines.append(

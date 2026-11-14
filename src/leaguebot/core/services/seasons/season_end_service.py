@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 
 from leaguebot.core.models.change import StepKind, StepResult
 from leaguebot.core.services.upkeep import backup_service
-from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile
 from leaguebot.core.services.seasons.season_lifecycle_service import (
@@ -308,7 +307,5 @@ def shared_steps(
             DISCARD_PORTRAITS, StepKind.ACT, discard_portraits, describe=describe_portraits
         ),
         DISCARD_BACKUP: discard_backup_step(scheduler),
-        # A module's post made in parts has its deletion plan one for each earlier part.
-        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         **close_signup_steps(roles, season_end_steps=season_end_steps),
     }

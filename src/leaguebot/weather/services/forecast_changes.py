@@ -18,7 +18,8 @@ for the forecasts' timers of a round armed again and for the phases the amendmen
   forecast Discord refuses, or whose forecast channel is unset, stops the queue (XIV.8).
 - `delete_forecast`: the deletion of one recorded forecast, whose record carries the forgetting
   of the row; a refusal stops the queue and keeps the row. It deletes the part the row names, and
-  plans a shared `delete_replaced` job for each earlier part of a forecast posted in more than one.
+  plans a `delete_forecast_part` job, weather's own step built on the shared `delete_replaced`
+  handler, for each earlier part of a forecast posted in more than one.
 - `plan_forecast_deletes`: finds the forecasts a clean-up (whichever of a round's Phase 1 to 3
   forecasts still stands, a day after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
   `delete_forecast` for each, so that each deletion is a job of its own.
@@ -117,6 +118,8 @@ DRAW_FORECAST = "draw_forecast"
 POST_FORECAST = "post_forecast"
 DELETE_FORECAST = forecast_cleanup_service.DELETE_FORECAST
 PLAN_FORECAST_DELETES = "plan_forecast_deletes"
+#: The deletion of a forecast's earlier part, which `delete_forecast` plans for each before the last.
+DELETE_FORECAST_PART = "delete_forecast_part"
 #: The jobs an amendment plans through weather, under the names the amendment gives them.
 CLEAN_UP_FORECAST = "clean_up_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
@@ -175,6 +178,16 @@ def _drawers() -> dict[int, Callable[..., Any]]:
         2: phase2_service.draw_phase2_on,
         3: phase3_service.draw_phase3_on,
     }
+
+
+def _delete_forecast_part_step() -> Step:
+    """The deletion of a part of a forecast before the last: the shared standing-post delete under
+    weather's own name, so that a part a league admin discards is named by weather's words at a
+    season's end (`standing_posts.not_deleted`) and in an amendment (`forecast_failure`)."""
+    return dataclasses.replace(
+        standing_posts.delete_replaced_step(DELETE_FORECAST_PART),
+        not_done=lambda view: standing_posts.not_deleted(view, DELETE_FORECAST_PART) or "",
+    )
 
 
 def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
@@ -357,7 +370,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         if channel_id is None:
             return StepResult(result={"none": True, "message_id": message_id})
         # A forecast posted in parts comes down whole: this job deletes the part the row names (the
-        # last), and plans a `delete_replaced` job for each part before it, so that a refusal of
+        # last), and plans a `delete_forecast_part` job for each part before it, so that a refusal of
         # one part stops the queue naming that part and a Discard names it for deletion by hand.
         # A part already gone counts as deleted.
         parts = json.loads(found["message_ids"]) if found["message_ids"] else [message_id]
@@ -385,7 +398,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             if int(part) != message_id
             for step in standing_posts.replaced(
                 int(channel_id), int(part), None, what=_occasion(phase),
-                division_name=division.name,
+                division_name=division.name, name=DELETE_FORECAST_PART,
             )
         )
         return StepResult(
@@ -451,7 +464,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             DELETE_FORECAST, StepKind.DELETE, delete, describe=describe_delete,
             record=record_delete,
         ),
-        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
+        DELETE_FORECAST_PART: _delete_forecast_part_step(),
         PLAN_FORECAST_DELETES: Step(
             PLAN_FORECAST_DELETES, StepKind.ACT, plan_deletes, describe=describe_plan,
         ),
@@ -840,9 +853,7 @@ def forecast_failure(view: StepView, _steps: Sequence[StepView]) -> tuple[str, s
                 f"{forecasts_named(standing)} {'were' if several else 'was'} not deleted a day "
                 f"after the round, and a league admin discarded it; "
                 f"{'they are' if several else 'it is'} deleted when the bot next starts")
-    if view.name == standing_posts.DELETE_REPLACED and "forecast" in str(
-        view.payload.get("what", "")
-    ):
+    if view.name == DELETE_FORECAST_PART:
         link = (view.result or {}).get("link") or f"in <#{view.payload['channel_id']}>"
         return ("forecast channel", f"a part of the {view.payload['what']} could not be "
                 f"deleted, and a league admin discarded it; delete it by hand ({link})")
@@ -889,15 +900,16 @@ def forecast_kept(view: StepView) -> str:
 def season_end_steps(
     *, now: Callable[[], datetime], line_prefix: str | None = None
 ) -> dict[str, Step]:
-    """The job weather defines for a season's end, by name: the deletion of a forecast
+    """The jobs weather defines for a season's end, by name: the deletion of a forecast
     (`DELETE_FORECAST`), which the season end's `flush_forecasts` plans for each forecast posted
-    under test mode. *now* is the queue's clock; *line_prefix* is the closing line some changes
+    under test mode, and of a forecast's earlier part (`DELETE_FORECAST_PART`). *now* is the queue's clock; *line_prefix* is the closing line some changes
     write, which a forecast's deletion has no use for. A deletion a league admin discards is named
-    by the step's own words (`forecast_kept`). Subscribed to core's `season_end_steps`."""
+    by the step's own words (`forecast_kept`; a part's by `standing_posts.not_deleted`). Subscribed
+    to core's `season_end_steps`."""
+    steps = forecast_steps(now=now)
     return {
-        DELETE_FORECAST: dataclasses.replace(
-            forecast_steps(now=now)[DELETE_FORECAST], not_done=forecast_kept
-        )
+        DELETE_FORECAST: dataclasses.replace(steps[DELETE_FORECAST], not_done=forecast_kept),
+        DELETE_FORECAST_PART: steps[DELETE_FORECAST_PART],
     }
 
 

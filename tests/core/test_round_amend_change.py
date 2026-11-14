@@ -2999,11 +2999,6 @@ _UNDONE_STEPS = [
         [("forecast channel", "a part of the Phase 1 forecast could not be deleted, and a league "
           "admin discarded it; delete it by hand (in <#6>)")],
         id="delete-a-part-of-a-forecast",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#287: a forecast's part is still deleted by core's shared `delete_replaced` "
-            "job, so weather names no `delete_forecast_part` left undone",
-        ),
     ),
 ]
 
