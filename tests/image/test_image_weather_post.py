@@ -19,7 +19,6 @@ import pytest
 from leaguebot.image.services.image_weather_post import (
     ForecastRender,
     describe,
-    weather_enabled,
 )
 
 
@@ -44,67 +43,199 @@ def _bot(*, module_on=True, aspect_on=True, template_valid=True):
 
 
 # ── 1. Enablement (FR-050) ────────────────────────────────────────────────
+#
+# Judged through `attach_forecast`, which hands back the picture, or None, together with the log
+# lines saying why a picture that was due was not drawn: a picture not due (the module or its
+# weather aspect off) hands back no line (weather spec, "Image generation"; #287, B3).
 
 
-@pytest.mark.asyncio
-async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await weather_enabled(_bot(), "weather_p2_template") is True
+def _values(description="Initial session forecast", rain_probability="30%", sessions=()):
+    """What weather hands the picture: the phase's description, Phase 1's likelihood of rain as
+    text, and each session's label, weather type, slot labels and their summary, in run order
+    (#287, W288)."""
+    from leaguebot.image.models.forecast_values import ForecastValues
+
+    return ForecastValues(
+        description=description, rain_probability=rain_probability, sessions=tuple(sessions),
+    )
 
 
-@pytest.mark.asyncio
-async def test_the_module_being_off_falls_back_to_text():
-    assert await weather_enabled(_bot(module_on=False), "weather_p2_template") is False
+def _drawing(template_key="weather_p2_template", **facts):
+    """A drawing of *template_key*, for Division 1's round 4 of season 3, phase 2."""
+    named = {"division_name": "Division 1", "round_number": "4", "season_number": "3",
+             "is_mystery": False, **facts}
+    return MagicMock(template_key=template_key, **named)
 
 
-@pytest.mark.asyncio
-async def test_the_aspect_being_off_falls_back_to_text():
-    assert await weather_enabled(_bot(aspect_on=False), "weather_p2_template") is False
+async def _attach(bot, monkeypatch, drawing, *, phase=2, png=None):
+    """`attach_forecast` for round 1's *phase*, its round read as *drawing* and, where *png* is
+    given, its render drawing that file; the picture and the log lines it hands back."""
+    import leaguebot.image.services.image_weather_post as post
+
+    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
+    if png is not None:
+        monkeypatch.setattr(post, "render_forecast", AsyncMock(return_value=ForecastRender(png=png)))
+    file, lines = await post.attach_forecast(bot, round_id=1, phase=phase, values=_values())
+    return file, list(lines)
 
 
-@pytest.mark.asyncio
-async def test_an_invalid_template_falls_back_to_text():
-    assert await weather_enabled(_bot(template_valid=False), "weather_p3_template") is False
+async def test_the_drawing_is_made_from_the_values_weather_hands_it(tmp_path):
+    """Pro's round 3, a normal round with two sessions, has a standing Phase 1 draw of a 90%
+    likelihood of rain and each session's Phase 2 type stored as sunny. Weather hands the picture
+    of its Phase 3 forecast the values it composed: "Final session forecast", 30%, Qualifying
+    mixed with Rain then Light Cloud, and Race wet with Rain. The drawing carries what was handed,
+    in that order, and nothing read from weather's tables; the heading still names the round's
+    division and number (#287, W288)."""
+    from leaguebot.image.models.forecast_values import ForecastSession
+    from leaguebot.image.services.image_weather_post import build_drawing_for_round
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    round_ = round_id(PRO, 3)
+    await league.write("UPDATE rounds SET format = 'NORMAL' WHERE id = ?", round_)
+    await league.write(
+        "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
+        "VALUES (?, 1, '{\"rpc\": 0.9}', 'ACTIVE', '2026-11-20T00:00:00+00:00')", round_,
+    )
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type, phase2_slot_type) "
+                           "VALUES (?, ?, 'sunny')", round_, session)
+    handed = _values("Final session forecast", "30%", (
+        ForecastSession(label="Qualifying", weather_type="Mixed",
+                        slots=("Rain", "Light Cloud"), summary="Rain → Light Cloud"),
+        ForecastSession(label="Race", weather_type="Rain", slots=("Rain",), summary="Rain"),
+    ))
+
+    drawing = await build_drawing_for_round(league.bot, round_, 3, values=handed)
+
+    assert drawing.phase_description == "Final session forecast"
+    assert drawing.rain_probability == "30%"
+    assert [(s.ordinal, s.name, s.weather_type, s.summary, [x.label for x in s.slots])
+            for s in drawing.sessions] == [
+        (1, "Qualifying", "Mixed", "Rain → Light Cloud", ["Rain", "Light Cloud"]),
+        (2, "Race", "Rain", "Rain", ["Rain"]),
+    ]
+    assert drawing.round_number == "3" and drawing.division_name
 
 
-@pytest.mark.asyncio
-async def test_enablement_is_asked_per_template_not_per_aspect():
+async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound(
+    monkeypatch, tmp_path,
+):
+    png = tmp_path / "w.png"
+    png.write_bytes(b"x")
+    file, lines = await _attach(_bot(), monkeypatch, _drawing(), png=png)
+    assert file is not None and lines == []
+
+
+async def test_the_module_being_off_falls_back_to_text(monkeypatch):
+    """No picture was due, so nothing is said of one."""
+    assert await _attach(_bot(module_on=False), monkeypatch, _drawing()) == (None, [])
+
+
+async def test_the_aspect_being_off_falls_back_to_text(monkeypatch):
+    """No picture was due, so nothing is said of one."""
+    assert await _attach(_bot(aspect_on=False), monkeypatch, _drawing()) == (None, [])
+
+
+async def test_an_invalid_template_falls_back_to_text(monkeypatch):
+    """A picture was due for Division 1's round 4, phase 3, but its template file is too small:
+    the reason is handed back, naming the forecast as a league reads the round, never by its
+    season (#287, B8)."""
+    bot = _bot(template_valid=False)
+    for report in (await bot.image_validity_service.template_reports()).values():
+        report.reason = "the template file is too small"
+    file, lines = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3)
+    assert file is None
+    assert lines == [
+        "⚠️ Weather image — round 4 in **Division 1**, phase 3: the template file is too small"
+    ]
+
+
+async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_path):
     """One of six being invalid must not stop the other five (XIV.4).
 
     A league whose sprint phase 3 file is too small still gets a picture for every round that
     is not a sprint.
     """
+    png = tmp_path / "w.png"
+    png.write_bytes(b"x")
     bot = _bot()
-    good, bad = MagicMock(), MagicMock()
-    good.valid, bad.valid = True, False
+    good, bad = MagicMock(valid=True), MagicMock(valid=False, reason="too small")
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={"weather_p3_template": good, "weather_p3_sprint_template": bad}
     )
-    assert await weather_enabled(bot, "weather_p3_template") is True
-    assert await weather_enabled(bot, "weather_p3_sprint_template") is False
+    drawn, _ = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3, png=png)
+    assert drawn is not None
+    sprint, lines = await _attach(
+        bot, monkeypatch, _drawing("weather_p3_sprint_template"), phase=3, png=png,
+    )
+    assert sprint is None and "too small" in "\n".join(lines)
 
 
-@pytest.mark.asyncio
-async def test_a_reader_that_raises_never_breaks_the_posting():
+@pytest.mark.parametrize(
+    ("round_reads", "named"),
+    [
+        (True, "round 4 in **Division 1**, phase 2"),
+        (False, "phase 2"),
+    ],
+    ids=["round-readable", "round-unreadable"],
+)
+async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_reads, named):
+    """The image settings' switch reader raises "boom" for a phase 2 forecast. The text stands,
+    and the fault is handed back for the log channel, naming the forecast where its round can be
+    read, as a league reads it (round 4 in **Division 1**), and only its phase where reading the
+    round raises too: naming in a log line never fails the line (#287, B3, B8)."""
+    import leaguebot.image.services.image_weather_post as post
+
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await weather_enabled(bot, "weather_p1_template") is False
+    reads = (AsyncMock(return_value=_drawing()) if round_reads
+             else AsyncMock(side_effect=RuntimeError("no round")))
+    monkeypatch.setattr(post, "build_drawing_for_round", reads)
+
+    file, lines = await post.attach_forecast(bot, round_id=1, phase=2, values=_values())
+
+    [line] = lines
+    assert file is None and "boom" in line
+    assert line.startswith(f"⚠️ Weather image — {named}: "), line
 
 
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
 
 
-def test_a_report_names_the_season_division_round_and_phase():
-    what = describe(division_name="Division 1", round_number=4, phase=2, season_number=3)
-    assert "season 3" in what
-    assert "Division 1" in what
-    assert "round 4" in what
-    assert "phase 2" in what
-
-
 def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
-    what = describe(division_name="D", round_number=1, phase=0, season_number=1)
-    assert "mystery notice" in what
+    """A mystery round's notice is named in a picture's failure line as the mystery round notice,
+    never as phase 0 and never as the "mystery notice" (image spec, "Weather image generation",
+    "Generation and posting"; #287, B12)."""
+    what = describe(division_name="D", round_number=1, phase=0)
+    assert what == "round 1 in **D**, the mystery round notice"
     assert "phase 0" not in what
+
+
+@pytest.mark.parametrize(
+    ("reads", "reason"),
+    [
+        (AsyncMock(side_effect=RuntimeError("no round")), "no round"),
+        (AsyncMock(return_value=None), "the round could not be found"),
+    ],
+    ids=["round-read-raises", "round-not-found"],
+)
+async def test_a_mystery_round_notice_whose_round_cannot_be_read_is_named_as_the_notice(
+    monkeypatch, reads, reason,
+):
+    """Weather posts a mystery round's notice, telling the picture it is the notice (phase 0), and
+    the round cannot be read, its read raising or finding nothing. The line still names it the
+    mystery round notice, never as a phase, though no round can be named (#287, B12, p9)."""
+    import leaguebot.image.services.image_weather_post as post
+
+    monkeypatch.setattr(post, "build_drawing_for_round", reads)
+
+    file, lines = await post.attach_forecast(_bot(), round_id=1, phase=0, values=_values())
+
+    [line] = lines
+    assert file is None
+    assert line == f"⚠️ Weather image — the mystery round notice: {reason}", line
+    assert "phase" not in line, line
 
 
 # ── 7. The render result ──────────────────────────────────────────────────
@@ -213,74 +344,71 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
     return bot
 
 
-@pytest.mark.asyncio
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
-    """FR-059 — the picture is posted and the substitution is reported to staff."""
-    import leaguebot.image.services.image_weather_post as post
-
+    """FR-059 — the picture is handed back, and the substitution with it, as a line for the log
+    channel naming what it pertains to: Division 1's round 4, phase 2, as a league reads the
+    round, never by its season (#287, B8)."""
     png = tmp_path / "w.png"
     png.write_bytes(b"x")
-    reported: list = []
-    monkeypatch.setattr(
-        post, "report_notices",
-        AsyncMock(side_effect=lambda bot, what, n: reported.append((what, list(n)))),
-    )
-    monkeypatch.setattr(post, "report", AsyncMock())
-    drawing = MagicMock(
-        template_key="weather_p2_template", division_name="Division 1",
-        round_number="4", season_number="3", is_mystery=False,
-    )
-    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
+    from leaguebot.image.models.image_module import RenderNotice
 
-    bot = _attach_bot(notices=["fallback used"])
+    bot = _attach_bot(notices=[RenderNotice(
+        image_type="weather_p2_template", notice_kind="ASSET_FALLBACK_USED",
+        detail="fallback used", field_id="weather_icon",
+    )])
     bot.image_render_service.render_for_posting.return_value.png_paths = [str(png)]
 
-    result = await post.attach_forecast(bot, round_id=1, phase=2)
+    result, lines = await _attach(bot, monkeypatch, _drawing())
 
     assert result is not None, "a substituted asset must not stop the graphic"
-    assert len(reported) == 1
-    what, notices = reported[0]
-    assert notices == ["fallback used"]
-    # Season, division, round and phase — so a manager can find what it pertains to.
-    for part in ("season 3", "Division 1", "round 4", "phase 2"):
-        assert part in what, part
+    said = "\n".join(lines)
+    assert "fallback used" in said
+    # The round as a league reads it, and the phase — so a manager can find what it pertains to.
+    assert "Image render notices — round 4 in **Division 1**, phase 2:" in said, said
+    assert "season" not in said, said
+
+
+async def test_attach_forecast_hands_render_for_posting_no_bot(monkeypatch, tmp_path):
+    """Division 1's round 4, phase 2, drawn with a substituted weather icon: the render gives one
+    notice. The render is handed no bot, so it reports nothing itself, and the notice comes back
+    once, as a line for the post job to write to the log channel (#287, B3)."""
+    png = tmp_path / "w.png"
+    png.write_bytes(b"x")
+    from leaguebot.image.models.image_module import RenderNotice
+
+    bot = _attach_bot(notices=[RenderNotice(
+        image_type="weather_p2_template", notice_kind="ASSET_FALLBACK_USED",
+        detail="fallback used", field_id="weather_icon",
+    )])
+    bot.image_render_service.render_for_posting.return_value.png_paths = [str(png)]
+
+    result, lines = await _attach(bot, monkeypatch, _drawing())
+
+    rendered = bot.image_render_service.render_for_posting
+    assert rendered.await_count == 1
+    assert rendered.await_args.kwargs.get("bot") is None
+    assert result is not None
+    assert "\n".join(lines).count("fallback used") == 1
 
 
 def test_no_notice_and_no_problem_reaches_a_forecast_channel():
-    """SC-005 — this module reports through the log-channel reporters and nowhere else."""
+    """SC-005 — this module posts nowhere: what it reports, it hands back to the post job, whose
+    lines go to the log channel."""
     import inspect
 
     import leaguebot.image.services.image_weather_post as post
-
-    source = inspect.getsource(post.attach_forecast)
-    assert "report_notices(" in source and "report(" in source
 
     module_source = inspect.getsource(post)
     for forbidden in ("post_forecast", "forecast_channel_id", "channel.send"):
         assert forbidden not in module_source, forbidden
 
 
-@pytest.mark.asyncio
 async def test_a_problem_is_reported_and_the_text_stands_instead(monkeypatch):
-    import leaguebot.image.services.image_weather_post as post
-
-    reported: list = []
-    monkeypatch.setattr(post, "report_notices", AsyncMock())
-    monkeypatch.setattr(
-        post, "report",
-        AsyncMock(side_effect=lambda bot, what, detail: reported.append(detail)),
-    )
-    drawing = MagicMock(
-        template_key="weather_p3_template", division_name="D",
-        round_number="1", season_number="1", is_mystery=False,
-    )
-    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
-
     bot = _attach_bot(draws=False, problem="no fallback in that directory")
-    result = await post.attach_forecast(bot, round_id=1, phase=3)
+    result, lines = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3)
 
     assert result is None, "the caller must post the textual forecast"
-    assert reported == ["no fallback in that directory"]
+    assert "no fallback in that directory" in "\n".join(lines)
 
 
 # ── 10. The mystery notice's posting (T047, FR-052, FR-053) ───────────────

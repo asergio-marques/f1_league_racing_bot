@@ -30,7 +30,6 @@ CREATE TABLE sessions (
     round_id            INTEGER NOT NULL,
     session_type        TEXT    NOT NULL,
     phase2_slot_type    TEXT,   -- 'rain' | 'mixed' | 'sunny'
-    phase3_slots        TEXT,   -- JSON array of weather strings
     FOREIGN KEY (round_id) REFERENCES rounds(id)
 );
 CREATE INDEX idx_sessions_round ON sessions(round_id);
@@ -39,13 +38,17 @@ CREATE INDEX idx_sessions_round ON sessions(round_id);
 CREATE TABLE phase_results (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id      INTEGER NOT NULL,
-    phase_number  INTEGER NOT NULL,
+    phase_number  INTEGER NOT NULL CHECK (phase_number IN (1, 2, 3)),
     payload       TEXT    NOT NULL,  -- JSON blob: inputs + outputs
-    status        TEXT    NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | INVALIDATED
+    status        TEXT    NOT NULL DEFAULT 'ACTIVE'
+                      CHECK (status IN ('ACTIVE', 'INVALIDATED')),
     created_at    TEXT    NOT NULL,
     FOREIGN KEY (round_id) REFERENCES rounds(id)
 );
 CREATE INDEX idx_phase_results_round ON phase_results(round_id);
+-- A phase has one standing draw: a withdrawn one is kept beside it, as many as were withdrawn.
+CREATE UNIQUE INDEX uq_phase_results_standing
+    ON phase_results(round_id, phase_number) WHERE status = 'ACTIVE';
 
 -- forecast_messages
 CREATE TABLE "forecast_messages" (
@@ -510,9 +513,11 @@ CREATE TABLE "rounds" (
     format          TEXT    NOT NULL,  -- NORMAL | SPRINT | MYSTERY | ENDURANCE
     track_name      TEXT,
     scheduled_at    TEXT    NOT NULL,  -- ISO 8601 UTC with its offset, e.g. 2025-06-15T18:00:00+00:00
-    phase1_done     INTEGER NOT NULL DEFAULT 0,
+    phase1_done     INTEGER NOT NULL DEFAULT 0,  -- weather's: 1 while a Phase 1 forecast's draw stands
     phase2_done     INTEGER NOT NULL DEFAULT 0,
     phase3_done     INTEGER NOT NULL DEFAULT 0,
+    mystery_notice_given INTEGER NOT NULL DEFAULT 0,  -- weather's: 1 once a mystery round's notice is
+                                                      -- recorded; it is no forecast, so no phase flag
     checkin_cleared INTEGER NOT NULL DEFAULT 0,  -- 1 once no call is owed: the check-in cleanup has run,
                                                  -- or a restart gave up a call whose deadline had passed
     not_held        INTEGER NOT NULL DEFAULT 0,  -- 1 where the round ended CANCELLED because every session

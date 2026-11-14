@@ -41,6 +41,7 @@ from tests.support.change_queue import (
     member,
     run_queue,
     seed_server,
+    step_rows,
     stopped_job,
 )
 from tests.support.settings_league import audit_rows, last_said, unruled
@@ -505,13 +506,16 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
 
 async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_off(cog, db_path):
     """The season is in Configuration, and a part is signed up to the bot's hook for clearing what
-    test mode posted (weather's deletion of each forecast). Switching test mode on calls it not
-    at all; switching it off calls it once, as a job of the toggle's own change after its save, so
-    the flag already reads off, and asks no change of its own of the queue."""
+    test mode posted, beside weather's. Switching test mode on asks it not at all; switching it off
+    asks it once, inside the toggle's save and handed the save's connection, on which the flag
+    already reads off. The jobs the parts hand back run as jobs of the toggle's own change after
+    its save and before the saved backup's deletion: weather's `flush_forecasts`, which core
+    plans under no name of its own. No change of its own is asked of the queue."""
     flag_when_called: list[bool] = []
 
-    async def watching(*_args: Any) -> tuple[()]:
-        flag_when_called.append(await _flag(db_path))
+    async def watching(db: Any, *_args: Any, **_kwargs: Any) -> tuple[()]:
+        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
+        flag_when_called.append(bool((await cursor.fetchone())["test_mode_active"]))
         return ()
 
     cog.bot.test_mode_flushed.subscribe(watching)
@@ -522,7 +526,12 @@ async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_
     await _toggle(cog)  # off
 
     assert flag_when_called == [False]
-    assert "weather.forecast.flush" not in [row["kind"] for row in await change_rows(db_path)]
+    changes = await change_rows(db_path)
+    assert "weather.forecast.flush" not in [row["kind"] for row in changes]
+    assert [row["name"] for row in await step_rows(db_path, changes[-1]["id"])] == [
+        "save", "flush_forecasts", "discard_backup",
+    ]
+    assert await stopped_job(db_path) is None
 
 
 # ── Judged again as it starts, a repeat, and a fault ─────────────────────────

@@ -47,13 +47,14 @@ DELETE_REPLACED = "delete_replaced"
 
 def replaced(
     channel_id: int | None, old: int | str | None, new: int | None, *, what: str,
-    division_name: str,
+    division_name: str, name: str = DELETE_REPLACED,
 ) -> tuple[PlannedStep, ...]:
     """The job that deletes *old*, the message a post replaced, or none where there is nothing to
-    delete: no old message, the old one being the new one, or no channel to look in."""
+    delete: no old message, the old one being the new one, or no channel to look in. A module
+    whose deletion wears a name of its own (weather's `delete_forecast_part`) plans it as *name*."""
     if old is None or channel_id is None or (new is not None and int(old) == int(new)):
         return ()
-    return (PlannedStep(DELETE_REPLACED, {
+    return (PlannedStep(name, {
         "channel_id": channel_id, "message_id": int(old), "what": what,
         "division_name": division_name,
     }),)
@@ -144,10 +145,11 @@ async def remove_kept(bot: LeagueBot, kept: Mapping[str, Any] | None) -> None:
         ) from failure
 
 
-def not_deleted(view: StepView) -> str | None:
-    """The line naming a discarded `delete_replaced` for deletion by hand, or None for any other
-    step or one not discarded."""
-    if view.name != DELETE_REPLACED or not (view.result or {}).get("discarded"):
+def not_deleted(view: StepView, name: str = DELETE_REPLACED) -> str | None:
+    """The line naming a discarded `delete_replaced` (or the step of *name* a module built through
+    `delete_replaced_step`) for deletion by hand, or None for any other step or one not
+    discarded."""
+    if view.name != name or not (view.result or {}).get("discarded"):
         return None
     payload = view.payload
     link = (view.result or {}).get("link") or f"in <#{payload['channel_id']}>"

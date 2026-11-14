@@ -215,21 +215,26 @@ class LeagueBot(commands.Bot):
     #: given the round ids and, inside a save, the save's connection (the database's path is bound
     #: as it signs up, for the rest). The builder makes it and signs weather up, so that core reads
     #: no column of weather's own (architecture.md, "A hook core declares is a list of
-    #: subscribers").
+    #: subscribers"). `/season status` is the one asker left.
     phases_drawn_read: AwaitedHook
-    #: The moments of a round amended, each module signing up its part: inside the save, each
+    #: The moments of a round amended, each module signing up its part: as the amendment is
+    #: judged, each module's part of the judgement (`amendment_judged`), asked when the amendment is
+    #: offered and again inside the save on its connection, each answering an `AmendmentPart` of
+    #: what it refuses, warns of, notes and keeps for the save; inside the save, each
     #: module's part of the amendment on the save's connection (each hands back what the arming
     #: reads of it, kept in the save's result), then, as the round is armed again, the posts each
     #: module owes (`round_armed`) and the clean-ups due a day after the round
     #: (`round_clean_ups_due`), each handing back the steps it plans. The builder makes them and
     #: hands them to the amendment and the re-arming of a round (architecture.md, "A hook core
     #: declares is a list of subscribers").
+    amendment_judged: AwaitedHook
     round_amended: AwaitedHook
     round_armed: AwaitedHook
     round_clean_ups_due: AwaitedHook
     #: The steps each module defines for the amendment of a round and its arming again, by name
     #: (each subscriber hands back its definitions), and the words an outcome gives a step left
-    #: undone (each hands back a thing and what to do, or None for a step not its own).
+    #: undone (each is handed the discarded step and the change's steps, and hands back a thing and
+    #: what to do, `()` for a step of its own with nothing to name, or None for a step not its own).
     amendment_steps: Hook
     amendment_step_failure: Hook
     #: The moment the bot's in-memory state is cleared (`/bot pack`, `/bot factory-reset`): each

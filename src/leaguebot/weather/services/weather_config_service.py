@@ -9,7 +9,8 @@ Ordering invariant (enforced before every write):
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -29,21 +30,39 @@ _DEFAULTS = WeatherPipelineConfig()  # default field values only
 DEADLINE_COLUMNS = ("phase_1_days", "phase_2_days", "phase_3_hours")
 
 
-async def round_window(
-    modules: "ModuleService", db_path: str, *, amending: bool
-) -> WeatherWindows | None:
+#: The name weather keeps its horizons under in what its part of an amendment's judgement keeps,
+#: which core stores as it is given and hands back (`amendment_judged`, `round_armed`).
+WINDOWS_KEPT = "weather_windows"
+
+
+def windows_of(config: WeatherPipelineConfig) -> WeatherWindows:
+    """The horizons of a stored configuration."""
+    return WeatherWindows(config.phase_1_days, config.phase_2_days, config.phase_3_hours)
+
+
+def windows_kept(kept: Mapping[str, Any]) -> WeatherWindows | None:
+    """The horizons weather's part of an amendment's judgement kept, in what core hands back as
+    *kept*, or None where it kept none: a record made before the horizons were kept, or none."""
+    stored = kept.get(WINDOWS_KEPT)
+    return WeatherWindows(**stored) if stored is not None else None
+
+
+async def windows_read(db_path: str) -> WeatherWindows:
+    """The horizons the league has now, read on a connection of their own."""
+    return windows_of(await get_weather_pipeline_config(db_path))
+
+
+async def windows_kept_or_read(kept: Mapping[str, Any], db_path: str) -> WeatherWindows:
+    """The horizons *kept* holds, or, where it holds none, those the league has now, read afresh."""
+    return windows_kept(kept) or await windows_read(db_path)
+
+
+async def round_window(modules: "ModuleService", db_path: str) -> WeatherWindows | None:
     """Weather's part of a round's timing windows read: its three horizons, or None where the
-    module is off. For an amendment the window counts whatever the module's switch, because a
-    forecast posted while weather was on is still posted, and whether it survives the amendment is
-    what the track and format rules turn on."""
-    if not amending and not await modules.is_weather_enabled():
+    module is off."""
+    if not await modules.is_weather_enabled():
         return None
-    config = await get_weather_pipeline_config(db_path)
-    return WeatherWindows(
-        phase_1_days=config.phase_1_days,
-        phase_2_days=config.phase_2_days,
-        phase_3_hours=config.phase_3_hours,
-    )
+    return await windows_read(db_path)
 
 
 async def review_section(

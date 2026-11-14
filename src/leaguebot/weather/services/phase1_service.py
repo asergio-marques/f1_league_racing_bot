@@ -17,7 +17,9 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.weather.models.forecast import Drawn
+from leaguebot.core.services.rounds.track_service import get_track_by_name
+from leaguebot.core.services.seasons.season_service import round_called_on
+from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_rpc_beta
 from leaguebot.weather.utils.message_builder import phase_log_message
@@ -33,31 +35,30 @@ async def draw_phase1_on(
     Writes the draw (``phase_results``, created at *now*) and ``phase1_done`` on the connection
     it is handed, so they stand or fall with the save that made them. Returns the `Drawn`: the
     payload and its calculation line, which the save writes beside the draw, or the BLOCKED line
-    where the circuit's parameters cannot be resolved or sampled (nothing written).
+    where the round names no circuit or its parameters cannot be resolved or sampled (nothing
+    written). Each line names the round as a league reads it, "round 3 in **Pro**".
 
     Produces nothing at all, and says so by a `Drawn` with no payload and no line, while the
     weather module is disabled, for a round that is cancelled, or whose division is, and for
     a phase already done; see ``draw_guard`` for why the draw itself refuses.
     """
-    row = await round_if_due(db, round_id, label="Phase 1", done_column="phase1_done")
+    row = await round_if_due(db, round_id, label="Phase 1", phase=1)
     if row is None:
         return Drawn(1)
 
-    track_name = row["track_name"]
+    called = await round_called_on(db, round_id)
+    track_name = row.facts.track_name
     if not track_name:
-        log.error("Phase 1: round %s has no track_name", round_id)
-        return Drawn(1)
+        err_msg = f"\u26a0\ufe0f Phase 1 BLOCKED for {called}: the round names no circuit."
+        log.error(err_msg)
+        return Drawn(1, line=err_msg, blocked=True)
 
-    # --- Resolve (mu, sigma) from the tracks table ---
-    track_cursor = await db.execute(
-        "SELECT mu, sigma FROM tracks WHERE name = ?",
-        (track_name,),
-    )
-    track_row = await track_cursor.fetchone()
+    # --- Resolve (mu, sigma) from the tracks table, through core's reader of it ---
+    track_row = await get_track_by_name(db, track_name)
 
     if track_row is None:
         err_msg = (
-            f"\u26a0\ufe0f Phase 1 BLOCKED for round {round_id} ({track_name}): "
+            f"\u26a0\ufe0f Phase 1 BLOCKED for {called} ({track_name}): "
             "no track row found in the database for this circuit."
         )
         log.error(err_msg)
@@ -71,7 +72,7 @@ async def draw_phase1_on(
         raw_draw, rpc = compute_rpc_beta(mu, sigma)
     except ValueError as exc:
         err_msg = (
-            f"\u26a0\ufe0f Phase 1 BLOCKED for round {round_id} ({track_name}): "
+            f"\u26a0\ufe0f Phase 1 BLOCKED for {called} ({track_name}): "
             f"Beta sampling failed — {exc}"
         )
         log.error(err_msg)
@@ -96,8 +97,8 @@ async def draw_phase1_on(
 
     await db.execute(
         "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
-        "VALUES (?, 1, ?, 'ACTIVE', ?)",
-        (round_id, json.dumps(payload), now.isoformat()),
+        "VALUES (?, 1, ?, ?, ?)",
+        (round_id, json.dumps(payload), PhaseResultStatus.ACTIVE.value, now.isoformat()),
     )
     await db.execute(
         "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
@@ -105,5 +106,7 @@ async def draw_phase1_on(
     )
     log.info("Phase 1 drawn for round %s — Rpc=%.2f", round_id, rpc)
     return Drawn(
-        1, payload=payload, line=phase_log_message(1, round_id, track_name, payload), written=True
+        1, payload=payload, line=phase_log_message(
+            1, called, track_name, payload
+        ), written=True
     )

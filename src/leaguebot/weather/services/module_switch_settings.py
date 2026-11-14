@@ -12,8 +12,8 @@ column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 (`docs/design/architecture.md`, "How modules and core fit together"): the flag going down and its
 audit entry share one save, and only once that has run does an `After` step call
 `SchedulerService.cancel_all_weather`. Doing the jobs' removal after the flag rather than before is
-safe only because every weather job reads the flag first and does nothing while it is off (core
-specification, "A disabled module shall produce nothing … a scheduled job"; pinned by
+safe only because the flag is read by each weather change's check, which drops the job while it
+is off (core specification, "A disabled module shall produce nothing … a scheduled job"; pinned by
 `tests/weather/test_weather_module_gate.py`,
 `test_phase_runner_produces_nothing_while_weather_is_disabled` among them, and the draws, posts and
 clean-up's own guards). A fault removing the jobs follows `setting_change`'s rule for a step after

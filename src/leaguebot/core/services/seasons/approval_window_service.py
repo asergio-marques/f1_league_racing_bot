@@ -11,8 +11,8 @@ horizons. Approve a season late enough and some of those moments are already beh
 Unchecked, what happens then is silent and different for each module. `schedule_attendance_round`
 skips a past-dated job and logs a line nobody reads, so the round asks nobody whether they are
 racing, distributes no reserves, and is recorded afterwards as perfect attendance for the whole
-division. The weather jobs are armed regardless, and the scheduler discards them for being past its
-five-minute misfire grace — recoverable, but only if the host happens to restart before the race.
+division. The weather jobs are armed regardless and, having no lateness limit, a past-dated one fires at
+once: a phase whose horizon had passed would be drawn the moment the season is approved.
 
 This module is the check that makes both unreachable from approval. It computes nothing and
 decides nothing about what to do; it reports which windows have passed, and
@@ -23,10 +23,11 @@ the round or shorten the window, and that is a choice only they can make.
 contributed by the modules that configure them, so a league running neither weather nor
 attendance offers none at all, and a season every round of which is already in the past would
 otherwise be approved in silence. Nothing would recover it: a round's result submission is
-armed against the round's own moment, a job that far behind is thrown away by the scheduler's
-300-second misfire grace rather than run, the round's start (`results.submission.open`) is the
-only route to a submission channel, and that job is the round's one clock-driven transition.
-Every round would stay at *not run* for good. `/round amend` refuses a backwards move on the
+armed against the round's own moment, with no lateness limit, so a job that far behind fires
+at once as the bot starts and the handler results signs up for it decides what becomes of a
+late one, and the round's start (`results.submission.open`) is the only route to a submission
+channel. Opened that late, every round of the season would open its submission at once and find
+its race long run, which is not the round's own moment. `/round amend` refuses a backwards move on the
 same reasoning and in the same words, so the two doors agree.
 
 **A division's faults are reduced to the latest round of each kind.** `calendar_faults` names the
@@ -40,10 +41,9 @@ manager sixty things where two would do, and runs a season built wholly in the p
 elapsed. That is precisely the complement of `schedule_attendance_round`'s own
 ``if fire_at > now``, so the gate and the attendance scheduler cannot disagree about a single
 round: nothing this module reports would have been scheduled, and nothing it passes over would
-have been skipped. For the weather phases it is very slightly stricter than the scheduler's
-300-second misfire grace, which is the safe direction — better to refuse a job that might
-just have squeezed in than to admit one the scheduler will throw away. `test_a_window_exactly
-_now_is_overdue` pins both halves of that. The offsets are not worked out here: they come from
+have been skipped. For the weather phases, whose jobs have no lateness limit, a moment exactly
+now is refused all the same, rather than armed to fire at once. `test_a_window_exactly
+_now_is_overdue` pins the check-in's half. The offsets are not worked out here: they come from
 `round_event_moments`, which the scheduler's arming reads too, so the two cannot drift apart.
 
 Pure by design: no database, no Discord, and ``now`` passed in rather than read from the

@@ -1,7 +1,8 @@
-"""Mystery Notice service — posts a fixed informational notice at the phase 1 horizon.
+"""Mystery Notice service — records the fixed informational notice given at the phase 1 horizon.
 
 It stands in the place of the phase 1 message and shares its horizon, which the league
-configures; see ``phase1_service`` for why no horizon is named as fixed.
+configures; see ``phase1_service`` for why no horizon is named as fixed. It records the notice and
+posts nothing: the post is made by the forecast change, after the record (`forecast_changes`).
 
 Called when a Mystery round's ``weather_p1_s{S}_d{D}_r{N}_id{round_id}`` job fires —
 `ask_forecast` reads the round's format as it does (a mystery round's phase 1 is its notice) — and
@@ -10,8 +11,10 @@ No random draws are performed; no phase_results row is written; no log-channel
 message is produced (FR-008).  The notice is posted to the division's forecast
 channel only, with no role tag (FR-003).
 
-What the notice records, the round's Phase 1 flag, is written on the connection a save hands
-it (`record_mystery_notice_on`); the notice itself is posted after it (`forecast_changes`).
+What the notice records, the round's own notice flag (`rounds.mystery_notice_given`, beside
+the phase flags and no part of them: a notice is no forecast, so no Phase 1 is drawn by it), is
+written on the connection a save hands it (`record_mystery_notice_on`); the notice itself is
+posted after it (`forecast_changes`).
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import logging
 
 import aiosqlite
 
+from leaguebot.core.models.round import RoundFormat
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 
@@ -27,26 +31,26 @@ log = logging.getLogger(__name__)
 
 
 async def record_mystery_notice_on(db: aiosqlite.Connection, round_id: int) -> Drawn:
-    """Mark the notice of *round_id* given, its Phase 1 done, on *db*, committing nothing.
+    """Mark the notice of *round_id* given on *db*, committing nothing.
 
     Nothing is drawn and no line is written (weather specification, FR-008); the flag is the
     whole record, written by the save that goes before the notice's post, so a notice Discord
     refuses no longer leaves the flag set with nothing posted behind it.
 
     Writes nothing, and says so by a `Drawn` with ``written`` false, while the weather module
-    is off (the round's Phase 1 is left undone), for a round that is cancelled, or whose
+    is off (the notice is left undone), for a round that is cancelled, or whose
     division is, where it reads the round after the cancellation is recorded, for the reason
     ``draw_guard`` gives, and for a round amended away from MYSTERY before the notice's turn
     came: the standard amendment-invalidation path already informed drivers.
     """
-    row = await round_if_due(db, round_id, label="Mystery notice", done_column=None)
+    row = await round_if_due(db, round_id, label="Mystery notice", phase=None)
     if row is None:
         return Drawn(0)
-    if row["format"] != "MYSTERY":
+    if row.facts.format != RoundFormat.MYSTERY:
         log.info(
             "Mystery notice: round %s format is now %s (not MYSTERY) — skipping.",
-            round_id, row["format"],
+            round_id, row.facts.format.value,
         )
         return Drawn(0)
-    await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = ?", (round_id,))
+    await db.execute("UPDATE rounds SET mystery_notice_given = 1 WHERE id = ?", (round_id,))
     return Drawn(0, written=True)

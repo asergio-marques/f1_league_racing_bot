@@ -1,15 +1,21 @@
 """A round amended, as the check-in answers it, and the steps test mode's advance asks.
 
 An amendment moves a round and so what its check-in owes, and attendance takes part in it through
-three of core's events, subscribed in wiring:
+these of core's events, subscribed in wiring:
 
+- `amendment_judged` is attendance's part of the judgement (`check_in_amendment_rules`): the
+  deadline refusal and the check-in's two warnings, and whether the check-in is reopened, kept for
+  the save;
 - `round_amended_on` reopens the round's check-in in the amendment's save where the amendment
   reopened it, handing back whether a call stood when the save was made and whether the check-in
   was reopened, kept with the save for the arming to read;
-- `amendment_posts`, when the round is armed again, plans the posts the round now owes of
-  attendance's, in order: the standing call taken down and posted again, or a call posted where
-  none stands, and the deadline run where it passed;
-- `amendment_clean_ups` hands core the clean-ups due.
+- `amendment_posts`, when the round is armed again (`round_armed`), answers a `RoundArming`: the
+  posts the round now owes of attendance's, in order (the standing call taken down and posted
+  again, or a call posted where none stands, and the deadline run where it passed) and the
+  check-in's timers (`CheckInJobs`), armed only while attendance is on;
+- `amendment_clean_ups` hands core the clean-ups due;
+- `check_in_failure` words a step of its own an outcome names as left undone
+  (`amendment_step_failure`).
 
 `amendment_steps` is what an amendment asks of the check-in: the steps of the call, the deadline
 and the clean-up it plans, with the take-down of the call it replaces. `give_up_text_for` words
@@ -26,7 +32,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -39,7 +45,12 @@ from leaguebot.attendance.models.attendance import (
     CHECK_IN_LAST_NOTICE,
 )
 from leaguebot.attendance.services.check_in import rsvp_service
-from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import (
+    WINDOWS_KEPT,
+    AttendanceService,
+    windows_if_on,
+    windows_kept,
+)
 from leaguebot.attendance.services.check_in.check_in_call import (
     check_in_steps,
     close_check_in_on,
@@ -60,15 +71,18 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     call_row,
     standing_call_row,
 )
+from leaguebot.attendance.services.check_in.check_in_amendment_rules import judge_check_in
 from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_steps, take_down_steps
 from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_steps
+from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
-from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round
+from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, CheckInJobs, Round
 from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
-from leaguebot.core.services.rounds.round_steps import judged_windows, named_now
+from leaguebot.core.services.rounds.round_steps import judge_kept, named_now
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceOutcome,
@@ -82,6 +96,42 @@ if TYPE_CHECKING:
     from leaguebot.core.services.posting.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
+
+
+def part_judged(
+    attendance: AttendanceWindows | None, *, moment: datetime, now: datetime
+) -> AmendmentPart:
+    """Attendance's part of judging an amendment that leaves a round at *moment*, at *now*, by the
+    lead times *attendance* (none where the module is off): the check-in's deadline refusal, its
+    two warnings, and whether the check-in is reopened, which it keeps for the save
+    (`round_amended_on`), with the lead times themselves, as ``attendance_windows``, for the jobs
+    that follow (`windows_kept`). Pure."""
+    part = judge_check_in(moment=moment, now=now, windows=attendance).part
+    if attendance is None:
+        return part
+    return dataclasses.replace(
+        part, kept={**part.kept, WINDOWS_KEPT: dataclasses.asdict(attendance)}
+    )
+
+
+async def amendment_judged(
+    db: aiosqlite.Connection | None,
+    rnd: Round,
+    changes: Mapping[str, Any],
+    *,
+    moment: datetime,
+    now: datetime,
+    windows: AttendanceWindows | None = None,
+    **_context: Any,
+) -> AmendmentPart:
+    """Attendance's part of judging an amendment of *rnd* that leaves it at *moment*, at *now*, by
+    the lead times the league has, which core hands it none of: in a save they are read on *db*,
+    the connection of the save that judges it again, and asked outside one they are *windows*,
+    which `wiring` reads through the module's own reader (none where the module is off)
+    (`part_judged`). Subscribed to core's `amendment_judged`."""
+    return part_judged(
+        windows if db is None else await windows_if_on(db), moment=moment, now=now
+    )
 
 
 async def round_amended_on(
@@ -126,14 +176,14 @@ async def amendment_posts(
     *,
     rnd: Round,
     kept: Mapping[str, Any],
-    attendance: AttendanceWindows | None,
     now: Callable[[], datetime],
     **_context: Any,
-) -> tuple[PlannedStep, ...]:
-    """The posts an amendment owes of attendance's, in order, planned as the round is armed
-    again, reading the round's call on *db*: the check-in call taken down and posted again, or
-    posted where none stands, and the deadline run where it passed. Subscribed to core's
-    `round_armed`.
+) -> RoundArming:
+    """What attendance owes the round armed again, reading the round's call on *db*: the posts, in
+    order (the check-in call taken down and posted again, or posted where none stands, and the
+    deadline run where it passed), and the check-in's timers at the lead times *attendance*, armed
+    only while attendance is on, the lead times being those the judgement kept
+    (`windows_kept`), read afresh where it kept none. Subscribed to core's `round_armed`.
 
     A call that stood at the save (*kept*, `round_amended_on`) is taken down and its post planned
     with it, the post judging when it runs whether the call is due then: the take-down can stop on
@@ -143,6 +193,7 @@ async def amendment_posts(
     the timer's. A standing call left in place whose deadline has passed with no distribution
     recorded has its deadline run, as the start-up recovery runs it.
     """
+    attendance = windows_kept(kept) or await windows_if_on(db)
     found = await _amendment_standing(db, round_id)
     taking_down = bool(kept.get("reopened") and kept.get("called"))
     call_left = bool(found["called"]) and not taking_down
@@ -164,7 +215,11 @@ async def amendment_posts(
     if (attendance is not None and call_left and found["undistributed"]
             and _deadline_passed(rnd, attendance, now)):
         planned.append(PlannedStep(DISTRIBUTE))
-    return tuple(planned)
+    armed = attendance is not None and await attendance_enabled_on(db)
+    return RoundArming(
+        steps=tuple(planned),
+        jobs=CheckInJobs(windows=attendance) if armed and attendance is not None else None,
+    )
 
 
 async def amendment_clean_ups(
@@ -271,9 +326,14 @@ def amendment_steps(
             taking_down.result or {}
         )
 
-    def window(ctx: StepContext) -> AttendanceWindows | None:
-        """The window the amendment's judging kept, which the call is judged against."""
-        return judged_windows(ctx)[0]
+    async def window(ctx: StepContext) -> AttendanceWindows | None:
+        """The lead times the amendment's judging kept, which the call is judged against, read
+        afresh where it kept none; none where attendance is off."""
+        kept = windows_kept(judge_kept(ctx.steps))
+        if kept is not None:
+            return kept
+        async with get_connection(ctx.db_path) as db:
+            return await windows_if_on(db)
 
     async def call_state(db_path: str, round_id: int) -> tuple[bool, bool]:
         """Whether a call stands for the round, and whether its check-in is over
@@ -299,7 +359,7 @@ def amendment_steps(
         if not await modules.is_attendance_enabled():
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
-        if rnd is None or not _call_fell_due(rnd, window(ctx), now):
+        if rnd is None or not _call_fell_due(rnd, await window(ctx), now):
             return False
         standing, cleared = await call_state(ctx.db_path, rnd.id)
         if cleared:
@@ -332,7 +392,7 @@ def amendment_steps(
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
-        attendance = window(ctx)
+        attendance = await window(ctx)
         if attendance is not None and _deadline_passed(rnd, attendance, now):
             standing, cleared = await call_state(ctx.db_path, rnd.id)
             if standing or cleared:
@@ -395,6 +455,99 @@ def amendment_steps(
         DELETE_MESSAGE: clean_up[DELETE_MESSAGE],
         MARK_CLEARED: clean_up[MARK_CLEARED],
     }
+
+
+_CALL_VANISHED = (
+    "check-in call",
+    "it could not be posted again and none can be seen; post it by hand with "
+    "`/attendance post-check-in` once the cause is cleared (or the check-in channel is set), and "
+    "see the log channel",
+)
+_EARLIER_CALL_KEPT = (
+    "check-in call",
+    "it could not be posted again, so the earlier call was kept and its answers count; see the "
+    "log channel",
+)
+
+
+def check_in_failure(
+    view: StepView, steps: Sequence[StepView]
+) -> tuple[str, str] | tuple[()] | None:
+    """What a league admin's discard of one of attendance's jobs leaves, as a core outcome names
+    it: the thing and what to do, `()` for a job of attendance's that leaves nothing of its own to
+    name, or None for a job that is not attendance's. Subscribed to core's
+    `amendment_step_failure`, which hands the discarded job and every job of the change (*steps*).
+
+    A take-down of the call and the posting of it again are named together, once: a call that
+    could not be posted again and none can be seen, or whose earlier call was kept, is named by the
+    take-down where that was discarded too, and the posting names it alone otherwise.
+    """
+    def last(name: str) -> StepView | None:
+        return next((each for each in reversed(steps) if each.name == name), None)
+
+    def gone(each: StepView | None) -> bool:
+        return each is not None and "discarded" in (each.result or {})
+
+    result = view.result or {}
+    if view.name == TAKE_DOWN_CALL:
+        posting = last(POST_CALL)
+        posted = (posting.result if posting is not None else None) or {}
+        if posted.get("vanished"):
+            return _CALL_VANISHED
+        if posted.get("earlier_left"):
+            return _EARLIER_CALL_KEPT
+        ids = ", ".join(str(one) for one in result.get("undeleted", []))
+        return (
+            "check-in call",
+            f"{len(result.get('undeleted', []))} message(s) could not be deleted and must be "
+            f"removed by hand (ids {ids})",
+        )
+    if view.name == POST_CALL:
+        if (result.get("vanished") or result.get("earlier_left")) and gone(last(TAKE_DOWN_CALL)):
+            return ()
+        if result.get("vanished"):
+            return _CALL_VANISHED
+        if result.get("earlier_left"):
+            return _EARLIER_CALL_KEPT
+        return (
+            "check-in call",
+            "the call could not be posted again, and a league admin discarded it; post it with "
+            "`/attendance post-check-in`",
+        )
+    if view.name == DISTRIBUTE:
+        return (
+            "check-in deadline",
+            "the reserves were not distributed, and a league admin discarded it; it is run when "
+            "the bot next starts, while the call stands",
+        )
+    if view.name == LOCK_CALL:
+        return (
+            "check-in call",
+            "the buttons could not be taken off the call at its deadline, and a league admin "
+            "discarded it; the placements stand, and the call can be taken down by hand",
+        )
+    if view.name == ANNOUNCE:
+        return (
+            "reserve announcement",
+            "the reserves' announcement could not be posted, and a league admin discarded it; the "
+            "placements stand",
+        )
+    if view.name == CLEAN_UP_CHECK_IN:
+        return (
+            "check-in call",
+            "the check-in was not taken down a day after the round, and a league admin discarded "
+            "it; it is taken down when the bot next starts",
+        )
+    if view.name == DELETE_MESSAGE:
+        # Named by the link its refused deletion kept, for an admin to open; by its channel where
+        # it kept none.
+        link = result.get("link") or f"in <#{view.payload.get('channel_id')}>"
+        return (
+            "check-in call",
+            f"the {view.payload.get('what', 'message')} could not be deleted a day after the "
+            f"round, and a league admin discarded it; delete it by hand ({link})",
+        )
+    return None
 
 
 def advance_steps(queue: ChangeQueue, db_path: str) -> dict[str, AdvanceStep]:

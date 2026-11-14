@@ -11,9 +11,11 @@ the sheet in `attendance_sheet` and the sanctions in `attendance_sanctions`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
+from typing import Any
 
 import aiosqlite
 
@@ -25,6 +27,7 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import AttendanceWindows
 from leaguebot.core.services.drivers.driver_service import profile_id_of_current_account
 from leaguebot.core.services.seasons.season_service import division_rounds_in_order_on
 
@@ -128,6 +131,44 @@ def rsvp_lock(
     if found == "ACCEPTED":
         return RsvpOutcome.LOCKED_ACCEPTED if now >= deadline_at else None
     return RsvpOutcome.LOCKED_AT_START if now >= start else None
+
+
+async def windows_on(db: aiosqlite.Connection) -> AttendanceWindows:
+    """The check-in's three lead times as the league has them, read on *db*: the stored row's, or
+    the schema's own column defaults where none is stored, writing nothing."""
+    columns = ("rsvp_notice_days", "rsvp_last_notice_hours", "rsvp_deadline_hours")
+    row = await (await db.execute(f"SELECT {', '.join(columns)} FROM attendance_config LIMIT 1")).fetchone()
+    if row is not None:
+        found = {column: int(row[column]) for column in columns}
+    else:
+        cursor = await db.execute(
+            "SELECT name, dflt_value FROM pragma_table_info('attendance_config') "
+            "WHERE name IN (?, ?, ?)", columns
+        )
+        found = {each["name"]: int(each["dflt_value"]) for each in await cursor.fetchall()}
+    return AttendanceWindows(
+        notice_days=found["rsvp_notice_days"],
+        last_notice_hours=found["rsvp_last_notice_hours"],
+        deadline_hours=found["rsvp_deadline_hours"],
+    )
+
+
+async def windows_if_on(db: aiosqlite.Connection) -> AttendanceWindows | None:
+    """`windows_on`, or None where attendance is off: a league without it has no check-in to lose
+    or to be inside the window of."""
+    return await windows_on(db) if await attendance_enabled_on(db) else None
+
+
+#: The name attendance keeps its lead times under in what its part of an amendment's judgement
+#: keeps, which core stores as it is given and hands back (`amendment_judged`, `round_armed`).
+WINDOWS_KEPT = "attendance_windows"
+
+
+def windows_kept(kept: Mapping[str, Any]) -> AttendanceWindows | None:
+    """The lead times attendance's part of an amendment's judgement kept, in what core hands back
+    as *kept*, or None where it kept none: attendance off, or a record made before they were kept."""
+    stored = kept.get(WINDOWS_KEPT)
+    return AttendanceWindows(**stored) if stored is not None else None
 
 
 class AttendanceService:

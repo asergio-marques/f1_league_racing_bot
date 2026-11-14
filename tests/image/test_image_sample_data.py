@@ -11,13 +11,6 @@ class TestWeatherSampleData:
         from tests.support.image_sample_data import build_weather_drawing
         return build_weather_drawing(None, key)
 
-    def test_the_rain_likelihood_is_not_a_whole_percentage(self):
-        """FR-062 — so that the whole-number rounding is visible in the render."""
-        from tests.support.image_sample_data import SAMPLE_RAIN_PROBABILITY
-
-        assert SAMPLE_RAIN_PROBABILITY * 100 != int(SAMPLE_RAIN_PROBABILITY * 100)
-        assert self._drawing("weather_p1_template").rain_probability == "30%"
-
     def test_the_two_phase_two_rounds_show_all_three_weather_types(self):
         """FR-063."""
         types = set()

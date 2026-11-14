@@ -165,3 +165,21 @@ class WeatherWindows:
     phase_1_days: int
     phase_2_days: int
     phase_3_hours: int
+
+
+@dataclass(frozen=True)
+class ForecastJobs:
+    """What a module asks the scheduler to arm of a round's forecasts, as the round is armed again:
+    the horizons the phases fall at and the phases *skip_phases* a job of the amendment draws at
+    once instead, which a timer armed with no lateness limit would otherwise draw a second time."""
+
+    windows: WeatherWindows
+    skip_phases: frozenset[int] = frozenset()
+
+
+@dataclass(frozen=True)
+class CheckInJobs:
+    """What a module asks the scheduler to arm of a round's check-in, as the round is armed again:
+    the lead times its call, its last notice and its deadline fall at."""
+
+    windows: AttendanceWindows

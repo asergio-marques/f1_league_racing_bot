@@ -16,14 +16,18 @@ whose every session was entered as not held is not**: it ends cancelled, but its
 armed and come down a day after its start like any round raced (#439, slice 8, Part E). **A completed season is not**: the
 live jobs fire after a season completes, and the catch-up does what they would have.
 
-**Each module's gate applies.** Weather's is asked here; attendance's is the check-in
-clean-up change's own, which this asks of the queue for every due round.
+**Each module's gate applies.** Weather's is the start-up sweep's, which passes over its step
+where it is switched off (#287); attendance's is the check-in clean-up change's own, which this
+asks of the queue for every due round.
 
 The two cleanups themselves are tested elsewhere; here they are stubbed, and what is pinned is
 which rounds reach them. Both are asked of the change queue (#439): the forecast's through
 weather's `ask_forecast_clean_up`, patched in `forecast_changes`, and the check-in's through
 attendance's `ask_check_in_clean_up` (slice 6b), read off the change queue's asks; attendance's
-is run as its "missed check-in clean-ups" start-up step, the queue's clock its moment.
+is run as its "missed check-in clean-ups" start-up step, the queue's clock its moment. Weather's
+is run likewise, as its "missed forecast clean-ups" start-up step, and a round whose ask fails
+stops none of the others: the failures are raised once at the end, as weather's own
+`RecoveryFailed`, which the sweep reports in the log channel (#287).
 """
 from __future__ import annotations
 
@@ -34,13 +38,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather import wiring as weather_wiring
+from tests.support.start_up_sweep import round_failures, run_weather_start_up_step
 
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
 #: The kind the check-in clean-up is asked of the queue under.
 CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
+#: The name weather's start-up step runs under.
+MISSED_FORECAST_CLEAN_UPS = "missed forecast clean-ups"
 
 
 async def _make_db(
@@ -106,22 +112,32 @@ async def _make_db(
     return db_path
 
 
-def _bot(db_path: str, *, weather_enabled: bool = True) -> MagicMock:
+def _bot(db_path: str) -> MagicMock:
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
     return bot
 
 
+def _check_ins_asked(bot) -> list[int]:
+    """The rounds whose check-in clean-up the bot's change queue was asked for, in order."""
+    return [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list
+            if call.args[0] == CHECK_IN_CLEAN_UP]
+
+
 async def _recover(
-    bot, *, forecast_error: Exception | None = None
+    bot, *, forecast_error: Exception | None = None, weather_on: bool = True
 ) -> tuple[list[int], list[int]]:
-    """Run the two recoveries in the order the start-up runs them, weather's missed forecast
-    clean-ups and then attendance's "missed check-in clean-ups" start-up step, as
-    `start_up_steps(bot)` gives it, the queue's clock pinned at the host's moment the rounds are
-    timed from. Returns the rounds whose forecast clean-up and whose check-in clean-up they asked
-    the queue for; *forecast_error* makes the forecast clean-up's ask raise."""
+    """Run the two recoveries in the order the start-up runs them, weather's "missed forecast
+    clean-ups" and then attendance's "missed check-in clean-ups" start-up step, each as its
+    module's `start_up_steps(bot)` gives it, the queue's clock pinned at the host's moment the
+    rounds are timed from. Returns the rounds whose forecast clean-up and whose check-in clean-up
+    they asked the queue for; *forecast_error* makes the forecast clean-up's ask raise, and the
+    error weather's step raised is raised again once attendance's step has run, as the sweep goes
+    on to the next step. With *weather_on* False, weather's step is run through the start-up
+    sweep, its switch off."""
     from leaguebot.attendance.wiring import start_up_steps
+    from leaguebot.weather.wiring import start_up_steps as weather_start_up_steps
 
     forecasts: list[int] = []
 
@@ -132,15 +148,22 @@ async def _recover(
 
     bot.change_queue.ask = AsyncMock(return_value=1)
     bot.change_queue.now = MagicMock(return_value=datetime.now(timezone.utc))
+    raised: Exception | None = None
     with patch(
         "leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
         new=AsyncMock(side_effect=_forecast),
     ):
-        await weather_wiring.recover_missed_forecast_clean_ups(bot)
+        if weather_on:
+            try:
+                await dict(weather_start_up_steps(bot))[MISSED_FORECAST_CLEAN_UPS]()
+            except Exception as error:
+                raised = error
+        else:
+            await run_weather_start_up_step(bot, MISSED_FORECAST_CLEAN_UPS, on=False)
         await dict(start_up_steps(bot))["missed check-in clean-ups"]()
-    check_ins = [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list
-                 if call.args[0] == CHECK_IN_CLEAN_UP]
-    return forecasts, check_ins
+    if raised is not None:
+        raise raised
+    return forecasts, _check_ins_asked(bot)
 
 
 # ---------------------------------------------------------------------------
@@ -221,8 +244,26 @@ async def test_the_check_in_clean_up_catch_up_reads_the_queue_s_clock(tmp_path):
 
     await dict(start_up_steps(bot))["missed check-in clean-ups"]()
 
-    assert [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list
-            if call.args[0] == CHECK_IN_CLEAN_UP] == [ROUND_ID]
+    assert _check_ins_asked(bot) == [ROUND_ID]
+
+
+async def test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock(tmp_path):
+    """Round 21 started two hours ago by the host's clock, its Phase 3 forecast standing, while
+    the queue's clock, the bot's, stands a day and three hours after its start. Weather's "missed
+    forecast clean-ups" start-up step judges the round a day past at the queue's clock, and asks
+    its forecast clean-up."""
+    from leaguebot.weather.wiring import start_up_steps
+
+    bot = _bot(await _make_db(tmp_path, hours_since_start=2, check_in=False))
+    bot.change_queue.now = MagicMock(
+        return_value=datetime.now(timezone.utc) + timedelta(hours=25)
+    )
+    asked = AsyncMock(return_value=None)
+
+    with patch("leaguebot.weather.services.forecast_changes.ask_forecast_clean_up", new=asked):
+        await dict(start_up_steps(bot))[MISSED_FORECAST_CLEAN_UPS]()
+
+    assert [call.args[2] for call in asked.await_args_list] == [ROUND_ID]
 
 
 async def test_only_what_is_standing_is_cleaned(tmp_path):
@@ -314,20 +355,29 @@ async def test_a_cancelled_round_is_left_alone(tmp_path, kwargs):
 
 
 async def test_weather_switched_off_keeps_its_forecasts(tmp_path):
-    """Disabling weather cancels its cleanup jobs; the catch-up must not run them anyway. The
-    check-in's gate is attendance's own, in its clean-up change's check."""
+    """Disabling weather cancels its cleanup jobs; the catch-up must not run them anyway. Run
+    through the start-up sweep with weather switched off, weather's step does not run, and no
+    forecast clean-up is asked. The check-in's gate is attendance's own, in its clean-up change's
+    check, and its clean-up is still asked."""
     db_path = await _make_db(tmp_path)
 
-    assert await _recover(_bot(db_path, weather_enabled=False)) == ([], [ROUND_ID])
+    assert await _recover(_bot(db_path), weather_on=False) == ([], [ROUND_ID])
 
 
-async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path, caplog):
-    db_path = await _make_db(tmp_path)
+async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path):
+    """Round 21 is a day past, its forecast and its call standing, and asking its forecast
+    clean-up fails. Weather's step raises its own `RecoveryFailed` naming round 21 with that
+    error, and attendance's step, run after it, still asks the round's check-in clean-up."""
+    from leaguebot.weather.models.recovery_failed import RecoveryFailed
 
-    forecasts, check_ins = await _recover(_bot(db_path), forecast_error=RuntimeError("gone"))
+    bot = _bot(await _make_db(tmp_path))
+    gone = RuntimeError("gone")
 
-    assert check_ins == [ROUND_ID]
-    assert "forecast cleanup failed" in caplog.text
+    with pytest.raises(RecoveryFailed) as raised:
+        await _recover(bot, forecast_error=gone)
+
+    assert raised.value.failures == {ROUND_ID: gone}
+    assert _check_ins_asked(bot) == [ROUND_ID]
 
 
 def _swept_bot(db_path: str) -> MagicMock:
@@ -345,9 +395,8 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
     """The database holding the standing check-in calls cannot be opened. Run through the
     start-up sweep, attendance's "missed check-in clean-ups" step asks no clean-up, and the sweep
     posts one line to the log channel, its failure line for that step, rather than the fault
-    going to the host's log alone."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    going to the host's log alone. The step fails as a whole, for no round, so the line is today's,
+    naming none (#287, B11)."""
     from tests.support.start_up_sweep import run_attendance_start_up_step
 
     bot = _swept_bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
@@ -355,7 +404,10 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
     lines, error = await run_attendance_start_up_step(bot, "missed check-in clean-ups")
 
     assert error is not None
-    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
+    assert lines == [
+        "❌ The bot's start-up step `missed check-in clean-ups` failed — OperationalError. "
+        "The details are in the host's log."
+    ]
     bot.change_queue.ask.assert_not_called()
 
 
@@ -365,10 +417,9 @@ async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_rou
     """Division 1 has two check-in calls standing: round 21's, raced 25 hours ago, and round
     22's, raced 30 hours ago. At the restart the queue refuses round 22's clean-up. Run through
     the start-up sweep, attendance's "missed check-in clean-ups" step still asks round 21's, and
-    the sweep posts one line to the log channel, its failure line for that step; the error the
-    step raised names round 22 alone, with the queue's error."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    the sweep posts one line to the log channel, its failure line for that step, naming round 22
+    in core's form, "round 2 in **Division 1**" (#287, B11); the error the step raised names round
+    22 alone, with the queue's error."""
     from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
 
     db_path = await _make_db(tmp_path, forecast=False)
@@ -401,4 +452,128 @@ async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_rou
     asked = [call.args[1]["round_id"] for call in bot.change_queue.ask.call_args_list]
     assert asked == [22, ROUND_ID]
     assert round_failures(error, module="attendance") == {22: refused}
-    assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
+    assert lines == [
+        "❌ The bot's start-up step `missed check-in clean-ups` failed for round 2 in "
+        "**Division 1** — RecoveryFailed. The details are in the host's log."
+    ]
+
+
+async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
+    tmp_path,
+):
+    """The database holding the standing forecasts cannot be opened. Run through the start-up
+    sweep, weather's "missed forecast clean-ups" step asks no clean-up, and the sweep posts one
+    line to the log channel, its failure line for that step, rather than the fault going to the
+    host's log alone. The step fails as a whole, for no round, so the line is today's, naming none
+    (#287, B11)."""
+    bot = _swept_bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
+    asked = AsyncMock(return_value=None)
+
+    with patch("leaguebot.weather.services.forecast_changes.ask_forecast_clean_up", new=asked):
+        lines, error = await run_weather_start_up_step(bot, MISSED_FORECAST_CLEAN_UPS)
+
+    assert error is not None
+    assert lines == [
+        "❌ The bot's start-up step `missed forecast clean-ups` failed — OperationalError. "
+        "The details are in the host's log."
+    ]
+    asked.assert_not_awaited()
+
+
+@pytest.mark.parametrize("gone, called", [
+    pytest.param(False, "round 2 in **Division 1**", id="round-readable"),
+    # Round 22's rows are deleted as its ask fails, so the error names it as core's
+    # `round_called` names a round no longer there (#287, B10).
+    pytest.param(True, "a round no longer there", id="round-gone"),
+])
+async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path, gone, called):
+    """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
+    22's (its round 2), raced 30 hours ago. At the restart the queue refuses round 22's forecast
+    clean-up, in one case after round 22's rows have been deleted. Run through the start-up sweep,
+    weather's "missed forecast clean-ups" step still asks round 21's, then raises weather's
+    `RecoveryFailed` naming round 22 alone with the queue's error, its message, which the host's
+    log carries, naming it as a league reads it, "round 2 in **Division 1**", or "a round no
+    longer there" where its rows are gone, never by its id 22 (#287, B10); and the sweep posts one
+    line to the log channel, its failure line for that step, naming the round the same way
+    (#287, B11)."""
+    db_path = await _make_db(tmp_path, check_in=False)
+    earlier = datetime.now(timezone.utc) - timedelta(hours=30)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (22, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'FINAL')",
+            (DIVISION_ID, earlier.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO forecast_messages "
+            "(round_id, division_id, phase_number, message_id, posted_at) "
+            "VALUES (22, ?, 3, 900, ?)",
+            (DIVISION_ID, earlier.isoformat()),
+        )
+        await db.commit()
+    bot = _swept_bot(db_path)
+    refused = RuntimeError("the database is locked")
+    asked: list[int] = []
+
+    async def ask(_queue, ask_db_path, round_id):
+        asked.append(round_id)
+        if round_id == 22:
+            if gone:
+                async with get_connection(ask_db_path) as db:
+                    await db.execute("DELETE FROM forecast_messages WHERE round_id = 22")
+                    await db.execute("DELETE FROM rounds WHERE id = 22")
+                    await db.commit()
+            raise refused
+
+    with patch("leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
+               new=AsyncMock(side_effect=ask)):
+        lines, error = await run_weather_start_up_step(bot, MISSED_FORECAST_CLEAN_UPS)
+
+    assert asked == [22, ROUND_ID]
+    assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
+    assert round_failures(error, module="weather") == {22: refused}
+    assert called in str(error) and "22" not in str(error), str(error)
+    assert lines == [
+        f"❌ The bot's start-up step `missed forecast clean-ups` failed for {called} — "
+        "RecoveryFailed. The details are in the host's log."
+    ]
+
+
+async def test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone(tmp_path):
+    """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
+    22's, its start stored without its offset, which no writer produces and the bot refuses to
+    read. Run through the start-up sweep, weather's "missed forecast clean-ups" step still asks
+    round 21's clean-up, then raises weather's `RecoveryFailed` naming round 22 alone, with the
+    `ValueError` its start raised, rather than passing it over in silence; and the sweep posts one
+    line to the log channel, its failure line for that step, naming the round in core's form,
+    "round 2 in **Division 1**" (#287, B11)."""
+    db_path = await _make_db(tmp_path, check_in=False)
+    unreadable = (datetime.now(timezone.utc) - timedelta(hours=30)).replace(tzinfo=None)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (22, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'FINAL')",
+            (DIVISION_ID, unreadable.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO forecast_messages "
+            "(round_id, division_id, phase_number, message_id, posted_at) "
+            "VALUES (22, ?, 3, 900, ?)",
+            (DIVISION_ID, datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+    bot = _swept_bot(db_path)
+    asked = AsyncMock(return_value=None)
+
+    with patch("leaguebot.weather.services.forecast_changes.ask_forecast_clean_up", new=asked):
+        lines, error = await run_weather_start_up_step(bot, MISSED_FORECAST_CLEAN_UPS)
+
+    assert [call.args[2] for call in asked.await_args_list] == [ROUND_ID]
+    assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
+    failures = round_failures(error, module="weather")
+    assert list(failures) == [22]
+    assert isinstance(failures[22], ValueError), failures
+    assert lines == [
+        "❌ The bot's start-up step `missed forecast clean-ups` failed for round 2 in "
+        "**Division 1** — RecoveryFailed. The details are in the host's log."
+    ]

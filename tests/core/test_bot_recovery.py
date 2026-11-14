@@ -78,10 +78,9 @@ async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_
     """Rounds 3 (id 21) and 4 (id 22) of Pro were each being amended when the bot stopped. At the
     restart the queue refuses the request for round 21's lapse. Run through the start-up sweep,
     results' "orphaned amend channels" step still asks round 22's lapse, and the sweep posts one
-    line to the log channel, its failure line for that step; the error the step raised is
-    results' own and names round 21 alone, with the queue's error."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    line to the log channel, its failure line for that step, naming round 21 in core's form,
+    "round 3 in **Pro**" (#287, B11); the error the step raised is results' own and names round 21
+    alone, with the queue's error."""
     from tests.support import review_league as league_of
     from tests.support.change_queue import change_rows
     from tests.support.start_up_sweep import round_failures, run_results_start_up_step
@@ -112,7 +111,10 @@ async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_
               if row["kind"] == "results.amend.lapse"]
     assert lapses == [league_of.LATER_ROUND_ID]
     assert round_failures(error) == {league_of.ROUND_ID: refused}
-    assert lines == [start_up_failure_line("orphaned amend channels", error)]
+    assert lines == [
+        "❌ The bot's start-up step `orphaned amend channels` failed for round 3 in **Pro** — "
+        "RecoveryFailed. The details are in the host's log."
+    ]
 
 
 # ---------------------------------------------------------------------------

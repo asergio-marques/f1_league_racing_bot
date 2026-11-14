@@ -61,7 +61,6 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.rounds.round_add_changes import saved_result
-from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.seasons.season_end_changes import (
     BACKUP_KEPT,
     anything_discarded,
@@ -72,9 +71,7 @@ from leaguebot.core.services.seasons.season_end_changes import (
 )
 from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_BACKUP,
-    FLUSH_FORECASTS,
     discard_backup_step,
-    flush_forecasts_step,
 )
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     live_season_stage,
@@ -148,7 +145,7 @@ async def _check(ctx: CheckContext) -> Verdict:
 
 
 def _save(
-    test_mode_turned_on: AwaitedHook, profiles_deleted: AwaitedHook
+    test_mode_turned_on: AwaitedHook, profiles_deleted: AwaitedHook, test_mode_flushed: AwaitedHook
 ) -> Callable[[aiosqlite.Connection, StepContext], Awaitable[StepResult]]:
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Set the flag, with the modules' part or the fake drivers' deletion, and the audit
@@ -160,6 +157,7 @@ def _save(
             return StepResult(result={"outcome": UNCHANGED})
         if not on:
             removed = await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)
+            flush = [job for jobs in await test_mode_flushed.call(db) for job in jobs]
             return StepResult(
                 result={"outcome": OFF, "removed": removed},
                 audits=(
@@ -167,7 +165,7 @@ def _save(
                         AUDIT_TYPE, {"test_mode_active": True}, {"test_mode_active": False}
                     ),
                 ),
-                then=(PlannedStep(FLUSH_FORECASTS), PlannedStep(DISCARD_BACKUP)),
+                then=(*flush, PlannedStep(DISCARD_BACKUP)),
             )
         await db.execute("UPDATE server_configs SET test_mode_active = 1")
         live = await live_season_stage_on(db)
@@ -233,11 +231,9 @@ def test_mode_toggle_change(
 
     steps: dict[str, Step] = {
         SAVE: Step(
-            SAVE, StepKind.SAVE, _save(test_mode_turned_on, profiles_deleted), describe=describe
+            SAVE, StepKind.SAVE, _save(test_mode_turned_on, profiles_deleted, test_mode_flushed), describe=describe
         ),
-        FLUSH_FORECASTS: flush_forecasts_step(test_mode_flushed),
         DISCARD_BACKUP: discard_backup_step(scheduler),
-        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         **steps_of_the_modules(season_end_steps, line_prefix=None),
     }
 

@@ -432,6 +432,41 @@ async def test_a_round_whose_start_passed_while_the_bot_was_down_opens_at_the_re
     assert "Results submission open for **Round 3** (Pro)" in league.texts(made)[0]
 
 
+async def test_a_round_start_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
+    tmp_path,
+):
+    """Rounds 3 and 4 of Pro both started while the bot was down, three hours and one hour before
+    its clock, and neither has been opened. At the restart the queue refuses round 3's opening.
+    Run through the start-up sweep, results' "missed round starts" step still asks round 4's
+    opening; the error the step raised is results' own and names round 3 alone, with the queue's
+    error; and the sweep posts one line to the log channel, naming round 3 in core's form,
+    "round 3 in **Pro**" (#287, B11)."""
+    from tests.support.start_up_sweep import round_failures, run_results_start_up_step
+
+    league = await _league(tmp_path)
+    round_4 = round_id(PRO, 4)
+    await _start_passed(league, hours=3)
+    await _start_passed(league, round_4, hours=1)
+    refused = RuntimeError("the database is locked")
+    ask = league.bot.change_queue.ask
+
+    async def refusing(kind: str, payload: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+        if kind == KIND and payload.get("round_id") == ROUND_3:
+            raise refused
+        return await ask(kind, payload, *args, **kwargs)
+
+    league.bot.change_queue.ask = refusing
+
+    lines, error = await run_results_start_up_step(league.bot, MISSED_STARTS)
+
+    assert await _opened_rounds(league) == [round_4]
+    assert round_failures(error) == {ROUND_3: refused}
+    assert lines == [
+        "❌ The bot's start-up step `missed round starts` failed for round 3 in **Pro** — "
+        "RecoveryFailed. The details are in the host's log."
+    ]
+
+
 async def _opened_before_the_stop(league: SeasonLeague) -> None:
     await _ask(league)
     await run_queue(league.bot)

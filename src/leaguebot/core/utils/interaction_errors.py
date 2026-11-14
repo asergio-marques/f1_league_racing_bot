@@ -53,6 +53,7 @@ from typing import Any
 import discord
 from discord import app_commands
 
+from leaguebot.core.models.recovery import RoundsFailed
 from leaguebot.core.utils.member_names import interaction_member
 
 log = logging.getLogger(__name__)
@@ -111,10 +112,17 @@ def start_up_failure_line(step: str, error: BaseException) -> str:
     start-up ran if it has no name of its own) that failed with *error*.
 
     The failure line's shape, as `event_failure_line` has it: what failed, the kind of fault, and
-    that the detail is in the host's log.
+    that the detail is in the host's log. Where *error* says which rounds the step failed for
+    (`RoundsFailed`), the line names them, in core's form, joined with commas and "and"; a step
+    that failed as a whole names none.
     """
+    rounds = list(error.rounds_called) if isinstance(error, RoundsFailed) else []
+    named = ""
+    if rounds:
+        joined = rounds[0] if len(rounds) == 1 else f"{', '.join(rounds[:-1])} and {rounds[-1]}"
+        named = f" for {joined}"
     return (
-        f"❌ The bot's start-up step `{step}` failed — "
+        f"❌ The bot's start-up step `{step}` failed{named} — "
         f"{type(error).__name__}. The details are in the host's log."
     )
 

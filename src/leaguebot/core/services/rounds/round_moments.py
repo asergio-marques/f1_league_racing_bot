@@ -16,13 +16,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
 
-from leaguebot.core.models.round import AttendanceWindows, Round, RoundFormat, WeatherWindows
+from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 from leaguebot.core.utils.hooks import AwaitedHook
-
-if TYPE_CHECKING:
-    import aiosqlite
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
 #: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
@@ -32,53 +28,32 @@ POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
 
 
 async def read_round_windows(
-    windows_read: AwaitedHook, *, amending: bool = False
+    windows_read: AwaitedHook,
 ) -> tuple[AttendanceWindows | None, WeatherWindows | None]:
     """The lead times the modules configure, as `(attendance, weather)`, the way
     `round_event_moments` and the judges take them: each hands back its window or nothing.
 
     Every module signed up to the hook checks its own switch and hands nothing where it is off,
-    so that a window is there only for a module that is on. With *amending*, a module says whether
-    its window counts while it is off: a forecast posted while weather was on is still posted, and
-    whether it survives an amendment is what the track and format rules turn on.
+    so that a window is there only for a module that is on.
     """
-    handed = await windows_read.call(amending=amending)
+    handed = await windows_read.call()
     attendance = next((each for each in handed if isinstance(each, AttendanceWindows)), None)
     weather = next((each for each in handed if isinstance(each, WeatherWindows)), None)
     return attendance, weather
 
 
 async def read_phases_drawn(
-    phases_drawn_read: AwaitedHook, round_ids: Sequence[int], *, db: aiosqlite.Connection | None = None
+    phases_drawn_read: AwaitedHook, round_ids: Sequence[int]
 ) -> dict[int, dict[int, bool]]:
     """Whether each of Phases 1 to 3 has been drawn, by phase number, for each round in
     *round_ids*, by round id, as the module that draws them says: they are its own record, not a
     column of core's round. A round nobody answers for is absent, and its phases count as not
     drawn.
-
-    With *db*, the connection a save holds, the subscribers read on it and so see what that save
-    has written and not yet committed; without, each reads on a connection of its own.
     """
     drawn: dict[int, dict[int, bool]] = {}
-    for part in await phases_drawn_read.call(round_ids, db=db):
+    for part in await phases_drawn_read.call(round_ids):
         drawn.update(part or {})
     return drawn
-
-
-def phases_due(
-    rnd: Round, weather: WeatherWindows, at: datetime, *, drawn: Mapping[int, bool]
-) -> list[int]:
-    """The forecast phases to draw at once at *at*: each not yet drawn (*drawn*, by phase number,
-    as `read_phases_drawn` gives it for the round) whose horizon has passed, for a round whose
-    moment is still ahead and which is no mystery round."""
-    moment = rnd.scheduled_at
-    if rnd.format == RoundFormat.MYSTERY or moment <= at:
-        return []
-    moments = round_event_moments(moment, weather=weather, attendance=None)
-    horizons = {
-        n: moments[f"weather_p{n}"] for n in (1, 2, 3)
-    }
-    return [n for n, horizon in horizons.items() if not drawn.get(n, False) and horizon <= at]
 
 
 def results_left_to_advance(*, test_mode: bool, results_on: bool, weather_on: bool) -> bool:

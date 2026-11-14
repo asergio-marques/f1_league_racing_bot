@@ -50,6 +50,7 @@ from leaguebot.core.services.queue.queue_records import unfinished
 from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.seasons.season_end_changes import test_mode_on
 from leaguebot.core.services.seasons.season_service import (
+    rounds_called,
     rounds_of_ongoing_seasons,
     round_facts_on,
 )
@@ -152,7 +153,7 @@ async def recover_missed_check_in_calls(bot: LeagueBot, *, queue: ChangeQueue) -
             )
             failures[each.id] = error
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(bot.db_path, list(failures)))
 
 
 async def recover_rsvp_views_and_deadlines(
@@ -232,7 +233,7 @@ async def recover_rsvp_views_and_deadlines(
             )
             failures[each.id] = error
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(bot.db_path, list(failures)))
 
 
 async def recover_missed_check_in_clean_ups(bot: LeagueBot, *, queue: ChangeQueue) -> None:
@@ -277,4 +278,4 @@ async def recover_missed_check_in_clean_ups(bot: LeagueBot, *, queue: ChangeQueu
             )
             failures[round_id] = error
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(bot.db_path, list(failures)))

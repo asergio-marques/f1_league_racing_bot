@@ -14,9 +14,10 @@ but the entry point.
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
@@ -38,8 +39,8 @@ def sign_up(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:
-    """Sign attendance's window up to the hook a round's timing windows read declares. It is
-    handed whether the round is being amended and checks its own switch."""
+    """Sign attendance's window up to the hook a round's timing windows read declares. It checks
+    its own switch."""
     from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.round_windows_read.subscribe(partial(
@@ -57,12 +58,39 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     ))
 
 
+def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
+    """Sign attendance's judgement of its check-in up to the hook a round's amendment is judged
+    through. Core hands it no lead times: asked in a save, it reads them on the save's connection,
+    and asked outside one, through the module's own reader of them."""
+    from leaguebot.attendance.services.check_in import check_in_amendment
+    from leaguebot.attendance.services.hooks import attendance_hooks
+
+    async def judged(*handed: Any, **context: Any) -> "AmendmentPart":
+        # Asked outside a save (no connection handed), the lead times are read here; in one, the
+        # module reads them on the save's connection.
+        windows = (
+            await attendance_hooks.lead_times(bot.attendance_service, bot.module_service)
+            if handed[0] is None else None
+        )
+        return await check_in_amendment.amendment_judged(*handed, windows=windows, **context)
+
+    bot.amendment_judged.subscribe(judged)
+
+
 def sign_up_to_round_amended(bot: "LeagueBot") -> None:
     """Sign attendance's reopening of its check-in up to the hook an amended round declares,
     inside the save."""
     from leaguebot.attendance.services.check_in import check_in_amendment
 
     bot.round_amended.subscribe(check_in_amendment.round_amended_on)
+
+
+def sign_up_to_amendment_step_failure(bot: "LeagueBot") -> None:
+    """Sign attendance's words for a step of its own left undone up to the hook an outcome gives a
+    step its words through."""
+    from leaguebot.attendance.services.check_in import check_in_amendment
+
+    bot.amendment_step_failure.subscribe(check_in_amendment.check_in_failure)
 
 
 def sign_up_to_round_armed(bot: "LeagueBot") -> None:

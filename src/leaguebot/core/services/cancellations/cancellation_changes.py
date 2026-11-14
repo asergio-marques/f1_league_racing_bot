@@ -152,7 +152,6 @@ from leaguebot.core.services.seasons.season_end_changes import (
 )
 from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_PORTRAITS,
-    FLUSH_FORECASTS,
     REVOKE_ROLES,
     refusal_of_the_modules,
     season_role_targets_on,
@@ -1404,7 +1403,7 @@ def season_cancel_change(
             close_jobs(season_end_closes, SEASON_END_CAUSE, int(ctx.payload["season_number"]))
         )
         if await test_mode_on(db):
-            planned.append(PlannedStep(FLUSH_FORECASTS))
+            planned.extend(job for jobs in await test_mode_flushed.call(db) for job in jobs)
         planned.append(PlannedStep(END))
         return StepResult(
             result={"divisions": [division_id for division_id, _ in running]},
@@ -1531,8 +1530,7 @@ def season_cancel_change(
     steps: dict[str, Step] = {
         **_follow_steps(seasons=seasons, drawing=drawing),
         **shared_steps(
-            roles, scheduler, season_end_steps=season_end_steps,
-            test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
+            roles, scheduler, season_end_steps=season_end_steps, drivers_deleted=drivers_deleted,
         ),
         **steps_of_the_modules(cancellation_steps),
         UNARM: Step(

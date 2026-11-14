@@ -77,7 +77,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.seasons.season_service import round_facts_on
+from leaguebot.core.services.seasons.season_service import round_facts_on, rounds_called
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.results.models.recovery_failed import RecoveryFailed
@@ -341,7 +341,7 @@ async def recover_orphaned_amend_channels(bot: LeagueBot, *, queue: ChangeQueue)
             log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
             failures[round_id] = error
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(bot.db_path, list(failures)))
 
 
 def amend_lapse_timer(

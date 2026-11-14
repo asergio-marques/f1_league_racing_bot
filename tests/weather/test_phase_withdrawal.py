@@ -48,8 +48,8 @@ async def _make_db(tmp_path) -> str:
                 )
             for session_type in ("LONG_SPRINT_RACE", "LONG_FEATURE_RACE"):
                 await db.execute(
-                    "INSERT INTO sessions (round_id, session_type, phase2_slot_type, "
-                    "phase3_slots) VALUES (?, ?, 'mixed', '[\"Rain\"]')",
+                    "INSERT INTO sessions (round_id, session_type, phase2_slot_type) "
+                    "VALUES (?, ?, 'mixed')",
                     (round_id, session_type),
                 )
         await db.commit()
@@ -68,7 +68,7 @@ async def _state(db, round_id: int = ROUND_ID) -> dict:
     )
     results = {row["phase_number"]: row["status"] for row in await cursor.fetchall()}
     cursor = await db.execute(
-        "SELECT phase2_slot_type, phase3_slots FROM sessions WHERE round_id = ? ORDER BY id",
+        "SELECT phase2_slot_type FROM sessions WHERE round_id = ? ORDER BY id",
         (round_id,),
     )
     sessions = [tuple(row) for row in await cursor.fetchall()]
@@ -78,13 +78,13 @@ async def _state(db, round_id: int = ROUND_ID) -> dict:
 PERFORMED = {
     "flags": (1, 1, 1),
     "results": {1: "ACTIVE", 2: "ACTIVE", 3: "ACTIVE"},
-    "sessions": [("mixed", '["Rain"]'), ("mixed", '["Rain"]')],
+    "sessions": [("mixed",), ("mixed",)],
 }
 
 
 async def test_withdrawing_phases_writes_only_those_phases_on_the_connection_handed(tmp_path):
     """Round 1 has all three phases performed. Withdrawing Phases 1 and 3 on a connection clears
-    their two flags and invalidates their two results, and clears each session's Phase 3 slots;
+    their two flags and invalidates their two results, Phase 3's slots going with its result;
     Phase 2 keeps its flag, its result and each session's slot type, and round 2 is untouched.
     Nothing of it outlasts a rollback."""
     from leaguebot.weather.services.phase_withdrawal import withdraw_phases_on
@@ -95,7 +95,7 @@ async def test_withdrawing_phases_writes_only_those_phases_on_the_connection_han
         assert await _state(db) == {
             "flags": (0, 1, 0),
             "results": {1: "INVALIDATED", 2: "ACTIVE", 3: "INVALIDATED"},
-            "sessions": [("mixed", None), ("mixed", None)],
+            "sessions": [("mixed",), ("mixed",)],
         }
         assert await _state(db, OTHER_ROUND_ID) == PERFORMED
         await db.rollback()

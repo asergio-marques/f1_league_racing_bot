@@ -1,15 +1,17 @@
-"""ForecastCleanupService — track and delete per-phase forecast messages.
+"""Track and delete per-phase forecast messages: the functions that record where a forecast was
+posted, post a weather occasion, and plan its deletion.
 
 Feature 007: Forecast Message Cleanup.
 
 Deletes are the inverse of writes: they use the channel and message ids stored when the forecast was
-posted, whether it went out as text or as a graphic, each sent from here through the standing-post
-handler.
+posted, whether it went out as text or as a graphic. A forecast is posted from here
+(`post_phase_message`) and deleted from here (`_discord_delete`), each through the standing-post
+handler; the notice of a cancellation is posted elsewhere (`cancellation_notice`).
 
 Public API:
   store_forecast_message_on — persist a message ID, on the save the post job's record has
   forget_forecast_on      — drop a message ID once its message is deleted
-  post_phase_message      — the one send site of a weather posting
+  post_phase_message      — the send of a forecast, or of a mystery round's notice
   forecast_deletes        — the delete jobs a clean-up or a flush plans, one for each
                             recorded forecast
 """
@@ -27,7 +29,8 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
-from leaguebot.core.services.posting.standing_post_handler import post_standing
+from leaguebot.core.services.posting.standing_post_handler import delete_standing, post_standing
+from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.messages import chunk_message
 
@@ -96,8 +99,11 @@ async def forget_forecast_on(
 
     Only the row holding *message_id* goes, so that a newer forecast recorded for the phase is
     never dropped with the one it replaced; with no *message_id* the phase's row goes whatever
-    it holds.
+    it holds. A mystery round's notice (phase 0) closes the round's notice flag with its record,
+    so that a round that is a mystery round again is owed its notice again.
     """
+    if phase_number == 0:
+        await db.execute("UPDATE rounds SET mystery_notice_given = 0 WHERE id = ?", (round_id,))
     if message_id is None:
         await db.execute(
             "DELETE FROM forecast_messages "
@@ -164,29 +170,32 @@ async def forecast_deletes(
     where: list[str] = []
     params: list[int] = []
     if round_id is not None:
-        where.append("fm.round_id = ?")
+        where.append("round_id = ?")
         params.append(round_id)
     if phases is not None:
-        where.append(f"fm.phase_number IN ({', '.join('?' for _ in phases)})")
+        where.append(f"phase_number IN ({', '.join('?' for _ in phases)})")
         params.extend(phases)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT fm.round_id, fm.division_id, fm.phase_number, fm.message_id, "
-            "       r.round_number "
-            "FROM forecast_messages fm "
-            "JOIN rounds r ON r.id = fm.round_id "
-            "JOIN divisions d ON d.id = fm.division_id "
-            "JOIN seasons s ON s.id = d.season_id "
+            "SELECT round_id, division_id, phase_number, message_id FROM forecast_messages "
             + (f"WHERE {' AND '.join(where)} " if where else "")
-            + "ORDER BY fm.round_id, fm.division_id, fm.phase_number",
+            + "ORDER BY round_id, division_id, phase_number",
             params,
         )
         rows = list(await cursor.fetchall())
+        # Core's half of what the jobs carry: the round's number, a recorded forecast of a round
+        # that is no longer there planning no job.
+        numbers: dict[int, int] = {}
+        for each in sorted({int(row["round_id"]) for row in rows}):
+            facts = await round_facts_on(db, each)
+            if facts is not None:
+                numbers[each] = facts.round_number
+        rows = [row for row in rows if int(row["round_id"]) in numbers]
     return tuple(
         PlannedStep(DELETE_FORECAST, {
             "round_id": row["round_id"], "division_id": row["division_id"],
             "phase": row["phase_number"], "message_id": row["message_id"],
-            "round_number": row["round_number"],
+            "round_number": numbers[int(row["round_id"])],
             **({"clean_up": True} if clean_up else {}),
         })
         for row in rows
@@ -213,11 +222,11 @@ async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) ->
             f"channel {channel_id} is not a text channel the forecast can be deleted from",
             result={"channel_id": channel_id, "message_id": message_id},
         )
-    await channel.get_partial_message(message_id).delete()
+    await delete_standing(channel.get_partial_message(message_id))
 
 
 # ---------------------------------------------------------------------------
-# 042 — the one send site every weather posting takes
+# 042 — the send of a forecast and of a mystery round's notice
 # ---------------------------------------------------------------------------
 
 @posts_in_a_job
@@ -235,8 +244,9 @@ async def post_phase_message(
     """Post one weather occasion, and nothing else: the job that calls it records the message and
     deletes the one it supersedes.
 
-    The single send site for all four of the module's weather postings — the three phases and
-    the notice of a mystery round — and for both manners in which each may be drawn.
+    The send for the four occasions the forecast change posts — the three phases and the notice
+    of a mystery round — and for both manners in which each may be drawn. The cancellation's note
+    is posted by `cancellation_notice`.
 
     **A transport failure stops the queue at the post job**, whose next try posts the text (XIV.8,
     FR-057): a message Discord refuses, a channel the bot cannot fetch and one that is not a text

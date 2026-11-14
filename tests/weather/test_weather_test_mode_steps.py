@@ -26,12 +26,13 @@ async def _seed(
     format: str = "NORMAL",
     scheduled_at: str = AHEAD,
     done: tuple[int, ...] = (),
+    notice: bool = False,
     standing: tuple[int, ...] = (),
     forecasts_in_hand: tuple[int, ...] = (),
     clean_up_in_hand: bool = False,
 ) -> None:
     """Round 1 (Bahrain, Division A) of the active season, with weather on or off: the phases in
-    *done* marked done, a forecast of each phase in *standing* still posted, and a forecast of each
+    *done* marked done, a mystery round's notice marked given where *notice*, a forecast of each phase in *standing* still posted, and a forecast of each
     phase in *forecasts_in_hand*, or its clean-up, asked of the change queue and not yet run."""
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -53,6 +54,8 @@ async def _seed(
             " phase1_done, phase2_done, phase3_done) VALUES (1, 1, 1, ?, 'Bahrain', ?, ?, ?, ?)",
             (format, scheduled_at, *(int(n in done) for n in (1, 2, 3))),
         )
+        if notice:
+            await db.execute("UPDATE rounds SET mystery_notice_given = 1 WHERE id = 1")
         for phase in standing:
             await db.execute(
                 "INSERT INTO forecast_messages "
@@ -96,7 +99,7 @@ def _round(*, format: str, scheduled_at: str):
                  (8, "cleanup")], [], id="phase 1 posted"),
     pytest.param({"format": "MYSTERY"}, [(0, "weather_p1")], [],
                  id="a mystery round's notice still to post"),
-    pytest.param({"format": "MYSTERY", "done": (1,), "standing": (0,)}, [], [],
+    pytest.param({"format": "MYSTERY", "notice": True, "standing": (0,)}, [], [],
                  id="a mystery round's notice posted, with no forecast to take down"),
     pytest.param({"forecasts_in_hand": (1,)}, [(2, "weather_p2"), (3, "weather_p3")], [],
                  id="phase 1 in hand on the change queue"),
@@ -162,8 +165,8 @@ P2_QUEUED = {(1, "weather_p2")}
                  id="phase 1 posted, with phase 2's job queued"),
     pytest.param({"format": "MYSTERY"}, None, [("Notice", "⏳")],
                  id="a mystery round's notice still to post"),
-    pytest.param({"format": "MYSTERY", "done": (1,), "standing": (0,)}, set(), [("Notice", "✅")],
-                 id="a mystery round's notice posted"),
+    pytest.param({"format": "MYSTERY", "notice": True, "standing": (0,)}, set(),
+                 [("Notice", "✅")], id="a mystery round's notice posted"),
     pytest.param({"scheduled_at": RACED}, set(),
                  [("P1", "⏭️"), ("P2", "⏭️"), ("P3", "⏭️"), ("Cleanup", "✅")],
                  id="a raced round with nothing posted"),

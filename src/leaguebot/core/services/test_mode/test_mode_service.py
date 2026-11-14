@@ -274,6 +274,13 @@ async def advance_next_step(
 # Toggle
 # ---------------------------------------------------------------------------
 
+async def test_mode_on(db: aiosqlite.Connection) -> bool:
+    """Whether the server is in test mode, read on the connection handed."""
+    cursor = await db.execute("SELECT test_mode_active FROM server_configs")
+    row = await cursor.fetchone()
+    return row is not None and bool(row["test_mode_active"])
+
+
 async def switch_test_mode_off_on(
     db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook
 ) -> int:

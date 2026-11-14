@@ -1,4 +1,4 @@
-"""`recover_missed_phases` — re-firing weather phases a restart went through.
+"""Weather's "missed phases" start-up step — re-firing weather phases a restart went through.
 
 Issue #208. A phase is a scheduled job, and a job does not survive the process. On restart the
 bot therefore asks which horizons have passed without their phase having run, and fires those.
@@ -16,8 +16,9 @@ and a league with three divisions of twenty-four rounds would otherwise read it 
 times on every start. `test_the_configuration_is_read_once` holds it — and holds it
 against the obvious "simplification" of moving the read inside the loop.
 
-**And only after the module gate**, so a server with weather switched off is never queried for a
-configuration it does not use — the module-output rule, applied to reads rather than writes.
+**And only where weather is on**, so a server with weather switched off is never queried for a
+configuration it does not use — the module-output rule, applied to reads rather than writes. The
+start-up sweep passes over a module switched off, so the step itself reads no switch (#287).
 
 **A phase already done is not fired again.** The `phase*_done` flags are what stop a restart
 republishing a forecast the division has already read, and every restart would otherwise post
@@ -38,6 +39,10 @@ and 3. `test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts` runs the 
 `ask_forecast` on a league with the queue, so a notice missed while the bot was down is posted
 once it starts, while the race is still ahead. The other tests record the asks, patched in
 `forecast_changes`, which the recovery reaches through that module as it runs.
+
+**The step is run as `start_up_steps(bot)` gives it**, judging at the change queue's clock, and a
+round whose ask fails stops none of the others: the failures are raised once at the end, as
+weather's own `RecoveryFailed`, which the sweep reports in the log channel (#287).
 """
 from __future__ import annotations
 
@@ -51,6 +56,10 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows
 from tests.support.season_league import PRO, ongoing_league, round_id
+from tests.support.start_up_sweep import round_failures, run_weather_start_up_step
+
+#: The name weather's start-up step runs under.
+MISSED_PHASES = "missed phases"
 
 SERVER_ID = 12008
 SEASON_ID = 1
@@ -128,11 +137,14 @@ async def _make_db(
     return db_path
 
 
-def _bot(db_path: str, *, weather_enabled: bool = True):
+def _bot(db_path: str, *, clock: datetime | None = None):
+    """The bot the step is handed, weather on, its change queue's clock *clock* (the host's where
+    None), which the seeded rounds are timed from."""
     bot = MagicMock()
     bot.db_path = db_path
     bot.module_service = MagicMock()
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    bot.change_queue.now = MagicMock(return_value=clock or datetime.now(timezone.utc))
     return bot
 
 
@@ -144,15 +156,21 @@ def _config(*, phase_1_days: int = 5, phase_2_days: int = 2, phase_3_hours: int 
     )
 
 
-async def _recover(bot, *, config=None, reads: list | None = None):
-    """Run the recovery, recording which phases it asked the queue for (as ``(phase, round)``)
-    and which configs were read."""
-    from leaguebot.weather.wiring import recover_missed_phases
+async def _recover(bot, *, config=None, reads: list | None = None, refused: dict | None = None,
+                   sweep: dict | None = None):
+    """Run weather's "missed phases" step, as `start_up_steps(bot)` gives it, recording which
+    phases it asked the queue for (as ``(phase, round)``) and which configs were read. The ask of
+    a round in *refused* raises its error. With *sweep*, the step is run through the start-up
+    sweep, weather's switch reading ``sweep["on"]``, and the sweep's lines and the step's error
+    are put in it."""
+    from leaguebot.weather.wiring import start_up_steps
 
     fired: list[tuple[int, int]] = []
 
     async def _ask(_queue, _db_path, round_id, phase):
         fired.append((phase, round_id))
+        if refused and round_id in refused:
+            raise refused[round_id]
 
     async def _get_config(db_path):
         if reads is not None:
@@ -165,7 +183,11 @@ async def _recover(bot, *, config=None, reads: list | None = None):
         "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(side_effect=_get_config),
     ):
-        await recover_missed_phases(bot)
+        if sweep is None:
+            await dict(start_up_steps(bot))[MISSED_PHASES]()
+        else:
+            sweep["lines"], sweep["error"] = await run_weather_start_up_step(
+                bot, MISSED_PHASES, on=sweep["on"])
     return fired
 
 
@@ -284,15 +306,18 @@ async def test_the_configuration_is_read_once(tmp_path):
 
 
 async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tmp_path):
-    """The module gate runs first, so a server that does not use the config is not queried
-    for it — the module-output rule applied to reads — and nothing is recovered."""
+    """Round 1 is past every horizon with no phase drawn, and weather is switched off. Run
+    through the start-up sweep, the "missed phases" step does not run: the config is not read,
+    nothing is recovered, and nothing reaches the log channel."""
     db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "NORMAL"),))
     reads: list[str] = []
+    sweep = {"on": False}
 
-    fired = await _recover(_bot(db_path, weather_enabled=False), reads=reads)
+    fired = await _recover(_bot(db_path), reads=reads, sweep=sweep)
 
     assert reads == []
     assert fired == []
+    assert sweep["lines"] == [] and sweep["error"] is None
 
 
 async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
@@ -332,6 +357,81 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
+async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
+    """Rounds 1 and 2 of Division 1 are both past their Phase 1 horizon with Phase 1 not drawn,
+    and the queue refuses round 1's ask. Run through the start-up sweep, the step still asks round
+    2's Phase 1, then raises weather's `RecoveryFailed` naming round 1 alone with the queue's
+    error, its message, which the host's log carries, naming it as a league reads it, "round 1 in
+    **Division 1**" (#287, B10); and the sweep posts one line to the log channel, its failure line
+    for the step, naming that round in core's form (#287, B11)."""
+    db_path = await _make_db(
+        tmp_path,
+        rounds=(
+            (1, RACE_SOON, False, True, True, "NORMAL"),
+            (2, RACE_SOON, False, True, True, "NORMAL"),
+        ),
+    )
+    refused = RuntimeError("the database is locked")
+    sweep = {"on": True}
+
+    fired = await _recover(_bot(db_path), refused={1: refused}, sweep=sweep)
+
+    assert sorted(fired) == [(1, 1), (1, 2)]
+    error = sweep["error"]
+    assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
+    assert round_failures(error, module="weather") == {1: refused}
+    assert "round 1 in **Division 1**" in str(error), str(error)
+    assert sweep["lines"] == [
+        "❌ The bot's start-up step `missed phases` failed for round 1 in **Division 1** — "
+        "RecoveryFailed. The details are in the host's log."
+    ]
+
+
+async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(tmp_path):
+    """Round 1 is past its Phase 1 horizon with Phase 1 not drawn; round 2, of the same live
+    division, has its start stored without its offset, which no writer produces and the bot refuses
+    to read. Run through the start-up sweep, weather's "missed phases" step still asks round 1's
+    Phase 1, then raises weather's `RecoveryFailed` naming round 2 alone, with the `ValueError` its
+    start raised, rather than passing it over in silence; and the sweep posts one line to the log
+    channel, its failure line for the step, as the step's failure did before the catch-up became a
+    service, and as the forecast clean-up catch-up reports the same round, naming the round in
+    core's form, "round 2 in **Division 1**" (#287, B11)."""
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, True, True, "NORMAL"),))
+    unreadable = (datetime.now(timezone.utc) + timedelta(days=3)).replace(tzinfo=None)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (2, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'NOT_RUN')",
+            (DIVISION_ID, unreadable.isoformat()),
+        )
+        await db.commit()
+    sweep = {"on": True}
+
+    fired = await _recover(_bot(db_path), sweep=sweep)
+
+    assert fired == [(1, 1)]
+    error = sweep["error"]
+    assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
+    failures = round_failures(error, module="weather")
+    assert list(failures) == [2]
+    assert isinstance(failures[2], ValueError), failures
+    assert sweep["lines"] == [
+        "❌ The bot's start-up step `missed phases` failed for round 2 in **Division 1** — "
+        "RecoveryFailed. The details are in the host's log."
+    ]
+
+
+async def test_the_missed_phases_catch_up_reads_the_queue_s_clock(tmp_path):
+    """Round 1 races thirty days from now by the host's clock, no phase drawn, while the queue's
+    clock, the bot's, stands twenty-six days later: four days before the race, past the packaged
+    five-day Phase 1 horizon and short of Phase 2's. The step judges at the queue's clock and asks
+    Phase 1 alone."""
+    db_path = await _make_db(tmp_path, rounds=((1, 30, False, False, False, "NORMAL"),))
+    bot = _bot(db_path, clock=datetime.now(timezone.utc) + timedelta(days=26))
+
+    assert await _recover(bot) == [(1, 1)]
+
+
 @pytest.mark.parametrize("status", [
     # A season in setup has not started, and a completed one is over — neither has a forecast
     # owing.
@@ -365,9 +465,12 @@ async def _mystery_league(tmp_path, *, hours_until_race: float, notice_posted: b
     league = await ongoing_league(tmp_path, weather=True)
     race = datetime.now(timezone.utc) + timedelta(hours=hours_until_race)
     await league.write(
-        "UPDATE rounds SET format = 'MYSTERY', scheduled_at = ?, phase1_done = ? WHERE id = ?",
-        race.isoformat(), int(notice_posted), round_id(PRO, 3),
+        "UPDATE rounds SET format = 'MYSTERY', scheduled_at = ? WHERE id = ?",
+        race.isoformat(), round_id(PRO, 3),
     )
+    if notice_posted:
+        await league.write("UPDATE rounds SET mystery_notice_given = 1 WHERE id = ?",
+                           round_id(PRO, 3))
     return league
 
 
@@ -398,11 +501,11 @@ async def test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts(
     3; with the notice posted already, or the race run, none (folded defect 5; weather spec :158
     as amended). Thirty days out, its Phase 1 horizon not yet reached, none either: its notice is
     left to its own timer."""
-    from leaguebot.weather.wiring import recover_missed_phases
+    from leaguebot.weather.wiring import start_up_steps
 
     league = await _mystery_league(tmp_path, hours_until_race=hours_until_race,
                                    notice_posted=notice_posted)
 
-    await recover_missed_phases(league.bot)
+    await dict(start_up_steps(league.bot))[MISSED_PHASES]()
 
     assert await _forecasts_asked(league) == expected

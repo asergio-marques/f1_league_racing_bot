@@ -185,6 +185,7 @@ class TestFormatSlotSequence:
         for slots in (["Clear"], ["Wet", "Wet"], ["Very Wet", "Very Wet", "Very Wet"]):
             assert format_slot_sequence(slots) == format_slots_for_forecast(slots)
             assert "*" not in format_slot_sequence(slots)
+            assert format_slot_sequence(slots) == slots[0]
 
     def test_stripping_the_emphasis_is_never_the_graphic_s_job(self):
         """The value comes out unadorned; the message adds markup on top of it."""
@@ -279,13 +280,14 @@ class TestAForecastNamesNoHorizon:
             assert "Phase 2" not in message
             assert "Phase 3" not in message
 
-    def test_the_message_and_the_graphic_name_the_phase_alike(self):
-        """One constant serves both, so a fork cannot open between them (XIV.7)."""
-        from leaguebot.image.services.image_weather_service import (
-            PHASE_DESCRIPTIONS as graphic_descriptions,
-        )
-
-        assert graphic_descriptions is PHASE_DESCRIPTIONS
+    def test_the_phase_descriptions_are_the_three_the_spec_names(self):
+        """One constant names the phase in the message, and in the picture weather hands it
+        (#287, W288)."""
+        assert PHASE_DESCRIPTIONS == {
+            1: "Initial chance of rain",
+            2: "Initial session forecast",
+            3: "Final session forecast",
+        }
 
     def test_the_earlier_phases_still_promise_a_closer_forecast(self):
         """The weather spec obliges phase 1 to say a more detailed forecast follows.

@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.core.utils.hooks import AwaitedHook
 
 DEADLINE = "weather.setting.deadline"
 FORECAST_CHANNEL = "weather.setting.forecast_channel"
@@ -125,9 +126,14 @@ def deadline_setting(*, modules: "ModuleService", seasons: "SeasonService") -> S
     )
 
 
-def forecast_channel_setting(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
+def forecast_channel_setting(
+    *,
+    modules: "ModuleService",
+    seasons: "SeasonService",
+    channel_uses_read: "AwaitedHook",
+) -> Setting:
     """The forecast channel setting: the module and the season are read through the services
-    handed in."""
+    handed in, and the module holding a channel through *channel_uses_read*, core's hook."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -140,9 +146,7 @@ def forecast_channel_setting(*, modules: "ModuleService", seasons: "SeasonServic
         if division is None or division.season_id != season.id:
             return Verdict.refuse(division_not_found(payload["division_name"]))
         value = int(payload["value"])
-        use = await find_channel_use(
-            ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
-        )
+        use = await find_channel_use(ctx.db_path, value, channel_uses_read=channel_uses_read)
         if use is not None:
             return Verdict.refuse(
                 refusal(

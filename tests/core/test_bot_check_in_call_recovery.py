@@ -306,9 +306,8 @@ async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s
     deadlines still ahead at the queue's moment. At the restart the queue refuses round 430's
     call. Run through the start-up sweep, attendance's "missed check-in calls" step still asks
     round 429's call, and the sweep posts one line to the log channel, its failure line for that
-    step; the error the step raised names round 430 alone, with the queue's error."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    step, naming round 430 in core's form, "round 5 in **Division 1**" (#287, B11); the error the
+    step raised names round 430 alone, with the queue's error."""
     from tests.support.start_up_sweep import round_failures, run_attendance_start_up_step
 
     db_path = await _make_db(tmp_path)
@@ -339,7 +338,10 @@ async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s
              if row["kind"] == KIND]
     assert asked == [ROUND_ID]
     assert round_failures(error, module="attendance") == {ROUND_ID + 1: refused}
-    assert lines == [start_up_failure_line("missed check-in calls", error)]
+    assert lines == [
+        "❌ The bot's start-up step `missed check-in calls` failed for round 5 in "
+        "**Division 1** — RecoveryFailed. The details are in the host's log."
+    ]
 
 
 @pytest.mark.parametrize("queue_ran_first", [

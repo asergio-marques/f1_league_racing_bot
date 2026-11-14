@@ -353,13 +353,17 @@ _WINDOWS_PARTS = (
 #: Each module's part of a round amended, as the module names it: the moment's hook on the bot,
 #: the module, the subscriber, and what the test calls it, in the order the builder signs them up.
 _AMENDMENT_PARTS = (
+    ("amendment_judged", "leaguebot.attendance.services.check_in.check_in_amendment",
+     "amendment_judged", "attendance's judgement"),
+    ("amendment_judged", "leaguebot.weather.services.forecast_amendment", "amendment_judged",
+     "weather's judgement"),
     ("round_amended", "leaguebot.weather.services.phase_withdrawal", "round_amended_on",
      "weather's withdrawal"),
     ("round_amended", "leaguebot.attendance.services.check_in.check_in_amendment", "round_amended_on",
      "attendance's reopening"),
     ("round_armed", "leaguebot.attendance.services.check_in.check_in_amendment", "amendment_posts",
      "attendance's posts"),
-    ("round_armed", "leaguebot.weather.services.forecast_changes", "amendment_posts",
+    ("round_armed", "leaguebot.weather.services.forecast_amendment", "round_armed",
      "weather's posts"),
     ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
      "weather's clean-ups"),
@@ -380,8 +384,8 @@ _SEASON_END_PARTS = (
      "season_end_refusal", "results' refusal of a season's end"),
     ("drivers_returned", "leaguebot.signup.services.closing_steps", "drivers_returned_on",
      "signup's wizards ended"),
-    ("test_mode_flushed", "leaguebot.weather.services.forecast_cleanup_service",
-     "forecast_deletes", "weather's forecast deletions"),
+    ("test_mode_flushed", "leaguebot.weather.services.forecast_changes", "test_mode_flushed_on",
+     "weather's forecast flush"),
     ("drivers_deleted", "leaguebot.image.services.driver_portrait_service", "discard_portraits",
      "image's portraits discarded"),
 )
@@ -513,18 +517,22 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     module plans, results' deletion of a submission channel, attendance's take-down of a call,
     attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
     forecast note and results' results note. A round's timing windows read: attendance's window,
-    then weather's, each handed whether the round is being amended. A round amended: inside the
+    then weather's, each handed whether the round is being amended. A round amended: as it is judged,
+    attendance's judgement of its check-in, then weather's of its forecasts; inside the
     save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's reopening
     of its check-in; as the round is armed again, the posts each owes, attendance's then weather's,
     then the clean-ups due a day after the round, weather's then attendance's; the steps each
     defines, weather's then attendance's, under the names the amendment gives them today; and the
-    words an outcome gives a step that was not done, weather's for a forecast. A season's end: what
+    words an outcome gives a step that was not done, weather's for a forecast, then attendance's
+    for its check-in. A season's end: what
     stands in its way, results' refusal while a round is being amended; the drivers it returns,
     signup's ending of their wizards in the save, and the jobs signup plans for a driver returned;
     the jobs that close what a module holds open,
     signup's close of its window; the steps each module defines for it, signup's notice and close,
     its window's close, the Sign Up button's deletion and the closed post, then weather's deletion
-    of a forecast; the jobs that clear what test mode posted, weather's; and the drivers deleted,
+    of a forecast, of a forecast's earlier part and the clearing of the forecasts posted under test
+    mode; the jobs that clear what test mode posted, weather's planning of that clearing; and the
+    drivers deleted,
     image's discard of their portraits. A season, division or round deleted, each module deleting
     its own rows: of the rounds, attendance's, results' then weather's; of the divisions,
     attendance's then results'; of the season, results' then signup's. A driver deleted, each module
@@ -551,6 +559,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     from leaguebot.core.models.cancellation import SCOPE_ROUND
     from leaguebot.results.services.review import review_state
     from leaguebot.signup.services import signup_views
+    from leaguebot.attendance.services.check_in import check_in_amendment
     from leaguebot.weather.services import forecast_changes
 
     called: list[str] = []
@@ -570,8 +579,8 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
                             raising=False)
     for module_name, name, part in _WINDOWS_PARTS:
-        async def window_spy(*_args, part=part, amending, **_kwargs):
-            called.append(f"{part}, amending {amending}")
+        async def window_spy(*_args, part=part, **_kwargs):
+            called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, window_spy,
                             raising=False)
 
@@ -582,6 +591,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
                             raising=False)
     monkeypatch.setattr(forecast_changes, "forecast_failure",
                         lambda *_args, **_kwargs: called.append("weather's words"))
+    monkeypatch.setattr(check_in_amendment, "check_in_failure",
+                        lambda *_args, **_kwargs: called.append("attendance's words"),
+                        raising=False)
     for _hook, module_name, name, part in _SEASON_END_PARTS:
         async def season_end_spy(*_args, part=part, **_kwargs):
             called.append(part)
@@ -639,9 +651,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         ["notify_forecast"], ["notify_results"],
     ]
     called.clear()
-    await bot.round_windows_read.call(amending=True)
-    assert called == ["attendance's window, amending True", "weather's window, amending True"]
-    for hook in ("round_amended", "round_armed", "round_clean_ups_due"):
+    await bot.round_windows_read.call()
+    assert called == ["attendance's window", "weather's window"]
+    for hook in ("amendment_judged", "round_amended", "round_armed", "round_clean_ups_due"):
         called.clear()
         await getattr(bot, hook).call(None, 0)
         assert called == [part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook]
@@ -655,7 +667,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     ]
     called.clear()
     bot.amendment_step_failure.call(None)
-    assert called == ["weather's words"]
+    assert called == ["weather's words", "attendance's words"]
     for hook in dict.fromkeys(each[0] for each in _SEASON_END_PARTS):
         called.clear()
         await getattr(bot, hook).call()
@@ -671,7 +683,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
             "close_signup", "close_window", "delete_button", "disarm_timers", "post_closed",
             "signup_notice",
         ],
-        ["delete_forecast"],
+        ["delete_forecast", "delete_forecast_part", "flush_forecasts"],
     ]
     assert not hasattr(bot, "season_end_untold")
     for hook in dict.fromkeys(each[0] for each in _DELETE_PARTS):
@@ -771,19 +783,16 @@ _ATTENDANCE_SET = (3, 12, 1)
 _WEATHER_SET = (4, 1, 3)
 
 
-@pytest.mark.parametrize("amending", [False, True], ids=["the approval", "the amendment"])
 @pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
 @pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
 async def test_the_windows_hook_hands_each_caller_today_s_pair(
-    tmp_path, attendance_on, weather_on, amending
+    tmp_path, attendance_on, weather_on
 ):
     """A league whose check-in calls go out 3 days ahead, their last notice 12 hours and their
     deadline 1 hour before the round, and whose forecasts fall 4 days, 1 day and 3 hours before
     it, with attendance and weather each on or off. Read through the hook the builder makes,
     `(attendance, weather)` is what each caller has always received: attendance's window only
-    where attendance is on; weather's, for the season's approval, only where weather is on, and
-    for an amendment whatever weather's switch, since a forecast posted while weather was on is
-    still posted."""
+    where attendance is on; weather's only where weather is on."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.rounds.round_moments import read_round_windows
@@ -806,11 +815,11 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
                          (int(weather_on),))
         await db.commit()
 
-    pair = await read_round_windows(bot.round_windows_read, amending=amending)
+    pair = await read_round_windows(bot.round_windows_read)
 
     assert pair == (
         AttendanceWindows(*_ATTENDANCE_SET) if attendance_on else None,
-        WeatherWindows(*_WEATHER_SET) if weather_on or amending else None,
+        WeatherWindows(*_WEATHER_SET) if weather_on else None,
     )
 
 
@@ -859,8 +868,8 @@ _RECOVERIES_OF_THE_STEPS = {
                                      "recover_orphaned_submission_channels"),
     "missed round starts": ("leaguebot.results.services.submission.submission_recovery",
                             "recover_missed_round_starts"),
-    "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
-    "missed forecast clean-ups": ("leaguebot.weather.wiring",
+    "missed phases": ("leaguebot.weather.services.forecast_recovery", "recover_missed_phases"),
+    "missed forecast clean-ups": ("leaguebot.weather.services.forecast_recovery",
                                   "recover_missed_forecast_clean_ups"),
     "missed check-in calls": ("leaguebot.attendance.services.check_in.check_in_recovery",
                               "recover_missed_check_in_calls"),
@@ -876,8 +885,14 @@ _RECOVERIES_OF_THE_STEPS = {
 _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
     {"signup close timer", "wizards", "held signup channels", "orphaned amend channels", "orphaned submission channels",
      "missed round starts",
-     "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups"}
+     "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups",
+     "missed phases", "missed forecast clean-ups"}
 )
+
+
+#: The steps whose recovery is handed the bot's database path in place of the bot: weather's two,
+#: which take nothing else of the bot (#287).
+_RECOVERIES_GIVEN_THE_DATABASE_PATH = frozenset({"missed phases", "missed forecast clean-ups"})
 
 
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
@@ -915,7 +930,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     amendment sweep arms the bot's scheduler's sweep; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
-    service does not look the queue up on the bot; each of the others in its module's wiring.
+    service does not look the queue up on the bot; each of the others in its module's wiring, but
+    weather's two, `recover_missed_phases` and `recover_missed_forecast_clean_ups` in
+    `weather.services.forecast_recovery`, each handed the bot's database path and its queue.
     The RSVP views' recovery is handed the way to build the check-in buttons too (`view_of`), made
     by attendance's wiring, so that `LeagueBot` declares no `check_in_view` for it to look up.
     Nothing is posted to the log channel.
@@ -1021,7 +1038,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
                                         "hub_options": bot.hub_options}),
         "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {
-        step: (function, (bot,),
+        step: (function,
+               (bot.db_path,) if step in _RECOVERIES_GIVEN_THE_DATABASE_PATH else (bot,),
                {"queue": bot.change_queue} if step in _RECOVERIES_GIVEN_THE_QUEUE else {})
         for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
     }

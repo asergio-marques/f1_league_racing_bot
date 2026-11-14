@@ -80,9 +80,9 @@ These columns are the modules' own, as `architecture.md` allows, and `OWN_COLUMN
 
 | Table | Column | Module |
 |---|---|---|
-| `rounds` | `phase1_done`, `phase2_done`, `phase3_done` | weather |
+| `rounds` | `phase1_done`, `phase2_done`, `phase3_done`, `mystery_notice_given` | weather |
 | `rounds` | `checkin_cleared` | attendance |
-| `sessions` | `phase2_slot_type`, `phase3_slots` | weather |
+| `sessions` | `phase2_slot_type` | weather |
 | `divisions` | `forecast_channel_id` | weather |
 | `server_configs` | `weather_module_enabled` | weather |
 | `server_configs` | `signup_module_enabled` | signup |
@@ -167,7 +167,7 @@ the code is laid out"). The table names a service by its file, not its folder.
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook |
 | Module switches | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
-| Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges what an amendment may do and costs, pure; the second names a round in an amendment's step by the number it bears when read |
+| Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
@@ -351,7 +351,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `season.approve.tell`, `channel.tell` | an approval, or a mid-season confirmation, refused or discarded | none | one line in the review's channel |
 | `core.driver_*` (seven) | `/driver …` | the seats or the state, and the audit entry | role moves, lineups |
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
-| `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entry; turned off, every fake driver deleted | forecasts cleared, the backup deleted |
+| `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entry; turned off, every fake driver deleted | the jobs the modules hand back for what test mode posted, the backup deleted |
 | `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
 | `core.test_roster_add` | `/test-mode roster add` | the fake driver, its seat and assignment, and the audit entry | — |
 | `core.test_roster_add_bulk` | `/test-mode roster add-bulk` | every driver of the file, their seats and assignments, and an audit entry for each | — |
@@ -373,6 +373,18 @@ recur:
   judges again on the save's connection; a refusal found there writes nothing and ends the
   change rather than stopping the lane (`core.round_amend`, `core.driver_reassign`). An approval or
   a mid-season confirmation retried after a fault plans its judgement again before it saves.
+- **An amendment is judged by core and by each module.** `judged_with_the_modules` asks
+  `amendment_judged` of each module, handing no module's windows: each reads and keeps its own in its
+  `AmendmentPart`. The `judge` job's record is `{judged, kept}`, the parts' `kept` merged and stored
+  as given, named by no module, and handed back by the save and the arming to every module, each
+  reading only its own; a module finding none of its own in a record made before an update reads afresh. The
+  steps a module plans for an amendment are worded by the module (`amendment_step_failure`), so
+  core's outcome names none of them.
+- **A test-mode flush is whatever the modules hand back.** A change that switches test mode off or
+  ends a season plans the jobs `test_mode_flushed` returns, on the save's connection. The abort, which
+  plans them before the save that switches test mode off, asks (`fill`) with a flag that the jobs are
+  due only where test mode is still on as each comes up, and the module's job reads it; core names
+  no module's step.
 - **A fault in a job stops the lane**, save in `/bot init`'s save, a `Setting`'s save and the
   steps after it, and a role move (`role_moves.role_move_step`), each of which ends on a fault
   instead. `/season setup`'s
@@ -419,8 +431,12 @@ scheduler is paused until start-up ends.
 amendment and re-arming of a round (`round_amend_change`), through the scheduler service's arming
 functions. Each reads when a round's events fall from `round_event_moments`
 (`core/services/rounds/round_moments.py`), which is pure: no database, no clock, no scheduler. A
-cancellation removes a round's work (`cancel_round`, `cancel_rounds`) before its save. The handlers
-for a round's kinds are the modules'.
+cancellation removes a round's work (`cancel_round`, `cancel_rounds`) before its save. Whether a
+module's work is armed, and with what, is that module's answer through `round_armed`, a `RoundArming`
+of its steps and its jobs (weather's `ForecastJobs`, attendance's `CheckInJobs`); the arming step
+makes the scheduler's calls from them and arms the results submission whatever they answer. A round
+already raced, or ended not held, is armed its clean-ups alone, by `schedule_round_cleanups`, from the
+modules' switches. The handlers for a round's kinds are the modules'.
 
 ### Start-up
 
@@ -445,7 +461,11 @@ sweep of everything that came due while the bot was stopped:
   builder.
 - **Each step, each switch read, each module's list of steps and the queue's start is contained**:
   one that raises is logged with its traceback and reported to the log channel by one line
-  (`start_up_failure_line`), and the rest carry on, the module's later steps included. A module whose
+  (`start_up_failure_line`), and the rest carry on, the module's later steps included. Where the
+  error carries `rounds_called` (the protocol `RoundsFailed`, `core/models/recovery.py`: each round
+  a step failed for, named as core names it), the line names them, and never asks for a module's own
+  error type, so each module's `RecoveryFailed` is its own; an error carrying none is a step that
+  failed as a whole, and its line names no round. A module whose
   switch or list cannot be read is passed over; a switch not signed up is a fault in the assembly and
   is reported, never read as off.
 - **The hold is released when the sweep has asked its own**, on leaving `sweeping()`, and again in an
@@ -575,12 +595,13 @@ which each `_sign_up_to_*` docstring states where it matters.
 | Hook | Type | Subscribers | Core calls it in |
 |---|---|---|---|
 | `starting` | `StartingHook`, read rather than called | core's two steps, then signup, results, attendance, weather, image | `start_up` |
-| `round_windows_read` | A | attendance, weather | `round_moments.read_round_windows` |
-| `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn` |
+| `round_windows_read` | A | attendance, weather | `round_moments.read_round_windows`, for the season's approval and review; an amendment reads no module's windows through it |
+| `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn`, whose one caller is `/season status` |
+| `amendment_judged` | A | attendance, weather | `round_amend_change`, and `/round amend`'s confirmation (`round_cog`); handed no windows, each module reading and keeping its own |
 | `round_amended`, `round_clean_ups_due` | A | weather, attendance | `round_amend_change` |
 | `round_armed` | A | attendance, weather | `round_amend_change` |
 | `amendment_steps` | P | weather, attendance | `round_amend_change` |
-| `amendment_step_failure` | P | weather | `round_amend_change` |
+| `amendment_step_failure` | P | weather, attendance | `round_amend_change` |
 | `cancellation_refused` | A | results | `cancellation_changes` |
 | `rounds_called_off` | A | results, attendance | `cancellation_changes` |
 | `cancellation_notices` | A | attendance, weather, results | `cancellation_changes`, and `season_service.end_round_not_held_on`, results' not-held round end's writer |
@@ -611,7 +632,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `drivers_deleted` | A | image | `season_end_service` |
 | `test_mode_turned_on` | A | results | `test_mode_toggle_change` |
 | `season_approved` | A | results | `season_approval_change` |
-| `test_mode_flushed` | A | weather | `season_end_service` |
+| `test_mode_flushed` | A | weather | `test_mode_toggle_change`, `season_end_changes` (the season's end, and the abort's `fill`) and `cancellation_changes` (a season's cancellation), which plan the jobs it hands back and name none |
 | `pending_steps_read` | A | weather, attendance, results | `test_mode_service` |
 | `review_marks_read` | A | weather, results, attendance | `test_mode_service` |
 | `in_memory_state_cleared` | P | results, signup | `in_memory_state.clear_in_memory_state` |
@@ -823,8 +844,8 @@ What test mode is, and what it allows, are the core specification's ("Test mode"
 **The switch is a change of its own**, `core.test_mode_toggle`, carrying the state it sets rather
 than a flip. Turning it on is one save: the flag, the modules' part through `test_mode_turned_on`,
 and the audit entry. Turning it off is one save too (`switch_test_mode_off_on`), deleting every fake
-driver through `delete_driver_profiles`, followed by jobs that clear the forecasts posted under test
-mode and delete the saved backup. A season's end switches it off in its own `end` save. Whether a
+driver through `delete_driver_profiles`, followed by the jobs the modules hand back through `test_mode_flushed`
+to clear what test mode posted, and the deletion of the saved backup. A season's end switches it off in its own `end` save. Whether a
 real driver stands in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a
 `Setting`.
 

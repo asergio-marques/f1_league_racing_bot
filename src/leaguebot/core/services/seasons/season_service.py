@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -1513,6 +1513,22 @@ async def division_on(db: aiosqlite.Connection, division_id: int) -> Division | 
     return _row_to_division(row) if row is not None else None
 
 
+async def sessions_of_round_on(db: aiosqlite.Connection, round_id: int) -> list[Session]:
+    """The sessions of *round_id* in id order, none for a round with none or one that is not
+    there, read on *db*.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"), handed the connection of its own save: a draw that goes through each session reads
+    them here, inside the same save, so a session that save has written is read as written. It
+    writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, round_id, session_type FROM sessions WHERE round_id = ? ORDER BY id",
+        (round_id,),
+    )
+    return [_row_to_session(row) for row in await cursor.fetchall()]
+
+
 async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | None:
     """*round_id* of *division_id*, or None where it is not (any longer) that division's.
 
@@ -1556,15 +1572,31 @@ async def round_called(db_path: str, round_id: int) -> str:
     round at the press, and a round deleted meanwhile is named so rather than failing the refusal.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.round_number, d.name FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
+        return await round_called_on(db, round_id)
+
+
+async def round_called_on(db: aiosqlite.Connection, round_id: int) -> str:
+    """`round_called` read on *db*, for a line written inside a save that must await nothing but
+    that save's own connection."""
+    cursor = await db.execute(
+        "SELECT r.round_number, d.name FROM rounds r "
+        "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+        (round_id,),
+    )
+    row = await cursor.fetchone()
     if row is None:
         return "a round no longer there"
     return f"round {row['round_number']} in **{row['name']}**"
+
+
+async def rounds_called(db_path: str, round_ids: Sequence[int]) -> tuple[str, ...]:
+    """Each of *round_ids* as `round_called` names it, in the order given, read in one connection.
+
+    For the error a module's start-up step raises for some of its rounds (`RoundsFailed`), so that
+    the log channel's line can name them as a league reads them.
+    """
+    async with get_connection(db_path) as db:
+        return tuple([await round_called_on(db, round_id) for round_id in round_ids])
 
 
 @dataclass(frozen=True)
@@ -1695,6 +1727,35 @@ async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
             (RoundStatus.NOT_RUN.value, stored_scheduled_at(now)),
         )
         return [_row_to_round(row) for row in await cursor.fetchall()]
+
+
+async def rounds_of_the_active_season(db_path: str) -> tuple[list[Round], list[int]]:
+    """The rounds of the ACTIVE season that are not cancelled, of a division not cancelled,
+    earliest first and, at the same moment, by id; and, apart, the ids of such rounds whose stored
+    moment cannot be read, in id order.
+
+    For a module catching up what came due while the bot was down: weather's missed phases, which
+    a season is owed while it is live, whatever stage it is in. A round that can be placed nowhere
+    is not passed over in silence: its id is handed back for the caller to report as that round's
+    own failure, the rounds that can be read being asked all the same. It writes nothing.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
+            "r.status FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status = 'ACTIVE' AND r.status != 'CANCELLED' AND d.status != 'CANCELLED' "
+            "ORDER BY r.scheduled_at, r.id"
+        )
+        rows = await cursor.fetchall()
+    rounds: list[Round] = []
+    unreadable: list[int] = []
+    for row in rows:
+        try:
+            rounds.append(_row_to_round(row))
+        except ValueError:
+            unreadable.append(row[0])
+    return rounds, sorted(unreadable)
 
 
 async def rounds_of_ongoing_seasons(db_path: str, statuses: Iterable[str]) -> list[Round]:

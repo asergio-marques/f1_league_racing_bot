@@ -129,17 +129,24 @@ def _highest(weights: dict[str, float]) -> str:
 
 
 async def _persisted_slots(db_path: str) -> list[tuple[str, list[str] | None]]:
-    """Every session's ``(session_type, phase3_slots)``, ordered by id as Phase 3 reads them."""
+    """Every session's ``(session_type, slots)``, ordered by id as Phase 3 reads them: the slots
+    its standing Phase 3 draw holds for it, or None where no Phase 3 draw stands."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT session_type, phase3_slots FROM sessions WHERE round_id = ? ORDER BY id",
+            "SELECT id, session_type FROM sessions WHERE round_id = ? ORDER BY id", (ROUND_ID,),
+        )
+        sessions = await cursor.fetchall()
+        cursor = await db.execute(
+            "SELECT payload FROM phase_results "
+            "WHERE round_id = ? AND phase_number = 3 AND status = 'ACTIVE'",
             (ROUND_ID,),
         )
-        rows = await cursor.fetchall()
-    return [
-        (row["session_type"], json.loads(row["phase3_slots"]) if row["phase3_slots"] else None)
-        for row in rows
-    ]
+        drawn = await cursor.fetchone()
+    slots = {} if drawn is None else {
+        int(each["session_id"]): list(each["slots"])
+        for each in json.loads(drawn["payload"])["session_draws"]
+    }
+    return [(row["session_type"], slots.get(int(row["id"]))) for row in sessions]
 
 
 async def _phase3_state(db_path: str) -> tuple[int, int]:
@@ -242,15 +249,6 @@ async def test_a_mixed_session_capped_at_one_slot_takes_one(tmp_path):
     slots = (await _persisted_slots(db_path))[0][1]
     assert len(slots) == 1
     assert set(slots) <= DRY_LABELS | WET_LABELS
-
-
-async def test_an_unknown_session_type_falls_back_to_four_slots(tmp_path):
-    """A session type outside the enum must not take the phase down."""
-    db_path = await _make_db(tmp_path)
-    await _seed(db_path, sessions=[("NOT_A_SESSION_TYPE", "sunny")])
-    _, randint, _ = await _draw(db_path)
-
-    assert randint.call_args.args == (1, 4)
 
 
 @pytest.mark.parametrize("pick", ["min", "max"], ids=["lower_bound", "upper_bound"])

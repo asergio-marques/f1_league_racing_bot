@@ -49,6 +49,7 @@ from tests.support.season_league import (
     FERRARI,
     MAX,
     PRO,
+    _refusing_delete,
     amend_round,
     amendment_changes,
     cancel_round,
@@ -899,13 +900,15 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
     another connection still reads the old moment, since the save has not committed; and round 3
     still bears number 3, the division not yet renumbered. What it hands back is kept with the
     save, not in memory: the queue is restarted once the save is made, and the module's part of
-    the round armed again still finds it among what it is handed, and plans its own step from it.
+    the round armed again still finds it among what it is handed, and plans its own step from it,
+    answering the round armed again with that step and no timed work of its own.
     The steps run in order: attendance's take-down of the call, weather's deletion of the
     withdrawn forecast and its notice, then the further module's step, carrying what the save
     handed back, then the reply's round list. Once the queue has run, round 3 is round 4."""
     from collections.abc import Mapping
 
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.amendment import RoundArming
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
     from leaguebot.core.services.queue.change_types import Step
     from tests.support.change_queue import restart_queue
@@ -933,10 +936,10 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
                      outside == old["scheduled_at"]))
         return {further: [rid, number]}
 
-    async def _posts(*args: Any, **kwargs: Any) -> tuple[PlannedStep, ...]:
+    async def _posts(*args: Any, **kwargs: Any) -> RoundArming:
         [kept] = [each[further] for each in (*args, *kwargs.values())
                   if isinstance(each, Mapping) and further in each]
-        return (PlannedStep(further, {"from_the_save": kept}),)
+        return RoundArming(steps=(PlannedStep(further, {"from_the_save": kept}),))
 
     async def _post(ctx: Any) -> StepResult:
         carried.append(ctx.step_payload["from_the_save"])
@@ -1674,8 +1677,8 @@ async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_pat
         await posted_forecast(league, R3, 2, message)
     else:
         message, phase = 8000, 0
-        await league.write("UPDATE rounds SET format = 'MYSTERY', phase1_done = 1 WHERE id = ?",
-                           R3)
+        await league.write(
+            "UPDATE rounds SET format = 'MYSTERY', mystery_notice_given = 1 WHERE id = ?", R3)
         await league.write(
             "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
             "posted_at) VALUES (?, ?, 0, ?, ?)", R3, PRO, message, league.clock.now.isoformat())
@@ -2680,3 +2683,507 @@ async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp
     assert reposts.posted == [(R3, PRO)]
     assert len(_success_lines(league)) == 1
     assert [line for line in _log_lines(league) if "/attendance post-check-in" in line] == []
+
+
+# ── A mystery round's notice, under an amendment (owner, 2026-11-14) ─────────────────────────
+
+
+async def _with_its_notice_posted(league: Any, *, days: float) -> int:
+    """Pro's round 3 made a mystery round, naming no circuit, *days* out, inside its first
+    horizon; its notice asked as its timer asks it and run through the queue. Gives the notice's
+    message."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast
+
+    await league.write("UPDATE rounds SET format = 'MYSTERY', track_name = NULL WHERE id = ?", R3)
+    await _place_r3(league, days=days)
+    await ask_forecast(league.bot.change_queue, league.db_path, R3, 1)
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is None
+    [(kind, notice)] = _forecast_events(league)
+    assert kind == "send"
+    assert await _forecasts(league) == {0: notice}
+    return notice
+
+
+@pytest.mark.parametrize("weather_on", [
+    pytest.param(True, id="weather on"),
+    pytest.param(False, id="weather switched off since the notice"),
+])
+async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down(
+    tmp_path, weather_on,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is a mystery round three days
+    out, its notice posted in Pro's forecast channel. Weather is left on, or switched off; a
+    manager then changes the round to a Normal round at Silverstone Circuit, its moment as it
+    stands. The amendment is allowed and finishes. The notice is deleted and its record closed,
+    whatever weather's switch, and no notice that forecasts no longer stand is posted. With
+    weather on, the round's Phase 1, whose horizon has passed, is drawn and posted at once, and
+    is the one forecast recorded; the round is armed again for its forecasts, Phases 2 and 3 at
+    the league's horizons, with no Phase 1 timer to draw it a second time. With weather off,
+    nothing else is posted and no forecast is armed (criterion 1)."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           R3, session)
+    notice = await _with_its_notice_posted(league, days=3)
+    if not weather_on:
+        await league.write("UPDATE server_configs SET weather_module_enabled = 0")
+    armed_before = len(league.armed)
+    forecasts_armed = league.bot.scheduler_service.schedule_round
+    forecasts_armed_before = len(forecasts_armed.call_args_list)
+
+    press = await _amended(league, format="NORMAL", track="Silverstone Circuit")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert _outcome(press).startswith(AMENDED)
+    after = _forecast_events(league)[1:]
+    assert [mid for kind, mid in after if kind == "delete"] == [notice]
+    assert notice not in league.channel(PRO_CH.forecast).messages
+    assert not any("Invalidated" in text for text in league.texts(PRO_CH.forecast))
+    sent = [mid for kind, mid in after if kind == "send"]
+    armed = [which for which, _ in league.armed[armed_before:]]
+    forecast_arming = forecasts_armed.call_args_list[forecasts_armed_before:]
+    if weather_on:
+        assert len(sent) == 1
+        assert await _forecasts(league) == {1: sent[0]}
+        assert armed.count("weather") == 1
+        [arming] = forecast_arming
+        assert arming.kwargs.get("skip_phases") == frozenset({1})
+    else:
+        assert sent == []
+        assert await _forecasts(league) == {}
+        assert "weather" not in armed
+        assert forecast_arming == []
+
+
+@pytest.mark.parametrize("cleared", ["retried", "discarded"])
+async def test_a_mystery_round_s_notice_discord_will_not_delete_stops_the_queue_keeping_it(
+    tmp_path, cleared,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is a mystery round three days
+    out, its notice posted in Pro's forecast channel; a manager changes it to a Normal round at
+    Silverstone Circuit, and Discord refuses to delete the notice. The queue stops, its notice
+    naming the job "deleting the mystery round notice of round 3 in **Pro**", never a Phase 0
+    forecast nor a withdrawn one; the notice stands in the channel with its record. Retried once
+    Discord allows it, the notice and its record go and the amendment finishes with nothing left
+    undone. Discarded, the amendment's reply names, under Pro's forecast channel, the mystery
+    round notice that could not be deleted, with its link to delete it by hand (criterion 1)."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           R3, session)
+    notice = await _with_its_notice_posted(league, days=3)
+    league.undeletable.add(notice)
+    _refusing_delete(league, league.channel(PRO_CH.forecast).messages[notice])
+
+    press = await _amended(league, format="NORMAL", track="Silverstone Circuit")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    notices = _stop_notices(league)
+    assert any("deleting the mystery round notice of round 3 in **Pro**" in line
+               for line in notices), notices
+    assert not any("Phase 0" in line or "withdrawn" in line for line in notices), notices
+    assert notice in league.channel(PRO_CH.forecast).messages
+    assert (await _forecasts(league)).get(0) == notice
+    if cleared == "retried":
+        league.undeletable.clear()
+        await retry_job(league.bot)
+        await run_queue(league.bot)
+        assert await stopped_job(league.db_path) is None
+        assert notice not in league.channel(PRO_CH.forecast).messages
+        assert 0 not in await _forecasts(league)
+        assert NOT_DONE not in _outcome(press)
+        return
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+    outcome = _outcome(press)
+    assert outcome.startswith(AMENDED) and NOT_DONE in outcome
+    named = ("**Pro** — forecast channel: the mystery round notice could not be deleted, and a "
+             "league admin discarded it; delete it by hand (")
+    [bullet] = [line for line in outcome.splitlines() if named in line]
+    assert str(notice) in bullet
+    assert "Phase 0" not in outcome and "withdrawn" not in outcome
+
+
+@pytest.mark.parametrize("days", [
+    pytest.param(30, id="moved later, before its first horizon again"),
+    pytest.param(1, id="moved earlier"),
+])
+async def test_a_mystery_round_whose_date_is_moved_keeps_its_notice(tmp_path, days):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is a mystery round three days
+    out, its notice posted. A manager moves it to *days* out, still a mystery round, and the
+    amendment runs; then its Phase 1 is asked again, as a timer armed for its new first horizon
+    would ask it. The notice stands with its record: nothing in Pro's forecast channel is deleted,
+    nothing is posted again, and no notice that forecasts no longer stand goes out
+    (criterion 2)."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast
+
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    notice = await _with_its_notice_posted(league, days=3)
+
+    await _amended(league, scheduled_at=_at(league, days=days))
+    await run_queue(league.bot)
+    await ask_forecast(league.bot.change_queue, league.db_path, R3, 1)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert _forecast_events(league) == [("send", notice)]
+    assert notice in league.channel(PRO_CH.forecast).messages
+    assert await _forecasts(league) == {0: notice}
+
+
+# ── Every job a league admin discards is named in today's words ────────────────────────────
+#
+# Each case is the steps of one amendment of Pro's round 3 as its outcome reads them: the step's
+# name, its payload, and its result, "discarded" marking the job a league admin discarded. The
+# names are the queue's own, kept as they are stored, whichever module comes to name them.
+
+_LINK = "https://discord.com/channels/5/6/7"
+_VANISHED = (
+    "check-in call", "it could not be posted again and none can be seen; post it by hand with "
+    "`/attendance post-check-in` once the cause is cleared (or the check-in channel is set), "
+    "and see the log channel",
+)
+_EARLIER_KEPT = (
+    "check-in call", "it could not be posted again, so the earlier call was kept and its answers "
+    "count; see the log channel",
+)
+_GONE = {"discarded": True}
+
+_UNDONE_STEPS = [
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11, 12]})],
+        [("check-in call", "2 message(s) could not be deleted and must be removed by hand "
+          "(ids 11, 12)")],
+        id="take-down-call",
+    ),
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11]}),
+         ("post_call", {}, {"vanished": True})],
+        [_VANISHED], id="take-down-call-and-no-call-seen",
+    ),
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11]}),
+         ("post_call", {}, {"earlier_left": True})],
+        [_EARLIER_KEPT], id="take-down-call-and-the-earlier-call-kept",
+    ),
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11]}),
+         ("post_call", {}, {**_GONE, "vanished": True})],
+        [_VANISHED], id="take-down-and-post-call-named-once",
+    ),
+    pytest.param(
+        [("post_call", {}, {**_GONE, "vanished": True})], [_VANISHED], id="post-call-none-seen",
+    ),
+    pytest.param(
+        [("post_call", {}, {**_GONE, "earlier_left": True})], [_EARLIER_KEPT],
+        id="post-call-earlier-kept",
+    ),
+    pytest.param(
+        [("post_call", {}, _GONE)],
+        [("check-in call", "the call could not be posted again, and a league admin discarded it; "
+          "post it with `/attendance post-check-in`")],
+        id="post-call",
+    ),
+    pytest.param(
+        [("delete_forecast", {},
+          {**_GONE, "phase": 1, "guild_id": 5, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the withdrawn Phase 1 forecast could not be deleted, and a league "
+          f"admin discarded it; delete it by hand ({_LINK})")],
+        id="delete-withdrawn-forecast",
+    ),
+    pytest.param(
+        [("delete_forecast", {},
+          {**_GONE, "phase": 0, "guild_id": 5, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the mystery round notice could not be deleted, and a league admin "
+          f"discarded it; delete it by hand ({_LINK})")],
+        id="delete-mystery-round-notice",
+    ),
+    pytest.param(
+        [("delete_forecast", {"superseded": True},
+          {**_GONE, "phase": 2, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the superseded Phase 2 forecast could not be deleted, and a league "
+          "admin discarded it; delete it by hand (message 7 in <#6>)")],
+        id="delete-superseded-forecast-with-no-link",
+    ),
+    pytest.param(
+        [("delete_forecast", {"clean_up": True},
+          {**_GONE, "phase": 3, "guild_id": 5, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the Phase 3 forecast could not be deleted a day after the round, "
+          f"and a league admin discarded it; delete it by hand ({_LINK})")],
+        id="delete-forecast-at-the-clean-up",
+    ),
+    pytest.param(
+        [("notify_invalidation", {}, _GONE)],
+        [("forecast channel", "the notice that its forecasts no longer stand could not be posted, "
+          "and a league admin discarded it")],
+        id="notify-invalidation",
+    ),
+    pytest.param(
+        [("rerun_phase", {"phase": 2}, _GONE)],
+        [("Phase 2 forecast", "not drawn, and a league admin discarded it; it is drawn when the "
+          "bot next starts, while the round is still to be run")],
+        id="rerun-phase",
+    ),
+    pytest.param(
+        [("distribute", {}, _GONE)],
+        [("check-in deadline", "the reserves were not distributed, and a league admin discarded "
+          "it; it is run when the bot next starts, while the call stands")],
+        id="distribute",
+    ),
+    pytest.param(
+        [("lock_call", {}, _GONE)],
+        [("check-in call", "the buttons could not be taken off the call at its deadline, and a "
+          "league admin discarded it; the placements stand, and the call can be taken down by "
+          "hand")],
+        id="lock-call",
+    ),
+    pytest.param(
+        [("announce", {}, _GONE)],
+        [("reserve announcement", "the reserves' announcement could not be posted, and a league "
+          "admin discarded it; the placements stand")],
+        id="announce",
+    ),
+    pytest.param(
+        [("clean_up_forecast", {"standing": [2]}, _GONE)],
+        [("forecast channel", "the Phase 2 forecast was not deleted a day after the round, and a "
+          "league admin discarded it; it is deleted when the bot next starts")],
+        id="clean-up-one-forecast",
+    ),
+    pytest.param(
+        [("clean_up_forecast", {"standing": [1, 2]}, _GONE)],
+        [("forecast channel", "the Phase 1 and 2 forecasts were not deleted a day after the "
+          "round, and a league admin discarded it; they are deleted when the bot next starts")],
+        id="clean-up-two-forecasts",
+    ),
+    pytest.param(
+        [("clean_up_check_in", {}, _GONE)],
+        [("check-in call", "the check-in was not taken down a day after the round, and a league "
+          "admin discarded it; it is taken down when the bot next starts")],
+        id="clean-up-check-in",
+    ),
+    pytest.param(
+        [("delete_message", {"what": "check-in call", "channel_id": 9},
+          {**_GONE, "link": _LINK})],
+        [("check-in call", "the check-in call could not be deleted a day after the round, and a "
+          f"league admin discarded it; delete it by hand ({_LINK})")],
+        id="delete-message",
+    ),
+    pytest.param(
+        [("delete_message", {"channel_id": 9}, _GONE)],
+        [("check-in call", "the message could not be deleted a day after the round, and a league "
+          "admin discarded it; delete it by hand (in <#9>)")],
+        id="delete-message-with-no-link",
+    ),
+    pytest.param(
+        [("draw_forecast", {"phase": 1}, _GONE)],
+        [("Phase 1 forecast", "not drawn, and a league admin discarded it; it is drawn when the "
+          "bot next starts, while the round is still to be run")],
+        id="draw-forecast",
+    ),
+    pytest.param(
+        [("post_forecast", {}, {**_GONE, "phase": 2})],
+        [("Phase 2 forecast", "drawn but not posted, and a league admin discarded it; the draw "
+          "stands in the log channel, and nothing posts it again")],
+        id="post-forecast",
+    ),
+    pytest.param(
+        [("delete_forecast_part", {"what": "Phase 1 forecast", "channel_id": 6}, _GONE)],
+        [("forecast channel", "a part of the Phase 1 forecast could not be deleted, and a league "
+          "admin discarded it; delete it by hand (in <#6>)")],
+        id="delete-a-part-of-a-forecast",
+    ),
+]
+
+
+@pytest.mark.parametrize("steps, named", _UNDONE_STEPS)
+async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, steps, named):
+    """The bot is the one the entry point builds, every module's hooks signed up. Pro's round 3
+    is amended, and a league admin discards one of the jobs the amendment planned: the check-in
+    call's take-down or repost, a forecast's deletion, the invalidation notice, a phase's redraw,
+    the reserves' distribution, the call's lock, the reserve announcement, a clean-up, a message's
+    deletion, a forecast's draw or post, or a part of a forecast left standing. The amendment's
+    outcome reads "Round amended successfully", then, under "Not done", one line per job naming
+    Pro, the thing left undone and what to do about it, word for word as today; a take-down whose
+    repost is discarded too is named once, by the take-down."""
+    from leaguebot.core.db.database import run_migrations
+    from leaguebot.core.services.queue.change_types import OutcomeContext, StepView
+    from tests.support.change_queue import league_bot
+
+    path = str(tmp_path / "words.db")
+    await run_migrations(path)
+    bot = await league_bot(path)
+    [amend] = [kind for kind in bot.change_queue.types if kind.kind == "season.round.amend"]
+    ctx = OutcomeContext(
+        bot=bot, db_path=path, change_id=1, kind="season.round.amend",
+        payload={"division_name": "Pro", "round_number": 3}, what="`/round amend`",
+        actor_id=None, actor_name=None, named="Admin",
+        steps=tuple(StepView(name, payload, result, True) for name, payload, result in steps),
+    )
+
+    assert amend.outcome(ctx) == "✅ Round amended successfully.\n⚠️ **Not done**\n" + "\n".join(
+        f"  • **Pro** — {target}: {reason}" for target, reason in named
+    )
+
+
+# ── Core arms what each module's arming answer hands back (#287) ───────────────────────────
+#
+# Whether a module's timed work is armed again, and with what, is that module's answer through
+# `round_armed`: a `RoundArming` carrying the steps it plans and its jobs, `ForecastJobs` for the
+# forecasts and `CheckInJobs` for the check-in. Core's arming makes the scheduler's calls, in
+# today's order, from what it is handed.
+
+
+async def test_core_arms_what_a_module_s_arming_answer_hands_back(tmp_path):
+    """Weather and attendance both off. In place of the modules' own answers, one module answers
+    the round armed again with forecast jobs at horizons of 4 days, 1 day and 3 hours, its Phase 2
+    to be skipped, and another with check-in jobs at 6 days, 12 hours and 1 hour. Pro's round 3 is
+    moved to 60 days out. The round's forecasts are armed once, at those horizons and skipping
+    Phase 2; its check-in once, at those lead times; and its results submission is not armed on
+    its own, the forecasts' arming carrying it as today."""
+    league = await ongoing_league(tmp_path)
+    from leaguebot.core.models.amendment import RoundArming
+    from leaguebot.core.models.round import (
+        AttendanceWindows,
+        CheckInJobs,
+        ForecastJobs,
+        WeatherWindows,
+    )
+
+    forecasts = RoundArming(steps=(), jobs=ForecastJobs(
+        windows=WeatherWindows(phase_1_days=4, phase_2_days=1, phase_3_hours=3),
+        skip_phases=frozenset({2}),
+    ))
+    check_in = RoundArming(steps=(), jobs=CheckInJobs(
+        windows=AttendanceWindows(notice_days=6, last_notice_hours=12, deadline_hours=1),
+    ))
+
+    async def _forecasts(*_args: Any, **_kwargs: Any) -> Any:
+        return forecasts
+
+    async def _check_in(*_args: Any, **_kwargs: Any) -> Any:
+        return check_in
+
+    league.bot.round_armed._subscribers.clear()
+    league.bot.round_armed.subscribe(_forecasts)
+    league.bot.round_armed.subscribe(_check_in)
+    await _amended(league, scheduled_at=_at(league, days=60))
+
+    await run_queue(league.bot)
+
+    scheduler = league.bot.scheduler_service
+    assert (await _change(league))["state"] == "DONE"
+    [armed] = scheduler.schedule_round.call_args_list
+    assert armed.args[0].id == R3
+    assert {key: armed.kwargs[key] for key in
+            ("phase_1_days", "phase_2_days", "phase_3_hours", "skip_phases")} == {
+        "phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3, "skip_phases": frozenset({2}),
+    }
+    [called] = scheduler.schedule_attendance_round.call_args_list
+    assert called.args[0].id == R3
+    assert {key: called.kwargs[key] for key in
+            ("notice_days", "last_notice_hours", "deadline_hours")} == {
+        "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,
+    }
+    assert scheduler.schedule_result_submission_jobs.call_args_list == []
+
+
+async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp_path):
+    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, but no module answers
+    the round armed again. Pro's round 3 is moved to 60 days out. Neither its forecasts nor its
+    check-in are armed; its results submission is armed, once, for round 3 alone, so that the
+    round still opens its submission and can finish."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    league.bot.round_armed._subscribers.clear()
+    await _amended(league, scheduled_at=_at(league, days=60))
+
+    await run_queue(league.bot)
+
+    scheduler = league.bot.scheduler_service
+    assert (await _change(league))["state"] == "DONE"
+    assert scheduler.schedule_round.call_args_list == []
+    assert scheduler.schedule_attendance_round.call_args_list == []
+    [armed] = scheduler.schedule_result_submission_jobs.call_args_list
+    assert [rnd.id for rnd in armed.args[0]] == [R3]
+
+
+# ── Each module keeps its own windows (#287, T7) ───────────────────────────────────────────
+#
+# Core hands no module the windows of another, nor its own: each module reads its own lead times
+# through its part of the judgement and keeps them in what that part keeps, which core stores in
+# `judge`'s record without reading it.
+
+async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
+    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is moved
+    to 60 days out and the amendment runs, every module's arming answer recorded as it is asked.
+    The record `judge` keeps holds no windows, and `round_armed` is handed none: no argument
+    named for attendance or weather, and no forecast horizons or check-in lead times among what
+    it is handed."""
+    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    handed: list[dict[str, Any]] = []
+
+    async def _recorded(*args: Any, **kwargs: Any) -> None:
+        handed.append({"args": args, "kwargs": kwargs})
+
+    league.bot.round_armed._subscribers.clear()
+    league.bot.round_armed.subscribe(_recorded)
+    await _amended(league, scheduled_at=_at(league, days=60))
+
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    assert "windows" not in (await _job(league, "judge"))["result"]
+    [asked] = handed
+    assert not {"attendance", "weather"} & set(asked["kwargs"])
+    assert not any(isinstance(value, (AttendanceWindows, WeatherWindows))
+                   for value in (*asked["args"], *asked["kwargs"].values()))
+
+
+async def test_an_amendment_stopped_across_the_update_reads_each_module_s_windows_afresh(tmp_path):
+    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, check-in lead times
+    5 days, 24 hours, 2 hours. Pro's round 3 is moved to 60 days out, and the amendment stops at
+    its save, its judgement kept as the bot before this update kept it: both modules' windows
+    under `windows`, by name. The league then sets its horizons to 4 days, 1 day, 3 hours and its
+    check-in to 6 days, 12 hours, 1 hour, and the save is retried. The amendment finishes,
+    nothing raising: neither module finds a window of its own in the record, so each reads its
+    windows afresh, and the round is armed once for its forecasts and once for its check-in, at
+    the lead times the league has now."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await _amended(league, scheduled_at=_at(league, days=60))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+    old_record = {
+        "judged": True,
+        "windows": {
+            "attendance": {"notice_days": 5, "last_notice_hours": 24, "deadline_hours": 2},
+            "weather": {"phase_1_days": 5, "phase_2_days": 2, "phase_3_hours": 2},
+        },
+    }
+    await league.write("UPDATE queued_change_steps SET result = ? WHERE change_id = ? AND name = ?",
+                       json.dumps(old_record), (await _change(league))["id"], "judge")
+    await league.write("UPDATE weather_pipeline_config SET phase_1_days = 4, phase_2_days = 1, "
+                       "phase_3_hours = 3")
+    await league.write("UPDATE attendance_config SET rsvp_notice_days = 6, "
+                       "rsvp_last_notice_hours = 12, rsvp_deadline_hours = 1")
+
+    await retry_job(league.bot)
+    await run_queue(league.bot)
+
+    scheduler = league.bot.scheduler_service
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [armed] = scheduler.schedule_round.call_args_list
+    assert {key: armed.kwargs[key] for key in ("phase_1_days", "phase_2_days", "phase_3_hours")} \
+        == {"phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3}
+    [called] = scheduler.schedule_attendance_round.call_args_list
+    assert {key: called.kwargs[key] for key in
+            ("notice_days", "last_notice_hours", "deadline_hours")} == {
+        "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,
+    }

@@ -53,10 +53,6 @@ PASS = {
 }
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
-#: The start-up catch-up, each module's share in its wiring: each module moves its own into the
-#: handler it provides for the start-up sweep (architecture.md, "Timed work and restarts"). The
-#: missed post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
-CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -170,8 +166,6 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
-    ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
 }
 
@@ -584,9 +578,6 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Each owned by the pass whose handler must first judge a missed event of its kind.
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["image"]),
-    # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`.
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
-    ("core/services/scheduler_service.py", "SchedulerService._arm_forecast_cleanup"): (1, PASS["weather"]),
 }
 
 
@@ -993,7 +984,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
 
@@ -1532,7 +1522,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
-    ("weather/services/weather_settings.py", "forecast_channel_setting.check"): (1, PASS["weather"]),
 }
 
 
@@ -1780,8 +1769,10 @@ TABLE_OWNER: dict[str, str] = {
 #: `tests/core/test_schema_rules.py` holds each to the schema the migrations build.
 OWN_COLUMNS: dict[str, dict[str, frozenset[str]]] = {
     "weather": {
-        "rounds": frozenset({"phase1_done", "phase2_done", "phase3_done"}),
-        "sessions": frozenset({"phase2_slot_type", "phase3_slots"}),
+        "rounds": frozenset(
+            {"phase1_done", "phase2_done", "phase3_done", "mystery_notice_given"}
+        ),
+        "sessions": frozenset({"phase2_slot_type"}),
         "divisions": frozenset({"forecast_channel_id"}),
         "server_configs": frozenset({"weather_module_enabled"}),
     },
@@ -2336,6 +2327,10 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
     ),
+    ("weather/services/round_phases.py", "phase2_slot_types_on"): (
+        "sessions",
+        "reads `sessions.phase2_slot_type`, the weather module's own column",
+    ),
 }
 
 
@@ -2432,8 +2427,6 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
-    ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
     ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
         (2, PASS["image"]),
@@ -2449,17 +2442,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_standings_post.py", "_seats"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
-    ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("weather/services/draw_guard.py", "<module>"): (3, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "_round_row"): (2, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "ask_forecast"): (2, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "ask_forecast_clean_up"): (2, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "forecast_steps.delete"): (1, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "forecast_steps.record_delete"): (1, PASS["weather"]),
-    ("weather/services/forecast_cleanup_service.py", "forecast_deletes"): (3, PASS["weather"]),
-    ("weather/services/phase1_service.py", "draw_phase1_on"): (1, PASS["weather"]),
-    ("weather/services/phase2_service.py", "draw_phase2_on"): (1, PASS["weather"]),
-    ("weather/services/phase3_service.py", "draw_phase3_on"): (1, PASS["weather"]),
+    ("image/services/image_weather_post.py", "build_drawing_for_round"): (4, PASS["image"]),
 }
 
 
@@ -2521,7 +2504,6 @@ def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
 #: Today's mentions of a module's own column outside it, under the design pass that removes each:
 #: core's under its own, each module's under its own, its wiring's included.
 KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/image_weather_post.py", "build_drawing_for_round"): (5, PASS["image"]),
 }
 
 
@@ -3124,6 +3106,11 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
+    ("image/services/image_weather_post.py", "attach_forecast"):
+        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
+        "back as a line for the log channel, and the forecast goes out as text; and place 3, "
+        "around reading the round to name the line of a switch that could not be read, which "
+        "must not fail the line",
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
         "a stated exception: a put-back after a press already answered logs the error in full and "
         "leaves the message as the press's edit left it, for a report would answer the press twice",
@@ -3171,7 +3158,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
@@ -3214,7 +3200,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "team_key_for_entry"): (1, PASS["image"]),
     ("image/services/image_verdict_post.py", "team_name_for_entry"): (1, PASS["image"]),
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (1, PASS["image"]),
-    ("image/services/image_weather_post.py", "attach_forecast"): (1, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (1, PASS["image"]),
     ("image/utils/font_metrics.py", "_faces_of"): (3, PASS["image"]),

@@ -90,7 +90,7 @@ async def _create_sessions(db_path: str, round_id: int, fmt: RoundFormat) -> lis
 async def _raw_sessions(db_path: str, round_id: int = ROUND_ID) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT session_type, phase2_slot_type, phase3_slots FROM sessions "
+            "SELECT session_type, phase2_slot_type FROM sessions "
             "WHERE round_id = ? ORDER BY id",
             (round_id,),
         )

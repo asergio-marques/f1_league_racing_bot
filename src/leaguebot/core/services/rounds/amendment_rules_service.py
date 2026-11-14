@@ -1,32 +1,33 @@
 """What an amendment to a round may do, and what it costs the round.
 
 A round of an active season may have its track, its moment or its format amended. Each of those
-costs the round something — a forecast drawn for a circuit it is no longer run at, a check-in
-called for a date that has moved — and some of them cost so much that the amendment must not
-happen at all. This module decides which, and whether an amendment changes anything at all, and
-nothing else: it computes no consequence, writes nothing and posts nothing. `round_amend_change`
-carries the answer out.
+costs the round something, and some of them cost so much that the amendment must not happen at
+all. This module decides which, and whether an amendment changes anything at all, and nothing
+else: it computes no consequence, writes nothing and posts nothing. `round_amend_change` carries
+the answer out.
 
-**Pure by design**: no database, no Discord, and ``now`` passed in rather than read from the wall
-clock, so the tests can pin a date and a moment together. Modelled on `approval_window_service`,
-which answers the neighbouring question at the confirmation of placements. The window offsets
-both modules read, and the scheduler's arming with them, come from `round_event_moments`, so the
-three cannot drift.
+**Core judges its own rules and gathers each module's.** What it refuses itself: a field that
+cannot be amended, an empty change, a round whose results are in, a round moved into the past, a
+round that has already started and a mystery round given a track alone. What it costs a module's
+own work (the check-in's windows, the forecast phases, the forecasts already posted) is that
+module's to judge, behind core's `amendment_judged` hook, each answering an `AmendmentPart` of
+what it refuses, warns of, notes and keeps for the amendment's save. `judged_with_the_modules`
+asks the hook and `judge_amendment` gathers the answers, the refusals in the order the rules run:
+core's head rules, then each module's in the order they signed up, then core's tail rules.
 
-**One question answers almost all of it.** For every window a round carries — the check-in call,
-its last notice, its deadline, and the three forecast phases — ask: *would this have run already,
-were the round always to have stood at its new moment?* Where it would, what was posted stands and
-nothing is posted in its place; a moment already past is never honoured retroactively. Where it
-would not, what was posted is withdrawn and the work armed again for its new moment. That single
-rule covers the delay, the bring-forward and the change that moves no date at all.
+**One question answers almost all of a module's part.** For every window a round carries, ask:
+*would this have run already, were the round always to have stood at its new moment?* Where it
+would, what was posted stands and nothing is posted in its place; a moment already past is never
+honoured retroactively. Where it would not, what was posted is withdrawn and the work armed again
+for its new moment. That single rule covers the delay, the bring-forward and the change that moves
+no date at all.
 
 **A round is never moved into the past**, whatever the modules enabled. A round's result submission
 is armed against its own moment, so a round moved backwards would have it opened late, at once, and
 not at the round's moment, its start (`results.submission.open`) being the only route to a
-submission channel. The check-in deadline rule below
-refuses such a move where attendance is on; the refusal is stated in its own right so that the
-answer does not depend on which modules a league runs. Moving a round *forward* is untouched, and
-remains the remedy for a circuit or a format that must be corrected late.
+submission channel. The refusal is stated in its own right so that the answer does not depend on
+which modules a league runs. Moving a round *forward* is untouched, and remains the remedy for a
+circuit or a format that must be corrected late.
 
 **An amendment is one change.** However many of the three fields it alters, it is judged once,
 against the round as it will stand once every change is in, and where any rule refuses any part of
@@ -38,89 +39,58 @@ separately would refuse an amendment the league is entitled to make.
 offered. A window can pass while the confirmation stands, and an amendment allowed on the strength
 of a window that has since closed is exactly the silent loss these rules exist to prevent. That is
 the caller's job; this module is given a ``now`` and answers for that moment alone.
+
+**Pure by design**: `judge_amendment` reads no database and no Discord, and ``now`` is passed in
+rather than read from the wall clock, so the tests can pin a date and a moment together. Only
+`judged_with_the_modules` is awaited, for the hook's subscribers. Modelled on
+`approval_window_service`, which answers the neighbouring question at the confirmation of
+placements. The window offsets both modules read, and the scheduler's arming with them, come from
+`round_event_moments`, so the three cannot drift.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+import aiosqlite
+
+from leaguebot.core.models.amendment import AmendmentPart
 from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
-    AttendanceWindows,
     Round,
     RoundFormat,
     RoundStatus,
-    WeatherWindows,
     read_scheduled_at,
 )
-from leaguebot.core.services.rounds.round_moments import as_utc, round_event_moments
+from leaguebot.core.services.rounds.round_moments import as_utc
+from leaguebot.core.utils.hooks import AwaitedHook
 
 #: The fields of a round a league may amend.
 AMENDABLE_FIELDS = frozenset({"track_name", "format", "scheduled_at"})
 
 
 @dataclass(frozen=True)
-class WindowOutcome:
-    """What becomes of one of a round's windows once it is amended.
-
-    *stands* is the answer to the one question: the window would have run already under the
-    round's new moment, so whatever was posted for it stays and nothing replaces it. *fire_at* is
-    the moment it falls at under the new arrangement, which is when the work is armed for where
-    it does not stand.
-    """
-
-    label: str
-    fire_at: datetime
-    stands: bool
-
-    @property
-    def rearm(self) -> bool:
-        """The complement of *stands*: the window is still ahead and must be armed."""
-        return not self.stands
-
-
-@dataclass(frozen=True)
 class AmendmentVerdict:
-    """Whether an amendment may proceed, and what it does to the round.
+    """Whether an amendment may proceed, and what the modules say of it.
 
-    *refusals* empty means it may. Anything in it means none of the amendment happens — a change
-    set is one change, and a rule refusing one field refuses the lot.
+    *refusals* empty means it may. Anything in it means none of the amendment happens: a change
+    set is one change, and a rule refusing one field refuses the lot. *warnings* and *notes* are
+    what the confirmation tells the manager the amendment costs, the notes first, as the modules
+    gave them; *kept* is what they keep for the amendment's save, merged.
     """
 
     refusals: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    #: The check-in windows, keyed "call" / "last_notice" / "deadline". Empty with attendance off.
-    check_in: dict[str, WindowOutcome] = field(default_factory=dict)
-    #: The forecast phases, keyed 1 / 2 / 3. Empty with weather off.
-    phases: dict[int, WindowOutcome] = field(default_factory=dict)
-    #: The round's moment once amended, which every window above is measured from.
+    notes: list[str] = field(default_factory=list)
+    kept: dict[str, Any] = field(default_factory=dict)
+    #: The round's moment once amended.
     new_moment: datetime | None = None
 
     @property
     def allowed(self) -> bool:
         return not self.refusals
-
-    @property
-    def recall_check_in(self) -> bool:
-        """Whether the check-in call is to be posted again, carrying what changed.
-
-        True where the call is still to come under the new arrangement — either it never went out
-        and is now armed, or it did and the round has moved far enough that it would not have.
-        """
-        call = self.check_in.get("call")
-        return call is not None and call.rearm
-
-    @property
-    def check_in_stays_closed(self) -> bool:
-        """Whether the round's check-in is beyond recall, its deadline having passed either way.
-
-        Nothing is posted afresh for such a round and no answer may be changed: the deadline
-        computed from its new moment has gone by, so there is no window left to reopen.
-        """
-        deadline = self.check_in.get("deadline")
-        return deadline is not None and deadline.stands
 
 
 def _amended_moment(rnd: Round, changes: dict[str, Any]) -> datetime:
@@ -179,30 +149,28 @@ def judge_amendment(
     changes: dict[str, Any],
     *,
     now: datetime,
-    attendance: AttendanceWindows | None = None,
-    weather: WeatherWindows | None = None,
-    drawn: Mapping[int, bool] | None = None,
+    parts: Sequence[AmendmentPart] = (),
 ) -> AmendmentVerdict:
-    """Judge *changes* against *rnd* as it will stand once they are in.
+    """Judge *changes* against *rnd* as it will stand once they are in, with the modules' *parts*.
 
     Args:
-        rnd:        The round as it stands, carrying its status.
-        changes:    ``{field: new value}`` over `AMENDABLE_FIELDS`. An empty set is refused.
-        now:        The moment to judge against. Required, and never the wall clock.
-        attendance: The check-in lead times, or None where the module is disabled — with it off
-                    the round has no check-in to lose and none of its windows are judged.
-        weather:    The forecast horizons, or None where the module is disabled.
-        drawn:      Whether each of Phases 1 to 3 has been drawn, by phase number, as the weather
-                    module says (`read_phases_drawn`); none where it has none to say, as a round
-                    no forecast has been drawn for.
+        rnd:     The round as it stands, carrying its status.
+        changes: ``{field: new value}`` over `AMENDABLE_FIELDS`. An empty set is refused.
+        now:     The moment to judge against. Required, and never the wall clock.
+        parts:   What each module answered of the amendment (`judged_with_the_modules`), in the
+                 order they signed up; none where no module is signed up.
 
     Returns:
-        An `AmendmentVerdict`. Where `refusals` is non-empty the rest describes the amendment
-        that was refused and must not be acted upon.
+        An `AmendmentVerdict`. The refusals run core's head rules, then each module's, then core's
+        tail rules. Where `refusals` is non-empty the rest describes the amendment that was
+        refused and must not be acted upon.
+
+    Raises:
+        ValueError: two parts keep the same name, so that neither could be handed to the save
+                    without replacing the other.
     """
     now = as_utc(now)
     refusals: list[str] = []
-    warnings: list[str] = []
 
     unknown = sorted(set(changes) - AMENDABLE_FIELDS)
     if unknown:
@@ -218,7 +186,6 @@ def judge_amendment(
         refusals.append(status_refusal(rnd.status))
 
     new_moment = _amended_moment(rnd, changes) if not unknown else rnd.scheduled_at
-    moment_moved = "scheduled_at" in changes
 
     # ── Where the round may be moved to ────────────────────────────────────────────────────
     # A round is never moved into the past, whatever the modules enabled. The round's result
@@ -226,114 +193,76 @@ def judge_amendment(
     # once, and not at the round's moment: the rule stands as written, and the reason given is
     # that the submission would open late.
     #
-    # Judged before the windows below and refused regardless of enablement, so that the answer
-    # does not turn on which modules a league happens to run. The check-in deadline rule
-    # already refused this where attendance was on; with it off nothing did.
-    if moment_moved and new_moment <= now:
+    # Judged regardless of enablement, so that the answer does not turn on which modules a league
+    # happens to run.
+    if "scheduled_at" in changes and new_moment <= now:
         refusals.append(
             "A round cannot be moved into the past. Its result submission would open late, at "
             "once, and not at the round's moment. Give it a moment still to come."
         )
 
-    # ── The check-in windows ───────────────────────────────────────────────────────────────
-    check_in: dict[str, WindowOutcome] = {}
-    if attendance is not None:
-        moments = round_event_moments(new_moment, weather=None, attendance=attendance)
-        windows = [
-            ("call", "Check-in call", moments["rsvp_notice"]),
-            # Absent from the moments where the last notice is 0 hours: no last notice at all.
-            *(
-                [("last_notice", "Check-in last notice", moments["rsvp_last_notice"])]
-                if "rsvp_last_notice" in moments
-                else []
-            ),
-            # Zero means the deadline is the round's own start time — the documented meaning of
-            # the setting, not an absent window.
-            ("deadline", "Check-in deadline", moments["rsvp_deadline"]),
-        ]
-        for key, label, fire_at in windows:
-            # ``<=`` rather than ``<``: a window falling exactly now counts as having passed,
-            # the same threshold `approval_window_service` holds to, so the two cannot disagree
-            # about a single round.
-            check_in[key] = WindowOutcome(label=label, fire_at=fire_at, stands=fire_at <= now)
-
-        # A check-in that would open and close in the same instant asks a question nobody can
-        # answer, and the round would be recorded afterwards as perfect attendance for the whole
-        # division. This is the one refusal the moment itself earns.
-        if check_in["deadline"].stands:
-            refusals.append(
-                "The check-in deadline for that moment has already passed, so the round would "
-                "have no check-in at all. Move it further out, or shorten the deadline."
-            )
-        elif check_in["call"].stands:
-            warnings.append(
-                "The check-in call for that moment is already due, so no fresh call will go out "
-                "— the one already posted stands."
-            )
-        if "last_notice" in check_in and check_in["last_notice"].stands and not check_in["call"].stands:
-            warnings.append(
-                "The check-in last notice for that moment is already due, so this round will "
-                "get no reminder."
-            )
-
-    # ── The forecast phases ────────────────────────────────────────────────────────────────
-    phases: dict[int, WindowOutcome] = {}
-    if weather is not None:
-        moments = round_event_moments(new_moment, weather=weather, attendance=None)
-        for number in (1, 2, 3):
-            fire_at = moments[f"weather_p{number}"]
-            phases[number] = WindowOutcome(
-                label=f"Weather Phase {number}", fire_at=fire_at, stands=fire_at <= now
-            )
+    # ── What each module refuses, warns of and keeps, in the order they signed up ──────────
+    warnings: list[str] = []
+    notes: list[str] = []
+    kept: dict[str, Any] = {}
+    for part in parts:
+        refusals.extend(part.refusals)
+        warnings.extend(part.warnings)
+        notes.extend(part.notes)
+        for name in part.kept:
+            if name in kept:
+                raise ValueError(f"two modules keep {name!r} for the amendment's save")
+        kept.update(part.kept)
 
     # ── What the track and the format may no longer be ─────────────────────────────────────
-    # A forecast already posted was drawn for this round's circuit and sessions and cannot be
-    # unsaid — but only where it is still standing once the amendment is in. Where the round has
-    # moved far enough that the phase would not have run under its new moment, that forecast is
-    # withdrawn and drawn again, so there is nothing left that was drawn for the old circuit and
-    # nothing to refuse. Moving a round is therefore the league's remedy for a circuit or a
-    # format that must be corrected late, and it is why a change set is judged as one change.
-    #
-    # Judged on what was actually performed rather than on the module's present state: a forecast
-    # posted while weather was on was still posted, whatever the module says now. Without
-    # configured horizons nothing can be said about withdrawal, so the flag alone decides.
-    def _still_stands(number: int) -> bool:
-        outcome = phases.get(number)
-        return outcome is None or outcome.stands
-
-    drawn = drawn or {}
-    if "track_name" in changes and drawn.get(1, False) and _still_stands(1):
-        refusals.append(
-            "The first forecast for this round has already been posted, and it was drawn for "
-            "its present circuit. Amend the round's moment as well to put the forecasts back "
-            "in question."
-        )
-    if "format" in changes and drawn.get(2, False) and _still_stands(2):
-        refusals.append(
-            "The second forecast for this round has already been posted, and it was drawn for "
-            "its present sessions. Amend the round's moment as well to put the forecasts back "
-            "in question."
-        )
     if ("track_name" in changes or "format" in changes) and new_moment <= now:
         refusals.append(
             "This round has already started, so its track and format can no longer be amended."
         )
 
-    # A mystery round names no track, and naming one is how a league reveals it — which is the
-    # format change, not a track change slipped in beside it.
+    # A mystery round names no track, and giving it one is a change of its format, not a track
+    # change slipped in beside it.
     if (
         "track_name" in changes
         and "format" not in changes
         and rnd.format == RoundFormat.MYSTERY
     ):
         refusals.append(
-            "A mystery round names no circuit. Amend its format as well to reveal it."
+            "A mystery round names no circuit. Change its format as well to give it one."
         )
 
     return AmendmentVerdict(
         refusals=refusals,
         warnings=warnings,
-        check_in=check_in,
-        phases=phases,
+        notes=notes,
+        kept=kept,
         new_moment=new_moment,
+    )
+
+
+async def judged_with_the_modules(
+    amendment_judged: AwaitedHook,
+    rnd: Round,
+    changes: dict[str, Any],
+    *,
+    now: datetime,
+    db: aiosqlite.Connection | None,
+) -> AmendmentVerdict:
+    """`judge_amendment`, with each module's part asked through the *amendment_judged* hook.
+
+    Each subscriber is handed the save's connection *db* (None where the amendment is asked
+    outside a save), the round, the changes, the round's moment once amended and the one clock
+    core judges by, both in UTC, and nothing else: core names no module's windows, each module
+    reads its own and keeps them in its part's ``kept``. It answers an `AmendmentPart`, or None for
+    a part of none.
+    """
+    now = as_utc(now).astimezone(timezone.utc)
+    moment = (
+        _amended_moment(rnd, changes)
+        if set(changes) <= AMENDABLE_FIELDS
+        else rnd.scheduled_at.astimezone(timezone.utc)
+    )
+    handed = await amendment_judged.call(db, rnd, changes, moment=moment, now=now)
+    return judge_amendment(
+        rnd, changes, now=now, parts=tuple(part for part in handed if part is not None)
     )

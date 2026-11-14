@@ -14,27 +14,89 @@ A module of its own because the guards are shared: each of the four draws (`draw
 `round_if_due`, and the forecast change's check reads the module's switch through
 `weather_enabled_on`, so that the draw and the queue read the switch the same way. It reads core's
 `server_configs` and writes nothing.
+
+The round is read once, here (`weather_round_on`): core's half through its readers (the round, its
+division and its season) beside weather's own (the phases drawn, the division's forecast channel),
+so that no service of the module reads core's tables of its own. What it judges of the round,
+whether the work is still due, is judged once as well (`lapse`), for the draw's guard and for the
+forecast change's check and its post alike.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from enum import Enum
 
 import aiosqlite
 
+from leaguebot.core.models.division import Division, DivisionStatus
 from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.seasons.season_service import RoundFacts, division_on, round_facts_on
+from leaguebot.weather.services.forecast_channel import forecast_channels_on
+from leaguebot.weather.services.round_phases import PhasesDrawn, phases_drawn_on
 
 log = logging.getLogger(__name__)
 
-_ROUND_COLUMNS = (
-    "SELECT r.id, r.track_name, r.format, r.phase1_done, r.phase2_done, r.phase3_done, "
-    "       r.division_id, r.status AS round_status, d.status AS division_status, "
-    "       d.forecast_channel_id, d.mention_role_id "
-    "FROM rounds r "
-    "JOIN divisions d ON d.id = r.division_id "
-    "JOIN seasons s ON s.id = d.season_id "
-    "WHERE r.id = ?"
-)
+
+@dataclass(frozen=True)
+class WeatherRound:
+    """A round as weather judges it: core's facts and division beside the module's own record.
+
+    *drawn* is whether each of Phases 1 to 3 has been drawn, by phase number, with whether a
+    mystery round's notice has been given, and
+    *forecast_channel_id* the division's forecast channel, `None` for none set.
+    """
+
+    facts: RoundFacts
+    division: Division
+    drawn: PhasesDrawn
+    forecast_channel_id: int | None
+
+
+async def weather_round_on(db: aiosqlite.Connection, round_id: int) -> WeatherRound | None:
+    """*round_id* as weather judges it, or None where the round is no longer there, read on *db*.
+
+    The single weather reader of a round: it asks core for the round and its division, and weather's
+    own readers for the phases drawn and the forecast channel. Reads only.
+    """
+    facts = await round_facts_on(db, round_id)
+    if facts is None:
+        return None
+    division = await division_on(db, facts.division_id)
+    if division is None:
+        return None
+    drawn = (await phases_drawn_on(db, [round_id]))[round_id]
+    channel = (await forecast_channels_on(db, [facts.division_id]))[facts.division_id]
+    return WeatherRound(facts, division, drawn, channel)
+
+
+class Lapse(Enum):
+    """Why a round is no longer owed weather's work: gone, called off (it or its division), or the
+    module switched off."""
+
+    GONE = "the round is gone"
+    CANCELLED = "the round or its division is cancelled"
+    OFF = "the weather module is off"
+
+
+def lapse(rnd: WeatherRound | None, weather_on: bool) -> Lapse | None:
+    """Why the work for *rnd* is no longer due, else None: the judgement a draw's guard
+    (`round_if_due`) and the forecast change (`forecast_changes`) share, in the order they judge it.
+
+    The race time is no part of it: the change judges that as it starts and again as it posts, and
+    the draw does not.
+    """
+    if rnd is None:
+        return Lapse.GONE
+    if (
+        rnd.facts.status == RoundStatus.CANCELLED
+        or rnd.facts.division_status == DivisionStatus.CANCELLED
+    ):
+        return Lapse.CANCELLED
+    if not weather_on:
+        return Lapse.OFF
+    return None
 
 
 async def weather_enabled_on(db: aiosqlite.Connection) -> bool:
@@ -47,28 +109,25 @@ async def weather_enabled_on(db: aiosqlite.Connection) -> bool:
 
 
 async def round_if_due(
-    db: aiosqlite.Connection, round_id: int, *, label: str, done_column: str | None
-) -> aiosqlite.Row | None:
-    """The round's row where a draw may go on, else None, the reason written to the host's log.
+    db: aiosqlite.Connection, round_id: int, *, label: str, phase: int | None
+) -> WeatherRound | None:
+    """The round where a draw may go on, else None, the reason written to the host's log.
 
     Not due: the round is not found, it or its division is cancelled, the weather module is off,
-    or the phase's *done_column* is already set (``None`` for none to check).
+    or *phase* (``None`` for none to check) is already drawn.
     """
-    cursor = await db.execute(_ROUND_COLUMNS, (round_id,))
-    row = await cursor.fetchone()
-    if row is None:
+    rnd = await weather_round_on(db, round_id)
+    why = lapse(rnd, await weather_enabled_on(db))
+    if rnd is None:
         log.error("%s: round_id=%s not found", label, round_id)
         return None
-    if (
-        row["round_status"] == RoundStatus.CANCELLED.value
-        or row["division_status"] == "CANCELLED"
-    ):
+    if why is Lapse.CANCELLED:
         log.info("%s: round %s or its division is cancelled — round left untouched.", label, round_id)
         return None
-    if not await weather_enabled_on(db):
+    if why is Lapse.OFF:
         log.info("%s: weather module disabled — round %s left untouched.", label, round_id)
         return None
-    if done_column is not None and row[done_column]:
+    if phase is not None and rnd.drawn[phase]:
         log.info("%s already done for round %s — skipping.", label, round_id)
         return None
-    return row
+    return rnd

@@ -17,7 +17,8 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.weather.models.forecast import Drawn
+from leaguebot.core.services.seasons.season_service import round_called_on, sessions_of_round_on
+from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_ir, compute_im, compute_is, build_slot_pool
 from leaguebot.weather.utils.message_builder import phase_log_message
@@ -40,20 +41,20 @@ async def draw_phase2_on(
     weather module is disabled, for a round that is cancelled, or whose division is, and for
     a phase already done; see ``draw_guard`` for why the draw itself refuses.
     """
-    row = await round_if_due(db, round_id, label="Phase 2", done_column="phase2_done")
+    row = await round_if_due(db, round_id, label="Phase 2", phase=2)
     if row is None:
         return Drawn(2)
 
-    if not row["phase1_done"]:
+    if not row.drawn[1]:
         log.warning("Phase 2: Phase 1 not yet done for round %s — it is drawn first.", round_id)
         return Drawn(2, earlier=1)
 
     # --- Load active Phase 1 result to get Rpc ---
     p1_cursor = await db.execute(
         "SELECT payload FROM phase_results "
-        "WHERE round_id = ? AND phase_number = 1 AND status = 'ACTIVE' "
+        "WHERE round_id = ? AND phase_number = 1 AND status = ? "
         "ORDER BY id DESC LIMIT 1",
-        (round_id,),
+        (round_id, PhaseResultStatus.ACTIVE.value),
     )
     p1_row = await p1_cursor.fetchone()
 
@@ -63,7 +64,7 @@ async def draw_phase2_on(
 
     p1_payload = json.loads(p1_row["payload"])
     rpc: float = p1_payload["rpc"]
-    track_name: str = row["track_name"] or p1_payload.get("track", "Unknown")
+    track_name: str = row.facts.track_name or p1_payload.get("track", "Unknown")
 
     # --- Build slot pool ---
     ir = compute_ir(rpc)
@@ -72,17 +73,13 @@ async def draw_phase2_on(
     pool = build_slot_pool(ir, im, is_)
 
     # --- Load sessions and draw ---
-    s_cursor = await db.execute(
-        "SELECT id, session_type FROM sessions WHERE round_id = ? ORDER BY id",
-        (round_id,),
-    )
-    sessions = await s_cursor.fetchall()
+    sessions = await sessions_of_round_on(db, round_id)
 
     slot_draws: list[dict] = []
 
-    for session_row in sessions:
+    for session in sessions:
         slot = random.choice(pool)
-        slot_draws.append({"session_id": session_row["id"], "session_type": session_row["session_type"], "slot": slot})
+        slot_draws.append({"session_id": session.id, "session_type": session.session_type.value, "slot": slot})
 
     # --- Persist ---
     payload = {
@@ -103,11 +100,14 @@ async def draw_phase2_on(
         )
     await db.execute(
         "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
-        "VALUES (?, 2, ?, 'ACTIVE', ?)",
-        (round_id, json.dumps(payload), now.isoformat()),
+        "VALUES (?, 2, ?, ?, ?)",
+        (round_id, json.dumps(payload), PhaseResultStatus.ACTIVE.value, now.isoformat()),
     )
     await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = ?", (round_id,))
     log.info("Phase 2 drawn for round %s", round_id)
+    called = await round_called_on(db, round_id)
     return Drawn(
-        2, payload=payload, line=phase_log_message(2, round_id, track_name, payload), written=True
+        2, payload=payload, line=phase_log_message(
+            2, called, track_name, payload
+        ), written=True
     )

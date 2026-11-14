@@ -5,9 +5,9 @@ database, so jobs survive restarts. A job whose moment passed while the bot was 
 on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, the misfire grace
 a job has unless it is armed with none). Later than that, APScheduler skips it with a warning in
 the host's log, and whatever should be caught up after a longer stop is caught up by each
-module's start-up steps, signed up by its wiring. A one-off timer, an overdue results submission
-and a round's four check-in timers are armed with no lateness limit, and fire at once on start
-whatever the stop. What becomes of a job missed in a
+module's start-up steps, signed up by its wiring. A one-off timer, an overdue results submission,
+a round's forecast phases and clean-up, and a round's four check-in timers are armed with no
+lateness limit, and fire at once on start whatever the stop. What becomes of a job missed in a
 longer stop is its kind's handler's to decide (`docs/design/architecture.md`, "Timed work and
 restarts").
 
@@ -408,9 +408,9 @@ class SchedulerService:
             phase_2_days:   Days before round to fire Phase 2 (default 2).
             phase_3_hours:  Hours before round to fire Phase 3 (default 2).
             skip_phases:    Phases armed no job, for the caller draws them at once itself: an
-                            amendment's catch-up (`round_amend_change`). A job for a horizon
-                            passed by less than the misfire grace would run at once and draw
-                            the phase a second time.
+                            amendment's catch-up (`round_amend_change`). A job armed for a
+                            horizon already passed has no lateness limit and would fire at
+                            once, asking for the phase a second time.
         """
         _suffix = _round_job_suffix(rnd, season_number, division_tier)
 
@@ -430,6 +430,7 @@ class SchedulerService:
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
+                misfire_grace_time=None,
                 name=f"Weather P{phase_num} s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"kind": f"weather_p{phase_num}", "key": rnd.id},
             )
@@ -577,6 +578,7 @@ class SchedulerService:
             trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
             id=cleanup_job_id,
             replace_existing=True,
+            misfire_grace_time=None,
             name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
             kwargs={"kind": "cleanup", "key": rnd.id},
         )

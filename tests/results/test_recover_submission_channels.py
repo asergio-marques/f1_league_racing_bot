@@ -486,8 +486,9 @@ async def test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still
     """Rounds 3 (id 21) and 4 (id 22) of Pro were each mid-submission when the bot stopped. At the
     restart the queue refuses round 21's request for its submission restart. Run through the
     start-up sweep, results' "orphaned submission channels" step still asks round 22's restart,
-    and the sweep posts one line to the log channel, its failure line for that step; the error
-    the step raised is results' own and names round 21 alone, with the queue's error."""
+    and the sweep posts one line to the log channel, its failure line for that step, naming round
+    21 in core's form, "round 3 in **Pro**" (#287, B11); the error the step raised is results' own
+    and names round 21 alone, with the queue's error."""
     db_path = await _make_db(tmp_path, name="recover_one_fails")
     async with get_connection(db_path) as db:
         await db.execute(
@@ -510,15 +511,16 @@ async def test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still
 
     stub.change_queue.ask = AsyncMock(side_effect=ask)
 
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
     lines, error = await run_results_start_up_step(stub, "orphaned submission channels")
 
     restarted = sorted(payload["round_id"] for kind, payload in _asked(stub)
                        if kind == "results.submission.restart")
     assert restarted == [ROUND_ID, 22]
     assert round_failures(error) == {ROUND_ID: refused}
-    assert lines == [start_up_failure_line("orphaned submission channels", error)]
+    assert lines == [
+        "❌ The bot's start-up step `orphaned submission channels` failed for round 3 in "
+        "**Pro** — RecoveryFailed. The details are in the host's log."
+    ]
 
 
 # ---------------------------------------------------------------------------

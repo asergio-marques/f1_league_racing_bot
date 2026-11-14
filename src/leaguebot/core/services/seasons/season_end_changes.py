@@ -71,7 +71,6 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.queue_records import (
     in_hand,
 )
@@ -85,9 +84,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_BACKUP,
-    DELETE_FORECAST,
     DISCARD_PORTRAITS,
-    FLUSH_FORECASTS,
     REVOKE_ROLES,
     refusal_of_the_modules,
     season_role_targets_on,
@@ -119,7 +116,10 @@ from leaguebot.core.services.seasons.season_service import (
     completion_refusal_on,
     refresh_division_status_on,
 )
-from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
+from leaguebot.core.services.test_mode.test_mode_service import (
+    switch_test_mode_off_on,
+    test_mode_on,
+)
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
@@ -207,27 +207,7 @@ BACKUP_KEPT = (
     "The saved test-mode state could not be deleted. It is deleted with the next `/test-mode "
     "toggle` that switches test mode off."
 )
-FORECASTS_KEPT = (
-    "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
-    "forecast channel."
-)
 PORTRAITS_KEPT = "The portraits of the drivers deleted could not be discarded."
-
-
-def _forecast_kept(view: StepView) -> str:
-    """The line for a forecast whose deletion a league admin discarded, with its link where the
-    job kept one: it stands in its channel, to be deleted by hand."""
-    result = view.result or {}
-    message = result.get("message_id", view.payload.get("message_id"))
-    if "guild_id" in result and message is not None:
-        where = f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/{message}"
-    else:
-        where = f"message {message} in <#{result.get('channel_id')}>"
-    return (
-        f"The Phase {view.payload.get('phase', result.get('phase'))} forecast of round "
-        f"{view.payload.get('round_number', '?')} could not be deleted: delete it by hand "
-        f"({where})."
-    )
 
 
 def completion_in_hand_refusal(season_number: Any, job: int) -> str:
@@ -425,16 +405,6 @@ def shared_not_done(
                 roles_at = len(lines)
                 lines.append("")
             roles.append(f"<@{each['user_id']}>")
-        elif view.name == FLUSH_FORECASTS:
-            lines.append(FORECASTS_KEPT)
-        elif view.name == DELETE_FORECAST:
-            lines.append(_forecast_kept(view))
-        elif view.name == standing_posts.DELETE_REPLACED:
-            # A calendar's earlier post is named by the cancellation's own outcome; here only a
-            # part of a forecast posted in parts.
-            part = standing_posts.not_deleted(view)
-            if part is not None and "forecast" in str(each.get("what", "")):
-                lines.append(part)
         elif view.name == SIGNUP_NOTICE:
             if str(each["user_id"]) in closed:
                 lines.append(
@@ -627,7 +597,9 @@ def season_complete_change(
             )
         planned.extend(close_jobs(season_end_closes, SEASON_END_CAUSE, number))
         if await test_mode_on(db):
-            planned.append(PlannedStep(FLUSH_FORECASTS))
+            planned.extend(
+                job for jobs in await test_mode_flushed.call(db) for job in jobs
+            )
         planned.append(PlannedStep(END))
         return StepResult(
             result={"season_number": number, "settled": True}, then=tuple(planned)
@@ -795,7 +767,7 @@ def season_complete_change(
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
         **shared_steps(
             roles, scheduler, season_end_steps=season_end_steps,
-            test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
+            drivers_deleted=drivers_deleted,
         ),
     }
     return ChangeType(
@@ -955,26 +927,29 @@ def season_abort_change(
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the abort of the season being set up"
 
-    async def test_mode_still_on(ctx: StepContext) -> bool:
-        """The forecasts are cleared only where test mode posted them: the job is planned with the
-        abort, before the save that switches test mode off, and reads the flag as it comes up."""
+    async def fill(ctx: CheckContext) -> None:
+        """Ask the modules, as the abort is asked, for the jobs that clear what test mode posted,
+        handing them the flag that they are due only where test mode is on as each comes up (the
+        abort plans them before the save that switches it off). They are kept in the payload, for
+        `plan`, which cannot await."""
         async with get_connection(ctx.db_path) as db:
-            return await test_mode_on(db)
+            found = await test_mode_flushed.call(db, only_in_test_mode=True)
+        ctx.payload["flush"] = [
+            {"name": job.name, "payload": job.payload} for jobs in found for job in jobs
+        ]
 
     shared = shared_steps(
-        roles, scheduler, season_end_steps=season_end_steps,
-        test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
+        roles, scheduler, season_end_steps=season_end_steps, drivers_deleted=drivers_deleted,
     )
     steps: dict[str, Step] = {
         **shared,
-        FLUSH_FORECASTS: replace(shared[FLUSH_FORECASTS], still_due=test_mode_still_on),
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
-    def plan(_payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         return (
             *close_jobs(season_end_closes, ABORT_CAUSE),
-            PlannedStep(FLUSH_FORECASTS),
+            *(PlannedStep(job["name"], job["payload"]) for job in payload.get("flush", ())),
             PlannedStep(END),
             PlannedStep(CLOSE),
         )
@@ -983,18 +958,10 @@ def season_abort_change(
         kind=SEASON_ABORT,
         opening=(),
         plan=plan,
+        fill=fill,
         steps=steps,
         check=check,
         key=lambda payload: f"{SEASON_ABORT}:{payload['season_id']}",
         doing=lambda payload: "Aborting the season being set up",
         outcome=outcome,
     )
-
-
-async def test_mode_on(db: aiosqlite.Connection) -> bool:
-    """Whether the server is in test mode, read on the connection handed."""
-    cursor = await db.execute("SELECT test_mode_active FROM server_configs")
-    row = await cursor.fetchone()
-    return row is not None and bool(row["test_mode_active"])
-
-

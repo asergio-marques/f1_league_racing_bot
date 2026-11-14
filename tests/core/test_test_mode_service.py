@@ -87,6 +87,8 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
                     r.get("phase3_done", 0),
                 ),
             )
+            if r.get("mystery_notice_given"):
+                await db.execute("UPDATE rounds SET mystery_notice_given = 1 WHERE id = ?", (i,))
 
         await db.commit()
 
@@ -201,11 +203,12 @@ async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
 
 
 async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
-    """Mystery round with notice already sent (phase1_done=1) must not appear in queue."""
+    """Mystery round with notice already sent (mystery_notice_given=1, Phase 1 not drawn) must
+    not appear in queue."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
-        {"format": "MYSTERY", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
+        {"format": "MYSTERY", "mystery_notice_given": 1},
     ])
     result = await get_next_pending_phase(
         db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
@@ -1036,12 +1039,12 @@ async def _mystery_round_armed(
     tmp_path, service: SchedulerService, *, notice_posted: bool
 ) -> str:
     """A mystery round a week ahead, weather and results on, its jobs armed as approval arms
-    them."""
+    them; where *notice_posted*, its notice recorded as given and no Phase 1 drawn."""
     db_path = str(tmp_path / "mystery_jobs.db")
     await run_migrations(db_path)
     await _seed_with_weather(
         db_path,
-        [{"format": "MYSTERY", "track_name": None, "phase1_done": 1 if notice_posted else 0}],
+        [{"format": "MYSTERY", "track_name": None, "mystery_notice_given": notice_posted}],
     )
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")

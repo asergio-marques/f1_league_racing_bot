@@ -24,12 +24,21 @@ async def run_attendance_start_up_step(
     return await _run_start_up_step(bot, "attendance", name)
 
 
+async def run_weather_start_up_step(
+    bot: Any, name: str, *, on: bool = True
+) -> tuple[list[str], BaseException | None]:
+    """Run weather's start-up step *name*, as `start_up_steps(bot)` gives it, alone in weather's
+    turn of the start-up sweep, weather's switch reading *on*. Gives the lines the sweep posted to
+    the log channel and the error the step raised, if any."""
+    return await _run_start_up_step(bot, "weather", name, on=on)
+
+
 async def _run_start_up_step(
-    bot: Any, module: str, name: str
+    bot: Any, module: str, name: str, *, on: bool = True
 ) -> tuple[list[str], BaseException | None]:
     """Run *module*'s start-up step *name*, from `leaguebot.<module>.wiring.start_up_steps(bot)`,
-    alone in *module*'s turn of the real start-up sweep, the module on and core's queue and
-    scheduler stood in for."""
+    alone in *module*'s turn of the real start-up sweep, the module's switch reading *on* and
+    core's queue and scheduler stood in for."""
     import leaguebot.core.services.upkeep.start_up as start_up_module
     from leaguebot.core.utils.hooks import StartingHook
 
@@ -49,7 +58,7 @@ async def _run_start_up_step(
 
     class _Modules:
         async def is_enabled(self, module: str) -> bool:
-            return True
+            return on
 
     class _Queue:
         @asynccontextmanager

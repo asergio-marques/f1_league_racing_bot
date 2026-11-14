@@ -19,6 +19,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons.season_service import (
     round_in_division,
+    rounds_called,
     rounds_still_to_run_by,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -105,7 +106,7 @@ async def recover_orphaned_submission_channels(bot: LeagueBot, *, queue: ChangeQ
             log.exception("Recovery: could not recover round %s's submission channel", round_id)
             failures[round_id] = error
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(bot.db_path, list(failures)))
 
 
 async def recover_missed_round_starts(
@@ -141,4 +142,4 @@ async def recover_missed_round_starts(
             log.exception("Recovery: could not open round %s's results submission", rnd.id)
             failures[rnd.id] = error
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(bot.db_path, list(failures)))

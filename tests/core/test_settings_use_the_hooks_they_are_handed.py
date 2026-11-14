@@ -1,9 +1,10 @@
-"""The core settings that ask a hook are handed it by the builder, and never look it up on the bot.
+"""The settings that ask a hook are handed it by the builder, and never look it up on the bot.
 
 A channel setting's check asks which module already holds the channel through the
 `channel_uses_read` hook, and the base role's follow-on calls the `base_role_changed` hook. Each is
-built with the hook (`__main__.register_change_types` hands it), so the bot a check or a step is
-run with carries no hook: asking it for one would fail.
+built with the hook (`__main__.register_change_types` hands core's, and a module's wiring its own,
+as weather's does the forecast channel's), so the bot a check or a step is run with carries no
+hook: asking it for one would fail.
 """
 from __future__ import annotations
 
@@ -73,30 +74,49 @@ def _seasons() -> Any:
     return SimpleNamespace(get_setup_or_active_season=season, get_division=division)
 
 
+def _modules() -> Any:
+    """The module service, weather switched on."""
+
+    async def on() -> bool:
+        return True
+
+    return SimpleNamespace(is_weather_enabled=on)
+
+
+def _forecast_channel(hook: AwaitedHook) -> Any:
+    """Weather's forecast channel setting, built as weather's wiring builds it, with the hook."""
+    from leaguebot.weather.services.weather_settings import forecast_channel_setting
+
+    return forecast_channel_setting(modules=_modules(), seasons=_seasons(), channel_uses_read=hook)
+
+
 def _settings(hook: AwaitedHook) -> dict[str, Any]:
+    """Each setting, by name, as a builder: one is built only when its case asks for it."""
     division_lineup, division_calendar = division_channel_settings(
         seasons=_seasons(), channel_uses_read=hook
     )
     return {
-        "log channel": log_channel_setting(config=_config(), channel_uses_read=hook),
-        "interaction channel": interaction_channel_setting(
+        "log channel": lambda: log_channel_setting(config=_config(), channel_uses_read=hook),
+        "interaction channel": lambda: interaction_channel_setting(
             config=_config(), channel_uses_read=hook
         ),
-        "hub channel": hub_channel_setting(config=_config(), channel_uses_read=hook),
-        "division lineup channel": division_lineup,
-        "division calendar channel": division_calendar,
+        "hub channel": lambda: hub_channel_setting(config=_config(), channel_uses_read=hook),
+        "division lineup channel": lambda: division_lineup,
+        "division calendar channel": lambda: division_calendar,
+        "division forecast channel": lambda: _forecast_channel(hook),
     }
 
 
 @pytest.mark.parametrize(
     "name",
     ["log channel", "interaction channel", "hub channel", "division lineup channel",
-     "division calendar channel"],
+     "division calendar channel", "division forecast channel"],
 )
 async def test_a_channel_setting_asks_the_hook_it_was_built_with(db_path, name):
     """A channel another module holds is refused by the setting's check, naming that module's use,
-    though the bot it runs on carries no hook: the answer came from the hook the builder handed."""
-    setting = _settings(_hook_holding(CHANNEL))[name]
+    though the bot it runs on carries no hook: the answer came from the hook the builder handed.
+    Core's channel settings, and weather's forecast channel for division Alpha with weather on."""
+    setting = _settings(_hook_holding(CHANNEL))[name]()
     ctx = CheckContext(
         payload={"value": CHANNEL, "division_id": 1, "division_name": "Alpha"},
         bot=_BotWithNoHooks(),

@@ -153,7 +153,8 @@ async def test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before
     tmp_path, phase,
 ):
     """The draw's save holds the draw, the phase's flag and its calculation line, and nothing is
-    sent until the post job after it (folded defect 6)."""
+    sent until the post job after it (folded defect 6). The line's header names the round as a
+    league reads it, "Round 3 in **Pro**", never by its database id (B7)."""
     league = await _league(tmp_path)
     await _posted(league, *range(1, phase))
     before = len(_events(league))
@@ -163,7 +164,7 @@ async def test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before
 
     assert await _draws(league, phase) == 1
     assert await _done(league, phase) == 1
-    assert f"Phase {phase} Calculation Log** | Round #{ROUND}" in await _said(league)
+    assert f"Phase {phase} Calculation Log** | Round 3 in **Pro** | {TRACK}" in await _said(league)
     assert _events(league)[before:] == []
 
     await run_queue(league.bot)
@@ -182,8 +183,9 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     from leaguebot.image.services import image_weather_post
 
     league = await _league(tmp_path)
-    drawn = AsyncMock(side_effect=lambda *_a, **_k: discord.File(io.BytesIO(b"png"),
-                                                                    filename="forecast.png"))
+    drawn = AsyncMock(side_effect=lambda *_a, **_k: (
+        discord.File(io.BytesIO(b"png"), filename="forecast.png"), (),
+    ))
     if refused == "picture refused":
         monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
         league.channel(FORECAST).fail_when = lambda _content, kwargs: kwargs.get("file") is not None
@@ -210,6 +212,131 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     retried = _sends(league)[-1]
     assert _notified_roles(retried) == {PRO_ROLE}
     assert _notifies_no_member(retried)
+
+
+def _pictures_due(league: Any, *, valid: bool = True) -> None:
+    """Images on, the weather aspect on, and every weather template answering *valid*, with the
+    reason "the template file is too small" where it is not."""
+    from types import SimpleNamespace
+
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": True})
+    report = SimpleNamespace(valid=valid, reason=None if valid else "the template file is too small")
+    league.bot.image_validity_service.template_reports = AsyncMock(return_value={
+        key: report for key in ("weather_p1_template", "weather_p2_template",
+                                "weather_p2_sprint_template", "weather_p3_template",
+                                "weather_p3_sprint_template", "weather_mystery_template")
+    })
+
+
+@pytest.mark.parametrize("cause, reason", [
+    pytest.param("invalid drawing file", "the template file is too small"),
+    pytest.param("unreadable switch", "the images switch could not be read"),
+    pytest.param("unreadable round", "the round could not be read"),
+    pytest.param("drawing fault", "the drawing broke"),
+    pytest.param("round not found", "the round could not be found"),
+    pytest.param("images off", None),
+    pytest.param("weather pictures off", None),
+    pytest.param("images off, round unreadable", None),
+    pytest.param("weather pictures off, round unreadable", None),
+    pytest.param(
+        "mystery notice, round not found",
+        "⚠️ Weather image — the mystery round notice: the round could not be found",
+    ),
+])
+async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
+    tmp_path, monkeypatch, cause, reason,
+):
+    """Phase 1 asked with pictures due, but its picture not drawn: the template file is invalid,
+    the images switch cannot be read, the round cannot be read for the picture, the round cannot
+    be found for it, or the drawing raises. The text forecast is posted and recorded, and the
+    reason is written to the log channel. With the images module off, or its weather pictures
+    off, no picture was due: the text is posted and nothing about a picture is written, even
+    where the round could not have been read for one (weather spec, "Image generation";
+    criterion 4). Where round 3 is a mystery round, its notice is posted in place of Phase 1
+    (weather spec, "Mystery rounds"), and a picture that cannot find its round names it the
+    mystery round notice, never a phase (image spec, "Weather image generation", "Generation and
+    posting"; criterion 13)."""
+    from leaguebot.image.services import image_weather_post
+
+    mystery = cause.startswith("mystery")
+    league = await _league(tmp_path, mystery=mystery)
+    _pictures_due(league, valid=cause != "invalid drawing file")
+    if cause == "unreadable switch":
+        league.bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError(reason))
+    elif cause == "drawing fault":
+        monkeypatch.setattr(image_weather_post, "render_forecast",
+                            AsyncMock(side_effect=RuntimeError(reason)))
+    elif cause.endswith("round not found"):
+        monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
+                            AsyncMock(return_value=None))
+    if "round unreadable" in cause or cause == "unreadable round":
+        monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
+                            AsyncMock(side_effect=RuntimeError("the round could not be read")))
+    if cause.startswith("images off"):
+        league.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    elif cause.startswith("weather pictures off"):
+        league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": False})
+    before = league.log()
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [new] = _ids(_events(league), "send")
+    assert league.channel(FORECAST).files == [None]
+    assert await _forecasts(league) == {0 if mystery else 1: new}
+    written = league.log()[len(before):]
+    if reason is None:
+        assert "image" not in written.lower() and "picture" not in written.lower()
+        assert "could not be read" not in written
+    else:
+        assert reason in written
+    if mystery:
+        assert [line for line in written.splitlines() if "Weather image" in line] == [reason]
+
+
+@pytest.mark.parametrize("phase", [1, 2, 3])
+async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws(
+    tmp_path, monkeypatch, phase,
+):
+    """Pro's round 3, at Silverstone with a short qualifying then a long race, has its earlier
+    phases posted; *phase* is then asked and run through the queue with the picture's drawing
+    stood in for. The picture is handed, as values, what the forecast's text is composed from:
+    the phase's description, the likelihood of rain Phase 1 drew as text, and from Phase 2 on each
+    session's label and drawn weather type in run order, with Phase 3's slots and their summary
+    (#287, W288)."""
+    from leaguebot.image.services import image_weather_post
+    from leaguebot.weather.utils.message_builder import (
+        format_rain_probability,
+        format_session_weather_type,
+        format_slot_sequence,
+    )
+
+    league = await _league(tmp_path)
+    await _posted(league, *range(1, phase))
+    drawn = AsyncMock(return_value=(None, ()))
+    monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
+
+    await _ask(league, phase)
+    await run_queue(league.bot)
+
+    values = drawn.await_args.kwargs["values"]
+    [first] = await league.rows("SELECT payload FROM phase_results WHERE round_id = ? "
+                                "AND phase_number = 1 AND status = 'ACTIVE'", ROUND)
+    [own] = await league.rows("SELECT payload FROM phase_results WHERE round_id = ? "
+                              "AND phase_number = ? AND status = 'ACTIVE'", ROUND, phase)
+    draws = json.loads(own["payload"]).get("session_draws", [])
+    assert values.description == {1: "Initial chance of rain", 2: "Initial session forecast",
+                                   3: "Final session forecast"}[phase]
+    assert values.rain_probability == format_rain_probability(json.loads(first["payload"])["rpc"])
+    kinds = {2: "slot", 3: "slot_type"}
+    assert [(s.label, s.weather_type, tuple(s.slots), s.summary) for s in values.sessions] == [
+        (label, format_session_weather_type(draw[kinds[phase]]),
+         tuple(draw.get("slots", ())), format_slot_sequence(draw["slots"]) if phase == 3 else None)
+        for label, draw in zip(("Qualifying", "Race"), draws)
+    ]
+    assert len(values.sessions) == (0 if phase == 1 else 2)
 
 
 @pytest.mark.parametrize("phase", [2, 3])
@@ -304,7 +431,8 @@ async def test_a_forecast_whose_id_could_not_be_saved_removes_the_copy_before_it
 async def test_the_mystery_notice_s_flag_is_saved_with_its_record_and_a_refused_notice_stops_the_queue(
     tmp_path,
 ):
-    """Round 3 is a mystery round, and its phase 1 asked: the notice's record sets `phase1_done`;
+    """Round 3 is a mystery round, and its phase 1 asked: the notice's record sets its own flag,
+    `mystery_notice_given`, and leaves `phase1_done` unset, no forecast having been drawn;
     Discord refusing the notice stops the queue, and Retry posts it, mentioning no role and
     deleting nothing (folded defect 5)."""
     league = await _league(tmp_path, mystery=True)
@@ -313,7 +441,9 @@ async def test_the_mystery_notice_s_flag_is_saved_with_its_record_and_a_refused_
     await _ask(league, 1)
     await run_queue(league.bot)
 
-    assert await _done(league, 1) == 1
+    [row] = await league.rows("SELECT mystery_notice_given FROM rounds WHERE id = ?", ROUND)
+    assert row["mystery_notice_given"] == 1
+    assert await _done(league, 1) == 0
     assert await _draws(league, 1) == 0
     assert (await stopped_job(league.db_path))["name"] == "post_forecast"
 
@@ -347,16 +477,27 @@ async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier
                      "draw_forecast", "post_forecast", "delete_forecast"]
 
 
-async def test_a_blocked_phase_writes_its_line_and_nothing_else(tmp_path):
-    """Round 3's circuit is one the bot has no row for: the phase's ⚠️ BLOCKED line is written,
-    nothing is drawn or posted, and the queue goes on."""
+@pytest.mark.parametrize("blocking, line", [
+    pytest.param("UPDATE rounds SET track_name = 'Nowhere Circuit' WHERE id = ?",
+                 "Phase 1 BLOCKED for round 3 in **Pro** (Nowhere Circuit)", id="unknown circuit"),
+    pytest.param("UPDATE tracks SET sigma = 0.9 WHERE name = ?",
+                 f"Phase 1 BLOCKED for round 3 in **Pro** ({TRACK})", id="impossible distribution"),
+    pytest.param("UPDATE rounds SET track_name = NULL WHERE id = ?",
+                 "Phase 1 BLOCKED for round 3 in **Pro**: the round names no circuit.",
+                 id="no circuit"),
+])
+async def test_a_blocked_phase_writes_its_line_and_nothing_else(tmp_path, blocking, line):
+    """Round 3's circuit is one the bot has no row for, or one whose σ makes the draw impossible,
+    or round 3 names no circuit at all: the phase's ⚠️ BLOCKED line, naming the round as a league
+    reads it ("round 3 in **Pro**", never its database id) and giving its reason, is written to
+    the log channel, nothing is drawn or posted, and the queue goes on (weather spec, "Phase 1")."""
     league = await _league(tmp_path)
-    await league.write("UPDATE rounds SET track_name = 'Nowhere Circuit' WHERE id = ?", ROUND)
+    await league.write(blocking, TRACK if "tracks" in blocking else ROUND)
 
     await _ask(league, 1)
     await run_queue(league.bot)
 
-    assert f"Phase 1 BLOCKED for round {ROUND} (Nowhere Circuit)" in await _said(league)
+    assert line in await _said(league)
     assert await _draws(league, 1) == 0
     assert await _done(league, 1) == 0
     assert _events(league) == []
@@ -390,7 +531,7 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_is_drawn_and_i
     await run_queue(league.bot)
 
     assert await _draws(league, 1) == 1
-    assert f"Phase 1 Calculation Log** | Round #{ROUND}" in await _said(league)
+    assert "Phase 1 Calculation Log**" in await _said(league)
     assert (await stopped_job(league.db_path))["name"] == "post_forecast"
     assert ("**Pro** has no forecast channel set: set one with `/weather channel`, then press "
             "Retry.") in await _said(league)
@@ -480,6 +621,31 @@ async def test_a_forecast_whose_race_passed_while_its_post_stood_stopped_is_drop
     assert await _forecasts(league) == {1: earlier}
     assert await _draws(league, 2) == 1
     assert await _done(league, 2) == 1
+
+
+async def test_a_draw_that_stood_stopped_until_its_race_passed_is_dropped_when_retried(tmp_path):
+    """Phase 1 asked, and its draw's save fails, stopping the queue at the draw; the queue stays
+    stopped past round 3's race. The fault mended, Retry: nothing drawn or recorded, no
+    calculation line written, nothing posted, and the queue goes on (weather spec, "Supersession
+    and cleanup")."""
+    league = await _league(tmp_path)
+    await league.write(
+        "CREATE TRIGGER refuse_draw BEFORE INSERT ON phase_results "
+        "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
+    )
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "draw_forecast"
+
+    await league.write("DROP TRIGGER refuse_draw")
+    league.clock.advance(days=91)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _draws(league, 1) == 0
+    assert await _done(league, 1) == 0
+    assert "Phase 1 Calculation Log" not in await _said(league)
+    assert _events(league) == []
 
 
 async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_phases_not_at_all(
@@ -991,7 +1157,7 @@ async def test_a_draw_that_fails_stops_the_queue_naming_what_it_was_drawing(
     league = await _league(tmp_path, mystery=mystery)
     if mystery:
         await league.write(
-            "CREATE TRIGGER refuse_notice BEFORE UPDATE OF phase1_done ON rounds "
+            "CREATE TRIGGER refuse_notice BEFORE UPDATE ON rounds "
             "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
         )
     else:
@@ -1016,7 +1182,7 @@ async def test_a_mystery_notice_whose_round_is_amended_away_while_its_record_sto
     Phase 1 is left undone, and the queue goes on."""
     league = await _league(tmp_path, mystery=True)
     await league.write(
-        "CREATE TRIGGER refuse_notice BEFORE UPDATE OF phase1_done ON rounds "
+        "CREATE TRIGGER refuse_notice BEFORE UPDATE ON rounds "
         "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
     )
     await _ask(league, 1)
@@ -1273,3 +1439,139 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
     assert result.result == {"none": True}
     assert _events(league) == []
     assert await _forecasts(league) == {3: 9303}
+
+
+# ---------------------------------------------------------------------------
+# A timer missed while the bot was down, firing beside the restart's own ask
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def scheduler(tmp_path, monkeypatch):
+    """Build the real scheduler service on a league's database and a job store of its own, as the
+    bot does at its start; it is stopped and its job store closed once the test has run."""
+    from leaguebot.core.services import scheduler_service
+
+    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
+    made: list[Any] = []
+
+    def build(db_path: str) -> Any:
+        service = scheduler_service.SchedulerService(db_path, str(tmp_path / "jobs.db"))
+        made.append(service)
+        return service
+
+    yield build
+    for service in made:
+        try:
+            service._scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+        service._scheduler._jobstores["default"].engine.dispose()
+
+
+def _weather_timers(league: Any, service: Any) -> list[str]:
+    """Sign weather's timers up on *service*, each asking the league's queue as the bot's do; gives
+    the list each kind is written to as its timer fires."""
+    from leaguebot.weather.services.forecast_changes import timer_callbacks
+
+    fired: list[str] = []
+    callbacks = timer_callbacks(league.bot.change_queue, league.db_path)
+
+    def recorded(kind: str, handler: Any) -> Any:
+        async def fire(key: int) -> None:
+            fired.append(kind)
+            await handler(key)
+
+        return fire
+
+    for phase, handler in callbacks.phases.items():
+        service.register_timer(f"weather_p{phase}", recorded(f"weather_p{phase}", handler))
+    service.register_timer("cleanup", recorded("cleanup", callbacks.clean_up))
+    return fired
+
+
+async def _until_fired(fired: list[str], count: int) -> None:
+    """Wait, five seconds at most, for *count* timers to have fired, and then a moment more for
+    their asks to land."""
+    import asyncio
+
+    for _ in range(500):
+        if len(fired) >= count:
+            break
+        await asyncio.sleep(0.01)
+    for _ in range(10):
+        await asyncio.sleep(0.01)
+
+
+def _round_3(when: Any) -> Any:
+    """Round 3 as the scheduler arms it, its race at *when*."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=ROUND, division_id=PRO, round_number=3, scheduled_at=when)
+
+
+async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once(
+    tmp_path, scheduler,
+):
+    """Round 3's race is an hour away, and the bot was down through every one of its horizons
+    (5 days, 2 days and 2 hours before), its three phase timers armed and missed by an hour or
+    more. The bot comes back: weather's start-up step for missed phases asks for all three, and
+    the queue draws and posts them; the three timers, armed with no lateness limit, then fire as
+    the scheduler is resumed and ask again. Each phase is drawn once, three forecasts are posted
+    in Pro's forecast channel, and the timers' asks put no further forecast change on the queue."""
+    from datetime import timedelta
+
+    from leaguebot.weather.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+    race = league.clock.now + timedelta(hours=1)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", race.isoformat(), ROUND)
+    service = scheduler(league.db_path)
+    fired = _weather_timers(league, service)
+    service.start(paused=True)
+    service.schedule_round(_round_3(race), season_number=3, division_tier=1)
+
+    await dict(start_up_steps(league.bot))["missed phases"]()
+    await run_queue(league.bot)
+    service.resume()
+    await _until_fired(fired, 3)
+    await run_queue(league.bot)
+
+    assert sorted(fired) == ["weather_p1", "weather_p2", "weather_p3"]
+    assert [await _draws(league, phase) for phase in (1, 2, 3)] == [1, 1, 1]
+    assert [kind for kind, _ in _events(league)].count("send") == 3
+    assert len(await _states(league, KIND)) == 3
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_path, scheduler):
+    """Round 3 was raced 25 hours ago, and its Phase 3 forecast (9303) still stands: its clean-up
+    fell due an hour ago while the bot was down. The bot comes back: weather's start-up step for
+    missed clean-ups asks for it, and the queue deletes 9303. The round's clean-up is then armed
+    again, past-dated, as the re-arming of a raced round does, and with no lateness limit its
+    timer fires at once and asks again. 9303 is deleted once, its record is gone, and the timer's
+    ask, finding no forecast recorded, is dropped: the queue holds the one clean-up change."""
+    from datetime import timedelta
+
+    from leaguebot.weather.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+    race = league.clock.now - timedelta(hours=25)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", race.isoformat(), ROUND)
+    await posted_forecast(league, ROUND, 3, 9303)
+    service = scheduler(league.db_path)
+    fired = _weather_timers(league, service)
+    service.start(paused=True)
+
+    await dict(start_up_steps(league.bot))["missed forecast clean-ups"]()
+    await run_queue(league.bot)
+    service.schedule_round_cleanups(_round_3(race), season_number=3, division_tier=1,
+                                    now=league.clock.now, check_in=False)
+    service.resume()
+    await _until_fired(fired, 1)
+    await run_queue(league.bot)
+
+    assert fired == ["cleanup"]
+    assert _events(league) == [("delete", 9303)]
+    assert await _forecasts(league) == {}
+    assert await _states(league, CLEAN_UP_KIND) == ["DONE"]
+    assert await stopped_job(league.db_path) is None

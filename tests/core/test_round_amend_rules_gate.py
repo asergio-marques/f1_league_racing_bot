@@ -27,7 +27,16 @@ NEW_TRACK = "Silverstone Circuit"
 ROUND_AMEND_KIND = "season.round.amend"
 
 
-async def _db(tmp_path, *, scheduled_at: datetime, phase1_done: int = 0) -> str:
+async def _db(
+    tmp_path,
+    *,
+    scheduled_at: datetime,
+    phase1_done: int = 0,
+    phase2_done: int = 0,
+    round_format: str = "NORMAL",
+    track_name: str | None = "Bahrain International Circuit",
+    status: str = "NOT_RUN",
+) -> str:
     path = str(tmp_path / "round_amend.db")
     await run_migrations(path)
     async with get_connection(path) as db:
@@ -46,10 +55,12 @@ async def _db(tmp_path, *, scheduled_at: datetime, phase1_done: int = 0) -> str:
             (DIVISION,),
         )
         await db.execute(
-            "INSERT INTO rounds "
-            "(id, division_id, round_number, format, track_name, scheduled_at, phase1_done) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?, ?)",
-            (scheduled_at.isoformat(), phase1_done),
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, phase1_done, phase2_done, status) VALUES (1, 1, 1, ?, ?, ?, ?, ?, ?)",
+            (
+                round_format, track_name, scheduled_at.isoformat(), phase1_done, phase2_done,
+                status,
+            ),
         )
         await db.commit()
     return path
@@ -67,7 +78,9 @@ def _interaction():
     return interaction
 
 
-async def _cog(db_path, *, attendance: bool = True, now: datetime | None = None):
+async def _cog(
+    db_path, *, attendance: bool = True, weather: bool = False, now: datetime | None = None,
+):
     cog = RoundCog.__new__(RoundCog)
     # The league's bot (`league_bot`), with each awaited member it reads named (issue #240). A
     # whole-bot ``AsyncMock`` answers an unpinned reader with a truthy mock, which for a file
@@ -75,8 +88,9 @@ async def _cog(db_path, *, attendance: bool = True, now: datetime | None = None)
     cog.bot = await league_bot(db_path)
     cog.bot.output_router.post_log = AsyncMock()
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    for module in ("weather", "signup", "results", "images"):
+    for module in ("signup", "results", "images"):
         setattr(cog.bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
     cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=SimpleNamespace(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
@@ -227,14 +241,58 @@ async def test_the_confirmation_shows_a_new_moment_in_utc_without_its_offset(tmp
 
 
 async def test_the_summary_names_the_forecasts_it_will_withdraw(tmp_path):
-    """A round a month out has drawn nothing yet, so all three phases are still to come."""
+    """Weather is on and attendance off. Round 1 of Div A races in three hours, its Phase 1 and
+    Phase 2 forecasts drawn and Phase 3's not yet. A manager moves it a month out. The
+    confirmation names the field changed, then the drawn phases the move puts back in question,
+    Phase 1 and Phase 2, as withdrawn and redrawn; Phase 3, never drawn, is not named (core spec,
+    "Amending and cancelling a round"; criterion 5)."""
+    now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    path = await _db(tmp_path, scheduled_at=now + timedelta(hours=3), phase1_done=1, phase2_done=1)
+    interaction = _interaction()
+
+    await _amend(await _cog(path, attendance=False, weather=True, now=now), interaction,
+                 scheduled_at="2031-04-04T05:06:00")
+
+    assert _reply(interaction) == (
+        "**Amend Round 1** in division **Div A**:\n"
+        "  \u2022 `scheduled_at` \u2192 `2031-04-04 05:06:00`\n"
+        "\n\u26a0\ufe0f This will withdraw and redraw Phase 1, Phase 2 for this round."
+    )
+
+
+async def test_the_summary_says_nothing_of_forecasts_where_none_was_drawn(tmp_path):
+    """Weather is on. Round 1 of Div A is a month out and has drawn nothing yet. A manager changes
+    its circuit. The confirmation names the field changed and says nothing about forecasts: none
+    is withdrawn and none stands (owner, 2026-11-14, "Nothing about forecasts"; criterion 5)."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     interaction = _interaction()
 
-    await _amend(await _cog(path), interaction, track=NEW_TRACK)
+    await _amend(await _cog(path, weather=True), interaction, track=NEW_TRACK)
 
-    reply = _reply(interaction)
-    assert "Phase 1" in reply and "Phase 2" in reply and "Phase 3" in reply
+    assert _reply(interaction) == (
+        "**Amend Round 1** in division **Div A**:\n"
+        "  \u2022 `track_name` \u2192 `Silverstone Circuit`"
+    )
+    assert _offered_a_confirmation(interaction)
+
+
+async def test_the_summary_promises_no_redraw_while_weather_is_off(tmp_path):
+    """Weather and attendance are off. Round 1 of Div A races in three hours, its Phase 1 and
+    Phase 2 forecasts drawn. A manager moves it a month out. The confirmation names Phase 1 and
+    Phase 2 as withdrawn and promises no redraw, since no phase is drawn while weather is off
+    (weather spec, "Changes to a round after generation"; criterion 5)."""
+    now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    path = await _db(tmp_path, scheduled_at=now + timedelta(hours=3), phase1_done=1, phase2_done=1)
+    interaction = _interaction()
+
+    await _amend(await _cog(path, attendance=False, now=now), interaction,
+                 scheduled_at="2031-04-04T05:06:00")
+
+    assert _reply(interaction) == (
+        "**Amend Round 1** in division **Div A**:\n"
+        "  \u2022 `scheduled_at` \u2192 `2031-04-04 05:06:00`\n"
+        "\n\u26a0\ufe0f This will withdraw Phase 1, Phase 2 for this round."
+    )
 
 
 async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp_path):
@@ -255,9 +313,102 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
 
     await _amend(await _cog(path, attendance=False), interaction, scheduled_at=nearer.isoformat())
 
-    reply = _reply(interaction)
-    assert "will stand" in reply
-    assert "withdraw" not in reply
+    # Word for word, as it always has read.
+    assert _reply(interaction) == (
+        "**Amend Round 1** in division **Div A**:\n"
+        f"  \u2022 `scheduled_at` \u2192 `{nearer}`\n"
+        "\n\u26a0\ufe0f The forecasts already posted for this round will stand."
+    )
+
+
+async def test_the_check_in_warnings_follow_the_forecasts_line(tmp_path):
+    """The queue's clock reads 4 March 2031, 05:06 UTC. Round 1 of Div A races in three hours,
+    its Phase 1 and Phase 2 forecasts drawn, with weather on, attendance on (check-in call 5 days
+    before, last notice 24 hours, deadline 2 hours) and the forecast horizons at their defaults
+    (5 days, 2 days, 2 hours). A manager moves it to three days out. The confirmation names the
+    moment, then the drawn phase the move withdraws and redraws (Phase 2, Phase 1's horizon being
+    behind the clock and Phase 3 never drawn), then the check-in warning that the call is
+    already due: the forecasts' line first and the check-in's after."""
+    now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    path = await _db(tmp_path, scheduled_at=now + timedelta(hours=3), phase1_done=1, phase2_done=1)
+    interaction = _interaction()
+
+    await _amend(await _cog(path, weather=True, now=now), interaction,
+                 scheduled_at="2031-03-07T05:06:00")
+
+    assert _reply(interaction) == (
+        "**Amend Round 1** in division **Div A**:\n"
+        "  \u2022 `scheduled_at` \u2192 `2031-03-07 05:06:00`\n"
+        "\n\u26a0\ufe0f This will withdraw and redraw Phase 2 for this round.\n"
+        "\u26a0\ufe0f The check-in call for that moment is already due, so no fresh call will go "
+        "out \u2014 the one already posted stands."
+    )
+    assert _offered_a_confirmation(interaction)
+
+
+_STATUS = (
+    "This round's results have been entered, so it can no longer be amended. "
+    "Drivers have reports and appeals to lodge against them."
+)
+_PAST = (
+    "A round cannot be moved into the past. Its result submission would open late, at once, "
+    "and not at the round's moment. Give it a moment still to come."
+)
+_DEADLINE = (
+    "The check-in deadline for that moment has already passed, so the round would have no "
+    "check-in at all. Move it further out, or shorten the deadline."
+)
+_TRACK_DRAWN = (
+    "The first forecast for this round has already been posted, and it was drawn for its "
+    "present circuit. Amend the round's moment as well to put the forecasts back in question."
+)
+_FORMAT_DRAWN = (
+    "The second forecast for this round has already been posted, and it was drawn for its "
+    "present sessions. Amend the round's moment as well to put the forecasts back in question."
+)
+_STARTED = "This round has already started, so its track and format can no longer be amended."
+_MYSTERY = "A mystery round names no circuit. Change its format as well to give it one."
+
+
+@pytest.mark.parametrize("round_format, track_name, asked, refusals", [
+    pytest.param(
+        "MYSTERY", None, {"track": NEW_TRACK},
+        [_STATUS, _PAST, _DEADLINE, _TRACK_DRAWN, _STARTED, _MYSTERY],
+        id="a-mystery-round-named-a-circuit",
+    ),
+    pytest.param(
+        "NORMAL", "Bahrain International Circuit", {"track": NEW_TRACK, "format": "SPRINT"},
+        [_STATUS, _PAST, _DEADLINE, _TRACK_DRAWN, _FORMAT_DRAWN, _STARTED],
+        id="a-round-given-a-new-circuit-and-format",
+    ),
+])
+async def test_every_refusal_is_given_in_today_s_order(
+    tmp_path, round_format, track_name, asked, refusals
+):
+    """The queue's clock reads 4 March 2031, 05:06 UTC, with attendance on. Round 1 of Div A is
+    a day out, its results already entered (FINAL), and its first two forecasts posted. A manager
+    asks to move it an hour into the past and, in the same breath, either names a circuit for it
+    as a mystery round or gives it a new circuit and format. The refusal names every rule broken,
+    one bullet each, in today's order and words: the round's status, the move into the past, the
+    check-in deadline, the forecasts already posted, the round already started, the mystery round
+    named no circuit; then says nothing has been changed, and offers no confirmation."""
+    now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    path = await _db(
+        tmp_path, scheduled_at=now + timedelta(days=1), phase1_done=1, phase2_done=1,
+        round_format=round_format, track_name=track_name, status="FINAL",
+    )
+    interaction = _interaction()
+
+    await _amend(
+        await _cog(path, now=now), interaction, scheduled_at="2031-03-04T04:06:00", **asked
+    )
+
+    assert _reply(interaction) == (
+        "\u26d4 **Round 1** in **Div A** cannot be amended:\n"
+        + "\n".join(f"\u2022 {reason}" for reason in refusals)
+        + "\n\n**Nothing has been changed.**"
+    )
+    assert not _offered_a_confirmation(interaction)
 
 
 # ---------------------------------------------------------------------------
