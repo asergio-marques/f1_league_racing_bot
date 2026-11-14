@@ -98,7 +98,7 @@ async def test_reading_a_round_s_window_writes_nothing(tmp_path):
     modules = MagicMock()
     modules.is_attendance_enabled = AsyncMock(return_value=True)
 
-    await attendance_hooks.round_window(AttendanceService(db_path), modules, amending=False)
+    await attendance_hooks.lead_times(AttendanceService(db_path), modules)
 
     assert await _row(db_path) == {}
 

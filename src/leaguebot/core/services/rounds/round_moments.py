@@ -28,17 +28,15 @@ POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
 
 
 async def read_round_windows(
-    windows_read: AwaitedHook, *, amending: bool = False
+    windows_read: AwaitedHook,
 ) -> tuple[AttendanceWindows | None, WeatherWindows | None]:
     """The lead times the modules configure, as `(attendance, weather)`, the way
     `round_event_moments` and the judges take them: each hands back its window or nothing.
 
     Every module signed up to the hook checks its own switch and hands nothing where it is off,
-    so that a window is there only for a module that is on. With *amending*, a module says whether
-    its window counts while it is off: a forecast posted while weather was on is still posted, and
-    whether it survives an amendment is what the track and format rules turn on.
+    so that a window is there only for a module that is on.
     """
-    handed = await windows_read.call(amending=amending)
+    handed = await windows_read.call()
     attendance = next((each for each in handed if isinstance(each, AttendanceWindows)), None)
     weather = next((each for each in handed if isinstance(each, WeatherWindows)), None)
     return attendance, weather

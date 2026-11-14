@@ -57,21 +57,12 @@ async def windows_kept_or_read(kept: Mapping[str, Any], db_path: str) -> Weather
     return windows_kept(kept) or await windows_read(db_path)
 
 
-async def round_window(
-    modules: "ModuleService", db_path: str, *, amending: bool
-) -> WeatherWindows | None:
+async def round_window(modules: "ModuleService", db_path: str) -> WeatherWindows | None:
     """Weather's part of a round's timing windows read: its three horizons, or None where the
-    module is off. For an amendment the window counts whatever the module's switch, because a
-    forecast posted while weather was on is still posted, and whether it survives the amendment is
-    what the track and format rules turn on."""
-    if not amending and not await modules.is_weather_enabled():
+    module is off."""
+    if not await modules.is_weather_enabled():
         return None
-    config = await get_weather_pipeline_config(db_path)
-    return WeatherWindows(
-        phase_1_days=config.phase_1_days,
-        phase_2_days=config.phase_2_days,
-        phase_3_hours=config.phase_3_hours,
-    )
+    return await windows_read(db_path)
 
 
 async def review_section(

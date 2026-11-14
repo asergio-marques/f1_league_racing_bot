@@ -63,8 +63,8 @@ def sign_up_to_test_mode_flushed(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:
-    """Sign weather's window up to the hook a round's timing windows read declares. It is handed
-    whether the round is being amended and checks its own switch."""
+    """Sign weather's window up to the hook a round's timing windows read declares. It checks its own
+    switch."""
     from leaguebot.weather.services import weather_config_service
 
     bot.round_windows_read.subscribe(partial(

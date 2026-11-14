@@ -345,7 +345,7 @@ _CANCELLATION_PARTS = (
 #: Each module's subscriber to a round's timing windows read, as the module names it, and what the
 #: test calls it, in the order the builder signs them up.
 _WINDOWS_PARTS = (
-    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_window", "attendance's window"),
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "lead_times", "attendance's window"),
     ("leaguebot.weather.services.weather_config_service", "round_window", "weather's window"),
 )
 
@@ -579,8 +579,8 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
                             raising=False)
     for module_name, name, part in _WINDOWS_PARTS:
-        async def window_spy(*_args, part=part, amending, **_kwargs):
-            called.append(f"{part}, amending {amending}")
+        async def window_spy(*_args, part=part, **_kwargs):
+            called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, window_spy,
                             raising=False)
 
@@ -651,12 +651,17 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         ["notify_forecast"], ["notify_results"],
     ]
     called.clear()
-    await bot.round_windows_read.call(amending=True)
-    assert called == ["attendance's window, amending True", "weather's window, amending True"]
+    await bot.round_windows_read.call()
+    assert called == ["attendance's window", "weather's window"]
     for hook in ("amendment_judged", "round_amended", "round_armed", "round_clean_ups_due"):
         called.clear()
         await getattr(bot, hook).call(None, 0)
-        assert called == [part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook]
+        # Asked outside a save, attendance's judgement reads its lead times first, through the
+        # same function that answers the windows read.
+        read_first = ["attendance's window"] if hook == "amendment_judged" else []
+        assert called == read_first + [
+            part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook
+        ]
     called.clear()
     handed.clear()
     await bot.phases_drawn_read.call([7], db=None)
@@ -783,19 +788,16 @@ _ATTENDANCE_SET = (3, 12, 1)
 _WEATHER_SET = (4, 1, 3)
 
 
-@pytest.mark.parametrize("amending", [False, True], ids=["the approval", "the amendment"])
 @pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
 @pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
 async def test_the_windows_hook_hands_each_caller_today_s_pair(
-    tmp_path, attendance_on, weather_on, amending
+    tmp_path, attendance_on, weather_on
 ):
     """A league whose check-in calls go out 3 days ahead, their last notice 12 hours and their
     deadline 1 hour before the round, and whose forecasts fall 4 days, 1 day and 3 hours before
     it, with attendance and weather each on or off. Read through the hook the builder makes,
     `(attendance, weather)` is what each caller has always received: attendance's window only
-    where attendance is on; weather's, for the season's approval, only where weather is on, and
-    for an amendment whatever weather's switch, since a forecast posted while weather was on is
-    still posted."""
+    where attendance is on; weather's only where weather is on."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.rounds.round_moments import read_round_windows
@@ -818,11 +820,11 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
                          (int(weather_on),))
         await db.commit()
 
-    pair = await read_round_windows(bot.round_windows_read, amending=amending)
+    pair = await read_round_windows(bot.round_windows_read)
 
     assert pair == (
         AttendanceWindows(*_ATTENDANCE_SET) if attendance_on else None,
-        WeatherWindows(*_WEATHER_SET) if weather_on or amending else None,
+        WeatherWindows(*_WEATHER_SET) if weather_on else None,
     )
 
 

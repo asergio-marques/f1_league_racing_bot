@@ -93,21 +93,12 @@ async def bot_packed_on(db: aiosqlite.Connection) -> None:
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
 
-async def round_window(
-    attendance: AttendanceService, modules: "ModuleService", *, amending: bool
-) -> AttendanceWindows | None:
-    """Attendance's part of a round's timing windows read: its three lead times, or None where
-    the module is off, since a league without attendance has no check-in to lose or to be inside
-    the window of. Counts as off for an amendment too, so *amending* changes nothing here
-    (`lead_times`)."""
-    return await lead_times(attendance, modules)
-
-
 async def lead_times(
     attendance: AttendanceService, modules: "ModuleService"
 ) -> AttendanceWindows | None:
-    """The check-in's three lead times as the league has them, or None where the module is off.
-    Reads only: with no configuration stored, the packaged defaults answer and no row is
+    """The check-in's three lead times as the league has them, or None where the module is off,
+    since a league without attendance has no check-in to lose or to be inside the window of; the
+    subscriber to a round's timing windows read. Reads only: with no configuration stored, the packaged defaults answer and no row is
     created."""
     if not await modules.is_attendance_enabled():
         return None

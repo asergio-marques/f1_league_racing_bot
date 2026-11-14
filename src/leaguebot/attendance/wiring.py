@@ -39,12 +39,12 @@ def sign_up(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:
-    """Sign attendance's window up to the hook a round's timing windows read declares. It is
-    handed whether the round is being amended and checks its own switch."""
+    """Sign attendance's window up to the hook a round's timing windows read declares. It checks
+    its own switch."""
     from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.round_windows_read.subscribe(partial(
-        attendance_hooks.round_window, bot.attendance_service, bot.module_service
+        attendance_hooks.lead_times, bot.attendance_service, bot.module_service
     ))
 
 
