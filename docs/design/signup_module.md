@@ -244,14 +244,20 @@ view, so its buttons answer after a restart.
 `nationality`, `time-type`, `time-image`, `open` and `close` on the group, and the subgroups
 `config` (`view` alone, `test_the_signup_config_group_holds_only_view`), `time-slot`, `close-time`
 and `unassigned`. A command that changes something parses its own input (the close time, through
-`_parse_close_time`, one parser for `/signup open` and `/signup close-time`), asks one change and
-holds no rule of its own. Five commands run `_module_gate` after their tier guard: `time-slot list`,
+`_parse_close_time`, one parser for `/signup open` and `/signup close-time`) and asks one change. A
+setting command holds no rule of its own; `/signup open` and `/signup close` also refuse at the ask
+(test mode, no configuration; signups not open, a season's end in hand, a close time armed), and
+`close` chooses between asking at once and `ConfirmCloseView`, the change's check judging again
+when its turn comes. Five commands run `_module_gate` after their tier guard: `time-slot list`,
 `open`, `close`, `unassigned list` and `unassigned export`. The setting commands go straight to the
-queue and leave the module-on refusal to their change's check (`open_to_change`).
+queue and leave the module-on refusal to their change's check: `open_to_change` for the five settings and
+`/signup channel`, the close-time group's own check for its three.
 
-The cog holds three listeners, each asking a change of the queue as the bot and leaving the
-judgement to its check: `on_message` hands a message typed in a driver's channel to
-`take_typed_answer`; `on_guild_channel_delete` asks a signup's ending where a wizard names the
+The cog holds three listeners. `on_message` hands a message typed in a driver's channel to
+`take_typed_answer`, which asks the driver's own `signup.answer` turn as the driver, after turning
+away a message typed while an earlier answer waits and passing over one where the wizard asks
+nothing. The other two ask as the bot and leave the judgement to the change's check:
+`on_guild_channel_delete` asks a signup's ending where a wizard names the
 channel deleted; `on_member_remove` asks `signup.member_left` for every member who leaves. Each
 ignores a server not the league's.
 
@@ -353,8 +359,10 @@ The five settings, the channel and the switch-on are each a `Setting`
 (`core/services/queue/setting_change.py`); the close-time group's three are too, under kinds that do
 not carry `.setting.`, since a close time repairs nothing and is not among the settings that overtake
 a stopped lane (`close_time_settings`' docstring). The refusals are the check's, in the command's
-order and words, made at the ask and again as the change starts; `open_to_change` holds the two they
-share (the module on, the configuration not fixed by a confirmed season). **A slot is removed by its
+order and words, made at the ask and again as the change starts. `open_to_change` holds the two
+the five settings and the channel share (the module on, the configuration not fixed by a confirmed
+season); the close-time group's check reads the switch itself and judges no fixed configuration,
+and the switch-on refuses where the module is already on. **A slot is removed by its
 identity, not its rank**, the command resolving the rank to a day and time at the ask
 (`test_removing_slot_n_twice_removes_one_slot`).
 
@@ -549,13 +557,15 @@ several modules join a hook the entry point calls the function in its order.
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channel, window, settings and slots in the season's fingerprint, whatever its switch |
 | `in_memory_state_cleared` | `signup_views.clear_pending_reasons` | drops the pending reasons |
 
-Signup's switch is the keyed hook `ModuleService.register_switch` under `"signup"`. The three
+Signup's switch is the keyed hook `ModuleService.register_switch` under `"signup"`. Three of the
 subscribers that write in a save core calls them in whatever the switches say read signup's switch
 themselves and do nothing while it is off: the confirmation's copy (`configuration_confirmed_on`),
 the turn-down (`driver_turned_down_on`) and the account change (`driver_account_changed_on`;
-`test_a_held_channel_stays_while_the_signup_module_is_off`). The names a signup gives, the season's
-delete, the pack, the channels and the fingerprint deliberately read no switch, as their docstrings
-say: a signup kept still names its driver, and rows and channels held are held off or on.
+`test_a_held_channel_stays_while_the_signup_module_is_off`). A season's end returning its drivers
+(`drivers_returned_on`), the season's delete and the pack write whatever the switch says, reading
+none. The names a signup gives, the channels and the fingerprint read none either, as their
+docstrings say (`driver_names`, `channel_uses`, `fingerprint_areas`): a signup kept still names its
+driver, and rows and channels held are held off or on.
 
 ### Core holds no rule of signup's
 
@@ -618,7 +628,7 @@ reason as a change hands any fault to `report_failure` itself (`signup_views`, p
 wizards' start-up catch-up asks each driver's ending and lapse in a loop that one failure never
 stops (`recover_gone_channels`, `recover_correction_timeouts`, place 2). The switch-off's
 `clear_overwrites` is one job of a queued change that clears each overwrite in a loop, logging and
-stepping over one it cannot clear, for its docstring's reason: a channel with a stale overwrite is
+stepping over one it cannot clear, for the reason `signup_off_change`'s module docstring gives: a channel with a stale overwrite is
 put right by hand, a module left half-off is not. The architecture check accepts it as a catch-all
 inside a loop; it is not one of the six places as `architecture.md` words them.
 
