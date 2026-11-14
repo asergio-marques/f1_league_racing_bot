@@ -727,10 +727,30 @@ LAPSE_RECORDED = (
 )
 
 
+#: Why a lapse case fails until the record of a lapse whose driver went says so (product-3-1).
+_LAPSE_SAYS_HE_WENT = (
+    "#286: a correction lapse whose driver went before its panel still records him as back in "
+    "the approval queue, not that he had gone and no fresh review panel was posted"
+)
+
+
+def _lapse_detail(league: SeasonLeague) -> str:
+    """The lines beneath the log channel's record of Kimi's correction lapsing, joined."""
+    _, after = league.log().split(LAPSE_RECORDED, 1)
+    detail = []
+    for line in after.split("\n")[1:]:
+        if not line.startswith("  "):
+            break
+        detail.append(line.strip())
+    return " ".join(detail)
+
+
 @pytest.mark.parametrize("waiting, going", [
     pytest.param(_submitted, _press_cancel, id="after his signup is submitted, he withdraws"),
-    pytest.param(_lapsed, _press_cancel, id="after his correction lapses, he withdraws"),
-    pytest.param(_lapsed, _leave, id="after his correction lapses, he leaves"),
+    pytest.param(_lapsed, _press_cancel, id="after his correction lapses, he withdraws",
+                 marks=pytest.mark.xfail(strict=True, reason=_LAPSE_SAYS_HE_WENT)),
+    pytest.param(_lapsed, _leave, id="after his correction lapses, he leaves",
+                 marks=pytest.mark.xfail(strict=True, reason=_LAPSE_SAYS_HE_WENT)),
 ])
 async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, going):
     """Kimi is owed a review panel in his channel (*waiting*: his signup just submitted, or his
@@ -740,7 +760,8 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, g
     runs it: he is Not Signed Up. Discord takes the panel again, and a Retry on his lane clears
     it without posting the panel, which is no longer owed to anyone. Where his correction had
     lapsed, the log channel still records the lapse, naming manager 77 and Kimi: it happened,
-    whether or not the panel it owed him is ever posted."""
+    whether or not the panel it owed him is ever posted. The record says Kimi had gone and no
+    fresh review panel was posted, never that he is back in the approval queue."""
     league = await waiting(tmp_path)
     await run_queue(league.bot)
 
@@ -761,3 +782,6 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, g
             if type(message.view).__name__ == "AdminReviewView"] == []
     if waiting is _lapsed:
         assert LAPSE_RECORDED in league.log()
+        detail = _lapse_detail(league)
+        assert "had gone" in detail and "no fresh review panel" in detail, detail
+        assert "back in the approval queue" not in detail, detail
