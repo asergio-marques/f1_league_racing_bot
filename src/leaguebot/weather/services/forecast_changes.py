@@ -304,7 +304,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             from leaguebot.image.services import image_weather_post
 
             attachment, lines = await image_weather_post.attach_forecast(
-                ctx.bot, round_id, 1 if phase == 0 else phase,
+                ctx.bot, round_id, phase,
                 values=forecast_values(phase, payload, payload if phase == 1 else first),
             )
         parts = await forecast_cleanup_service.post_phase_message(

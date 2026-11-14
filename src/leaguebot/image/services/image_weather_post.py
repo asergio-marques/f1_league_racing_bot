@@ -196,10 +196,13 @@ def describe(*, division_name: str, round_number, phase: int) -> str:
     The round is named as a league reads it, "round 3 in **Pro**", as core names a round in the log
     channel.
     """
-    return (
-        f"round {round_number} in **{division_name}**, "
-        + ("the mystery round notice" if phase == 0 else f"phase {phase}")
-    )
+    return f"round {round_number} in **{division_name}**, {_phase_name(phase)}"
+
+
+def _phase_name(phase: int) -> str:
+    """What a line calls *phase* where the round cannot be named: phase 0 is the mystery round's
+    notice, never a phase."""
+    return "the mystery round notice" if phase == 0 else f"phase {phase}"
 
 
 async def attach_forecast(
@@ -209,14 +212,16 @@ async def attach_forecast(
     saying why a picture that was due was not drawn.
 
     The one entry point the weather post job calls, handing the *values* the forecast's words
-    were composed as. Every reason a graphic is not drawn — the module off, the aspect off, the
-    template invalid, the round unreadable, the render failed — hands back no file, and the caller
-    posts the textual forecast it was going to post anyway (XIV.7).
+    were composed as. Phase 0 is the mystery round's notice: its line names it the notice, never a
+    phase, without reading the round, and its picture is drawn on phase 1's footing. Every reason a
+    graphic is not drawn — the module off, the aspect off, the template invalid, the round
+    unreadable, the render failed — hands back no file, and the caller posts the textual forecast it
+    was going to post anyway (XIV.7).
 
     The two switches are asked before anything else is read, so that a picture that was not due
     (the module or its weather aspect off) says nothing, whatever else could not be read. A switch
     that cannot be read is a reason like any other, its line naming the forecast where the round can
-    be read and only its phase where it cannot. Every other
+    be read and only its phase (or the notice) where it cannot. Every other
     reason, and every notice the render gave, is handed back as a line for the log channel, which
     the caller writes in its own save, naming the forecast it pertains to (FR-059).
 
@@ -228,21 +233,22 @@ async def attach_forecast(
     """
     import discord
 
-    what = f"phase {phase}"
+    drawn_phase = 1 if phase == 0 else phase  # the notice is drawn on phase 1's footing
+    what = _phase_name(phase)
     try:
         due, why = await weather_enabled(bot, None)
         if not due:
             if why is None:
                 return None, ()
             try:  # a switch that could not be read still names the forecast it was read for
-                named = await build_drawing_for_round(bot, round_id, phase, values=values)
+                named = await build_drawing_for_round(bot, round_id, drawn_phase, values=values)
                 if named is not None:
                     what = _named(named, phase)
             except Exception as exc:  # noqa: BLE001 — the line then names no more than the phase
                 log.error("weather: could not name round %s for a line: %s", round_id, exc, exc_info=True)
             return None, (_fault(what, why),)
 
-        drawing = await build_drawing_for_round(bot, round_id, phase, values=values)
+        drawing = await build_drawing_for_round(bot, round_id, drawn_phase, values=values)
         if drawing is None:
             return None, (_fault(what, "the round could not be found"),)
 
@@ -267,7 +273,7 @@ def _named(drawing: WeatherDrawing, phase: int) -> str:
     return describe(
         division_name=drawing.division_name,
         round_number=drawing.round_number,
-        phase=0 if drawing.is_mystery else phase,
+        phase=0 if drawing.is_mystery or phase == 0 else phase,
     )
 
 

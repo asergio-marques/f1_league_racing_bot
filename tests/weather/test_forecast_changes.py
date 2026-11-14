@@ -242,9 +242,6 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
     pytest.param(
         "mystery notice, round not found",
         "⚠️ Weather image — the mystery round notice: the round could not be found",
-        marks=pytest.mark.xfail(strict=True, reason=(
-            "#287: weather hands the notice's picture phase 1, so its line names 'phase 1' "
-            "rather than the mystery round notice")),
     ),
 ])
 async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(

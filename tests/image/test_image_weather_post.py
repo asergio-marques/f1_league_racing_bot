@@ -211,8 +211,6 @@ def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
     assert "phase 0" not in what
 
 
-@pytest.mark.xfail(strict=True, reason="#287: a notice's picture whose round cannot be read is "
-                                       "named by its phase, not as the mystery round notice")
 @pytest.mark.parametrize(
     ("reads", "reason"),
     [
