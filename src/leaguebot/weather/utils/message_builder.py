@@ -150,18 +150,18 @@ def invalidation_message(track: str) -> str:
 
 def phase_log_message(
     phase_number: int,
-    round_number: int,
-    division_name: str,
+    called: str,
     track: str,
     payload: dict,
 ) -> str:
-    """Produce a structured log entry for the calculation log channel, naming the round as a
-    league reads it ("Round 3 in **Pro**"), never by its database id."""
+    """Produce a structured log entry for the calculation log channel. *called* is the round as
+    core names it for a league ("round 3 in **Pro**", `round_called_on`), never by its database
+    id; the header capitalises it."""
     import json
 
     header = (
         f"📋 **Phase {phase_number} Calculation Log** | "
-        f"Round {round_number} in **{division_name}** | {track}"
+        f"{called[:1].upper()}{called[1:]} | {track}"
     )
     body = json.dumps(payload, indent=2, default=str)
     return f"{header}\n```json\n{body}\n```"

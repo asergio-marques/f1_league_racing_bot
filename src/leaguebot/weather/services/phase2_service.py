@@ -17,7 +17,7 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.services.seasons.season_service import sessions_of_round_on
+from leaguebot.core.services.seasons.season_service import round_called_on, sessions_of_round_on
 from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_ir, compute_im, compute_is, build_slot_pool
@@ -105,8 +105,9 @@ async def draw_phase2_on(
     )
     await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = ?", (round_id,))
     log.info("Phase 2 drawn for round %s", round_id)
+    called = await round_called_on(db, round_id)
     return Drawn(
         2, payload=payload, line=phase_log_message(
-            2, row.facts.round_number, row.facts.division_name, track_name, payload
+            2, called, track_name, payload
         ), written=True
     )

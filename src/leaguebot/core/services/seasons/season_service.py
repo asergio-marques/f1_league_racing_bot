@@ -1572,12 +1572,18 @@ async def round_called(db_path: str, round_id: int) -> str:
     round at the press, and a round deleted meanwhile is named so rather than failing the refusal.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.round_number, d.name FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
+        return await round_called_on(db, round_id)
+
+
+async def round_called_on(db: aiosqlite.Connection, round_id: int) -> str:
+    """`round_called` read on *db*, for a line written inside a save that must await nothing but
+    that save's own connection."""
+    cursor = await db.execute(
+        "SELECT r.round_number, d.name FROM rounds r "
+        "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+        (round_id,),
+    )
+    row = await cursor.fetchone()
     if row is None:
         return "a round no longer there"
     return f"round {row['round_number']} in **{row['name']}**"

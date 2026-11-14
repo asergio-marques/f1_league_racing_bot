@@ -18,6 +18,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.core.services.rounds.track_service import get_track_by_name
+from leaguebot.core.services.seasons.season_service import round_called_on
 from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_rpc_beta
@@ -45,7 +46,7 @@ async def draw_phase1_on(
     if row is None:
         return Drawn(1)
 
-    called = f"round {row.facts.round_number} in **{row.facts.division_name}**"
+    called = await round_called_on(db, round_id)
     track_name = row.facts.track_name
     if not track_name:
         err_msg = f"\u26a0\ufe0f Phase 1 BLOCKED for {called}: the round names no circuit."
@@ -106,6 +107,6 @@ async def draw_phase1_on(
     log.info("Phase 1 drawn for round %s — Rpc=%.2f", round_id, rpc)
     return Drawn(
         1, payload=payload, line=phase_log_message(
-            1, row.facts.round_number, row.facts.division_name, track_name, payload
+            1, called, track_name, payload
         ), written=True
     )

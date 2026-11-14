@@ -20,7 +20,7 @@ import aiosqlite
 from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.core.models.session import MAX_SLOTS
-from leaguebot.core.services.seasons.season_service import sessions_of_round_on
+from leaguebot.core.services.seasons.season_service import round_called_on, sessions_of_round_on
 from leaguebot.weather.services.round_phases import phase2_slot_types_on
 from leaguebot.weather.utils.math_utils import get_phase3_weights, draw_weighted
 from leaguebot.weather.utils.message_builder import phase_log_message, format_slots_for_log
@@ -116,8 +116,9 @@ async def draw_phase3_on(
     )
     await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
     log.info("Phase 3 drawn for round %s", round_id)
+    called = await round_called_on(db, round_id)
     return Drawn(
         3, payload=payload, line=phase_log_message(
-            3, row.facts.round_number, row.facts.division_name, track_name, payload
+            3, called, track_name, payload
         ), written=True
     )
