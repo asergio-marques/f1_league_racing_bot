@@ -435,7 +435,8 @@ async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier
     pytest.param("UPDATE tracks SET sigma = 0.9 WHERE name = ?",
                  f"Phase 1 BLOCKED for round {ROUND} ({TRACK})", id="impossible distribution"),
     pytest.param("UPDATE rounds SET track_name = NULL WHERE id = ?",
-                 f"Phase 1 BLOCKED for round {ROUND}", id="no circuit",
+                 f"Phase 1 BLOCKED for round {ROUND}: the round names no circuit.",
+                 id="no circuit",
                  marks=pytest.mark.xfail(
                      strict=True,
                      reason="#287: a round with no circuit blocks Phase 1 in the host's log alone",
@@ -443,8 +444,9 @@ async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier
 ])
 async def test_a_blocked_phase_writes_its_line_and_nothing_else(tmp_path, blocking, line):
     """Round 3's circuit is one the bot has no row for, or one whose σ makes the draw impossible,
-    or round 3 names no circuit at all: the phase's ⚠️ BLOCKED line is written to the log
-    channel, nothing is drawn or posted, and the queue goes on (weather spec, "Phase 1")."""
+    or round 3 names no circuit at all: the phase's ⚠️ BLOCKED line, giving its reason, is
+    written to the log channel, nothing is drawn or posted, and the queue goes on (weather spec,
+    "Phase 1")."""
     league = await _league(tmp_path)
     await league.write(blocking, TRACK if "tracks" in blocking else ROUND)
 
