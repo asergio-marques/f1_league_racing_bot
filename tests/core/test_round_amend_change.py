@@ -49,6 +49,7 @@ from tests.support.season_league import (
     FERRARI,
     MAX,
     PRO,
+    _refusing_delete,
     amend_round,
     amendment_changes,
     cancel_round,
@@ -2780,6 +2781,7 @@ async def test_a_mystery_round_s_notice_discord_will_not_delete_stops_the_queue_
                            R3, session)
     notice = await _with_its_notice_posted(league, days=3)
     league.undeletable.add(notice)
+    _refusing_delete(league, league.channel(PRO_CH.forecast).messages[notice])
 
     press = await _amended(league, format="NORMAL", track="Silverstone Circuit")
     await run_queue(league.bot)
