@@ -692,6 +692,19 @@ async def _lapsed(tmp_path: Any) -> SeasonLeague:
     return league
 
 
+async def _submitted_at_length(tmp_path: Any) -> SeasonLeague:
+    """As `_submitted`, but Kimi gave a platform ID and a preferred teammate of 1,900 characters
+    each, so his review panel runs to two or more messages: Discord takes the earlier parts and
+    refuses the last, the one carrying the buttons."""
+    league = await _league(
+        tmp_path, state="COLLECTING_NOTES",
+        draft=dict(ANSWERED_TO_NOTES, platform_id="P" * 1900, preferred_teammate="T" * 1900),
+    )
+    _refuse_the_panel(league)
+    await _type(league, "Happy to race anywhere")
+    return league
+
+
 def _refuse_the_panel(league: SeasonLeague) -> None:
     """Discord refuses the review panel in Kimi's channel, and takes every other post."""
     league.channel(KIMI_CHANNEL).fail_when = (
@@ -747,6 +760,14 @@ def _lapse_detail(league: SeasonLeague) -> str:
 
 @pytest.mark.parametrize("waiting, going", [
     pytest.param(_submitted, _press_cancel, id="after his signup is submitted, he withdraws"),
+    pytest.param(
+        _submitted_at_length, _press_cancel,
+        id="after part of his divided panel is posted, he withdraws",
+        marks=pytest.mark.xfail(strict=True, reason=(
+            "#286: the earlier parts of a divided review panel stay in the driver's channel "
+            "once the panel is dropped for a driver who withdrew"
+        )),
+    ),
     pytest.param(_lapsed, _press_cancel, id="after his correction lapses, he withdraws",
                  marks=pytest.mark.xfail(strict=True, reason=_LAPSE_SAYS_HE_WENT)),
     pytest.param(_lapsed, _leave, id="after his correction lapses, he leaves",
@@ -756,9 +777,11 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, g
     """Kimi is owed a review panel in his channel (*waiting*: his signup just submitted, or his
     correction lapsed and he is back awaiting approval), and Discord refuses it. When the queue
     runs, the job posting it stops his channel's lane alone: the league lane is not stopped.
+    Where his panel runs to several messages, its earlier parts are posted before the refusal.
     Kimi then goes (*going*: he presses Cancel Signup, or leaves the server), and the league
     runs it: he is Not Signed Up. Discord takes the panel again, and a Retry on his lane clears
-    it without posting the panel, which is no longer owed to anyone. Where his correction had
+    it without posting the panel, which is no longer owed to anyone: no part of it stays in his
+    channel. Where his correction had
     lapsed, the log channel still records the lapse, naming manager 77 and Kimi: it happened,
     whether or not the panel it owed him is ever posted. The record says Kimi had gone and no
     fresh review panel was posted, never that he is back in the approval queue."""
@@ -780,6 +803,9 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, g
     assert await stopped_job(league.db_path) is None
     assert [message for message in league.channel(KIMI_CHANNEL).messages.values()
             if type(message.view).__name__ == "AdminReviewView"] == []
+    assert [message.content for message in league.channel(KIMI_CHANNEL).messages.values()
+            if message.content.startswith("**📋 Signup Review**")
+            or "P" * 1900 in message.content or "T" * 1900 in message.content] == []
     if waiting is _lapsed:
         assert LAPSE_RECORDED in league.log()
         detail = _lapse_detail(league)
