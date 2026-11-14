@@ -205,7 +205,9 @@ Answers to `architecture.md`, "How a change is carried out".
 change, so that a stop between any two resumes where it stopped:
 
 1. **`draw_forecast`**, a save: the phase is drawn and recorded, its flag set and its calculation
-   line written to the log channel, in one save (weather specification, "Supersession and cleanup").
+   line written to the log channel, in one save (weather specification, "Supersession and cleanup"),
+   the line naming the round as core does (`round_called_on`, read on the save's connection, handed
+   to `phase_log_message` as `called`) and never by its database id.
    A phase whose earlier phase has not been drawn plans the earlier phase first. A Phase 1 that
    cannot be drawn, for a round naming no circuit, a circuit that cannot be resolved or an
    impossible distribution, writes nothing but its BLOCKED line, which reaches the log channel as
@@ -265,15 +267,12 @@ round (`clean_up_forecast`). The step names, their payloads and the changes weat
 queue's record: they do not move for a design, so that a change stopped before a deploy retries
 after it.
 
-**A mystery round's notice is no forecast, in an amendment either.** A round whose format is changed
-to another type has its notice taken down by a `delete_forecast` job of phase 0, which
-`forecast_amendment.round_armed` plans first, whatever weather's switch: the notice is no forecast, so
-no invalidation notice is posted for it, and the round's forecasts follow as any round's, a phase
-whose horizon has passed being drawn at once while its race is ahead. A mystery round whose date is
-moved keeps its notice: nothing is deleted or posted again, and none of its phases is withdrawn, since
-none was drawn. The deletion goes through the standing-post handler, so Discord refusing it stops
-the queue for Retry or Discard, and the record it closes is the notice's, `mystery_notice_given`
-being lowered with its row.
+**A mystery round's notice is no forecast, in an amendment either** (weather specification, "Mystery
+rounds" and "Changes to a round after generation"). The notice's taking down is a `delete_forecast`
+job of phase 0, which `forecast_amendment.round_armed` plans first. The deletion goes through the
+standing-post handler, so Discord refusing it stops the queue for Retry or Discard, and the record it
+closes is the notice's, `mystery_notice_given` being lowered with its row. What the notice is judged
+as, and what becomes of it, is the specification's.
 
 ### The cancellation notice
 
@@ -368,12 +367,13 @@ division's present channel.
 the first try alone, from the words weather hands it (`ForecastValues`, declared by image) and
 reading none of weather's tables. Where `attach_forecast` returns no file, the forecast goes as
 text. It hands back, with the file or without, the lines saying why a picture that was due was not
-drawn: an invalid drawing file, a switch or a round that cannot be read, a render's problem, a notice
-the render gave, and a fault in the drawing itself, the one catch-all of the graphic (`architecture.md`,
-"Errors and failures", the catch-all around a graphic that rides on a post). The post job puts them on
-its `StepResult`, so they reach the log channel in the save that records the post. A picture that
-was never due, because the league has switched pictures off, says nothing. A graphic Discord
-refuses stops the queue for Retry.
+drawn, which reasons and when none is due being the specification's "Image generation". The two
+switches are asked first, so that nothing is read for a picture not due. The one catch-all of the
+graphic sits around its drawing (`architecture.md`, "Errors and failures", the catch-all around a
+graphic that rides on a post). The post job puts the lines on its `StepResult`, so they reach the
+log channel in the save that records the post. The render is given no bot, so a render's notices
+come back as those lines alone and are posted once. A graphic Discord refuses stops the queue for
+Retry.
 
 ---
 
@@ -424,8 +424,7 @@ being the parts' merged `kept`, which core stores as it is given and reads for n
 and the arming hand it back, and weather reads its horizons from it (`windows_kept`), **reading them
 afresh where it finds none**: an amendment stopped across an update holds a record with no window of
 weather's own, and nothing raises. The note names only the phases drawn and put back in question, and
-promises a redraw only while weather is on; where none is drawn it says nothing of forecasts. A
-mystery round's notice is never named.
+promises a redraw only while weather is on, as "Changes to a round after generation" has it.
 
 When the round is armed again, each module answers `round_armed` with a `RoundArming`, its steps and
 its jobs; weather's `ForecastJobs` carry the windows and `skip_phases`, the phases whose draw the
@@ -487,7 +486,7 @@ Answers to `architecture.md`, "Errors and failures".
 core's `amendment_step_failure` so that core names none of them. A discarded draw is made when the bot
 next starts, while its round is still to be run; a discarded post leaves the draw standing in the log
 channel; a discarded deletion is left to delete by hand, by its link, a mystery round's notice
-being named as such and never as a withdrawn forecast.
+being named as the specification's "Mystery rounds" has it.
 
 ---
 

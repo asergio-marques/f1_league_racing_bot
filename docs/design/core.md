@@ -628,7 +628,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `drivers_deleted` | A | image | `season_end_service` |
 | `test_mode_turned_on` | A | results | `test_mode_toggle_change` |
 | `season_approved` | A | results | `season_approval_change` |
-| `test_mode_flushed` | A | weather | `test_mode_toggle_change` and `season_end_changes` (the season's end, and the abort's `fill`), which plan the jobs it hands back and name none |
+| `test_mode_flushed` | A | weather | `test_mode_toggle_change`, `season_end_changes` (the season's end, and the abort's `fill`) and `cancellation_changes` (a season's cancellation), which plan the jobs it hands back and name none |
 | `pending_steps_read` | A | weather, attendance, results | `test_mode_service` |
 | `review_marks_read` | A | weather, results, attendance | `test_mode_service` |
 | `in_memory_state_cleared` | P | results, signup | `in_memory_state.clear_in_memory_state` |
