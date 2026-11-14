@@ -367,9 +367,7 @@ def _awaits_inside_a_write(nodes=None) -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/services/module_switch_settings.py", "module_on_signup.save"): (1, PASS["signup"]),
-}
+KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_nothing_else_is_awaited_while_a_write_is_open():
