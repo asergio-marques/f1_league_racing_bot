@@ -827,7 +827,6 @@ def submit_change(
                 preferred_teams=draft.get("preferred_teams", []),
                 preferred_teammate=draft.get("preferred_teammate"),
                 lap_times=draft.get("lap_times", {}), notes=draft.get("notes"),
-                signup_channel_id=wizard.signup_channel_id,
             )
             if prior == DriverState.PENDING_DRIVER_CORRECTION.value and existing is not None:
                 record.id = existing.id

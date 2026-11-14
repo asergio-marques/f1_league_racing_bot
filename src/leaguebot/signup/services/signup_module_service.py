@@ -505,7 +505,7 @@ class SignupModuleService:
         "id, season_id, window_id, discord_user_id, discord_username, "
         "server_display_name, nationality, platform, platform_id, availability_slot_ids, "
         "driver_type, preferred_teams, preferred_teammate, lap_times_json, notes, "
-        "signup_channel_id, total_lap_ms"
+        "total_lap_ms"
     )
 
     async def get_record(
@@ -576,7 +576,6 @@ class SignupModuleService:
             record.preferred_teammate,
             json.dumps(record.lap_times),
             record.notes,
-            record.signup_channel_id,
         )
         if record.id is not None and record.id > 0:
             await db.execute(
@@ -585,8 +584,7 @@ class SignupModuleService:
                     discord_username = ?, server_display_name = ?, nationality = ?,
                     platform = ?, platform_id = ?, availability_slot_ids = ?,
                     driver_type = ?, preferred_teams = ?, preferred_teammate = ?,
-                    lap_times_json = ?, notes = ?, signup_channel_id = ?,
-                    updated_at = ?
+                    lap_times_json = ?, notes = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (*fields, now.isoformat(), record.id),
@@ -610,9 +608,8 @@ class SignupModuleService:
                 (season_id, window_id, discord_user_id, discord_username,
                  server_display_name, nationality, platform, platform_id,
                  availability_slot_ids, driver_type, preferred_teams,
-                 preferred_teammate, lap_times_json, notes, signup_channel_id,
-                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 preferred_teammate, lap_times_json, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (season_id, window_id, record.discord_user_id, *fields, now.isoformat(),
              now.isoformat()),
@@ -637,7 +634,6 @@ class SignupModuleService:
             preferred_teammate=row["preferred_teammate"],
             lap_times=json.loads(row["lap_times_json"] or "{}"),
             notes=row["notes"],
-            signup_channel_id=row["signup_channel_id"],
             total_lap_ms=row["total_lap_ms"] if "total_lap_ms" in row.keys() else None,
             season_id=row["season_id"] if "season_id" in row.keys() else None,
             window_id=row["window_id"] if "window_id" in row.keys() else None,

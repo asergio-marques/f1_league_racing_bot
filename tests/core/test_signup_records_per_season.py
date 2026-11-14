@@ -18,8 +18,6 @@ from tests.support.driver_transitions import transitioned
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
-_NO_CHANNEL_COLUMN = "#286: SignupRecord still carries the signup_channel_id item 22 removes"
-
 
 async def _save_record(svc, db_path, record):
     """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
@@ -85,7 +83,6 @@ async def _archive(db_path, season_id: int):
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -103,7 +100,6 @@ async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_pa
     assert stored.window_id == window_id
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -116,7 +112,6 @@ async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     assert (await svc.get_record(USER)).platform == "PSN"
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_a_new_season_does_not_overwrite_the_last(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -132,7 +127,6 @@ async def test_a_new_season_does_not_overwrite_the_last(db_path):
     assert (await svc.get_record(USER)).platform == "Xbox"
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     """Signups are keyed by the Discord account, and survive the driver whatever becomes of
     the profile — deleted at the season's end where they never raced."""
@@ -151,9 +145,6 @@ async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     assert len(await svc.get_records(1)) == 1
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#286: driver_signup_on cannot yet be asked for a season's signup"
-)
 async def test_a_driver_s_signup_for_a_season_is_the_one_kept_under_it(db_path):
     """Season 1 holds the driver's Steam signup and season 2, after it, their Xbox one. Asked for
     season 1, the one function that says which signup is the driver's gives the Steam signup; asked

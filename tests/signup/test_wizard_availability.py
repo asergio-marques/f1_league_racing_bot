@@ -16,8 +16,6 @@ from types import SimpleNamespace
 
 import pytest
 
-_NO_CHANNEL_COLUMN = "#286: SignupRecord still carries the signup_channel_id item 22 removes"
-
 
 def _typed(content: str):
     """A message the driver typed: its text, and no attachment."""
@@ -152,7 +150,6 @@ def _record(slot_ids):
 
 
 class TestReviewPanel:
-    @pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
     def test_review_panel_labels_resolve_by_slot_id(self):
         from leaguebot.signup.services.wizard_service import WizardService
 
@@ -160,7 +157,6 @@ class TestReviewPanel:
         panel = WizardService._format_review_panel(_record(["Fri_21_00"]), labels)
         assert "**Availability:** Friday 21:00 UTC" in panel
 
-    @pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
     def test_answer_for_a_removed_slot_named_not_printed(self):
         """A slot that no longer exists has no label; the storage form is not shown."""
         from leaguebot.signup.services.wizard_service import WizardService
@@ -170,14 +166,12 @@ class TestReviewPanel:
         assert "**Availability:** Unknown slot" in panel
         assert "Fri_21_00" not in panel
 
-    @pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
     def test_no_labels_available_names_every_slot_unknown(self):
         from leaguebot.signup.services.wizard_service import WizardService
 
         panel = WizardService._format_review_panel(_record(["Fri_21_00", "Mon_19_00"]))
         assert "**Availability:** Unknown slot, Unknown slot" in panel
 
-    @pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
     def test_no_availability_reads_none(self):
         from leaguebot.signup.services.wizard_service import WizardService
 

@@ -828,7 +828,6 @@ CREATE TABLE "signup_records" (
     preferred_teammate    TEXT,
     lap_times_json        TEXT,       -- JSON object: {track_id: "M:ss.mss"}
     notes                 TEXT,
-    signup_channel_id     INTEGER,
     total_lap_ms          INTEGER,
     created_at            TEXT    NOT NULL,
     updated_at            TEXT    NOT NULL,

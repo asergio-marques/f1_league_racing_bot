@@ -10,8 +10,6 @@ from leaguebot.core.db.database import get_connection
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
-_NO_CHANNEL_COLUMN = "#286: SignupRecord still carries the signup_channel_id item 22 removes"
-
 
 async def _add_slot(db_path, day_of_week, time_hhmm):
     """Add the slot at *day_of_week* and *time_hhmm*, as `/signup time-slot add` leaves the table."""
@@ -405,7 +403,6 @@ def _make_record(user_id: str = "u1") -> "SignupRecord":
 class TestSignupRecordCRUD:
     """T053: SignupRecord save/get/clear lifecycle."""
 
-    @pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
     async def test_save_and_get_roundtrip(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
@@ -423,7 +420,6 @@ class TestSignupRecordCRUD:
         svc = SignupModuleService(db_path)
         assert await svc.get_record("ghost") is None
 
-    @pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
     async def test_a_second_signup_is_kept_beside_the_first(self, db_path):
         """Records are never overwritten (issue #220): the latest is what a review reads."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -443,7 +439,6 @@ class TestSignupRecordCRUD:
             )
             assert (await cursor.fetchone())["n"] == 2
 
-    @pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
     async def test_saving_a_stored_record_updates_it_in_place(self, db_path):
         """A correction amends the signup it was asked of."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -662,7 +657,6 @@ async def test_the_drivers_mid_signup_are_listed_oldest_first_with_the_channel_t
     assert await svc.drivers_mid_signup(set()) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CHANNEL_COLUMN)
 async def test_a_driver_with_no_account_has_no_signup(db_path):
     """A signup on the books, asked for a driver with no account: there is no signup to give."""
     from leaguebot.signup.services.signup_module_service import (

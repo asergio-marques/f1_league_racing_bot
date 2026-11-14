@@ -128,7 +128,6 @@ class SignupRecord:
     preferred_teammate: str | None
     lap_times: dict[str, str]     # track_id → normalised "M:ss.mss"
     notes: str | None
-    signup_channel_id: int | None
     total_lap_ms: int | None = None  # computed once at approval; NULL = no times
     season_id: int | None = None
     window_id: int | None = None
