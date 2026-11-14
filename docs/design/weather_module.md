@@ -59,8 +59,8 @@ name one (`READS_OF_OWN_COLUMNS`: `round_phases.phases_drawn_on` for the flags, 
 for the channel, `round_phases.phase2_slot_types_on` for the slot type), and a round, a division, a
 season, a track or a round's sessions through core's readers (`round_facts_on`, `division_on`,
 `get_track_by_name`, `sessions_of_round_on`). No weather service writes a core table's column that is
-not its own. The image module reads `sessions.phase2_slot_type` and `phase3_slots` to draw the forecast
-graphic (see "How modules and core fit together").
+not its own. The image module reads `sessions.phase2_slot_type` and `phase3_slots`, and `phase_results.payload`,
+to draw the forecast graphic (see "How modules and core fit together").
 
 ### The switch
 
@@ -81,7 +81,7 @@ already posted and the draws already made are kept by a switch-off.
 | `phase_results` | `phase1_service`, `phase2_service`, `phase3_service` | a phase's draw, with its flag, in the draw's save |
 | | `phase_withdrawal` | a withdrawn phase's rows set `INVALIDATED`, inside an amendment's save |
 | | `forecast_cleanup_service` (`rounds_deleted_on`) | a deleted round's rows |
-| `forecast_messages` | `forecast_cleanup_service` | a row as a post is recorded (`store_forecast_message_on`), dropped as its message is deleted (`forget_forecast_on`), and a deleted round's rows |
+| `forecast_messages` | `forecast_cleanup_service` | a row as a post is recorded (`store_forecast_message_on`), dropped as its message is deleted (`forget_forecast_on`), a deleted round's rows, and every row when the bot is packed (`bot_packed_on`) |
 | `weather_pipeline_config` | `weather_config_service` (`set_deadline_on`) | one horizon, in a setting's save |
 | `rounds.phaseN_done` | the draws; `mystery_notice_service` (phase 1's flag, for the notice) | raised with the draw |
 | | `phase_withdrawal` | lowered with the withdrawal |
@@ -98,9 +98,8 @@ Weather keeps one thing twice that cannot be worked out again: **a draw's output
 are random draws, so the figures are not a function of any other row. The draw's `payload` in
 `phase_results` is the record; `sessions.phase2_slot_type` and `phase3_slots` hold the same outputs
 where the image module and phase 3 read them, and `rounds.phaseN_done` says the draw stands.
-`architecture.md`'s "The database" admits this second form of stored copy: one that cannot be
-recomputed is written together with what it copies, by each of its writers, in one save, each writer
-pinned by a named test, and the module's design file names the copy and its writers.
+It is a stored copy that cannot be recomputed, in `architecture.md`'s "The database" sense; its
+writers are these.
 
 | Writer | Writes together | Pinned by |
 |---|---|---|
@@ -219,7 +218,7 @@ held is owed it as any is; a mystery round's notice is never cleaned up (weather
 
 ### The settings and the switch
 
-The two deadline settings, the forecast channel and the switch's two directions are `Setting`s built
+The deadline setting (one setting for the three horizons), the forecast channel and the switch's two directions are `Setting`s built
 by `setting_change`, which holds what every settings change does with a value already held and with a
 fault. Their checks run as the command is answered and again as the change starts. The forecast
 channel's setting is handed core's `channel_uses_read` hook, as results' and attendance's are, so
@@ -292,8 +291,9 @@ rounds, and the clean-ups from weather's own `forecast_messages` rows, each roun
 are raised as one `RecoveryFailed` naming each round and its error, which the start-up sweep reports to
 the log channel in one line, as the core specification's "When the bot stops" requires. Each module
 owns its own `RecoveryFailed`: core's sweep catches whatever a step raises and does not name the type.
-A start time that cannot be read is that round's failure, in both steps: core's reader of the active
-season's rounds hands such a round back apart, and the step records it. A database that cannot be read
+A start time that cannot be read is that round's failure, found by each step in its own way: the
+missed phases from the ids `rounds_of_the_active_season` hands back apart from the live rounds, and
+the clean-ups from `round_facts_on` raising for it. Each step records it. A database that cannot be read
 is raised as it is. Pinned by `test_one_round_failing_its_recovery_stops_none_of_the_others`,
 `test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone` and
 `test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone`.
@@ -339,7 +339,7 @@ several modules join a hook the entry point signs them up in the order they are 
 | Hook | Weather's function | What weather does |
 |---|---|---|
 | `starting` | `wiring.start_up_steps` | its two start-up steps |
-| `round_windows_read` | `weather_config_service.round_window` | hands its three horizons, or none where the module is off |
+| `round_windows_read` | `weather_config_service.round_window` | hands its three horizons, or none where the module is off and the round is not being amended |
 | `phases_drawn_read` | `round_phases.phases_drawn` | says which phases of a round are drawn; `/season status` reads it |
 | `amendment_judged` | `forecast_amendment.amendment_judged` | weather's part of judging a round's amendment: the two refusals for a forecast already posted, its note, and the phases it withdraws |
 | `round_amended` | `phase_withdrawal.round_amended_on` | withdraws the phases, inside the amendment's save |
@@ -364,15 +364,15 @@ past, a round already started, and the mystery reveal. It then asks each module 
 one UTC `now`, the windows and the save's connection or none. Weather answers an `AmendmentPart`
 (the refusals, its note, and `withdrawn`, which core keeps for the amendment's save). Core merges the
 parts, giving the refusals in core's head rules, each module's in sign-up order, then core's tail
-rules, which is the order a league has always met them in. A key two modules keep is a fault.
+rules. A key two modules keep is a fault.
 
 When the round is armed again, each module answers `round_armed` with a `RoundArming`, its steps and
 its jobs; weather's `ForecastJobs` carry the windows and `skip_phases`, the phases whose draw the
 amendment makes at once and whose timer therefore must not draw it again, since a timer with no
-lateness limit would. Core makes the scheduler's calls, in the order it always has, from the answers;
+lateness limit would. Core makes the scheduler's calls, in a fixed order, from the answers;
 it holds no rule of weather's about which jobs a round owes. A round already raced, or ended not held,
 is armed its clean-ups alone by `schedule_round_cleanups`, which core calls from the modules' switches. What the queue stores of an amendment (the
-windows by name, the steps and their payloads) is core's record and does not change.
+windows by name, the steps and their payloads) is core's record.
 
 ### What weather reads of others
 
@@ -431,13 +431,13 @@ Each is stated where it lives and pinned by the test named.
 | Constraint | Stated in | Pinned by |
 |---|---|---|
 | A forecast's text is composed when it is sent, from the stored draw, not stored | `forecast_text`'s docstring | `test_the_forecast_text_is_built_from_the_recorded_draw` |
-| A forecast is deleted from the channel it was posted in, not the division's present one | `forecast_steps.delete` | `test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves` |
+| A forecast is deleted from the channel it was posted in, not the division's present one | `forecast_cleanup_service`' module docstring | `test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves` |
 | The deletion of a superseded forecast is a job of its own, after the post | `forecast_changes`' docstring | `test_a_phase_posts_before_the_superseded_forecast_is_deleted_by_a_job` |
 | A mystery round writes no `phase_results` and tags nobody | `mystery_notice_service`'s docstring | `test_the_mystery_notice_notifies_nobody` |
 | A phase has one standing draw | the schema's partial unique index | `test_a_second_standing_draw_for_one_phase_is_refused` |
-| A draw and its calculation line are one save | `forecast_steps.draw` | `test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted` |
+| A draw and its calculation line are one save | `forecast_changes`' module docstring | `test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted` |
 | The horizons are the league's own, and no fixed moment is named | `phase1_service`'s docstring | `test_the_league_s_own_horizons_are_used_not_the_packaged_ones` |
-| The four timers have no lateness limit; the work's own check judges lateness | `schedule_round`'s docstring | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
+| The four timers have no lateness limit; the work's own check judges lateness | `SchedulerService.arm_once`'s docstring, and architecture.md's "Timed work and restarts" | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
 | A recovery judges every moment at the queue's clock | `forecast_recovery`'s docstring | `test_the_missed_phases_catch_up_reads_the_queue_s_clock` |
 | A failed recovery stops none of the other rounds and is reported once | `forecast_recovery`'s docstring | `test_one_round_failing_its_recovery_stops_none_of_the_others` |
 | A phase the amendment draws at once is skipped by its timer | `ForecastJobs`' docstring | `test_core_arms_what_a_module_s_arming_answer_hands_back` |
