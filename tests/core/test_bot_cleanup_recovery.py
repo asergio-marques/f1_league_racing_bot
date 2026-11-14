@@ -474,15 +474,23 @@ async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported
     asked.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#287: weather's RecoveryFailed names a round by its database id")
-async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
+@pytest.mark.parametrize("gone, called", [
+    pytest.param(False, "round 2 in **Division 1**", id="round-readable", marks=pytest.mark.xfail(
+        strict=True, reason="#287: weather's RecoveryFailed names a round by its database id")),
+    # Round 22's rows are deleted as its ask fails, so the error names it as core's
+    # `round_called` names a round no longer there (#287, B10).
+    pytest.param(True, "a round no longer there", id="round-gone", marks=pytest.mark.xfail(
+        strict=True, reason="#287: weather's RecoveryFailed names a round by its database id")),
+])
+async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path, gone, called):
     """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
     22's (its round 2), raced 30 hours ago. At the restart the queue refuses round 22's forecast
-    clean-up. Run through the start-up sweep, weather's "missed forecast clean-ups" step still asks
-    round 21's, then raises weather's `RecoveryFailed` naming round 22 alone with the queue's
-    error, its message, which the host's log carries, naming it as a league reads it, "round 2 in
-    **Division 1**", never by its id 22 (#287, B10); and the sweep posts one line to the log
-    channel, its failure line for that step."""
+    clean-up, in one case after round 22's rows have been deleted. Run through the start-up sweep,
+    weather's "missed forecast clean-ups" step still asks round 21's, then raises weather's
+    `RecoveryFailed` naming round 22 alone with the queue's error, its message, which the host's
+    log carries, naming it as a league reads it, "round 2 in **Division 1**", or "a round no
+    longer there" where its rows are gone, never by its id 22 (#287, B10); and the sweep posts one
+    line to the log channel, its failure line for that step."""
     from leaguebot.core.utils.interaction_errors import start_up_failure_line
 
     db_path = await _make_db(tmp_path, check_in=False)
@@ -504,9 +512,14 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     refused = RuntimeError("the database is locked")
     asked: list[int] = []
 
-    async def ask(_queue, _db_path, round_id):
+    async def ask(_queue, ask_db_path, round_id):
         asked.append(round_id)
         if round_id == 22:
+            if gone:
+                async with get_connection(ask_db_path) as db:
+                    await db.execute("DELETE FROM forecast_messages WHERE round_id = 22")
+                    await db.execute("DELETE FROM rounds WHERE id = 22")
+                    await db.commit()
             raise refused
 
     with patch("leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
@@ -516,7 +529,7 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert asked == [22, ROUND_ID]
     assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
     assert round_failures(error, module="weather") == {22: refused}
-    assert "round 2 in **Division 1**" in str(error) and "22" not in str(error), str(error)
+    assert called in str(error) and "22" not in str(error), str(error)
     assert lines == [start_up_failure_line(MISSED_FORECAST_CLEAN_UPS, error)]
 
 
