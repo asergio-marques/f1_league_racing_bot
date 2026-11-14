@@ -2444,16 +2444,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("weather/services/draw_guard.py", "<module>"): (3, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "_round_row"): (2, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "ask_forecast"): (2, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "ask_forecast_clean_up"): (2, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "forecast_steps.delete"): (1, PASS["weather"]),
-    ("weather/services/forecast_changes.py", "forecast_steps.record_delete"): (1, PASS["weather"]),
-    ("weather/services/forecast_cleanup_service.py", "forecast_deletes"): (3, PASS["weather"]),
-    ("weather/services/phase1_service.py", "draw_phase1_on"): (1, PASS["weather"]),
-    ("weather/services/phase2_service.py", "draw_phase2_on"): (1, PASS["weather"]),
-    ("weather/services/phase3_service.py", "draw_phase3_on"): (1, PASS["weather"]),
 }
 
 

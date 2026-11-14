@@ -17,6 +17,7 @@ from datetime import datetime
 
 import aiosqlite
 
+from leaguebot.core.services.seasons.season_service import sessions_of_round_on
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_ir, compute_im, compute_is, build_slot_pool
@@ -40,11 +41,11 @@ async def draw_phase2_on(
     weather module is disabled, for a round that is cancelled, or whose division is, and for
     a phase already done; see ``draw_guard`` for why the draw itself refuses.
     """
-    row = await round_if_due(db, round_id, label="Phase 2", done_column="phase2_done")
+    row = await round_if_due(db, round_id, label="Phase 2", phase=2)
     if row is None:
         return Drawn(2)
 
-    if not row["phase1_done"]:
+    if not row.drawn[1]:
         log.warning("Phase 2: Phase 1 not yet done for round %s — it is drawn first.", round_id)
         return Drawn(2, earlier=1)
 
@@ -63,7 +64,7 @@ async def draw_phase2_on(
 
     p1_payload = json.loads(p1_row["payload"])
     rpc: float = p1_payload["rpc"]
-    track_name: str = row["track_name"] or p1_payload.get("track", "Unknown")
+    track_name: str = row.facts.track_name or p1_payload.get("track", "Unknown")
 
     # --- Build slot pool ---
     ir = compute_ir(rpc)
@@ -72,17 +73,13 @@ async def draw_phase2_on(
     pool = build_slot_pool(ir, im, is_)
 
     # --- Load sessions and draw ---
-    s_cursor = await db.execute(
-        "SELECT id, session_type FROM sessions WHERE round_id = ? ORDER BY id",
-        (round_id,),
-    )
-    sessions = await s_cursor.fetchall()
+    sessions = await sessions_of_round_on(db, round_id)
 
     slot_draws: list[dict] = []
 
-    for session_row in sessions:
+    for session in sessions:
         slot = random.choice(pool)
-        slot_draws.append({"session_id": session_row["id"], "session_type": session_row["session_type"], "slot": slot})
+        slot_draws.append({"session_id": session.id, "session_type": session.session_type.value, "slot": slot})
 
     # --- Persist ---
     payload = {

@@ -19,7 +19,9 @@ import aiosqlite
 
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
-from leaguebot.core.models.session import MAX_SLOTS, SessionType
+from leaguebot.core.models.session import MAX_SLOTS
+from leaguebot.core.services.seasons.season_service import sessions_of_round_on
+from leaguebot.weather.services.round_phases import phase2_slot_types_on
 from leaguebot.weather.utils.math_utils import get_phase3_weights, draw_weighted
 from leaguebot.weather.utils.message_builder import phase_log_message, format_slots_for_log
 
@@ -43,11 +45,11 @@ async def draw_phase3_on(
     weather module is disabled, for a round that is cancelled, or whose division is, and for
     a phase already done; see ``draw_guard`` for why the draw itself refuses.
     """
-    row = await round_if_due(db, round_id, label="Phase 3", done_column="phase3_done")
+    row = await round_if_due(db, round_id, label="Phase 3", phase=3)
     if row is None:
         return Drawn(3)
 
-    if not row["phase2_done"]:
+    if not row.drawn[2]:
         log.warning("Phase 3: Phase 2 not done for round %s — it is drawn first.", round_id)
         return Drawn(3, earlier=2)
 
@@ -66,29 +68,21 @@ async def draw_phase3_on(
 
     p1_payload = json.loads(p1_row["payload"])
     rpc: float = p1_payload["rpc"]
-    track_name: str = row["track_name"] or p1_payload.get("track", "Unknown")
+    track_name: str = row.facts.track_name or p1_payload.get("track", "Unknown")
 
     # Load sessions with their Phase 2 slot assignments
-    s_cursor = await db.execute(
-        "SELECT id, session_type, phase2_slot_type FROM sessions "
-        "WHERE round_id = ? ORDER BY id",
-        (round_id,),
-    )
-    sessions = await s_cursor.fetchall()
+    sessions = await sessions_of_round_on(db, round_id)
+    slot_types = await phase2_slot_types_on(db, round_id)
 
     session_draws: list[dict] = []
 
-    for session_row in sessions:
-        session_id: int = session_row["id"]
-        session_type_val: str = session_row["session_type"]
-        slot_type: str = session_row["phase2_slot_type"] or "sunny"
+    for session in sessions:
+        session_id: int = session.id
+        session_type_val: str = session.session_type.value
+        slot_type: str = slot_types.get(session_id) or "sunny"
 
         # Determine draw count
-        try:
-            st_enum = SessionType(session_type_val)
-            max_s = MAX_SLOTS.get(st_enum, 4)
-        except ValueError:
-            max_s = 4
+        max_s = MAX_SLOTS.get(session.session_type, 4)
 
         min_s = _MIN_SLOTS if slot_type == "mixed" else 1
         min_s = min(min_s, max_s)  # guard: min cannot exceed session-type cap

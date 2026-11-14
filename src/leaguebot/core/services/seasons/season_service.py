@@ -1513,6 +1513,22 @@ async def division_on(db: aiosqlite.Connection, division_id: int) -> Division | 
     return _row_to_division(row) if row is not None else None
 
 
+async def sessions_of_round_on(db: aiosqlite.Connection, round_id: int) -> list[Session]:
+    """The sessions of *round_id* in id order, none for a round with none or one that is not
+    there, read on *db*.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"), handed the connection of its own save: a draw that goes through each session reads
+    them here, inside the same save, so a session that save has written is read as written. It
+    writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, round_id, session_type FROM sessions WHERE round_id = ? ORDER BY id",
+        (round_id,),
+    )
+    return [_row_to_session(row) for row in await cursor.fetchall()]
+
+
 async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | None:
     """*round_id* of *division_id*, or None where it is not (any longer) that division's.
 

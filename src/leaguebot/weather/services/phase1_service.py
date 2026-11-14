@@ -17,6 +17,7 @@ from datetime import datetime
 
 import aiosqlite
 
+from leaguebot.core.services.rounds.track_service import get_track_by_name
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_rpc_beta
@@ -39,21 +40,17 @@ async def draw_phase1_on(
     weather module is disabled, for a round that is cancelled, or whose division is, and for
     a phase already done; see ``draw_guard`` for why the draw itself refuses.
     """
-    row = await round_if_due(db, round_id, label="Phase 1", done_column="phase1_done")
+    row = await round_if_due(db, round_id, label="Phase 1", phase=1)
     if row is None:
         return Drawn(1)
 
-    track_name = row["track_name"]
+    track_name = row.facts.track_name
     if not track_name:
         log.error("Phase 1: round %s has no track_name", round_id)
         return Drawn(1)
 
-    # --- Resolve (mu, sigma) from the tracks table ---
-    track_cursor = await db.execute(
-        "SELECT mu, sigma FROM tracks WHERE name = ?",
-        (track_name,),
-    )
-    track_row = await track_cursor.fetchone()
+    # --- Resolve (mu, sigma) from the tracks table, through core's reader of it ---
+    track_row = await get_track_by_name(db, track_name)
 
     if track_row is None:
         err_msg = (

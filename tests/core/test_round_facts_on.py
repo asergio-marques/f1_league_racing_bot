@@ -230,7 +230,6 @@ async def test_the_rounds_of_an_active_season_alone_are_read_with_their_division
         assert await active_season_rounds_on(db) == [(3, 20), (5, 20)]
 
 
-@pytest.mark.xfail(strict=True, reason="#287: core has no sessions_of_round_on reader yet")
 async def test_sessions_of_round_on_reads_in_id_order(tmp_path):
     from leaguebot.core.services.seasons.season_service import sessions_of_round_on
 

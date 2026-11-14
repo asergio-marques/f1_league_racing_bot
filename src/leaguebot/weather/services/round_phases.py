@@ -35,6 +35,18 @@ async def phases_drawn_on(
     }
 
 
+async def phase2_slot_types_on(db: aiosqlite.Connection, round_id: int) -> dict[int, str | None]:
+    """The slot type Phase 2 drew for each session of *round_id*, by session id, `None` for a
+    session it has drawn none for.
+
+    ``sessions.phase2_slot_type`` is the weather module's own column on core's `sessions` table,
+    which Phase 3 draws from; the session itself, its id and its type, it asks core for
+    (`sessions_of_round_on`). Reads on the connection it is handed. Reads only.
+    """
+    cursor = await db.execute("SELECT id, phase2_slot_type FROM sessions WHERE round_id = ?", (round_id,))
+    return {int(row["id"]): row["phase2_slot_type"] for row in await cursor.fetchall()}
+
+
 async def phases_drawn(
     db_path: str, round_ids: Sequence[int], *, db: aiosqlite.Connection | None = None
 ) -> dict[int, dict[int, bool]]:

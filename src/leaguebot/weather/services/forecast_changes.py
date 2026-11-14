@@ -52,7 +52,8 @@ from leaguebot.core.models.change import (
     Verdict,
     forecasts_named,
 )
-from leaguebot.core.models.round import Round, RoundStatus, WeatherWindows, read_scheduled_at
+from leaguebot.core.models.division import DivisionStatus
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus, WeatherWindows
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
@@ -66,6 +67,7 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.posting.notice_handler import send_notice
+from leaguebot.core.services.seasons.season_service import division_on, round_facts_on
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, phases_due
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now, round_number_now
 from leaguebot.core.services.test_mode.test_mode_service import (
@@ -82,7 +84,13 @@ from leaguebot.weather.services import (
     phase2_service,
     phase3_service,
 )
-from leaguebot.weather.services.draw_guard import weather_enabled_on
+from leaguebot.weather.services.draw_guard import (
+    Lapse,
+    WeatherRound,
+    lapse,
+    weather_enabled_on,
+    weather_round_on,
+)
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 from leaguebot.weather.services.round_phases import phases_drawn_on
 from leaguebot.core.utils.league_server import league_guild
@@ -103,8 +111,6 @@ CLEAN_UP_FORECAST = "clean_up_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
 RERUN_PHASE = "rerun_phase"
 
-_DONE_COLUMN = {0: "phase1_done", 1: "phase1_done", 2: "phase2_done", 3: "phase3_done"}
-
 
 def _value(ctx: StepContext, key: str, default: Any = None) -> Any:
     """The job's own value, else the change's."""
@@ -115,43 +121,24 @@ def _occasion(phase: int) -> str:
     return "mystery round notice" if phase == 0 else f"Phase {phase} forecast"
 
 
-async def _round_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
-    cursor = await db.execute(
-        "SELECT r.id, r.round_number, r.format, r.scheduled_at, r.phase1_done, r.phase2_done, "
-        "       r.phase3_done, r.division_id, r.status AS round_status, r.not_held, "
-        "       d.status AS division_status, d.name AS division_name, "
-        "       d.forecast_channel_id, d.mention_role_id "
-        "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-        (round_id,),
-    )
-    return await cursor.fetchone()
-
-
-def _raced(row: aiosqlite.Row, now: datetime) -> bool:
-    """Whether the round's race time has passed by *now*."""
-    return read_scheduled_at(row["scheduled_at"]) <= now
-
-
 def _not_due(
-    row: aiosqlite.Row | None, phase: int, weather_on: bool, now: datetime, *, posting: bool
+    rnd: WeatherRound | None, phase: int, weather_on: bool, now: datetime, *, posting: bool
 ) -> str | None:
     """Why *phase* of the round is no longer to be drawn (or, *posting*, posted), else None.
 
-    These are the guards each runner held (`draw_guard`), judged again as the change starts and as
-    the post comes up, with the race time added (A25): a forecast for a race already run is
-    dropped.
+    These are the guards each runner held (`draw_guard.lapse`), judged again as the change starts
+    and as the post comes up, with the round's format and its race time added: a forecast for a
+    race already run is dropped.
     """
-    if row is None:
-        return "the round is gone"
-    if row["round_status"] == RoundStatus.CANCELLED.value or row["division_status"] == "CANCELLED":
-        return "the round or its division is cancelled"
-    if not weather_on:
-        return "the weather module is off"
-    if (phase == 0) != (row["format"] == "MYSTERY"):
+    why = lapse(rnd, weather_on)
+    if why is not None:
+        return why.value
+    assert rnd is not None
+    if (phase == 0) != (rnd.facts.format == RoundFormat.MYSTERY):
         return "the round's format is no longer the one this forecast is for"
-    if _raced(row, now):
+    if rnd.facts.scheduled_at <= now:
         return "the round's race time has passed"
-    done = bool(row[_DONE_COLUMN[phase]])
+    done = rnd.drawn[max(phase, 1)]
     if posting and not done:
         return "the phase is not recorded as drawn"
     if not posting and done:
@@ -228,11 +215,11 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
     async def post_still_due(ctx: StepContext) -> bool:
         phase = int(_value(ctx, "phase"))
         async with get_connection(ctx.db_path) as db:
-            row = await _round_row(db, int(_value(ctx, "round_id")))
+            rnd = await weather_round_on(db, int(_value(ctx, "round_id")))
             weather_on = await weather_enabled_on(db)
             drawn = phase == 0 or await _active_payload(db, int(_value(ctx, "round_id")),
                                                         phase) is not None
-        reason = _not_due(row, phase, weather_on, now(), posting=True)
+        reason = _not_due(rnd, phase, weather_on, now(), posting=True)
         if reason is None and not drawn:
             reason = "the phase's draw no longer stands"
         if reason is not None:
@@ -245,8 +232,8 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         phase = int(_value(ctx, "phase"))
         round_id = int(_value(ctx, "round_id"))
         async with get_connection(ctx.db_path) as db:
-            row = await _round_row(db, round_id)
-            if row is None:
+            rnd = await weather_round_on(db, round_id)
+            if rnd is None:
                 raise LookupError(f"round {round_id} is no longer there")
             payload = None if phase == 0 else await _active_payload(db, round_id, phase)
             earlier = None
@@ -254,16 +241,16 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                 cursor = await db.execute(
                     "SELECT message_id FROM forecast_messages "
                     "WHERE round_id = ? AND division_id = ? AND phase_number = ?",
-                    (round_id, row["division_id"], phase - 1),
+                    (round_id, rnd.division.id, phase - 1),
                 )
                 found = await cursor.fetchone()
                 earlier = None if found is None else int(found["message_id"])
-        if not row["forecast_channel_id"]:
+        if not rnd.forecast_channel_id:
             raise StepFailedOnDiscord(
-                f"**{row['division_name']}** has no forecast channel set: set one with "
+                f"**{rnd.division.name}** has no forecast channel set: set one with "
                 f"`/weather channel`, then press Retry."
             )
-        mention = row["mention_role_id"]
+        mention = rnd.division.mention_role_id
         text = forecast_text(phase, mention, payload)
         attachment = None
         if ctx.tries == 0:
@@ -274,8 +261,8 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             )
         parts = await forecast_cleanup_service.post_phase_message(
             ctx.bot,
-            division_id=row["division_id"],
-            channel_id=int(row["forecast_channel_id"]),
+            division_id=rnd.division.id,
+            channel_id=int(rnd.forecast_channel_id),
             phase_number=phase,
             text=text,
             attachment=attachment,
@@ -283,14 +270,14 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             mentions=_forecast_mentions(phase, mention),
         )
         result = {
-            "new": list(parts), "channel_id": int(row["forecast_channel_id"]),
+            "new": list(parts), "channel_id": int(rnd.forecast_channel_id),
             "phase": phase,
-            "old": earlier, "division_id": row["division_id"],
+            "old": earlier, "division_id": rnd.division.id,
         }
         then: tuple[PlannedStep, ...] = ()
         if earlier is not None:
             then = (PlannedStep(DELETE_FORECAST, {
-                "round_id": round_id, "division_id": row["division_id"], "phase": phase - 1,
+                "round_id": round_id, "division_id": rnd.division.id, "phase": phase - 1,
                 "message_id": earlier, "superseded": True,
             }),)
         return StepResult(result=result, then=then)
@@ -306,10 +293,10 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
     async def describe_post(ctx: StepContext) -> str:
         phase = int(_value(ctx, "phase"))
         async with get_connection(ctx.db_path) as db:
-            row = await _round_row(db, int(_value(ctx, "round_id")))
+            rnd = await weather_round_on(db, int(_value(ctx, "round_id")))
         where = f"round {_value(ctx, 'round_number', '?')} in "
-        where += f"<#{row['forecast_channel_id']}>" if row is not None and row[
-            "forecast_channel_id"] else f"**{_value(ctx, 'division_name', '?')}**"
+        where += f"<#{rnd.forecast_channel_id}>" if rnd is not None and (
+            rnd.forecast_channel_id) else f"**{_value(ctx, 'division_name', '?')}**"
         if phase == 0:
             return f"posting the mystery round notice of {where}"
         return f"posting the Phase {phase} forecast of {where}"
@@ -321,20 +308,24 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         async with get_connection(ctx.db_path) as db:
             division_id = _value(ctx, "division_id")
             if division_id is None:
-                row = await _round_row(db, round_id)
-                division_id = None if row is None else row["division_id"]
+                facts = await round_facts_on(db, round_id)
+                division_id = None if facts is None else facts.division_id
             cursor = await db.execute(
-                "SELECT fm.message_id, fm.message_ids, d.name AS division_name, "
-                "COALESCE(fm.channel_id, d.forecast_channel_id) "
-                "AS forecast_channel_id FROM forecast_messages fm "
-                "JOIN divisions d ON d.id = fm.division_id "
-                "WHERE fm.round_id = ? AND fm.division_id = ? AND fm.phase_number = ?",
+                "SELECT message_id, message_ids, channel_id FROM forecast_messages "
+                "WHERE round_id = ? AND division_id = ? AND phase_number = ?",
                 (round_id, division_id, phase),
             )
             found = await cursor.fetchone()
-        if found is None or (wanted is not None and int(found["message_id"]) != int(wanted)):
+            division = None if division_id is None else await division_on(db, int(division_id))
+            channels = {} if division is None else await forecast_channels_on(db, [division.id])
+        if (
+            found is None or division is None
+            or (wanted is not None and int(found["message_id"]) != int(wanted))
+        ):
             return StepResult(result={"none": True})
-        channel_id = found["forecast_channel_id"]
+        channel_id = (
+            found["channel_id"] if found["channel_id"] is not None else channels.get(division.id)
+        )
         message_id = int(found["message_id"])
         if channel_id is None:
             return StepResult(result={"none": True, "message_id": message_id})
@@ -367,7 +358,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             if int(part) != message_id
             for step in standing_posts.replaced(
                 int(channel_id), int(part), None, what=f"Phase {phase} forecast",
-                division_name=found["division_name"],
+                division_name=division.name,
             )
         )
         return StepResult(
@@ -383,11 +374,10 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         division_id = _value(ctx, "division_id")
         round_id = int(_value(ctx, "round_id"))
         if division_id is None:
-            cursor = await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))
-            found = await cursor.fetchone()
-            if found is None:
+            facts = await round_facts_on(db, round_id)
+            if facts is None:
                 return
-            division_id = found["division_id"]
+            division_id = facts.division_id
         await forecast_cleanup_service.forget_forecast_on(
             db, round_id, int(division_id), int(_value(ctx, "phase")),
             None if message_id is None else int(message_id),
@@ -396,7 +386,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
     async def describe_delete(ctx: StepContext) -> str:
         phase = int(_value(ctx, "phase"))
         async with get_connection(ctx.db_path) as db:
-            row = await _round_row(db, int(_value(ctx, "round_id")))
+            rnd = await weather_round_on(db, int(_value(ctx, "round_id")))
             recorded = None
             if _value(ctx, "message_id") is not None:
                 cursor = await db.execute(
@@ -405,10 +395,10 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                 )
                 found = await cursor.fetchone()
                 recorded = None if found is None else found["channel_id"]
-        channel = recorded or (None if row is None else row["forecast_channel_id"])
+        channel = recorded or (None if rnd is None else rnd.forecast_channel_id)
         where = "the forecast channel" if not channel else f"<#{channel}>"
-        number = _value(ctx, "round_number", None) or (None if row is None
-                                                       else row["round_number"])
+        number = _value(ctx, "round_number", None) or (None if rnd is None
+                                                       else rnd.facts.round_number)
         later = " a day after it" if _value(ctx, "clean_up", False) else ""
         return f"deleting the Phase {phase} forecast of round {number} in {where}{later}"
 
@@ -469,9 +459,9 @@ def forecast_change(*, now: Callable[[], datetime]) -> ChangeType:
     async def check(ctx: CheckContext) -> Verdict:
         phase = int(ctx.payload["phase"])
         async with get_connection(ctx.db_path) as db:
-            row = await _round_row(db, int(ctx.payload["round_id"]))
+            rnd = await weather_round_on(db, int(ctx.payload["round_id"]))
             weather_on = await weather_enabled_on(db)
-        reason = _not_due(row, phase, weather_on, now(), posting=False)
+        reason = _not_due(rnd, phase, weather_on, now(), posting=False)
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
     def outcome(_ctx: OutcomeContext) -> str:
@@ -509,16 +499,11 @@ async def ask_forecast(
     done, a race run).
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.round_number, r.format, d.name FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
+        facts = await round_facts_on(db, round_id)
+    if facts is None:
         log.error("Forecast: round_id=%s not found — nothing asked of the queue.", round_id)
         return None
-    if row["format"] == "MYSTERY":
+    if facts.format == RoundFormat.MYSTERY:
         if phase not in (0, 1):
             log.info(
                 "Phase %s of mystery round %s has no forecast — nothing asked of the queue.",
@@ -527,8 +512,8 @@ async def ask_forecast(
             return None
         phase = 0
     payload = {
-        "round_id": round_id, "phase": phase, "division_name": row["name"],
-        "round_number": row["round_number"],
+        "round_id": round_id, "phase": phase, "division_name": facts.division_name,
+        "round_number": facts.round_number,
     }
     change = await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
     return ForecastAsked(phase, change)
@@ -562,20 +547,20 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
-            row = await _round_row(db, int(ctx.payload["round_id"]))
+            facts = await round_facts_on(db, int(ctx.payload["round_id"]))
             weather_on = await weather_enabled_on(db)
-            recorded = row is not None and any([
+            recorded = facts is not None and any([
                 await _recorded(db, int(ctx.payload["round_id"]), phase)
                 for phase in CLEAN_UP_PHASES
             ])
-        if row is None:
-            return Verdict.not_due("the round is gone")
+        if facts is None:
+            return Verdict.not_due(Lapse.GONE.value)
         if (
-            row["round_status"] == RoundStatus.CANCELLED.value and not row["not_held"]
-        ) or row["division_status"] == "CANCELLED":
-            return Verdict.not_due("the round or its division is cancelled")
+            facts.status == RoundStatus.CANCELLED and not facts.not_held
+        ) or facts.division_status == DivisionStatus.CANCELLED:
+            return Verdict.not_due(Lapse.CANCELLED.value)
         if not weather_on:
-            return Verdict.not_due("the weather module is off")
+            return Verdict.not_due(Lapse.OFF.value)
         if not recorded:
             return Verdict.not_due("no Phase 1 to 3 forecast is recorded")
         return Verdict.go()
@@ -621,24 +606,19 @@ async def ask_forecast_clean_up(
     phases standing as it is asked (`standing`) name the change; the jobs delete what stands when
     they run."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.round_number, d.name FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
+        facts = await round_facts_on(db, round_id)
         standing = [
             phase for phase in CLEAN_UP_PHASES if await _recorded(db, round_id, phase)
         ]
-    if row is None:
+    if facts is None:
         log.error("Forecast clean-up: round_id=%s not found — nothing asked of the queue.",
                   round_id)
         return None
     payload = {
         "round_id": round_id, "phases": list(CLEAN_UP_PHASES), "clean_up": True,
         "standing": standing,
-        "division_name": row["name"],
-        "round_number": row["round_number"],
+        "division_name": facts.division_name,
+        "round_number": facts.round_number,
     }
     change = await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
                              origin=ChangeOrigin.BOT)

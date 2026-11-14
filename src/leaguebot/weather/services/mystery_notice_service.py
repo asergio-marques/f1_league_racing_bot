@@ -20,6 +20,7 @@ import logging
 
 import aiosqlite
 
+from leaguebot.core.models.round import RoundFormat
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 
@@ -39,13 +40,13 @@ async def record_mystery_notice_on(db: aiosqlite.Connection, round_id: int) -> D
     ``draw_guard`` gives, and for a round amended away from MYSTERY before the notice's turn
     came: the standard amendment-invalidation path already informed drivers.
     """
-    row = await round_if_due(db, round_id, label="Mystery notice", done_column=None)
+    row = await round_if_due(db, round_id, label="Mystery notice", phase=None)
     if row is None:
         return Drawn(0)
-    if row["format"] != "MYSTERY":
+    if row.facts.format != RoundFormat.MYSTERY:
         log.info(
             "Mystery notice: round %s format is now %s (not MYSTERY) — skipping.",
-            round_id, row["format"],
+            round_id, row.facts.format.value,
         )
         return Drawn(0)
     await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = ?", (round_id,))

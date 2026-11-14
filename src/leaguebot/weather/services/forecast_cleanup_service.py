@@ -28,6 +28,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
 from leaguebot.core.services.posting.standing_post_handler import delete_standing, post_standing
+from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.messages import chunk_message
 
@@ -164,29 +165,32 @@ async def forecast_deletes(
     where: list[str] = []
     params: list[int] = []
     if round_id is not None:
-        where.append("fm.round_id = ?")
+        where.append("round_id = ?")
         params.append(round_id)
     if phases is not None:
-        where.append(f"fm.phase_number IN ({', '.join('?' for _ in phases)})")
+        where.append(f"phase_number IN ({', '.join('?' for _ in phases)})")
         params.extend(phases)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT fm.round_id, fm.division_id, fm.phase_number, fm.message_id, "
-            "       r.round_number "
-            "FROM forecast_messages fm "
-            "JOIN rounds r ON r.id = fm.round_id "
-            "JOIN divisions d ON d.id = fm.division_id "
-            "JOIN seasons s ON s.id = d.season_id "
+            "SELECT round_id, division_id, phase_number, message_id FROM forecast_messages "
             + (f"WHERE {' AND '.join(where)} " if where else "")
-            + "ORDER BY fm.round_id, fm.division_id, fm.phase_number",
+            + "ORDER BY round_id, division_id, phase_number",
             params,
         )
         rows = list(await cursor.fetchall())
+        # Core's half of what the jobs carry: the round's number, a recorded forecast of a round
+        # that is no longer there planning no job.
+        numbers: dict[int, int] = {}
+        for each in sorted({int(row["round_id"]) for row in rows}):
+            facts = await round_facts_on(db, each)
+            if facts is not None:
+                numbers[each] = facts.round_number
+        rows = [row for row in rows if int(row["round_id"]) in numbers]
     return tuple(
         PlannedStep(DELETE_FORECAST, {
             "round_id": row["round_id"], "division_id": row["division_id"],
             "phase": row["phase_number"], "message_id": row["message_id"],
-            "round_number": row["round_number"],
+            "round_number": numbers[int(row["round_id"])],
             **({"clean_up": True} if clean_up else {}),
         })
         for row in rows
