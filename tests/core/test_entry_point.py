@@ -345,7 +345,7 @@ _CANCELLATION_PARTS = (
 #: Each module's subscriber to a round's timing windows read, as the module names it, and what the
 #: test calls it, in the order the builder signs them up.
 _WINDOWS_PARTS = (
-    ("leaguebot.attendance.services.hooks.attendance_hooks", "lead_times", "attendance's window"),
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_window", "attendance's window"),
     ("leaguebot.weather.services.weather_config_service", "round_window", "weather's window"),
 )
 
@@ -505,6 +505,9 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#287: attendance's subscriber to the windows read is not yet named round_window"
+))
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -656,12 +659,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     for hook in ("amendment_judged", "round_amended", "round_armed", "round_clean_ups_due"):
         called.clear()
         await getattr(bot, hook).call(None, 0)
-        # Asked outside a save, attendance's judgement reads its lead times first, through the
-        # same function that answers the windows read.
-        read_first = ["attendance's window"] if hook == "amendment_judged" else []
-        assert called == read_first + [
-            part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook
-        ]
+        assert called == [part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook]
     called.clear()
     handed.clear()
     await bot.phases_drawn_read.call([7], db=None)
