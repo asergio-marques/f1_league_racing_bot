@@ -7,12 +7,9 @@ takes blocks joined by blank lines and splits only between them.
 """
 from __future__ import annotations
 
-import pytest
-
 from leaguebot.core.utils.messages import chunk_message
 
 
-@pytest.mark.xfail(strict=True, reason="#286: chunk_message has no records mode yet")
 def test_records_are_divided_only_between_records():
     """Twelve four-line records of about 250 characters, about 3,000 characters joined: the
     parts each fit the limit, each holds whole records only, and rejoined they are the text."""

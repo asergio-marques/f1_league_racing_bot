@@ -52,6 +52,7 @@ from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
 from leaguebot.core.utils.formatting import discord_ts
@@ -1294,8 +1295,8 @@ class SignupCog(commands.Cog):
         # Availability is the question a division is built around, so it is named in full
         # here rather than summarised: a league may configure 25 slots, and a driver who
         # ticks every one of them costs a ~500-character line, taking the worst single
-        # driver block to some 800 — inside the 1900-character chunk budget below, which
-        # splits between drivers and so could not divide one (decided 2026-09-20, #184).
+        # driver block to some 800 — inside the message limit, which the records mode of
+        # `chunk_message` divides between drivers only and so could not divide one (decided 2026-09-20, #184).
         #
         # The labels are matched on the slot's durable ``slot_id`` and rendered in the
         # league's own chronological order. Matching on ``slot_sequence_id`` instead would
@@ -1328,25 +1329,9 @@ class SignupCog(commands.Cog):
             if d["notes"]:
                 lines[-1] += f"\n  Notes: {d['notes']}"
 
-        # Discord has a 2000-char limit; chunk if needed
-        output = "\n\n".join(lines)
-        if len(output) <= 1900:
-            await interaction.followup.send(output, ephemeral=True)
-        else:
-            chunk, chunks = "", []
-            for line in lines:
-                if len(chunk) + len(line) + 2 > 1900:
-                    chunks.append(chunk)
-                    chunk = line
-                else:
-                    chunk = f"{chunk}\n\n{line}" if chunk else line
-            if chunk:
-                chunks.append(chunk)
-            for i, part in enumerate(chunks):
-                if i == 0:
-                    await interaction.followup.send(part, ephemeral=True)
-                else:
-                    await interaction.followup.send(part, ephemeral=True)
+        # Discord has a 2000-char limit; the records are divided between drivers only.
+        for part in chunk_message("\n\n".join(lines), records=True):
+            await interaction.followup.send(part, ephemeral=True)
 
     @unassigned_group.command(
         name="export",
