@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus, WeatherWindows
 
@@ -50,11 +52,17 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: weather's part of the judgement is still handed the windows by name, "
+           "attendance= and weather=, by core",
+)
 async def test_the_drawn_phases_are_read_on_the_connection_handed(tmp_path):
     """Pro's round 1, three days out, its Phase 1 not drawn as committed. On the connection an
     amendment's save holds, Phase 1 is marked drawn and not yet committed, and weather is asked
-    on that connection for its part of a change of the round's track alone. It refuses the change
-    for the first forecast already posted, as it reads the phase drawn on that connection."""
+    on that connection for its part of a change of the round's track alone, as core asks it,
+    handing it no windows. It refuses the change for the first forecast already posted, as it
+    reads the phase drawn on that connection."""
     db_path = await _make_db(tmp_path)
     from leaguebot.weather.services.forecast_amendment import amendment_judged
 
@@ -66,7 +74,6 @@ async def test_the_drawn_phases_are_read_on_the_connection_handed(tmp_path):
         await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = ?", (ROUND_ID,))
         part = await amendment_judged(
             db, rnd, {"track_name": "Silverstone Circuit"}, moment=MOMENT, now=NOW,
-            attendance=None, weather=DEFAULT_WEATHER,
         )
         await db.rollback()
 

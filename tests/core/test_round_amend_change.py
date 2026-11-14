@@ -3137,3 +3137,90 @@ async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp
     assert scheduler.schedule_attendance_round.call_args_list == []
     [armed] = scheduler.schedule_result_submission_jobs.call_args_list
     assert [rnd.id for rnd in armed.args[0]] == [R3]
+
+
+# ── Each module keeps its own windows (#287, T7) ───────────────────────────────────────────
+#
+# Core hands no module the windows of another, nor its own: each module reads its own lead times
+# through its part of the judgement and keeps them in what that part keeps, which core stores in
+# `judge`'s record without reading it.
+
+#: What core still names of the modules' windows.
+_CORE_NAMES_THE_WINDOWS = (
+    "#287: core still reads each module's windows by name, keeps them in `judge`'s record and "
+    "hands them to `round_armed` as attendance= and weather="
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_CORE_NAMES_THE_WINDOWS)
+async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
+    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is moved
+    to 60 days out and the amendment runs, every module's arming answer recorded as it is asked.
+    The record `judge` keeps holds no windows, and `round_armed` is handed none: no argument
+    named for attendance or weather, and no forecast horizons or check-in lead times among what
+    it is handed."""
+    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    handed: list[dict[str, Any]] = []
+
+    async def _recorded(*args: Any, **kwargs: Any) -> None:
+        handed.append({"args": args, "kwargs": kwargs})
+
+    league.bot.round_armed._subscribers.clear()
+    league.bot.round_armed.subscribe(_recorded)
+    await _amended(league, scheduled_at=_at(league, days=60))
+
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    assert "windows" not in (await _job(league, "judge"))["result"]
+    [asked] = handed
+    assert not {"attendance", "weather"} & set(asked["kwargs"])
+    assert not any(isinstance(value, (AttendanceWindows, WeatherWindows))
+                   for value in (*asked["args"], *asked["kwargs"].values()))
+
+
+@pytest.mark.xfail(strict=True, reason=_CORE_NAMES_THE_WINDOWS)
+async def test_an_amendment_stopped_across_the_update_reads_each_module_s_windows_afresh(tmp_path):
+    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, check-in lead times
+    5 days, 24 hours, 2 hours. Pro's round 3 is moved to 60 days out, and the amendment stops at
+    its save, its judgement kept as the bot before this update kept it: both modules' windows
+    under `windows`, by name. The league then sets its horizons to 4 days, 1 day, 3 hours and its
+    check-in to 6 days, 12 hours, 1 hour, and the save is retried. The amendment finishes,
+    nothing raising: neither module finds a window of its own in the record, so each reads its
+    windows afresh, and the round is armed once for its forecasts and once for its check-in, at
+    the lead times the league has now."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await _amended(league, scheduled_at=_at(league, days=60))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+    old_record = {
+        "judged": True,
+        "windows": {
+            "attendance": {"notice_days": 5, "last_notice_hours": 24, "deadline_hours": 2},
+            "weather": {"phase_1_days": 5, "phase_2_days": 2, "phase_3_hours": 2},
+        },
+    }
+    await league.write("UPDATE queued_change_steps SET result = ? WHERE change_id = ? AND name = ?",
+                       json.dumps(old_record), (await _change(league))["id"], "judge")
+    await league.write("UPDATE weather_pipeline_config SET phase_1_days = 4, phase_2_days = 1, "
+                       "phase_3_hours = 3")
+    await league.write("UPDATE attendance_config SET rsvp_notice_days = 6, "
+                       "rsvp_last_notice_hours = 12, rsvp_deadline_hours = 1")
+
+    await retry_job(league.bot)
+    await run_queue(league.bot)
+
+    scheduler = league.bot.scheduler_service
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [armed] = scheduler.schedule_round.call_args_list
+    assert {key: armed.kwargs[key] for key in ("phase_1_days", "phase_2_days", "phase_3_hours")} \
+        == {"phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3}
+    [called] = scheduler.schedule_attendance_round.call_args_list
+    assert {key: called.kwargs[key] for key in
+            ("notice_days", "last_notice_hours", "deadline_hours")} == {
+        "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,
+    }
