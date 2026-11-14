@@ -629,10 +629,6 @@ def _over_the_limit(content: str, _kwargs: dict[str, Any]) -> bool:
     return len(content) > DISCORD_LIMIT
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: the refusal quotes the whole wrong answer, past what one message can take",
-)
 async def test_a_long_wrong_answer_is_refused_in_one_message(tmp_path):
     """Kimi is asked his preferred teams (the league's are Alpha and Beta) and types one name
     1,990 characters long, which is no team. Discord refuses any message over 2,000 characters.
@@ -719,11 +715,6 @@ async def _press_cancel(league: SeasonLeague) -> None:
     pytest.param(_submitted, id="after his signup is submitted"),
     pytest.param(_lapsed, id="after his correction lapses"),
 ])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: the review panel stays owed after the driver withdraws, and the lapse's "
-           "panel is posted on the league lane",
-)
 async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting):
     """Kimi is owed a review panel in his channel (*waiting*: his signup just submitted, or his
     correction lapsed and he is back awaiting approval), and Discord refuses it. When the queue

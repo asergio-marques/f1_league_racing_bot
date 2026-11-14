@@ -388,11 +388,6 @@ LONGEST_DRAFT = dict(
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: the review panel is posted as one message, which Discord refuses past 2,000 "
-           "characters",
-)
 async def test_the_worst_case_panel_is_posted_in_parts(tmp_path):
     """Kimi has answered everything but his notes with the longest answers he can give: a
     platform ID and a preferred teammate of 1,900 characters each, and a time for each of 24

@@ -61,12 +61,14 @@ in time waits on the queue (that choice counts, Q23). Its jobs are `names`, whic
 manager and the driver for the notice and the line (a save waits on no second connection),
 `lapse` (a save: back to Pending Admin Approval, the wizard unengaged and the correction's state,
 its reason, requester and offer time cleared), `post_lapse` (the notice mentioning the manager,
-worded for a restart where it was one) and `post_panel` (a fresh review panel, and the lapse
-written to the log, naming the panel where one was posted). A signup channel confirmed gone (the
-strict lookup `post_lapse` and `post_panel` share, which stops the job where the league's server
-is missing from the cache or Discord cannot tell) posts nothing and ends the signup as a driver
-who leaves does, `post_panel` asking `signup.end` in its own save and the lapse's record saying
-so (#439, slice 8). `lapse` and `post_panel` cannot be
+worded for a restart where it was one) and `post_panel`, which hands a fresh review panel to
+the driver's own lane as a `signup.panel` (#459): a refusal of the panel stops that driver's lane
+alone and no league change waits on it, a driver who withdraws meanwhile has it dropped, and the
+panel's job writes the lapse to the log, naming the panel once it stands. A signup channel
+confirmed gone (the strict lookup `post_lapse` makes, which stops the job where the league's
+server is missing from the cache or Discord cannot tell) posts nothing and ends the signup as a
+driver who leaves does, `signup.end` asked in the save of the job that found it gone and the
+lapse's record saying so (#439, slice 8). `lapse` and `post_panel` cannot be
 discarded (#439, slice 8): dropped, the driver would be left awaiting a correction nobody can
 choose, or waiting for approval with no panel, and either leaves a signup unsettled, which refuses
 the season's placements; a Discard on either is refused and only a Retry moves it.
@@ -113,7 +115,7 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
+from leaguebot.core.utils.log_lines import name_of_member
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
@@ -125,18 +127,19 @@ from leaguebot.signup.services.closing_steps import (
     take_reason_down,
 )
 from leaguebot.signup.services.signup_posting import post
-from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, AdminReviewView
+from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE
 from leaguebot.signup.services.wizard_answers import (
     INACTIVITY,
+    PANEL,
     _BUTTON_ONLY,
     _set_typing,
     _signup_channel_or_gone,
     _text_channel,
     channel_gone_ending,
+    correction_lapse_line,
 )
 from leaguebot.signup.services.wizard_service import (
     _CORRECTION_PARAMETER_STATES,
-    _REVIEW_PANEL_MENTIONS,
     WizardService,
     build_step_view,
 )
@@ -879,7 +882,7 @@ def lapse_change(
     starting again asked it, which words the notice). It is not due, and is dropped, where the
     signup module is off (no panel is posted into a module the league turned off), the driver no
     longer awaits a correction choice, or a choice pressed in time is still queued: that choice
-    counts. *queue_of* gives the change queue the fresh review panel is handed.
+    counts. The panel itself is the `signup.panel` change's, on the driver's lane.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -985,67 +988,37 @@ def lapse_change(
         )
         return StepResult(result={})
 
-    @posts_in_a_job
+    def lapse_record(ctx: StepContext | OutcomeContext) -> dict[str, Any]:
+        """What the lapse's record names: the manager who asked and the driver."""
+        user_id = str(ctx.payload["user_id"])
+        return {
+            "manager": str(named_result(ctx).get("manager") or "a member"),
+            "driver": named_result(ctx).get("driver") or f"<@{user_id}>",
+        }
+
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
         channel_id = lapse_result(ctx).get("channel_id")
-        channel = None if channel_id is None else await _signup_channel_or_gone(
-            ctx, int(channel_id)
-        )
-        if channel is None:
-            # The channel is gone, or the wizard names none: the signup ends as it does for a
-            # driver who leaves, since nothing else would ever settle a driver awaiting a review
-            # that cannot be posted.
-            ended = await channel_gone_ending(
-                ctx, user_id, None if channel_id is None else int(channel_id),
-            )
+        if channel_id is None:
+            # The wizard names no channel: the signup ends as it does for a driver who leaves,
+            # since nothing else would ever settle a driver awaiting a review that cannot be
+            # posted.
+            ended = await channel_gone_ending(ctx, user_id, None)
             return StepResult(
                 result={"panel": False, "channel_gone": True},
-                lines=(lapse_line(ctx, False, gone=True),),
+                lines=(correction_lapse_line(lapse_record(ctx), panel=False, gone=True),),
                 follow_ons=ended.follow_ons,
             )
-        record = await signup().get_record(user_id)
-        posted = False
-        if record is not None:
-            wizard = await signup().get_wizard(user_id)
-            slot_labels = {
-                slot.slot_id: slot.display_label
-                for slot in (
-                    wizard.config_snapshot.slots if wizard and wizard.config_snapshot else []
-                )
-            }
-            async with get_connection(ctx.db_path) as db:
-                track_map = await track_service.get_track_name_map(db)
-            await post(
-                channel,
-                WizardService._format_review_panel(record, slot_labels, track_name_map=track_map),
-                view=AdminReviewView(
-                    user_id, change_queue=queue_of(), signup=signup(), drivers=drivers(),
-                    config=config, router=router,
-                ),
-                mentions=_REVIEW_PANEL_MENTIONS,
-                refused=f"the review panel could not be posted in channel {channel.id}",
-            )
-            posted = True
-        return StepResult(result={"panel": posted}, lines=(lapse_line(ctx, posted),))
-
-    def lapse_line(ctx: OutcomeContext, posted: bool, gone: bool = False) -> str:
-        """The log channel's record of the lapse, naming the manager who asked and the driver, and
-        whether a fresh review panel is in the driver's channel, or that the channel was gone and
-        the signup ended."""
-        user_id = str(ctx.payload["user_id"])
-        driver = named_result(ctx).get("driver") or f"<@{user_id}>"
-        return abandoned_line(
-            str(named_result(ctx).get("manager") or "a member"),
-            f"the correction request for {driver}'s signup",
-            lapsed=True,
-            detail=(
-                f"{driver}'s signup channel was gone, so no fresh review panel could be posted "
-                "and their signup is ended."
-                if gone else
-                f"{driver} is back in the approval queue"
-                + ("; a fresh review panel is in their channel." if posted else ".")
-            ),
+        # The panel is the driver's own lane's to post, so that a refusal of it stops that
+        # driver's signup and no league change waits on it; the job there writes the lapse's
+        # record once the panel stands, or ends the signup if the channel is gone.
+        return StepResult(
+            result={"panel": "asked"},
+            follow_ons=(FollowOn(
+                PANEL,
+                {"user_id": user_id, "channel_id": int(channel_id), "lapse": lapse_record(ctx)},
+                f"posting <@{user_id}>'s review panel again",
+            ),),
         )
 
     async def describe_names(ctx: StepContext) -> str:
@@ -1058,7 +1031,7 @@ def lapse_change(
         return f"telling <@{ctx.step_payload['user_id']}>'s channel the correction lapsed"
 
     async def describe_panel(ctx: StepContext) -> str:
-        return f"posting <@{ctx.step_payload['user_id']}>'s review panel again"
+        return f"handing <@{ctx.step_payload['user_id']}>'s review panel to their own lane"
 
     async def would_wait_unreviewed(ctx: StepContext) -> str:
         return (
