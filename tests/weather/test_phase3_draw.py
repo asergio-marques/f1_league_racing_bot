@@ -129,17 +129,24 @@ def _highest(weights: dict[str, float]) -> str:
 
 
 async def _persisted_slots(db_path: str) -> list[tuple[str, list[str] | None]]:
-    """Every session's ``(session_type, phase3_slots)``, ordered by id as Phase 3 reads them."""
+    """Every session's ``(session_type, slots)``, ordered by id as Phase 3 reads them: the slots
+    its standing Phase 3 draw holds for it, or None where no Phase 3 draw stands."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT session_type, phase3_slots FROM sessions WHERE round_id = ? ORDER BY id",
+            "SELECT id, session_type FROM sessions WHERE round_id = ? ORDER BY id", (ROUND_ID,),
+        )
+        sessions = await cursor.fetchall()
+        cursor = await db.execute(
+            "SELECT payload FROM phase_results "
+            "WHERE round_id = ? AND phase_number = 3 AND status = 'ACTIVE'",
             (ROUND_ID,),
         )
-        rows = await cursor.fetchall()
-    return [
-        (row["session_type"], json.loads(row["phase3_slots"]) if row["phase3_slots"] else None)
-        for row in rows
-    ]
+        drawn = await cursor.fetchone()
+    slots = {} if drawn is None else {
+        int(each["session_id"]): list(each["slots"])
+        for each in json.loads(drawn["payload"])["session_draws"]
+    }
+    return [(row["session_type"], slots.get(int(row["id"]))) for row in sessions]
 
 
 async def _phase3_state(db_path: str) -> tuple[int, int]:
