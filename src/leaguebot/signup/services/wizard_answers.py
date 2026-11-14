@@ -756,9 +756,11 @@ def submit_change(
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
     cancel_timers: Callable[[str], None],
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The `signup.submit` change type, for the builder to register, on the league lane: the last
     answer's hand-over (decision 22, Q-A, "every change of a driver's status is the league's").
+    *now* is the queue's clock, which stamps the signup the save stores.
 
     The payload is ``user_id``, ``channel_id`` and the ⏳ ``mark`` of the last typed answer, if
     any. `name_driver` reads the driver's name and state before anything is written (a save waits
@@ -833,7 +835,7 @@ def submit_change(
             (key for key, state in _CORRECTION_PARAMETER_STATES.items() if state == wizard.wizard_state),
             None,
         )
-        await signup().save_record_on(db, record)
+        await signup().save_record_on(db, record, now=now())
         await drivers().transition_on(db, user_id, DriverState.PENDING_ADMIN_APPROVAL)
         wizard.wizard_state = WizardState.UNENGAGED
         wizard.draft_answers = {}

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection
+
+NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 _NO_CHANNEL_COLUMN = "#286: SignupRecord still carries the signup_channel_id item 22 removes"
 
@@ -40,7 +44,7 @@ async def _delete_wizard(svc, db_path, discord_user_id):
 async def _save_record(svc, db_path, record):
     """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
     async with get_connection(db_path) as db:
-        record_id = await svc.save_record_on(db, record)
+        record_id = await svc.save_record_on(db, record, now=NOW)
         await db.commit()
     return record_id
 
@@ -357,7 +361,9 @@ class TestWindowState:
         svc = await self._make_config(db_path)
         # Opened and closed in saves of the caller's, as the jobs do (#439, slice 6b, C66, C68).
         async with get_connection(db_path) as db:
-            await svc.set_window_open_on(db, button_message_id=999, selected_tracks=["01", "03"])
+            await svc.set_window_open_on(
+                db, button_message_id=999, selected_tracks=["01", "03"], now=NOW
+            )
             await db.commit()
         assert await svc.get_window_state() is True
         cfg = await svc.get_config()
@@ -365,7 +371,7 @@ class TestWindowState:
         assert cfg.selected_tracks == ["01", "03"]
 
         async with get_connection(db_path) as db:
-            await svc.set_window_closed_on(db)
+            await svc.set_window_closed_on(db, now=NOW)
             await db.commit()
         assert await svc.get_window_state() is False
         cfg2 = await svc.get_config()

@@ -293,7 +293,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         submit_change(
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            cancel_timers=cancel_wizard_timers(bot),
+            cancel_timers=cancel_wizard_timers(bot), now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(

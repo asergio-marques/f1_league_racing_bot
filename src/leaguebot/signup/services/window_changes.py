@@ -308,7 +308,8 @@ def window_open_change(
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         payload = ctx.step_payload
         await signup.set_window_open_on(
-            db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]]
+            db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]],
+            now=queue().now(),
         )
         await advance_on_window_open_on(db)
         if payload["close_at"]:

@@ -777,8 +777,8 @@ CREATE TABLE "signup_wizard_records" (
     -- Index into the lap-time steps when collecting multi-track times
     current_lap_track_index     INTEGER NOT NULL DEFAULT 0,
     -- Timestamp of last wizard activity, used for inactivity timeout
-    last_activity_at            TEXT    NOT NULL DEFAULT (datetime('now')),
-    created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
+    last_activity_at            TEXT    NOT NULL,
+    created_at                  TEXT    NOT NULL,
     -- When the correction choices a manager asked for were posted in the driver's channel: the
     -- five minutes to choose run from then. NULL while no correction is awaited.
     correction_offered_at       TEXT,
@@ -803,7 +803,7 @@ CREATE TABLE "signup_windows" (
     season_id            INTEGER NOT NULL REFERENCES seasons(id),
     selected_tracks_json TEXT    NOT NULL DEFAULT '[]',
     close_at             TEXT,
-    opened_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    opened_at            TEXT    NOT NULL,
     closed_at            TEXT
 );
 CREATE INDEX idx_signup_windows_season ON signup_windows(season_id);
@@ -830,8 +830,8 @@ CREATE TABLE "signup_records" (
     notes                 TEXT,
     signup_channel_id     INTEGER,
     total_lap_ms          INTEGER,
-    created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_at            TEXT    NOT NULL,
+    updated_at            TEXT    NOT NULL,
     approved              INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_signup_records_account ON signup_records(discord_user_id);

@@ -7,6 +7,8 @@ season keeps its own.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -14,13 +16,15 @@ from leaguebot.signup.models.signup_module import SignupRecord
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.driver_transitions import transitioned
 
+NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
 _NO_CHANNEL_COLUMN = "#286: SignupRecord still carries the signup_channel_id item 22 removes"
 
 
 async def _save_record(svc, db_path, record):
     """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
     async with get_connection(db_path) as db:
-        record_id = await svc.save_record_on(db, record)
+        record_id = await svc.save_record_on(db, record, now=NOW)
         await db.commit()
     return record_id
 
@@ -88,7 +92,7 @@ async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_pa
     # The window is opened in a save of the caller's, as the `/signup open` job's record does it
     # (#439, slice 6b, C68).
     async with get_connection(db_path) as db:
-        await svc.set_window_open_on(db, 111, ["3"])
+        await svc.set_window_open_on(db, 111, ["3"], now=NOW)
         await db.commit()
     window_id = (await svc.get_windows(1))[0]["id"]
 

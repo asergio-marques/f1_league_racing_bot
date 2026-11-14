@@ -379,7 +379,12 @@ class SignupModuleService:
         return bool(row["signups_open"]) if row else False
 
     async def set_window_open_on(
-        self, db: aiosqlite.Connection, button_message_id: int, selected_tracks: list[str]
+        self,
+        db: aiosqlite.Connection,
+        button_message_id: int,
+        selected_tracks: list[str],
+        *,
+        now: datetime,
     ) -> None:
         """Open the window, and record it as a window of the server's active season, on the
         caller's connection, committing nothing: the Sign Up button's message is kept, the
@@ -400,9 +405,9 @@ class SignupModuleService:
         season_id = await self._live_season_id(db)
         if season_id is not None:
             await db.execute(
-                "INSERT INTO signup_windows (season_id, selected_tracks_json) "
-                "VALUES (?, ?)",
-                (season_id, json.dumps(selected_tracks)),
+                "INSERT INTO signup_windows (season_id, selected_tracks_json, opened_at) "
+                "VALUES (?, ?, ?)",
+                (season_id, json.dumps(selected_tracks), now.isoformat()),
             )
 
     @staticmethod
@@ -432,11 +437,11 @@ class SignupModuleService:
         ]
 
     async def set_window_closed_on(
-        self, db: aiosqlite.Connection, *, closed_msg_id: int | None = None
+        self, db: aiosqlite.Connection, *, now: datetime, closed_msg_id: int | None = None
     ) -> None:
         """Record the window closed on the caller's connection, committing nothing: the Sign Up
         button's id and the close time are cleared, *closed_msg_id* is kept so the next opening
-        deletes the notice, and the window's record is stamped closed."""
+        deletes the notice, and the open window's record is stamped closed at *now*."""
         await db.execute(
             "UPDATE signup_module_config "
             "SET signups_open = 0, signup_button_message_id = NULL, "
@@ -446,8 +451,8 @@ class SignupModuleService:
         )
         # The window record keeps the close time it carried; only its closing is stamped.
         await db.execute(
-            "UPDATE signup_windows SET closed_at = datetime('now') "
-            "WHERE closed_at IS NULL",
+            "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
+            (now.isoformat(),),
         )
 
     async def set_close_at(self, close_at_iso: str | None) -> None:
@@ -549,8 +554,11 @@ class SignupModuleService:
             rows = await cursor.fetchall()
         return [self._row_to_signup_record(row) for row in rows]
 
-    async def save_record_on(self, db: aiosqlite.Connection, record: SignupRecord) -> int:
-        """Store *record* on the connection handed, returning its id; commits nothing.
+    async def save_record_on(
+        self, db: aiosqlite.Connection, record: SignupRecord, *, now: datetime
+    ) -> int:
+        """Store *record* on the connection handed, returning its id; commits nothing. *now*
+        stamps the moment a new signup was made and the moment a stored one was last changed.
 
         A record not yet stored (``id`` of -1 or below 1) is inserted as a new signup, under
         the season and window it names or, where it names none, under the server's active
@@ -578,10 +586,10 @@ class SignupModuleService:
                     platform = ?, platform_id = ?, availability_slot_ids = ?,
                     driver_type = ?, preferred_teams = ?, preferred_teammate = ?,
                     lap_times_json = ?, notes = ?, signup_channel_id = ?,
-                    updated_at = datetime('now')
+                    updated_at = ?
                 WHERE id = ?
                 """,
-                (*fields, record.id),
+                (*fields, now.isoformat(), record.id),
             )
             return record.id
 
@@ -602,10 +610,12 @@ class SignupModuleService:
                 (season_id, window_id, discord_user_id, discord_username,
                  server_display_name, nationality, platform, platform_id,
                  availability_slot_ids, driver_type, preferred_teams,
-                 preferred_teammate, lap_times_json, notes, signup_channel_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 preferred_teammate, lap_times_json, notes, signup_channel_id,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (season_id, window_id, record.discord_user_id, *fields),
+            (season_id, window_id, record.discord_user_id, *fields, now.isoformat(),
+             now.isoformat()),
         )
         new_id = inserted_id(cursor)
         record.id, record.season_id, record.window_id = new_id, season_id, window_id
@@ -709,11 +719,12 @@ class SignupModuleService:
         snapshot_json: str | None,
         draft_answers: dict[str, Any],
         current_lap_track_index: int,
-        last_activity_at: str | None,
+        last_activity_at: str,
     ) -> None:
         """Insert or update a driver's wizard row on the connection handed; commits nothing.
 
-        A signup that begins or goes on is not held, so the row's ``held_until`` is cleared.
+        A signup that begins or goes on is not held, so the row's ``held_until`` is cleared. A row
+        is created at the moment of its first activity, so *last_activity_at* stamps both.
         What `save_wizard_on` writes, for a change that saves the row in the same save as a job's
         mark. *snapshot_json* is the configuration as `_snapshot_to_dict` freezes it, already
         encoded, so that a job which made it can hand it on in its result.
@@ -723,8 +734,8 @@ class SignupModuleService:
             INSERT INTO signup_wizard_records
                 (discord_user_id, wizard_state, signup_channel_id,
                  config_snapshot_json, draft_answers_json, current_lap_track_index,
-                 last_activity_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 last_activity_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(discord_user_id) DO UPDATE SET
                 wizard_state             = excluded.wizard_state,
                 signup_channel_id        = excluded.signup_channel_id,
@@ -741,6 +752,7 @@ class SignupModuleService:
                 snapshot_json,
                 json.dumps(draft_answers),
                 current_lap_track_index,
+                last_activity_at,
                 last_activity_at,
             ),
         )

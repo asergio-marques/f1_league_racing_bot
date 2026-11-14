@@ -19,17 +19,20 @@ SERVER_ID = 22040
 #: record and the close's (#439, slice 6b, C66, C68); the committing forms go (C72).
 
 
+NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
 async def _open(svc, db_path, button_message_id, selected_tracks):
     """Open the window in a save of the test's own, as the job that posts the information does."""
     async with get_connection(db_path) as db:
-        await svc.set_window_open_on(db, button_message_id, selected_tracks)
+        await svc.set_window_open_on(db, button_message_id, selected_tracks, now=NOW)
         await db.commit()
 
 
 async def _close(svc, db_path):
     """Close the window in a save of the test's own, as the close's job does."""
     async with get_connection(db_path) as db:
-        await svc.set_window_closed_on(db)
+        await svc.set_window_closed_on(db, now=NOW)
         await db.commit()
 
 

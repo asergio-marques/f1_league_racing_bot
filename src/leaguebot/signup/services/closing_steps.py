@@ -657,7 +657,7 @@ def window_close_steps(
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         await signup_module_service().set_window_closed_on(
-            db, closed_msg_id=int((result.result or {})["new"])
+            db, now=now(), closed_msg_id=int((result.result or {})["new"])
         )
         await record_system_change_on(
             db, change_type=str(ctx.step_payload["audit_action"]), old_value="open",

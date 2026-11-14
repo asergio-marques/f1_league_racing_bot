@@ -2884,24 +2884,13 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_record_on"):
-        (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.set_window_closed_on"):
-        (1, PASS["signup"]),
-}
+KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {}
 
 #: The schema's columns that default to SQLite's clock, keyed by ``("schema", "table.column")``: a
 #: default stamps a stored time from SQLite's clock as a statement does, and the rule makes no
 #: exception for it. `tests/core/test_schema_rules.py` checks them against the schema the
 #: migrations build.
-KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("schema", "signup_records.created_at"): (1, PASS["signup"]),
-    ("schema", "signup_records.updated_at"): (1, PASS["signup"]),
-    ("schema", "signup_windows.opened_at"): (1, PASS["signup"]),
-    ("schema", "signup_wizard_records.created_at"): (1, PASS["signup"]),
-    ("schema", "signup_wizard_records.last_activity_at"): (1, PASS["signup"]),
-}
+KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {}
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
