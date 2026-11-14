@@ -770,8 +770,9 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, g
     it without posting the panel, which is no longer owed to anyone: no part of it stays in his
     channel. Where his correction had
     lapsed, the log channel still records the lapse, naming manager 77 and Kimi: it happened,
-    whether or not the panel it owed him is ever posted. The record says Kimi had gone and no
-    fresh review panel was posted, never that he is back in the approval queue."""
+    whether or not the panel it owed him is ever posted. The record says Kimi was no longer
+    awaiting review and no fresh review panel was posted, never that he is back in the approval
+    queue."""
     league = await waiting(tmp_path)
     await run_queue(league.bot)
 
@@ -796,5 +797,40 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, g
     if waiting is _lapsed:
         assert LAPSE_RECORDED in league.log()
         detail = _lapse_detail(league)
-        assert "had gone" in detail and "no fresh review panel" in detail, detail
+        assert "no longer awaiting review" in detail and "no fresh review panel" in detail, detail
         assert "back in the approval queue" not in detail, detail
+
+
+async def test_a_dropped_panel_whose_parts_discord_will_not_remove_still_clears(
+    tmp_path, monkeypatch,
+):
+    """Kimi's divided review panel stopped his lane after its earlier parts were posted, and he
+    has since withdrawn. When the job is retried, Discord refuses to remove those earlier parts.
+    The job cannot be discarded, so it must still clear: it completes without the panel, his lane
+    is no longer stopped, and the log names the parts left for a manager to remove by hand
+    (architecture.md, "How a change is carried out": an undiscardable step completes once its
+    work is no longer owed)."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services.posting import standing_posts
+
+    league = await _submitted_at_length(tmp_path)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, KIMI_LANE)
+    assert stopped is not None and stopped["name"] == "post_panel"
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+
+    async def _refused(_bot, _kept):
+        raise StepFailedOnDiscord("1 message(s) of the earlier try could not be removed")
+
+    monkeypatch.setattr(standing_posts, "remove_kept", _refused)
+    league.channel(KIMI_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=KIMI_LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert await stopped_job(league.db_path, KIMI_LANE) is None
+    assert "need removing by hand" in league.log()
+    assert [message for message in league.channel(KIMI_CHANNEL).messages.values()
+            if type(message.view).__name__ == "AdminReviewView"] == []

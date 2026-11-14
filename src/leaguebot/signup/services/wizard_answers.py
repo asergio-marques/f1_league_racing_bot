@@ -958,7 +958,10 @@ def correction_lapse_line(
     """The log channel's record of a correction's lapse, naming the manager who asked and the
     driver (*lapse*'s ``manager`` and ``driver``), and whether a fresh review panel is in the
     driver's channel, or that the channel was gone and the signup ended, or (*driver_gone*) that
-    the driver had withdrawn or left by the time the panel came to be posted, so none was."""
+    the driver was no longer awaiting review when the panel came to be posted, so none was.
+
+    The last is worded so that it holds however the signup ended before the panel posted: a
+    withdrawal, a departure or a season's end. The log records that ending beside it."""
     driver = lapse["driver"]
     return abandoned_line(
         str(lapse["manager"]),
@@ -968,8 +971,8 @@ def correction_lapse_line(
             f"{driver}'s signup channel was gone, so no fresh review panel could be posted "
             "and their signup is ended."
             if gone else
-            f"{driver} had gone by the time the fresh review panel came to be posted, "
-            "so no fresh review panel was posted."
+            f"{driver} was no longer awaiting review when the fresh review panel came to be "
+            "posted, so no fresh review panel was posted."
             if driver_gone else
             f"{driver} is back in the approval queue"
             + ("; a fresh review panel is in their channel." if panel else ".")
@@ -1049,14 +1052,22 @@ def panel_change(
         lapse = ctx.step_payload.get("lapse")
         if not await owed(ctx):
             # Judged here, not in a `still_due`: the parts a refused try of a divided panel
-            # sent are the driver's answers with no buttons, and go with the panel.
-            await standing_posts.remove_kept(ctx.bot, ctx.kept)
-            return StepResult(
-                result={"dropped": True},
-                lines=() if lapse is None else (
-                    correction_lapse_line(lapse, panel=False, driver_gone=True),
-                ),
-            )
+            # sent are the driver's answers with no buttons, and go with the panel. Their
+            # removal is best effort, so that a step that cannot be discarded still completes
+            # once its panel is not owed (architecture.md, "How a change is carried out"): a
+            # deletion Discord refuses is named for removal by hand, and the parts go anyway
+            # with the held channel.
+            noted: list[str] = []
+            try:
+                await standing_posts.remove_kept(ctx.bot, ctx.kept)
+            except StepFailedOnDiscord as refused:
+                noted.append(
+                    f"  {refused}: the earlier parts of <@{user_id}>'s review panel in "
+                    f"<#{ctx.step_payload['channel_id']}> need removing by hand."
+                )
+            if lapse is not None:
+                noted.insert(0, correction_lapse_line(lapse, panel=False, driver_gone=True))
+            return StepResult(result={"dropped": True}, lines=tuple(noted))
         channel = await _signup_channel_or_gone(ctx, int(ctx.step_payload["channel_id"]))
         if channel is None:
             ended = await channel_gone_ending(ctx, user_id, int(ctx.step_payload["channel_id"]))
