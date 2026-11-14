@@ -2454,7 +2454,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
     ("weather/services/draw_guard.py", "<module>"): (3, PASS["weather"]),
     ("weather/services/forecast_changes.py", "_round_row"): (2, PASS["weather"]),
     ("weather/services/forecast_changes.py", "ask_forecast"): (2, PASS["weather"]),
@@ -3240,11 +3239,9 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
     ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.move_base_role_overwrite"):
         (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_lapse_pending_reason"): (1, PASS["signup"]),
-    ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
 }
 
 

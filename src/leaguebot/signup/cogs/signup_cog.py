@@ -37,7 +37,7 @@ from leaguebot.signup.services.close_time_settings import kind_of as close_time_
 from leaguebot.signup.services.signup_settings import fixed_refusal, format_slots, kind_of
 from leaguebot.signup.services.wizard_answers import take_typed_answer
 from leaguebot.signup.services.wizard_changes import (
-    DELETED, ask_channel_gone, ask_member_left, departed_placed_driver,
+    DELETED, ask_channel_gone, ask_member_left,
 )
 from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
@@ -328,34 +328,18 @@ class SignupCog(commands.Cog):
         The clean-up is the change queue's: the listener asks it, as the bot, for
         `signup.member_left` for every member who leaves, and the change's own check decides what
         there is to clean up. A member who leaves while the queue is stopped keeps their channel
-        and state until it clears.
-
-        Also posts a log notification for UNASSIGNED and ASSIGNED drivers who
-        leave without going through the wizard path.
+        and state until it clears. Its line, "Driver left server", is the change's too, for a
+        driver approved or placed as for one still signing up.
 
         Only a member leaving the league's own server counts: the same person leaving another
         server the bot sits in is nothing to the league.
         """
         if await is_foreign_guild(self.bot, member.guild.id):
             return
-        await ask_member_left(self.bot.change_queue, self.bot.db_path, str(member.id))
-
-        # Handle UNASSIGNED / ASSIGNED drivers (not covered by `signup.member_left`)
-        try:
-            departed = await departed_placed_driver(
-                self.bot.db_path, str(member.id), member.display_name or str(member.id)
-            )
-            if departed is None:
-                return
-            state, display_name = departed
-            await self.bot.output_router.post_log(
-                f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
-            )
-        except Exception:
-            log.warning(
-                "on_member_remove: failed to post log for %s/%s",
-                member.guild.id, member.id, exc_info=True,
-            )
+        await ask_member_left(
+            self.bot.change_queue, self.bot.db_path, str(member.id),
+            member.display_name or str(member.id),
+        )
 
     # ── /signup (root group) ───────────────────────────────────────────
 

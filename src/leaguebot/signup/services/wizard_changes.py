@@ -170,7 +170,7 @@ __all__ = [
     "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "LEAVE_JOB", "MEMBER_LEFT",
-    "ask_channel_gone", "ask_member_left", "channel_delete_change", "departed_placed_driver", "end_change", "member_left_change", "start_change",
+    "ask_channel_gone", "ask_member_left", "channel_delete_change", "end_change", "member_left_change", "start_change",
 ]
 
 
@@ -867,11 +867,15 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
     )
 
 
-async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> int | None:
+async def ask_member_left(
+    queue: "ChangeQueue", db_path: str, user_id: str, name: str | None = None
+) -> int | None:
     """Ask the queue, as the bot, to clean up after *user_id* leaving the league's server
     (`signup.member_left`): asked for every member who leaves, whoever they are, since the
-    change's own check decides what there is to clean up. Gives the change's id, or None where
-    there is nothing to do (that check judges it, and drops the change)."""
+    change's own check decides what there is to clean up. *name* is the member's name on the
+    server, which the line names a placed driver by where they have no signup record. Gives the
+    change's id, or None where there is nothing to do (that check judges it, and drops the
+    change)."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
@@ -880,7 +884,10 @@ async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> i
         row = await cursor.fetchone()
     return await queue.ask(
         MEMBER_LEFT,
-        {"user_id": user_id, "channel_id": None if row is None else row["signup_channel_id"]},
+        {
+            "user_id": user_id, "name": name,
+            "channel_id": None if row is None else row["signup_channel_id"],
+        },
         what=f"cleaning up after <@{user_id}> leaving the server",
         origin=ChangeOrigin.BOT,
     )
@@ -906,35 +913,6 @@ async def ask_channel_gone(
     )
 
 
-async def departed_placed_driver(
-    db_path: str, user_id: str, fallback_name: str
-) -> tuple[str, str] | None:
-    """The state and name to announce for a placed or approved driver (Unassigned or Assigned) who
-    has left the server, or None for anyone else. The name is the one on their latest signup, else
-    *fallback_name*, whichever of the two reads fails."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (user_id,)
-        )
-        row = await cursor.fetchone()
-    if row is None or row["current_state"] not in ("UNASSIGNED", "ASSIGNED"):
-        return None
-    try:
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT server_display_name, discord_username FROM signup_records "
-                "WHERE discord_user_id = ? ORDER BY id DESC LIMIT 1",
-                (user_id,),
-            )
-            rec = await cursor.fetchone()
-    except Exception:  # noqa: BLE001 — the line is posted under the server's name instead
-        log.warning("could not read the signup record of %s", user_id, exc_info=True)
-        return row["current_state"], fallback_name
-    if rec is None:
-        return row["current_state"], fallback_name
-    return row["current_state"], rec["server_display_name"] or rec["discord_username"] or user_id
-
-
 def member_left_change(
     *,
     signup: Callable[[], "SignupModuleService"],
@@ -944,10 +922,13 @@ def member_left_change(
     """The `signup.member_left` change type, for the builder to register, on the league lane (a
     member leaving counts as a command, and the driver's status is the league's).
 
-    The payload is ``user_id`` (the account that left) and ``channel_id`` (the signup channel their
-    wizard held when the change was asked, or None). It is not due, and is dropped, where there is
-    nothing to clean up: the driver has no wizard collecting answers and is not awaiting review or
-    a correction choice, or they have signed up again into another channel meanwhile. Its jobs
+    The payload is ``user_id`` (the account that left), ``name`` (their name on the server) and
+    ``channel_id`` (the signup channel their wizard held when the change was asked, or None). It
+    is not due, and is dropped, where there is nothing to clean up: the driver has no wizard
+    collecting answers and is not awaiting review or a correction choice, or they have signed up
+    again into another channel meanwhile. A driver approved or placed (Unassigned or Assigned) has
+    nothing to clean up either but the line that they left: `leave` is that line alone for them,
+    with no transition, no timer taken away and no channel deleted. Its jobs
     are `name_driver`, which finds the name and state for the line (a save waits on no second
     connection); `leave` (a save), which moves them to Not Signed
     Up, keeps the wizard's row while a channel stands to be deleted, and writes the line;
@@ -959,17 +940,19 @@ def member_left_change(
     """
     #: The states of a driver whose wizard is unengaged but who still has a channel to clean up.
     awaiting = (DriverState.PENDING_ADMIN_APPROVAL, DriverState.AWAITING_CORRECTION_PARAMETER)
+    #: The states of a driver approved or placed, whose leaving is a line and nothing else.
+    placed = (DriverState.UNASSIGNED, DriverState.ASSIGNED)
 
-    async def state_label(user_id: str) -> str | None:
+    async def state_label(user_id: str) -> tuple[str, bool] | None:
         """The state the driver leaves in, from whichever of the wizard and the driver is active,
-        or None where there is nothing to clean up."""
+        and whether they are placed (approved), or None where there is nothing to clean up."""
         wizard = await signup().get_wizard(user_id)
         if wizard is not None and wizard.wizard_state != WizardState.UNENGAGED:
-            return wizard.wizard_state.value
+            return wizard.wizard_state.value, False
         profile = await drivers().get_profile(user_id)
-        if profile is None or profile.current_state not in awaiting:
+        if profile is None or profile.current_state not in (*awaiting, *placed):
             return None
-        return profile.current_state.value
+        return profile.current_state.value, profile.current_state in placed
 
     async def check(ctx: CheckContext) -> Verdict:
         if ctx.change_id is None:
@@ -977,8 +960,11 @@ def member_left_change(
             # up to run, by which time the driver may have moved on or signed up again.
             return Verdict.go()
         user_id = str(ctx.payload["user_id"])
-        if await state_label(user_id) is None:
+        label = await state_label(user_id)
+        if label is None:
             return Verdict.not_due("the member has no signup to clean up")
+        if label[1]:
+            return Verdict.go()
         asked = ctx.payload.get("channel_id")
         wizard = await signup().get_wizard(user_id)
         if asked is not None and (wizard is None or wizard.signup_channel_id != int(asked)):
@@ -988,7 +974,7 @@ def member_left_change(
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         user_id = str(payload["user_id"])
         planned = [
-            PlannedStep(NAME_JOB, {"user_id": user_id}),
+            PlannedStep(NAME_JOB, {"user_id": user_id, "name": payload.get("name")}),
             PlannedStep(LEAVE_JOB, {"user_id": user_id, "channel_id": payload.get("channel_id")}),
             *disarming([user_id]),
         ]
@@ -1003,34 +989,44 @@ def member_left_change(
         # rather than write the line under the member's id.
         user_id = str(ctx.step_payload["user_id"])
         record = await signup().get_record(user_id)
-        name = user_id
+        label = await state_label(user_id)
+        placed_driver = label is not None and label[1]
+        # A placed driver without a signup record is named as the server names them.
+        name = (ctx.step_payload.get("name") if placed_driver else None) or user_id
         if record is not None:
             name = record.server_display_name or record.discord_username or user_id
-        return StepResult(result={"name": name, "state": await state_label(user_id)})
+        return StepResult(result={
+            "name": name, "state": None if label is None else label[0], "placed": placed_driver,
+        })
 
     async def leave(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        # A driver who has already moved on is cleaned up all the same; any other error is not
-        # swallowed (#457).
-        try:
-            await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
-        except InvalidDriverTransition:
-            pass
-        if ctx.step_payload.get("channel_id") is None:
-            await signup().delete_wizard_on(db, user_id)
         named = next(
             ((view.result or {}) for view in ctx.steps if view.name == NAME_JOB and view.done), {}
         )
+        if not named.get("placed"):
+            # A driver who has already moved on is cleaned up all the same; any other error is
+            # not swallowed (#457).
+            try:
+                await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
+            except InvalidDriverTransition:
+                pass
+            if ctx.step_payload.get("channel_id") is None:
+                await signup().delete_wizard_on(db, user_id)
         return StepResult(result={}, lines=(
             f"Driver left server: **{named.get('name') or user_id}** (<@{user_id}>) | "
             f"state: {named.get('state') or 'unknown'}",
         ))
 
     async def left(ctx: StepContext) -> bool:
-        """Whether `leave` took place, for the deletion after it: not where an admin discarded
-        it, which leaves the driver where they were."""
+        """Whether `leave` ended the driver's signup, for the jobs after it: not where an admin
+        discarded it, which leaves the driver where they were, nor for a placed driver, whose
+        leaving was a line alone."""
         return not any(
             view.name == LEAVE_JOB and "discarded" in (view.result or {}) for view in ctx.steps
+        ) and not any(
+            view.name == NAME_JOB and view.done and (view.result or {}).get("placed")
+            for view in ctx.steps
         )
 
     async def held(ctx: StepContext) -> bool:
