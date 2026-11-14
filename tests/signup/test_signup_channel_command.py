@@ -371,16 +371,23 @@ async def test_moving_the_signup_channel_sets_the_new_before_clearing_the_old(tm
     assert await _stored(league.db_path) == NEW
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: /signup channel is refused as fixed for the season even where the stored signup "
-    "channel is gone, so a league cannot replace it mid-season"
-))
-async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path):
+@pytest.mark.parametrize("gone", [
+    pytest.param(True, id="gone", marks=pytest.mark.xfail(strict=True, reason=(
+        "#286: /signup channel is refused as fixed for the season even where the stored signup "
+        "channel is gone, so a league cannot replace it mid-season"
+    ))),
+    pytest.param(False, id="standing"),
+])
+async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
     """Season 3's configuration is confirmed (the season waiting for its signup window), which
-    fixes the signup settings, and the league's signup channel, 650, has since been deleted from
-    the server. An admin runs `/signup channel` for 700 as a repair: it is not refused as fixed
-    for the season; 700 is saved as the signup channel, Discord is asked to set 700's overwrites
-    and nothing of 650's, and the admin is told the channel was set."""
+    fixes the signup settings, and an admin runs `/signup channel` for 700.
+
+    Where the league's signup channel, 650, has since been deleted from the server, the command
+    is a repair: it is not refused as fixed for the season; 700 is saved as the signup channel,
+    Discord is asked to set 700's overwrites and nothing of 650's, and the admin is told the
+    channel was set. Where 650 still stands, the repair is not owed and the command is refused
+    as fixed for Season 3, as before: 650 stays the signup channel, no channel is edited, and
+    one refusal line is written."""
     league = await _league(tmp_path, held=OLD)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -389,14 +396,18 @@ async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path):
         )
         await db.commit()
     new = _channel(NEW)
-    edits = _discord(league, new)
-    # 650 is gone from the server, as Discord answers when the bot asks for it.
-    gone = discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+    old = _channel(OLD)
+    edits = _discord(league, new) if gone else _discord(league, old, new)
+    # Where 650 is gone from the server, Discord answers so when the bot asks for it; where it
+    # stands, Discord hands it back.
+    missing = discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
     fetch = league.bot.fetch_channel
 
     async def _fetch(channel_id):
         if channel_id == OLD:
-            raise gone
+            if gone:
+                raise missing
+            return old
         return await fetch(channel_id)
 
     league.guild.fetch_channel = AsyncMock(side_effect=_fetch)
@@ -404,11 +415,17 @@ async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path):
 
     asked = await _run(league, new)
 
-    assert "fixed for Season 3" not in last_said(asked)
-    assert await _stored(league.db_path) == NEW
-    assert [channel_id for channel_id, _overwrites in edits] == [NEW]
-    assert edits[0][1] != {}
-    assert "✅ Signup channel set to <#700>." in last_said(asked)
+    if gone:
+        assert "fixed for Season 3" not in last_said(asked)
+        assert await _stored(league.db_path) == NEW
+        assert [channel_id for channel_id, _overwrites in edits] == [NEW]
+        assert edits[0][1] != {}
+        assert "✅ Signup channel set to <#700>." in last_said(asked)
+    else:
+        assert "fixed for Season 3" in last_said(asked)
+        assert await _stored(league.db_path) == OLD
+        assert edits == []
+        await _assert_one_refusal_line(league, "/signup channel", "fixed for Season 3")
 
 
 @pytest.mark.parametrize(
