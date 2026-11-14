@@ -97,6 +97,7 @@ from leaguebot.signup.services.closing_steps import (
     disarming,
     take_reason_down,
 )
+from leaguebot.signup.services.signup_module_service import signup_enabled_on
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, IN_PROGRESS_STATES
 from leaguebot.signup.services.wizard_answers import (
@@ -537,7 +538,8 @@ def end_change(
     the reason. An expiry is the league's
     whole (a timer is a command's, decision 31): the change carries those three jobs itself, after
     `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
-    mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
+    mid-signup any longer, where signup is off (the module's work does not run while it is off), and
+    where an answer typed before the 24 hours ran out is still waiting
     on the driver's lane (the time typed counts, Q22). A gone channel's ending is due only while
     the driver is signing up (answering, awaiting approval, or awaiting or making a correction)
     and their wizard still names that channel: it posts, locks and deletes nothing, the channel
@@ -576,6 +578,10 @@ def end_change(
         user_id = str(ctx.payload["user_id"])
         profile = await drivers().get_profile(user_id)
         if ctx.payload.get("reason") == EXPIRED:
+            async with get_connection(ctx.db_path) as db:
+                switched_on = await signup_enabled_on(db)
+            if not switched_on:
+                return Verdict.not_due("signup is off")
             record = await signup().get_wizard(user_id)
             if record is None or record.wizard_state == WizardState.UNENGAGED:
                 return Verdict.not_due("the signup is no longer collecting answers")

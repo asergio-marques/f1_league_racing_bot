@@ -1173,10 +1173,6 @@ async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path, naive):
     assert _expired(league, OTHER) == []
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the expiry's check does not read signup's switch, so a signup expires while signup "
-    "is off"
-))
 async def test_expiry_is_not_due_while_signup_is_off(tmp_path):
     """Kimi is part-way through signing up, last active 24 hours and a minute ago, and the
     signup module is off. His 24-hour timer fires and the queue runs: the expiry is not due. He
