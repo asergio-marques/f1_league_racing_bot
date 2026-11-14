@@ -111,7 +111,11 @@ def sign_up_to_season_end_steps(bot: "LeagueBot") -> None:
     are read through: the close of its window, the button's deletion and the closed post, each
     driver's notice and channel's close."""
     from leaguebot.signup.services import window_changes
-    from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
+    from leaguebot.signup.services.window_close import (
+        CLOSE_TIMER,
+        CLOSE_TIMER_KEY,
+        RETURNED_BY_CLOSE,
+    )
 
     bot.season_end_steps.subscribe(partial(
         window_changes.season_end_steps,
@@ -122,7 +126,7 @@ def sign_up_to_season_end_steps(bot: "LeagueBot") -> None:
         returned_by_close=RETURNED_BY_CLOSE,
         cancel_timers=cancel_wizard_timers(bot),
         # Read when it runs: a test replaces the scheduler's method after registering.
-        cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
+        cancel_close_timer=lambda: bot.scheduler_service.disarm(CLOSE_TIMER, CLOSE_TIMER_KEY),
         now=lambda: bot.change_queue.now(),
     ))
 
@@ -221,7 +225,13 @@ def register_change_types(bot: "LeagueBot") -> None:
 
     from leaguebot.core.services.queue.setting_change import setting_change
     from leaguebot.signup.services.module_switch_settings import module_on_signup
+    from leaguebot.signup.services.close_time_settings import close_time_settings
     from leaguebot.signup.services.signup_settings import signup_settings
+    from leaguebot.signup.services.window_close import (
+        CLOSE_TIMER,
+        CLOSE_TIMER_KEY,
+        close_timer_arm_change,
+    )
 
     bot.change_queue.register(reason_delete_change())
     bot.change_queue.register(
@@ -232,7 +242,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         window_open_change(
             modules=bot.module_service, signup=bot.signup_module_service,
             config=bot.config_service,
-            schedule_close=bot.scheduler_service.schedule_signup_close_timer,
+            arm_once=bot.scheduler_service.arm_once,
             queue=lambda: bot.change_queue,
         )
     )
@@ -251,7 +261,7 @@ def register_change_types(bot: "LeagueBot") -> None:
             returned_by_close=RETURNED_BY_CLOSE, cancel_timers=cancel_wizard_timers(bot),
             # Read when it runs: a test replaces the scheduler's or the configuration's method
             # after registering.
-            cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
+            cancel_close_timer=lambda: bot.scheduler_service.disarm(CLOSE_TIMER, CLOSE_TIMER_KEY),
             server_config=lambda: bot.config_service.get_server_config(),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
@@ -359,25 +369,29 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     for setting in signup_settings(modules=bot.module_service, signup=bot.signup_module_service):
         bot.change_queue.register(setting_change(setting))
+    bot.change_queue.register(close_timer_arm_change(arm_once=bot.scheduler_service.arm_once))
+    for setting in close_time_settings(
+        modules=bot.module_service, signup=bot.signup_module_service,
+        scheduler=lambda: bot.scheduler_service,
+    ):
+        bot.change_queue.register(setting_change(setting))
 
 
 def register_scheduler_callbacks(bot: "LeagueBot") -> None:
-    """Sign up the handler of signup's kind of job through `register_timer`, the signup close.
+    """Sign up the handler of signup's one-off close timer through `register_timer`.
 
     It asks the change queue, read from the bot when it fires. The bot keeps the one queue
     `build` made; a test that replaces the queue must register this handler again."""
-    scheduler = bot.scheduler_service
+    from leaguebot.signup.services.window_close import CLOSE_TIMER, close_when_due
 
-    async def _signup_close_cb() -> None:
-        from leaguebot.signup.services.window_close import close_signups_unattended
-        await close_signups_unattended(
+    bot.scheduler_service.register_timer(
+        CLOSE_TIMER,
+        lambda _key: close_when_due(
             change_queue=bot.change_queue,
             module_service=bot.module_service,
             signup_module_service=bot.signup_module_service,
-            cause="timer",
-        )
-
-    scheduler.register_timer("signup_close", _signup_close_cb)
+        ),
+    )
 
 
 def cancel_wizard_timers(bot: "LeagueBot") -> "Callable[[str], None]":
@@ -403,49 +417,18 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
     sweep (the entry point signs them up to `bot.starting` under signup's switch key). Each
     recovery is looked up when its step runs, so a step stands for that function and no other."""
     return (
-        # A signup close timer lost on restart; its callback is registered by `build`.
-        ("signup close timer", lambda: recover_signup_close_timers(bot)),
+        # A close time passed while the bot was down, or a timer lost; its handler is registered
+        # by `build`. Looked up when the step runs, so the step stands for that function.
+        ("signup close timer", lambda: _recover_missed_close(bot)),
         ("wizards", lambda: recover_wizards(bot)),
     )
 
 
 
-async def recover_signup_close_timers(bot: "LeagueBot") -> None:
-    """Close a signup window whose close time passed while the bot was down, or re-arm its timer."""
-    from datetime import datetime as _dt, timezone as _tz
+async def _recover_missed_close(bot: "LeagueBot") -> None:
+    from leaguebot.signup.services import window_close
 
-    from leaguebot.core.db.database import get_connection as _get_conn
-
-    async with _get_conn(bot.db_path) as _db:
-        _cur = await _db.execute(
-            "SELECT close_at FROM signup_module_config WHERE close_at IS NOT NULL"
-        )
-        _row = await _cur.fetchone()
-    if _row is None:
-        return
-    now_utc = _dt.now(_tz.utc)
-    _close_at_iso = _row["close_at"]
-    try:
-        _close_dt = _dt.fromisoformat(_close_at_iso)
-        if _close_dt.tzinfo is None:
-            _close_dt = _close_dt.replace(tzinfo=_tz.utc)
-    except ValueError:
-        log.warning("start-up: invalid signup close_at value: %r", _close_at_iso)
-        return
-    if _close_dt <= now_utc:
-        log.info("start-up: signup close_at is past — running forced close")
-        from leaguebot.signup.services.window_close import close_signups_unattended
-        await close_signups_unattended(
-            change_queue=bot.change_queue,
-            module_service=bot.module_service,
-            signup_module_service=bot.signup_module_service,
-            cause="restart",
-        )
-    else:
-        from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
-        if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
-            log.info("start-up: re-arming the signup close timer at %s", _close_at_iso)
-            bot.scheduler_service.schedule_signup_close_timer(_close_at_iso)
+    await window_close.recover_missed_close(bot, queue=bot.change_queue)
 
 
 async def recover_wizards(bot: "LeagueBot") -> None:

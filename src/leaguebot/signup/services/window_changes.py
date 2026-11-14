@@ -94,6 +94,7 @@ from leaguebot.signup.services.closing_steps import (
     window_close_steps,
 )
 from leaguebot.signup.services.signup_posting import post_standing_message
+from leaguebot.signup.services.window_close import CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of
 from leaguebot.signup.services.signup_views import SignupButtonView
 
 if TYPE_CHECKING:
@@ -163,15 +164,16 @@ def window_open_change(
     modules: "ModuleService",
     signup: "SignupModuleService",
     config: "ConfigService",
-    schedule_close: Callable[[str], None],
+    arm_once: Callable[[str, str, datetime], None],
     queue: Callable[[], "ChangeQueue"],
 ) -> ChangeType:
     """The `signup.open` change type, for the builder to register.
 
     The payload is ``track_ids`` (the tracks chosen, ids as text), ``close_at`` (the normalised
     close time or None), and ``channel_id`` and ``closed_message_id`` (the signup channel and
-    the "signups closed" notice standing in it, each or None). *schedule_close* arms the close
-    timer at an ISO 8601 time, and *queue* is the change queue the Sign Up button is handed.
+    the "signups closed" notice standing in it, each or None). *arm_once* arms the close
+    timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is the change queue the Sign
+    Up button is handed.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -326,7 +328,7 @@ def window_open_change(
         return "posting the signup information and opening the window"
 
     async def arm_close(ctx: StepContext) -> StepResult:
-        schedule_close(str(ctx.step_payload["close_at"]))
+        arm_once(CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of(str(ctx.step_payload["close_at"])))
         return StepResult(result={})
 
     async def describe_arm(_ctx: StepContext) -> str:

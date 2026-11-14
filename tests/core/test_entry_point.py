@@ -285,10 +285,6 @@ _SCHEDULER_KINDS = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the signup close is still the scheduler's own `signup_close` job, not the one-off "
-    "timer `signup.close_timer`"
-))
 async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     """Straight after `build`, with the scheduler not yet started, every kind is signed up in the
     one registry: the scheduler's own jobs (the three weather phases, the forecast clean-up, the

@@ -489,9 +489,6 @@ async def test_closed_signups_are_not_force_closed_again(tmp_path):
     assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "clear_overwrites"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the switch-off cancels core's signup_close job rather than disarming signup.close_timer"
-))
 async def test_the_close_timer_is_cancelled(tmp_path):
     """A scheduled automatic close firing against a disabled module would close the window over
     a league that has already stood the module down: once the switch-off has run, the close

@@ -426,9 +426,6 @@ async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, m
     assert await _test_mode(league) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the abort cancels core's signup_close job rather than disarming signup.close_timer"
-))
 async def test_a_close_timer_that_cannot_be_cancelled_stops_the_queue(tmp_path):
     """Signups are open and the season is aborted. Disarming the signup close timer fails, the job
     store locked: the queue stops with the season still standing. Retried with the store free,

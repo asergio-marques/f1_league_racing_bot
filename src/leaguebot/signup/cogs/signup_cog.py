@@ -31,10 +31,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
+from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE, same_instant
 from leaguebot.core.db.database import get_connection
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
 from leaguebot.signup.services.signup_settings import fixed_refusal, format_slots, kind_of
 from leaguebot.signup.services.wizard_answers import take_typed_answer
 from leaguebot.signup.services.wizard_changes import (
@@ -118,19 +119,6 @@ def _parse_close_time(
         return None, "❌ `close_time` must be a future datetime."
     return parsed.isoformat(), None
 
-
-def _same_instant(stored: str, other: str) -> bool:
-    """Whether two ISO 8601 times name one instant, a time with no timezone read as UTC.
-
-    `/signup close-time modify` uses it to tell a replacement from the time already armed:
-    the stored string is normalised, but a manager's need not be spelt the same way.
-    """
-    first, second = datetime.fromisoformat(stored), datetime.fromisoformat(other)
-    if first.tzinfo is None:
-        first = first.replace(tzinfo=timezone.utc)
-    if second.tzinfo is None:
-        second = second.replace(tzinfo=timezone.utc)
-    return first == second
 
 
 #: How many drivers each group in the close confirmation names before it gives a count of the
@@ -726,49 +714,19 @@ class SignupCog(commands.Cog):
         parent=signup,
     )
 
-    async def _close_time_context(
-        self, interaction: discord.Interaction
-    ) -> SignupModuleConfig | None:
-        """Return the config for a close-time command, or reply and return None.
-
-        All three close-time commands need an open signup window: `close_at` only means
-        anything while one is running, and `set_window_closed` clears it, so a timer armed
-        against a closed window could only ever fire a forced close on nothing.
-        """
-        cfg = await self.bot.signup_module_service.get_config()
-        if cfg is None or not cfg.signups_open:
-            await refuse(
-                interaction,
-                "❌ Signups are not currently open, so there is no auto-close time to "
-                "manage. Set one when you open the window with "
-                "`/signup open close_time:`.",
-                what=describe(interaction),
-            )
-            return None
-        return cfg
-
-    async def _record_close_time_change(
-        self,
-        interaction: discord.Interaction,
-        *,
-        change_type: str,
-        old_value: str,
-        new_value: str,
-        log_line: str,
+    async def _ask_close_time(
+        self, interaction: discord.Interaction, command: str, close_time: str | None = None
     ) -> None:
-        """Write the audit row and the log line shared by all three close-time commands."""
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, ?, ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 change_type, old_value, new_value, now),
-            )
-            await db.commit()
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | {log_line}",
+        """Ask the change queue to carry out `/signup close-time <command>`: the setting's check
+        judges every refusal as it is asked and again as the change starts (`close_time_settings`).
+        The time the command was given is its own input, parsed here as `/signup open` parses it
+        and handed to the check as the time or the refusal."""
+        payload: dict = {}
+        if close_time is not None:
+            close_at, close_error = _parse_close_time(close_time)
+            payload = {"close_at": close_at, "close_error": close_error}
+        await self.bot.change_queue.ask(
+            close_time_kind(command), payload, interaction=interaction, what=describe(interaction)
         )
 
     @close_time_group.command(
@@ -782,45 +740,7 @@ class SignupCog(commands.Cog):
     async def close_time_add(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        cfg = await self._close_time_context(interaction)
-        if cfg is None:
-            return
-
-        if cfg.close_at is not None:
-            armed = datetime.fromisoformat(cfg.close_at)
-            await refuse(
-                interaction,
-                f"❌ Signups already auto-close at {discord_ts(armed)} "
-                f"({discord_ts(armed, 'R')}). Use `/signup close-time modify` to change "
-                "it, or `/signup close-time cancel` to clear it.",
-                what=describe(interaction),
-            )
-            return
-
-        close_at_iso, close_error = _parse_close_time(close_time)
-        if close_error is not None:
-            await refuse(interaction, close_error, what=describe(interaction))
-            return
-        assert close_at_iso is not None
-
-        await self.bot.signup_module_service.set_close_at(close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
-
-        armed = datetime.fromisoformat(close_at_iso)
-        await interaction.response.send_message(
-            f"✅ Signups will auto-close at {discord_ts(armed)} "
-            f"({discord_ts(armed, 'R')}).",
-            ephemeral=True,
-        )
-        await self._record_close_time_change(
-            interaction,
-            change_type="SIGNUP_CLOSE_TIME_ADD",
-            old_value="",
-            new_value=close_at_iso,
-            log_line=f"/signup close-time add | Success\n  close_time: {close_at_iso}",
-        )
+        await self._ask_close_time(interaction, "add", close_time)
 
     @close_time_group.command(
         name="cancel", description="Clear the auto-close time, leaving signups open."
@@ -828,37 +748,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @_after_the_catch_up
     async def close_time_cancel(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        cfg = await self._close_time_context(interaction)
-        if cfg is None:
-            return
-
-        if cfg.close_at is None:
-            await refuse(
-                interaction,
-                "❌ No auto-close time is set. Signups stay open until you run "
-                "`/signup close`.",
-                what=describe(interaction),
-            )
-            return
-
-        previous = cfg.close_at
-        self.bot.scheduler_service.cancel_signup_close_timer()
-        await self.bot.signup_module_service.set_close_at(None)
-
-        await interaction.response.send_message(
-            "✅ Auto-close time cleared. Signups stay open until you close them with "
-            "`/signup close`.",
-            ephemeral=True,
-        )
-        await self._record_close_time_change(
-            interaction,
-            change_type="SIGNUP_CLOSE_TIME_CANCEL",
-            old_value=previous,
-            new_value="",
-            log_line=f"/signup close-time cancel | Success\n  was: {previous}",
-        )
+        await self._ask_close_time(interaction, "cancel")
 
     @close_time_group.command(
         name="modify", description="Replace the armed auto-close time with a new one."
@@ -871,30 +761,17 @@ class SignupCog(commands.Cog):
     async def close_time_modify(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        cfg = await self._close_time_context(interaction)
-        if cfg is None:
-            return
-
-        if cfg.close_at is None:
-            await refuse(
-                interaction,
-                "❌ No auto-close time is set, so there is nothing to change. Use "
-                "`/signup close-time add` to arm one.",
-                what=describe(interaction),
-            )
-            return
-
-        close_at_iso, close_error = _parse_close_time(close_time)
-        if close_error is not None:
-            await refuse(interaction, close_error, what=describe(interaction))
-            return
-        assert close_at_iso is not None
-
-        previous = cfg.close_at
-        if _same_instant(previous, close_at_iso):
-            armed = datetime.fromisoformat(previous)
+        close_at, _error = _parse_close_time(close_time)
+        stored = await self.bot.signup_module_service.get_config()
+        if (
+            close_at is not None and stored is not None and stored.signups_open
+            and stored.close_at is not None and same_instant(stored.close_at, close_at)
+            and await self.bot.module_service.is_signup_enabled()
+        ):
+            # The time asked is the one armed: said at once, nothing queued, as the command has
+            # always answered it.
+            armed = parse_datetime(stored.close_at)
+            assert armed is not None
             await interaction.response.send_message(
                 f"ℹ️ Signups already auto-close at {discord_ts(armed)} "
                 f"({discord_ts(armed, 'R')}). Nothing was changed.",
@@ -903,31 +780,11 @@ class SignupCog(commands.Cog):
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
                 "/signup close-time modify | Nothing changed\n"
-                f"  close_time: {previous}\n"
+                f"  close_time: {stored.close_at}\n"
                 "  reason: it is already the armed time",
             )
             return
-
-        self.bot.scheduler_service.cancel_signup_close_timer()
-        await self.bot.signup_module_service.set_close_at(close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
-
-        armed = datetime.fromisoformat(close_at_iso)
-        await interaction.response.send_message(
-            f"✅ Signups will now auto-close at {discord_ts(armed)} "
-            f"({discord_ts(armed, 'R')}).",
-            ephemeral=True,
-        )
-        await self._record_close_time_change(
-            interaction,
-            change_type="SIGNUP_CLOSE_TIME_MODIFY",
-            old_value=previous,
-            new_value=close_at_iso,
-            log_line=(
-                "/signup close-time modify | Success\n"
-                f"  was: {previous}\n  close_time: {close_at_iso}"
-            ),
-        )
+        await self._ask_close_time(interaction, "modify", close_time)
 
     # ── /signup open (T017) ───────────────────────────────────────────
 

@@ -337,9 +337,6 @@ ARM_AGAIN = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: /signup open arms core's signup_close job, not signup.close_timer through arm_once"
-))
 async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp_path):
     """Manager 77 runs `/signup open` with a close time, and arming the close fails, so the
     change stops at `arm_close` with the information posted and signups open. A league admin

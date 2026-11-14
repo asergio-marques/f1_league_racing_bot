@@ -13,6 +13,7 @@ against the registered command list rather than against a string a reader has to
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -175,11 +176,6 @@ def _manager(league, command: str = "signup close") -> Any:
 #: The kind of the one-off timer that closes signups at their set time (#286, item 12).
 CLOSE_TIMER = "signup.close_timer"
 
-#: What the close-time commands do not yet do before #286's item 12.
-_CLOSE_TIME_SETTINGS = (
-    "#286: the close-time commands are not yet Settings that arm and disarm the "
-    "signup.close_timer from the change queue"
-)
 
 
 async def _asked(league, run, *args) -> Any:
@@ -285,6 +281,7 @@ class TestTheCloseRefusal:
         cog = SignupCog.__new__(SignupCog)
         cog.bot = league.bot
         await _cancel(cog, _manager(league))
+        await run_queue(league.bot)
 
         await _close_on(league)
 
@@ -298,7 +295,6 @@ class TestTheCloseRefusal:
 
 
 class TestCancel:
-    @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_clears_the_stored_time_and_the_scheduled_job(self, tmp_path):
         """The window is open with its close time armed a week on. Manager 77 runs `/signup
         close-time cancel`: he is answered as under way and nothing is saved as it is asked; when
@@ -342,7 +338,6 @@ class TestCancel:
 
 
 class TestAdd:
-    @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_arms_the_timer(self, tmp_path):
         """The window is open with no close time. Manager 77 runs `/signup close-time add` for
         two weeks on: he is answered as under way and nothing is saved or armed as it is asked;
@@ -398,7 +393,6 @@ class TestAdd:
 
 
 class TestModify:
-    @pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
     async def test_it_cancels_the_old_job_and_arms_the_new(self, tmp_path):
         """The window is open with its close time armed a week on. Manager 77 runs `/signup
         close-time modify` for two weeks on: he is answered as under way and nothing changes as
@@ -466,7 +460,7 @@ class TestModify:
             "SELECT old_value, new_value FROM audit_entries "
             "WHERE change_type = 'SIGNUP_CLOSE_TIME_MODIFY'"
         )
-        assert (row["old_value"], row["new_value"]) == (ARMED, LATER)
+        assert (json.loads(row["old_value"]), json.loads(row["new_value"])) == (ARMED, LATER)
 
 
 # ── A fault in the save, or in the arming after it ────────────────────────
@@ -480,7 +474,6 @@ _CLOSE_TIME_COMMANDS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
 @pytest.mark.parametrize("run, name, before, _saved", _CLOSE_TIME_COMMANDS)
 async def test_a_close_time_faulted_in_its_save_stores_nothing(
     tmp_path, run, name, before, _saved
@@ -505,7 +498,6 @@ async def test_a_close_time_faulted_in_its_save_stores_nothing(
     assert not any(" | Success" in line for line in await log_lines(league))
 
 
-@pytest.mark.xfail(strict=True, reason=_CLOSE_TIME_SETTINGS)
 @pytest.mark.parametrize("run, name, before, saved", _CLOSE_TIME_COMMANDS)
 async def test_a_close_timer_that_cannot_be_armed_or_removed_leaves_the_time_saved(
     tmp_path, run, name, before, saved
@@ -558,10 +550,6 @@ class TestTheyRequireAnOpenWindow:
 # ── The close timer, and the close time missed while the bot was down ─────
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: no signup.close_timer is armed by the close-time commands, nor a handler for it "
-    "that judges the stored close time"
-))
 async def test_a_close_time_cancelled_does_not_close_signups(tmp_path):
     """The window is open with no close time. Manager 77 adds one two weeks on and the queue
     runs; he then cancels it and the queue runs. The close timer fires anyway for the key it was
@@ -587,10 +575,6 @@ async def test_a_close_time_cancelled_does_not_close_signups(tmp_path):
     assert "SIGNUP_AUTO_CLOSE" not in await _audit_types(league.db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: no signup.close_timer is armed by the close-time commands, nor a handler for it "
-    "that judges the stored close time"
-))
 async def test_the_close_timer_closes_signups_at_their_set_time(tmp_path):
     """The window is open with no close time. Manager 77 adds one two weeks on and the queue
     runs. The queue's clock moves past it and the close timer fires for the key it was armed
@@ -613,10 +597,6 @@ async def test_the_close_timer_closes_signups_at_their_set_time(tmp_path):
     assert (await _audit_types(league.db_path)).count("SIGNUP_AUTO_CLOSE") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: signup's start-up step judges the close time against the host's clock, not the "
-    "queue's, and re-arms rather than catching up"
-))
 async def test_a_close_time_missed_while_down_closes_on_start(tmp_path):
     """The window is open with its close time an hour on by the host's clock; the bot was down
     and the queue's clock now reads two hours on, past it. Signup's "signup close timer"
@@ -637,10 +617,6 @@ async def test_a_close_time_missed_while_down_closes_on_start(tmp_path):
     assert _armed(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: signup's start-up step arms core's signup close job, not a signup.close_timer, for "
-    "a close time still ahead"
-))
 async def test_a_close_time_still_ahead_is_armed_on_start(tmp_path):
     """The window is open with its close time a day on, and the bot starts with no close timer
     standing, as after a discarded arming. Signup's "signup close timer" start-up step runs, and

@@ -173,8 +173,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
-    ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),
 }
 
@@ -592,7 +590,6 @@ KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`.
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
     ("core/services/scheduler_service.py", "SchedulerService._arm_forecast_cleanup"): (1, PASS["weather"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["signup"]),
 }
 
 
@@ -1983,7 +1980,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
 }
 
@@ -2128,7 +2124,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Results' pass
     # Attendance's pass
     # Signup's pass
-    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
