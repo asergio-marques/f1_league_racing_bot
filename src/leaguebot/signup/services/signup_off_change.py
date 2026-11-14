@@ -200,6 +200,12 @@ def signup_off_change(
             # must, or the season is left in a stage waiting on a window nothing can close.
             await advance_on_window_close_on(db)
         await signup_module_service().delete_config_on(db)
+        # The window's record is stamped closed with the module's going off, or the next opening
+        # would make a second open window, which the schema refuses.
+        await db.execute(
+            "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
+            (now().isoformat(),),
+        )
         await db.execute("UPDATE server_configs SET signup_module_enabled = 0")
         return StepResult(
             result={},

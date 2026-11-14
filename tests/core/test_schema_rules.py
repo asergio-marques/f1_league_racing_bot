@@ -236,7 +236,6 @@ async def test_an_account_holds_one_signup_wizard(db_path):
     db.close()
 
 
-@pytest.mark.xfail(strict=True, reason="#286: nothing in the schema holds signup to one open window")
 async def test_a_second_open_window_is_refused(db_path):
     """Season 1 has a signup window that closed and one still open. A second window opened
     beside the open one is refused by the schema: signup has one open window at a time, so the

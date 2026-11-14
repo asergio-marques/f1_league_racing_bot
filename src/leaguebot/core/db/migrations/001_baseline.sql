@@ -807,6 +807,9 @@ CREATE TABLE "signup_windows" (
     closed_at            TEXT
 );
 CREATE INDEX idx_signup_windows_season ON signup_windows(season_id);
+-- A season has one open window at a time, so the close time and the close are written to that
+-- window alone: a second is refused while one has no closing.
+CREATE UNIQUE INDEX idx_signup_windows_one_open ON signup_windows(season_id) WHERE closed_at IS NULL;
 
 -- signup_records
 CREATE TABLE "signup_records" (
