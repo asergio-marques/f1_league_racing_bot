@@ -93,7 +93,7 @@ from leaguebot.signup.services.closing_steps import (
     window_close_jobs,
     window_close_steps,
 )
-from leaguebot.signup.services.signup_posting import post
+from leaguebot.signup.services.signup_posting import post_standing_message
 from leaguebot.signup.services.signup_views import SignupButtonView
 
 if TYPE_CHECKING:
@@ -285,7 +285,7 @@ def window_open_change(
             discord.AllowedMentions(roles=[base_role]) if base_role
             else discord.AllowedMentions.none()
         )
-        message_id = await post(
+        message_id = await post_standing_message(
             found, embed=embed, view=SignupButtonView(queue()), mentions=mentions,
             refused=f"the information message could not be posted in channel {found.id}",
         )

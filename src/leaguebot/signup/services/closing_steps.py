@@ -54,7 +54,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.signup.services.signup_posting import post
+from leaguebot.signup.services.signup_posting import post, post_standing_message
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
@@ -455,7 +455,7 @@ def window_close_steps(
         )
         if not isinstance(found, discord.TextChannel):
             raise StepFailedOnDiscord("the signup channel could not be found to post in")
-        message_id = await post(
+        message_id = await post_standing_message(
             found, CLOSED_NOTICE, mentions=discord.AllowedMentions.none(),
             refused=f"the closed notice could not be posted in channel {found.id}",
         )
