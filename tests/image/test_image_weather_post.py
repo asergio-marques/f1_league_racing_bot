@@ -19,7 +19,6 @@ import pytest
 from leaguebot.image.services.image_weather_post import (
     ForecastRender,
     describe,
-    weather_enabled,
 )
 
 
@@ -44,50 +43,100 @@ def _bot(*, module_on=True, aspect_on=True, template_valid=True):
 
 
 # ── 1. Enablement (FR-050) ────────────────────────────────────────────────
+#
+# Judged through `attach_forecast`, which hands back the picture, or None, together with the log
+# lines saying why a picture that was due was not drawn: a picture not due (the module or its
+# weather aspect off) hands back no line (weather spec, "Image generation"; #287, B3).
+
+#: Why the enablement cannot yet be read through `attach_forecast`'s answer.
+_HANDS_BACK_NO_LINES = (
+    "#287: attach_forecast hands back the file alone and reports its reasons itself"
+)
 
 
-@pytest.mark.asyncio
-async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await weather_enabled(_bot(), "weather_p2_template") is True
+def _drawing(template_key="weather_p2_template", **facts):
+    """A drawing of *template_key*, for Division 1's round 4 of season 3, phase 2."""
+    named = {"division_name": "Division 1", "round_number": "4", "season_number": "3",
+             "is_mystery": False, **facts}
+    return MagicMock(template_key=template_key, **named)
 
 
-@pytest.mark.asyncio
-async def test_the_module_being_off_falls_back_to_text():
-    assert await weather_enabled(_bot(module_on=False), "weather_p2_template") is False
+async def _attach(bot, monkeypatch, drawing, *, phase=2, png=None):
+    """`attach_forecast` for round 1's *phase*, its round read as *drawing* and, where *png* is
+    given, its render drawing that file; the picture and the log lines it hands back."""
+    import leaguebot.image.services.image_weather_post as post
+
+    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
+    if png is not None:
+        monkeypatch.setattr(post, "render_forecast", AsyncMock(return_value=ForecastRender(png=png)))
+    file, lines = await post.attach_forecast(bot, round_id=1, phase=phase)
+    return file, list(lines)
 
 
-@pytest.mark.asyncio
-async def test_the_aspect_being_off_falls_back_to_text():
-    assert await weather_enabled(_bot(aspect_on=False), "weather_p2_template") is False
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
+async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound(
+    monkeypatch, tmp_path,
+):
+    png = tmp_path / "w.png"
+    png.write_bytes(b"x")
+    file, lines = await _attach(_bot(), monkeypatch, _drawing(), png=png)
+    assert file is not None and lines == []
 
 
-@pytest.mark.asyncio
-async def test_an_invalid_template_falls_back_to_text():
-    assert await weather_enabled(_bot(template_valid=False), "weather_p3_template") is False
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
+async def test_the_module_being_off_falls_back_to_text(monkeypatch):
+    """No picture was due, so nothing is said of one."""
+    assert await _attach(_bot(module_on=False), monkeypatch, _drawing()) == (None, [])
 
 
-@pytest.mark.asyncio
-async def test_enablement_is_asked_per_template_not_per_aspect():
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
+async def test_the_aspect_being_off_falls_back_to_text(monkeypatch):
+    """No picture was due, so nothing is said of one."""
+    assert await _attach(_bot(aspect_on=False), monkeypatch, _drawing()) == (None, [])
+
+
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
+async def test_an_invalid_template_falls_back_to_text(monkeypatch):
+    """A picture was due: the template's reason is handed back, naming the forecast."""
+    bot = _bot(template_valid=False)
+    for report in (await bot.image_validity_service.template_reports()).values():
+        report.reason = "the template file is too small"
+    file, lines = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3)
+    assert file is None
+    said = "\n".join(lines)
+    for part in ("the template file is too small", "season 3", "Division 1", "round 4"):
+        assert part in said, part
+
+
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
+async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_path):
     """One of six being invalid must not stop the other five (XIV.4).
 
     A league whose sprint phase 3 file is too small still gets a picture for every round that
     is not a sprint.
     """
+    png = tmp_path / "w.png"
+    png.write_bytes(b"x")
     bot = _bot()
-    good, bad = MagicMock(), MagicMock()
-    good.valid, bad.valid = True, False
+    good, bad = MagicMock(valid=True), MagicMock(valid=False, reason="too small")
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={"weather_p3_template": good, "weather_p3_sprint_template": bad}
     )
-    assert await weather_enabled(bot, "weather_p3_template") is True
-    assert await weather_enabled(bot, "weather_p3_sprint_template") is False
+    drawn, _ = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3, png=png)
+    assert drawn is not None
+    sprint, lines = await _attach(
+        bot, monkeypatch, _drawing("weather_p3_sprint_template"), phase=3, png=png,
+    )
+    assert sprint is None and "too small" in "\n".join(lines)
 
 
-@pytest.mark.asyncio
-async def test_a_reader_that_raises_never_breaks_the_posting():
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
+async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch):
+    """The text stands, and the fault is handed back for the log channel."""
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await weather_enabled(bot, "weather_p1_template") is False
+    file, lines = await _attach(bot, monkeypatch, _drawing("weather_p1_template"), phase=1)
+    assert file is None and "boom" in "\n".join(lines)
 
 
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
@@ -213,74 +262,49 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
     return bot
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
-    """FR-059 — the picture is posted and the substitution is reported to staff."""
-    import leaguebot.image.services.image_weather_post as post
-
+    """FR-059 — the picture is handed back, and the substitution with it, as a line for the log
+    channel naming what it pertains to."""
     png = tmp_path / "w.png"
     png.write_bytes(b"x")
-    reported: list = []
-    monkeypatch.setattr(
-        post, "report_notices",
-        AsyncMock(side_effect=lambda bot, what, n: reported.append((what, list(n)))),
-    )
-    monkeypatch.setattr(post, "report", AsyncMock())
-    drawing = MagicMock(
-        template_key="weather_p2_template", division_name="Division 1",
-        round_number="4", season_number="3", is_mystery=False,
-    )
-    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
+    from leaguebot.image.models.image_module import RenderNotice
 
-    bot = _attach_bot(notices=["fallback used"])
+    bot = _attach_bot(notices=[RenderNotice(
+        image_type="weather_p2_template", notice_kind="ASSET_FALLBACK_USED",
+        detail="fallback used", field_id="weather_icon",
+    )])
     bot.image_render_service.render_for_posting.return_value.png_paths = [str(png)]
 
-    result = await post.attach_forecast(bot, round_id=1, phase=2)
+    result, lines = await _attach(bot, monkeypatch, _drawing())
 
     assert result is not None, "a substituted asset must not stop the graphic"
-    assert len(reported) == 1
-    what, notices = reported[0]
-    assert notices == ["fallback used"]
+    said = "\n".join(lines)
+    assert "fallback used" in said
     # Season, division, round and phase — so a manager can find what it pertains to.
     for part in ("season 3", "Division 1", "round 4", "phase 2"):
-        assert part in what, part
+        assert part in said, part
 
 
 def test_no_notice_and_no_problem_reaches_a_forecast_channel():
-    """SC-005 — this module reports through the log-channel reporters and nowhere else."""
+    """SC-005 — this module posts nowhere: what it reports, it hands back to the post job, whose
+    lines go to the log channel."""
     import inspect
 
     import leaguebot.image.services.image_weather_post as post
-
-    source = inspect.getsource(post.attach_forecast)
-    assert "report_notices(" in source and "report(" in source
 
     module_source = inspect.getsource(post)
     for forbidden in ("post_forecast", "forecast_channel_id", "channel.send"):
         assert forbidden not in module_source, forbidden
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_a_problem_is_reported_and_the_text_stands_instead(monkeypatch):
-    import leaguebot.image.services.image_weather_post as post
-
-    reported: list = []
-    monkeypatch.setattr(post, "report_notices", AsyncMock())
-    monkeypatch.setattr(
-        post, "report",
-        AsyncMock(side_effect=lambda bot, what, detail: reported.append(detail)),
-    )
-    drawing = MagicMock(
-        template_key="weather_p3_template", division_name="D",
-        round_number="1", season_number="1", is_mystery=False,
-    )
-    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
-
     bot = _attach_bot(draws=False, problem="no fallback in that directory")
-    result = await post.attach_forecast(bot, round_id=1, phase=3)
+    result, lines = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3)
 
     assert result is None, "the caller must post the textual forecast"
-    assert reported == ["no fallback in that directory"]
+    assert "no fallback in that directory" in "\n".join(lines)
 
 
 # ── 10. The mystery notice's posting (T047, FR-052, FR-053) ───────────────

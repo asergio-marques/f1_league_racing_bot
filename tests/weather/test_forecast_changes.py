@@ -212,6 +212,80 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     assert _notifies_no_member(retried)
 
 
+#: Why a picture was due and the forecast went out as text, until #287 lands.
+_PICTURE_FAULT_NOT_LOGGED = (
+    "#287: a picture that was due and not drawn reaches the host's log alone, not the log channel"
+)
+
+
+def _pictures_due(league: Any, *, valid: bool = True) -> None:
+    """Images on, the weather aspect on, and every weather template answering *valid*, with the
+    reason "the template file is too small" where it is not."""
+    from types import SimpleNamespace
+
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": True})
+    report = SimpleNamespace(valid=valid, reason=None if valid else "the template file is too small")
+    league.bot.image_validity_service.template_reports = AsyncMock(return_value={
+        key: report for key in ("weather_p1_template", "weather_p2_template",
+                                "weather_p2_sprint_template", "weather_p3_template",
+                                "weather_p3_sprint_template", "weather_mystery_template")
+    })
+
+
+@pytest.mark.parametrize("cause, reason", [
+    pytest.param("invalid drawing file", "the template file is too small",
+                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
+    pytest.param("unreadable switch", "the images switch could not be read",
+                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
+    pytest.param("unreadable round", "the round could not be read",
+                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
+    pytest.param("drawing fault", "the drawing broke",
+                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
+    pytest.param("images off", None),
+    pytest.param("weather pictures off", None),
+])
+async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
+    tmp_path, monkeypatch, cause, reason,
+):
+    """Phase 1 asked with pictures due, but its picture not drawn: the template file is invalid,
+    the images switch cannot be read, the round cannot be read for the picture, or the drawing
+    raises. The text forecast is posted and recorded, and the reason is written to the log
+    channel. With the images module off, or its weather pictures off, no picture was due: the
+    text is posted and nothing about a picture is written (weather spec, "Image generation";
+    criterion 4)."""
+    from leaguebot.image.services import image_weather_post
+
+    league = await _league(tmp_path)
+    _pictures_due(league, valid=cause != "invalid drawing file")
+    if cause == "unreadable switch":
+        league.bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError(reason))
+    elif cause == "unreadable round":
+        monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
+                            AsyncMock(side_effect=RuntimeError(reason)))
+    elif cause == "drawing fault":
+        monkeypatch.setattr(image_weather_post, "render_forecast",
+                            AsyncMock(side_effect=RuntimeError(reason)))
+    elif cause == "images off":
+        league.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    elif cause == "weather pictures off":
+        league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": False})
+    before = league.log()
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [new] = _ids(_events(league), "send")
+    assert league.channel(FORECAST).files == [None]
+    assert await _forecasts(league) == {1: new}
+    written = league.log()[len(before):]
+    if reason is None:
+        assert "image" not in written.lower() and "picture" not in written.lower()
+    else:
+        assert reason in written
+
+
 @pytest.mark.parametrize("phase", [2, 3])
 async def test_a_phase_posts_before_the_superseded_forecast_is_deleted_by_a_job(tmp_path, phase):
     league = await _league(tmp_path)
