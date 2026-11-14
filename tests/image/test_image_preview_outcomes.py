@@ -7,11 +7,14 @@ and these tests hold both halves of that line.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import aiosqlite
 import pytest
+from lxml import etree
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.image_config_service import ImageConfigService
@@ -29,6 +32,16 @@ from leaguebot.core.services.seasons.season_service import SeasonService
 SERVER_ID = 8383
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 TRACK = "Albert Park Circuit"
+
+#: The shipped templates, which a preview draws where the league has no template of its own.
+_TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+
+#: Each phase's description, as the weather specification names it.
+_PHASE_DESCRIPTIONS = {
+    1: "Initial chance of rain",
+    2: "Initial session forecast",
+    3: "Final session forecast",
+}
 
 
 @pytest.fixture
@@ -928,3 +941,50 @@ class TestWeatherPreview:
 
         assert len(requests) == 1
         assert requests[0][1] == "weather_mystery_template"
+
+    @pytest.mark.parametrize("phase", [1, 2, 3])
+    async def test_a_sprint_round_s_preview_places_the_words_a_forecast_would(
+        self, bot, league, phase
+    ):
+        """The text each phase's preview places on the shipped template of a sprint round.
+
+        Image spec, "Resolution of the data to be placed" and "Test data": the likelihood of rain
+        as the phase 1 message renders it, a whole percentage with its sign; each session named
+        with no qualifier of its length, in the order run, with its type among Sunny, Mixed and
+        Rain, all three shown at phase 2; and at phase 3 all five concrete weathers, each
+        session summarised by its slots. The preview composes this text for itself, so it is
+        pinned here, at the preview, and not on the sample data the tests keep.
+        """
+        context = await _context(bot, round_number=2, require_mystery=False)
+        ((_label, key, build),) = await build_weather_preview(bot, context, phase=phase)
+        text = build(etree.parse(str(_TEMPLATES / f"{key}.svg")).getroot()).text
+
+        assert text["phase_description"] == _PHASE_DESCRIPTIONS[phase]
+        assert re.fullmatch(r"\d{1,3}%", text["rain_probability"])
+        if phase == 1:
+            assert not any(field.startswith("session_") for field in text)
+            return
+
+        names = [text[f"session_{n}_name"] for n in range(1, 5)]
+        types = [text[f"session_{n}_slot_type"] for n in range(1, 5)]
+        assert names == ["Sprint Qualifying", "Sprint Race", "Feature Qualifying", "Feature Race"]
+        assert set(types) <= {"Sunny", "Mixed", "Rain"}
+        if phase == 2:
+            assert set(types) == {"Sunny", "Mixed", "Rain"}
+            assert not any("slot_" in f and "slot_type" not in f for f in text)
+            return
+
+        weathers = set()
+        for n in range(1, 5):
+            slots = [
+                text[f"session_{n}_slot_{m}_label"]
+                for m in range(1, 9)
+                if f"session_{n}_slot_{m}_label" in text
+            ]
+            assert slots
+            weathers.update(slots)
+            one_weather = len(set(slots)) == 1
+            assert text[f"session_{n}_summary"] == (
+                slots[0] if one_weather else " → ".join(slots)
+            )
+        assert weathers == {"Clear", "Light Cloud", "Overcast", "Wet", "Very Wet"}
