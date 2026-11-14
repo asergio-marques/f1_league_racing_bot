@@ -53,10 +53,6 @@ PASS = {
 }
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
-#: The start-up catch-up, each module's share in its wiring: each module moves its own into the
-#: handler it provides for the start-up sweep (architecture.md, "Timed work and restarts"). The
-#: missed post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
-CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -2328,6 +2324,10 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
     ("weather/services/forecast_channel.py", "forecast_channels_on"): (
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
+    ),
+    ("weather/services/round_phases.py", "phase2_slot_types_on"): (
+        "sessions",
+        "reads `sessions.phase2_slot_type`, the weather module's own column",
     ),
 }
 
