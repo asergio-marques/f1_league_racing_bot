@@ -378,9 +378,10 @@ has the catch-alls `architecture.md` allows it ("Errors and failures"): one arou
 place for a graphic that rides on a post, and one around reading the round to name the line of a
 switch that could not be read, the place for naming something in a line, which leaves the line
 naming the phase alone. A line names the round and the phase as the weather specification's
-"Image generation" has it, through `describe`. The post job puts the lines on its `StepResult`, so
-they reach the log channel in the save that records the post. The render is given no bot, so a render's notices come back as those lines
-alone and are posted once. A graphic Discord refuses stops the queue for Retry.
+"Image generation" has it, through `describe`, which names a mystery round's notice as the mystery
+round notice. The post job puts the lines on its `StepResult`, so they reach the log channel in the
+save that records the post. The render is given no bot, so a render's notices come back as those
+lines alone and are posted once. A graphic Discord refuses stops the queue for Retry.
 
 ---
 
