@@ -39,7 +39,6 @@ from tests.signup.test_wizard_changes import (
     _press_sign_up,
     _timer_callback,
     _wizard,
-    _RECOVERED_BY_THE_WIZARD_SERVICE,
     _recover_wizards,
 )
 from tests.support.change_queue import (
@@ -337,7 +336,6 @@ async def test_a_driver_whose_channel_was_deleted_may_sign_up_again(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
 @pytest.mark.parametrize(("state", "wizard_state"), IN_PROGRESS, ids=IN_PROGRESS_IDS)
 async def test_a_restart_ends_a_signup_whose_channel_was_deleted_while_the_bot_was_down(
     tmp_path, state, wizard_state,
@@ -363,7 +361,6 @@ async def test_a_restart_ends_a_signup_whose_channel_was_deleted_while_the_bot_w
     assert league.log().count(RESTART_LINE) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
 async def test_a_restart_with_no_league_server_ends_nothing(tmp_path, caplog):
     """Kimi awaits approval and his signup channel 6405 is gone, but when the bot starts again the
     league's server is missing from its cache. Recovering the wizards ends nothing: no `signup.end`
@@ -383,7 +380,6 @@ async def test_a_restart_with_no_league_server_ends_nothing(tmp_path, caplog):
                for record in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
 @pytest.mark.parametrize(
     "refusal",
     [http_error(), http_error(discord.Forbidden, status=403, text="Missing Access")],
@@ -417,7 +413,6 @@ async def test_a_restart_that_cannot_confirm_a_channel_gone_ends_nothing(
                for record in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
 async def test_a_channel_missing_from_the_cache_but_found_at_the_restart_is_left_alone(tmp_path):
     """Kimi awaits approval, and when the bot starts again his signup channel 6405 is missing from
     its cache but Discord's lookup finds it standing. Recovering the wizards ends nothing: no

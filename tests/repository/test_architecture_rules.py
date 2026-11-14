@@ -547,8 +547,6 @@ def _scheduler_reached_around() -> Counter[tuple[str, str]]:
 
 
 KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 
 
@@ -2907,7 +2905,6 @@ KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 
 

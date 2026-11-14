@@ -73,7 +73,6 @@ DELETE_TIMER = "signup_channel_delete"
 INACTIVITY_TIMER = "signup_inactivity"
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
-_NO_SCHEDULER = "#286: WizardService still takes the scheduler, which it will not hold"
 #: A second driver awaiting a correction choice, with a channel of his own.
 OTHER = 115
 #: The manager reviewing Kimi's signup, and the reason they type after Request Changes.
@@ -625,7 +624,6 @@ async def test_a_lapse_asked_by_its_timer_returns_the_driver_and_posts_the_notic
     assert "lapsed" in league.log().lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SCHEDULER)
 async def test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice(tmp_path):
     """The bot starts again. Kimi's correction choices were posted ten minutes ago, a second
     driver's (115) one minute ago, both awaiting a correction parameter. Recovering the

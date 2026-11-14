@@ -1084,7 +1084,6 @@ async def build(settings: Settings) -> LeagueBot:
     bot.wizard_service = WizardService(
         settings.db_path,
         bot.signup_module_service,
-        scheduler_service=bot.scheduler_service,
         change_queue=bot.change_queue,
         bot=bot,
     )

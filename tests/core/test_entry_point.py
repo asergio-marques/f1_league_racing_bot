@@ -879,11 +879,6 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 )
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the signup close timer's start-up step re-arms through core's scheduler rather than "
-    "asking window_close.recover_missed_close with the bot's queue, and the wizards are "
-    "recovered by the wizard service rather than closing_steps.recover_wizards with the queue"
-))
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read

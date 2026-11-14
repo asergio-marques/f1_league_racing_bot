@@ -20,13 +20,16 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.drivers.driver_service import drivers_in_states
 from leaguebot.core.models.change import (
     ChangeOrigin,
     FollowOn,
@@ -57,7 +60,10 @@ from leaguebot.signup.services.signup_posting import post, post_standing_message
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+log = logging.getLogger(__name__)
 
 #: The job that deletes the reason a manager typed after Reject, ahead of the closing notice that
 #: gives it.
@@ -138,7 +144,7 @@ __all__ = [
     "DELETE_BUTTON", "DELETE_REASON",
     "DELETE_TIMER", "DISARM_TIMERS",
     "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
-    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry",
+    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry", "recover_correction_timeouts", "recover_gone_channels", "recover_wizards",
     "closing_change", "closing_steps", "driver_returned_jobs", "drivers_returned_on",
     "reason_delete_change", "season_end_closes", "season_end_driver_steps", "take_reason_down", "window_close_jobs",
     "window_close_steps", "disarm_timers_step", "disarming",
@@ -408,6 +414,152 @@ def season_end_closes(*, cause: str, season_number: int | None = None) -> tuple[
     *season_number* the season's, where it has one, for the words of the job. Subscribed to core's
     `season_end_closes`."""
     return (PlannedStep(CLOSE_WINDOW, {"cause": cause, "season_number": season_number}),)
+
+
+async def recover_wizards(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
+    """Signup's catch-up at start: ask, as the bot, for what the wizards missed while it was down,
+    before the queue starts.
+
+    A signup whose channel was deleted meanwhile is ended first (`recover_gone_channels`); a
+    driver parked awaiting a correction parameter is released (`recover_correction_timeouts`); and
+    each signup left unanswered for 24 hours, judged against *queue*'s clock, so that a caught-up
+    expiry and one run on time take one path, has its expiry asked (`ask_expiry`). The change's
+    check drops what the driver has since moved on from. It arms nothing: a deadline still ahead
+    is a timer the scheduler's own store keeps through the restart, and an expiry asked of a wizard
+    with no activity recorded is asked at once. SC-005.
+    """
+    gone = await recover_gone_channels(bot, queue=queue)
+    await recover_correction_timeouts(bot.db_path, queue, skip=gone)
+    now = queue.now()
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, last_activity_at FROM signup_wizard_records "
+            "WHERE wizard_state != 'UNENGAGED'"
+        )
+        wizards = await cursor.fetchall()
+    for wizard in wizards:
+        user_id = str(wizard["discord_user_id"])
+        if user_id in gone:
+            continue
+        if wizard["last_activity_at"]:
+            last = datetime.fromisoformat(wizard["last_activity_at"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if last + HOLD > now:
+                continue
+        await ask_expiry(queue, bot.db_path, user_id)
+
+
+async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> set[str]:
+    """The first of the wizards' catch-up: end the signup of every driver whose signup channel was
+    deleted while the bot was down (#439, slice 8).
+
+    Every driver whose signup is under way (`IN_PROGRESS_STATES`) and whose wizard names a
+    channel is looked at. A channel the cache lacks is confirmed with `fetch_channel`: not
+    found, or found as no text channel, is gone, and the restart asks the queue, as the bot
+    and before it starts, for the ending of that signup (`signup.end`, reason `CHANNEL_GONE`,
+    found at a restart), whose check drops it where the driver has since moved on. Any other
+    failure of the lookup is logged and the channel treated as standing: a sweep cannot stop
+    the queue, and the deletion listener or the next restart tries again. With no league
+    server in the cache nothing is ended, and a warning says so.
+
+    Gives the accounts it asked an ending of, which the rest of the recovery skips.
+    """
+    from leaguebot.core.utils.log_lines import name_of_member
+    from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
+    from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
+
+    asked: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    async with get_connection(bot.db_path) as db:
+        for driver in await drivers_in_states(db, [state.value for state in IN_PROGRESS_STATES]):
+            cursor = await db.execute(
+                "SELECT signup_channel_id FROM signup_wizard_records "
+                "WHERE discord_user_id = ? AND signup_channel_id IS NOT NULL",
+                (driver["discord_user_id"],),
+            )
+            wizard = await cursor.fetchone()
+            if wizard is not None:
+                rows.append({
+                    "discord_user_id": driver["discord_user_id"],
+                    "signup_channel_id": wizard["signup_channel_id"],
+                })
+    if not rows:
+        return asked
+    guild = await league_guild(bot)
+    if guild is None:
+        log.warning(
+            "recover_gone_channels: the league's server is not in the cache, so no signup "
+            "channel was looked for"
+        )
+        return asked
+    for row in rows:
+        user_id = row["discord_user_id"]
+        channel_id = int(row["signup_channel_id"])
+        try:
+            if guild.get_channel(channel_id) is not None:
+                continue
+            try:
+                fetched = await guild.fetch_channel(channel_id)
+            except discord.NotFound:
+                fetched = None
+            if isinstance(fetched, discord.TextChannel):
+                continue
+            await ask_channel_gone(
+                queue,
+                user_id=user_id,
+                channel_id=channel_id,
+                named=await name_of_member(bot, int(user_id)),
+                found=RESTART,
+            )
+            asked.add(user_id)
+        except discord.HTTPException:
+            log.warning(
+                "recover_gone_channels: signup channel %s of %s could not be looked for; "
+                "treated as standing", channel_id, user_id, exc_info=True,
+            )
+        except Exception:  # noqa: BLE001 - one driver's refused ask must not strand the rest
+            log.exception("recover_gone_channels: could not ask the ending of %s's signup", user_id)
+    return asked
+
+
+async def recover_correction_timeouts(
+    db_path: str, queue: "ChangeQueue", *, skip: frozenset[str] | set[str] = frozenset()
+) -> None:
+    """Release every driver awaiting a correction parameter, save those in *skip*, whose signup
+    the restart has just ended for a channel gone.
+
+    The five-minute selection window is a one-off timer, so a restart discards it and nothing
+    re-creates it, which left the driver parked for good, shown in no listing and refused by
+    their own Sign Up button (issue #129). The restart asks the queue, as the bot and before it
+    starts, for the lapse of each such driver (`signup.correction.lapse`, with *restart* set,
+    which words the notice).
+
+    A restart releases them **unconditionally** rather than re-arming whatever time was left. The
+    state exists only while a manager is mid-decision, and a manager whose bot has restarted is no
+    longer mid-decision (decided 2026-09-15). That is also why nothing here reads a stored
+    deadline, and why a driver stranded by the old behaviour, whose record predates any of this,
+    is released on the same path.
+
+    These drivers cannot come from `recover_wizards`' own read of the wizards: the wizard record is
+    UNENGAGED for the whole window. The driver profile is the only record that the window is
+    open, so it is what is read here.
+    """
+    from leaguebot.signup.services.review_changes import ask_lapse
+
+    async with get_connection(db_path) as db:
+        rows = await drivers_in_states(db, [DriverState.AWAITING_CORRECTION_PARAMETER.value])
+
+    for row in rows:
+        if row["discord_user_id"] in skip:
+            continue
+        try:
+            await ask_lapse(queue, row["discord_user_id"], restart=True)
+        except Exception:  # noqa: BLE001 - one driver's refused ask must not strand the rest
+            log.exception(
+                "recover_correction_timeouts: could not ask the lapse of %s",
+                row["discord_user_id"],
+            )
 
 
 def window_close_jobs(

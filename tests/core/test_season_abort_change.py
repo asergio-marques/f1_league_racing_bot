@@ -888,9 +888,6 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert not await _season_stands(league)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the wizards are recovered by the wizard service, not closing_steps.recover_wizards"
-))
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
     collecting their notes) when the abort's `end` runs its driver pass. Their wizard is
@@ -926,11 +923,6 @@ def _timer_fired(league: Any, timer: str) -> Any:
     return callback
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the season's end holds a driver's channel through the wizard service, not "
-    "closing_steps' own jobs arming its deletion from the queue's clock, and the wizards are "
-    "recovered by the wizard service, not closing_steps.recover_wizards"
-))
 async def test_448_disabling_signup_after_a_season_end_keeps_the_deletions_and_posts_no_expiry(
     tmp_path,
 ):

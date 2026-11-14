@@ -1718,11 +1718,6 @@ async def test_a_season_end_notice_mentions_only_the_driver(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the season's end holds a driver's channel through the wizard service, not "
-    "closing_steps' own jobs arming its deletion from the queue's clock, and the wizards are "
-    "recovered by the wizard service, not closing_steps.recover_wizards"
-))
 async def test_448_disabling_signup_after_a_season_completed_keeps_the_deletions_and_posts_no_expiry(
     tmp_path,
 ):
@@ -2432,9 +2427,6 @@ async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_th
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the wizards are recovered by the wizard service, not closing_steps.recover_wizards"
-))
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
     collecting their notes) when the completion's `end` runs its driver pass. Their wizard is

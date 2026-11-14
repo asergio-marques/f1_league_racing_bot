@@ -429,7 +429,7 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
         # A close time passed while the bot was down, or a timer lost; its handler is registered
         # by `build`. Looked up when the step runs, so the step stands for that function.
         ("signup close timer", lambda: _recover_missed_close(bot)),
-        ("wizards", lambda: recover_wizards(bot)),
+        ("wizards", lambda: _recover_wizards(bot)),
     )
 
 
@@ -440,6 +440,7 @@ async def _recover_missed_close(bot: "LeagueBot") -> None:
     await window_close.recover_missed_close(bot, queue=bot.change_queue)
 
 
-async def recover_wizards(bot: "LeagueBot") -> None:
-    """Recover the signup wizards the last run left, as the bot's wizard service does."""
-    await bot.wizard_service.recover_wizards()
+async def _recover_wizards(bot: "LeagueBot") -> None:
+    from leaguebot.signup.services import closing_steps
+
+    await closing_steps.recover_wizards(bot, queue=bot.change_queue)

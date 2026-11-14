@@ -808,11 +808,6 @@ def _expired(league: SeasonLeague, user_id: int = SIGNING_UP) -> list[str]:
             if "expired" in text.lower()]
 
 
-_RECOVERED_BY_THE_WIZARD_SERVICE = (
-    "#286: the wizards are recovered by the wizard service, not closing_steps.recover_wizards"
-)
-
-
 async def _recover_wizards(league: SeasonLeague) -> None:
     """The wizards recovered as the bot does when it starts: signup's catch-up, `recover_wizards`
     in `closing_steps`, handed the bot and the league's change queue, whose clock (`league.clock`)
@@ -1138,7 +1133,6 @@ async def test_a_timer_that_fires_before_the_24_hours_since_the_last_answer_ends
     assert _armed(league, DELETE_TIMER) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
 @pytest.mark.parametrize("naive", [False, True], ids=["with a zone", "without a zone"])
 async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path, naive):
     """The bot starts again, its queue's clock two days ahead of the host's. Kimi was last active
@@ -1737,7 +1731,6 @@ async def test_an_expiry_for_a_driver_who_has_since_submitted_changes_nothing(tm
     assert _armed(league, DELETE_TIMER) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_RECOVERED_BY_THE_WIZARD_SERVICE)
 async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_a_manager(
     tmp_path,
 ):
