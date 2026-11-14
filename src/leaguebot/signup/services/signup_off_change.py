@@ -4,8 +4,9 @@
 is results': where the window is open, the jobs of a close come first, in the order a close runs
 them (`window_changes`, `closing_steps`) -- each driver still filling in the wizard returned and
 told, the Sign Up button taken down, "Signups are now closed" posted -- and the last job,
-`switch_off`, is one save: it cancels the close timer and every wizard's timers, forgets the
-signup channel and the window beside it, brings the module's flag down and audits the switch-off;
+`switch_off`, is one save: it forgets the signup channel and the window beside it, brings the
+module's flag down and audits the switch-off; once it is saved the job `disarm_timers` cancels the
+close timer and every wizard's timers (never inside the save, so that one that fails keeps them);
 where the window was not recorded closed (the closed notice or the drivers' return was discarded)
 it also moves the season on, as the closed notice's record would have. A job Discord refuses stops
 the queue instead of being named and stepped over, and a Discard names what was not done in the
@@ -66,7 +67,14 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     configuration_fixed_refusal,
 )
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.signup.services.closing_steps import POST_CLOSED, closing_steps, window_close_steps
+from leaguebot.signup.services.closing_steps import (
+    DISARM_TIMERS,
+    POST_CLOSED,
+    closing_steps,
+    disarm_timers_step,
+    disarming,
+    window_close_steps,
+)
 from leaguebot.signup.services.window_changes import (
     RETURN_DRIVERS,
     discarded,
@@ -186,9 +194,6 @@ def signup_off_change(
         cursor = await db.execute("SELECT signup_channel_id FROM signup_module_config WHERE id = 1")
         config = await cursor.fetchone()
         channel_id = None if config is None else config["signup_channel_id"]
-        cancel_close_timer()
-        for account in wizards:
-            cancel_timers(account)
         window_open = ctx.payload["window"] is not None
         if window_open and not window_was_closed(ctx.steps):
             # The closed notice's record moves the season on; without it the module's going off
@@ -201,8 +206,13 @@ def signup_off_change(
             audits=(AuditRecord("MODULE_DISABLE", {"module": "signup"}, {}),),
             lines=() if window_open else (f"{ctx.named} | /module disable signup | Success",),
             then=(
-                () if channel_id is None
-                else (PlannedStep(CLEAR_OVERWRITES, {"channel_id": int(channel_id)}),)
+                # A close timer is armed only for a configuration's window: none is left to take
+                # away where there is no configuration.
+                *disarming(wizards, close_timer=config is not None),
+                *(
+                    () if channel_id is None
+                    else (PlannedStep(CLEAR_OVERWRITES, {"channel_id": int(channel_id)}),)
+                ),
             ),
             follow_ons=(
                 FollowOn(
@@ -293,6 +303,9 @@ def signup_off_change(
             cancel_timers=cancel_timers,
         ),
         SWITCH_OFF: Step(SWITCH_OFF, StepKind.SAVE, switch_off, describe=describe_switch_off),
+        DISARM_TIMERS: disarm_timers_step(
+            cancel_timers=cancel_timers, cancel_close_timer=cancel_close_timer
+        ),
         CLEAR_OVERWRITES: Step(
             CLEAR_OVERWRITES, StepKind.ACT, clear_overwrites, describe=describe_clear
         ),

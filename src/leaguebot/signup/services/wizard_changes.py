@@ -14,9 +14,9 @@ naming the cause so that nothing is left to stop the queue. Its jobs are:
   that marks the job done, so the row names a channel only once it is certain to stand. A job
   that created a channel and failed to save its row keeps the channel's id; the next try deletes
   it before it creates another, so no channel is ever left unnamed;
-- `start` (a save) moves the driver to Pending Signup Completion and takes away the timers an
-  earlier signup left, and `arm_inactivity` arms the 24 hours they have to answer, from the
-  moment the job runs;
+- `start` (a save) moves the driver to Pending Signup Completion, `disarm_timers` takes away the
+  timers an earlier signup left (a job after the save, never inside it: a save that fails leaves
+  them), and `arm_inactivity` arms the 24 hours they have to answer, from the moment the job runs;
 - `post_welcome` takes the typing away where the first question is answered by a button, and posts
   the welcome and that question in the new channel, with the "Signup | Started" line.
 
@@ -85,6 +85,7 @@ from leaguebot.signup.services.closing_steps import (
     CHANNEL_GONE,
     CLOSE_SIGNUP,
     DELETE_KIND,
+    DISARM_TIMERS,
     END,
     EXPIRED,
     EXPIRED_NOTICE,
@@ -92,6 +93,8 @@ from leaguebot.signup.services.closing_steps import (
     KIND as CLOSING,
     SIGNUP_NOTICE,
     closing_steps,
+    disarm_timers_step,
+    disarming,
     take_reason_down,
 )
 from leaguebot.signup.services.signup_posting import delete_channel, post
@@ -265,9 +268,13 @@ def start_change(
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"])}
-        return tuple(
-            PlannedStep(name, dict(shared))
-            for name in (DELETE_OLD_CHANNEL, CREATE_CHANNEL, START_JOB, ARM_INACTIVITY, POST_WELCOME)
+        return (
+            PlannedStep(DELETE_OLD_CHANNEL, dict(shared)),
+            PlannedStep(CREATE_CHANNEL, dict(shared)),
+            PlannedStep(START_JOB, dict(shared)),
+            *disarming([shared["user_id"]]),
+            PlannedStep(ARM_INACTIVITY, dict(shared)),
+            PlannedStep(POST_WELCOME, dict(shared)),
         )
 
     async def _guild(ctx: StepContext) -> discord.Guild:
@@ -363,7 +370,6 @@ def start_change(
 
     async def start(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        cancel_timers(user_id)
         await drivers().transition_on(db, user_id, DriverState.PENDING_SIGNUP_COMPLETION)
         return StepResult(result={})
 
@@ -474,6 +480,7 @@ def start_change(
         START_JOB: Step(
             START_JOB, StepKind.SAVE, start, still_due=has_channel, describe=describe_start
         ),
+        DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers, still_due=has_started),
         ARM_INACTIVITY: Step(
             ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=has_started,
             describe=describe_arm,
@@ -516,9 +523,9 @@ def end_change(
     asker, and ``found``, `PANEL` (the default), `DELETED` or `RESTART`). Its job
     `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
-    Signed Up and the wizard ended in the same save, the timers taken
-    away and the line written ("Withdrawn", "Rejected" with the manager and the reason, or the
-    lapse).
+    Signed Up and the wizard ended in the same save, and the line written
+    ("Withdrawn", "Rejected" with the manager and the reason, or the lapse); `disarm_timers`
+    takes the timers away after it, as a job of its own, so that a save that fails keeps them.
 
     A withdrawal is refused by the check where the signup has already ended (the transition to Not
     Signed Up is not one the state machine allows from where they stand), telling the driver so and
@@ -620,13 +627,16 @@ def end_change(
             # The panel's job found the name; the channel is gone, so nothing follows `end`.
             shared_end.update({key: payload[key] for key in ("channel_id", "named")})
             shared_end["found"] = payload.get("found", PANEL)
-            return (PlannedStep(END_JOB, shared_end),)
+            return (PlannedStep(END_JOB, shared_end), *disarming([user_id]))
         if payload["reason"] == REJECTED:
             shared_end.update({
                 key: payload[key]
                 for key in ("actor_id", "actor_name", "text", "reason_message_id")
             })
-        planned = [PlannedStep(NAME_JOB, {"user_id": user_id}), PlannedStep(END_JOB, shared_end)]
+        planned = [
+            PlannedStep(NAME_JOB, {"user_id": user_id}), PlannedStep(END_JOB, shared_end),
+            *disarming([user_id]),
+        ]
         channel_id = payload.get("channel_id")
         if payload["reason"] == EXPIRED and channel_id is not None:
             shared = {"user_id": user_id, "channel_id": int(channel_id)}
@@ -646,7 +656,6 @@ def end_change(
         wizard_row = await cursor.fetchone()
         await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
         await signup().end_wizard_on(db, user_id)
-        cancel_timers(user_id)
         named = member_named(None, int(user_id))
         for view in ctx.steps:
             if view.name == NAME_JOB and view.done:
@@ -763,6 +772,7 @@ def end_change(
                 END_JOB, StepKind.SAVE, end, describe=describe_end,
                 undiscardable=would_never_end,
             ),
+            DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers),
             **closing_steps(now=now, arm_once=arm_once),
         },
         check=check,
@@ -939,8 +949,9 @@ def member_left_change(
     nothing to clean up: the driver has no wizard collecting answers and is not awaiting review or
     a correction choice, or they have signed up again into another channel meanwhile. Its jobs
     are `name_driver`, which finds the name and state for the line (a save waits on no second
-    connection); `leave` (a save), which takes the driver's timers away, moves them to Not Signed
-    Up, keeps the wizard's row while a channel stands to be deleted, and writes the line; and
+    connection); `leave` (a save), which moves them to Not Signed
+    Up, keeps the wizard's row while a channel stands to be deleted, and writes the line;
+    `disarm_timers`, which takes the driver's timers away once `leave` is saved; and
     `delete_channel`, which deletes the channel at once, with no hold, and whose record deletes the
     wizard's row. The check lets every departure be asked and judges it as the change comes up to
     run. A member who leaves while the queue is stopped keeps their channel and state
@@ -979,6 +990,7 @@ def member_left_change(
         planned = [
             PlannedStep(NAME_JOB, {"user_id": user_id}),
             PlannedStep(LEAVE_JOB, {"user_id": user_id, "channel_id": payload.get("channel_id")}),
+            *disarming([user_id]),
         ]
         if payload.get("channel_id") is not None:
             planned.append(PlannedStep(DELETE_CHANNEL, {
@@ -998,7 +1010,6 @@ def member_left_change(
 
     async def leave(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        cancel_timers(user_id)
         # A driver who has already moved on is cleaned up all the same; any other error is not
         # swallowed (#457).
         try:
@@ -1050,6 +1061,7 @@ def member_left_change(
         steps={
             NAME_JOB: Step(NAME_JOB, StepKind.ACT, name_driver, describe=describe_name),
             LEAVE_JOB: Step(LEAVE_JOB, StepKind.SAVE, leave, describe=describe_leave),
+            DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers, still_due=left),
             DELETE_CHANNEL: Step(
                 DELETE_CHANNEL, StepKind.DELETE, delete, still_due=held,
                 describe=describe_delete, record=forget,

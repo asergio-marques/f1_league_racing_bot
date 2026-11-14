@@ -641,8 +641,9 @@ async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-#: The jobs that close the signup window in its channel, wherever the close plans them.
-WINDOW_JOBS = ("delete_button", "post_closed")
+#: The jobs that close the signup window in its channel, wherever the close plans them, and the
+#: job after the close's save that takes its timers away.
+WINDOW_JOBS = ("delete_button", "post_closed", "disarm_timers")
 
 
 async def test_the_jobs_run_in_order(tmp_path):

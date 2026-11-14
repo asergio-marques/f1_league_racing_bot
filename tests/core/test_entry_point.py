@@ -667,7 +667,10 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         [job.name for job in jobs] for jobs in bot.season_end_closes.call(cause="season end")
     ] == [["close_window"]]
     assert [sorted(steps) for steps in bot.season_end_steps.call(line_prefix=None)] == [
-        ["close_signup", "close_window", "delete_button", "post_closed", "signup_notice"],
+        [
+            "close_signup", "close_window", "delete_button", "disarm_timers", "post_closed",
+            "signup_notice",
+        ],
         ["delete_forecast"],
     ]
     assert not hasattr(bot, "season_end_untold")

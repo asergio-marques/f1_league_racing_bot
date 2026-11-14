@@ -84,11 +84,14 @@ from leaguebot.signup.services.closing_steps import (
     CLOSE_SIGNUP,
     CLOSE_WINDOW,
     DELETE_BUTTON,
+    DISARM_TIMERS,
     POST_CLOSED,
     SIGNUP_NOTICE,
     WINDOW_CLOSED_NOTICE,
     WINDOW_NOT_CLOSED,
     closing_steps,
+    disarm_timers_step,
+    disarming,
     season_end_steps as driver_steps,
     window_close_jobs,
     window_close_steps,
@@ -494,6 +497,7 @@ def return_drivers_step(
     cancel_timers: Callable[[str], None],
     name: str = RETURN_DRIVERS,
     plan_after: PlanAfter = planned_by_a_member_s_close,
+    disarm_close_timer: bool = False,
 ) -> Step:
     """The job of a change that closes the window: one save that returns each driver still filling
     in the wizard to Not Signed Up, ends their wizard, cancels their timers and plans every job
@@ -502,7 +506,12 @@ def return_drivers_step(
     queue was asked for, and `module.off:signup`) it plans the Sign Up button's deletion and the
     "Signups are now closed" post, then each driver's notice, lock and deletion's arming; its
     payload is the ``audit_action`` the close is audited under. Its other arguments are those of
-    `window_close_change`; a season's end plans its own (`season_end_close_step`)."""
+    `window_close_change`; a season's end plans its own (`season_end_close_step`).
+
+    The timers are taken away by the first job it plans (`disarm_timers`, which the change
+    registers), never inside the save: a save that fails returns nobody and keeps every timer.
+    *disarm_close_timer* has that job take away the window's close timer too, whether or not any
+    driver was returned."""
 
     async def return_drivers(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         states = [state.value for state in returned_by_close]
@@ -529,9 +538,13 @@ def return_drivers_step(
             )
             wizard = await cursor.fetchone()
             returned.append((account, None if wizard is None else wizard["signup_channel_id"]))
-        planned = plan_after(ctx, channel_id, button_id, returned)
-        for account, _wizard_channel in returned:
-            cancel_timers(account)
+        planned = (
+            *disarming(
+                [account for account, _ in returned],
+                close_timer=disarm_close_timer,
+            ),
+            *plan_after(ctx, channel_id, button_id, returned),
+        )
         return StepResult(result={"returned": [account for account, _ in returned]}, then=planned)
 
     async def describe_return(_ctx: StepContext) -> str:
@@ -566,10 +579,10 @@ def season_end_close_step(
     returning = return_drivers_step(
         signup_module_service=signup_module_service, returned_by_close=returned_by_close,
         cancel_timers=cancel_timers, name=CLOSE_WINDOW, plan_after=planned_by_a_season_s_end,
+        disarm_close_timer=True,
     )
 
     async def close_window(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        cancel_close_timer()
         return await returning.run(db, ctx)
 
     async def window_stands(_ctx: StepContext) -> bool:
@@ -628,6 +641,9 @@ def season_end_steps(
             modules=modules, signup_module_service=signup_module_service,
             returned_by_close=returned_by_close, cancel_timers=cancel_timers,
             cancel_close_timer=cancel_close_timer, line_prefix=line_prefix,
+        ),
+        DISARM_TIMERS: disarm_timers_step(
+            cancel_timers=cancel_timers, cancel_close_timer=cancel_close_timer
         ),
     }
     steps[POST_CLOSED] = dataclasses.replace(
@@ -797,6 +813,7 @@ def window_close_change(
     steps: dict[str, Step] = {
         **closing_steps(now=now, arm_once=arm_once),
         **window_close_steps(signup_module_service=signup_module_service, now=now),
+        DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers),
         RETURN_DRIVERS: dataclasses.replace(
             return_drivers_step(
                 signup_module_service=signup_module_service, returned_by_close=returned_by_close,

@@ -988,7 +988,8 @@ async def test_a_driver_moved_on_before_their_gone_channel_is_found_is_not_ended
 
 async def test_ending_a_signup_whose_channel_is_gone_cannot_be_discarded(tmp_path):
     """Kimi awaits approval, his signup channel 6405 deleted, and the ending of his signup for
-    the gone channel is asked with his name already found, so its one job is `end`. Its save
+    the gone channel is asked with his name already found, so its jobs are `end` and, after it,
+    `disarm_timers`. Its save
     fails, stopping the league lane there. A league admin's Discard on it is refused, saying Kimi
     would be left awaiting approval with no signup channel and no review panel, and the season's
     placements could not be confirmed; he is still awaiting approval and the queue stays stopped.
@@ -1004,7 +1005,7 @@ async def test_ending_a_signup_whose_channel_is_gone_cannot_be_discarded(tmp_pat
     await run_queue(league.bot)
     stopped = await stopped_job(league.db_path, "league")
     assert stopped is not None and stopped["name"] == "end"
-    assert await _job_names(league, END_KIND) == ["end"]
+    assert await _job_names(league, END_KIND) == ["end", "disarm_timers"]
 
     refused = await discard_job(league.bot, lane="league")
 
@@ -1574,9 +1575,6 @@ async def test_a_member_leaving_whose_signup_record_cannot_be_read_stops_the_lea
     assert not any("Driver left server" in line for line in league.bot.log_channel.sent)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#286: a driver's timers are disarmed inside the save, not in a job after it"
-)
 async def test_a_save_that_fails_keeps_the_driver_s_timers(tmp_path, monkeypatch):
     """Kimi, part-way through signing up, leaves the server, and the database fails as the
     queue saves his leaving. The save is rolled back whole, so his timers are kept with it: his

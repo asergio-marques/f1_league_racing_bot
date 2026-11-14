@@ -480,13 +480,16 @@ async def test_a_window_closed_since_the_ask_refuses_the_switch_off(tmp_path):
 async def test_closed_signups_are_not_force_closed_again(tmp_path):
     """Closing transitions every in-progress driver and posts into their channels; running it
     over an already-closed signup would notice nobody and post nothing. With the window closed,
-    the switch-off has no close job: only `switch_off`, and the `clear_overwrites` it plans."""
+    the switch-off has no close job: only `switch_off`, and the `disarm_timers` and
+    `clear_overwrites` it plans."""
     league = await _league(tmp_path)
 
     await _switch_off(league)
     await run_queue(league.bot)
 
-    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "clear_overwrites"]
+    assert [job["name"] for job in await _off_jobs(league)] == [
+        "switch_off", "disarm_timers", "clear_overwrites",
+    ]
 
 
 async def test_the_close_timer_is_cancelled(tmp_path):
@@ -608,7 +611,9 @@ async def test_the_overwrites_the_bot_applied_are_cleared(tmp_path):
     assert set(_cleared(channel)) == {
         guild.default_role, guild.me, guild.get_role(BASE_ROLE), guild.get_role(interaction_role),
     }
-    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "clear_overwrites"]
+    assert [job["name"] for job in await _off_jobs(league)] == [
+        "switch_off", "disarm_timers", "clear_overwrites",
+    ]
 
 
 async def test_a_league_with_no_base_role_reverts_the_rest(tmp_path):
@@ -702,7 +707,8 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
 async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
     """Nothing was ever applied, so there is nothing to revert, and asking Discord for
     channel `None` would raise: the module's configuration names no channel, and the
-    switch-off's only job is `switch_off`."""
+    switch-off's jobs are `switch_off` and the `disarm_timers` after it, with no
+    `clear_overwrites`."""
     league = await _league(tmp_path, configured=False)
     await league.write(
         "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
@@ -713,7 +719,7 @@ async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
     await _switch_off(league)
     await run_queue(league.bot)
 
-    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off"]
+    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "disarm_timers"]
     assert channel.set_permissions.await_count == 0
     assert not await league.bot.module_service.is_signup_enabled()
 

@@ -117,8 +117,11 @@ from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
+    DISARM_TIMERS,
     INACTIVITY_TIMER,
     KIND as CLOSING,
+    disarm_timers_step,
+    disarming,
     take_reason_down,
 )
 from leaguebot.signup.services.signup_posting import post
@@ -219,7 +222,8 @@ def approve_change(
     """The `signup.approve` change type, for the builder to register.
 
     The payload is ``user_id`` (the driver's account, as text) and ``actor_name`` (the manager's
-    display name, which the driver's notice gives). *cancel_timers* takes away a driver's timers.
+    display name, which the driver's notice gives). *cancel_timers* takes away a driver's timers,
+    in a job after the save that approves, so that a save that fails keeps them.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -236,7 +240,11 @@ def approve_change(
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "actor_name": str(payload["actor_name"])}
-        return (PlannedStep(APPROVE_JOB, dict(shared)), PlannedStep(GRANT_ROLE, dict(shared)))
+        return (
+            PlannedStep(APPROVE_JOB, dict(shared)),
+            *disarming([shared["user_id"]]),
+            PlannedStep(GRANT_ROLE, dict(shared)),
+        )
 
     async def approve(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
@@ -246,7 +254,6 @@ def approve_change(
             await signup().set_total_lap_ms_on(db, user_id, total_lap_ms(record.lap_times))
         await drivers().transition_on(db, user_id, DriverState.UNASSIGNED)
         await signup().mark_approved_on(db, user_id)
-        cancel_timers(user_id)
         follow_ons: tuple[FollowOn, ...] = ()
         if wizard is not None and wizard.signup_channel_id is not None:
             follow_ons = (FollowOn(
@@ -332,6 +339,7 @@ def approve_change(
         plan=plan,
         steps={
             APPROVE_JOB: Step(APPROVE_JOB, StepKind.SAVE, approve, describe=describe_approve),
+            DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers, still_due=approved),
             GRANT_ROLE: Step(
                 GRANT_ROLE, StepKind.ACT, grant_role, still_due=approved, describe=describe_grant
             ),

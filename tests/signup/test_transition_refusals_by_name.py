@@ -237,7 +237,10 @@ async def _leaving_after_moving_on(tmp_path, monkeypatch) -> None:
         "user_id": USER_ID, "channel_id": None,
     })
     assert states == {USER_ID: DriverState.NOT_SIGNED_UP.value}
-    cancel_timers.assert_called_once_with(USER_ID)
+    cancel_timers.assert_not_called()
+    assert [(job.name, job.payload["accounts"]) for job in change.plan(
+        {"user_id": USER_ID, "channel_id": None}
+    ) if job.name == "disarm_timers"] == [("disarm_timers", [USER_ID])]
     signup.delete_wizard_on.assert_awaited_once()
     assert signup.delete_wizard_on.await_args.args[1] == USER_ID
     assert len(result.lines) == 1
@@ -286,7 +289,10 @@ async def _close_after_one_moved_on(tmp_path, monkeypatch) -> None:
     assert result.result == {"returned": [OTHER_ID]}
     assert states == {USER_ID: pending.value, OTHER_ID: DriverState.NOT_SIGNED_UP.value}
     assert [call.args[1] for call in signup_service.end_wizard_on.await_args_list] == [OTHER_ID]
-    cancel_timers.assert_called_once_with(OTHER_ID)
+    cancel_timers.assert_not_called()
+    assert [(job.name, job.payload["accounts"]) for job in result.then[:1]] == [
+        ("disarm_timers", [OTHER_ID])
+    ]
 
 
 #: One case per catch: the save, where the state machine refuses the driver's move inside it.

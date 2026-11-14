@@ -489,7 +489,8 @@ async def test_a_channel_gone_when_the_panel_is_due_ends_the_signup_once_it_is_s
     gone.send.assert_not_awaited()
     [ending] = [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
     assert (ending["state"], ending["lane"]) == ("DONE", "league")
-    assert [job["name"] for job in await step_rows(league.db_path, ending["id"])] == ["end"]
+    assert [job["name"] for job in await step_rows(league.db_path, ending["id"])] == [
+        "end", "disarm_timers"]
 
 
 async def test_a_signup_ended_for_its_gone_channel_is_logged_naming_the_driver_and_the_channel(

@@ -123,8 +123,8 @@ def _disarmed(league: SeasonLeague) -> list[tuple[Any, ...]]:
 
 async def test_a_channel_deleted_while_its_signup_awaits_approval_ends_the_signup(tmp_path):
     """Kimi awaits approval, and his signup channel 6405 is deleted by hand. The bot hears it and
-    the queue runs: one `signup.end`, asked as the bot on the league lane, runs its single job
-    `end`. Kimi is Not Signed Up, his wizard ended (still naming 6405), nothing is sent to the
+    the queue runs: one `signup.end`, asked as the bot on the league lane, runs its job
+    `end` and `disarm_timers` after it. Kimi is Not Signed Up, his wizard ended (still naming 6405), nothing is sent to the
     gone channel, and the log channel is told once, naming him and the channel, that his signup
     channel was deleted and that he may press Sign Up again while signups are open."""
     league = await _league(tmp_path)
@@ -135,7 +135,7 @@ async def test_a_channel_deleted_while_its_signup_awaits_approval_ends_the_signu
 
     [end] = await _endings(league)
     assert (end["lane"] or "league", end["origin"], end["state"]) == ("league", "BOT", "DONE")
-    assert await _job_names(league, END_KIND) == ["end"]
+    assert await _job_names(league, END_KIND) == ["end", "disarm_timers"]
     assert await _driver_state(league) == "NOT_SIGNED_UP"
     wizard = await _wizard(league)
     assert wizard is not None

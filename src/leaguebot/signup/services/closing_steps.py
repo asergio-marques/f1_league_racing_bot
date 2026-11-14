@@ -19,7 +19,7 @@ lane alone. It needs only its channel to stand, not the signup it closes: that h
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -70,6 +70,11 @@ CLOSE_SIGNUP = "close_signup"
 ARM_DELETION = "arm_deletion"
 DELETE_BUTTON = "delete_button"
 POST_CLOSED = "post_closed"
+#: The job, after the save that made them no longer due, that takes timers away: a driver's
+#: inactivity, deletion and correction timers (``accounts``) and the window's close timer
+#: (``close_timer``). A timer is disarmed by a job after the save, never inside it, so that a
+#: save that fails leaves the timers it would have taken away.
+DISARM_TIMERS = "disarm_timers"
 #: The job that closes the window at a season's end, which core plans through its hook for the
 #: close of what a module holds open.
 CLOSE_WINDOW = "close_window"
@@ -134,13 +139,53 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
 __all__ = [
     "ARM_DELETION", "BUTTON_KEPT", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "CLOSE_WINDOW",
     "DELETE_BUTTON", "DELETE_REASON",
-    "DELETE_TIMER",
+    "DELETE_TIMER", "DISARM_TIMERS",
     "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
     "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry", "close_driver_signup",
     "closing_change", "closing_steps", "driver_returned_jobs", "drivers_returned_on", "post_driver_notice",
     "reason_delete_change", "season_end_closes", "season_end_steps", "take_reason_down", "window_close_jobs",
-    "window_close_steps",
+    "window_close_steps", "disarm_timers_step", "disarming",
 ]
+
+
+def disarming(
+    accounts: Sequence[str] = (), *, close_timer: bool = False
+) -> tuple[PlannedStep, ...]:
+    """The `disarm_timers` job for *accounts*' timers and, where *close_timer*, the window's close
+    timer, to plan after the save that made them no longer due; none where there is nothing to
+    take away."""
+    if not accounts and not close_timer:
+        return ()
+    return (PlannedStep(
+        DISARM_TIMERS, {"accounts": [str(account) for account in accounts], "close_timer": close_timer},
+    ),)
+
+
+def disarm_timers_step(
+    *,
+    cancel_timers: Callable[[str], None],
+    cancel_close_timer: Callable[[], None] | None = None,
+    still_due: Callable[[StepContext], Awaitable[bool]] | None = None,
+) -> Step:
+    """The `disarm_timers` job (`disarming`), for a change type to register: it takes away each
+    account's timers (*cancel_timers*) and, where the payload asks it, the window's close timer
+    (*cancel_close_timer*, which a change that never asks it need not be handed). *still_due*
+    judges the save it follows, as for any job that depends on one. Nothing is read or written in
+    the database: a timer that is already gone is nothing to take away."""
+
+    async def disarm(ctx: StepContext) -> StepResult:
+        for account in ctx.step_payload["accounts"]:
+            cancel_timers(str(account))
+        if ctx.step_payload["close_timer"]:
+            if cancel_close_timer is None:
+                raise RuntimeError("the close timer was asked taken away of a change that has none")
+            cancel_close_timer()
+        return StepResult(result={})
+
+    async def describe(_ctx: StepContext) -> str:
+        return "taking the signup's timers away"
+
+    return Step(DISARM_TIMERS, StepKind.ACT, disarm, still_due=still_due, describe=describe)
 
 
 async def ask_expiry(queue: "ChangeQueue", db_path: str, user_id: str) -> int | None:
