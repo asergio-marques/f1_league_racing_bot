@@ -22,8 +22,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from leaguebot.core.utils.input_validator import parse_nationality, parse_time
-from leaguebot.results.utils.results_formatter import render_lap_time
+from leaguebot.core.utils.input_validator import parse_nationality, parse_time, render_lap_time
 from leaguebot.signup.services.closing_steps import (
     DELETE_TIMER,
     INACTIVITY_TIMER,

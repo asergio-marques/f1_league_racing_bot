@@ -322,7 +322,8 @@ def build_results_drawing(root, template_key: str, teams):
             # a classification rather than as a field of drivers tied with the leader.
             cycle = (index - 1) // len(cases)
             if cycle and best_lap:
-                from leaguebot.results.utils.results_formatter import parse_lap_time, render_lap_time
+                from leaguebot.core.utils.input_validator import render_lap_time
+                from leaguebot.results.utils.results_formatter import parse_lap_time
 
                 parsed = parse_lap_time(best_lap)
                 if parsed is not None:

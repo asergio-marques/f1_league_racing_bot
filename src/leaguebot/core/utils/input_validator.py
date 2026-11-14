@@ -406,6 +406,16 @@ def parse_time(text: str | None) -> int | None:
     return ((hours * 60 + minutes) * 60 + seconds) * 1000 + int(match.group("ms"))
 
 
+def render_lap_time(ms: int) -> str:
+    """Format ms as M:SS.mmm or H:MM:SS.mmm — the hours shown only where there are any."""
+    total_s, ms_part = divmod(ms, 1000)
+    total_m, secs = divmod(total_s, 60)
+    hours, mins = divmod(total_m, 60)
+    if hours:
+        return f"{hours}:{mins:02d}:{secs:02d}.{ms_part:03d}"
+    return f"{mins}:{secs:02d}.{ms_part:03d}"
+
+
 def parse_gap(text: str | None) -> int | None:
     """The milliseconds a gap to the leader stands for: ``+`` and a time, or None."""
     raw = (text or "").strip()

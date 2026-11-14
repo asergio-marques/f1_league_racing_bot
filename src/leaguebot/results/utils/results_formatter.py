@@ -32,7 +32,7 @@ from leaguebot.results.models.session_result import (
     RaceSessionResult,
 )
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-from leaguebot.core.utils.input_validator import parse_time
+from leaguebot.core.utils.input_validator import parse_time, render_lap_time
 
 _SESSION_LABELS: dict[SessionType, str] = {
     SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
@@ -53,16 +53,6 @@ UNKNOWN_TEAM = "unknown team"
 def parse_lap_time(s: str) -> int | None:
     """A stored lap time in milliseconds, or None — read by the shared strict parser (#362)."""
     return parse_time(s)
-
-
-def render_lap_time(ms: int) -> str:
-    """Format ms as M:SS.mmm or H:MM:SS.mmm — the hours shown only where there are any."""
-    total_s, ms_part = divmod(ms, 1000)
-    total_m, secs = divmod(total_s, 60)
-    hours, mins = divmod(total_m, 60)
-    if hours:
-        return f"{hours}:{mins:02d}:{secs:02d}.{ms_part:03d}"
-    return f"{mins}:{secs:02d}.{ms_part:03d}"
 
 
 def render_gap(gap_ms: int) -> str:

@@ -456,7 +456,6 @@ def test_parse_time_is_strict(typed):
     assert parse_time(typed) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#286: render_lap_time is not yet in core's input_validator")
 @pytest.mark.parametrize("ms", [0, 999, 58_123, 83_456, 599_999, 3_723_456, 7_200_000])
 def test_parse_time_reads_every_stored_shape(ms):
     """Stored times are written by these, so the strict reader must read all they write.
