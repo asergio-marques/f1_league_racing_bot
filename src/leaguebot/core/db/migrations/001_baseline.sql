@@ -781,7 +781,10 @@ CREATE TABLE "signup_wizard_records" (
     created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
     -- When the correction choices a manager asked for were posted in the driver's channel: the
     -- five minutes to choose run from then. NULL while no correction is awaited.
-    correction_offered_at       TEXT
+    correction_offered_at       TEXT,
+    -- When the hold on the driver's signup channel runs out: its deletion is due from then and
+    -- not before. NULL while the channel is not held.
+    held_until                  TEXT
 );
 CREATE INDEX idx_signup_wizard_channel
     ON signup_wizard_records(signup_channel_id);

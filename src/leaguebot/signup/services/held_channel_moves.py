@@ -6,7 +6,8 @@ the jobs, which core runs after the save; the steps here, handed back through th
 *driver_account_changed_steps*, are what they run:
 
 - `MOVE_HELD_CHANNEL` moves the channel's deletion timer to the new account, kept at the moment it
-  was already due (a day after the change where none stands), and the channel's permissions: the
+  was already due, by its timer or else the wizard's row (``held_until``), and a day after the
+  change where neither stands, and the channel's permissions: the
   new account may read it and not write, and the replaced account's own permission is removed. A
   timer is moved before the permissions, so that the channel is never left with nothing to delete
   it; run again after the timer has moved, it keeps the new account's. Discord refusing the
@@ -60,9 +61,12 @@ def held_channel_steps(
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
         scheduler = scheduler_service()
+        held = await signup().get_wizard(new)
         due = (
             scheduler.timer_due(DELETE_TIMER, replaced)
             or scheduler.timer_due(DELETE_TIMER, new)
+            or (None if held is None or held.held_until is None
+                else datetime.fromisoformat(held.held_until))
             or now() + HOLD
         )
         scheduler.arm_once(DELETE_TIMER, new, due)

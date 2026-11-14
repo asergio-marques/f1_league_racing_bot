@@ -352,7 +352,9 @@ def register_change_types(bot: "LeagueBot") -> None:
         INACTIVITY_TIMER, lambda key: ask_expiry(bot.change_queue, bot.db_path, str(key))
     )
     # A held signup channel's 24 hours ending asks its deletion, on the driver's own lane.
-    bot.change_queue.register(channel_delete_change(signup=lambda: bot.signup_module_service))
+    bot.change_queue.register(channel_delete_change(
+            signup=lambda: bot.signup_module_service, now=lambda: bot.change_queue.now()
+        ))
     bot.change_queue.register(
         member_left_change(
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,

@@ -245,6 +245,17 @@ async def wizard_channel(db_path: str, user_id: str) -> int | None:
     return None if row is None or row["signup_channel_id"] is None else int(row["signup_channel_id"])
 
 
+async def hold_until_on(db: aiosqlite.Connection, user_id: str, until: datetime) -> None:
+    """Record on the connection handed, committing nothing, that the hold on *user_id*'s signup
+    channel runs out at *until* (``held_until`` of their wizard's row). The channel's deletion is
+    due from then and not before, whether its timer survived a restart or not; the row's next
+    save as a wizard clears it."""
+    await db.execute(
+        "UPDATE signup_wizard_records SET held_until = ? WHERE discord_user_id = ?",
+        (until.isoformat(), user_id),
+    )
+
+
 def season_end_driver_steps(
     *,
     now: Callable[[], datetime],
@@ -319,20 +330,22 @@ def closing_steps(
         )
         return StepResult(result={})
 
-    def _hold(ctx: StepContext, channel: discord.TextChannel | None) -> None:
-        """A season's end's closing: the driver's timers away, the channel's deletion armed."""
+    def _hold(ctx: StepContext, channel: discord.TextChannel | None) -> dict[str, Any]:
+        """A season's end's closing: the driver's timers away, the channel's deletion armed. Gives
+        the result the step's record keeps the hold's end from."""
         user_id = str(ctx.step_payload["user_id"])
         if cancel_timers is not None:
             cancel_timers(user_id)
-        if channel is not None:
-            arm_once(DELETE_TIMER, user_id, now() + HOLD)
+        if channel is None:
+            return {}
+        until = now() + HOLD
+        arm_once(DELETE_TIMER, user_id, until)
+        return {"held_until": until.isoformat()}
 
     async def close_signup(ctx: StepContext) -> StepResult:
         held = bool(ctx.step_payload.get("hold"))
         if _passed_over(ctx):
-            if held:
-                _hold(ctx, None)
-            return StepResult(result={"no_channel": True})
+            return StepResult(result={"no_channel": True, **(_hold(ctx, None) if held else {})})
         channel = await _channel(ctx)
         member = None if channel is None else channel.guild.get_member(int(ctx.step_payload["user_id"]))
         if channel is not None and member is not None:
@@ -345,15 +358,21 @@ def closing_steps(
                 raise StepFailedOnDiscord(
                     f"the signup channel {channel.id} could not be locked"
                 ) from error
-        if held:
-            _hold(ctx, channel)
-        return StepResult(result={})
+        return StepResult(result=_hold(ctx, channel) if held else {})
 
     async def arm_deletion(ctx: StepContext) -> StepResult:
         if _passed_over(ctx):
             return StepResult(result={"no_channel": True})
-        arm_once(DELETE_TIMER, str(ctx.step_payload["user_id"]), now() + HOLD)
-        return StepResult(result={})
+        until = now() + HOLD
+        arm_once(DELETE_TIMER, str(ctx.step_payload["user_id"]), until)
+        return StepResult(result={"held_until": until.isoformat()})
+
+    async def record_hold(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """In the save that marks the arming done, the hold's end on the wizard's row, so that the
+        deletion is due from then whatever becomes of the timer."""
+        until = (result.result or {}).get("held_until")
+        if until is not None:
+            await hold_until_on(db, str(ctx.step_payload["user_id"]), datetime.fromisoformat(until))
 
     async def describe_notice(ctx: StepContext) -> str:
         return f"telling <@{ctx.step_payload['user_id']}> that their signup has closed"
@@ -372,8 +391,12 @@ def closing_steps(
             standing_posts.delete_replaced_step(DELETE_REASON), describe=describe_reason
         ),
         SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
-        CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
-        ARM_DELETION: Step(ARM_DELETION, StepKind.ACT, arm_deletion, describe=describe_arm),
+        CLOSE_SIGNUP: Step(
+            CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close, record=record_hold
+        ),
+        ARM_DELETION: Step(
+            ARM_DELETION, StepKind.ACT, arm_deletion, describe=describe_arm, record=record_hold
+        ),
     }
 
 
@@ -424,7 +447,9 @@ async def recover_wizards(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
     driver parked awaiting a correction parameter is released (`recover_correction_timeouts`); and
     each signup left unanswered for 24 hours, judged against *queue*'s clock, so that a caught-up
     expiry and one run on time take one path, has its expiry asked (`ask_expiry`). The change's
-    check drops what the driver has since moved on from. It arms nothing: a deadline still ahead
+    check drops what the driver has since moved on from. Each hold on a signup channel that ran out
+    meanwhile (``held_until``) has its deletion asked (`ask_channel_delete`), which the change's
+    check drops where the channel is no longer the driver's. It arms nothing: a deadline still ahead
     is a timer the scheduler's own store keeps through the restart, and an expiry asked of a wizard
     with no activity recorded is asked at once. SC-005.
     """
@@ -437,6 +462,15 @@ async def recover_wizards(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
             "WHERE wizard_state != 'UNENGAGED'"
         )
         wizards = await cursor.fetchall()
+        cursor = await db.execute(
+            "SELECT discord_user_id, held_until FROM signup_wizard_records "
+            "WHERE held_until IS NOT NULL"
+        )
+        holds = await cursor.fetchall()
+    for hold in holds:
+        # A hold that ran out while the bot was down: its timer may not have survived.
+        if datetime.fromisoformat(hold["held_until"]) <= now:
+            await ask_channel_delete(queue, bot.db_path, str(hold["discord_user_id"]))
     for wizard in wizards:
         user_id = str(wizard["discord_user_id"])
         if user_id in gone:
@@ -695,7 +729,7 @@ def closing_change(
         doing=lambda payload: f"Closing the signup of <@{payload['user_id']}>",
         outcome=outcome,
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
-        writes=(),
+        writes=("signup_wizard_records",),
     )
 
 

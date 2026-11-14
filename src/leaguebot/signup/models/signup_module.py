@@ -148,3 +148,6 @@ class SignupWizardRecord:
     #: When the correction choices a manager asked for were posted in the driver's channel (the
     #: five minutes to choose run from then); None while no correction is awaited.
     correction_offered_at: str | None = None
+    #: When the hold on the driver's signup channel runs out, from which its deletion is due
+    #: (ISO-8601 UTC); None while the channel is not held.
+    held_until: str | None = None

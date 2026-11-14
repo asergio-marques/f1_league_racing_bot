@@ -642,7 +642,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records WHERE discord_user_id = ?",
                 (discord_user_id,),
             )
@@ -658,7 +658,7 @@ class SignupModuleService:
         cursor = await db.execute(
             "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
             "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-            "       last_activity_at, correction_offered_at "
+            "       last_activity_at, correction_offered_at, held_until "
             "FROM signup_wizard_records WHERE discord_user_id = ?",
             (discord_user_id,),
         )
@@ -672,7 +672,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records "
                 "WHERE signup_channel_id = ?",
                 (channel_id,),
@@ -713,6 +713,7 @@ class SignupModuleService:
     ) -> None:
         """Insert or update a driver's wizard row on the connection handed; commits nothing.
 
+        A signup that begins or goes on is not held, so the row's ``held_until`` is cleared.
         What `save_wizard_on` writes, for a change that saves the row in the same save as a job's
         mark. *snapshot_json* is the configuration as `_snapshot_to_dict` freezes it, already
         encoded, so that a job which made it can hand it on in its result.
@@ -730,7 +731,8 @@ class SignupModuleService:
                 config_snapshot_json     = excluded.config_snapshot_json,
                 draft_answers_json       = excluded.draft_answers_json,
                 current_lap_track_index  = excluded.current_lap_track_index,
-                last_activity_at         = excluded.last_activity_at
+                last_activity_at         = excluded.last_activity_at,
+                held_until               = NULL
             """,
             (
                 discord_user_id,
@@ -807,7 +809,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records "
                 "WHERE wizard_state != 'UNENGAGED'",
             )
@@ -820,7 +822,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records WHERE wizard_state != 'UNENGAGED'"
             )
             rows = await cursor.fetchall()
@@ -873,6 +875,7 @@ class SignupModuleService:
             current_lap_track_index=row["current_lap_track_index"],
             last_activity_at=row["last_activity_at"],
             correction_offered_at=row["correction_offered_at"],
+            held_until=row["held_until"],
         )
 
     # ── Config snapshot ───────────────────────────────────────────────

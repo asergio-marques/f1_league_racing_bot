@@ -1352,10 +1352,6 @@ async def test_the_24_hour_deletion_runs_on_the_driver_s_lane_and_a_refusal_stop
     assert league.channel(KIMI_CHANNEL) is held
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: a held channel's deletion is judged by its timer alone, not by when its hold runs "
-    "out, and the start-up asks none that fell due while the bot was down"
-))
 async def test_a_held_channel_due_while_down_is_deleted_on_start(tmp_path):
     """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
     channel (6405) is held for 24 hours. Twenty-three hours on, its deletion is asked early (its

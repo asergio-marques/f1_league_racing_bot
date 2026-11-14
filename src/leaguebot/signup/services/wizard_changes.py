@@ -807,14 +807,20 @@ async def delete_signup_channel(ctx: StepContext, reason: str) -> StepResult:
     return StepResult(result={})
 
 
-def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> ChangeType:
+def channel_delete_change(
+    *, signup: Callable[[], "SignupModuleService"], now: Callable[[], datetime]
+) -> ChangeType:
     """The `signup.channel.delete` change type, for the builder to register.
 
     The payload is ``user_id`` (the account whose wizard holds the channel), ``channel_id`` (the
     channel held). A hold's 24-hour timer asks it on the driver's own lane (``channel:<id>``),
     where Discord's refusal stops that lane alone. It is not due, and is dropped, where the
-    driver's wizard no longer names the channel: a new signup, or a move to another account, has
-    taken it over. Its one job `delete_channel` deletes the channel, one already gone being
+    driver's wizard no longer names the channel, a new signup or a move to another account having
+    taken it over, or where the hold's end (the row's ``held_until``) is still ahead of *now*, the
+    queue's clock: a timer that fires early deletes nothing, and one lost to a restart is made up
+    by the start-up step, which asks for each hold past its end. Signup being off does not stop
+    it: a held channel is still deleted on time, the one piece of signup's work that runs while
+    the module is off. Its one job `delete_channel` deletes the channel, one already gone being
     nothing to do, and its record
     deletes the wizard's row in the save that marks the job done, so the row names a channel only
     while the channel may stand. *signup* is a getter, so that the service is the one the bot
@@ -825,6 +831,8 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
         row = await signup().get_wizard(str(ctx.payload["user_id"]))
         if row is None or row.signup_channel_id != int(ctx.payload["channel_id"]):
             return Verdict.not_due("the driver no longer holds that signup channel")
+        if row.held_until is not None and datetime.fromisoformat(row.held_until) > now():
+            return Verdict.not_due("the hold on the signup channel has not yet run out")
         return Verdict.go()
 
     async def held(ctx: StepContext) -> bool:
