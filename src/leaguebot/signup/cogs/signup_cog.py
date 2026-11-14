@@ -1155,8 +1155,9 @@ class SignupCog(commands.Cog):
         track_list: list[str] = []
         if track_ids and track_ids.strip():
             parts = [t.strip() for t in re.split(r"[,\s]+", track_ids.strip()) if t.strip()]
-            async with get_connection(self.bot.db_path) as db:
-                track_name_map = await track_service.get_track_name_map(db)
+            track_name_map = {
+                str(t["id"]): t["name"] for t in await track_service.list_tracks(self.bot.db_path)
+            }
             unknown = [t for t in parts if t not in track_name_map]
             if unknown:
                 bad = ", ".join(f"'{t}'" for t in unknown)

@@ -177,7 +177,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
