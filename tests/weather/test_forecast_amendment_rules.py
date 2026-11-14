@@ -75,3 +75,102 @@ async def test_the_drawn_phases_are_read_on_the_connection_handed(tmp_path):
         await db.rollback()
 
     assert list(part.refusals) == [FIRST_FORECAST_REFUSAL]
+
+
+# ---------------------------------------------------------------------------
+# "Would it have run, were the round always to have stood at its new moment?"
+# ---------------------------------------------------------------------------
+
+#: Why each test below fails until weather judges its own part of an amendment.
+NOT_YET_WEATHER_S = (
+    "#287: the forecasts' part of an amendment is still judged in core's judge_amendment, not by "
+    "weather's judge_forecasts"
+)
+
+
+def _forecasts(changes, *, moment, windows=DEFAULT_WEATHER, drawn=None):
+    """The forecasts' part of *changes*, leaving the round at *moment*, judged at NOW."""
+    from leaguebot.weather.services.forecast_amendment import judge_forecasts
+
+    return judge_forecasts(changes, moment=moment, now=NOW, windows=windows, drawn=drawn or {})
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
+def test_a_long_delay_puts_every_phase_back_in_question():
+    """A round a day out, its Phase 1 drawn, moved to 30 days out: every phase is armed again."""
+    moment = NOW + timedelta(days=30)
+    judgement = _forecasts({"scheduled_at": moment}, moment=moment, drawn={1: True})
+    assert all(p.rearm for p in judgement.phases.values())
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
+def test_a_delay_can_leave_phase_one_standing_while_the_later_two_are_rearmed():
+    """The middle case the rule exists for: one phase keeps, two go back.
+
+    Round three days out, its Phase 1 drawn, delayed to four. Phase 1 falls five days before,
+    which is behind us either way, so the forecast already drawn stands. Phases 2 and 3 have not
+    come round under the new moment, so they are armed again. Nothing is refused.
+    """
+    moment = NOW + timedelta(days=4)
+    judgement = _forecasts({"scheduled_at": moment}, moment=moment, drawn={1: True})
+    assert not judgement.part.refusals
+    assert judgement.phases[1].stands
+    assert judgement.phases[2].rearm
+    assert judgement.phases[3].rearm
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
+def test_a_phase_falling_exactly_now_counts_as_having_run():
+    """A round 30 days out moved to five days out, its Phase 1 landing exactly now: Phase 1
+    stands, as having run, and Phase 2 is armed again."""
+    moment = NOW + timedelta(days=5)
+    judgement = _forecasts({"scheduled_at": moment}, moment=moment)
+    assert judgement.phases[1].stands
+    assert judgement.phases[2].rearm
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
+def test_no_phases_are_judged_without_configured_horizons():
+    """With no forecast horizons, a track change to a round 30 days out judges no phase."""
+    judgement = _forecasts(
+        {"track_name": "Silverstone Circuit"}, moment=NOW + timedelta(days=30), windows=None
+    )
+    assert judgement.phases == {}
+
+
+# ---------------------------------------------------------------------------
+# What the track and the format may no longer be
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
+def test_the_track_may_not_be_amended_once_phase_one_has_run():
+    """A round three days out, its Phase 1 drawn, no horizons to put it back in question: its
+    track change is refused for the first forecast."""
+    judgement = _forecasts(
+        {"track_name": "Silverstone Circuit"}, moment=NOW + timedelta(days=3), windows=None,
+        drawn={1: True},
+    )
+    assert any("first forecast" in r for r in judgement.part.refusals)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
+def test_the_format_may_not_be_amended_once_phase_two_has_run():
+    """A round a day out, its Phases 1 and 2 drawn, no horizons: its format change is refused for
+    the second forecast."""
+    judgement = _forecasts(
+        {"format": RoundFormat.SPRINT}, moment=NOW + timedelta(days=1), windows=None,
+        drawn={1: True, 2: True},
+    )
+    assert any("second forecast" in r for r in judgement.part.refusals)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
+def test_the_format_may_still_be_amended_after_phase_one_alone():
+    """A round three days out, its Phase 1 alone drawn, no horizons: its format change is refused
+    nothing."""
+    judgement = _forecasts(
+        {"format": RoundFormat.SPRINT}, moment=NOW + timedelta(days=3), windows=None,
+        drawn={1: True},
+    )
+    assert not judgement.part.refusals
