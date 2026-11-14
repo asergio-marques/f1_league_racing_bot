@@ -349,6 +349,78 @@ async def test_approve_saves_the_lap_sum_on_the_signup_record_itself(tmp_path):
     assert (await _record(league))["total_lap_ms"] == LAP_SUM_MS
 
 
+def _standing_timers(league: SeasonLeague, *standing: tuple[str, str]) -> set[tuple[str, str]]:
+    """The timers the scheduler holds, as (kind, key), *standing* to begin with: arming one adds
+    it and disarming takes it away, as the scheduler does."""
+    held = set(standing)
+    scheduler = league.bot.scheduler_service
+    scheduler.arm_once.side_effect = lambda kind, key, _when: held.add((kind, str(key)))
+    scheduler.disarm.side_effect = lambda kind, key: held.discard((kind, str(key)))
+    return held
+
+
+async def _withdraw(league: SeasonLeague) -> None:
+    """Kimi withdraws his signup, as Cancel Signup asks: `signup.end` for the reason withdrawn."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await league.bot.change_queue.ask(
+        "signup.end", {"user_id": str(SIGNING_UP), "reason": "withdrawn"},
+        what=f"withdrawing <@{SIGNING_UP}>'s signup", origin=ChangeOrigin.BOT,
+    )
+
+
+async def _approve(league: SeasonLeague) -> None:
+    await _press_approve(league)
+
+
+#: The cases of the closing's deletion against the disarm: what ends the signup, the league
+#: lane's jobs that run up to and including its save, and which lane's work runs first.
+_CLOSING_FIRST = pytest.mark.xfail(
+    strict=True,
+    reason="#286: the end's and the approval's disarm takes away the deletion the closing armed",
+)
+_DELETION_AGAINST_THE_DISARM = [
+    pytest.param(_approve, 1, False, id="approve-disarm-first"),
+    pytest.param(_approve, 1, True, id="approve-closing-first", marks=_CLOSING_FIRST),
+    pytest.param(_withdraw, 2, False, id="withdraw-disarm-first"),
+    pytest.param(_withdraw, 2, True, id="withdraw-closing-first", marks=_CLOSING_FIRST),
+]
+
+
+@pytest.mark.parametrize("ending, saved_after, closing_first", _DELETION_AGAINST_THE_DISARM)
+async def test_the_closing_s_deletion_survives_the_disarm_whichever_lane_runs_first(
+    tmp_path, ending, saved_after, closing_first
+):
+    """Kimi awaits approval; his 24-hour inactivity timer and a correction lapse stand. Manager
+    77 approves him, or Kimi withdraws. The league lane runs up to the save, which asks back
+    `signup.closing` on Kimi's lane. Then either the league lane finishes first (its
+    `disarm_timers` job) and Kimi's lane after it, or Kimi's lane first (the closing arms his
+    channel's deletion a day on) and the league lane after. Either way, once both have run, the
+    deletion of Kimi's channel still stands, and his inactivity and correction timers are gone:
+    the end's and the approval's disarm takes only those two, never the deletion the closing
+    arms."""
+    league = await _league(tmp_path)
+    held = _standing_timers(
+        league, (INACTIVITY_TIMER, str(SIGNING_UP)), (CORRECTION_TIMER, str(SIGNING_UP))
+    )
+
+    await ending(league)
+    queue = league.bot.change_queue
+    await queue.run_until_idle(lane="league", steps=saved_after)
+    assert await _changes_of(league, CLOSING_KIND)
+    if closing_first:
+        await queue.run_until_idle(lane=KIMI_LANE)
+        assert (DELETE_TIMER, str(SIGNING_UP)) in held
+    else:
+        await queue.run_until_idle(lane="league")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (DELETE_TIMER, str(SIGNING_UP)) in held
+    assert (INACTIVITY_TIMER, str(SIGNING_UP)) not in held
+    assert (CORRECTION_TIMER, str(SIGNING_UP)) not in held
+
+
 # ---------------------------------------------------------------------------
 # Request Changes (C85)
 # ---------------------------------------------------------------------------
