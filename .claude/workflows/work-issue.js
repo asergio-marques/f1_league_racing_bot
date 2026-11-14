@@ -39,6 +39,7 @@ const DESIGN_FILES = {
   results: 'docs/design/results_module.md',
   attendance: 'docs/design/attendance_module.md',
   signup: 'docs/design/signup_module.md',
+  weather: 'docs/design/weather_module.md',
 }
 
 // Each role's model and effort. Every model and effort is set explicitly, so that a session on
