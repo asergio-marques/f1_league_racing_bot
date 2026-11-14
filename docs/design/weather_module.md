@@ -206,8 +206,8 @@ change, so that a stop between any two resumes where it stopped:
 
 1. **`draw_forecast`**, a save: the phase is drawn and recorded, its flag set and its calculation
    line written to the log channel, in one save (weather specification, "Supersession and cleanup"),
-   the line naming the round as core does (`round_called_on`, read on the save's connection, handed
-   to `phase_log_message` as `called`) and never by its database id.
+   the line naming the round as that section's rule on naming it asks: through core's own naming
+   (`round_called_on`, read on the save's connection, handed to `phase_log_message` as `called`).
    A phase whose earlier phase has not been drawn plans the earlier phase first. A Phase 1 that
    cannot be drawn, for a round naming no circuit, a circuit that cannot be resolved or an
    impossible distribution, writes nothing but its BLOCKED line, which reaches the log channel as
