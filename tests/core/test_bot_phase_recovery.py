@@ -481,12 +481,7 @@ async def _forecasts_asked(league) -> list[tuple[int, int]]:
     "hours_until_race, notice_posted, expected",
     [
         pytest.param(0.5, False, [(round_id(PRO, 3), 0)], id="its notice owed"),
-        pytest.param(0.5, True, [], id="its notice already posted",
-                     marks=pytest.mark.xfail(
-                         strict=True,
-                         reason="#287: a mystery round's notice is recorded in its Phase 1 flag, "
-                                "with no column of its own",
-                     )),
+        pytest.param(0.5, True, [], id="its notice already posted"),
         pytest.param(-1, False, [], id="its race already run"),
         pytest.param(30 * 24, False, [], id="its first horizon still ahead"),
     ],

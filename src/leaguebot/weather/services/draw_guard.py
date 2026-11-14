@@ -34,7 +34,7 @@ from leaguebot.core.models.division import Division, DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.seasons.season_service import RoundFacts, division_on, round_facts_on
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
-from leaguebot.weather.services.round_phases import phases_drawn_on
+from leaguebot.weather.services.round_phases import PhasesDrawn, phases_drawn_on
 
 log = logging.getLogger(__name__)
 
@@ -43,13 +43,14 @@ log = logging.getLogger(__name__)
 class WeatherRound:
     """A round as weather judges it: core's facts and division beside the module's own record.
 
-    *drawn* is whether each of Phases 1 to 3 has been drawn, by phase number, and
+    *drawn* is whether each of Phases 1 to 3 has been drawn, by phase number, with whether a
+    mystery round's notice has been given, and
     *forecast_channel_id* the division's forecast channel, `None` for none set.
     """
 
     facts: RoundFacts
     division: Division
-    drawn: dict[int, bool]
+    drawn: PhasesDrawn
     forecast_channel_id: int | None
 
 

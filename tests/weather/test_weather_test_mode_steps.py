@@ -100,12 +100,7 @@ def _round(*, format: str, scheduled_at: str):
     pytest.param({"format": "MYSTERY"}, [(0, "weather_p1")], [],
                  id="a mystery round's notice still to post"),
     pytest.param({"format": "MYSTERY", "notice": True, "standing": (0,)}, [], [],
-                 id="a mystery round's notice posted, with no forecast to take down",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: a mystery round's notice is recorded in its Phase 1 flag, "
-                            "with no column of its own",
-                 )),
+                 id="a mystery round's notice posted, with no forecast to take down"),
     pytest.param({"forecasts_in_hand": (1,)}, [(2, "weather_p2"), (3, "weather_p3")], [],
                  id="phase 1 in hand on the change queue"),
     pytest.param({"scheduled_at": RACED}, [],
@@ -171,12 +166,7 @@ P2_QUEUED = {(1, "weather_p2")}
     pytest.param({"format": "MYSTERY"}, None, [("Notice", "⏳")],
                  id="a mystery round's notice still to post"),
     pytest.param({"format": "MYSTERY", "notice": True, "standing": (0,)}, set(),
-                 [("Notice", "✅")], id="a mystery round's notice posted",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: a mystery round's notice is recorded in its Phase 1 flag, "
-                            "with no column of its own",
-                 )),
+                 [("Notice", "✅")], id="a mystery round's notice posted"),
     pytest.param({"scheduled_at": RACED}, set(),
                  [("P1", "⏭️"), ("P2", "⏭️"), ("P3", "⏭️"), ("Cleanup", "✅")],
                  id="a raced round with nothing posted"),

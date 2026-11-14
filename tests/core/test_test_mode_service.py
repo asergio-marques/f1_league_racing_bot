@@ -202,11 +202,6 @@ async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     assert result["kind"] == "weather_p1"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: a mystery round's notice is recorded in its Phase 1 flag, with no "
-           "column of its own",
-)
 async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     """Mystery round with notice already sent (mystery_notice_given=1, Phase 1 not drawn) must
     not appear in queue."""
@@ -1040,12 +1035,6 @@ async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -
 # names its hidden track, forecasting it.
 
 
-#: Why a notice recorded in its own column still reads as owed, until #287 lands.
-_NOTICE_IN_PHASE1_FLAG = (
-    "#287: a mystery round's notice is recorded in its Phase 1 flag, with no column of its own"
-)
-
-
 async def _mystery_round_armed(
     tmp_path, service: SchedulerService, *, notice_posted: bool
 ) -> str:
@@ -1079,7 +1068,6 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     assert result["kind"] == "weather_p1"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOTICE_IN_PHASE1_FLAG)
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1097,7 +1085,6 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     assert result["phase_number"] == 4
 
 
-@pytest.mark.xfail(strict=True, reason=_NOTICE_IN_PHASE1_FLAG)
 async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     tmp_path, paused_scheduler
 ) -> None:

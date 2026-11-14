@@ -424,10 +424,6 @@ async def test_a_forecast_whose_id_could_not_be_saved_removes_the_copy_before_it
     assert await _forecasts(league) == {1: new}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: the notice's record sets `phase1_done`, as if a Phase 1 forecast were drawn",
-)
 async def test_the_mystery_notice_s_flag_is_saved_with_its_record_and_a_refused_notice_stops_the_queue(
     tmp_path,
 ):

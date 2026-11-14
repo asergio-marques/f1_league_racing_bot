@@ -514,9 +514,11 @@ CREATE TABLE "rounds" (
     format          TEXT    NOT NULL,  -- NORMAL | SPRINT | MYSTERY | ENDURANCE
     track_name      TEXT,
     scheduled_at    TEXT    NOT NULL,  -- ISO 8601 UTC with its offset, e.g. 2025-06-15T18:00:00+00:00
-    phase1_done     INTEGER NOT NULL DEFAULT 0,
+    phase1_done     INTEGER NOT NULL DEFAULT 0,  -- weather's: 1 while a Phase 1 forecast's draw stands
     phase2_done     INTEGER NOT NULL DEFAULT 0,
     phase3_done     INTEGER NOT NULL DEFAULT 0,
+    mystery_notice_given INTEGER NOT NULL DEFAULT 0,  -- weather's: 1 once a mystery round's notice is
+                                                      -- recorded; it is no forecast, so no phase flag
     checkin_cleared INTEGER NOT NULL DEFAULT 0,  -- 1 once no call is owed: the check-in cleanup has run,
                                                  -- or a restart gave up a call whose deadline had passed
     not_held        INTEGER NOT NULL DEFAULT 0,  -- 1 where the round ended CANCELLED because every session

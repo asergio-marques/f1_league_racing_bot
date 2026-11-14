@@ -966,12 +966,7 @@ async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
 
 
 @pytest.mark.parametrize("phase", [
-    pytest.param(0, id="mystery notice",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: a mystery round's notice is recorded in its Phase 1 flag, "
-                            "with no column of its own",
-                 )),
+    pytest.param(0, id="mystery notice"),
     pytest.param(1, id="phase 1"),
 ])
 async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phase):

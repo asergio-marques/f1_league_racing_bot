@@ -1,10 +1,12 @@
 """Which forecasts a round has had drawn: weather's own record of it.
 
-`rounds.phase1_done` to `phase3_done` are the weather module's own columns on core's `rounds`
-table (architecture.md, "Each table is read and written by its owner alone"). Core does not carry
-them on its `Round`: where it must judge by them, as an amendment does of the round it changes,
-it asks the weather module through its `phases_drawn_read` hook, and this is the reader the
-module answers with.
+`rounds.phase1_done` to `phase3_done` and `rounds.mystery_notice_given` are the weather module's
+own columns on core's `rounds` table (architecture.md, "Each table is read and written by its
+owner alone"). Core does not carry them on its `Round`: where it must judge by them, as an
+amendment does of the round it changes, it asks the weather module through its `phases_drawn_read`
+hook, and this is the reader the module answers with. It is the one place the module reads what
+has been drawn: a phase's flag says a draw of that phase stands, and a mystery round's notice,
+which is no forecast and no draw, is recorded apart in its own flag.
 """
 
 from __future__ import annotations
@@ -19,22 +21,42 @@ from leaguebot.core.models.round import Round, RoundFormat, WeatherWindows
 from leaguebot.core.services.rounds.round_moments import round_event_moments
 
 
+class PhasesDrawn(dict[int, bool]):
+    """Whether each of Phases 1 to 3 has been drawn, by phase number, with whether the round's
+    mystery notice has been given beside it (`notice_given`): the notice is no phase, and a round
+    with its notice given has had no forecast drawn for that."""
+
+    def __init__(self, phases: Mapping[int, bool], *, notice_given: bool = False) -> None:
+        super().__init__(phases)
+        self.notice_given = notice_given
+
+    def first_done(self, *, mystery: bool) -> bool:
+        """Whether the round's first forecast is done: its notice where it is a mystery round,
+        Phase 1 otherwise."""
+        return self.notice_given if mystery else self[1]
+
+
 async def phases_drawn_on(
     db: aiosqlite.Connection, round_ids: Sequence[int]
-) -> dict[int, dict[int, bool]]:
-    """Whether each of Phases 1 to 3 has been drawn, by phase number, for each round in
-    *round_ids*, by round id; a round that does not exist is left out.
+) -> dict[int, PhasesDrawn]:
+    """Whether each of Phases 1 to 3 has been drawn, by phase number, and whether the mystery
+    notice has been given, for each round in *round_ids*, by round id; a round that does not
+    exist is left out.
 
     Reads on the connection it is handed, so that an amendment's save sees what that save has
     written and not yet committed. Reads only.
     """
     rows = await tuple_rows_in(
         db,
-        "SELECT id, phase1_done, phase2_done, phase3_done FROM rounds WHERE id IN ({marks})",
+        "SELECT id, phase1_done, phase2_done, phase3_done, mystery_notice_given "
+        "FROM rounds WHERE id IN ({marks})",
         round_ids,
     )
     return {
-        int(row[0]): {1: bool(row[1]), 2: bool(row[2]), 3: bool(row[3])} for row in rows
+        int(row[0]): PhasesDrawn(
+            {1: bool(row[1]), 2: bool(row[2]), 3: bool(row[3])}, notice_given=bool(row[4])
+        )
+        for row in rows
     }
 
 
@@ -55,7 +77,9 @@ async def phases_drawn(db_path: str, round_ids: Sequence[int]) -> dict[int, dict
     opened on *db_path*. Whatever the module's switch: a forecast posted while weather was on is
     still posted. Reads only."""
     async with get_connection(db_path) as own:
-        return await phases_drawn_on(own, round_ids)
+        return {
+            round_id: dict(drawn) for round_id, drawn in (await phases_drawn_on(own, round_ids)).items()
+        }
 
 
 def phases_due(

@@ -153,6 +153,17 @@ async def amendment_judged(
     ).part
 
 
+async def _notice_stands_beside(db: aiosqlite.Connection, rnd: Round) -> bool:
+    """Whether a mystery round's notice is posted for a round that is no mystery round now: it
+    came down with the type, and the round's forecasts follow."""
+    if rnd.format == RoundFormat.MYSTERY:
+        return False
+    cursor = await db.execute(
+        "SELECT 1 FROM forecast_messages WHERE round_id = ? AND phase_number = 0", (rnd.id,)
+    )
+    return await cursor.fetchone() is not None
+
+
 async def round_armed(
     db: aiosqlite.Connection,
     round_id: int,
@@ -165,7 +176,9 @@ async def round_armed(
 ) -> RoundArming:
     """What weather owes the round armed again, read on *db* at the queue's clock *now*.
 
-    The steps, in order: the deletion of each withdrawn forecast that was posted, the notice that
+    The steps, in order: the deletion of a mystery round's notice where the round is none now,
+    whatever weather's switch (it is no forecast, and no invalidation notice is posted for it), the
+    deletion of each withdrawn forecast that was posted, the notice that
     the forecasts no longer stand, and the draw of each phase due at once. *kept* is what weather's
     part of the save kept (`phase_withdrawal.round_amended_on`) with the track, and is empty where
     the save was not made. The phases due are drawn by a job of the amendment's, so the forecasts'
@@ -179,10 +192,13 @@ async def round_armed(
     on = await weather_enabled_on(db)
     draw: list[int] = []
     if on:
-        drawn = (await phases_drawn_on(db, [round_id])).get(round_id, {})
+        drawn: Mapping[int, bool] = (await phases_drawn_on(db, [round_id])).get(round_id, {})
         draw = phases_due(rnd, weather, at, drawn=drawn)
     posted = kept.get("posted", [])
-    planned = [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
+    planned = [PlannedStep(DELETE_FORECAST, {"phase": 0})] if await _notice_stands_beside(
+        db, rnd
+    ) else []
+    planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
     if posted:
         planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": kept["track"]}))
     planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]

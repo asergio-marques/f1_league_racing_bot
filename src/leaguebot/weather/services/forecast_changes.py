@@ -140,7 +140,7 @@ def _not_due(
         return "the round's format is no longer the one this forecast is for"
     if rnd.facts.scheduled_at <= now:
         return "the round's race time has passed"
-    done = rnd.drawn[max(phase, 1)]
+    done = rnd.drawn.notice_given if phase == 0 else rnd.drawn[phase]
     if posting and not done:
         return "the phase is not recorded as drawn"
     if not posting and done:
@@ -363,7 +363,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             if guild is not None:
                 kept["guild_id"] = guild.id
             raise StepFailedOnDiscord(
-                f"the Phase {phase} forecast message {message_id} in channel {channel_id}"
+                f"the {_occasion(phase)} message {message_id} in channel {channel_id}"
                 f" could not be deleted",
                 result=kept,
             ) from exc
@@ -372,7 +372,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             for part in parts
             if int(part) != message_id
             for step in standing_posts.replaced(
-                int(channel_id), int(part), None, what=f"Phase {phase} forecast",
+                int(channel_id), int(part), None, what=_occasion(phase),
                 division_name=division.name,
             )
         )
@@ -415,7 +415,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         number = _value(ctx, "round_number", None) or (None if rnd is None
                                                        else rnd.facts.round_number)
         later = " a day after it" if _value(ctx, "clean_up", False) else ""
-        return f"deleting the Phase {phase} forecast of round {number} in {where}{later}"
+        return f"deleting the {_occasion(phase)} of round {number} in {where}{later}"
 
     async def plan_deletes(ctx: StepContext) -> StepResult:
         planned = await forecast_cleanup_service.forecast_deletes(
@@ -772,13 +772,16 @@ def forecast_failure(view: StepView, _steps: Sequence[StepView]) -> tuple[str, s
         return (occasion, "drawn but not posted, and a league admin discarded it; the draw "
                 "stands in the log channel, and nothing posts it again")
     if view.name == DELETE_FORECAST:
+        phase = result.get("phase", phase)
         where = (
             f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/"
             f"{result['message_id']}"
             if "guild_id" in result and "message_id" in result
             else f"message {result.get('message_id')} in <#{result.get('channel_id')}>"
         )
-        if view.payload.get("clean_up"):
+        if phase == 0:
+            what = "the mystery round notice could not be deleted"
+        elif view.payload.get("clean_up"):
             what = f"the Phase {result.get('phase')} forecast could not be deleted a day after the round"
         else:
             which = "superseded" if view.payload.get("superseded") else "withdrawn"
@@ -891,6 +894,8 @@ def amendment_steps(
                 f"deleting the superseded Phase {ctx.step_payload['phase']} forecast of round "
                 f"{await round_number_now(seasons, ctx)} in **{ctx.payload['division_name']}**"
             )
+        if ctx.step_payload["phase"] == 0:
+            return await named("deleting the mystery round notice of round {number} in **{division}**")(ctx)
         return await named("deleting a withdrawn forecast of round {number} in **{division}**")(ctx)
 
     async def describe_clean_up(ctx: StepContext) -> str:
@@ -955,7 +960,7 @@ def amendment_steps(
         if rnd is None or weather is None:
             return False
         async with get_connection(ctx.db_path) as db:
-            drawn = (await phases_drawn_on(db, [rnd.id])).get(rnd.id, {})
+            drawn: Mapping[int, bool] = (await phases_drawn_on(db, [rnd.id])).get(rnd.id, {})
         return int(ctx.step_payload["phase"]) in phases_due(rnd, weather, now(), drawn=drawn)
 
     async def rerun_phase(ctx: StepContext) -> StepResult:

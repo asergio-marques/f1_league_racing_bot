@@ -11,8 +11,10 @@ No random draws are performed; no phase_results row is written; no log-channel
 message is produced (FR-008).  The notice is posted to the division's forecast
 channel only, with no role tag (FR-003).
 
-What the notice records, the round's Phase 1 flag, is written on the connection a save hands
-it (`record_mystery_notice_on`); the notice itself is posted after it (`forecast_changes`).
+What the notice records, the round's own notice flag (`rounds.mystery_notice_given`, beside
+the phase flags and no part of them: a notice is no forecast, so no Phase 1 is drawn by it), is
+written on the connection a save hands it (`record_mystery_notice_on`); the notice itself is
+posted after it (`forecast_changes`).
 """
 
 from __future__ import annotations
@@ -29,14 +31,14 @@ log = logging.getLogger(__name__)
 
 
 async def record_mystery_notice_on(db: aiosqlite.Connection, round_id: int) -> Drawn:
-    """Mark the notice of *round_id* given, its Phase 1 done, on *db*, committing nothing.
+    """Mark the notice of *round_id* given on *db*, committing nothing.
 
     Nothing is drawn and no line is written (weather specification, FR-008); the flag is the
     whole record, written by the save that goes before the notice's post, so a notice Discord
     refuses no longer leaves the flag set with nothing posted behind it.
 
     Writes nothing, and says so by a `Drawn` with ``written`` false, while the weather module
-    is off (the round's Phase 1 is left undone), for a round that is cancelled, or whose
+    is off (the notice is left undone), for a round that is cancelled, or whose
     division is, where it reads the round after the cancellation is recorded, for the reason
     ``draw_guard`` gives, and for a round amended away from MYSTERY before the notice's turn
     came: the standard amendment-invalidation path already informed drivers.
@@ -50,5 +52,5 @@ async def record_mystery_notice_on(db: aiosqlite.Connection, round_id: int) -> D
             round_id, row.facts.format.value,
         )
         return Drawn(0)
-    await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = ?", (round_id,))
+    await db.execute("UPDATE rounds SET mystery_notice_given = 1 WHERE id = ?", (round_id,))
     return Drawn(0, written=True)

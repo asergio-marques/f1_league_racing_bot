@@ -34,7 +34,7 @@ import aiosqlite
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import forecasts_named
 from leaguebot.core.models.division import DivisionStatus
-from leaguebot.core.models.round import RoundStatus, WeatherWindows
+from leaguebot.core.models.round import RoundFormat, RoundStatus, WeatherWindows
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.seasons.season_service import (
@@ -107,7 +107,11 @@ async def recover_missed_phases(db_path: str, *, queue: ChangeQueue) -> None:
             attendance=None,
         )
         for phase in (1, 2, 3):
-            if drawn[each.id][phase] or now < moments[f"weather_p{phase}"]:
+            done = (
+                drawn[each.id].first_done(mystery=each.format == RoundFormat.MYSTERY)
+                if phase == 1 else drawn[each.id][phase]
+            )
+            if done or now < moments[f"weather_p{phase}"]:
                 continue
             log.info("Recovery: firing Phase %d for round %s", phase, each.id)
             try:

@@ -99,8 +99,11 @@ async def forget_forecast_on(
 
     Only the row holding *message_id* goes, so that a newer forecast recorded for the phase is
     never dropped with the one it replaced; with no *message_id* the phase's row goes whatever
-    it holds.
+    it holds. A mystery round's notice (phase 0) closes the round's notice flag with its record,
+    so that a round that is a mystery round again is owed its notice again.
     """
+    if phase_number == 0:
+        await db.execute("UPDATE rounds SET mystery_notice_given = 0 WHERE id = ?", (round_id,))
     if message_id is None:
         await db.execute(
             "DELETE FROM forecast_messages "

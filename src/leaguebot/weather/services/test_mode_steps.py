@@ -3,7 +3,7 @@ and what advance passes over, and how the review marks them, read from weather's
 
 Core's `pending_steps_read` hook asks each module which of the rounds it hands over have steps
 still pending (architecture.md, "How modules and core fit together"). Weather answers from its own
-switch, its own columns on `rounds` (`phase1_done` to `phase3_done`), the forecasts it keeps and
+switch, its own columns on `rounds` (`phase1_done` to `phase3_done`, `mystery_notice_given`), the forecasts it keeps and
 the forecast changes still in hand on the change queue; core hands it the rounds as it reads them,
 their format, race time and status, and orders what comes back. Weather reads a round's format
 itself, from the round it is handed, to tell a mystery round's notice from Phase 1.
@@ -43,7 +43,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     phase_mark,
 )
 from leaguebot.weather.services.draw_guard import weather_enabled_on
-from leaguebot.weather.services.round_phases import phases_drawn_on
+from leaguebot.weather.services.round_phases import PhasesDrawn, phases_drawn_on
 
 #: The step that takes the forecasts of Phases 1 to 3 down, a day after the round.
 CLEAN_UP_PHASE = 8
@@ -57,11 +57,11 @@ async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
     return {int(row["round_id"]) for row in await cursor.fetchall()}
 
 
-def _owed(rnd: ActiveRound, done: dict[int, bool]) -> list[int]:
+def _owed(rnd: ActiveRound, done: PhasesDrawn) -> list[int]:
     """The weather steps of *rnd* not done, in order: a mystery round's notice (0) until it is
     posted, or each of Phases 1 to 3 not done."""
     if rnd.format.upper() == "MYSTERY":
-        return [] if done[1] else [0]
+        return [] if done.first_done(mystery=True) else [0]
     return [phase for phase in (1, 2, 3) if not done[phase]]
 
 
@@ -123,6 +123,7 @@ async def review_marks(
         raced = rnd.scheduled_at <= now
         drawn = done[rid]
         p1, p2, p3 = drawn[1], drawn[2], drawn[3]
+        first = drawn.first_done(mystery=rnd.format.upper() == "MYSTERY")
 
         def mark(is_done: bool, event: str) -> str:
             """A step's mark: passed over where undone on a raced round."""
@@ -133,7 +134,7 @@ async def review_marks(
         if rnd.format.upper() == "MYSTERY":
             # A mystery round's notice is armed as `weather_p1`: weather's `ask_forecast` reads
             # the round's format as it fires.
-            marks[rid] = [("Notice", mark(p1, "weather_p1"))]
+            marks[rid] = [("Notice", mark(first, "weather_p1"))]
         else:
             marks[rid] = [
                 ("P1", mark(p1, "weather_p1")),

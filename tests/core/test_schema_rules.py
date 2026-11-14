@@ -549,7 +549,6 @@ async def test_every_table_has_an_owner(db_path):
         db.close()
 
 
-@pytest.mark.xfail(strict=True, reason="#287: rounds has no `mystery_notice_given` column")
 async def test_every_module_column_is_in_the_schema(db_path):
     """A module's own column that the schema renamed or dropped would drop out of the rule on
     writes without a word."""

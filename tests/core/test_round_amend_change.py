@@ -1658,12 +1658,7 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
 
 @pytest.mark.parametrize("standing", [
     pytest.param("phase 2", id="phase 3 never posted"),
-    pytest.param("mystery notice", id="a mystery round's notice",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: a mystery round's notice is recorded in its Phase 1 flag, with "
-                            "no column of its own",
-                 )),
+    pytest.param("mystery notice", id="a mystery round's notice"),
 ])
 async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):
     """Weather on. Pro's round 3 is thirty minutes out with one forecast recorded: (phase 3 never
@@ -2713,11 +2708,6 @@ async def _with_its_notice_posted(league: Any, *, days: float) -> int:
     pytest.param(True, id="weather on"),
     pytest.param(False, id="weather switched off since the notice"),
 ])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: a mystery round whose notice has posted is refused a change of type, for a "
-           "forecast never drawn",
-)
 async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down(
     tmp_path, weather_on,
 ):
@@ -2822,12 +2812,7 @@ async def test_a_mystery_round_s_notice_discord_will_not_delete_stops_the_queue_
 
 
 @pytest.mark.parametrize("days", [
-    pytest.param(30, id="moved later, before its first horizon again",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: moving a mystery round back before its first horizon "
-                            "withdraws its notice as a Phase 1 forecast",
-                 )),
+    pytest.param(30, id="moved later, before its first horizon again"),
     pytest.param(1, id="moved earlier"),
 ])
 async def test_a_mystery_round_whose_date_is_moved_keeps_its_notice(tmp_path, days):
@@ -2920,11 +2905,6 @@ _UNDONE_STEPS = [
         [("forecast channel", "the mystery round notice could not be deleted, and a league admin "
           f"discarded it; delete it by hand ({_LINK})")],
         id="delete-mystery-round-notice",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#287: a mystery round notice's deletion left undone is named as a withdrawn "
-            "Phase 0 forecast",
-        ),
     ),
     pytest.param(
         [("delete_forecast", {"superseded": True},
