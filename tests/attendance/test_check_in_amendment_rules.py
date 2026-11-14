@@ -44,9 +44,10 @@ def _judged(moment: datetime, windows: AttendanceWindows | None = DEFAULT_ATTEND
 def test_a_delay_is_allowed_however_close_the_round_stood():
     """The participation case: a league delays a round by a week to get more drivers.
 
-    The round stood an hour away and every window of the old moment has passed, which is *why*
-    the league is moving it, and none of that is judged: the round is moved to a week out. The
-    check-in refuses nothing, and every one of its windows is ahead again and armed afresh.
+    The check-in is judged on the amended moment alone, a week out, with the default windows:
+    the round's earlier moment is no input, so however close it stood, and however many of its
+    windows had passed, nothing of it is judged. The check-in refuses nothing, and every one of
+    its windows is ahead again and armed afresh.
     """
     judgement = _judged(NOW + timedelta(days=7))
     assert not judgement.part.refusals
@@ -119,8 +120,8 @@ def test_a_disabled_last_notice_carries_no_window():
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_round_moved_well_out_has_its_check_in_called_again():
-    """A round three hours away moved to 30 days out: its call is posted again, and its check-in
-    does not stay closed."""
+    """The amended moment 30 days out, the default windows (the round's earlier moment is not
+    judged): its call is posted again, and its check-in does not stay closed."""
     judgement = _judged(NOW + timedelta(days=30))
     assert judgement.recall
     assert not judgement.stays_closed
@@ -128,8 +129,10 @@ def test_a_round_moved_well_out_has_its_check_in_called_again():
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_ATTENDANCE_S)
 def test_a_round_nudged_within_its_closed_check_in_stays_closed():
-    """A round an hour away whose moment does not move: its deadline passed on the old moment and
-    on the new one alike, so its check-in stays closed and no call is posted again."""
+    """The amended moment an hour away, the default windows: the same input as
+    `test_bringing_a_round_inside_its_check_in_deadline_is_refused`, here asserting what the save
+    is told. Its deadline has passed under that moment, so its check-in stays closed and no call
+    is posted again. The round's earlier moment is not judged."""
     judgement = _judged(NOW + timedelta(hours=1))
     assert judgement.stays_closed
     assert not judgement.recall

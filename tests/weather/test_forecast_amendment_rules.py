@@ -97,7 +97,8 @@ def _forecasts(changes, *, moment, windows=DEFAULT_WEATHER, drawn=None):
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
 def test_a_long_delay_puts_every_phase_back_in_question():
-    """A round a day out, its Phase 1 drawn, moved to 30 days out: every phase is armed again."""
+    """The amended moment 30 days out, the default horizons, Phase 1 drawn (the round's earlier
+    moment is not judged): every phase is armed again."""
     moment = NOW + timedelta(days=30)
     judgement = _forecasts({"scheduled_at": moment}, moment=moment, drawn={1: True})
     assert all(p.rearm for p in judgement.phases.values())
@@ -107,9 +108,10 @@ def test_a_long_delay_puts_every_phase_back_in_question():
 def test_a_delay_can_leave_phase_one_standing_while_the_later_two_are_rearmed():
     """The middle case the rule exists for: one phase keeps, two go back.
 
-    Round three days out, its Phase 1 drawn, delayed to four. Phase 1 falls five days before,
-    which is behind us either way, so the forecast already drawn stands. Phases 2 and 3 have not
-    come round under the new moment, so they are armed again. Nothing is refused.
+    The amended moment four days out, the default horizons, Phase 1 drawn; the round's earlier
+    moment is not judged. Phase 1 falls five days before it, which is behind us, so the forecast
+    already drawn stands. Phases 2 and 3 have not come round under the new moment, so they are
+    armed again. Nothing is refused.
     """
     moment = NOW + timedelta(days=4)
     judgement = _forecasts({"scheduled_at": moment}, moment=moment, drawn={1: True})
@@ -121,8 +123,9 @@ def test_a_delay_can_leave_phase_one_standing_while_the_later_two_are_rearmed():
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_WEATHER_S)
 def test_a_phase_falling_exactly_now_counts_as_having_run():
-    """A round 30 days out moved to five days out, its Phase 1 landing exactly now: Phase 1
-    stands, as having run, and Phase 2 is armed again."""
+    """The amended moment five days out, the default horizons, no phase drawn, so Phase 1 lands
+    exactly now (the round's earlier moment is not judged): Phase 1 stands, as having run, and
+    Phase 2 is armed again."""
     moment = NOW + timedelta(days=5)
     judgement = _forecasts({"scheduled_at": moment}, moment=moment)
     assert judgement.phases[1].stands
