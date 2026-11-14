@@ -60,6 +60,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import state_of_account_on
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_types import (
@@ -918,7 +919,9 @@ async def post_review_panel(
     signup to post. The panel runs as long as the driver's answers do, so it is divided through
     `chunk_message` into messages Discord takes, each posted whole, the Approve / Request Changes
     / Reject buttons *view* gives on the last (#459). Raises `StepFailedOnDiscord` where Discord
-    refuses a part."""
+    refuses a part, its `result` holding the ids of the parts already sent (as `new`, in
+    `channel_id`) for the job to keep, so that its next try removes them before it posts the panel
+    again (`standing_posts.remove_kept`)."""
     record = await signup.get_record(user_id)
     if record is None:
         return False
@@ -932,12 +935,20 @@ async def post_review_panel(
     parts = chunk_message(
         WizardService._format_review_panel(record, slot_labels, track_name_map=track_map)
     )
+    sent: list[int] = []
     for number, part in enumerate(parts, start=1):
-        await post(
-            channel, part, view=view() if number == len(parts) else None,
-            mentions=_REVIEW_PANEL_MENTIONS,
-            refused=f"the review panel could not be posted in channel {channel.id}",
-        )
+        try:
+            sent.append(await post(
+                channel, part, view=view() if number == len(parts) else None,
+                mentions=_REVIEW_PANEL_MENTIONS,
+                refused=f"the review panel could not be posted in channel {channel.id}",
+            ))
+        except StepFailedOnDiscord as refusal:
+            if sent:
+                raise StepFailedOnDiscord(
+                    refusal.reason, result={"new": sent, "channel_id": channel.id},
+                ) from refusal.__cause__
+            raise
     return True
 
 
@@ -1052,6 +1063,7 @@ def panel_change(
         member = channel.guild.get_member(int(user_id))
         if member is not None:
             await _set_typing(channel, member, allowed=False, reason="Signup wizard channel hold")
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
         posted = await post_review_panel(
             channel, user_id, signup=signup(), db_path=ctx.db_path,
             view=lambda: _review_view(user_id),

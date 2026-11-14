@@ -416,10 +416,6 @@ async def test_the_worst_case_panel_is_posted_in_parts(tmp_path):
     assert any("T" * 1900 in part.content for part in parts)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: a retried review panel posts again the parts Discord already took",
-)
 async def test_a_divided_panel_retried_posts_its_earlier_parts_once(tmp_path):
     """Kimi has given the longest answers he can (as above), so his review panel runs to two or
     more messages. He types "See you there"; Discord takes the earlier parts but refuses the last,
