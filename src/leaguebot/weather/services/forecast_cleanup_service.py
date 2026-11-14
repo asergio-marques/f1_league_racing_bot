@@ -27,7 +27,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
-from leaguebot.core.services.posting.standing_post_handler import post_standing
+from leaguebot.core.services.posting.standing_post_handler import delete_standing, post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.messages import chunk_message
 
@@ -213,7 +213,7 @@ async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) ->
             f"channel {channel_id} is not a text channel the forecast can be deleted from",
             result={"channel_id": channel_id, "message_id": message_id},
         )
-    await channel.get_partial_message(message_id).delete()
+    await delete_standing(channel.get_partial_message(message_id))
 
 
 # ---------------------------------------------------------------------------

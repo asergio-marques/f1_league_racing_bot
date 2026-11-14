@@ -993,7 +993,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
 
