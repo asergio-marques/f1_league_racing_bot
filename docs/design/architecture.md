@@ -533,8 +533,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
 and the settings a league repairs itself with.** A change to one of a league's settings is one
 atomic save of its value and its audit record (its line with them, or in the save of the step after
 it that carries the line — the arming of the daily portrait job, a role's grant to every driver
-where it replaces one gone from the server while the season's configuration is fixed, or the old hub
-stood down and the new one's permissions set once its channel is moved; see "The record is the
+where it replaces one gone from the server while the season's configuration is fixed, the old hub
+stood down and the new one's permissions set once its channel is moved, or the signup channel's
+permissions set (the new channel's first, the old one's cleared last); see "The record is the
 queue's"), and the work after it that the setting does not need (checking it against the templates,
 arming or removing a timed job, granting a role to every driver, asking the hub's panel to be posted
 again as the bot's own change) is work nothing later depends on. A fault in either leaves nothing
@@ -721,8 +722,9 @@ stop nobody yet holds the role to clear.
   the answer for a value already held and the answer for a fault are decided in one place. A
   setting's value, its audit record and its line are one save, save where a step after it arms the
   daily portrait job, grants a role to every driver where it replaces one gone from the server
-  while the season's configuration is fixed, or stands the old hub down and sets the new one's
-  permissions once its channel is moved: there the value and the audit record share the save and
+  while the season's configuration is fixed, stands the old hub down and sets the new one's
+  permissions once its channel is moved, or sets the new signup channel's permissions and then
+  clears the old one's: there the value and the audit record share the save and
   the line follows in that step's own save, so that a fault of the bot's own in that step — a
   failed arming, a failed grant, the guild or the new hub's channel gone missing — records no
   success, while a permission edit Discord refuses, which the step reports rather than raises, or a
@@ -891,6 +893,10 @@ never one migration file's text, so that the day itself changes nothing about it
 **A column nothing reads is removed, not kept.** A stored value nobody reads still has to be
 written, and goes stale without anyone noticing.
 
+*Stated exception:* a table or column a specification requires kept as a league's history stays
+without a reader (the copies of a season's signup configuration and slots, for one), named as such
+in the module's design file.
+
 ---
 
 ## Timed work and restarts
@@ -986,6 +992,32 @@ failures").
 Which lane a timer's change runs on is the core specification's ("How a change is carried out",
 where a conversation's own timers run on its lane); the callback asks its change as any request is
 asked, and the change type gives the lane from the payload (`ChangeType.lane`).
+
+**A timer is disarmed by a job after the save that made its work no longer due, never inside that
+save.** Disarming reaches the scheduler, which is not the database, so a save that disarmed inside
+itself and then rolled back would leave the work owed with no timer to wake it. The change's own job
+after the save disarms (`disarm_timers`), and a timer that still fires after a failed disarm asks a
+change whose check finds the work no longer due ("The database says when something is due"). Where a
+timer must outlive the change that disarms the others (a held channel's deletion, armed by the job
+that closes the conversation), the disarm names the timers it takes and leaves that one. *Rejected:*
+disarming in the save, which lets a rolled-back save lose a timer; and leaving every timer to find
+itself not due, which holds the scheduler's jobs until they fire.
+
+**The change a timer asks is not due while its module is off, judged in the change's check.** The
+switch is read where the work is judged, so that a timer left standing from before the switch-off,
+or one a start-up step asks, does nothing and the host's log says so, and a module's switching off
+needs no list of its timers to take away. A stated exception is work the module announced while on
+and which nothing could arm again later: a held signup channel's 24 hours, whose deletion runs
+while the module is off because the league was told the channel goes (the docstring of the
+deletion's change names it, and a test pins it).
+
+**A confirmation's lapse that changes nothing but the record of its own abandonment may be held in
+memory, and a restart drops it unrecorded.** Where a lapse writes nothing a restart would need (a
+confirmation's buttons that time out, signup's pending reason awaiting a typed answer, core's
+presses awaiting a confirmation: `ConfirmCloseView`'s timeout, signup's pending reason and core's
+`_PRESSES`), a timer in memory is enough: the lapse is not a change on the queue, and what the
+restart drops is the abandoned request, which the member asks again. A lapse that changes a record
+a league relies on is a one-off timer that asks a change, as above.
 
 **Start-up runs once, in one function.** discord.py can report the bot as "ready" more than once in
 a single run, after a network drop, so start-up work does not belong in the handler for that event.
@@ -1220,6 +1252,15 @@ log channel cannot take.
 itself. *Rejected:* no longer retrying these posts. *Rejected:* keeping the retry queue for posts
 beside the change queue, as two mechanisms for one job.
 
+**A job that posts and cannot be discarded posts only what is bounded by construction.** A post
+that cannot be dropped and cannot be made stops its lane for good, so the text of one is bounded
+before it is posted: text built from what a member typed or a league configured is divided through
+`chunk_message`, the parts posted one after another, or limited where the quoted part is accepted
+at a length (a wrong answer quoted back in a refusal). A text nothing bounds, such as a panel of a
+league's own long configuration posted as one message, is a fault waiting for the league that
+writes it. *Rejected:* trusting the limits of the inputs, which are the member's and the league's
+and not the bot's.
+
 Which channels exist, and what may go in each, is the constitution's Principle VII and the channel
 registry (`channel_registry_service`).
 
@@ -1274,7 +1315,10 @@ notice, and `send_log_text` for the retry of a late one), which divides a record
 message on its line breaks where it can, and at the limit where one line alone is too long; a reply
 too long for one message is sent in parts through `chunk_message` (`core/utils/messages.py`), which
 does the dividing for each of them. That is how a record meets the core specification's "The record
-of what changed" on length.
+of what changed" on length. `chunk_message` has a second mode for a list of records (`records=True`):
+the text is blocks joined by blank lines, and is divided only between blocks, so that no record is
+split across two messages; a block too long for one message is divided at the limit, as in the first
+mode. A reply that lists records, such as `/signup unassigned`, divides through it.
 
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
 command does not catch itself reaches `report_failure` through the command tree. The tree steps

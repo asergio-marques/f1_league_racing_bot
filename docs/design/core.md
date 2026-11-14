@@ -185,9 +185,10 @@ A cog's reads are asked of a core service, as architecture.md's "What each part 
 it: `pack_service.what_stops_a_pack`, `track_service.list_tracks` and `resolve_track`,
 `PlacementService.division_lineup`. `/season config-review` reads `bot.configuration_faults`, the
 reader the builder makes (`_make_configuration_faults`), which asks
-`approval_checks.configuration_faults` with the services, signup's among them, as they stand when it
-is asked, so that core reaches the module only as architecture.md's "How modules and core fit
-together" has it.
+`approval_checks.configuration_faults` with the services and the hooks as they stand when it is
+asked. Signup's share of what it finds, the signup channel and the league's two roles, arrives
+through the `configuration_faults_read` hook, so that core reaches the module only as
+architecture.md's "How modules and core fit together" has it and holds no rule of signup's.
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
 status and stage, a division's and a round's status, the driver's state, the change queue's
@@ -467,8 +468,8 @@ own design pass.
 |---|---|---|
 | core | expired review prompts | asks each standing review's take-down, and routes its Approve view again |
 | core | hub | routes the hub's buttons again and asks the panel's refresh |
-| signup | signup close timer | closes a signup window whose close passed, or arms its timer again |
-| signup | wizards | arms each signup wizard's inactivity timer again |
+| signup | signup close timer | asks the close of a signup window whose close passed, or the arming of the timer of one still ahead |
+| signup | wizards | asks the expiry of each signup left unanswered for 24 hours and the deletion of each hold that ran out; arms nothing |
 | results | amendment sweep | arms results' standing sweep of lapsed amendments |
 | results | orphaned amend channels | asks each open amendment's lapse; before the submission channels, for the reason its comment gives |
 | results | orphaned submission channels | asks each open submission's review or restart |
@@ -583,7 +584,8 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `rounds_made_final` | A | results | `season_service` (`end_rounds_awaiting_results_on`, `close_raced_rounds_on`) |
 | `placements_confirmed`, `placements_confirmed_steps` | A, P | results, attendance | `season_approval_change` |
 | `configuration_confirmed` | A | signup | `configuration_confirm_change` |
-| `confirmation_refused` | A | results | `confirmation_refusals` |
+| `confirmation_refused` | A | results, signup | `confirmation_refusals` |
+| `configuration_faults_read` | A | signup | `approval_checks` |
 | `review_sections_read` | A | signup, attendance, results, weather | `review_sections` |
 | `division_lines_read` | A | results, attendance, weather | `review_sections` |
 | `division_channel_faults_read` | A | weather, results, attendance | `approval_checks` |
