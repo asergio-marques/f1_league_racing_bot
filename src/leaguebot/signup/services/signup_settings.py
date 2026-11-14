@@ -27,7 +27,7 @@ of any other kind after the insert is a fault, never read as a duplicate
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, Verdict
@@ -145,13 +145,19 @@ def _toggle(command: str, field: str, *, modules: "ModuleService") -> Setting:
     )
 
 
-async def open_to_change(modules: "ModuleService", db_path: str, command: str) -> str | None:
+async def open_to_change(
+    modules: "ModuleService", db_path: str, command: str,
+    *, repairing: Callable[[], Awaitable[bool]] | None = None,
+) -> str | None:
     """The words refusing a change to the signup settings: the module off, or a season whose
-    confirmed configuration has fixed them. None where it may go ahead."""
+    confirmed configuration has fixed them. None where it may go ahead.
+
+    A setting that repairs what the league cannot do without passes *repairing*, which says
+    whether the change is a repair now: a fixed configuration then does not refuse it."""
     if not await modules.is_signup_enabled():
         return NOT_ENABLED
     season_number = await configuration_fixed(db_path)
-    if season_number is not None:
+    if season_number is not None and not (repairing is not None and await repairing()):
         return fixed_refusal(season_number, command)
     return None
 

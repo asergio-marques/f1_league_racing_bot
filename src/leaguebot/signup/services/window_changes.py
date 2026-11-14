@@ -96,9 +96,9 @@ from leaguebot.signup.services.closing_steps import (
     window_close_jobs,
     window_close_steps,
 )
-from leaguebot.signup.services.signup_posting import post_standing_message
+from leaguebot.signup.services.information_post import post_information
+from leaguebot.signup.services.information_post import stamp as _stamp
 from leaguebot.signup.services.window_close import CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of
-from leaguebot.signup.services.signup_views import SignupButtonView
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
@@ -155,9 +155,6 @@ def armed_close_refusal(close_at: str) -> str:
     )
 
 
-def _stamp(moment: datetime, fmt: Literal["F", "R"] = "F") -> str:
-    """A dynamic timestamp for *moment*, read as UTC where it carries no zone."""
-    return discord.utils.format_dt(moment, fmt)
 
 
 def window_open_change(
@@ -247,50 +244,11 @@ def window_open_change(
     async def post_info(ctx: StepContext) -> StepResult:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         payload = ctx.step_payload
-        guild = await league_guild(ctx.bot)
-        found = None if guild is None else guild.get_channel(int(payload["channel_id"]))
-        if guild is None or not isinstance(found, discord.TextChannel):
-            raise StepFailedOnDiscord("the signup channel could not be found to post in")
-        server_cfg = await config.get_server_config()
-        base_role_id = server_cfg.base_role_id if server_cfg is not None else None
-        base_role = guild.get_role(base_role_id) if base_role_id else None
-        track_ids = [str(each) for each in payload["track_ids"]]
-        if track_ids:
-            async with get_connection(ctx.db_path) as db:
-                names = await track_service.get_track_name_map(db)
-            tracks_display = "\n".join(f"• {names[each]}" for each in track_ids)
-        else:
-            tracks_display = "No tracks specified"
-        settings = await signup.get_settings()
-        slots = await signup.get_slots()
         close_at = payload["close_at"]
-        close_line = ""
-        if close_at:
-            parsed = datetime.fromisoformat(close_at)
-            close_line = f"\n**Auto-closes:** {_stamp(parsed)} ({_stamp(parsed, 'R')})"
-        role_line = f"\n\n{base_role.mention} — click below to sign up!" if base_role else ""
-        time_type = "Time Trial" if settings.time_type == "TIME_TRIAL" else "Short Qualification"
-        embed = discord.Embed(
-            title="🏁 Driver Signups Are Open!",
-            description=(
-                "**Available time slots:**\n"
-                + "\n".join(f"• {s.display_label}" for s in slots)
-                + f"\n\n**Tracks:**\n{tracks_display}"
-                + f"\n\n**Time type:** {time_type}"
-                + f"\n**Time image proof:** {'Required' if settings.time_image_required else 'Not required'}"
-                + f"\n**Nationality:** {'Required' if settings.nationality_required else 'Not required'}"
-                + close_line
-                + role_line
-            ),
-            color=discord.Color.green(),
-        )
-        mentions = (
-            discord.AllowedMentions(roles=[base_role]) if base_role
-            else discord.AllowedMentions.none()
-        )
-        message_id = await post_standing_message(
-            found, embed=embed, view=SignupButtonView(queue()), mentions=mentions,
-            refused=f"the information message could not be posted in channel {found.id}",
+        track_ids = [str(each) for each in payload["track_ids"]]
+        message_id = await post_information(
+            ctx.bot, signup=signup, config=config, queue=queue(),
+            channel_id=int(payload["channel_id"]), track_ids=track_ids, close_at=close_at,
         )
         audited: dict[str, Any] = {"track_ids": track_ids}
         if close_at:

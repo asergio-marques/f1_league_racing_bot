@@ -372,10 +372,7 @@ async def test_moving_the_signup_channel_sets_the_new_before_clearing_the_old(tm
 
 
 @pytest.mark.parametrize("gone", [
-    pytest.param(True, id="gone", marks=pytest.mark.xfail(strict=True, reason=(
-        "#286: /signup channel is refused as fixed for the season even where the stored signup "
-        "channel is gone, so a league cannot replace it mid-season"
-    ))),
+    pytest.param(True, id="gone"),
     pytest.param(False, id="standing"),
 ])
 async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
@@ -428,10 +425,6 @@ async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
         await _assert_one_refusal_line(league, "/signup channel", "fixed for Season 3")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: replacing the signup channel while signups are open sets its permissions and posts "
-    "nothing, so the new channel has no Sign Up button"
-))
 async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button(
     tmp_path,
 ):
@@ -449,7 +442,8 @@ async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign
             "VALUES ('2026-09-17', 'SETUP', 3, 'SIGNUPS')"
         )
         await db.execute(
-            "INSERT INTO signup_windows (season_id, selected_tracks_json) VALUES (?, '[]')",
+            "INSERT INTO signup_windows (season_id, selected_tracks_json, opened_at) "
+            "VALUES (?, '[]', '2026-09-20T10:00:00+00:00')",
             (cursor.lastrowid,),
         )
         await db.execute(

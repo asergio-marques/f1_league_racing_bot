@@ -402,6 +402,7 @@ def register_change_types(bot: "LeagueBot") -> None:
             channel_setting(
                 modules=bot.module_service, signup=bot.signup_module_service,
                 config=bot.config_service, channel_uses_read=bot.channel_uses_read,
+                queue=lambda: bot.change_queue,
             )
         )
     )
