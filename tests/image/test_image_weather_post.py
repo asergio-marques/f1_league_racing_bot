@@ -137,11 +137,6 @@ async def test_the_aspect_being_off_falls_back_to_text(monkeypatch):
     assert await _attach(_bot(aspect_on=False), monkeypatch, _drawing()) == (None, [])
 
 
-#: What a picture's line names until it names the round as a league reads it (#287, B8).
-_NAMED_BY_SEASON = "#287: a picture's line names the forecast by season, division and round"
-
-
-@pytest.mark.xfail(strict=True, reason=_NAMED_BY_SEASON)
 async def test_an_invalid_template_falls_back_to_text(monkeypatch):
     """A picture was due for Division 1's round 4, phase 3, but its template file is too small:
     the reason is handed back, naming the forecast as a league reads the round, never by its
@@ -180,8 +175,7 @@ async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_
 @pytest.mark.parametrize(
     ("round_reads", "named"),
     [
-        pytest.param(True, "round 4 in **Division 1**, phase 2",
-                     marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_SEASON)),
+        (True, "round 4 in **Division 1**, phase 2"),
         (False, "phase 2"),
     ],
     ids=["round-readable", "round-unreadable"],
@@ -321,7 +315,6 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
     return bot
 
 
-@pytest.mark.xfail(strict=True, reason=_NAMED_BY_SEASON)
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
     """FR-059 — the picture is handed back, and the substitution with it, as a line for the log
     channel naming what it pertains to: Division 1's round 4, phase 2, as a league reads the

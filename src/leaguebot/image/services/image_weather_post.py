@@ -189,15 +189,16 @@ async def render_forecast(
     return ForecastRender(png=decision.png_paths[0], notices=decision.notices)
 
 
-def describe(*, division_name: str, round_number, phase: int, season_number=None) -> str:
-    """What a report names, so a manager can find the forecast it pertains to (FR-059)."""
-    parts = []
-    if season_number is not None:
-        parts.append(f"season {season_number}")
-    parts.append(str(division_name))
-    parts.append(f"round {round_number}")
-    parts.append("mystery notice" if phase == 0 else f"phase {phase}")
-    return ", ".join(parts)
+def describe(*, division_name: str, round_number, phase: int) -> str:
+    """What a report names, so a manager can find the forecast it pertains to (FR-059).
+
+    The round is named as a league reads it, "round 3 in **Pro**", as core names a round in the log
+    channel.
+    """
+    return (
+        f"round {round_number} in **{division_name}**, "
+        + ("mystery notice" if phase == 0 else f"phase {phase}")
+    )
 
 
 async def attach_forecast(
@@ -261,12 +262,11 @@ async def attach_forecast(
 
 
 def _named(drawing, phase: int) -> str:
-    """What a report names of *drawing*'s forecast: its season, division, round and phase."""
+    """What a report names of *drawing*'s forecast: its round, as a league reads it, and its phase."""
     return describe(
         division_name=drawing.division_name,
         round_number=drawing.round_number,
         phase=0 if drawing.is_mystery else phase,
-        season_number=drawing.season_number,
     )
 
 
