@@ -170,8 +170,6 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
-    ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
 }
 
@@ -2430,8 +2428,6 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
-    ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
     ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
         (2, PASS["image"]),
@@ -3169,7 +3165,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),

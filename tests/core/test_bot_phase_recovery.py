@@ -60,11 +60,6 @@ from tests.support.start_up_sweep import round_failures, run_weather_start_up_st
 
 #: The name weather's start-up step runs under.
 MISSED_PHASES = "missed phases"
-#: Why a test fails until weather's recoveries are a weather service (#287, C1).
-NOT_YET_A_SERVICE = (
-    "#287: weather's missed-phases recovery is not yet a service judging at the queue's clock "
-    "and raising RecoveryFailed at the end"
-)
 
 SERVER_ID = 12008
 SEASON_ID = 1
@@ -362,7 +357,6 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
 async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
     """Rounds 1 and 2 are both past their Phase 1 horizon with Phase 1 not drawn, and the queue
     refuses round 1's ask. Run through the start-up sweep, the step still asks round 2's Phase 1,
@@ -389,7 +383,6 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert sweep["lines"] == [start_up_failure_line(MISSED_PHASES, error)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
 async def test_the_missed_phases_catch_up_reads_the_queue_s_clock(tmp_path):
     """Round 1 races thirty days from now by the host's clock, no phase drawn, while the queue's
     clock, the bot's, stands twenty-six days later: four days before the race, past the packaged

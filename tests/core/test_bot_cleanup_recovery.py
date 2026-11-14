@@ -47,11 +47,6 @@ ROUND_ID = 21
 CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 #: The name weather's start-up step runs under.
 MISSED_FORECAST_CLEAN_UPS = "missed forecast clean-ups"
-#: Why a test fails until weather's recoveries are a weather service (#287, C1).
-NOT_YET_A_SERVICE = (
-    "#287: weather's forecast clean-up catch-up is not yet a service judging at the queue's "
-    "clock, its read uncaught and its failures raised as RecoveryFailed at the end"
-)
 
 
 async def _make_db(
@@ -252,7 +247,6 @@ async def test_the_check_in_clean_up_catch_up_reads_the_queue_s_clock(tmp_path):
     assert _check_ins_asked(bot) == [ROUND_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
 async def test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock(tmp_path):
     """Round 21 started two hours ago by the host's clock, its Phase 3 forecast standing, while
     the queue's clock, the bot's, stands a day and three hours after its start. Weather's "missed
@@ -370,7 +364,6 @@ async def test_weather_switched_off_keeps_its_forecasts(tmp_path):
     assert await _recover(_bot(db_path), weather_on=False) == ([], [ROUND_ID])
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
 async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path):
     """Round 21 is a day past, its forecast and its call standing, and asking its forecast
     clean-up fails. Weather's step raises its own `RecoveryFailed` naming round 21 with that
@@ -461,7 +454,6 @@ async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_rou
     assert lines == [start_up_failure_line("missed check-in clean-ups", error)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
 async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
     tmp_path,
 ):
@@ -482,7 +474,6 @@ async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported
     asked.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
 async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
     """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
     22's, raced 30 hours ago. At the restart the queue refuses round 22's forecast clean-up. Run
@@ -525,7 +516,6 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert lines == [start_up_failure_line(MISSED_FORECAST_CLEAN_UPS, error)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
 async def test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone(tmp_path):
     """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
     22's, its start stored without its offset, which no writer produces and the bot refuses to

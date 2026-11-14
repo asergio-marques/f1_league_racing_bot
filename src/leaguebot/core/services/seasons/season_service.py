@@ -1697,6 +1697,32 @@ async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
         return [_row_to_round(row) for row in await cursor.fetchall()]
 
 
+async def rounds_of_the_active_season(db_path: str) -> list[Round]:
+    """Each round of the ACTIVE season that is not cancelled, of a division not cancelled,
+    earliest first.
+
+    For a module catching up what came due while the bot was down: weather's missed phases, which
+    a season is owed while it is live, whatever stage it is in. A round whose stored moment cannot
+    be read is passed over, as one that can be placed nowhere. It writes nothing.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
+            "r.status FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status = 'ACTIVE' AND r.status != 'CANCELLED' AND d.status != 'CANCELLED' "
+            "ORDER BY r.scheduled_at, r.id"
+        )
+        rows = await cursor.fetchall()
+    rounds: list[Round] = []
+    for row in rows:
+        try:
+            rounds.append(_row_to_round(row))
+        except ValueError:
+            continue
+    return rounds
+
+
 async def rounds_of_ongoing_seasons(db_path: str, statuses: Iterable[str]) -> list[Round]:
     """Each round of a season in an ongoing stage (`ONGOING_STAGES`) whose status is one of
     *statuses*, earliest first, a round of a cancelled division left out.
