@@ -200,8 +200,7 @@ def describe(*, division_name: str, round_number, phase: int) -> str:
 
 
 def _phase_name(phase: int) -> str:
-    """What a line calls *phase* where the round cannot be named: phase 0 is the mystery round's
-    notice, never a phase."""
+    """What a line calls *phase*: phase 0 is the mystery round's notice, never a phase."""
     return "the mystery round notice" if phase == 0 else f"phase {phase}"
 
 
@@ -229,7 +228,8 @@ async def attach_forecast(
     (architecture.md, "A catch-all error handler", place 6): a fault in any of it is a line, never a
     break in the forecast. The inner is around reading the round to name the line of a switch that
     could not be read (place 3, naming something in a line must not fail the line): a round that
-    cannot be read leaves the line naming the phase alone, and the switch's reason still reaches it.
+    cannot be read leaves the line naming the phase, or the notice, alone, and the switch's reason
+    still reaches it.
     """
     import discord
 
@@ -244,7 +244,7 @@ async def attach_forecast(
                 named = await build_drawing_for_round(bot, round_id, drawn_phase, values=values)
                 if named is not None:
                     what = _named(named, phase)
-            except Exception as exc:  # noqa: BLE001 — the line then names no more than the phase
+            except Exception as exc:  # noqa: BLE001 — the line then names no more than the phase or the notice
                 log.error("weather: could not name round %s for a line: %s", round_id, exc, exc_info=True)
             return None, (_fault(what, why),)
 
