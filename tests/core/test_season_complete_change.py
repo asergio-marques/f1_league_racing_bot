@@ -36,6 +36,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
+    SERVER_ID,
     acknowledgement,
     change_rows,
     discard_job,
@@ -2669,8 +2670,8 @@ async def test_a_forecast_that_will_not_delete_stops_the_completion_and_once_dis
     """As above, but Discord refuses to delete Pro's Phase 1 forecast of round 4 (9401): the
     queue stops at its `delete_forecast` job, the forecast and its record kept. A league admin
     discards it: the season is completed, the other two forecasts are deleted, and the reply and
-    the closing line (Incomplete) name 'The Phase 1 forecast of round 4 could not be deleted:
-    delete it by hand (…)' with the message's link."""
+    the closing line (Incomplete) name it word for word as 'The Phase 1 forecast of round 4 could
+    not be deleted: delete it by hand (<the message's link>).'"""
     league = await _test_forecasts_posted(tmp_path)
     league.undeletable.add(9401)
     interaction = await _asked(league)
@@ -2688,11 +2689,44 @@ async def test_a_forecast_that_will_not_delete_stops_the_completion_and_once_dis
     assert await _status(league) == "COMPLETED"
     assert 9402 not in league.channel(PRO_CH.forecast).messages
     assert 9501 not in league.channel(AM_CH.forecast).messages
-    named = "The Phase 1 forecast of round 4 could not be deleted: delete it by hand ("
-    [entry] = [line for line in _not_done(reply(interaction)) if named in line]
-    assert "9401" in entry
+    named = (
+        "The Phase 1 forecast of round 4 could not be deleted: delete it by hand "
+        f"(https://discord.com/channels/{SERVER_ID}/{PRO_CH.forecast}/9401)."
+    )
+    assert named in _not_done(reply(interaction))
     [line] = _closing_lines(league)
-    assert INCOMPLETE in line and named in line and "9401" in line
+    assert INCOMPLETE in line and named in line
+
+
+async def test_a_discarded_forecast_whose_server_was_not_found_is_named_by_its_message_and_channel(
+    tmp_path,
+):
+    """As above, but the league's server could not be found as the delete failed, so the stopped
+    `delete_forecast` job kept no server id beside the channel and the message (its result is
+    left so here, as the delete leaves it). A league admin discards it: the reply and the closing
+    line (Incomplete) name it word for word as 'The Phase 1 forecast of round 4 could not be
+    deleted: delete it by hand (message 9401 in <#<the forecast channel>>).'"""
+    league = await _test_forecasts_posted(tmp_path)
+    league.undeletable.add(9401)
+    interaction = await _asked(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    kept = dict(stopped["result"])
+    del kept["guild_id"]
+    await league.write("UPDATE queued_change_steps SET result = ? WHERE id = ?",
+                       json.dumps(kept), stopped["id"])
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _status(league) == "COMPLETED"
+    named = (
+        "The Phase 1 forecast of round 4 could not be deleted: delete it by hand "
+        f"(message 9401 in <#{PRO_CH.forecast}>)."
+    )
+    assert named in _not_done(reply(interaction))
+    [line] = _closing_lines(league)
+    assert INCOMPLETE in line and named in line
 
 
 async def _forecast_in_two_parts(tmp_path: Any) -> Any:
