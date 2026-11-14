@@ -772,8 +772,9 @@ class SignupCog(commands.Cog):
         # Availability is the question a division is built around, so it is named in full
         # here rather than summarised: a league may configure 25 slots, and a driver who
         # ticks every one of them costs a ~500-character line, taking the worst single
-        # driver block to some 800 — inside the message limit, which the records mode of
-        # `chunk_message` divides between drivers only and so could not divide one (decided 2026-09-20, #184).
+        # driver block to some 800 — well inside the message limit, so the records mode of
+        # `chunk_message` divides between drivers and never needs to divide one (decided
+        # 2026-09-20, #184).
         #
         # The labels are matched on the slot's durable ``slot_id`` and rendered in the
         # league's own chronological order. Matching on ``slot_sequence_id`` instead would
