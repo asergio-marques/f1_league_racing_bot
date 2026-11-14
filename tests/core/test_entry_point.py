@@ -859,8 +859,8 @@ _RECOVERIES_OF_THE_STEPS = {
                                      "recover_orphaned_submission_channels"),
     "missed round starts": ("leaguebot.results.services.submission.submission_recovery",
                             "recover_missed_round_starts"),
-    "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
-    "missed forecast clean-ups": ("leaguebot.weather.wiring",
+    "missed phases": ("leaguebot.weather.services.forecast_recovery", "recover_missed_phases"),
+    "missed forecast clean-ups": ("leaguebot.weather.services.forecast_recovery",
                                   "recover_missed_forecast_clean_ups"),
     "missed check-in calls": ("leaguebot.attendance.services.check_in.check_in_recovery",
                               "recover_missed_check_in_calls"),
@@ -876,10 +876,18 @@ _RECOVERIES_OF_THE_STEPS = {
 _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
     {"signup close timer", "wizards", "held signup channels", "orphaned amend channels", "orphaned submission channels",
      "missed round starts",
-     "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups"}
+     "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups",
+     "missed phases", "missed forecast clean-ups"}
 )
 
 
+#: The steps whose recovery is handed the bot's database path in place of the bot: weather's two,
+#: which take nothing else of the bot (#287).
+_RECOVERIES_GIVEN_THE_DATABASE_PATH = frozenset({"missed phases", "missed forecast clean-ups"})
+
+
+@pytest.mark.xfail(strict=True, reason="#287: weather's two start-up recoveries are not yet "
+                   "forecast_recovery's, handed the database path and the change queue")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read
@@ -915,7 +923,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     amendment sweep arms the bot's scheduler's sweep; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
-    service does not look the queue up on the bot; each of the others in its module's wiring.
+    service does not look the queue up on the bot; each of the others in its module's wiring, but
+    weather's two, `recover_missed_phases` and `recover_missed_forecast_clean_ups` in
+    `weather.services.forecast_recovery`, each handed the bot's database path and its queue.
     The RSVP views' recovery is handed the way to build the check-in buttons too (`view_of`), made
     by attendance's wiring, so that `LeagueBot` declares no `check_in_view` for it to look up.
     Nothing is posted to the log channel.
@@ -1021,7 +1031,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
                                         "hub_options": bot.hub_options}),
         "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {
-        step: (function, (bot,),
+        step: (function,
+               (bot.db_path,) if step in _RECOVERIES_GIVEN_THE_DATABASE_PATH else (bot,),
                {"queue": bot.change_queue} if step in _RECOVERIES_GIVEN_THE_QUEUE else {})
         for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
     }
