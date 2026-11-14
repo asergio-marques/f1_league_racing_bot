@@ -338,18 +338,15 @@ class TestSnapshotStoresTheDurableIdentity:
 
 class TestWindowState:
     async def _make_config(self, db_path):
-        """Helper: insert a signup_module_config row for server 1."""
+        """Helper: insert a signup_module_config row for server 1, in a save of the test's own."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
-        from leaguebot.signup.models.signup_module import SignupModuleConfig
-        svc = SignupModuleService(db_path)
-        cfg = SignupModuleConfig(
-            signup_channel_id=100,
-            signups_open=False,
-            signup_button_message_id=None,
-            selected_tracks=[],
-        )
-        await svc.save_config(cfg)
-        return svc
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO signup_module_config (id, signup_channel_id, signups_open)"
+                " VALUES (1, 100, 0)"
+            )
+            await db.commit()
+        return SignupModuleService(db_path)
 
     async def test_default_window_closed(self, db_path):
         svc = await self._make_config(db_path)
