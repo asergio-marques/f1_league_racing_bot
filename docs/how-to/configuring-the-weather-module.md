@@ -240,6 +240,6 @@ Worth running through before the season is approved.
 | A driver asks when the next forecast is due | The posts do not say, by design — they promise only that an accurate one follows later. `/weather config view` gives you your own deadlines |
 | `/weather config` refused | Either the season's placements are confirmed, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one round | It was amended twice after a forecast went out. One amendment posts one notice, however many things it changes |
-| Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter. With pictures switched off, text is what was due and nothing is recorded |
+| Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the round ("round 3 in **Pro**"), the phase and the reason — most often a drawing file or the converter. With pictures switched off, text is what was due and nothing is recorded |
 | A forecast that seems too wet for the stated chance of rain | Normal. The chance of rain shifts the odds; it does not decide the outcome |
 | Nothing in the log channel either | The module is off, or the season is not approved yet — nothing is scheduled until it is |
