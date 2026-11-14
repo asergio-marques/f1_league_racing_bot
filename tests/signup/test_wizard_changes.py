@@ -1500,10 +1500,6 @@ async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_job
     pytest.param(
         "ASSIGNED", "another-season-after", "Lewis Hamilton",
         id="assigned-another-season-s-signup-saved-after",
-        marks=pytest.mark.xfail(strict=True, reason=(
-            "#286: the departure line names the driver from his latest signup, whatever its "
-            "season, not from his signup for the live season"
-        )),
     ),
 ])
 async def test_a_placed_driver_leaving_writes_the_line_through_the_queue(

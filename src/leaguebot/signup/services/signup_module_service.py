@@ -178,6 +178,17 @@ class SignupModuleService:
                     found[profile_id] = row
         return found
 
+    async def live_season_signup(self, profile_id: int) -> aiosqlite.Row | None:
+        """The signup that is the driver's for the live season, as `driver_signup_on` chooses it
+        across the accounts core holds for them, or None where they have none for it. Where no
+        season is live, their signups of every season are considered."""
+        async with get_connection(self._db_path) as db:
+            live = await live_season_stage_on(db)
+            return await driver_signup_on(
+                db, await accounts_of_profile(db, profile_id),
+                season_id=None if live is None else live[0],
+            )
+
     async def _unsettled_drivers(self) -> list[tuple[dict[str, Any], aiosqlite.Row | None]]:
         """Every driver whose signup is unsettled (core's `UNSETTLED_STATES`), each beside their
         signup, in the order the listings keep (`_listing_order`)."""

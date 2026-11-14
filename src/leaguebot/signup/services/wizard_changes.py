@@ -945,7 +945,7 @@ def member_left_change(
     nothing to clean up either but the line that they left: `leave` is that line alone for them,
     with no transition, no timer taken away and no channel deleted. Its jobs
     are `name_driver`, which finds the name and state for the line (a save waits on no second
-    connection); `leave` (a save), which moves them to Not Signed
+    connection), a placed driver being named from their signup for the live season; `leave` (a save), which moves them to Not Signed
     Up, keeps the wizard's row while a channel stands to be deleted, and writes the line;
     `disarm_timers`, which takes the driver's timers away once `leave` is saved; and
     `delete_channel`, which deletes the channel at once, with no hold, and whose record deletes the
@@ -1003,13 +1003,22 @@ def member_left_change(
         # A read that fails stops the lane like any job's (architecture, "Errors and failures"),
         # rather than write the line under the member's id.
         user_id = str(ctx.step_payload["user_id"])
-        record = await signup().get_record(user_id)
         label = await state_label(user_id)
         placed_driver = label is not None and label[1]
         # A placed driver without a signup record is named as the server names them.
         name = (ctx.step_payload.get("name") if placed_driver else None) or user_id
-        if record is not None:
-            name = record.server_display_name or record.discord_username or user_id
+        if placed_driver:
+            # From the signup that stands for them in the live season, which another season's
+            # signup, saved later, is not.
+            profile = await drivers().get_profile(user_id)
+            row = None if profile is None else await signup().live_season_signup(profile.id)
+            if row is not None:
+                name = row["server_display_name"] or row["discord_username"] or user_id
+        else:
+            # A driver still signing up, from the signup under review.
+            record = await signup().get_record(user_id)
+            if record is not None:
+                name = record.server_display_name or record.discord_username or user_id
         return StepResult(result={
             "name": name, "state": None if label is None else label[0], "placed": placed_driver,
         })
