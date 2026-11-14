@@ -1769,7 +1769,9 @@ TABLE_OWNER: dict[str, str] = {
 #: `tests/core/test_schema_rules.py` holds each to the schema the migrations build.
 OWN_COLUMNS: dict[str, dict[str, frozenset[str]]] = {
     "weather": {
-        "rounds": frozenset({"phase1_done", "phase2_done", "phase3_done"}),
+        "rounds": frozenset(
+            {"phase1_done", "phase2_done", "phase3_done", "mystery_notice_given"}
+        ),
         "sessions": frozenset({"phase2_slot_type", "phase3_slots"}),
         "divisions": frozenset({"forecast_channel_id"}),
         "server_configs": frozenset({"weather_module_enabled"}),

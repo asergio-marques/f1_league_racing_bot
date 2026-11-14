@@ -404,9 +404,13 @@ class TestRunMysteryNotice:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: the notice's record sets `phase1_done`, as if a Phase 1 forecast were drawn",
+)
 async def test_the_notice_s_record_writes_only_on_the_connection_it_is_handed(tmp_path):
-    """The notice marks the round's Phase 1 done on the save handed, committing nothing of its
-    own: its flag stands or falls with the job, and the notice is posted by a job after it, so
+    """The notice marks itself given (`mystery_notice_given`) on the save handed, leaving the
+    round's Phase 1 undone, no forecast having been drawn, and committing nothing of its own: its flag stands or falls with the job, and the notice is posted by a job after it, so
     a notice Discord refuses no longer leaves the flag set and nothing posted (#439)."""
     from leaguebot.core.db.database import get_connection, run_migrations
     from leaguebot.weather.services.mystery_notice_service import record_mystery_notice_on
@@ -420,8 +424,10 @@ async def test_the_notice_s_record_writes_only_on_the_connection_it_is_handed(tm
 
     async with get_connection(db_path) as db:
         drawn = await record_mystery_notice_on(db, 5)
-        cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = 5")
-        assert (await cursor.fetchone())["phase1_done"] == 1
+        cursor = await db.execute(
+            "SELECT phase1_done, mystery_notice_given FROM rounds WHERE id = 5")
+        row = await cursor.fetchone()
+        assert (row["phase1_done"], row["mystery_notice_given"]) == (0, 1)
         await db.rollback()
 
     # Nothing is drawn for a notice, and it writes no line (weather spec :128).
@@ -429,5 +435,5 @@ async def test_the_notice_s_record_writes_only_on_the_connection_it_is_handed(tm
     assert drawn.line is None
     assert not drawn.blocked
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = 5")
-        assert (await cursor.fetchone())["phase1_done"] == 0
+        cursor = await db.execute("SELECT mystery_notice_given FROM rounds WHERE id = 5")
+        assert (await cursor.fetchone())["mystery_notice_given"] == 0

@@ -301,10 +301,15 @@ async def test_a_forecast_whose_id_could_not_be_saved_removes_the_copy_before_it
     assert await _forecasts(league) == {1: new}
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: the notice's record sets `phase1_done`, as if a Phase 1 forecast were drawn",
+)
 async def test_the_mystery_notice_s_flag_is_saved_with_its_record_and_a_refused_notice_stops_the_queue(
     tmp_path,
 ):
-    """Round 3 is a mystery round, and its phase 1 asked: the notice's record sets `phase1_done`;
+    """Round 3 is a mystery round, and its phase 1 asked: the notice's record sets its own flag,
+    `mystery_notice_given`, and leaves `phase1_done` unset, no forecast having been drawn;
     Discord refusing the notice stops the queue, and Retry posts it, mentioning no role and
     deleting nothing (folded defect 5)."""
     league = await _league(tmp_path, mystery=True)
@@ -313,7 +318,9 @@ async def test_the_mystery_notice_s_flag_is_saved_with_its_record_and_a_refused_
     await _ask(league, 1)
     await run_queue(league.bot)
 
-    assert await _done(league, 1) == 1
+    [row] = await league.rows("SELECT mystery_notice_given FROM rounds WHERE id = ?", ROUND)
+    assert row["mystery_notice_given"] == 1
+    assert await _done(league, 1) == 0
     assert await _draws(league, 1) == 0
     assert (await stopped_job(league.db_path))["name"] == "post_forecast"
 
@@ -1033,7 +1040,7 @@ async def test_a_draw_that_fails_stops_the_queue_naming_what_it_was_drawing(
     league = await _league(tmp_path, mystery=mystery)
     if mystery:
         await league.write(
-            "CREATE TRIGGER refuse_notice BEFORE UPDATE OF phase1_done ON rounds "
+            "CREATE TRIGGER refuse_notice BEFORE UPDATE ON rounds "
             "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
         )
     else:
@@ -1058,7 +1065,7 @@ async def test_a_mystery_notice_whose_round_is_amended_away_while_its_record_sto
     Phase 1 is left undone, and the queue goes on."""
     league = await _league(tmp_path, mystery=True)
     await league.write(
-        "CREATE TRIGGER refuse_notice BEFORE UPDATE OF phase1_done ON rounds "
+        "CREATE TRIGGER refuse_notice BEFORE UPDATE ON rounds "
         "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
     )
     await _ask(league, 1)

@@ -459,9 +459,12 @@ async def _mystery_league(tmp_path, *, hours_until_race: float, notice_posted: b
     league = await ongoing_league(tmp_path, weather=True)
     race = datetime.now(timezone.utc) + timedelta(hours=hours_until_race)
     await league.write(
-        "UPDATE rounds SET format = 'MYSTERY', scheduled_at = ?, phase1_done = ? WHERE id = ?",
-        race.isoformat(), int(notice_posted), round_id(PRO, 3),
+        "UPDATE rounds SET format = 'MYSTERY', scheduled_at = ? WHERE id = ?",
+        race.isoformat(), round_id(PRO, 3),
     )
+    if notice_posted:
+        await league.write("UPDATE rounds SET mystery_notice_given = 1 WHERE id = ?",
+                           round_id(PRO, 3))
     return league
 
 
@@ -478,7 +481,12 @@ async def _forecasts_asked(league) -> list[tuple[int, int]]:
     "hours_until_race, notice_posted, expected",
     [
         pytest.param(0.5, False, [(round_id(PRO, 3), 0)], id="its notice owed"),
-        pytest.param(0.5, True, [], id="its notice already posted"),
+        pytest.param(0.5, True, [], id="its notice already posted",
+                     marks=pytest.mark.xfail(
+                         strict=True,
+                         reason="#287: a mystery round's notice is recorded in its Phase 1 flag, "
+                                "with no column of its own",
+                     )),
         pytest.param(-1, False, [], id="its race already run"),
         pytest.param(30 * 24, False, [], id="its first horizon still ahead"),
     ],

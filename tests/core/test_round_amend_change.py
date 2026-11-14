@@ -1658,7 +1658,12 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
 
 @pytest.mark.parametrize("standing", [
     pytest.param("phase 2", id="phase 3 never posted"),
-    pytest.param("mystery notice", id="a mystery round's notice"),
+    pytest.param("mystery notice", id="a mystery round's notice",
+                 marks=pytest.mark.xfail(
+                     strict=True,
+                     reason="#287: a mystery round's notice is recorded in its Phase 1 flag, with "
+                            "no column of its own",
+                 )),
 ])
 async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):
     """Weather on. Pro's round 3 is thirty minutes out with one forecast recorded: (phase 3 never
@@ -1676,8 +1681,8 @@ async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_pat
         await posted_forecast(league, R3, 2, message)
     else:
         message, phase = 8000, 0
-        await league.write("UPDATE rounds SET format = 'MYSTERY', phase1_done = 1 WHERE id = ?",
-                           R3)
+        await league.write(
+            "UPDATE rounds SET format = 'MYSTERY', mystery_notice_given = 1 WHERE id = ?", R3)
         await league.write(
             "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
             "posted_at) VALUES (?, ?, 0, ?, ?)", R3, PRO, message, league.clock.now.isoformat())
@@ -2682,6 +2687,105 @@ async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp
     assert reposts.posted == [(R3, PRO)]
     assert len(_success_lines(league)) == 1
     assert [line for line in _log_lines(league) if "/attendance post-check-in" in line] == []
+
+
+# ── A mystery round's notice, under an amendment (owner, 2026-11-14) ─────────────────────────
+
+
+async def _with_its_notice_posted(league: Any, *, days: float) -> int:
+    """Pro's round 3 made a mystery round, naming no circuit, *days* out, inside its first
+    horizon; its notice asked as its timer asks it and run through the queue. Gives the notice's
+    message."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast
+
+    await league.write("UPDATE rounds SET format = 'MYSTERY', track_name = NULL WHERE id = ?", R3)
+    await _place_r3(league, days=days)
+    await ask_forecast(league.bot.change_queue, league.db_path, R3, 1)
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is None
+    [(kind, notice)] = _forecast_events(league)
+    assert kind == "send"
+    assert await _forecasts(league) == {0: notice}
+    return notice
+
+
+@pytest.mark.parametrize("weather_on", [
+    pytest.param(True, id="weather on"),
+    pytest.param(False, id="weather switched off since the notice"),
+])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: a mystery round whose notice has posted is refused a change of type, for a "
+           "forecast never drawn",
+)
+async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down(
+    tmp_path, weather_on,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is a mystery round three days
+    out, its notice posted in Pro's forecast channel. Weather is left on, or switched off; a
+    manager then changes the round to a Normal round at Silverstone Circuit, its moment as it
+    stands. The amendment is allowed and finishes. The notice is deleted and its record closed,
+    whatever weather's switch, and no notice that forecasts no longer stand is posted. With
+    weather on, the round's Phase 1, whose horizon has passed, is drawn and posted at once, and
+    is the one forecast recorded; with weather off, nothing else is posted (criterion 1)."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           R3, session)
+    notice = await _with_its_notice_posted(league, days=3)
+    if not weather_on:
+        await league.write("UPDATE server_configs SET weather_module_enabled = 0")
+
+    press = await _amended(league, format="NORMAL", track="Silverstone Circuit")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert _outcome(press).startswith(AMENDED)
+    after = _forecast_events(league)[1:]
+    assert [mid for kind, mid in after if kind == "delete"] == [notice]
+    assert notice not in league.channel(PRO_CH.forecast).messages
+    assert not any("Invalidated" in text for text in league.texts(PRO_CH.forecast))
+    sent = [mid for kind, mid in after if kind == "send"]
+    if weather_on:
+        assert len(sent) == 1
+        assert await _forecasts(league) == {1: sent[0]}
+    else:
+        assert sent == []
+        assert await _forecasts(league) == {}
+
+
+@pytest.mark.parametrize("days", [
+    pytest.param(30, id="moved later, before its first horizon again",
+                 marks=pytest.mark.xfail(
+                     strict=True,
+                     reason="#287: moving a mystery round back before its first horizon "
+                            "withdraws its notice as a Phase 1 forecast",
+                 )),
+    pytest.param(1, id="moved earlier"),
+])
+async def test_a_mystery_round_whose_date_is_moved_keeps_its_notice(tmp_path, days):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is a mystery round three days
+    out, its notice posted. A manager moves it to *days* out, still a mystery round, and the
+    amendment runs; then its Phase 1 is asked again, as a timer armed for its new first horizon
+    would ask it. The notice stands with its record: nothing in Pro's forecast channel is deleted,
+    nothing is posted again, and no notice that forecasts no longer stand goes out
+    (criterion 2)."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast
+
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    notice = await _with_its_notice_posted(league, days=3)
+
+    await _amended(league, scheduled_at=_at(league, days=days))
+    await run_queue(league.bot)
+    await ask_forecast(league.bot.change_queue, league.db_path, R3, 1)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert _forecast_events(league) == [("send", notice)]
+    assert notice in league.channel(PRO_CH.forecast).messages
+    assert await _forecasts(league) == {0: notice}
 
 
 # ── Every job a league admin discards is named in today's words ────────────────────────────

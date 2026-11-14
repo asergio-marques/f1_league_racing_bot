@@ -966,7 +966,12 @@ async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
 
 
 @pytest.mark.parametrize("phase", [
-    pytest.param(0, id="mystery notice"),
+    pytest.param(0, id="mystery notice",
+                 marks=pytest.mark.xfail(
+                     strict=True,
+                     reason="#287: a mystery round's notice is recorded in its Phase 1 flag, "
+                            "with no column of its own",
+                 )),
     pytest.param(1, id="phase 1"),
 ])
 async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phase):
@@ -999,8 +1004,10 @@ async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phas
              "division_name": "Pro", "track_name": "Silverstone Circuit", "job_id": None}
 
     async def _phase1_done() -> int:
-        [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_)
-        return row["phase1_done"]
+        """The round's Phase 1 flag, or its notice's own flag for the mystery round."""
+        flag = "mystery_notice_given" if phase == 0 else "phase1_done"
+        [row] = await league.rows(f"SELECT {flag} FROM rounds WHERE id = ?", round_)
+        return row[flag]
 
     def _sent() -> list[int]:
         return [mid for kind, cid, mid in league.events if cid == forecast and kind == "send"]
