@@ -167,7 +167,7 @@ the code is laid out"). The table names a service by its file, not its folder.
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook |
 | Module switches | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
-| Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges what an amendment may do and costs, pure; the second names a round in an amendment's step by the number it bears when read |
+| Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and the mystery reveal) and gathers each module's part of the judgement through `amendment_judged`, pure; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
@@ -419,8 +419,11 @@ scheduler is paused until start-up ends.
 amendment and re-arming of a round (`round_amend_change`), through the scheduler service's arming
 functions. Each reads when a round's events fall from `round_event_moments`
 (`core/services/rounds/round_moments.py`), which is pure: no database, no clock, no scheduler. A
-cancellation removes a round's work (`cancel_round`, `cancel_rounds`) before its save. The handlers
-for a round's kinds are the modules'.
+cancellation removes a round's work (`cancel_round`, `cancel_rounds`) before its save. Whether a
+module's work is armed, and with what, is that module's answer through `round_armed`, a `RoundArming`
+of its steps and its jobs (weather's `ForecastJobs`, attendance's `CheckInJobs`); the arming step
+makes the scheduler's calls from them and arms the results submission whatever they answer. The
+handlers for a round's kinds are the modules'.
 
 ### Start-up
 
@@ -576,11 +579,12 @@ which each `_sign_up_to_*` docstring states where it matters.
 |---|---|---|---|
 | `starting` | `StartingHook`, read rather than called | core's two steps, then signup, results, attendance, weather, image | `start_up` |
 | `round_windows_read` | A | attendance, weather | `round_moments.read_round_windows` |
-| `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn` |
+| `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn`, whose one caller is `/season status` |
+| `amendment_judged` | A | attendance, weather | `round_amend_change`, and `/round amend`'s confirmation (`round_cog`) |
 | `round_amended`, `round_clean_ups_due` | A | weather, attendance | `round_amend_change` |
 | `round_armed` | A | attendance, weather | `round_amend_change` |
 | `amendment_steps` | P | weather, attendance | `round_amend_change` |
-| `amendment_step_failure` | P | weather | `round_amend_change` |
+| `amendment_step_failure` | P | weather, attendance | `round_amend_change` |
 | `cancellation_refused` | A | results | `cancellation_changes` |
 | `rounds_called_off` | A | results, attendance | `cancellation_changes` |
 | `cancellation_notices` | A | attendance, weather, results | `cancellation_changes`, and `season_service.end_round_not_held_on`, results' not-held round end's writer |

@@ -223,7 +223,7 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 
 **Core reaches a module only through hooks, and the image module through a protocol it declares
 (below).** Where something in core has to let the modules act (the bot starting, a timed event
-falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
+falling due, a round's amendment judged, a round amended or its timed work armed again, a round's timing windows read, a round,
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
@@ -853,6 +853,12 @@ connection its caller was handed, in one transaction, and a named test pins each
 it. A running total kept beside the rows it sums is such a copy. A module's design file names each
 copy it keeps and the function that recomputes it.
 
+**A stored copy that cannot be recomputed is written together with what it copies.** A random
+draw's outputs, held once as the draw's record and again where another reader wants them, are no
+function of any other row, so there is no recompute to run. Each writer of the copy writes it with
+what it copies, in one save, on the connection it was handed, a named test pins each writer, and the
+module's design file names the copy and its writers (weather's draws, in `weather_module.md`).
+
 *Rejected:* a recompute whose steps each open and commit a connection of their own, which a stop
 leaves right up to one round and stale from the next, with nothing a league can run to repeat it
 (attendance's `_recalculate_forward` docstring).
@@ -968,7 +974,11 @@ save under test mode. Every path arms through these functions. A restart arms no
 store keeping the jobs and the start-up sweep catching up those missed (above), and neither does
 test mode, whose advance brings forward work already armed or found due in the database. A round's
 next-day clean-ups, which its weather and its attendance arming both owe, are armed with them: the
-forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`.
+forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`. **In the amendment
+and the re-arming, whether a module's work is armed, and with what, is that module's answer through
+`round_armed`**: each module hands back its steps and the jobs it owes, and the arming step makes the
+scheduler's calls with what each hands back, so that core holds no module's switch and no module's
+rule about which jobs a moved round owes.
 `schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
 round raced, or ended cancelled because every session was entered as not held.
 
