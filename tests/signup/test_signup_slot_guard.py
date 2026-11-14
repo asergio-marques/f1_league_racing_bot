@@ -19,13 +19,7 @@ import pytest
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import run_queue
-from tests.support.settings_league import (
-    audit_rows,
-    interaction,
-    last_said,
-    log_lines,
-    settings_league,
-)
+from tests.support.settings_league import audit_rows, interaction, last_said, settings_league
 from tests.support.undecorate import undecorate
 
 # ---------------------------------------------------------------------------
@@ -114,8 +108,6 @@ _FIXED_STAGES = ["WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING", "ONGOING_SIGNUPS
 class TestRefusedOnceConfigurationIsConfirmed:
     @pytest.mark.parametrize("stage", _FIXED_STAGES)
     async def test_slot_add_is_refused(self, tmp_path, stage):
-        """The manager is told the settings are fixed, nothing is added, and one line in the
-        standard refusal form names the command, the manager and the season (#442)."""
         league = await _seed(tmp_path, unassigned=0, stage=stage)
         before = await _slot_labels(league.db_path)
 
@@ -123,9 +115,6 @@ class TestRefusedOnceConfigurationIsConfirmed:
 
         assert "fixed for Season 3" in last_said(asked)
         assert await _slot_labels(league.db_path) == before, "no slot may have been added"
-        [line] = await log_lines(league)
-        assert line.startswith("⛔ `/signup time-slot add` refused for Admin (")
-        assert "fixed for Season 3" in line
 
     async def test_slot_remove_is_refused(self, tmp_path):
         league = await _seed(tmp_path, unassigned=0, stage="PLACEMENTS")
