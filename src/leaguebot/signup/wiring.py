@@ -2,14 +2,14 @@
 
 It signs signup up to the hooks core declares, registers signup's switch reader, change types and
 the handlers of its three timers of a signup, the handler of its kind of timed job with the signup
-close, clears what it holds in memory, and holds the recoveries its start-up steps run and the
-closure that cancels a driver's timers. It is under the entry point's rules, not a service's
-(architecture.md, "How the code is laid out"): it reads the bot as the builder does, so each
-function below is handed the bot and reads a service off it when it signs up or, where a lambda
-reads it, when it runs, which the tests that replace a service on the bot after registering rely
-on. It holds no rule of signup's and no database code of its own: the recovery that still reads a
-table here is listed under signup's pass in `test_architecture_rules.py`, to become a handler of
-the start-up sweep. Nothing imports it but the entry point.
+close, clears what it holds in memory, and offers the start-up steps that call
+`recover_missed_close` and `recover_wizards` in the services, and the closure that cancels a
+driver's timers. It is under the entry point's rules, not a service's (architecture.md, "How the
+code is laid out"): it reads the bot as the builder does, so each function below is handed the bot
+and reads a service off it when it signs up or, where a lambda reads it, when it runs, which the
+tests that replace a service on the bot after registering rely on. It holds no rule of signup's
+and no database code: each start-up step only hands the bot and its queue to the service's
+catch-up. Nothing imports it but the entry point.
 """
 from __future__ import annotations
 
