@@ -148,12 +148,17 @@ def _accepting(league: Any) -> None:
     league.channel(FORECAST).send_fails = None
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: the calculation line's header names the round by its database id",
+)
 @pytest.mark.parametrize("phase", [1, 2, 3])
 async def test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted(
     tmp_path, phase,
 ):
     """The draw's save holds the draw, the phase's flag and its calculation line, and nothing is
-    sent until the post job after it (folded defect 6)."""
+    sent until the post job after it (folded defect 6). The line's header names the round as a
+    league reads it, "Round 3 in **Pro**", never by its database id (B7)."""
     league = await _league(tmp_path)
     await _posted(league, *range(1, phase))
     before = len(_events(league))
@@ -163,7 +168,7 @@ async def test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before
 
     assert await _draws(league, phase) == 1
     assert await _done(league, phase) == 1
-    assert f"Phase {phase} Calculation Log** | Round #{ROUND}" in await _said(league)
+    assert f"Phase {phase} Calculation Log** | Round 3 in **Pro** | {TRACK}" in await _said(league)
     assert _events(league)[before:] == []
 
     await run_queue(league.bot)
@@ -478,11 +483,19 @@ async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier
 
 @pytest.mark.parametrize("blocking, line", [
     pytest.param("UPDATE rounds SET track_name = 'Nowhere Circuit' WHERE id = ?",
-                 f"Phase 1 BLOCKED for round {ROUND} (Nowhere Circuit)", id="unknown circuit"),
+                 "Phase 1 BLOCKED for round 3 in **Pro** (Nowhere Circuit)", id="unknown circuit",
+                 marks=pytest.mark.xfail(
+                     strict=True,
+                     reason="#287: the BLOCKED line names the round by its database id",
+                 )),
     pytest.param("UPDATE tracks SET sigma = 0.9 WHERE name = ?",
-                 f"Phase 1 BLOCKED for round {ROUND} ({TRACK})", id="impossible distribution"),
+                 f"Phase 1 BLOCKED for round 3 in **Pro** ({TRACK})", id="impossible distribution",
+                 marks=pytest.mark.xfail(
+                     strict=True,
+                     reason="#287: the BLOCKED line names the round by its database id",
+                 )),
     pytest.param("UPDATE rounds SET track_name = NULL WHERE id = ?",
-                 f"Phase 1 BLOCKED for round {ROUND}: the round names no circuit.",
+                 "Phase 1 BLOCKED for round 3 in **Pro**: the round names no circuit.",
                  id="no circuit",
                  marks=pytest.mark.xfail(
                      strict=True,
@@ -491,9 +504,9 @@ async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier
 ])
 async def test_a_blocked_phase_writes_its_line_and_nothing_else(tmp_path, blocking, line):
     """Round 3's circuit is one the bot has no row for, or one whose σ makes the draw impossible,
-    or round 3 names no circuit at all: the phase's ⚠️ BLOCKED line, giving its reason, is
-    written to the log channel, nothing is drawn or posted, and the queue goes on (weather spec,
-    "Phase 1")."""
+    or round 3 names no circuit at all: the phase's ⚠️ BLOCKED line, naming the round as a league
+    reads it ("round 3 in **Pro**", never its database id) and giving its reason, is written to
+    the log channel, nothing is drawn or posted, and the queue goes on (weather spec, "Phase 1")."""
     league = await _league(tmp_path)
     await league.write(blocking, TRACK if "tracks" in blocking else ROUND)
 
@@ -534,7 +547,7 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_is_drawn_and_i
     await run_queue(league.bot)
 
     assert await _draws(league, 1) == 1
-    assert f"Phase 1 Calculation Log** | Round #{ROUND}" in await _said(league)
+    assert "Phase 1 Calculation Log**" in await _said(league)
     assert (await stopped_job(league.db_path))["name"] == "post_forecast"
     assert ("**Pro** has no forecast channel set: set one with `/weather channel`, then press "
             "Retry.") in await _said(league)
