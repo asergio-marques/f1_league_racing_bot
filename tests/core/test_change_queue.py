@@ -666,7 +666,7 @@ async def test_a_log_line_is_delivered_after_its_save_and_leaves_the_retry_queue
     send = channel.send.side_effect
 
     async def _observe(content="", **kwargs):
-        with sqlite3.connect(env.db_path) as plain:
+        with contextlib.closing(sqlite3.connect(env.db_path)) as plain, plain:
             [(done_at,)] = plain.execute("SELECT done_at FROM queued_change_steps").fetchall()
         seen_done.append(done_at is not None)
         return await send(content, **kwargs)

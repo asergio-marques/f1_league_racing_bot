@@ -44,6 +44,7 @@ def log_bot(league: Any = None) -> MagicMock:
 def _queued_db(bot: MagicMock) -> str | None:
     return vars(bot).get(_QUEUED_DB)
 
+import contextlib
 
 def _member(bot: MagicMock) -> str:
     return QUEUED_MEMBER if _queued_db(bot) else MEMBER
@@ -118,7 +119,7 @@ def logged(bot: MagicMock) -> list[str]:
         return [call.args[0] for call in bot.output_router.post_log.await_args_list]
     from tests.support.change_queue import LOG_CHANNEL_ID
 
-    with sqlite3.connect(db_path) as db:
+    with contextlib.closing(sqlite3.connect(db_path)) as db, db:
         rows = db.execute(
             "SELECT content FROM pending_messages WHERE channel_id = ? ORDER BY id",
             (LOG_CHANNEL_ID,),

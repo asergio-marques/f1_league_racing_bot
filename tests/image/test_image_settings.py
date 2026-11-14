@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import contextlib
 import discord
 import pytest
 from discord import app_commands
@@ -905,7 +906,7 @@ async def test_the_contrast_is_measured_after_the_colour_is_saved(tmp_path):
     stored_when_read: list[str] = []
 
     async def _reading(*args: Any, **kwargs: Any) -> Any:
-        with sqlite3.connect(league.db_path) as db:
+        with contextlib.closing(sqlite3.connect(league.db_path)) as db, db:
             stored_when_read.append(db.execute(_column("fastest_lap_colour")).fetchone()[0])
         return await reads(*args, **kwargs)
 

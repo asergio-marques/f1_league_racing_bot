@@ -20,6 +20,7 @@ and driver roles, Lewis a former driver.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import re
@@ -1322,7 +1323,7 @@ async def test_the_final_classification_is_posted_while_the_season_is_still_acti
     seen: list[str] = []
 
     def _status_now(_content: Any, _kwargs: Any) -> bool:
-        with sqlite3.connect(league.db_path) as db:
+        with contextlib.closing(sqlite3.connect(league.db_path)) as db, db:
             seen.append(db.execute("SELECT status FROM seasons WHERE id = ?",
                                    (SEASON_ID,)).fetchone()[0])
         return False
@@ -1482,7 +1483,7 @@ async def test_the_portraits_of_the_drivers_deleted_are_discarded_after_the_save
     async def _discard(*args: Any) -> None:
         # The accounts come last, whatever the discard is handed before them.
         accounts = args[-1]
-        with sqlite3.connect(holder["db"]) as db:
+        with contextlib.closing(sqlite3.connect(holder["db"])) as db, db:
             status = db.execute("SELECT status FROM seasons WHERE id = ?",
                                 (SEASON_ID,)).fetchone()[0]
         calls.append((status, repr(accounts)))
