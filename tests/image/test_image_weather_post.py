@@ -137,16 +137,23 @@ async def test_the_aspect_being_off_falls_back_to_text(monkeypatch):
     assert await _attach(_bot(aspect_on=False), monkeypatch, _drawing()) == (None, [])
 
 
+#: What a picture's line names until it names the round as a league reads it (#287, B8).
+_NAMED_BY_SEASON = "#287: a picture's line names the forecast by season, division and round"
+
+
+@pytest.mark.xfail(strict=True, reason=_NAMED_BY_SEASON)
 async def test_an_invalid_template_falls_back_to_text(monkeypatch):
-    """A picture was due: the template's reason is handed back, naming the forecast."""
+    """A picture was due for Division 1's round 4, phase 3, but its template file is too small:
+    the reason is handed back, naming the forecast as a league reads the round, never by its
+    season (#287, B8)."""
     bot = _bot(template_valid=False)
     for report in (await bot.image_validity_service.template_reports()).values():
         report.reason = "the template file is too small"
     file, lines = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3)
     assert file is None
-    said = "\n".join(lines)
-    for part in ("the template file is too small", "season 3", "Division 1", "round 4"):
-        assert part in said, part
+    assert lines == [
+        "⚠️ Weather image — round 4 in **Division 1**, phase 3: the template file is too small"
+    ]
 
 
 async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_path):
@@ -173,7 +180,8 @@ async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_
 @pytest.mark.parametrize(
     ("round_reads", "named"),
     [
-        (True, "season 3, Division 1, round 4, phase 2"),
+        pytest.param(True, "round 4 in **Division 1**, phase 2",
+                     marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_SEASON)),
         (False, "phase 2"),
     ],
     ids=["round-readable", "round-unreadable"],
@@ -181,8 +189,8 @@ async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_
 async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_reads, named):
     """The image settings' switch reader raises "boom" for a phase 2 forecast. The text stands,
     and the fault is handed back for the log channel, naming the forecast where its round can be
-    read (Division 1's round 4 of season 3) and only its phase where reading the round raises
-    too: naming in a log line never fails the line (#287, B3)."""
+    read, as a league reads it (round 4 in **Division 1**), and only its phase where reading the
+    round raises too: naming in a log line never fails the line (#287, B3, B8)."""
     import leaguebot.image.services.image_weather_post as post
 
     bot = _bot()
@@ -193,23 +201,16 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
 
     file, lines = await post.attach_forecast(bot, round_id=1, phase=2, values=_values())
 
-    said = "\n".join(lines)
-    assert file is None and "boom" in said and named in said
+    [line] = lines
+    assert file is None and "boom" in line
+    assert line.startswith(f"⚠️ Weather image — {named}: "), line
 
 
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
 
 
-def test_a_report_names_the_season_division_round_and_phase():
-    what = describe(division_name="Division 1", round_number=4, phase=2, season_number=3)
-    assert "season 3" in what
-    assert "Division 1" in what
-    assert "round 4" in what
-    assert "phase 2" in what
-
-
 def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
-    what = describe(division_name="D", round_number=1, phase=0, season_number=1)
+    what = describe(division_name="D", round_number=1, phase=0)
     assert "mystery notice" in what
     assert "phase 0" not in what
 
@@ -320,9 +321,11 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
     return bot
 
 
+@pytest.mark.xfail(strict=True, reason=_NAMED_BY_SEASON)
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
     """FR-059 — the picture is handed back, and the substitution with it, as a line for the log
-    channel naming what it pertains to."""
+    channel naming what it pertains to: Division 1's round 4, phase 2, as a league reads the
+    round, never by its season (#287, B8)."""
     png = tmp_path / "w.png"
     png.write_bytes(b"x")
     from leaguebot.image.models.image_module import RenderNotice
@@ -338,9 +341,9 @@ async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatc
     assert result is not None, "a substituted asset must not stop the graphic"
     said = "\n".join(lines)
     assert "fallback used" in said
-    # Season, division, round and phase — so a manager can find what it pertains to.
-    for part in ("season 3", "Division 1", "round 4", "phase 2"):
-        assert part in said, part
+    # The round as a league reads it, and the phase — so a manager can find what it pertains to.
+    assert "Image render notices — round 4 in **Division 1**, phase 2:" in said, said
+    assert "season" not in said, said
 
 
 async def test_attach_forecast_hands_render_for_posting_no_bot(monkeypatch, tmp_path):
