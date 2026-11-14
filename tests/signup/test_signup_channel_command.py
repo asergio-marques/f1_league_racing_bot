@@ -428,6 +428,61 @@ async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
         await _assert_one_refusal_line(league, "/signup channel", "fixed for Season 3")
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: replacing the signup channel while signups are open sets its permissions and posts "
+    "nothing, so the new channel has no Sign Up button"
+))
+async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button(
+    tmp_path,
+):
+    """Season 3 is in its Signups stage with the window open, its information message (900)
+    posted in the league's signup channel, 650, which has since been deleted from the server. An
+    admin replaces it with 700 through `/signup channel`: 700 is saved, the information message
+    with its Sign Up button is posted in 700, and that post is kept as the window's information
+    message, so drivers can sign up again without the window being closed and reopened."""
+    from leaguebot.signup.services.signup_views import SignupButtonView
+
+    league = await _league(tmp_path, held=OLD)
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', 'SETUP', 3, 'SIGNUPS')"
+        )
+        await db.execute(
+            "INSERT INTO signup_windows (season_id, selected_tracks_json) VALUES (?, '[]')",
+            (cursor.lastrowid,),
+        )
+        await db.execute(
+            "UPDATE signup_module_config SET signups_open = 1, signup_button_message_id = 900, "
+            "selected_tracks_json = '[]'"
+        )
+        await db.commit()
+    new = _channel(NEW)
+    new.send = AsyncMock(return_value=MagicMock(id=901))
+    _discord(league, new)
+    gone = discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+
+    async def _fetch(channel_id):
+        if channel_id == OLD:
+            raise gone
+        return new
+
+    league.guild.fetch_channel = AsyncMock(side_effect=_fetch)
+    league.bot.fetch_channel = AsyncMock(side_effect=_fetch)
+
+    await _run(league, new)
+
+    assert await _stored(league.db_path) == NEW
+    posted = [
+        call for call in new.send.await_args_list
+        if isinstance(call.kwargs.get("view"), SignupButtonView)
+    ]
+    assert len(posted) == 1
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("SELECT signup_button_message_id FROM signup_module_config")
+        assert (await cursor.fetchone())[0] == 901
+
+
 @pytest.mark.parametrize(
     "fault",
     [
