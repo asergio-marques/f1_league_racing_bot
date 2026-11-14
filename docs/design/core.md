@@ -422,8 +422,9 @@ functions. Each reads when a round's events fall from `round_event_moments`
 cancellation removes a round's work (`cancel_round`, `cancel_rounds`) before its save. Whether a
 module's work is armed, and with what, is that module's answer through `round_armed`, a `RoundArming`
 of its steps and its jobs (weather's `ForecastJobs`, attendance's `CheckInJobs`); the arming step
-makes the scheduler's calls from them and arms the results submission whatever they answer. The
-handlers for a round's kinds are the modules'.
+makes the scheduler's calls from them and arms the results submission whatever they answer. A round
+already raced, or ended not held, is armed its clean-ups alone, by `schedule_round_cleanups`, from the
+modules' switches. The handlers for a round's kinds are the modules'.
 
 ### Start-up
 

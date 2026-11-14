@@ -977,8 +977,8 @@ next-day clean-ups, which its weather and its attendance arming both owe, are ar
 forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`. **In the amendment
 and the re-arming, whether a module's work is armed, and with what, is that module's answer through
 `round_armed`**: each module hands back its steps and the jobs it owes, and the arming step makes the
-scheduler's calls with what each hands back, so that core holds no module's switch and no module's
-rule about which jobs a moved round owes.
+scheduler's calls with what each hands back, so that core holds no module's rule about which jobs a
+moved round still to be run owes.
 `schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
 round raced, or ended cancelled because every session was entered as not held.
 
