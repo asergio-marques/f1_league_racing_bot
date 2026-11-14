@@ -211,6 +211,34 @@ def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
     assert "phase 0" not in what
 
 
+@pytest.mark.xfail(strict=True, reason="#287: a notice's picture whose round cannot be read is "
+                                       "named by its phase, not as the mystery round notice")
+@pytest.mark.parametrize(
+    ("reads", "reason"),
+    [
+        (AsyncMock(side_effect=RuntimeError("no round")), "no round"),
+        (AsyncMock(return_value=None), "the round could not be found"),
+    ],
+    ids=["round-read-raises", "round-not-found"],
+)
+async def test_a_mystery_round_notice_whose_round_cannot_be_read_is_named_as_the_notice(
+    monkeypatch, reads, reason,
+):
+    """Weather posts a mystery round's notice, telling the picture it is the notice (phase 0), and
+    the round cannot be read, its read raising or finding nothing. The line still names it the
+    mystery round notice, never as a phase, though no round can be named (#287, B12, p9)."""
+    import leaguebot.image.services.image_weather_post as post
+
+    monkeypatch.setattr(post, "build_drawing_for_round", reads)
+
+    file, lines = await post.attach_forecast(_bot(), round_id=1, phase=0, values=_values())
+
+    [line] = lines
+    assert file is None
+    assert line == f"⚠️ Weather image — the mystery round notice: {reason}", line
+    assert "phase" not in line, line
+
+
 # ── 7. The render result ──────────────────────────────────────────────────
 
 
