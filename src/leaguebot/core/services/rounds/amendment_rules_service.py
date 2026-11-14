@@ -59,11 +59,9 @@ import aiosqlite
 from leaguebot.core.models.amendment import AmendmentPart
 from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
-    AttendanceWindows,
     Round,
     RoundFormat,
     RoundStatus,
-    WeatherWindows,
     read_scheduled_at,
 )
 from leaguebot.core.services.rounds.round_moments import as_utc
@@ -248,16 +246,15 @@ async def judged_with_the_modules(
     changes: dict[str, Any],
     *,
     now: datetime,
-    attendance: AttendanceWindows | None,
-    weather: WeatherWindows | None,
     db: aiosqlite.Connection | None,
 ) -> AmendmentVerdict:
     """`judge_amendment`, with each module's part asked through the *amendment_judged* hook.
 
     Each subscriber is handed the save's connection *db* (None where the amendment is asked
     outside a save), the round, the changes, the round's moment once amended and the one clock
-    core judges by, both in UTC, and the lead times by name, *attendance* and *weather*, as read
-    fresh by the caller. It answers an `AmendmentPart`, or None for a part of none.
+    core judges by, both in UTC, and nothing else: core names no module's windows, each module
+    reads its own and keeps them in its part's ``kept``. It answers an `AmendmentPart`, or None for
+    a part of none.
     """
     now = as_utc(now).astimezone(timezone.utc)
     moment = (
@@ -265,9 +262,7 @@ async def judged_with_the_modules(
         if set(changes) <= AMENDABLE_FIELDS
         else rnd.scheduled_at.astimezone(timezone.utc)
     )
-    handed = await amendment_judged.call(
-        db, rnd, changes, moment=moment, now=now, attendance=attendance, weather=weather
-    )
+    handed = await amendment_judged.call(db, rnd, changes, moment=moment, now=now)
     return judge_amendment(
         rnd, changes, now=now, parts=tuple(part for part in handed if part is not None)
     )

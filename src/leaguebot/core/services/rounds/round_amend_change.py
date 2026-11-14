@@ -4,9 +4,10 @@
 for this change, which is judged when it is asked and again when it comes up to run, in the words
 Confirm used: a round that has gone, a window that has passed or results entered while the amendment
 waited refuse it with the same reply. It imports nothing from a module and no cog: what it needs of
-weather and attendance reaches it through the hooks the builder makes and signs them up to (the
-windows, each module's part of the judgement, the save, the posts and timed work, the clean-ups, the
-steps they define and the words for a step left undone), and it reads the season through the
+weather and attendance reaches it through the hooks the builder makes and signs them up to (each
+module's part of the judgement, which reads and keeps its own windows, the save, the posts and
+timed work, the clean-ups, the steps they define and the words for a step left undone), and it
+reads the season through the
 service it is handed.
 
 **The refusal because a cancellation is in hand is made only as the change is asked for**
@@ -48,13 +49,11 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
     ROUND_RACED_AWAITING_VERDICTS,
-    AttendanceWindows,
     CheckInJobs,
     ForecastJobs,
     Round,
     RoundFormat,
     RoundStatus,
-    WeatherWindows,
     read_scheduled_at,
     stored_scheduled_at,
     utc_text,
@@ -65,11 +64,15 @@ from leaguebot.core.services.rounds.amendment_rules_service import (
     status_refusal,
 )
 from leaguebot.core.services.rounds.round_moments import (
-    read_round_windows,
     results_left_to_advance,
     round_event_moments,
 )
-from leaguebot.core.services.rounds.round_steps import JUDGE, named_now, round_number_now as number_now
+from leaguebot.core.services.rounds.round_steps import (
+    JUDGE,
+    judge_kept,
+    named_now,
+    round_number_now as number_now,
+)
 from leaguebot.core.services.cancellations import cancellation_notice_service as notices
 from leaguebot.core.services.cancellations.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
 from leaguebot.core.services.queue.queue_records import (
@@ -193,7 +196,6 @@ def round_amend_change(
     scheduler: "SchedulerService",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
-    round_windows_read: AwaitedHook,
     amendment_judged: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
@@ -206,17 +208,15 @@ def round_amend_change(
     *changes* being ``[[field, value]]`` (`payload_changes`). It names no season: a payload that
     does is read as holding every division of that season (`review_changes.division_job_in_hand`).
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
-    *scheduler*, *round_windows_read* (the hook their windows are
-    read through), *amendment_judged* (the hook each module's part of the judgement is asked
-    through), *round_amended* (the moment inside the save), *round_armed* and
+    *scheduler*, *amendment_judged* (the hook each module's part of the judgement is asked
+    through, each reading its own windows), *round_amended* (the moment inside the save), *round_armed* and
     *round_clean_ups_due* (the moments the round is armed again, at which the modules plan their
     posts and their clean-ups) and the queue's clock *now*.
     """
     return _round_change(
         rearm=False, modules=modules, seasons=seasons, scheduler=scheduler,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
-        round_windows_read=round_windows_read, amendment_judged=amendment_judged,
-        round_amended=round_amended,
+        amendment_judged=amendment_judged, round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
 
@@ -228,7 +228,6 @@ def round_rearm_change(
     scheduler: "SchedulerService",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
-    round_windows_read: AwaitedHook,
     amendment_judged: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
@@ -246,8 +245,7 @@ def round_rearm_change(
     return _round_change(
         rearm=True, modules=modules, seasons=seasons, scheduler=scheduler,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
-        round_windows_read=round_windows_read, amendment_judged=amendment_judged,
-        round_amended=round_amended,
+        amendment_judged=amendment_judged, round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
 
@@ -260,7 +258,6 @@ def _round_change(
     scheduler: "SchedulerService",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
-    round_windows_read: AwaitedHook,
     amendment_judged: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
@@ -272,14 +269,6 @@ def _round_change(
     Only the check, the due-ness of the judging and the arming, their refusal to be discarded, the
     change's kind, key and words differ between the two; every other step is the amendment's.
     """
-
-    async def read_windows() -> tuple[AttendanceWindows | None, WeatherWindows]:
-        """The lead times the amendment is judged against, read through the windows hook:
-        attendance's only where it is on, weather's always."""
-        attendance, weather = await read_round_windows(round_windows_read, amending=True)
-        if weather is None:
-            raise LookupError("no module handed back weather's window to the amendment")
-        return attendance, weather
 
     async def rearm_check(ctx: CheckContext) -> Verdict:
         """A re-arming is due while the round can still be cancelled, or, for its clean-ups alone,
@@ -312,15 +301,8 @@ def _round_change(
         rnd = await seasons.get_round(int(payload["round_id"]))
         if rnd is None:
             return Verdict.refuse(ROUND_GONE)
-        attendance, weather = await read_windows()
         verdict = await judged_with_the_modules(
-            amendment_judged,
-            rnd,
-            amended_values(payload["changes"]),
-            now=now(),
-            attendance=attendance,
-            weather=weather,
-            db=None,
+            amendment_judged, rnd, amended_values(payload["changes"]), now=now(), db=None,
         )
         if not verdict.allowed:
             return Verdict.refuse(
@@ -364,28 +346,26 @@ def _round_change(
     # ── The jobs ────────────────────────────────────────────────────────────────
 
     async def judge(ctx: StepContext) -> StepResult:
-        """Keep the windows the later jobs judge the amendment by, the round being still there.
+        """Keep what each module keeps of its part of the judgement, which the later jobs judge by,
+        the round being still there.
 
-        It writes nothing and refuses nothing. The windows are read here, outside any save,
-        because a save reads no other connection. The amendment is judged when it is asked and
-        again in the save, against what the save reads at the queue's clock (`judged_again`), so
-        that its refusal is spoken once, at the save's own moment, however long a stop between
-        them lasts. What the amendment withdraws and what becomes of the check-in call are not
-        kept here, nor the phases to draw at once: the save plans the first from what it reads
-        when it runs and the arming the rest."""
+        It writes nothing and refuses nothing, and reads no module's windows itself: each module's
+        part is asked outside any save and keeps its own windows in what it keeps (`AmendmentPart`),
+        which is stored as it is given, opaquely, and handed back to the module by the jobs that
+        follow. The amendment is judged when it is asked and again in the save, against what the
+        save reads at the queue's clock (`judged_again`), so that its refusal is spoken once, at
+        the save's own moment, however long a stop between them lasts. What the amendment withdraws
+        and what becomes of the check-in call are decided by the save and the phases to draw at once
+        by the arming."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
-        attendance, weather = await read_windows()
-        return StepResult(
-            result={
-                "judged": True,
-                "windows": {
-                    "attendance": dataclasses.asdict(attendance) if attendance else None,
-                    "weather": dataclasses.asdict(weather),
-                },
-            }
+        # A re-arming carries no change: each module is asked of the round as it stands.
+        verdict = await judged_with_the_modules(
+            amendment_judged, rnd, amended_values(ctx.payload.get("changes", ())),
+            now=now(), db=None,
         )
+        return StepResult(result={"judged": True, "kept": verdict.kept})
 
     async def judge_went_through(ctx: StepContext) -> bool:
         return judged(ctx) is not None
@@ -403,17 +383,14 @@ def _round_change(
         db: aiosqlite.Connection,
         row: aiosqlite.Row,
         changes: Iterable[Sequence[str]],
-        judgement: dict[str, Any],
     ) -> AmendmentVerdict:
         """*changes* judged once more, against the round as the save reads it, each module's part
         asked on the save's connection *db* (which sees what the save has written and not yet
-        committed), at the windows `judge` kept and at the queue's clock.
+        committed), each reading its own windows there, and at the queue's clock.
 
         `judge` reached its verdict when it ran, and a job after it can stop and be tried again
         hours later: the save would otherwise write an amendment whose window has since passed,
         or plan what follows it from windows that have since gone by."""
-        windows = judgement["windows"]
-        attendance = windows["attendance"]
         rnd = Round(
             id=int(row["id"]),
             division_id=int(row["division_id"]),
@@ -424,13 +401,7 @@ def _round_change(
             status=row["status"],
         )
         return await judged_with_the_modules(
-            amendment_judged,
-            rnd,
-            amended_values(changes),
-            now=now(),
-            attendance=AttendanceWindows(**attendance) if attendance is not None else None,
-            weather=WeatherWindows(**windows["weather"]),
-            db=db,
+            amendment_judged, rnd, amended_values(changes), now=now(), db=db,
         )
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -447,7 +418,6 @@ def _round_change(
         leave a call to a schedule whose moment has gone."""
         if ctx.actor_id is None or ctx.actor_name is None:
             raise RuntimeError("amending a round is the act of a member, and none is recorded")
-        judgement = judged(ctx) or {}
         round_id = int(ctx.payload["round_id"])
         cursor = await db.execute(
             "SELECT id, status, round_number, division_id, track_name, format, scheduled_at "
@@ -462,7 +432,7 @@ def _round_change(
         elif row["status"] not in ROUND_CANCELLABLE:
             refusal = no_longer_amendable([status_refusal(row["status"])])
         else:
-            verdict = await judged_again(db, row, ctx.payload["changes"], judgement)
+            verdict = await judged_again(db, row, ctx.payload["changes"])
             if not verdict.allowed:
                 refusal = no_longer_amendable(verdict.refusals)
         if row is None or verdict is None or refusal is not None:
@@ -511,6 +481,7 @@ def _round_change(
         values = amended_values(ctx.payload["changes"])
         return StepResult(
             result={
+                **verdict.kept,
                 **kept,
                 "saved": True,
                 "round_number": row["round_number"],
@@ -548,7 +519,6 @@ def _round_change(
         at all, as the season's approval arms none; otherwise the round's `results` job is taken
         down again where its moment has passed, which a job armed with no lateness limit would run
         at once. Its call is still posted (`post_call`)."""
-        judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -569,10 +539,9 @@ def _round_change(
             # A round raced, or ended cancelled as not held: only the clean-ups of a day after it
             # are owed, armed through the scheduler and, where the day has come, run as the
             # restart's catch-up runs them.
-            check_in_on = (
-                judgement["windows"]["attendance"] is not None
-                and await modules.is_attendance_enabled()
-            )
+            # Only the switch is read, by name, as the scheduler's `forecast=` and `check_in=`
+            # ask no lead time: the windows of the next-day clean-up are the one shared delay.
+            check_in_on = await modules.is_attendance_enabled()
             planned = await plan_clean_ups(ctx, rnd, kept={})
             if weather_on or check_in_on:
                 scheduler.schedule_round_cleanups(
@@ -580,7 +549,7 @@ def _round_change(
                     forecast=weather_on, check_in=check_in_on, now=now(),
                 )
             return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
-        planned, jobs = await plan_posts(ctx, rnd, judgement)
+        planned, jobs = await plan_posts(ctx, rnd)
         forecasts = next((each for each in jobs if isinstance(each, ForecastJobs)), None)
         check_in = next((each for each in jobs if isinstance(each, CheckInJobs)), None)
         if forecasts is not None:
@@ -642,7 +611,7 @@ def _round_change(
         return tuple(step for steps in handed for step in steps or ())
 
     async def plan_posts(
-        ctx: StepContext, rnd: Round, judgement: dict[str, Any]
+        ctx: StepContext, rnd: Round
     ) -> tuple[tuple[PlannedStep, ...], tuple[ForecastJobs | CheckInJobs, ...]]:
         """The posts the amendment owes and the timed work to arm, as each module answers the
         round armed again (`RoundArming`): its steps, which the queue runs in today's order (the
@@ -654,15 +623,11 @@ def _round_change(
         withdraws, from what each module's part of it kept (`apply`), and only where it was saved.
 
         What each module plans and arms, and how it reads its own tables, is its own."""
-        windows = judgement["windows"]
-        attendance = windows["attendance"]
-        kept = (view(ctx, APPLY).result or {}) if saved(ctx) else {}
+        # What `judge` kept, which holds each module's windows as it read them, and, where the
+        # save was made, what the save kept over it: handed back to the modules as it was given.
+        kept = {**judge_kept(ctx.steps), **((view(ctx, APPLY).result or {}) if saved(ctx) else {})}
         async with get_connection(ctx.db_path) as db:
-            handed = await round_armed.call(
-                db, rnd.id, rnd=rnd, kept=kept,
-                attendance=AttendanceWindows(**attendance) if attendance is not None else None,
-                weather=WeatherWindows(**windows["weather"]), now=now,
-            )
+            handed = await round_armed.call(db, rnd.id, rnd=rnd, kept=kept, now=now)
         answers = [each for each in handed if each is not None]
         planned = [step for each in answers for step in each.steps]
         jobs = tuple(each.jobs for each in answers if each.jobs is not None)

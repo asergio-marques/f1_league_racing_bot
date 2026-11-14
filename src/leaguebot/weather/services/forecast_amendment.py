@@ -12,6 +12,7 @@ switch and no rule of weather's.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,7 +24,6 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.core.models.change import PlannedStep
 from leaguebot.core.models.round import (
-    AttendanceWindows,
     ForecastJobs,
     Round,
     RoundFormat,
@@ -37,6 +37,12 @@ from leaguebot.weather.services.forecast_changes import (
     RERUN_PHASE,
 )
 from leaguebot.weather.services.round_phases import first_horizon_ahead, phases_drawn_on, phases_due
+from leaguebot.weather.services.weather_config_service import (
+    WINDOWS_KEPT,
+    read_config_on,
+    windows_kept,
+    windows_of,
+)
 
 
 @dataclass(frozen=True)
@@ -141,34 +147,50 @@ async def amendment_judged(
     *,
     moment: datetime,
     now: datetime,
-    attendance: AttendanceWindows | None,
-    weather: WeatherWindows | None,
     db_path: str | None = None,
+    windows: WeatherWindows | None = None,
     weather_on: bool | None = None,
     **_context: Any,
 ) -> AmendmentPart:
     """Weather's part of judging an amendment of *rnd* that leaves it at *moment*, at *now*, by the
-    horizons *weather*, from the phases drawn as read on *db*: the connection of the save that
-    judges it again, which has written what it has not yet committed, or, where none is handed,
-    one opened on *db_path*. Whether weather is on is *weather_on*, as the module's switch reader
-    answers it (`wiring`); where it is not handed, it is read on the connection used. Subscribed to
-    core's `amendment_judged`."""
-    on = weather_on
-    if db is not None:
-        drawn = await phases_drawn_on(db, [rnd.id])
-        if on is None:
-            on = await weather_enabled_on(db)
-    else:
-        if db_path is None:
-            raise ValueError("no connection and no database path to read the phases drawn on")
+    league's own horizons and from the phases drawn. In a save both are read on *db*, the
+    connection of the save that judges it again, which has written what it has not yet committed.
+    Asked outside a save, the phases are read on a connection opened on *db_path*, and the
+    horizons are *windows*, which `wiring` reads through the configuration's reader, as the
+    settings read them. The horizons count whatever weather's switch, a forecast posted while
+    weather was on being posted still. Whether weather is on is *weather_on*, as the module's
+    switch reader answers it (`wiring`); where it is not handed, it is read on the connection
+    used. The horizons are kept in the part, as ``weather_windows``, for the jobs that follow
+    (`windows_kept`). Subscribed to core's `amendment_judged`."""
+    if db is None:
+        if db_path is None or windows is None:
+            raise ValueError("no connection, or no database path and horizons, to judge on")
         async with get_connection(db_path) as own:
-            drawn = await phases_drawn_on(own, [rnd.id])
-            if on is None:
-                on = await weather_enabled_on(own)
-    return judge_forecasts(
-        changes, moment=moment, now=now, windows=weather, drawn=drawn.get(rnd.id, {}),
+            return await _judged_on(own, rnd, changes, moment, now, windows, weather_on)
+    return await _judged_on(
+        db, rnd, changes, moment, now, windows_of(await read_config_on(db)), weather_on
+    )
+
+
+async def _judged_on(
+    db: aiosqlite.Connection,
+    rnd: Round,
+    changes: Mapping[str, Any],
+    moment: datetime,
+    now: datetime,
+    windows: WeatherWindows,
+    weather_on: bool | None,
+) -> AmendmentPart:
+    """`amendment_judged` of the phases drawn as read on *db*, by the horizons *windows*."""
+    on = await weather_enabled_on(db) if weather_on is None else weather_on
+    drawn = await phases_drawn_on(db, [rnd.id])
+    part = judge_forecasts(
+        changes, moment=moment, now=now, windows=windows, drawn=drawn.get(rnd.id, {}),
         weather_on=on,
     ).part
+    return dataclasses.replace(
+        part, kept={**part.kept, WINDOWS_KEPT: dataclasses.asdict(windows)}
+    )
 
 
 async def _notice_stands_beside(db: aiosqlite.Connection, rnd: Round) -> bool:
@@ -188,7 +210,6 @@ async def round_armed(
     *,
     rnd: Round,
     kept: Mapping[str, Any],
-    weather: WeatherWindows,
     now: Callable[[], datetime],
     **_context: Any,
 ) -> RoundArming:
@@ -199,7 +220,8 @@ async def round_armed(
     deletion of each withdrawn forecast that was posted, the notice that
     the forecasts no longer stand, and the draw of each phase due at once. *kept* is what weather's
     part of the save kept (`phase_withdrawal.round_amended_on`) with the track, and is empty where
-    the save was not made. The phases due are drawn by a job of the amendment's, so the forecasts'
+    the save was not made, with the horizons the judgement kept (`windows_kept`), read afresh where
+    it kept none. The phases due are drawn by a job of the amendment's, so the forecasts'
     timers skip them: armed with no lateness limit, a timer would draw the phase a second time.
 
     The forecasts are armed only while weather is on, and not for a mystery round moved inside its
@@ -207,6 +229,7 @@ async def round_armed(
     retroactively. Subscribed to core's `round_armed`.
     """
     at = now()
+    weather = windows_kept(kept) or windows_of(await read_config_on(db))
     on = await weather_enabled_on(db)
     draw: list[int] = []
     if on:

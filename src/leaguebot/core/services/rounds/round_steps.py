@@ -8,30 +8,25 @@ own steps of the amendment name it the same way.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
-
-from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_types import StepContext
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 
-#: The amendment's job that judges it and keeps the windows the later jobs judge it by.
+#: The amendment's job that judges it and keeps what each module's part of the judgement keeps.
 JUDGE = "judge"
 
 
-def judged_windows(ctx: Any) -> tuple[AttendanceWindows | None, WeatherWindows | None]:
-    """The windows the amendment's judging kept, as the later jobs of a change judge by them:
-    `(attendance, weather)`, each None where it kept none (it was discarded, or has not run)."""
-    kept = next((each for each in reversed(ctx.steps) if each.name == JUDGE), None)
-    windows = ((kept.result if kept else None) or {}).get("windows") or {}
-    attendance, weather = windows.get("attendance"), windows.get("weather")
-    return (
-        AttendanceWindows(**attendance) if attendance is not None else None,
-        WeatherWindows(**weather) if weather is not None else None,
-    )
+def judge_kept(steps: Iterable[Any]) -> Mapping[str, Any]:
+    """What the amendment's judging kept for the later jobs, from the change's *steps* (a step
+    context's ``steps``): what each module's part of the judgement kept, merged, which core stores
+    as it was given and reads for no module. Each module reads back its own windows from it, and
+    reads them afresh where it finds none (a record kept before the update, or a job discarded)."""
+    kept = next((each for each in reversed(tuple(steps)) if each.name == JUDGE), None)
+    return ((kept.result if kept else None) or {}).get("kept") or {}
 
 
 async def round_number_now(seasons: SeasonService, ctx: Any) -> Any:

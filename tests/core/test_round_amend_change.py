@@ -3120,14 +3120,6 @@ async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp
 # through its part of the judgement and keeps them in what that part keeps, which core stores in
 # `judge`'s record without reading it.
 
-#: What core still names of the modules' windows.
-_CORE_NAMES_THE_WINDOWS = (
-    "#287: core still reads each module's windows by name, keeps them in `judge`'s record and "
-    "hands them to `round_armed` as attendance= and weather="
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_CORE_NAMES_THE_WINDOWS)
 async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
     """Weather and attendance both on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is moved
     to 60 days out and the amendment runs, every module's arming answer recorded as it is asked.
@@ -3156,7 +3148,6 @@ async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
                    for value in (*asked["args"], *asked["kwargs"].values()))
 
 
-@pytest.mark.xfail(strict=True, reason=_CORE_NAMES_THE_WINDOWS)
 async def test_an_amendment_stopped_across_the_update_reads_each_module_s_windows_afresh(tmp_path):
     """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, check-in lead times
     5 days, 24 hours, 2 hours. Pro's round 3 is moved to 60 days out, and the amendment stops at

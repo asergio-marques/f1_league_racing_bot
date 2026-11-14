@@ -45,7 +45,12 @@ from leaguebot.attendance.models.attendance import (
     CHECK_IN_LAST_NOTICE,
 )
 from leaguebot.attendance.services.check_in import rsvp_service
-from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import (
+    WINDOWS_KEPT,
+    AttendanceService,
+    windows_if_on,
+    windows_kept,
+)
 from leaguebot.attendance.services.check_in.check_in_call import (
     check_in_steps,
     close_check_in_on,
@@ -77,7 +82,7 @@ from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Ch
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
-from leaguebot.core.services.rounds.round_steps import judged_windows, named_now
+from leaguebot.core.services.rounds.round_steps import judge_kept, named_now
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceOutcome,
@@ -93,6 +98,22 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def part_judged(
+    attendance: AttendanceWindows | None, *, moment: datetime, now: datetime
+) -> AmendmentPart:
+    """Attendance's part of judging an amendment that leaves a round at *moment*, at *now*, by the
+    lead times *attendance* (none where the module is off): the check-in's deadline refusal, its
+    two warnings, and whether the check-in is reopened, which it keeps for the save
+    (`round_amended_on`), with the lead times themselves, as ``attendance_windows``, for the jobs
+    that follow (`windows_kept`). Pure."""
+    part = judge_check_in(moment=moment, now=now, windows=attendance).part
+    if attendance is None:
+        return part
+    return dataclasses.replace(
+        part, kept={**part.kept, WINDOWS_KEPT: dataclasses.asdict(attendance)}
+    )
+
+
 async def amendment_judged(
     db: aiosqlite.Connection | None,
     rnd: Round,
@@ -100,15 +121,17 @@ async def amendment_judged(
     *,
     moment: datetime,
     now: datetime,
-    attendance: AttendanceWindows | None,
+    windows: AttendanceWindows | None = None,
     **_context: Any,
 ) -> AmendmentPart:
     """Attendance's part of judging an amendment of *rnd* that leaves it at *moment*, at *now*, by
-    the lead times *attendance* (none where the module is off): the check-in's deadline refusal,
-    its two warnings, and whether the check-in is reopened, which it keeps for the save
-    (`round_amended_on`). Pure: it reads nothing on *db*. Subscribed to core's
-    `amendment_judged`."""
-    return judge_check_in(moment=moment, now=now, windows=attendance).part
+    the lead times the league has, which core hands it none of: in a save they are read on *db*,
+    the connection of the save that judges it again, and asked outside one they are *windows*,
+    which `wiring` reads through the module's own reader (none where the module is off)
+    (`part_judged`). Subscribed to core's `amendment_judged`."""
+    return part_judged(
+        windows if db is None else await windows_if_on(db), moment=moment, now=now
+    )
 
 
 async def round_amended_on(
@@ -153,14 +176,14 @@ async def amendment_posts(
     *,
     rnd: Round,
     kept: Mapping[str, Any],
-    attendance: AttendanceWindows | None,
     now: Callable[[], datetime],
     **_context: Any,
 ) -> RoundArming:
     """What attendance owes the round armed again, reading the round's call on *db*: the posts, in
     order (the check-in call taken down and posted again, or posted where none stands, and the
     deadline run where it passed), and the check-in's timers at the lead times *attendance*, armed
-    only while attendance is on. Subscribed to core's `round_armed`.
+    only while attendance is on, the lead times being those the judgement kept
+    (`windows_kept`), read afresh where it kept none. Subscribed to core's `round_armed`.
 
     A call that stood at the save (*kept*, `round_amended_on`) is taken down and its post planned
     with it, the post judging when it runs whether the call is due then: the take-down can stop on
@@ -170,6 +193,7 @@ async def amendment_posts(
     the timer's. A standing call left in place whose deadline has passed with no distribution
     recorded has its deadline run, as the start-up recovery runs it.
     """
+    attendance = windows_kept(kept) or await windows_if_on(db)
     found = await _amendment_standing(db, round_id)
     taking_down = bool(kept.get("reopened") and kept.get("called"))
     call_left = bool(found["called"]) and not taking_down
@@ -302,9 +326,14 @@ def amendment_steps(
             taking_down.result or {}
         )
 
-    def window(ctx: StepContext) -> AttendanceWindows | None:
-        """The window the amendment's judging kept, which the call is judged against."""
-        return judged_windows(ctx)[0]
+    async def window(ctx: StepContext) -> AttendanceWindows | None:
+        """The lead times the amendment's judging kept, which the call is judged against, read
+        afresh where it kept none; none where attendance is off."""
+        kept = windows_kept(judge_kept(ctx.steps))
+        if kept is not None:
+            return kept
+        async with get_connection(ctx.db_path) as db:
+            return await windows_if_on(db)
 
     async def call_state(db_path: str, round_id: int) -> tuple[bool, bool]:
         """Whether a call stands for the round, and whether its check-in is over
@@ -330,7 +359,7 @@ def amendment_steps(
         if not await modules.is_attendance_enabled():
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
-        if rnd is None or not _call_fell_due(rnd, window(ctx), now):
+        if rnd is None or not _call_fell_due(rnd, await window(ctx), now):
             return False
         standing, cleared = await call_state(ctx.db_path, rnd.id)
         if cleared:
@@ -363,7 +392,7 @@ def amendment_steps(
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
-        attendance = window(ctx)
+        attendance = await window(ctx)
         if attendance is not None and _deadline_passed(rnd, attendance, now):
             standing, cleared = await call_state(ctx.db_path, rnd.id)
             if standing or cleared:

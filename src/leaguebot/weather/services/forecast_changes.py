@@ -56,7 +56,7 @@ from leaguebot.core.models.change import (
     forecasts_named,
 )
 from leaguebot.core.models.division import DivisionStatus
-from leaguebot.core.models.round import Round, RoundFormat, RoundStatus, WeatherWindows
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
@@ -72,7 +72,7 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.services.seasons.season_service import division_on, round_facts_on
 from leaguebot.core.services.rounds.round_moments import clean_up_moment
-from leaguebot.core.services.rounds.round_steps import judged_windows, named_now, round_number_now
+from leaguebot.core.services.rounds.round_steps import judge_kept, named_now, round_number_now
 from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceOutcome,
     AdvanceStep,
@@ -97,6 +97,7 @@ from leaguebot.weather.services.draw_guard import (
 )
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 from leaguebot.weather.services.round_phases import phases_drawn_on, phases_due
+from leaguebot.weather.services.weather_config_service import windows_kept_or_read
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.image.models.forecast_values import ForecastSession, ForecastValues
 from leaguebot.weather.utils.message_builder import (
@@ -1048,9 +1049,9 @@ def amendment_steps(
         if not await modules.is_weather_enabled():
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
-        _, weather = judged_windows(ctx)
-        if rnd is None or weather is None:
+        if rnd is None:
             return False
+        weather = await windows_kept_or_read(judge_kept(ctx.steps), ctx.db_path)
         async with get_connection(ctx.db_path) as db:
             drawn: Mapping[int, bool] = (await phases_drawn_on(db, [rnd.id])).get(rnd.id, {})
         return int(ctx.step_payload["phase"]) in phases_due(rnd, weather, now(), drawn=drawn)

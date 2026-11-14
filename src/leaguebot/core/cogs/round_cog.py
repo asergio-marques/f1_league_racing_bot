@@ -26,7 +26,6 @@ from leaguebot.core.services.cancellations.cancellation_changes import (
     cancellation_holding_amendment,
 )
 from leaguebot.core.services.rounds.round_amend_change import ROUND_AMEND, payload_changes
-from leaguebot.core.services.rounds.round_moments import read_round_windows
 from leaguebot.core.services.rounds.round_add_changes import (
     ADD as ROUND_ADD,
     IMPORT as ROUND_IMPORT,
@@ -615,27 +614,22 @@ async def _judge_round_amendment(
     *,
     now: datetime,
 ):
-    """Judge *amendments* against *rnd*, reading the league's own windows.
+    """Judge *amendments* against *rnd*, each module reading the league's own windows itself.
 
     Shared by `/round amend` and its confirmation so the two cannot disagree about a round, and
     judged afresh by each: a window can pass while the confirmation stands, and an amendment
     allowed on the strength of a window that has since closed is the silent loss the rules exist
     to prevent.
 
-    A module that is switched off passes no windows and so has nothing refused on its account —
-    a league without attendance has no check-in to lose.
+    A module that is switched off has nothing refused on its account — a league without
+    attendance has no check-in to lose.
     """
     from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
 
-    # The windows are read through the bot's hook (`LeagueBot.round_windows_read`), as the change
-    # on the queue reads them; weather's are read whatever the module's state, as a forecast
-    # posted while weather was on is still posted. Each module's part of the judgement is asked
-    # through `LeagueBot.amendment_judged`, outside any save.
-    attendance, weather = await read_round_windows(bot.round_windows_read, amending=True)
-
+    # Each module's part of the judgement is asked through `LeagueBot.amendment_judged`, outside
+    # any save, as the change on the queue asks it; each reads its own windows there.
     return await judged_with_the_modules(
-        bot.amendment_judged, rnd, dict(amendments), now=now,
-        attendance=attendance, weather=weather, db=None,
+        bot.amendment_judged, rnd, dict(amendments), now=now, db=None,
     )
 
 
