@@ -258,6 +258,19 @@ def _failing_module_step(record: _Recorder, starting: Any, error: BaseException)
     starting.subscribe(record.module_steps(record.step("missed phases")), module="weather")
 
 
+def _failing_module_step_for_rounds(record: _Recorder, starting: Any, error: BaseException,
+                                    rounds: tuple[str, ...]) -> None:
+    """Attendance's RSVP views and deadlines fails as in `_failing_module_step`, its error carrying
+    the rounds it failed for, each already named in core's form, as any module's error may carry
+    them (`rounds_called`), whatever the error's type (#287, B11)."""
+    error.rounds_called = rounds  # type: ignore[attr-defined]
+    _failing_module_step(record, starting, error)
+
+
+#: Why a case naming the rounds a step failed for fails until the build.
+_ROUNDS_NOT_NAMED = "#287: the sweep's failure line names no round a step's error carries"
+
+
 #: The first start-up step of each module a switch or list case fails, which never runs.
 _FIRST_STEP = {"results": "amendment sweep", "signup": "signup close timer"}
 
@@ -302,6 +315,35 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
                  id="a module's step"),
+    pytest.param(functools.partial(_failing_module_step_for_rounds,
+                                   rounds=("round 2 in **Pro**",)),
+                 "RSVP views and deadlines",
+                 "❌ The bot's start-up step `RSVP views and deadlines` failed for round 2 in "
+                 "**Pro** — _Fault. The details are in the host's log.",
+                 ["hub", "missed check-in calls", "RSVP views and deadlines",
+                  "missed check-in clean-ups", "missed phases"], True,
+                 id="a module's step failing for one round",
+                 marks=pytest.mark.xfail(strict=True, reason=_ROUNDS_NOT_NAMED)),
+    pytest.param(functools.partial(_failing_module_step_for_rounds,
+                                   rounds=("round 2 in **Pro**", "round 5 in **Am**")),
+                 "RSVP views and deadlines",
+                 "❌ The bot's start-up step `RSVP views and deadlines` failed for round 2 in "
+                 "**Pro** and round 5 in **Am** — _Fault. The details are in the host's log.",
+                 ["hub", "missed check-in calls", "RSVP views and deadlines",
+                  "missed check-in clean-ups", "missed phases"], True,
+                 id="a module's step failing for two rounds",
+                 marks=pytest.mark.xfail(strict=True, reason=_ROUNDS_NOT_NAMED)),
+    pytest.param(functools.partial(_failing_module_step_for_rounds,
+                                   rounds=("round 2 in **Pro**", "round 5 in **Am**",
+                                           "a round no longer there")),
+                 "RSVP views and deadlines",
+                 "❌ The bot's start-up step `RSVP views and deadlines` failed for round 2 in "
+                 "**Pro**, round 5 in **Am** and a round no longer there — _Fault. "
+                 "The details are in the host's log.",
+                 ["hub", "missed check-in calls", "RSVP views and deadlines",
+                  "missed check-in clean-ups", "missed phases"], True,
+                 id="a module's step failing for three rounds, one gone",
+                 marks=pytest.mark.xfail(strict=True, reason=_ROUNDS_NOT_NAMED)),
     pytest.param(_failing_switch, "results",
                  "❌ The bot's start-up step `results' switch` failed — SwitchNotSignedUp. "
                  "The details are in the host's log.",
@@ -333,7 +375,9 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
 ):
     """One part of the sweep raises: core's expired review prompts step (the hub and two modules'
     steps after it); attendance's RSVP views and deadlines, between its check-in calls and its
-    clean-ups, weather after it; results' switch read, a fault in the bot's assembly, weather after
+    clean-ups, weather after it, in three cases its error carrying the rounds it failed for, each
+    named in core's form, which the line then names, joined by commas and "and" (#287, B11);
+    results' switch read, a fault in the bot's assembly, weather after
     it; results' list of steps; signup's switch read or list of steps, its name taking "'s" where
     results' takes a bare apostrophe; or the queue's start. One line goes to the log channel, naming the
     part that failed and the kind of fault and saying the detail is in the host's log; the host's log
