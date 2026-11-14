@@ -92,7 +92,7 @@ from leaguebot.signup.services.closing_steps import (
     closing_steps,
     disarm_timers_step,
     disarming,
-    season_end_steps as driver_steps,
+    season_end_driver_steps,
     window_close_jobs,
     window_close_steps,
 )
@@ -104,9 +104,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
-    from leaguebot.signup.services.wizard_service import WizardService
 
 OPEN = "signup.open"
 POST_INFO = "post_info"
@@ -486,7 +484,7 @@ def planned_by_a_season_s_end(
     ))
     for account, _wizard_channel in returned:
         planned.append(PlannedStep(SIGNUP_NOTICE, {"user_id": account, "notice": WINDOW_CLOSED_NOTICE}))
-        planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": account}))
+        planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": account, "hold": True}))
     return tuple(planned)
 
 
@@ -615,8 +613,7 @@ def season_end_close_step(
 
 def season_end_steps(
     *,
-    wizard_service: Callable[[], "WizardService"],
-    scheduler_service: Callable[[], "SchedulerService"],
+    arm_once: Callable[[str, str, datetime], None],
     modules: Callable[[], "ModuleService"],
     signup_module_service: Callable[[], "SignupModuleService"],
     returned_by_close: Collection[DriverState],
@@ -632,9 +629,8 @@ def season_end_steps(
     `season_end_steps`; the services are getters, so that each is the one the bot holds when the
     job runs."""
     steps = {
-        **driver_steps(
-            wizard_service=wizard_service, scheduler_service=scheduler_service,
-            line_prefix=line_prefix,
+        **season_end_driver_steps(
+            now=now, arm_once=arm_once, cancel_timers=cancel_timers, line_prefix=line_prefix
         ),
         **window_close_steps(signup_module_service=signup_module_service, now=now),
         CLOSE_WINDOW: season_end_close_step(

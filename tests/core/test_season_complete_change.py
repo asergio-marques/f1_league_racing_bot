@@ -1690,10 +1690,6 @@ async def test_a_driver_returned_by_the_window_s_close_is_told_before_their_chan
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: the season end's notice is posted through the wizard service, naming no mentions",
-)
 async def test_a_season_end_notice_mentions_only_the_driver(tmp_path):
     """Kimi is part-way through signing up when the season is completed. When the queue runs, his
     signup channel is told the season has ended in one post that may notify Kimi alone, never a

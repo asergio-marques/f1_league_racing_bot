@@ -995,7 +995,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
@@ -2909,7 +2908,6 @@ KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-    ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 

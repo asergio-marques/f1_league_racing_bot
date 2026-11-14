@@ -119,8 +119,8 @@ def sign_up_to_season_end_steps(bot: "LeagueBot") -> None:
 
     bot.season_end_steps.subscribe(partial(
         window_changes.season_end_steps,
-        wizard_service=lambda: bot.wizard_service,
-        scheduler_service=lambda: bot.scheduler_service,
+        # Read when it runs: the scheduler is built after the hooks are signed up to.
+        arm_once=lambda kind, key, at: bot.scheduler_service.arm_once(kind, key, at),
         modules=lambda: bot.module_service,
         signup_module_service=lambda: bot.signup_module_service,
         returned_by_close=RETURNED_BY_CLOSE,
