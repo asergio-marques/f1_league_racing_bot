@@ -519,3 +519,164 @@ def test_a_round_amendment_with_any_value_changed_changes_something(changes):
     from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
 
     assert not amendment_changes_nothing(_STANDING, changes)
+
+
+# ---------------------------------------------------------------------------
+# The modules' parts of the judgement (#287)
+# ---------------------------------------------------------------------------
+#
+# Core judges its own rules, and each module judges its own windows behind `amendment_judged`,
+# answering an `AmendmentPart`: what it refuses, warns and notes, and what it keeps for the save.
+# `judged_with_the_modules` asks the hook and `judge_amendment` gathers the parts.
+
+#: Why each test below fails until core asks the modules through the hook.
+NOT_YET_THE_HOOK = "#287: the modules' judgements are not yet gathered through amendment_judged"
+
+
+def _judged_hook(*answers):
+    """An `amendment_judged` hook whose subscribers answer *answers* in sign-up order, and the
+    list each records what it was handed into: the connection, the round, the changes, the
+    amended moment, the clock and the windows."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    hook = AwaitedHook()
+    handed: list[tuple] = []
+    for answer in answers:
+        async def part(db, rnd, changes, *, moment, now, attendance, weather, answer=answer):
+            handed.append((db, rnd, changes, moment, now, attendance, weather))
+            return answer
+        hook.subscribe(part)
+    return hook, handed
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
+async def test_a_module_s_refusal_refuses_the_amendment():
+    from leaguebot.core.models.amendment import AmendmentPart
+    from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
+
+    hook, _handed = _judged_hook(AmendmentPart(refusals=("The module refuses it.",)))
+    rnd = _round(scheduled_at=NOW + timedelta(days=30))
+    verdict = await judged_with_the_modules(
+        hook, rnd, {"track_name": "Silverstone Circuit"}, now=NOW,
+        attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=None,
+    )
+    assert not verdict.allowed
+    assert verdict.refusals == ["The module refuses it."]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
+async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
+    """A round brought to an hour away with its track changed: with the modules signed up the
+    check-in deadline would refuse it, and with none core finds nothing of its own to refuse,
+    warn or keep, whatever windows it is handed."""
+    from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
+
+    hook, _handed = _judged_hook()
+    rnd = _round(scheduled_at=NOW + timedelta(days=3))
+    verdict = await judged_with_the_modules(
+        hook, rnd,
+        {"scheduled_at": NOW + timedelta(hours=1), "track_name": "Silverstone Circuit"},
+        now=NOW, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=None,
+    )
+    assert verdict.allowed, verdict.refusals
+    assert verdict.warnings == []
+    assert verdict.kept == {}
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
+async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_core_s_tail():
+    """Every one of core's rules refusing at once, beside two modules': the field that cannot be
+    amended, the round's status and the move into the past, then attendance's refusal and
+    weather's, in the order they signed up, then the round already started and the mystery
+    round given a track alone. Today's order, kept."""
+    from leaguebot.core.models.amendment import AmendmentPart
+    from leaguebot.core.services.rounds.amendment_rules_service import (
+        judged_with_the_modules,
+        status_refusal,
+    )
+
+    hook, _handed = _judged_hook(
+        AmendmentPart(refusals=("Attendance refuses it.",)),
+        AmendmentPart(refusals=("Weather refuses it.",)),
+    )
+    rnd = _round(
+        scheduled_at=NOW - timedelta(hours=1),
+        status=RoundStatus.AWAITING_REPORT_VERDICTS.value,
+        fmt=RoundFormat.MYSTERY,
+        track=None,
+    )
+    verdict = await judged_with_the_modules(
+        hook, rnd,
+        {
+            "round_number": 4,
+            "scheduled_at": NOW - timedelta(hours=2),
+            "track_name": "Silverstone Circuit",
+        },
+        now=NOW, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=None,
+    )
+    assert verdict.refusals == [
+        "A round's round_number cannot be amended.",
+        status_refusal(RoundStatus.AWAITING_REPORT_VERDICTS.value),
+        "A round cannot be moved into the past. Its result submission would open late, at "
+        "once, and not at the round's moment. Give it a moment still to come.",
+        "Attendance refuses it.",
+        "Weather refuses it.",
+        "This round has already started, so its track and format can no longer be amended.",
+        "A mystery round names no circuit. Amend its format as well to reveal it.",
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
+def test_what_the_modules_keep_is_merged_for_the_save():
+    from leaguebot.core.models.amendment import AmendmentPart
+
+    rnd = _round(scheduled_at=NOW + timedelta(days=30))
+    verdict = judge_amendment(
+        rnd, {"scheduled_at": NOW + timedelta(days=20)}, now=NOW,
+        parts=(AmendmentPart(kept={"reopened": True}), AmendmentPart(kept={"withdrawn": [2, 3]})),
+    )
+    assert verdict.allowed, verdict.refusals
+    assert verdict.kept == {"reopened": True, "withdrawn": [2, 3]}
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
+def test_a_key_kept_by_two_modules_is_a_fault():
+    """Neither module's value may silently replace the other's in what the save is handed."""
+    from leaguebot.core.models.amendment import AmendmentPart
+
+    rnd = _round(scheduled_at=NOW + timedelta(days=30))
+    with pytest.raises(ValueError, match="withdrawn"):
+        judge_amendment(
+            rnd, {"scheduled_at": NOW + timedelta(days=20)}, now=NOW,
+            parts=(AmendmentPart(kept={"withdrawn": [1]}), AmendmentPart(kept={"withdrawn": [2]})),
+        )
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
+@pytest.mark.parametrize("db", [pytest.param(None, id="asked"), pytest.param(object(), id="saved")])
+async def test_the_modules_are_handed_the_amended_moment_one_utc_now_and_the_save_s_connection(db):
+    """The clock and the new moment given in another zone: each module is handed both in UTC, the
+    one clock core judges by, and the connection of the save, or none where it is asked outside
+    one."""
+    from leaguebot.core.models.amendment import AmendmentPart
+    from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
+
+    hook, handed = _judged_hook(AmendmentPart(), AmendmentPart())
+    zone = timezone(timedelta(hours=2))
+    rnd = _round(scheduled_at=NOW + timedelta(days=30))
+    changes = {"scheduled_at": datetime(2026, 7, 1, 20, 0, tzinfo=zone)}
+    await judged_with_the_modules(
+        hook, rnd, changes, now=NOW.astimezone(zone),
+        attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=db,
+    )
+    assert len(handed) == 2
+    for each_db, each_rnd, each_changes, moment, now, attendance, weather in handed:
+        assert each_db is db
+        assert each_rnd is rnd
+        assert each_changes == changes
+        assert moment == datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc)
+        assert moment.utcoffset() == timedelta(0)
+        assert now == NOW
+        assert now.utcoffset() == timedelta(0)
+        assert (attendance, weather) == (DEFAULT_ATTENDANCE, DEFAULT_WEATHER)
+    assert handed[0][4] is handed[1][4]
