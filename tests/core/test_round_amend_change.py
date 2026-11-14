@@ -2727,7 +2727,9 @@ async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_th
     stands. The amendment is allowed and finishes. The notice is deleted and its record closed,
     whatever weather's switch, and no notice that forecasts no longer stand is posted. With
     weather on, the round's Phase 1, whose horizon has passed, is drawn and posted at once, and
-    is the one forecast recorded; with weather off, nothing else is posted (criterion 1)."""
+    is the one forecast recorded; the round is armed again for its forecasts, Phases 2 and 3 at
+    the league's horizons, with no Phase 1 timer to draw it a second time. With weather off,
+    nothing else is posted and no forecast is armed (criterion 1)."""
     league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
     for session in ("SHORT_QUALIFYING", "LONG_RACE"):
         await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
@@ -2735,6 +2737,9 @@ async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_th
     notice = await _with_its_notice_posted(league, days=3)
     if not weather_on:
         await league.write("UPDATE server_configs SET weather_module_enabled = 0")
+    armed_before = len(league.armed)
+    forecasts_armed = league.bot.scheduler_service.schedule_round
+    forecasts_armed_before = len(forecasts_armed.call_args_list)
 
     press = await _amended(league, format="NORMAL", track="Silverstone Circuit")
     await run_queue(league.bot)
@@ -2747,12 +2752,73 @@ async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_th
     assert notice not in league.channel(PRO_CH.forecast).messages
     assert not any("Invalidated" in text for text in league.texts(PRO_CH.forecast))
     sent = [mid for kind, mid in after if kind == "send"]
+    armed = [which for which, _ in league.armed[armed_before:]]
+    forecast_arming = forecasts_armed.call_args_list[forecasts_armed_before:]
     if weather_on:
         assert len(sent) == 1
         assert await _forecasts(league) == {1: sent[0]}
+        assert armed.count("weather") == 1
+        [arming] = forecast_arming
+        assert arming.kwargs.get("skip_phases") == frozenset({1})
     else:
         assert sent == []
         assert await _forecasts(league) == {}
+        assert "weather" not in armed
+        assert forecast_arming == []
+
+
+@pytest.mark.parametrize("cleared", ["retried", "discarded"])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: a mystery round whose notice has posted is refused a change of type, and its "
+           "notice is never taken down by the amendment",
+)
+async def test_a_mystery_round_s_notice_discord_will_not_delete_stops_the_queue_keeping_it(
+    tmp_path, cleared,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is a mystery round three days
+    out, its notice posted in Pro's forecast channel; a manager changes it to a Normal round at
+    Silverstone Circuit, and Discord refuses to delete the notice. The queue stops, its notice
+    naming the job "deleting the mystery round notice of round 3 in **Pro**", never a Phase 0
+    forecast nor a withdrawn one; the notice stands in the channel with its record. Retried once
+    Discord allows it, the notice and its record go and the amendment finishes with nothing left
+    undone. Discarded, the amendment's reply names, under Pro's forecast channel, the mystery
+    round notice that could not be deleted, with its link to delete it by hand (criterion 1)."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           R3, session)
+    notice = await _with_its_notice_posted(league, days=3)
+    league.undeletable.add(notice)
+
+    press = await _amended(league, format="NORMAL", track="Silverstone Circuit")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    notices = _stop_notices(league)
+    assert any("deleting the mystery round notice of round 3 in **Pro**" in line
+               for line in notices), notices
+    assert not any("Phase 0" in line or "withdrawn" in line for line in notices), notices
+    assert notice in league.channel(PRO_CH.forecast).messages
+    assert (await _forecasts(league)).get(0) == notice
+    if cleared == "retried":
+        league.undeletable.clear()
+        await retry_job(league.bot)
+        await run_queue(league.bot)
+        assert await stopped_job(league.db_path) is None
+        assert notice not in league.channel(PRO_CH.forecast).messages
+        assert 0 not in await _forecasts(league)
+        assert NOT_DONE not in _outcome(press)
+        return
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+    outcome = _outcome(press)
+    assert outcome.startswith(AMENDED) and NOT_DONE in outcome
+    named = ("**Pro** — forecast channel: the mystery round notice could not be deleted, and a "
+             "league admin discarded it; delete it by hand (")
+    [bullet] = [line for line in outcome.splitlines() if named in line]
+    assert str(notice) in bullet
+    assert "Phase 0" not in outcome and "withdrawn" not in outcome
 
 
 @pytest.mark.parametrize("days", [
@@ -2847,6 +2913,18 @@ _UNDONE_STEPS = [
         [("forecast channel", "the withdrawn Phase 1 forecast could not be deleted, and a league "
           f"admin discarded it; delete it by hand ({_LINK})")],
         id="delete-withdrawn-forecast",
+    ),
+    pytest.param(
+        [("delete_forecast", {},
+          {**_GONE, "phase": 0, "guild_id": 5, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the mystery round notice could not be deleted, and a league admin "
+          f"discarded it; delete it by hand ({_LINK})")],
+        id="delete-mystery-round-notice",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#287: a mystery round notice's deletion left undone is named as a withdrawn "
+            "Phase 0 forecast",
+        ),
     ),
     pytest.param(
         [("delete_forecast", {"superseded": True},
