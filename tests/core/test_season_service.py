@@ -1,4 +1,5 @@
-"""Core's writer of a round's status on a handed connection, `set_round_status_on` (#439).
+"""Core's writer of a round's status on a handed connection, `set_round_status_on` (#439), and its
+reader of the active season's live rounds, `rounds_of_the_active_season`.
 
 The results module moves a round through its review on the save a change type is handed, so the
 writer commits nothing, and it is guarded as every write of a round's status is: a stale caller may
@@ -10,7 +11,10 @@ import os
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.seasons.season_service import set_round_status_on
+from leaguebot.core.services.seasons.season_service import (
+    rounds_of_the_active_season,
+    set_round_status_on,
+)
 
 SERVER_ID = 12608
 DIVISION_ID = 11
@@ -97,3 +101,53 @@ async def test_set_round_status_on_respects_its_guard(tmp_path) -> None:
         22: RoundStatus.FINAL.value,
         23: RoundStatus.CANCELLED.value,
     }
+
+
+async def test_rounds_of_the_active_season_keeps_only_live_rounds(tmp_path) -> None:
+    """Weather's start-up catch-up of missed phases asks for the rounds of the ACTIVE season that
+    are still live: a cancelled round, a round of a cancelled division and a round whose stored
+    moment cannot be read are left out. A season still in SETUP is not the active one, and its
+    rounds are left out too; a league holds one live season at a time (`idx_seasons_one_live`), so
+    it is judged in a database of its own."""
+    db_path = os.path.join(str(tmp_path), "active_season.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, status) "
+            "VALUES (11, 1, 'Pro', 1, 555, 'ACTIVE'), (12, 1, 'Am', 2, 556, 'CANCELLED')"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at, "
+            "status) VALUES "
+            "(31, 11, 1, 'NORMAL', 'Silverstone', '2026-06-01T18:00:00+00:00', 'NOT_RUN'), "
+            "(32, 11, 2, 'NORMAL', 'Monza', '2026-05-01T18:00:00+00:00', 'CANCELLED'), "
+            "(33, 12, 1, 'NORMAL', 'Spa', '2026-05-01T18:00:00+00:00', 'NOT_RUN'), "
+            "(34, 11, 3, 'NORMAL', 'Imola', 'not a moment', 'NOT_RUN')"
+        )
+        await db.commit()
+
+    assert [each.id for each in await rounds_of_the_active_season(db_path)] == [31]
+
+    setup_path = os.path.join(str(tmp_path), "setup_season.db")
+    await run_migrations(setup_path)
+    async with get_connection(setup_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'SETUP')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (11, 1, 'Pro', 1, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at, "
+            "status) VALUES (31, 11, 1, 'NORMAL', 'Silverstone', '2026-06-01T18:00:00+00:00', "
+            "'NOT_RUN')"
+        )
+        await db.commit()
+
+    assert await rounds_of_the_active_season(setup_path) == []
