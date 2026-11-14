@@ -523,3 +523,42 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
     assert round_failures(error, module="weather") == {22: refused}
     assert lines == [start_up_failure_line(MISSED_FORECAST_CLEAN_UPS, error)]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_A_SERVICE)
+async def test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone(tmp_path):
+    """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
+    22's, its start stored without its offset, which no writer produces and the bot refuses to
+    read. Run through the start-up sweep, weather's "missed forecast clean-ups" step still asks
+    round 21's clean-up, then raises weather's `RecoveryFailed` naming round 22 alone, with the
+    `ValueError` its start raised, rather than passing it over in silence; and the sweep posts one
+    line to the log channel, its failure line for that step."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    db_path = await _make_db(tmp_path, check_in=False)
+    unreadable = (datetime.now(timezone.utc) - timedelta(hours=30)).replace(tzinfo=None)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (22, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'FINAL')",
+            (DIVISION_ID, unreadable.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO forecast_messages "
+            "(round_id, division_id, phase_number, message_id, posted_at) "
+            "VALUES (22, ?, 3, 900, ?)",
+            (DIVISION_ID, datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+    bot = _swept_bot(db_path)
+    asked = AsyncMock(return_value=None)
+
+    with patch("leaguebot.weather.services.forecast_changes.ask_forecast_clean_up", new=asked):
+        lines, error = await run_weather_start_up_step(bot, MISSED_FORECAST_CLEAN_UPS)
+
+    assert [call.args[2] for call in asked.await_args_list] == [ROUND_ID]
+    assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
+    failures = round_failures(error, module="weather")
+    assert list(failures) == [22]
+    assert isinstance(failures[22], ValueError), failures
+    assert lines == [start_up_failure_line(MISSED_FORECAST_CLEAN_UPS, error)]
