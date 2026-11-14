@@ -357,11 +357,14 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
+@pytest.mark.xfail(strict=True, reason="#287: weather's RecoveryFailed names a round by its database id")
 async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
-    """Rounds 1 and 2 are both past their Phase 1 horizon with Phase 1 not drawn, and the queue
-    refuses round 1's ask. Run through the start-up sweep, the step still asks round 2's Phase 1,
-    then raises weather's `RecoveryFailed` naming round 1 alone with the queue's error, and the
-    sweep posts one line to the log channel, its failure line for the step."""
+    """Rounds 1 and 2 of Division 1 are both past their Phase 1 horizon with Phase 1 not drawn,
+    and the queue refuses round 1's ask. Run through the start-up sweep, the step still asks round
+    2's Phase 1, then raises weather's `RecoveryFailed` naming round 1 alone with the queue's
+    error, its message, which the host's log carries, naming it as a league reads it, "round 1 in
+    **Division 1**" (#287, B10); and the sweep posts one line to the log channel, its failure line
+    for the step."""
     from leaguebot.core.utils.interaction_errors import start_up_failure_line
 
     db_path = await _make_db(
@@ -380,6 +383,7 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     error = sweep["error"]
     assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
     assert round_failures(error, module="weather") == {1: refused}
+    assert "round 1 in **Division 1**" in str(error), str(error)
     assert sweep["lines"] == [start_up_failure_line(MISSED_PHASES, error)]
 
 
