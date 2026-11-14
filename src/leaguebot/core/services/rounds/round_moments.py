@@ -16,13 +16,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
 
 from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 from leaguebot.core.utils.hooks import AwaitedHook
-
-if TYPE_CHECKING:
-    import aiosqlite
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
 #: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
@@ -49,18 +45,15 @@ async def read_round_windows(
 
 
 async def read_phases_drawn(
-    phases_drawn_read: AwaitedHook, round_ids: Sequence[int], *, db: aiosqlite.Connection | None = None
+    phases_drawn_read: AwaitedHook, round_ids: Sequence[int]
 ) -> dict[int, dict[int, bool]]:
     """Whether each of Phases 1 to 3 has been drawn, by phase number, for each round in
     *round_ids*, by round id, as the module that draws them says: they are its own record, not a
     column of core's round. A round nobody answers for is absent, and its phases count as not
     drawn.
-
-    With *db*, the connection a save holds, the subscribers read on it and so see what that save
-    has written and not yet committed; without, each reads on a connection of its own.
     """
     drawn: dict[int, dict[int, bool]] = {}
-    for part in await phases_drawn_read.call(round_ids, db=db):
+    for part in await phases_drawn_read.call(round_ids):
         drawn.update(part or {})
     return drawn
 

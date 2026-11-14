@@ -50,15 +50,10 @@ async def phase2_slot_types_on(db: aiosqlite.Connection, round_id: int) -> dict[
     return {int(row["id"]): row["phase2_slot_type"] for row in await cursor.fetchall()}
 
 
-async def phases_drawn(
-    db_path: str, round_ids: Sequence[int], *, db: aiosqlite.Connection | None = None
-) -> dict[int, dict[int, bool]]:
-    """`phases_drawn_on`, as core's `phases_drawn_read` hook asks it: on the connection the
-    asker holds where it hands one (*db*, an amendment's save), on one of its own opened on
-    *db_path* otherwise. Whatever the module's switch: a forecast posted while weather was on is
+async def phases_drawn(db_path: str, round_ids: Sequence[int]) -> dict[int, dict[int, bool]]:
+    """`phases_drawn_on`, as core's `phases_drawn_read` hook asks it: on a connection of its own
+    opened on *db_path*. Whatever the module's switch: a forecast posted while weather was on is
     still posted. Reads only."""
-    if db is not None:
-        return await phases_drawn_on(db, round_ids)
     async with get_connection(db_path) as own:
         return await phases_drawn_on(own, round_ids)
 
