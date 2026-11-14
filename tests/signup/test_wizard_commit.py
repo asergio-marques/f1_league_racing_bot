@@ -416,6 +416,48 @@ async def test_the_worst_case_panel_is_posted_in_parts(tmp_path):
     assert any("T" * 1900 in part.content for part in parts)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: a retried review panel posts again the parts Discord already took",
+)
+async def test_a_divided_panel_retried_posts_its_earlier_parts_once(tmp_path):
+    """Kimi has given the longest answers he can (as above), so his review panel runs to two or
+    more messages. He types "See you there"; Discord takes the earlier parts but refuses the last,
+    the one carrying the Approve / Request Changes / Reject buttons, so the queue stops at
+    `post_panel` on his channel's lane. Once Discord takes posts again a league admin presses
+    Retry: the queue is no longer stopped, and his channel holds the panel once, each part
+    posted a single time, the buttons on the last part alone."""
+    league = await _league(tmp_path, draft=LONGEST_DRAFT)
+    lane = f"channel:{KIMI_CHANNEL}"
+    kimi = league.channel(KIMI_CHANNEL)
+    kimi.fail_when = lambda content, kwargs: (
+        len(content) > DISCORD_LIMIT or kwargs.get("view") is not None
+    )
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+
+    kimi.fail_when = lambda content, _kwargs: len(content) > DISCORD_LIMIT
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    posted = [kimi.messages[mid] for mid in sorted(kimi.messages)]
+    heads = [at for at, message in enumerate(posted)
+             if message.content.startswith("**📋 Signup Review**")]
+    assert len(heads) == 1, "the panel's first part was posted again"
+    [start] = heads
+    parts = [part.content for part in posted[start:]]
+    assert len(parts) >= 2
+    assert len(parts) == len(set(parts)), "a part of the panel was posted twice"
+    assert [type(part.view).__name__ for part in posted[start:]] == (
+        ["NoneType"] * (len(parts) - 1) + ["AdminReviewView"]
+    )
+    assert sum("P" * 1900 in part for part in parts) == 1
+    assert sum("T" * 1900 in part for part in parts) == 1
+
+
 #: The line the ending writes in the log channel, naming Kimi and his gone channel.
 CHANNEL_GONE_LINE = (
     f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
