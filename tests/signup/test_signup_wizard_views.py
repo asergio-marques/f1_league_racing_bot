@@ -538,19 +538,10 @@ async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-#: The reason a Cancel Signup press by an approved or placed driver is not yet refused.
-_WITHDRAWS_A_PLACED_DRIVER = (
-    "#286: the withdrawal is refused only where Not Signed Up is not a transition the driver's "
-    "state allows, so an Unassigned or Assigned driver is withdrawn (#444)"
-)
-
-
 @pytest.mark.parametrize("driver_state", [
     pytest.param("NOT_SIGNED_UP", id="not signed up"),
-    pytest.param("UNASSIGNED", id="unassigned",
-                 marks=pytest.mark.xfail(strict=True, reason=_WITHDRAWS_A_PLACED_DRIVER)),
-    pytest.param("ASSIGNED", id="assigned",
-                 marks=pytest.mark.xfail(strict=True, reason=_WITHDRAWS_A_PLACED_DRIVER)),
+    pytest.param("UNASSIGNED", id="unassigned"),
+    pytest.param("ASSIGNED", id="assigned"),
 ])
 @pytest.mark.parametrize("view_name, button", CANCELS)
 async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(

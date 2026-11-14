@@ -74,7 +74,6 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.drivers.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
@@ -528,9 +527,10 @@ def end_change(
     ("Withdrawn", "Rejected" with the manager and the reason, or the lapse); `disarm_timers`
     takes the timers away after it, as a job of its own, so that a save that fails keeps them.
 
-    A withdrawal is refused by the check where the signup has already ended (the transition to Not
-    Signed Up is not one the state machine allows from where they stand), telling the driver so and
-    changing nothing; it asks back `signup.closing` for the driver's channel, which holds the
+    A withdrawal is refused by the check unless the driver's signup is still under way (answering,
+    awaiting approval, or awaiting or making a correction): a driver not signed up, approved
+    (Unassigned) or placed (Assigned) is told the signup has already ended and nothing changes, their
+    state, seat and roles as they were; it asks back `signup.closing` for the driver's channel, which holds the
     notice, the lock and the deletion's arming on the channel's own lane. A rejection is refused
     where the driver no longer awaits review (another manager approved them, they withdrew, a
     correction was asked for), telling the manager so and changing nothing, and otherwise asks back
@@ -618,9 +618,10 @@ def end_change(
             if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
                 return Verdict.refuse(REJECT_MOVED_ON)
             return Verdict.go()
-        if profile is None or DriverState.NOT_SIGNED_UP not in ALLOWED_TRANSITIONS.get(
-            profile.current_state, set()
-        ):
+        # A withdrawal is for a signup still under way. A driver already approved (Unassigned) or
+        # placed (Assigned) may be moved to Not Signed Up by the driver state machine, but not by
+        # a leftover Cancel Signup button: their state, seat and roles stand (#444).
+        if profile is None or profile.current_state not in IN_PROGRESS_STATES:
             if ctx.origin is ChangeOrigin.MEMBER:
                 return Verdict.refuse(f"⛔ {SIGNUP_ENDED}", SIGNUP_ENDED)
             return Verdict.not_due("the signup has already ended")
