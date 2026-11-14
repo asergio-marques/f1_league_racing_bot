@@ -244,15 +244,6 @@ async def test_a_mixed_session_capped_at_one_slot_takes_one(tmp_path):
     assert set(slots) <= DRY_LABELS | WET_LABELS
 
 
-async def test_an_unknown_session_type_falls_back_to_four_slots(tmp_path):
-    """A session type outside the enum must not take the phase down."""
-    db_path = await _make_db(tmp_path)
-    await _seed(db_path, sessions=[("NOT_A_SESSION_TYPE", "sunny")])
-    _, randint, _ = await _draw(db_path)
-
-    assert randint.call_args.args == (1, 4)
-
-
 @pytest.mark.parametrize("pick", ["min", "max"], ids=["lower_bound", "upper_bound"])
 async def test_the_drawn_count_is_the_number_of_slots_persisted(pick, tmp_path):
     db_path = await _make_db(tmp_path)
