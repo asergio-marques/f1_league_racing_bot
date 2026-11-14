@@ -691,7 +691,7 @@ def answer_change(
             picks = list(wizard.draft_answers.get("preferred_teams") or [])
             text = ordinal_prompt(int(wizard.draft_answers.get("_pref_teams_step", 1)), picks)
             view: discord.ui.View = PreferredTeamsButtonView(
-                user_id, queue, snapshot.team_names, excluded=picks
+                user_id, queue, snapshot.team_names, excluded=picks, signup=signup()
             )
         else:
             async with get_connection(ctx.db_path) as db:

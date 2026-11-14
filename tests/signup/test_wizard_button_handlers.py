@@ -120,11 +120,6 @@ async def test_a_first_team_pick_is_recorded_and_the_next_is_offered(tmp_path):
     assert len(league.channels[KIMI_CHANNEL].texts) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: the next team question's buttons are posted with no signup service, so a "
-    "press on them fails",
-)
 async def test_a_team_pressed_on_the_next_question_s_buttons_is_recorded(tmp_path):
     """Discord hands a press to the view on the message pressed, so the buttons the answer
     posts for the next pick must work as they stand, not only those registered at start.
