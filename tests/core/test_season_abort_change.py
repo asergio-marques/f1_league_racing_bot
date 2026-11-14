@@ -154,10 +154,16 @@ async def test_a_forecast_posted_in_two_parts_is_deleted_whole_when_the_season_i
     assert not {9400, 9401} & set(league.channel(DIVISIONS[PRO][3].forecast).messages)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: a forecast's earlier part is still deleted by core's shared `delete_replaced` "
+    "job, not by weather's own `delete_forecast_part`",
+)
 async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_its_link(tmp_path):
-    """As above, but Discord refuses to delete the first part (9400). The queue stops at the
-    deletion of that part; a league admin discards it. The abort goes on, and the reply names the
-    earlier Phase 1 forecast as to be deleted by hand, with the message's link."""
+    """As above, but Discord refuses to delete the first part (9400). The queue stops at
+    weather's own deletion of that part (`delete_forecast_part`); a league admin discards it. The
+    abort goes on, and the reply names the earlier Phase 1 forecast as to be deleted by hand, with
+    the message's link."""
     from tests.support.season_league import DIVISIONS, PRO
 
     league = await _forecast_in_two_parts(tmp_path)
@@ -166,7 +172,7 @@ async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_i
 
     await run_queue(league.bot)
 
-    assert await _stopped_at(league) == ("delete_replaced", None)
+    assert await _stopped_at(league) == ("delete_forecast_part", None)
     assert 9400 in league.channel(DIVISIONS[PRO][3].forecast).messages
 
     await discard_job(league.bot)

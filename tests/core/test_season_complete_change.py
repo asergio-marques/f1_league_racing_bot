@@ -2761,18 +2761,23 @@ async def test_a_forecast_posted_in_two_parts_is_deleted_whole_when_the_season_i
     assert await league.rows("SELECT * FROM forecast_messages") == []
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: a forecast's earlier part is still deleted by core's shared `delete_replaced` "
+    "job, not by weather's own `delete_forecast_part`",
+)
 async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_its_link(tmp_path):
-    """As above, but Discord refuses to delete the first part (9400). The queue stops at the
-    deletion of that part; a league admin discards it. The season is completed, and the reply and
-    the closing line (Incomplete) name the earlier Phase 1 forecast as to be deleted by hand,
-    with the message's link."""
+    """As above, but Discord refuses to delete the first part (9400). The queue stops at
+    weather's own deletion of that part (`delete_forecast_part`); a league admin discards it. The
+    season is completed, and the reply and the closing line (Incomplete) name the earlier Phase 1
+    forecast as to be deleted by hand, with the message's link."""
     league = await _forecast_in_two_parts(tmp_path)
     league.undeletable.add(9400)
     interaction = await _asked(league)
 
     await run_queue(league.bot)
 
-    assert await _stopped_at(league) == ("delete_replaced", None)
+    assert await _stopped_at(league) == ("delete_forecast_part", None)
     assert 9400 in league.channel(PRO_CH.forecast).messages
 
     await discard_job(league.bot)
