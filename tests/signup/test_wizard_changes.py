@@ -1432,6 +1432,47 @@ async def test_a_held_channel_due_while_signup_is_off_is_deleted_on_start(tmp_pa
     assert await _wizard(league) is None
 
 
+#: A driver parked while a manager chooses what they are to correct.
+CORRECTING = SIGNING_UP + 20
+
+
+async def test_a_restart_while_signup_is_off_ends_releases_and_expires_no_signup(tmp_path):
+    """The signup module is off and the bot starts again. Kimi is part-way through signing up,
+    last active 25 hours ago, and his signup channel (6405) was deleted while the bot was down; a
+    second driver (115) is part-way through signing up, last active 25 hours ago, his channel
+    standing; a third (125) is parked awaiting a correction choice. Signup's start-up steps run in
+    its turn of the start-up sweep, signup's switch reading off, then the queue runs. No signup is
+    ended, for a channel gone or for inactivity, and no correction lapse is asked: each driver
+    keeps his state and his wizard, no 24-hour timer is armed, and nothing is written to the log
+    channel, the sweep reporting no failure."""
+    league = await _league(tmp_path)
+    idle_since = league.clock.now - timedelta(hours=25)
+    await _idle(league, SIGNING_UP, idle_since)
+    await _idle(league, OTHER, idle_since)
+    league.remove_channel(KIMI_CHANNEL)
+    await signing_up(league, CORRECTING, state="AWAITING_CORRECTION_PARAMETER")
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' WHERE discord_user_id = ?",
+        str(CORRECTING),
+    )
+    await league.switch("signup", False)
+    logged = league.log()
+
+    assert await run_signup_start_up(league.bot, on=False) == []
+    await run_queue(league.bot)
+
+    assert await _changes_of(league, END_KIND) == []
+    assert await _changes_of(league, "signup.correction.lapse") == []
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert await _driver_state(league, OTHER) == "PENDING_SIGNUP_COMPLETION"
+    assert await _driver_state(league, CORRECTING) == "AWAITING_CORRECTION_PARAMETER"
+    for user_id in (SIGNING_UP, OTHER, CORRECTING):
+        assert await _wizard(league, user_id) is not None
+    assert _armed(league, INACTIVITY_TIMER) == []
+    assert _expired(league, OTHER) == []
+    assert league.log() == logged
+
+
 # ---------------------------------------------------------------------------
 # A member leaving mid-signup (C80)
 # ---------------------------------------------------------------------------
