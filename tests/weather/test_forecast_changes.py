@@ -182,8 +182,9 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     from leaguebot.image.services import image_weather_post
 
     league = await _league(tmp_path)
-    drawn = AsyncMock(side_effect=lambda *_a, **_k: discord.File(io.BytesIO(b"png"),
-                                                                    filename="forecast.png"))
+    drawn = AsyncMock(side_effect=lambda *_a, **_k: (
+        discord.File(io.BytesIO(b"png"), filename="forecast.png"), (),
+    ))
     if refused == "picture refused":
         monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
         league.channel(FORECAST).fail_when = lambda _content, kwargs: kwargs.get("file") is not None
