@@ -44,7 +44,7 @@ def sign_up_to_round_windows(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.round_windows_read.subscribe(partial(
-        attendance_hooks.lead_times, bot.attendance_service, bot.module_service
+        attendance_hooks.round_window, bot.attendance_service, bot.module_service
     ))
 
 
