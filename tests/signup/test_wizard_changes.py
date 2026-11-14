@@ -79,6 +79,8 @@ NEW_CHANNEL = 6500
 OLD_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
+#: A season other than the live one, under which Lewis holds a signup saved after his live one.
+OTHER_SEASON = 990
 
 
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
@@ -1500,29 +1502,50 @@ async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_job
 
 
 @pytest.mark.parametrize(("state", "record", "named"), [
-    pytest.param("UNASSIGNED", True, "Lewis Hamilton", id="unassigned"),
-    pytest.param("ASSIGNED", True, "Lewis Hamilton", id="assigned"),
-    pytest.param("ASSIGNED", False, "Lewis", id="assigned-no-signup-record"),
+    pytest.param("UNASSIGNED", "live", "Lewis Hamilton", id="unassigned"),
+    pytest.param("ASSIGNED", "live", "Lewis Hamilton", id="assigned"),
+    pytest.param("ASSIGNED", None, "Lewis", id="assigned-no-signup-record"),
+    pytest.param(
+        "ASSIGNED", "another-season-after", "Lewis Hamilton",
+        id="assigned-another-season-s-signup-saved-after",
+        marks=pytest.mark.xfail(strict=True, reason=(
+            "#286: the departure line names the driver from his latest signup, whatever its "
+            "season, not from his signup for the live season"
+        )),
+    ),
 ])
 async def test_a_placed_driver_leaving_writes_the_line_through_the_queue(
     tmp_path, state, record, named,
 ):
     """Lewis, approved or placed (*state*), leaves the server. The listener posts nothing itself:
     it asks the queue for `signup.member_left`, whose check admits him, and its save writes the
-    one line "Driver left server" naming him by the name he signed up under ("Lewis Hamilton"),
-    or by his Discord name ("Lewis") where he has no signup record, with his state. The save is
-    the line alone: he keeps his state, no timer of his is disarmed and no channel is deleted."""
+    one line "Driver left server" naming him by the name he signed up under for the live season
+    ("Lewis Hamilton"), even where a signup of his for another season was saved after it under
+    another name, or by his Discord name ("Lewis") where he has no signup record, with his state.
+    The save is the line alone: he keeps his state, no timer of his is disarmed and no channel is
+    deleted."""
     league = await _league(tmp_path)
     await league.write(
         "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?", state, str(LEWIS)
     )
-    if record:
+    if record is None:
+        await league.write("DELETE FROM signup_records WHERE discord_user_id = ?", str(LEWIS))
+    else:
         await league.write(
             "UPDATE signup_records SET server_display_name = 'Lewis Hamilton' "
             "WHERE discord_user_id = ?", str(LEWIS),
         )
-    else:
-        await league.write("DELETE FROM signup_records WHERE discord_user_id = ?", str(LEWIS))
+    if record == "another-season-after":
+        await league.write(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2025-01-01', 'COMPLETED', 1)", OTHER_SEASON,
+        )
+        await league.write(
+            "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, "
+            "server_display_name) VALUES ('2026-02-01T00:00:00+00:00', "
+            "'2026-02-01T00:00:00+00:00', ?, ?, 'Lewis From Another Season')",
+            OTHER_SEASON, str(LEWIS),
+        )
 
     await _leave(league, LEWIS)
 
