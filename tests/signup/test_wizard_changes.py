@@ -63,6 +63,7 @@ from tests.support.season_league import (
     setup_league,
     signing_up,
 )
+from tests.support.start_up_sweep import run_signup_start_up
 
 #: The changes Sign Up and Cancel Signup ask, and the one the league asks back of the lane.
 START_KIND = "signup.start"
@@ -1353,9 +1354,10 @@ async def test_a_held_channel_due_while_down_is_deleted_on_start(tmp_path):
     channel (6405) is held for 24 hours. Twenty-three hours on, its deletion is asked early (its
     timer fired before its time) and the queue runs: the deletion is not yet due, and the channel
     and his wizard's row stand. The bot is then down past the 24 hours and starts again, the
-    queue's clock 25 hours after the withdrawal: recovering the wizards asks
-    `signup.channel.delete` of Kimi's channel, as the bot, on his channel's lane, and when the
-    queue runs the channel is deleted and his wizard's row with it."""
+    queue's clock 25 hours after the withdrawal: signup's start-up steps, run in its turn of the
+    start-up sweep with signup on, ask `signup.channel.delete` of Kimi's channel, as the bot, on
+    his channel's lane, and when the queue runs the channel is deleted and his wizard's row with
+    it."""
     league = await _mid_signup(tmp_path)
     held = league.channel(KIMI_CHANNEL)
     await _press_cancel(league)
@@ -1370,7 +1372,7 @@ async def test_a_held_channel_due_while_down_is_deleted_on_start(tmp_path):
 
     league.clock.advance(hours=2)
     asked_before = len(await _changes_of(league, DELETE_KIND))
-    await _recover_wizards(league)
+    assert await run_signup_start_up(league.bot, on=True) == []
 
     asked = await _changes_of(league, DELETE_KIND)
     assert len(asked) == asked_before + 1
@@ -1397,6 +1399,32 @@ async def test_a_held_channel_is_deleted_while_signup_is_off(tmp_path):
 
     league.clock.advance(hours=24)
     await _timer_callback(league, DELETE_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    held.delete.assert_awaited_once()
+    assert held.texts == posted
+    assert await _wizard(league) is None
+
+
+@pytest.mark.xfail(strict=True, reason="#286: signup's catch-up of held channels runs only while "
+                   "signup is on, as part of the wizards' catch-up")
+async def test_a_held_channel_due_while_signup_is_off_is_deleted_on_start(tmp_path):
+    """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
+    channel (6405) is told his signup was withdrawn and held for 24 hours. The signup module is
+    then switched off, and the channel's deletion timer is lost (it never fires). The bot is down
+    past the 24 hours and starts again, the queue's clock 25 hours after the withdrawal, signup
+    still off: signup's start-up steps run in its turn of the start-up sweep, and when the queue
+    runs the channel is deleted and his wizard's row with it. Nothing more is posted in the
+    channel, and the sweep reports no failure to the log channel."""
+    league = await _mid_signup(tmp_path)
+    held = league.channel(KIMI_CHANNEL)
+    await _press_cancel(league)
+    await run_queue(league.bot)
+    posted = list(held.texts)
+    await league.switch("signup", False)
+
+    league.clock.advance(hours=25)
+    assert await run_signup_start_up(league.bot, on=False) == []
     await run_queue(league.bot)
 
     held.delete.assert_awaited_once()

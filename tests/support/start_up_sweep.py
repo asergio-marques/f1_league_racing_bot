@@ -80,6 +80,51 @@ async def _run_start_up_step(
     return lines, (raised[0] if raised else None)
 
 
+async def run_signup_start_up(bot: Any, *, on: bool) -> list[str]:
+    """Run every one of signup's start-up steps, as `start_up_steps(bot)` gives them, in signup's
+    turn of the real start-up sweep, signup's switch reading *on*, core's queue and scheduler stood
+    in for (each step asks the bot's own change queue). Gives the lines the sweep posted to the log
+    channel."""
+    import leaguebot.core.services.upkeep.start_up as start_up_module
+    from leaguebot.core.utils.hooks import StartingHook
+    from leaguebot.signup import wiring
+
+    starting = StartingHook()
+    starting.subscribe(lambda: wiring.start_up_steps(bot), module="signup")
+
+    class _Modules:
+        async def is_enabled(self, module: str) -> bool:
+            return on
+
+    class _Queue:
+        @asynccontextmanager
+        async def sweeping(self) -> Any:
+            yield
+
+        async def start(self) -> None:
+            pass
+
+        def release(self) -> None:
+            pass
+
+    class _Scheduler:
+        def start(self, *, paused: bool) -> None:
+            pass
+
+        def resume(self) -> None:
+            pass
+
+    lines: list[str] = []
+
+    async def post_log(content: str, **_: Any) -> None:
+        lines.append(content)
+
+    start_up = importlib.reload(start_up_module).start_up
+    await start_up(starting=starting, modules=_Modules(), change_queue=_Queue(),
+                   scheduler=_Scheduler(), post_log=post_log)
+    return lines
+
+
 def round_failures(
     error: BaseException | None, *, module: str = "results"
 ) -> dict[int, BaseException]:
