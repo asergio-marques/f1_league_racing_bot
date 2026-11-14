@@ -34,7 +34,7 @@ from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
 from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
-from leaguebot.signup.services.signup_settings import fixed_refusal, format_slots, kind_of
+from leaguebot.signup.services.signup_settings import format_slots, kind_of
 from leaguebot.signup.services.wizard_answers import take_typed_answer
 from leaguebot.signup.services.wizard_changes import (
     DELETED, ask_channel_gone, ask_member_left,
@@ -476,32 +476,6 @@ class SignupCog(commands.Cog):
         description="Manage signup availability time slots.",
         parent=signup,
     )
-
-    async def _refuse_while_configuration_fixed(
-        self, interaction: discord.Interaction, command: str, *, record: bool = True
-    ) -> bool:
-        """Refuse a change to the signup module's settings once a season has fixed them.
-
-        The settings are free while the server holds no active season and while its season
-        stands in Configuration; confirming that configuration fixes them until the season
-        ends (issue #220). This replaces the older guards that blocked a slot change while
-        the window was open or drivers awaited placement — both only ever happen inside a
-        season whose configuration is already fixed.
-
-        Returns True when the command replied and must stop, having recorded the refusal in
-        the log channel unless *record* is False.
-        """
-        from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
-
-        season_number = await configuration_fixed(self.bot.db_path)
-        if season_number is None:
-            return False
-        reply = fixed_refusal(season_number, command)
-        if record:
-            await refuse(interaction, reply, what=f"`{command}`")
-        else:
-            await interaction.response.send_message(reply, ephemeral=True)
-        return True
 
     @time_slot_group.command(name="add", description="Add an availability time slot.")
     @app_commands.describe(day="Day of week", time="Time in HH:MM 24h or 12h format (e.g. 14:30 or 2:30pm)")

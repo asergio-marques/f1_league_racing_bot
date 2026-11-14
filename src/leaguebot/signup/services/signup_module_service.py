@@ -278,35 +278,6 @@ class SignupModuleService:
             })
         return results
 
-    async def save_config(self, cfg: SignupModuleConfig) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO signup_module_config
-                    (id, signup_channel_id,
-                     signups_open, signup_button_message_id, selected_tracks_json,
-                     signup_closed_message_id, close_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    signup_channel_id          = excluded.signup_channel_id,
-                    signups_open               = excluded.signups_open,
-                    signup_button_message_id   = excluded.signup_button_message_id,
-                    selected_tracks_json       = excluded.selected_tracks_json,
-                    signup_closed_message_id   = excluded.signup_closed_message_id,
-                    close_at                   = excluded.close_at
-                """,
-                (
-                    1,
-                    cfg.signup_channel_id,
-                    int(cfg.signups_open),
-                    cfg.signup_button_message_id,
-                    json.dumps(cfg.selected_tracks),
-                    cfg.signup_closed_message_id,
-                    cfg.close_at,
-                ),
-            )
-            await db.commit()
-
     async def delete_config_on(self, db: aiosqlite.Connection) -> None:
         """Forget the signup channel and the window state on *db*, committing nothing, so that
         the module's switch-off saves it together with the flag coming down.

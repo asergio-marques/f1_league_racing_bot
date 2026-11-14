@@ -2119,7 +2119,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Results' pass
     # Attendance's pass
     # Signup's pass
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
