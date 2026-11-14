@@ -198,7 +198,7 @@ def describe(*, division_name: str, round_number, phase: int) -> str:
     """
     return (
         f"round {round_number} in **{division_name}**, "
-        + ("mystery notice" if phase == 0 else f"phase {phase}")
+        + ("the mystery round notice" if phase == 0 else f"phase {phase}")
     )
 
 
