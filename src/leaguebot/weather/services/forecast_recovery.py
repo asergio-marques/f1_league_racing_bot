@@ -51,6 +51,18 @@ log = logging.getLogger(__name__)
 __all__ = ["recover_missed_forecast_clean_ups", "recover_missed_phases"]
 
 
+async def _why_unreadable(db: aiosqlite.Connection, round_id: int) -> BaseException:
+    """The error that reading *round_id* raises, which core's reader of the active season's rounds
+    hands back the id of and not the reason, logged with its traceback for the host's log."""
+    try:
+        await round_facts_on(db, round_id)
+    except ValueError as error:
+        log.exception("Recovery: round %s cannot be read, its phases are not caught up", round_id)
+        return error
+    log.error("Recovery: round %s could not be read, its phases are not caught up", round_id)
+    return ValueError(f"the start of round {round_id} cannot be read")
+
+
 async def recover_missed_phases(db_path: str, *, queue: ChangeQueue) -> None:
     """Ask the change queue for any weather phases whose horizon has passed but were not executed.
 
@@ -79,16 +91,13 @@ async def recover_missed_phases(db_path: str, *, queue: ChangeQueue) -> None:
     now = queue.now()
     live, unreadable = await rounds_of_the_active_season(db_path)
     rounds = [each for each in live if each.scheduled_at > now]
+    failures: dict[int, BaseException] = {}
     async with get_connection(db_path) as db:
         drawn = await phases_drawn_on(db, [each.id for each in rounds])
+        for round_id in unreadable:
+            failures[round_id] = await _why_unreadable(db, round_id)
     config: WeatherPipelineConfig | None = None
 
-    failures: dict[int, BaseException] = {
-        round_id: ValueError(f"the start of round {round_id} cannot be read")
-        for round_id in unreadable
-    }
-    for round_id in unreadable:
-        log.error("Recovery: round %s cannot be read, its phases are not caught up", round_id)
     for each in rounds:
         if config is None:
             config = await weather_config_service.get_weather_pipeline_config(db_path)
