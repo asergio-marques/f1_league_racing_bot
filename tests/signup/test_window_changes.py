@@ -1037,10 +1037,6 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     assert await league.rows("SELECT * FROM signup_module_config") == []
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: the switch-off forgets the closed notice it posted, so after signup is switched back "
-    "on the next /signup open leaves it standing beside the Sign Up button"
-))
 async def test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on(tmp_path):
     """The window is open in the signup channel (620) and the season is in Configuration, the
     league's base role (819) and driver role (820) set and one availability slot saved. Manager 77

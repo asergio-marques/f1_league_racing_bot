@@ -750,7 +750,12 @@ CREATE TABLE "signup_module_settings" (
     id                      INTEGER PRIMARY KEY CHECK (id = 1),
     nationality_required    INTEGER NOT NULL DEFAULT 1,
     time_type               TEXT    NOT NULL DEFAULT 'TIME_TRIAL',
-    time_image_required     INTEGER NOT NULL DEFAULT 1
+    time_image_required     INTEGER NOT NULL DEFAULT 1,
+    -- Where the "signups are closed" notice the last close posted stands. The row outlives the
+    -- module's switch-off, which forgets the configuration, so that the next opening can still
+    -- take the notice down. Both NULL where none stands, or an opening has taken it down.
+    closed_notice_channel_id INTEGER,
+    closed_notice_message_id INTEGER
 );
 
 -- signup_module_config

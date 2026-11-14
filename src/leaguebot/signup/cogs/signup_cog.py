@@ -694,7 +694,7 @@ class SignupCog(commands.Cog):
                 "track_ids": track_list,
                 "close_at": close_at_iso,
                 "channel_id": cfg.signup_channel_id,
-                "closed_message_id": cfg.signup_closed_message_id,
+                "closed_message_id": await self.bot.signup_module_service.closed_notice_of(cfg),
             },
             interaction=interaction,
             what="Opening signups",

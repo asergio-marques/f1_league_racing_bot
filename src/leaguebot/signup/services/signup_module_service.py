@@ -317,7 +317,9 @@ class SignupModuleService:
         Principle X, rules 3 and 6). The time slots and the three question settings are not
         in this row, and no key joins their tables to it, so nothing cascades: they stand
         again when the module is next enabled, as the signup specification requires
-        (issue #127).
+        (issue #127). The closed-status message is the one id the disable does not lose: the
+        close kept it, with its channel, among the settings (`closed_notice_of`), so that the
+        first opening after the module is switched back on takes the notice down.
         """
         await db.execute("DELETE FROM signup_module_config")
 
@@ -414,6 +416,11 @@ class SignupModuleService:
             "",
             (button_message_id, json.dumps(selected_tracks)),
         )
+        # The notice the opening takes down is no longer one to find again.
+        await db.execute(
+            "UPDATE signup_module_settings "
+            "SET closed_notice_channel_id = NULL, closed_notice_message_id = NULL"
+        )
         season_id = await self._live_season_id(db)
         if season_id is not None:
             await db.execute(
@@ -453,7 +460,9 @@ class SignupModuleService:
     ) -> None:
         """Record the window closed on the caller's connection, committing nothing: the Sign Up
         button's id and the close time are cleared, *closed_msg_id* is kept so the next opening
-        deletes the notice, and the open window's record is stamped closed at *now*."""
+        deletes the notice, and the open window's record is stamped closed at *now*. The notice's
+        channel and id are kept with the module's settings as well, which a switch-off does not
+        forget, so that the next opening still finds the notice (`closed_notice_of`)."""
         await db.execute(
             "UPDATE signup_module_config "
             "SET signups_open = 0, signup_button_message_id = NULL, "
@@ -466,6 +475,38 @@ class SignupModuleService:
             "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
             (now.isoformat(),),
         )
+        if closed_msg_id is not None:
+            await db.execute(
+                "INSERT INTO signup_module_settings "
+                "(id, closed_notice_channel_id, closed_notice_message_id) "
+                "VALUES (1, (SELECT signup_channel_id FROM signup_module_config), ?) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "closed_notice_channel_id = excluded.closed_notice_channel_id, "
+                "closed_notice_message_id = excluded.closed_notice_message_id",
+                (closed_msg_id,),
+            )
+
+    async def closed_notice_of(self, cfg: SignupModuleConfig) -> int | None:
+        """The id of the "signups are closed" notice standing in the signup channel of *cfg*, or
+        None where none is known.
+
+        The configuration holds it from the close until the next opening. A switch-off forgets
+        the configuration, so after the module is switched back on the notice is read from the
+        module's settings, where the close kept it, if it stands in this channel and no opening
+        has taken it down since.
+        """
+        if cfg.signup_closed_message_id is not None:
+            return cfg.signup_closed_message_id
+        if cfg.signup_channel_id is None:
+            return None
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT closed_notice_message_id FROM signup_module_settings "
+                "WHERE closed_notice_channel_id = ? AND closed_notice_message_id IS NOT NULL",
+                (cfg.signup_channel_id,),
+            )
+            row = await cursor.fetchone()
+        return None if row is None else int(row["closed_notice_message_id"])
 
     async def set_close_at(self, close_at_iso: str | None) -> None:
         """Persist (or clear) the auto-close ISO 8601 UTC timestamp."""
@@ -1174,6 +1215,10 @@ async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
     await db.execute(
         "UPDATE signup_module_config SET signup_channel_id = NULL, "
         "signup_button_message_id = NULL, signup_closed_message_id = NULL"
+    )
+    await db.execute(
+        "UPDATE signup_module_settings "
+        "SET closed_notice_channel_id = NULL, closed_notice_message_id = NULL"
     )
     return {
         CLEARED_WIZARDS: wizards,
