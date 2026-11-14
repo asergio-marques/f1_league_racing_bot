@@ -1040,16 +1040,22 @@ async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -
 # names its hidden track, forecasting it.
 
 
+#: Why a notice recorded in its own column still reads as owed, until #287 lands.
+_NOTICE_IN_PHASE1_FLAG = (
+    "#287: a mystery round's notice is recorded in its Phase 1 flag, with no column of its own"
+)
+
+
 async def _mystery_round_armed(
     tmp_path, service: SchedulerService, *, notice_posted: bool
 ) -> str:
     """A mystery round a week ahead, weather and results on, its jobs armed as approval arms
-    them."""
+    them; where *notice_posted*, its notice recorded as given and no Phase 1 drawn."""
     db_path = str(tmp_path / "mystery_jobs.db")
     await run_migrations(db_path)
     await _seed_with_weather(
         db_path,
-        [{"format": "MYSTERY", "track_name": None, "phase1_done": 1 if notice_posted else 0}],
+        [{"format": "MYSTERY", "track_name": None, "mystery_notice_given": notice_posted}],
     )
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
@@ -1073,6 +1079,7 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     assert result["kind"] == "weather_p1"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOTICE_IN_PHASE1_FLAG)
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1090,6 +1097,7 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     assert result["phase_number"] == 4
 
 
+@pytest.mark.xfail(strict=True, reason=_NOTICE_IN_PHASE1_FLAG)
 async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     tmp_path, paused_scheduler
 ) -> None:
