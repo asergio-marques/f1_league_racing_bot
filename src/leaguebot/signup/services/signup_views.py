@@ -21,8 +21,10 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
+from leaguebot.core.utils.interaction_errors import report_failure
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -123,6 +125,76 @@ def _review_button(interaction: discord.Interaction, owner_id: str | None, label
     """A button of a signup review, as the log channel names it: "the “Approve” button of Alex's
     signup review"."""
     return f"the “{label}” button of {_review_owner(interaction, owner_id)} signup review"
+
+
+async def take_reason(
+    bot: LeagueBot, message: discord.Message, *, queue: ChangeQueue
+) -> None:
+    """What the review cog does with a message in a channel where a manager may owe a reason.
+
+    Where this manager has a pending reason in this channel (`_PENDING_REASONS`), the message is
+    it: the lapse is cancelled and the reason is asked of the change queue as the manager's
+    `signup.end` (Reject) or `signup.request_changes`, through the press's stored interaction;
+    the message is deleted by that change's own jobs, not at once. Where the press is refused (the
+    signup has moved on) or is already in hand, a change of its own on the driver's lane takes the
+    message down, since the change that would have done so was never asked.
+
+    The reason completes the change the press asked for, so it counts as the button's own work: a
+    fault in the queue is reported through the press's stored interaction (`report_failure`) — the
+    manager is told, one failure line is written. A fault that escaped would reach the bot's event
+    handler (`on_event_error`), which writes a line to the log channel but does not tell the
+    manager, so the catch stays. It wraps only that call, hands the error over and returns
+    (architecture.md, "Errors and failures"). A signup that has moved on since the press is a
+    refusal, not a fault.
+    """
+    # The kinds are the changes' own, and those modules import this one.
+    from leaguebot.signup.services.closing_steps import REASON_KIND
+    from leaguebot.signup.services.review_changes import REQUEST
+    from leaguebot.signup.services.wizard_changes import END, REJECTED
+
+    key = (message.channel.id, message.author.id)
+    pending = _PENDING_REASONS.pop(key, None)
+    if pending is None:
+        return
+    lapse = pending.get("lapse")
+    if lapse is not None:
+        lapse.cancel()
+
+    reason = message.content.strip() or "No specific reason given."
+
+    action = pending["action"]
+    interaction: discord.Interaction = pending["interaction"]
+    what = _review_button(interaction, pending["discord_user_id"], _BUTTON_OF[action])
+    actor = pending["actor"]
+    if action == "reject":
+        kind = END
+        payload = {
+            "user_id": pending["discord_user_id"], "reason": REJECTED,
+            "actor_id": actor.id, "actor_name": actor.display_name,
+            "text": reason, "reason_message_id": message.id,
+            "reason_channel_id": message.channel.id,
+        }
+    elif action == "request_changes":
+        kind = REQUEST
+        payload = {
+            "user_id": pending["discord_user_id"],
+            "actor_id": actor.id, "actor_name": actor.display_name,
+            "text": reason, "reason_message_id": message.id,
+            "reason_channel_id": message.channel.id,
+        }
+    else:
+        return
+    try:
+        asked = await queue.ask(
+            kind, payload, interaction=interaction, actor=actor, what=what,
+        )
+        if asked is None:
+            await queue.ask(
+                REASON_KIND, {"channel_id": message.channel.id, "message_id": message.id},
+                what="taking down a manager's reason", origin=ChangeOrigin.BOT,
+            )
+    except Exception as error:  # noqa: BLE001 — handed to report_failure, which tells the manager
+        await report_failure(interaction, error, what=what)
 
 
 async def _refuse_review_button(
