@@ -203,9 +203,15 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: a picture's line still calls a mystery round's notice the mystery notice",
+)
 def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
+    """A mystery round's notice is named in every message as the mystery round notice, never as
+    phase 0 and never as the "mystery notice" (weather spec, "Mystery rounds"; #287, B12)."""
     what = describe(division_name="D", round_number=1, phase=0)
-    assert "mystery notice" in what
+    assert what == "round 1 in **D**, the mystery round notice"
     assert "phase 0" not in what
 
 
