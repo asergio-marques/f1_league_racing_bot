@@ -234,17 +234,21 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
     pytest.param("unreadable switch", "the images switch could not be read"),
     pytest.param("unreadable round", "the round could not be read"),
     pytest.param("drawing fault", "the drawing broke"),
+    pytest.param("round not found", "the round could not be found"),
     pytest.param("images off", None),
     pytest.param("weather pictures off", None),
+    pytest.param("images off, round unreadable", None),
+    pytest.param("weather pictures off, round unreadable", None),
 ])
 async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     tmp_path, monkeypatch, cause, reason,
 ):
     """Phase 1 asked with pictures due, but its picture not drawn: the template file is invalid,
-    the images switch cannot be read, the round cannot be read for the picture, or the drawing
-    raises. The text forecast is posted and recorded, and the reason is written to the log
-    channel. With the images module off, or its weather pictures off, no picture was due: the
-    text is posted and nothing about a picture is written (weather spec, "Image generation";
+    the images switch cannot be read, the round cannot be read for the picture, the round cannot
+    be found for it, or the drawing raises. The text forecast is posted and recorded, and the
+    reason is written to the log channel. With the images module off, or its weather pictures
+    off, no picture was due: the text is posted and nothing about a picture is written, even
+    where the round could not have been read for one (weather spec, "Image generation";
     criterion 4)."""
     from leaguebot.image.services import image_weather_post
 
@@ -252,15 +256,18 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     _pictures_due(league, valid=cause != "invalid drawing file")
     if cause == "unreadable switch":
         league.bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError(reason))
-    elif cause == "unreadable round":
-        monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
-                            AsyncMock(side_effect=RuntimeError(reason)))
     elif cause == "drawing fault":
         monkeypatch.setattr(image_weather_post, "render_forecast",
                             AsyncMock(side_effect=RuntimeError(reason)))
-    elif cause == "images off":
+    elif cause == "round not found":
+        monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
+                            AsyncMock(return_value=None))
+    if "round unreadable" in cause or cause == "unreadable round":
+        monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
+                            AsyncMock(side_effect=RuntimeError("the round could not be read")))
+    if cause.startswith("images off"):
         league.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-    elif cause == "weather pictures off":
+    elif cause.startswith("weather pictures off"):
         league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": False})
     before = league.log()
 
@@ -274,6 +281,7 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     written = league.log()[len(before):]
     if reason is None:
         assert "image" not in written.lower() and "picture" not in written.lower()
+        assert "could not be read" not in written
     else:
         assert reason in written
 
