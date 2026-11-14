@@ -376,8 +376,8 @@ A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_dea
 `round_window` hook, on `round_windows_read`, hands core. Attendance registers a callback for each
 kind (`register_timer`); a callback asks the matching change, as the bot's, and the change's check
 reads the round again, so a timer that fires after its work was changed does nothing. All four are
-armed with no lateness limit, and each handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
-`test_a_check_in_timer_is_armed_with_no_lateness_limit`.
+armed with no lateness limit, and each handler judges lateness itself (`architecture.md`, "Timed
+work and restarts"). Pinned by `test_a_check_in_timer_is_armed_with_no_lateness_limit`.
 
 What each does when its moment passed while the bot was down is the attendance specification's
 ("RSVP notices"); the table says which function judges it, and against which moment.
