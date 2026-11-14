@@ -212,7 +212,9 @@ async def attach_forecast(
     posts the textual forecast it was going to post anyway (XIV.7).
 
     The two switches are asked before anything else is read, so that a picture that was not due
-    (the module or its weather aspect off) says nothing, whatever else could not be read. Every other
+    (the module or its weather aspect off) says nothing, whatever else could not be read. A switch
+    that cannot be read is a reason like any other, its line naming the forecast where the round can
+    be read and only its phase where it cannot. Every other
     reason, and every notice the render gave, is handed back as a line for the log channel, which
     the caller writes in its own save, naming the forecast it pertains to (FR-059).
 
@@ -225,18 +227,21 @@ async def attach_forecast(
     try:
         due, why = await weather_enabled(bot, None)
         if not due:
-            return None, () if why is None else (_fault(what, why),)
+            if why is None:
+                return None, ()
+            try:  # a switch that could not be read still names the forecast it was read for
+                named = await build_drawing_for_round(bot, round_id, phase, values=values)
+                if named is not None:
+                    what = _named(named, phase)
+            except Exception as exc:  # noqa: BLE001 — the line then names no more than the phase
+                log.error("weather: could not name round %s for a line: %s", round_id, exc, exc_info=True)
+            return None, (_fault(what, why),)
 
         drawing = await build_drawing_for_round(bot, round_id, phase, values=values)
         if drawing is None:
             return None, (_fault(what, "the round could not be found"),)
 
-        what = describe(
-            division_name=drawing.division_name,
-            round_number=drawing.round_number,
-            phase=0 if drawing.is_mystery else phase,
-            season_number=drawing.season_number,
-        )
+        what = _named(drawing, phase)
         due, why = await weather_enabled(bot, drawing.template_key)
         if not due:
             return None, () if why is None else (_fault(what, why),)
@@ -250,6 +255,16 @@ async def attach_forecast(
     except Exception as exc:  # noqa: BLE001 — a graphic never breaks a forecast
         log.error("weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True)
         return None, (_fault(what, str(exc)),)
+
+
+def _named(drawing, phase: int) -> str:
+    """What a report names of *drawing*'s forecast: its season, division, round and phase."""
+    return describe(
+        division_name=drawing.division_name,
+        round_number=drawing.round_number,
+        phase=0 if drawing.is_mystery else phase,
+        season_number=drawing.season_number,
+    )
 
 
 def _fault(what: str, detail: str) -> str:
