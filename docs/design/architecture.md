@@ -978,10 +978,12 @@ forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`
 and the re-arming of a round still to be run, whether a module's work is armed, and with what, is that
 module's answer through `round_armed`**: each module hands back its steps and the jobs it owes, and
 the arming step makes the scheduler's calls with what each hands back, so that core holds no
-module's rule about which jobs a moved round still to be run owes.
+module's rule about which jobs a moved round still to be run owes. What a module keeps from its part of
+the amendment's judgement, its own windows included, core stores as it is given and hands back to the
+same module, reading it for none: core names no module's windows.
 `schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
 round raced, or ended cancelled because every session was entered as not held; core makes that call
-from the modules' switches and attendance's windows.
+from the modules' switches, the clean-up's delay being the one shared delay, so no module's window is read.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
