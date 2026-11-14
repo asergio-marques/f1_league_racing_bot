@@ -371,6 +371,46 @@ async def test_moving_the_signup_channel_sets_the_new_before_clearing_the_old(tm
     assert await _stored(league.db_path) == NEW
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#286: /signup channel is refused as fixed for the season even where the stored signup "
+    "channel is gone, so a league cannot replace it mid-season"
+))
+async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path):
+    """Season 3's configuration is confirmed (the season waiting for its signup window), which
+    fixes the signup settings, and the league's signup channel, 650, has since been deleted from
+    the server. An admin runs `/signup channel` for 700 as a repair: it is not refused as fixed
+    for the season; 700 is saved as the signup channel, Discord is asked to set 700's overwrites
+    and nothing of 650's, and the admin is told the channel was set."""
+    league = await _league(tmp_path, held=OLD)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', 'SETUP', 3, 'WAITING')"
+        )
+        await db.commit()
+    new = _channel(NEW)
+    edits = _discord(league, new)
+    # 650 is gone from the server, as Discord answers when the bot asks for it.
+    gone = discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+    fetch = league.bot.fetch_channel
+
+    async def _fetch(channel_id):
+        if channel_id == OLD:
+            raise gone
+        return await fetch(channel_id)
+
+    league.guild.fetch_channel = AsyncMock(side_effect=_fetch)
+    league.bot.fetch_channel = AsyncMock(side_effect=_fetch)
+
+    asked = await _run(league, new)
+
+    assert "fixed for Season 3" not in last_said(asked)
+    assert await _stored(league.db_path) == NEW
+    assert [channel_id for channel_id, _overwrites in edits] == [NEW]
+    assert edits[0][1] != {}
+    assert "✅ Signup channel set to <#700>." in last_said(asked)
+
+
 @pytest.mark.parametrize(
     "fault",
     [
