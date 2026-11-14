@@ -197,7 +197,7 @@ async def _calendar(bot: LeagueBot, division_id: int):
     headings = []
     ordinal_of_round: dict[int, int] = {}
     for ordinal, row in enumerate(rows, start=1):
-        # A mystery round names no circuit until it is revealed, and its flag is the
+        # A mystery round names no circuit until its format is changed, and its flag is the
         # mystery asset rather than a country's (044, FR-012). The datum is the literal
         # `Mystery`, which the closed-set rule resolves to the module's own `mystery.svg`
         # even where a league's flag directory has none — so this is a *substitution*, not

@@ -386,10 +386,6 @@ _MYSTERY = "A mystery round names no circuit. Change its format as well to give 
         "MYSTERY", None, {"track": NEW_TRACK},
         [_STATUS, _PAST, _DEADLINE, _TRACK_DRAWN, _STARTED, _MYSTERY],
         id="a-mystery-round-named-a-circuit",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#287: the mystery round's refusal still says to amend its format to reveal it",
-        ),
     ),
     pytest.param(
         "NORMAL", "Bahrain International Circuit", {"track": NEW_TRACK, "format": "SPRINT"},

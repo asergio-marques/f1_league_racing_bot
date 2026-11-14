@@ -222,15 +222,15 @@ def judge_amendment(
             "This round has already started, so its track and format can no longer be amended."
         )
 
-    # A mystery round names no track, and naming one is how a league reveals it — which is the
-    # format change, not a track change slipped in beside it.
+    # A mystery round names no track, and giving it one is a change of its format, not a track
+    # change slipped in beside it.
     if (
         "track_name" in changes
         and "format" not in changes
         and rnd.format == RoundFormat.MYSTERY
     ):
         refusals.append(
-            "A mystery round names no circuit. Amend its format as well to reveal it."
+            "A mystery round names no circuit. Change its format as well to give it one."
         )
 
     return AmendmentVerdict(

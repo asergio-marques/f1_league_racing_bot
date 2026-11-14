@@ -359,7 +359,7 @@ Weather's switch is the keyed hook `ModuleService.register_switch` under `"weath
 ### An amendment's judgement and arming
 
 Core judges what is its own: unknown fields, an empty change, the round's status, a move into the
-past, a round already started, and the mystery reveal. It then asks each module for its part through
+past, a round already started, and a mystery round given a circuit alone. It then asks each module for its part through
 `amendment_judged`, attendance's and then weather's, handing the round, the changes, the new moment,
 one UTC `now`, the windows and the save's connection or none. Weather answers an `AmendmentPart`
 (the refusals, its note, and `withdrawn`, which core keeps for the amendment's save). Core merges the
