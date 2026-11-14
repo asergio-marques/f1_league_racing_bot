@@ -10,9 +10,13 @@ import pytest
 from lxml import etree
 
 from leaguebot.image.services.image_weather_service import (
+    SessionDrawing,
+    SlotDrawing,
     WeatherDataError,
+    WeatherDrawing,
     build_fill_spec,
     resolve_drawing,
+    weather_template_key,
 )
 
 HEADING = (
@@ -28,16 +32,33 @@ HEADING = (
     '<image id="track_flag"/>'
 )
 
-SPRINT_SESSIONS = [
-    {"session_type": "SHORT_SPRINT_QUALIFYING", "slot_type": "sunny", "slots": ["Clear", "Clear"]},
-    {"session_type": "LONG_SPRINT_RACE", "slot_type": "mixed", "slots": ["Overcast"]},
-    {"session_type": "SHORT_FEATURE_QUALIFYING", "slot_type": "rain", "slots": ["Light Cloud", "Wet"]},
-    {"session_type": "LONG_FEATURE_RACE", "slot_type": "mixed", "slots": ["Wet", "Very Wet", "Overcast"]},
-]
-ENDURANCE_SESSIONS = [
-    {"session_type": "FULL_QUALIFYING", "slot_type": "rain", "slots": ["Clear", "Light Cloud", "Overcast"]},
-    {"session_type": "FULL_RACE", "slot_type": "sunny", "slots": ["Overcast", "Wet", "Very Wet", "Wet"]},
-]
+#: Each session as the picture draws it: its label, its weather type and Phase 3's slots, in the
+#: order the sessions are run.
+SPRINT_SESSIONS = (
+    ("Sprint Qualifying", "Sunny", ("Clear", "Clear")),
+    ("Sprint Race", "Mixed", ("Overcast",)),
+    ("Feature Qualifying", "Rain", ("Light Cloud", "Wet")),
+    ("Feature Race", "Mixed", ("Wet", "Very Wet", "Overcast")),
+)
+ENDURANCE_SESSIONS = (
+    ("Qualifying", "Rain", ("Clear", "Light Cloud", "Overcast")),
+    ("Race", "Sunny", ("Overcast", "Wet", "Very Wet", "Wet")),
+)
+
+_DESCRIPTIONS = {
+    1: "Initial chance of rain",
+    2: "Initial session forecast",
+    3: "Final session forecast",
+}
+
+_SUMMARIES = {
+    ("Clear", "Clear"): "Clear",
+    ("Overcast",): "Overcast",
+    ("Light Cloud", "Wet"): "Light Cloud → Wet",
+    ("Wet", "Very Wet", "Overcast"): "Wet → Very Wet → Overcast",
+    ("Clear", "Light Cloud", "Overcast"): "Clear → Light Cloud → Overcast",
+    ("Overcast", "Wet", "Very Wet", "Wet"): "Overcast → Wet → Very Wet → Wet",
+}
 
 
 def _svg(body: str):
@@ -81,19 +102,36 @@ def _p3_template(sessions: int, slots: int, *, heading: str = HEADING):
 
 
 def _drawing(phase, fmt, sessions, **kw):
-    return resolve_drawing(
+    """The drawing of *phase* for a round of *fmt*, built as it stands once resolved: these tests
+    project a drawing, and how one is resolved is ``test_image_weather_service``'s subject."""
+    def value(name, default):
+        return kw.pop(name, default) or None
+
+    track = value("track_name", "Silverstone Circuit")
+    return WeatherDrawing(
+        template_key=weather_template_key(phase, fmt),
         phase=phase,
         division_name="Test Division",
-        round_number=1,
-        round_format=fmt,
-        track_name=kw.pop("track_name", "Silverstone Circuit"),
-        race_name=kw.pop("race_name", "British Grand Prix"),
-        country_name=kw.pop("country_name", "United Kingdom"),
-        rain_probability=kw.pop("rain_probability", 0.3047),
-        sessions=sessions,
-        division_tier=kw.pop("division_tier", 1),
-        season_number=kw.pop("season_number", 1),
-        **kw,
+        round_number="1",
+        phase_description=_DESCRIPTIONS[phase],
+        track_name=track,
+        race_name=value("race_name", "British Grand Prix"),
+        country_name=value("country_name", "United Kingdom"),
+        track_datum=track,
+        rain_probability=value("rain_probability", "30%"),
+        division_tier=None if (tier := kw.pop("division_tier", 1)) is None else str(tier),
+        season_number=str(kw.pop("season_number", 1)),
+        sessions=[
+            SessionDrawing(
+                ordinal=ordinal,
+                name=name,
+                weather_type=weather_type,
+                summary=_SUMMARIES[slots] if phase == 3 else None,
+                slots=[SlotDrawing(ordinal=i, label=label) for i, label in enumerate(slots, 1)]
+                if phase == 3 else [],
+            )
+            for ordinal, (name, weather_type, slots) in enumerate(sessions, start=1)
+        ] if phase in (2, 3) else [],
     )
 
 

@@ -656,21 +656,29 @@ def build_rsvp_drawing(root, *, case: str = "sprint"):
 #: slot, a session of one weather throughout, a session whose slots differ, a session at its
 #: type's greatest slot count, and each of the five concrete weathers at least once.
 SAMPLE_WEATHER_SPRINT = (
-    # session type,               phase 2 draw, phase 3 sequence
-    ("SHORT_SPRINT_QUALIFYING", "sunny", ["Clear", "Clear"]),
-    ("LONG_SPRINT_RACE", "mixed", ["Overcast"]),
-    ("SHORT_FEATURE_QUALIFYING", "rain", ["Light Cloud", "Wet"]),
-    ("LONG_FEATURE_RACE", "mixed", ["Wet", "Very Wet", "Overcast"]),
+    # session label, phase 2 type, phase 3 sequence, and its summary, as weather composes them
+    ("Sprint Qualifying", "Sunny", ("Clear", "Clear"), "Clear"),
+    ("Sprint Race", "Mixed", ("Overcast",), "Overcast"),
+    ("Feature Qualifying", "Rain", ("Light Cloud", "Wet"), "Light Cloud → Wet"),
+    ("Feature Race", "Mixed", ("Wet", "Very Wet", "Overcast"), "Wet → Very Wet → Overcast"),
 )
 
 SAMPLE_WEATHER_ENDURANCE = (
-    ("FULL_QUALIFYING", "rain", ["Clear", "Light Cloud", "Overcast"]),
-    ("FULL_RACE", "sunny", ["Overcast", "Wet", "Very Wet", "Wet"]),
+    ("Qualifying", "Rain", ("Clear", "Light Cloud", "Overcast"),
+     "Clear → Light Cloud → Overcast"),
+    ("Race", "Sunny", ("Overcast", "Wet", "Very Wet", "Wet"), "Overcast → Wet → Very Wet → Wet"),
 )
 
-#: Deliberately **not** a whole percentage, so that the rounding can be judged (FR-062). It
-#: renders as "30%": the graphic and the phase 1 message round to the nearest whole number.
-SAMPLE_RAIN_PROBABILITY = 0.3047
+#: The likelihood of rain as weather composes it: text, rounded by weather before the picture
+#: is handed it (#287, W288).
+SAMPLE_RAIN_PROBABILITY = "30%"
+
+#: The phase's description, as weather hands it.
+_SAMPLE_WEATHER_DESCRIPTIONS = {
+    1: "Initial chance of rain",
+    2: "Initial session forecast",
+    3: "Final session forecast",
+}
 
 _SAMPLE_WEATHER_ROUNDS = {
     "SPRINT": ("SPRINT", "Silverstone Circuit", "British Grand Prix", "United Kingdom",
@@ -713,8 +721,17 @@ def build_weather_drawing(root, template_key: str):
     Six images across four commands, one per template. Phases 2 and 3 draw a sprint round from
     their sprint template and an endurance round from their plain one; phase 1 and the mystery
     notice draw one apiece.
+
+    A forecast is built as the drawing stands once resolved from what weather composes and hands
+    the picture (#287, W288): the image module formats nothing of weather's, so the sample is
+    fabricated as composed text.
     """
-    from leaguebot.image.services.image_weather_service import resolve_drawing
+    from leaguebot.image.services.image_weather_service import (
+        SessionDrawing,
+        SlotDrawing,
+        WeatherDrawing,
+        resolve_drawing,
+    )
 
     sprint = template_key.endswith("_sprint_template")
     fmt, track, race, country, sessions = _SAMPLE_WEATHER_ROUNDS[
@@ -734,22 +751,30 @@ def build_weather_drawing(root, template_key: str):
 
     phase = 3 if "_p3" in template_key else (2 if "_p2" in template_key else 1)
 
-    return resolve_drawing(
-        phase=phase,
+    return WeatherDrawing(
         template_key=template_key,
+        phase=phase,
         division_name="Test Division",
-        round_number=1,
-        round_format=fmt,
+        round_number="1",
+        phase_description=_SAMPLE_WEATHER_DESCRIPTIONS[phase],
         track_name=track,
         race_name=race,
         country_name=country,
+        track_datum=track,
         rain_probability=SAMPLE_RAIN_PROBABILITY,
+        division_tier="1",
+        season_number="1",
         sessions=[
-            {"session_type": session_type, "slot_type": slot_type, "slots": slots}
-            for session_type, slot_type, slots in sessions
-        ],
-        division_tier=1,
-        season_number=1,
+            SessionDrawing(
+                ordinal=ordinal,
+                name=label,
+                weather_type=weather_type,
+                summary=summary if phase == 3 else None,
+                slots=[SlotDrawing(ordinal=i, label=slot) for i, slot in enumerate(slots, 1)]
+                if phase == 3 else [],
+            )
+            for ordinal, (label, weather_type, slots, summary) in enumerate(sessions, start=1)
+        ] if phase in (2, 3) else [],
     )
 
 
