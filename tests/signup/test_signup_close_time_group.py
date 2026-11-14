@@ -437,13 +437,13 @@ class TestModify:
         """The manager gives the instant already armed, as stored or as a naive time read as
         UTC: they are told nothing changed, no audit row is written, the timer is neither
         disarmed nor armed again, and one line records that nothing changed."""
-        from tests.support.change_queue import queued_log_lines
+        from tests.support.change_queue import queued_log_lines, updated_reply
 
         league = await _close_league(tmp_path, close_at=ARMED)
 
         interaction = await _ran(league, _modify, typed)
 
-        assert re.search(r"[Nn]othing (was )?changed", _reply(interaction))
+        assert re.search(r"[Nn]othing (was )?changed", updated_reply(interaction))
         assert await _close_at(league.db_path) == ARMED
         assert await _close_time_audits(league.db_path) == []
         assert _disarmed(league) == [] and _armed(league) == []

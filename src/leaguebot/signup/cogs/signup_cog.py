@@ -30,7 +30,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE, same_instant
+from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
 from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
@@ -55,7 +55,6 @@ from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
-from leaguebot.core.utils.formatting import discord_ts
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
@@ -599,29 +598,6 @@ class SignupCog(commands.Cog):
     async def close_time_modify(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
-        close_at, _error = _parse_close_time(close_time)
-        stored = await self.bot.signup_module_service.get_config()
-        if (
-            close_at is not None and stored is not None and stored.signups_open
-            and stored.close_at is not None and same_instant(stored.close_at, close_at)
-            and await self.bot.module_service.is_signup_enabled()
-        ):
-            # The time asked is the one armed: said at once, nothing queued, as the command has
-            # always answered it.
-            armed = parse_datetime(stored.close_at)
-            assert armed is not None
-            await interaction.response.send_message(
-                f"ℹ️ Signups already auto-close at {discord_ts(armed)} "
-                f"({discord_ts(armed, 'R')}). Nothing was changed.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                "/signup close-time modify | Nothing changed\n"
-                f"  close_time: {stored.close_at}\n"
-                "  reason: it is already the armed time",
-            )
-            return
         await self._ask_close_time(interaction, "modify", close_time)
 
     # ── /signup open (T017) ───────────────────────────────────────────
