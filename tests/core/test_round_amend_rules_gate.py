@@ -240,14 +240,6 @@ async def test_the_confirmation_shows_a_new_moment_in_utc_without_its_offset(tmp
     assert "  • `scheduled_at` → `2099-06-21 18:00:00`" in _reply(interaction)
 
 
-#: Why the confirmation still names forecasts never drawn, and promises a redraw, until #287 lands.
-_NAMES_UNDRAWN_FORECASTS = (
-    "#287: the confirmation names as withdrawn every phase still ahead, drawn or not, and "
-    "promises a redraw with weather off"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
 async def test_the_summary_names_the_forecasts_it_will_withdraw(tmp_path):
     """Weather is on and attendance off. Round 1 of Div A races in three hours, its Phase 1 and
     Phase 2 forecasts drawn and Phase 3's not yet. A manager moves it a month out. The
@@ -268,7 +260,6 @@ async def test_the_summary_names_the_forecasts_it_will_withdraw(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
 async def test_the_summary_says_nothing_of_forecasts_where_none_was_drawn(tmp_path):
     """Weather is on. Round 1 of Div A is a month out and has drawn nothing yet. A manager changes
     its circuit. The confirmation names the field changed and says nothing about forecasts: none
@@ -285,7 +276,6 @@ async def test_the_summary_says_nothing_of_forecasts_where_none_was_drawn(tmp_pa
     assert _offered_a_confirmation(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
 async def test_the_summary_promises_no_redraw_while_weather_is_off(tmp_path):
     """Weather and attendance are off. Round 1 of Div A races in three hours, its Phase 1 and
     Phase 2 forecasts drawn. A manager moves it a month out. The confirmation names Phase 1 and
@@ -331,7 +321,6 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
 async def test_the_check_in_warnings_follow_the_forecasts_line(tmp_path):
     """The queue's clock reads 4 March 2031, 05:06 UTC. Round 1 of Div A races in three hours,
     its Phase 1 and Phase 2 forecasts drawn, with weather on, attendance on (check-in call 5 days

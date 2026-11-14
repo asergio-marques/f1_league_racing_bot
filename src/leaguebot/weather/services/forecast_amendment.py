@@ -75,6 +75,7 @@ def judge_forecasts(
     now: datetime,
     windows: WeatherWindows | None,
     drawn: Mapping[int, bool],
+    weather_on: bool = True,
 ) -> ForecastJudgement:
     """Weather's part of an amendment *changes* that leaves the round at *moment*, judged at *now*.
 
@@ -85,7 +86,10 @@ def judge_forecasts(
     stands once the amendment is in: a track change is refused for the first forecast, and a
     format change for the second. Judged on what was performed (*drawn*, by phase number) and not
     on the module's switch; with no *windows* nothing can be said of withdrawal, so *drawn* alone
-    decides. The note names the phases withdrawn, or says the forecasts stand.
+    decides. The note names the phases withdrawn, only those drawn (*drawn*) and put back in
+    question, and promises a redraw only while weather is on (*weather_on*); where some forecast
+    is drawn and none is withdrawn it says the forecasts stand, and where none is drawn it says
+    nothing of forecasts. A mystery round's notice is no forecast and is never named.
 
     Pure: nothing is read, written or posted.
     """
@@ -116,12 +120,17 @@ def judge_forecasts(
             "in question."
         )
     withdrawn = sorted(number for number, outcome in phases.items() if outcome.rearm)
-    if withdrawn:
-        named = ", ".join(f"Phase {number}" for number in withdrawn)
-        note = f"This will withdraw and redraw {named} for this round."
-    else:
-        note = "The forecasts already posted for this round will stand."
-    part = AmendmentPart(refusals=tuple(refusals), notes=(note,), kept={"withdrawn": withdrawn})
+    notes: tuple[str, ...] = ()
+    named = ", ".join(f"Phase {number}" for number in withdrawn if drawn.get(number, False))
+    if named:
+        notes = (
+            f"This will withdraw and redraw {named} for this round."
+            if weather_on
+            else f"This will withdraw {named} for this round.",
+        )
+    elif any(drawn.get(number, False) for number in (1, 2, 3)):
+        notes = ("The forecasts already posted for this round will stand.",)
+    part = AmendmentPart(refusals=tuple(refusals), notes=notes, kept={"withdrawn": withdrawn})
     return ForecastJudgement(part=part, phases=phases)
 
 
@@ -135,21 +144,30 @@ async def amendment_judged(
     attendance: AttendanceWindows | None,
     weather: WeatherWindows | None,
     db_path: str | None = None,
+    weather_on: bool | None = None,
     **_context: Any,
 ) -> AmendmentPart:
     """Weather's part of judging an amendment of *rnd* that leaves it at *moment*, at *now*, by the
     horizons *weather*, from the phases drawn as read on *db*: the connection of the save that
     judges it again, which has written what it has not yet committed, or, where none is handed,
-    one opened on *db_path*. Subscribed to core's `amendment_judged`."""
+    one opened on *db_path*. Whether weather is on is *weather_on*, as the module's switch reader
+    answers it (`wiring`); where it is not handed, it is read on the connection used. Subscribed to
+    core's `amendment_judged`."""
+    on = weather_on
     if db is not None:
         drawn = await phases_drawn_on(db, [rnd.id])
+        if on is None:
+            on = await weather_enabled_on(db)
     else:
         if db_path is None:
             raise ValueError("no connection and no database path to read the phases drawn on")
         async with get_connection(db_path) as own:
             drawn = await phases_drawn_on(own, [rnd.id])
+            if on is None:
+                on = await weather_enabled_on(own)
     return judge_forecasts(
-        changes, moment=moment, now=now, windows=weather, drawn=drawn.get(rnd.id, {})
+        changes, moment=moment, now=now, windows=weather, drawn=drawn.get(rnd.id, {}),
+        weather_on=on,
     ).part
 
 

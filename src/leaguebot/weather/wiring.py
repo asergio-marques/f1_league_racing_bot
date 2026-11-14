@@ -13,9 +13,10 @@ entry point.
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -83,12 +84,20 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
 
 def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
     """Sign weather's part of judging an amendment up to the hook a round's amendment is judged
-    through, handed the database's path for where the amendment is asked outside a save."""
+    through, handed the database's path for where the amendment is asked outside a save.
+
+    Whether weather is on is asked of the module switch's reader (`bot.module_service`) as the
+    judgement is asked for, a read of its own that holds no connection of the save's, so that
+    what the confirmation promises of the redraw is what the switch says."""
     from leaguebot.weather.services import forecast_amendment
 
-    bot.amendment_judged.subscribe(
-        partial(forecast_amendment.amendment_judged, db_path=bot.db_path)
-    )
+    async def judged(*handed: Any, **context: Any) -> AmendmentPart:
+        return await forecast_amendment.amendment_judged(
+            *handed, db_path=bot.db_path,
+            weather_on=await bot.module_service.is_weather_enabled(), **context,
+        )
+
+    bot.amendment_judged.subscribe(judged)
 
 
 def sign_up_to_round_amended(bot: "LeagueBot") -> None:
