@@ -170,12 +170,31 @@ async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_
     assert sprint is None and "too small" in "\n".join(lines)
 
 
-async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch):
-    """The text stands, and the fault is handed back for the log channel."""
+@pytest.mark.parametrize(
+    ("round_reads", "named"),
+    [
+        (True, "season 3, Division 1, round 4, phase 2"),
+        (False, "phase 2"),
+    ],
+    ids=["round-readable", "round-unreadable"],
+)
+async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_reads, named):
+    """The image settings' switch reader raises "boom" for a phase 2 forecast. The text stands,
+    and the fault is handed back for the log channel, naming the forecast where its round can be
+    read (Division 1's round 4 of season 3) and only its phase where reading the round raises
+    too: naming in a log line never fails the line (#287, B3)."""
+    import leaguebot.image.services.image_weather_post as post
+
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    file, lines = await _attach(bot, monkeypatch, _drawing("weather_p1_template"), phase=1)
-    assert file is None and "boom" in "\n".join(lines)
+    reads = (AsyncMock(return_value=_drawing()) if round_reads
+             else AsyncMock(side_effect=RuntimeError("no round")))
+    monkeypatch.setattr(post, "build_drawing_for_round", reads)
+
+    file, lines = await post.attach_forecast(bot, round_id=1, phase=2, values=_values())
+
+    said = "\n".join(lines)
+    assert file is None and "boom" in said and named in said
 
 
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
