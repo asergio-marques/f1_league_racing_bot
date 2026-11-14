@@ -324,6 +324,29 @@ async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatc
         assert part in said, part
 
 
+async def test_attach_forecast_hands_render_for_posting_no_bot(monkeypatch, tmp_path):
+    """Division 1's round 4, phase 2, drawn with a substituted weather icon: the render gives one
+    notice. The render is handed no bot, so it reports nothing itself, and the notice comes back
+    once, as a line for the post job to write to the log channel (#287, B3)."""
+    png = tmp_path / "w.png"
+    png.write_bytes(b"x")
+    from leaguebot.image.models.image_module import RenderNotice
+
+    bot = _attach_bot(notices=[RenderNotice(
+        image_type="weather_p2_template", notice_kind="ASSET_FALLBACK_USED",
+        detail="fallback used", field_id="weather_icon",
+    )])
+    bot.image_render_service.render_for_posting.return_value.png_paths = [str(png)]
+
+    result, lines = await _attach(bot, monkeypatch, _drawing())
+
+    rendered = bot.image_render_service.render_for_posting
+    assert rendered.await_count == 1
+    assert rendered.await_args.kwargs.get("bot") is None
+    assert result is not None
+    assert "\n".join(lines).count("fallback used") == 1
+
+
 def test_no_notice_and_no_problem_reaches_a_forecast_channel():
     """SC-005 — this module posts nowhere: what it reports, it hands back to the post job, whose
     lines go to the log channel."""
