@@ -373,8 +373,8 @@ Answers to `architecture.md`, "Timed work and restarts".
 A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_deadline` and
 `rsvp_cleanup`, armed by core's scheduler service (`schedule_attendance_round`, and
 `schedule_round_cleanups` for the next-day clean-up) from the three lead times attendance's
-`round_window` hook, on `round_windows_read`, hands core. Attendance registers a callback for each kind (`register_timer`); a
-callback asks the matching change, as the bot's, and the change's check reads the round again, so a
+`round_window` hook, on `round_windows_read`, hands core. Attendance registers a callback for each
+kind (`register_timer`); a callback asks the matching change, as the bot's, and the change's check reads the round again, so a
 timer that fires after its work was changed does nothing. All four are armed with no lateness limit,
 and each handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
 `test_a_check_in_timer_is_armed_with_no_lateness_limit`.
@@ -584,8 +584,9 @@ Answers to `architecture.md`, "Errors and failures".
 **A recovery that fails on one round stops none of the others.** `check_in_recovery` goes through
 every round, catching and noting the failure of each, and raises `RecoveryFailed` once at the end,
 naming each round and its error, which the start-up sweep reports to the log channel in one line. The
-error carries `rounds_called`, each failed round named as core names it, which the sweep puts in that
-line (`RoundsFailed`, `core/models/recovery.py`); a step that fails as a whole carries none. A
+error carries `rounds_called`, each failed round named as core names it (`RoundsFailed`,
+`core/models/recovery.py`); `architecture.md`, "The sweep is core's own steps, then each enabled
+module's turn", says what the sweep does with it. A
 call whose buttons cannot be armed again is noted in the host's log alone. A database it cannot read
 is raised as it is, for the sweep to report: nothing is caught up, and nothing says so but that
 line. Pinned by `test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`

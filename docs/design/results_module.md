@@ -470,8 +470,8 @@ docstring).
 
 **A failed recovery reports once.** A round that cannot be recovered stops none of the others; once
 every round is gone through, the step raises one `RecoveryFailed` naming each and carrying `rounds_called`, each as core names it
-(`RoundsFailed`, `core/models/recovery.py`), which the start-up
-sweep reports to the log channel in one line
+(`RoundsFailed`, `core/models/recovery.py`); `architecture.md`, "The sweep is core's own steps, then
+each enabled module's turn", says what the sweep does with it
 (`test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are`).
 
 ---

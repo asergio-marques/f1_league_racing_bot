@@ -335,9 +335,9 @@ are raised as one `RecoveryFailed` naming each round and its error, which the st
 the log channel in one line, as the core specification's "When the bot stops" requires. Each module
 owns its own `RecoveryFailed`: core's sweep catches whatever a step raises and does not name the type.
 The error carries `rounds_called`, each failed round named as core names it ("round 3 in **Pro**", or
-"a round no longer there" where its rows are gone; `RoundsFailed`, `core/models/recovery.py`), which
-the sweep puts in its line to the log channel and the host's log reads in the message with the
-faults; a step that fails as a whole carries none and is reported without a round.
+"a round no longer there" where its rows are gone; `RoundsFailed`, `core/models/recovery.py`);
+`architecture.md`, "The sweep is core's own steps, then each enabled module's turn", says what the
+sweep does with it, and the host's log reads the same names in the message with the faults.
 A start time that cannot be read is that round's failure, found by each step in its own way: the
 missed phases from the ids `rounds_of_the_active_season` hands back apart from the live rounds, and
 the clean-ups from `round_facts_on` raising for it. Each step records it. A database that cannot be read
@@ -377,8 +377,8 @@ says. The two switches are asked first, so that nothing is read for a picture no
 has the catch-alls `architecture.md` allows it ("Errors and failures"): one around its drawing, the
 place for a graphic that rides on a post, and one around reading the round to name the line of a
 switch that could not be read, the place for naming something in a line, which leaves the line
-naming the phase alone. A line names the round as a league reads it, "round 3 in **Pro**", and the
-phase. The post job puts the lines on its `StepResult`, so they reach the log channel in the save
+naming the phase alone. A line names the round and the phase as the weather specification's "Image generation" has it,
+through `describe`. The post job puts the lines on its `StepResult`, so they reach the log channel in the save
 that records the post. The render is given no bot, so a render's notices come back as those lines
 alone and are posted once. A graphic Discord refuses stops the queue for Retry.
 
@@ -446,8 +446,9 @@ stores of an amendment (the judgement's `kept`, the steps and their payloads) is
 
 Core's readers, as `architecture.md`'s "Each table is read and written by its owner alone" asks: a
 round's facts and its division (`round_facts_on`, `division_on`), a round's sessions in id order
-(`sessions_of_round_on`), a round as core names it, read on the save's connection (`round_called_on`), the rounds a start-up catch-up failed for, each as core
-names it (`rounds_called`), a track by name (`get_track_by_name`), the rounds of the active season
+(`sessions_of_round_on`), a round as core names it, read on the save's connection
+(`round_called_on`), the rounds a start-up catch-up failed for, each as core names it
+(`rounds_called`), a track by name (`get_track_by_name`), the rounds of the active season
 (`rounds_of_the_active_season`). The composed read of a round as weather judges it is
 `draw_guard.weather_round_on`, core's half beside weather's own.
 
