@@ -239,6 +239,13 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
     pytest.param("weather pictures off", None),
     pytest.param("images off, round unreadable", None),
     pytest.param("weather pictures off, round unreadable", None),
+    pytest.param(
+        "mystery notice, round not found",
+        "⚠️ Weather image — the mystery round notice: the round could not be found",
+        marks=pytest.mark.xfail(strict=True, reason=(
+            "#287: weather hands the notice's picture phase 1, so its line names 'phase 1' "
+            "rather than the mystery round notice")),
+    ),
 ])
 async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     tmp_path, monkeypatch, cause, reason,
@@ -249,17 +256,20 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     reason is written to the log channel. With the images module off, or its weather pictures
     off, no picture was due: the text is posted and nothing about a picture is written, even
     where the round could not have been read for one (weather spec, "Image generation";
-    criterion 4)."""
+    criterion 4). Where round 3 is a mystery round, its notice is posted in place of Phase 1, and
+    a picture that cannot find its round names it the mystery round notice, never a phase
+    (weather spec, "Mystery rounds"; criterion 13)."""
     from leaguebot.image.services import image_weather_post
 
-    league = await _league(tmp_path)
+    mystery = cause.startswith("mystery")
+    league = await _league(tmp_path, mystery=mystery)
     _pictures_due(league, valid=cause != "invalid drawing file")
     if cause == "unreadable switch":
         league.bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError(reason))
     elif cause == "drawing fault":
         monkeypatch.setattr(image_weather_post, "render_forecast",
                             AsyncMock(side_effect=RuntimeError(reason)))
-    elif cause == "round not found":
+    elif cause.endswith("round not found"):
         monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
                             AsyncMock(return_value=None))
     if "round unreadable" in cause or cause == "unreadable round":
@@ -277,13 +287,15 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     assert await stopped_job(league.db_path) is None
     [new] = _ids(_events(league), "send")
     assert league.channel(FORECAST).files == [None]
-    assert await _forecasts(league) == {1: new}
+    assert await _forecasts(league) == {0 if mystery else 1: new}
     written = league.log()[len(before):]
     if reason is None:
         assert "image" not in written.lower() and "picture" not in written.lower()
         assert "could not be read" not in written
     else:
         assert reason in written
+    if mystery:
+        assert [line for line in written.splitlines() if "Weather image" in line] == [reason]
 
 
 @pytest.mark.parametrize("phase", [1, 2, 3])
