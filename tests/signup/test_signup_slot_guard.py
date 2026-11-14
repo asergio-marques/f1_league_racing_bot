@@ -12,18 +12,21 @@ configuration is already confirmed, so the one rule covers them.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import run_queue
-from tests.support.settings_league import audit_rows, interaction, last_said, settings_league
+from tests.support.settings_league import (
+    audit_rows,
+    interaction,
+    last_said,
+    log_lines,
+    settings_league,
+)
 from tests.support.undecorate import undecorate
-
-SERVER_ID = 5512
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -69,42 +72,11 @@ async def _seed(
     return league
 
 
-def _cog(db_path):
-    from leaguebot.core.services.drivers.placement_service import PlacementService
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
-
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.placement_service = PlacementService(db_path)
-    bot.output_router.post_log = AsyncMock()
-
-    cog = SignupCog.__new__(SignupCog)
-    cog.bot = bot
-    return cog
-
-
-def _interaction():
-    """Nothing has answered it yet, so a refusal goes out as its response."""
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.user.id = 42
-    interaction.user.display_name = "Manager"
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.send_message = AsyncMock()
-    return interaction
-
-
 def _day_choice(day: int):
     choice = MagicMock()
     choice.value = str(day)
     choice.name = "Friday"
     return choice
-
-
-def _reply(interaction) -> str:
-    return interaction.response.send_message.await_args.args[0]
 
 
 async def _command(league, method: str, name: str, *args):
@@ -142,6 +114,8 @@ _FIXED_STAGES = ["WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING", "ONGOING_SIGNUPS
 class TestRefusedOnceConfigurationIsConfirmed:
     @pytest.mark.parametrize("stage", _FIXED_STAGES)
     async def test_slot_add_is_refused(self, tmp_path, stage):
+        """The manager is told the settings are fixed, nothing is added, and one line in the
+        standard refusal form names the command, the manager and the season (#442)."""
         league = await _seed(tmp_path, unassigned=0, stage=stage)
         before = await _slot_labels(league.db_path)
 
@@ -149,6 +123,9 @@ class TestRefusedOnceConfigurationIsConfirmed:
 
         assert "fixed for Season 3" in last_said(asked)
         assert await _slot_labels(league.db_path) == before, "no slot may have been added"
+        [line] = await log_lines(league)
+        assert line.startswith("⛔ `/signup time-slot add` refused for Admin (")
+        assert "fixed for Season 3" in line
 
     async def test_slot_remove_is_refused(self, tmp_path):
         league = await _seed(tmp_path, unassigned=0, stage="PLACEMENTS")
@@ -211,37 +188,3 @@ class TestPermittedWhileFree:
         await _add(league)
 
         assert "Friday 21:00 UTC" in await _slot_labels(league.db_path)
-
-
-# ---------------------------------------------------------------------------
-# The refusal is recorded (#442)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
-async def test_the_fixed_configuration_check_logs_its_refusal_unless_record_is_false(
-    tmp_path, record
-):
-    """The check answers the manager either way. With `record` left at its default it writes
-    one line in the standard refusal form, naming the command; with `record=False` it writes
-    none."""
-    cog = _cog((await _seed(tmp_path, unassigned=0, stage="WAITING")).db_path)
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "signup time-slot add"
-
-    refused = await cog._refuse_while_configuration_fixed(
-        interaction, "/signup time-slot add", record=record
-    )
-
-    assert refused is True
-    assert "fixed for Season 3" in _reply(interaction)
-    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    if record:
-        [line] = lines
-        assert line.startswith("⛔ ")
-        assert "/signup time-slot add" in line
-        assert "refused for Manager (<@42>)" in line
-        assert "fixed for Season 3" in line
-    else:
-        assert lines == []
