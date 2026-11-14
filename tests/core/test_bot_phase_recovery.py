@@ -383,6 +383,39 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert sweep["lines"] == [start_up_failure_line(MISSED_PHASES, error)]
 
 
+@pytest.mark.xfail(strict=True, reason="#287: a live round whose start cannot be read is its own failure")
+async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(tmp_path):
+    """Round 1 is past its Phase 1 horizon with Phase 1 not drawn; round 2, of the same live
+    division, has its start stored without its offset, which no writer produces and the bot refuses
+    to read. Run through the start-up sweep, weather's "missed phases" step still asks round 1's
+    Phase 1, then raises weather's `RecoveryFailed` naming round 2 alone, with the `ValueError` its
+    start raised, rather than passing it over in silence; and the sweep posts one line to the log
+    channel, its failure line for the step, as the step's failure did before the catch-up became a
+    service, and as the forecast clean-up catch-up reports the same round."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, True, True, "NORMAL"),))
+    unreadable = (datetime.now(timezone.utc) + timedelta(days=3)).replace(tzinfo=None)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (2, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'NOT_RUN')",
+            (DIVISION_ID, unreadable.isoformat()),
+        )
+        await db.commit()
+    sweep = {"on": True}
+
+    fired = await _recover(_bot(db_path), sweep=sweep)
+
+    assert fired == [(1, 1)]
+    error = sweep["error"]
+    assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
+    failures = round_failures(error, module="weather")
+    assert list(failures) == [2]
+    assert isinstance(failures[2], ValueError), failures
+    assert sweep["lines"] == [start_up_failure_line(MISSED_PHASES, error)]
+
+
 async def test_the_missed_phases_catch_up_reads_the_queue_s_clock(tmp_path):
     """Round 1 races thirty days from now by the host's clock, no phase drawn, while the queue's
     clock, the bot's, stands twenty-six days later: four days before the race, past the packaged

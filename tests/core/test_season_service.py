@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
 from leaguebot.core.services.seasons.season_service import (
@@ -103,12 +105,18 @@ async def test_set_round_status_on_respects_its_guard(tmp_path) -> None:
     }
 
 
+@pytest.mark.xfail(strict=True, reason="#287: the reader hands back the live rounds whose start cannot be read")
 async def test_rounds_of_the_active_season_keeps_only_live_rounds(tmp_path) -> None:
     """Weather's start-up catch-up of missed phases asks for the rounds of the ACTIVE season that
-    are still live: a cancelled round, a round of a cancelled division and a round whose stored
-    moment cannot be read are left out. A season still in SETUP is not the active one, and its
-    rounds are left out too; a league holds one live season at a time (`idx_seasons_one_live`), so
-    it is judged in a database of its own."""
+    are still live, earliest first and, at the same moment, by id: a cancelled round and a round
+    of a cancelled division are left out. A live round whose stored moment cannot be read is not
+    passed over in silence: its id is handed back apart, so that the catch-up reports it as that
+    round's failure. A season still in SETUP is not the active one, and its rounds are left out
+    too; a league holds one live season at a time (`idx_seasons_one_live`), so it is judged in a
+    database of its own.
+
+    Rounds 36, 31, 35 are inserted out of order: 35 races first, 31 and 36 share a moment and are
+    ordered by id."""
     db_path = os.path.join(str(tmp_path), "active_season.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -123,14 +131,18 @@ async def test_rounds_of_the_active_season_keeps_only_live_rounds(tmp_path) -> N
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at, "
             "status) VALUES "
+            "(36, 11, 5, 'NORMAL', 'Suzuka', '2026-06-01T18:00:00+00:00', 'NOT_RUN'), "
             "(31, 11, 1, 'NORMAL', 'Silverstone', '2026-06-01T18:00:00+00:00', 'NOT_RUN'), "
+            "(35, 11, 4, 'NORMAL', 'Zandvoort', '2026-04-01T18:00:00+00:00', 'NOT_RUN'), "
             "(32, 11, 2, 'NORMAL', 'Monza', '2026-05-01T18:00:00+00:00', 'CANCELLED'), "
             "(33, 12, 1, 'NORMAL', 'Spa', '2026-05-01T18:00:00+00:00', 'NOT_RUN'), "
             "(34, 11, 3, 'NORMAL', 'Imola', 'not a moment', 'NOT_RUN')"
         )
         await db.commit()
 
-    assert [each.id for each in await rounds_of_the_active_season(db_path)] == [31]
+    rounds, unreadable = await rounds_of_the_active_season(db_path)
+    assert [each.id for each in rounds] == [35, 31, 36]
+    assert unreadable == [34]
 
     setup_path = os.path.join(str(tmp_path), "setup_season.db")
     await run_migrations(setup_path)
@@ -150,4 +162,4 @@ async def test_rounds_of_the_active_season_keeps_only_live_rounds(tmp_path) -> N
         )
         await db.commit()
 
-    assert await rounds_of_the_active_season(setup_path) == []
+    assert await rounds_of_the_active_season(setup_path) == ([], [])
