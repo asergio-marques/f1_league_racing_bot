@@ -411,12 +411,6 @@ async def test_a_division_s_and_a_round_s_statuses_match_their_enums(db_path):
     assert _check_list(db_path, "rounds", "status") == {s.value for s in RoundStatus}
 
 
-#: Why a test fails until `phase_results` holds its own rules (#287, C6).
-_PHASE_RESULTS_UNRULED = (
-    "#287: phase_results has no PhaseResultStatus enum, no CHECKs and no unique standing draw"
-)
-
-
 def _draw(db: sqlite3.Connection, phase: int, status: str = "ACTIVE") -> None:
     """Store a draw of *phase* for round 1 of Pro, in *status*."""
     db.execute(
@@ -434,7 +428,6 @@ def _round_of_pro(db: sqlite3.Connection) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_PHASE_RESULTS_UNRULED)
 async def test_phase_result_statuses_match_the_schema(db_path):
     """A stored draw's status is written twice, in the CHECK list on `phase_results.status` and in
     weather's `PhaseResultStatus`, and must not drift; its phase number's CHECK list allows
@@ -450,7 +443,6 @@ async def test_phase_result_statuses_match_the_schema(db_path):
     db.close()
 
 
-@pytest.mark.xfail(strict=True, reason=_PHASE_RESULTS_UNRULED)
 async def test_a_second_standing_draw_for_one_phase_is_refused(db_path):
     """Round 1 of Pro has a standing (ACTIVE) Phase 1 draw and a withdrawn (INVALIDATED) one. A
     second withdrawn Phase 1 draw and a standing Phase 2 draw are stored beside them, and a second

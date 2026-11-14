@@ -16,6 +16,7 @@ from typing import Any
 
 import aiosqlite
 
+from leaguebot.weather.models.forecast import PhaseResultStatus
 from leaguebot.weather.services.round_phases import phases_drawn_on
 
 
@@ -39,9 +40,8 @@ async def withdraw_phases_on(
         elif phase == 3:
             await db.execute("UPDATE rounds SET phase3_done = 0 WHERE id = ?", (round_id,))
         await db.execute(
-            "UPDATE phase_results SET status = 'INVALIDATED' "
-            "WHERE round_id = ? AND phase_number = ?",
-            (round_id, phase),
+            "UPDATE phase_results SET status = ? WHERE round_id = ? AND phase_number = ?",
+            (PhaseResultStatus.INVALIDATED.value, round_id, phase),
         )
     if 2 in withdrawn:
         await db.execute(

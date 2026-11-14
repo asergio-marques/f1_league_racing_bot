@@ -18,7 +18,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.core.services.rounds.track_service import get_track_by_name
-from leaguebot.weather.models.forecast import Drawn
+from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_rpc_beta
 from leaguebot.weather.utils.message_builder import phase_log_message
@@ -93,8 +93,8 @@ async def draw_phase1_on(
 
     await db.execute(
         "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
-        "VALUES (?, 1, ?, 'ACTIVE', ?)",
-        (round_id, json.dumps(payload), now.isoformat()),
+        "VALUES (?, 1, ?, ?, ?)",
+        (round_id, json.dumps(payload), PhaseResultStatus.ACTIVE.value, now.isoformat()),
     )
     await db.execute(
         "UPDATE rounds SET phase1_done = 1 WHERE id = ?",

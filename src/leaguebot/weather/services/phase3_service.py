@@ -17,7 +17,7 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.weather.models.forecast import Drawn
+from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.core.models.session import MAX_SLOTS
 from leaguebot.core.services.seasons.season_service import sessions_of_round_on
@@ -56,9 +56,9 @@ async def draw_phase3_on(
     # Load active Phase 1 PhaseResult for Rpc
     p1_cursor = await db.execute(
         "SELECT payload FROM phase_results "
-        "WHERE round_id = ? AND phase_number = 1 AND status = 'ACTIVE' "
+        "WHERE round_id = ? AND phase_number = 1 AND status = ? "
         "ORDER BY id DESC LIMIT 1",
-        (round_id,),
+        (round_id, PhaseResultStatus.ACTIVE.value),
     )
     p1_row = await p1_cursor.fetchone()
 
@@ -116,8 +116,8 @@ async def draw_phase3_on(
         )
     await db.execute(
         "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
-        "VALUES (?, 3, ?, 'ACTIVE', ?)",
-        (round_id, json.dumps(payload), now.isoformat()),
+        "VALUES (?, 3, ?, ?, ?)",
+        (round_id, json.dumps(payload), PhaseResultStatus.ACTIVE.value, now.isoformat()),
     )
     await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
     log.info("Phase 3 drawn for round %s", round_id)

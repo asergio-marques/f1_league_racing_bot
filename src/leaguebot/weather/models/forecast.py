@@ -2,6 +2,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class PhaseResultStatus(str, Enum):
+    """Whether a stored draw (``phase_results.status``) stands or has been withdrawn.
+
+    The values are the ``phase_results.status`` CHECK list in the baseline schema, which
+    ``test_schema_rules`` holds to this enum so the two cannot drift. A phase has one ACTIVE draw
+    at a time (the schema's partial unique index): a withdrawal marks it INVALIDATED, and the
+    redraw is written beside it.
+    """
+
+    ACTIVE = "ACTIVE"
+    INVALIDATED = "INVALIDATED"
 
 
 @dataclass(frozen=True)

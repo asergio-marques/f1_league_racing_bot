@@ -39,13 +39,17 @@ CREATE INDEX idx_sessions_round ON sessions(round_id);
 CREATE TABLE phase_results (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id      INTEGER NOT NULL,
-    phase_number  INTEGER NOT NULL,
+    phase_number  INTEGER NOT NULL CHECK (phase_number IN (1, 2, 3)),
     payload       TEXT    NOT NULL,  -- JSON blob: inputs + outputs
-    status        TEXT    NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | INVALIDATED
+    status        TEXT    NOT NULL DEFAULT 'ACTIVE'
+                      CHECK (status IN ('ACTIVE', 'INVALIDATED')),
     created_at    TEXT    NOT NULL,
     FOREIGN KEY (round_id) REFERENCES rounds(id)
 );
 CREATE INDEX idx_phase_results_round ON phase_results(round_id);
+-- A phase has one standing draw: a withdrawn one is kept beside it, as many as were withdrawn.
+CREATE UNIQUE INDEX uq_phase_results_standing
+    ON phase_results(round_id, phase_number) WHERE status = 'ACTIVE';
 
 -- forecast_messages
 CREATE TABLE "forecast_messages" (

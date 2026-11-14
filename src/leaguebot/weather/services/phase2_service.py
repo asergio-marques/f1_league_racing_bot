@@ -18,7 +18,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.core.services.seasons.season_service import sessions_of_round_on
-from leaguebot.weather.models.forecast import Drawn
+from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_ir, compute_im, compute_is, build_slot_pool
 from leaguebot.weather.utils.message_builder import phase_log_message
@@ -52,9 +52,9 @@ async def draw_phase2_on(
     # --- Load active Phase 1 result to get Rpc ---
     p1_cursor = await db.execute(
         "SELECT payload FROM phase_results "
-        "WHERE round_id = ? AND phase_number = 1 AND status = 'ACTIVE' "
+        "WHERE round_id = ? AND phase_number = 1 AND status = ? "
         "ORDER BY id DESC LIMIT 1",
-        (round_id,),
+        (round_id, PhaseResultStatus.ACTIVE.value),
     )
     p1_row = await p1_cursor.fetchone()
 
@@ -100,8 +100,8 @@ async def draw_phase2_on(
         )
     await db.execute(
         "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
-        "VALUES (?, 2, ?, 'ACTIVE', ?)",
-        (round_id, json.dumps(payload), now.isoformat()),
+        "VALUES (?, 2, ?, ?, ?)",
+        (round_id, json.dumps(payload), PhaseResultStatus.ACTIVE.value, now.isoformat()),
     )
     await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = ?", (round_id,))
     log.info("Phase 2 drawn for round %s", round_id)

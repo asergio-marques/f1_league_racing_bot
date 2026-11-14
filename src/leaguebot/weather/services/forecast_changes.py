@@ -76,7 +76,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceStepFailed,
     PhaseEntry,
 )
-from leaguebot.weather.models.forecast import Drawn
+from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services import (
     forecast_cleanup_service,
     mystery_notice_service,
@@ -435,8 +435,8 @@ async def _active_payload(
     """The payload of the phase's active draw, or None where there is none."""
     cursor = await db.execute(
         "SELECT payload FROM phase_results "
-        "WHERE round_id = ? AND phase_number = ? AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1",
-        (round_id, phase),
+        "WHERE round_id = ? AND phase_number = ? AND status = ? ORDER BY id DESC LIMIT 1",
+        (round_id, phase, PhaseResultStatus.ACTIVE.value),
     )
     found = await cursor.fetchone()
     return None if found is None else json.loads(found["payload"])
