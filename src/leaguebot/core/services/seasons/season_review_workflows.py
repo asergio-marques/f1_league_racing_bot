@@ -651,8 +651,8 @@ async def approve_season(
     # scheduled at all, so the round asks nobody whether they are racing, distributes
     # no reserves, and is recorded afterwards as perfect attendance for the whole
     # division, with nothing able to recover it. An overdue weather phase is armed
-    # past-dated and thrown away for exceeding the scheduler's misfire grace, coming
-    # back only if the host happens to restart before the race.
+    # past-dated and, having no lateness limit, fires at once: drawn the moment the
+    # season is approved.
     #
     # **And the round's own moment is judged, whatever the modules**. The windows
     # above are contributed by the modules that configure them, so a league running

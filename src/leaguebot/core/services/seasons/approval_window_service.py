@@ -11,8 +11,8 @@ horizons. Approve a season late enough and some of those moments are already beh
 Unchecked, what happens then is silent and different for each module. `schedule_attendance_round`
 skips a past-dated job and logs a line nobody reads, so the round asks nobody whether they are
 racing, distributes no reserves, and is recorded afterwards as perfect attendance for the whole
-division. The weather jobs are armed regardless, and the scheduler discards them for being past its
-five-minute misfire grace — recoverable, but only if the host happens to restart before the race.
+division. The weather jobs are armed regardless and, having no lateness limit, a past-dated one fires at
+once: a phase whose horizon had passed would be drawn the moment the season is approved.
 
 This module is the check that makes both unreachable from approval. It computes nothing and
 decides nothing about what to do; it reports which windows have passed, and
@@ -40,10 +40,9 @@ manager sixty things where two would do, and runs a season built wholly in the p
 elapsed. That is precisely the complement of `schedule_attendance_round`'s own
 ``if fire_at > now``, so the gate and the attendance scheduler cannot disagree about a single
 round: nothing this module reports would have been scheduled, and nothing it passes over would
-have been skipped. For the weather phases it is very slightly stricter than the scheduler's
-300-second misfire grace, which is the safe direction — better to refuse a job that might
-just have squeezed in than to admit one the scheduler will throw away. `test_a_window_exactly
-_now_is_overdue` pins both halves of that. The offsets are not worked out here: they come from
+have been skipped. For the weather phases, whose jobs have no lateness limit, a moment exactly
+now is refused all the same, rather than armed to fire at once. `test_a_window_exactly
+_now_is_overdue` pins the check-in's half. The offsets are not worked out here: they come from
 `round_event_moments`, which the scheduler's arming reads too, so the two cannot drift apart.
 
 Pure by design: no database, no Discord, and ``now`` passed in rather than read from the
