@@ -160,9 +160,6 @@ _TOGGLED = {
     "time_image": "✅ Time image requirement: **OFF**.",
 }
 
-#: Why each test pinning the settings on the queue fails until they are (#286, item 11).
-_ON_THE_QUEUE = "#286: the signup settings are not yet asked of the change queue"
-
 
 async def _league(tmp_path, *, config: bool = True, slots=()):
     """The settings league with signup alone on (`settings_league`), holding the module's
@@ -276,7 +273,6 @@ async def test_the_time_type_command_records_both_values(tmp_path):
     assert json.loads(entry["old_value"])["value"] != json.loads(entry["new_value"])["value"]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "command", ["nationality", "time_type", "time_image"],
 )
@@ -323,7 +319,6 @@ _ONE_SAVE = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "command, args, slots, query, saved, kind", _ONE_SAVE, ids=[case[0] for case in _ONE_SAVE]
 )
@@ -365,7 +360,6 @@ async def test_a_signup_setting_saves_its_value_and_audit_in_one_save(
     assert [line for line in await log_lines(league) if " | Success" in line] != []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_fault_after_a_slot_is_saved_is_not_read_as_a_duplicate(tmp_path):
     """`/signup time-slot add Monday 20:00`, no slot saved, whose audit entry's write raises a
     `ValueError` after the slot's insert: the manager is told nothing was saved and to run it
@@ -384,7 +378,6 @@ async def test_a_fault_after_a_slot_is_saved_is_not_read_as_a_duplicate(tmp_path
     assert await _rows(league.db_path, _SLOTS) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_removing_slot_n_twice_removes_one_slot(tmp_path):
     """Monday 19:00 (#1), Wednesday 20:00 (#2) and Friday 21:00 (#3) saved;
     `/signup time-slot remove 1` is asked twice before either runs: Monday alone is removed,
@@ -483,13 +476,13 @@ async def test_a_server_that_has_configured_nothing_reports_not_set(tmp_path):
 
 
 async def test_the_report_reflects_a_toggle_that_has_been_flipped(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    league = await _league(tmp_path)
+    cog = _make_cog(league.db_path)
     before = _interaction()
     await undecorate(SignupCog.config_view)(cog, before)
     was = _fields(before)["Nationality Required"]
 
-    await undecorate(SignupCog.nationality)(cog, _interaction())
+    await _run(league, "nationality")
     after = _interaction()
     await undecorate(SignupCog.config_view)(cog, after)
 
@@ -579,7 +572,7 @@ async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
 
         return run
 
-    signup._module_gate = acts("signup nationality", False)
+    signup._ask_setting = acts("signup nationality")
     attendance._ask_setting = acts("attendance config no-rsvp-penalty")
     test_mode._refuse_outside_test_mode = acts("test-mode backup lock", True)
     monkeypatch.setattr(bot_cog, "refuse", acts("bot pack"))

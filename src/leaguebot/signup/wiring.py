@@ -221,6 +221,7 @@ def register_change_types(bot: "LeagueBot") -> None:
 
     from leaguebot.core.services.queue.setting_change import setting_change
     from leaguebot.signup.services.module_switch_settings import module_on_signup
+    from leaguebot.signup.services.signup_settings import signup_settings
 
     bot.change_queue.register(reason_delete_change())
     bot.change_queue.register(
@@ -356,6 +357,8 @@ def register_change_types(bot: "LeagueBot") -> None:
             module_on_signup(modules=bot.module_service, config=bot.config_service)
         )
     )
+    for setting in signup_settings(modules=bot.module_service, signup=bot.signup_module_service):
+        bot.change_queue.register(setting_change(setting))
 
 
 def register_scheduler_callbacks(bot: "LeagueBot") -> None:

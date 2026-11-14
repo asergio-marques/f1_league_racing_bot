@@ -174,9 +174,9 @@ def test_the_season_s_end_is_registered():
 
 #: The settings commands of results, weather and images as the builder registers them (#439,
 #: slice 7), core's seven `/bot` settings, its two division channels and its test-mode nationality
-#: switch, weather's forecast channel, results' three division channels, attendance's two (#283)
-#: and its eight timings and sanctions (#285): one change type per setting, every one built by
-#: `setting_change`.
+#: switch, weather's forecast channel, results' three division channels, attendance's two (#283),
+#: its eight timings and sanctions (#285) and signup's five toggles and slots (#286): one change
+#: type per setting, every one built by `setting_change`.
 SETTING_KINDS = (
     *(f"core.setting.{name}" for name in (
         "log_channel", "interaction_channel", "interaction_role", "admin_role",
@@ -202,12 +202,15 @@ SETTING_KINDS = (
         "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "no_rsvp_penalty", "absent_penalty",
         "no_show_penalty", "autosack", "autoreserve",
     )),
+    *(f"signup.setting.{name}" for name in (
+        "nationality", "time_type", "time_image", "time_slot_add", "time_slot_remove",
+    )),
 )
 
 
 def test_the_settings_changes_are_registered():
-    """The builder registers the forty-eight settings changes of core, results, weather, images
-    and attendance, once each, and no other kind carrying ".setting." (#439, slice 7; #283;
+    """The builder registers the fifty-three settings changes of core, results, weather, images,
+    attendance and signup, once each, and no other kind carrying ".setting." (#439, slice 7; #283;
     #285)."""
     from leaguebot.__main__ import register_change_types
 
@@ -217,7 +220,7 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 48
+    assert len(SETTING_KINDS) == 53
 
 
 #: Each channel the channel registry knows, by its key, and the setting that points the bot at it.

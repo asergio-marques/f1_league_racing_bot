@@ -35,6 +35,7 @@ from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
 from leaguebot.core.db.database import get_connection
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.signup_settings import fixed_refusal, format_slots, kind_of
 from leaguebot.signup.services.wizard_answers import take_typed_answer
 from leaguebot.signup.services.wizard_changes import (
     DELETED, ask_channel_gone, ask_member_left, departed_placed_driver,
@@ -72,9 +73,6 @@ _DAY_CHOICES = [
     app_commands.Choice(name="Saturday", value="6"),
     app_commands.Choice(name="Sunday", value="7"),
 ]
-
-_MAX_SLOTS = 25
-
 
 #: How an unsettled signup that holds no seed is marked in `/signup unassigned list`.
 _REVIEW_LABELS = {
@@ -133,15 +131,6 @@ def _same_instant(stored: str, other: str) -> bool:
     if second.tzinfo is None:
         second = second.replace(tzinfo=timezone.utc)
     return first == second
-
-
-def _format_slots(slots: list) -> str:
-    if not slots:
-        return "No availability slots configured."
-    lines = [f"**Availability Time Slots**"]
-    for slot in slots:
-        lines.append(f"#{slot.slot_sequence_id} — {slot.display_label}")
-    return "\n".join(lines)
 
 
 #: How many drivers each group in the close confirmation names before it gives a count of the
@@ -615,40 +604,22 @@ class SignupCog(commands.Cog):
 
     # ── /signup nationality toggle (T020) ──────────────────────────────
 
+    async def _ask_setting(
+        self, interaction: discord.Interaction, command: str, payload: dict | None = None
+    ) -> None:
+        """Ask the change queue to carry out `/signup <command>`: the setting's check judges every
+        refusal as it is asked and again as the change starts (`signup_settings`), so the command
+        holds no rule of its own. The queue's acknowledgement is the command's response, and it
+        writes the value, its audit entry and its log line in one save."""
+        await self.bot.change_queue.ask(
+            kind_of(command), payload or {}, interaction=interaction, what=describe(interaction)
+        )
+
     @signup.command(name="nationality", description="Toggle whether nationality is required in signups.")
     @league_manager_only
     @_after_the_catch_up
     async def nationality(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup nationality"):
-            return
-        settings = await self.bot.signup_module_service.get_settings()
-        old_val = settings.nationality_required
-        settings.nationality_required = not old_val
-        await self.bot.signup_module_service.save_settings(settings)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"field": "nationality_required", "value": old_val}),
-                 json.dumps({"field": "nationality_required", "value": settings.nationality_required}),
-                 now),
-            )
-            await db.commit()
-
-        state = "**ON**" if settings.nationality_required else "**OFF**"
-        await interaction.response.send_message(
-            f"✅ Nationality requirement: {state}.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup nationality | Success\n"
-            f"  nationality_required: {settings.nationality_required}",
-        )
+        await self._ask_setting(interaction, "nationality")
 
     # ── /signup time-type toggle (T021) ────────────────────────────────
 
@@ -656,38 +627,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @_after_the_catch_up
     async def time_type(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-type"):
-            return
-        settings = await self.bot.signup_module_service.get_settings()
-        old_val = settings.time_type
-        settings.time_type = (
-            "SHORT_QUALIFICATION" if old_val == "TIME_TRIAL" else "TIME_TRIAL"
-        )
-        await self.bot.signup_module_service.save_settings(settings)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"field": "time_type", "value": old_val}),
-                 json.dumps({"field": "time_type", "value": settings.time_type}),
-                 now),
-            )
-            await db.commit()
-
-        label = "Time Trial" if settings.time_type == "TIME_TRIAL" else "Short Qualification"
-        await interaction.response.send_message(
-            f"✅ Time type: **{label}**.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-type | Success\n"
-            f"  time_type: {settings.time_type}",
-        )
+        await self._ask_setting(interaction, "time-type")
 
     # ── /signup time-image toggle (T022) ───────────────────────────────
 
@@ -695,36 +635,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @_after_the_catch_up
     async def time_image(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-image"):
-            return
-        settings = await self.bot.signup_module_service.get_settings()
-        old_val = settings.time_image_required
-        settings.time_image_required = not old_val
-        await self.bot.signup_module_service.save_settings(settings)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"field": "time_image_required", "value": old_val}),
-                 json.dumps({"field": "time_image_required", "value": settings.time_image_required}),
-                 now),
-            )
-            await db.commit()
-
-        state = "**ON**" if settings.time_image_required else "**OFF**"
-        await interaction.response.send_message(
-            f"✅ Time image requirement: {state}.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-image | Success\n"
-            f"  time_image_required: {settings.time_image_required}",
-        )
+        await self._ask_setting(interaction, "time-image")
 
     # ── /signup time-slot (sub-group) ──────────────────────────────────
 
@@ -753,11 +664,7 @@ class SignupCog(commands.Cog):
         season_number = await configuration_fixed(self.bot.db_path)
         if season_number is None:
             return False
-        reply = (
-            f"❌ The signup module's settings are fixed for Season {season_number} now that "
-            f"its configuration has been confirmed. `{command}` is available again once the "
-            "season has ended, or while a new season is in configuration."
-        )
+        reply = fixed_refusal(season_number, command)
         if record:
             await refuse(interaction, reply, what=f"`{command}`")
         else:
@@ -775,63 +682,9 @@ class SignupCog(commands.Cog):
         day: app_commands.Choice[str],
         time: str,
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot add"):
-            return
-
-        # Guard: max slots
-        existing_slots = await self.bot.signup_module_service.get_slots()
-        if len(existing_slots) >= _MAX_SLOTS:
-            await refuse(
-                interaction, f"❌ Maximum of {_MAX_SLOTS} time slots reached.", what=describe(interaction)
-            )
-            return
-
-        # Parse time
-        normalized = _parse_time(time)
-        if normalized is None:
-            await refuse(
-                interaction,
-                f"❌ Could not parse time '{time}'. Use HH:MM 24h or 12h with am/pm.",
-                what=describe(interaction),
-            )
-            return
-
-        day_int = int(day.value)
-        try:
-            await self.bot.signup_module_service.add_slot(day_int, normalized)
-        except ValueError:
-            await refuse(
-                interaction, "❌ That time slot already exists.", what=describe(interaction)
-            )
-            return
-
-        updated = await self.bot.signup_module_service.get_slots()
-        new_slot = next((s for s in updated if s.day_of_week == day_int and s.time_hhmm == normalized), None)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SLOT_ADD', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 # The durable slot ID, not the display ordinal: an audit entry outlives
-                 # the list it was written against.
-                 json.dumps({"day": day_int, "time": normalized,
-                             "slot_id": new_slot.slot_id if new_slot else None}), now),
-            )
-            await db.commit()
-
-        await interaction.response.send_message(
-            _format_slots(updated), ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot add | Success\n"
-            f"  day: {day.name}\n"
-            f"  time: {normalized}",
+        await self._ask_setting(
+            interaction, "time-slot add",
+            {"day": int(day.value), "day_name": day.name, "time": _parse_time(time) or time},
         )
 
     @time_slot_group.command(name="remove", description="Remove an availability time slot by its sequence ID.")
@@ -841,49 +694,17 @@ class SignupCog(commands.Cog):
     async def time_slot_remove(
         self, interaction: discord.Interaction, slot_id: int
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot remove"):
-            return
-
+        # The rank is resolved to the slot's day and time here, as the list stands now: the change
+        # removes that slot, whatever is removed ahead of it (`signup_settings`).
         slots = await self.bot.signup_module_service.get_slots()
-        if not slots:
-            await refuse(
-                interaction, "❌ No slots configured.", what=describe(interaction)
-            )
-            return
-
         target = next((s for s in slots if s.slot_sequence_id == slot_id), None)
-        if target is None:
-            await refuse(
-                interaction, f"❌ Slot #{slot_id} does not exist.", what=describe(interaction)
-            )
-            return
-
-        await self.bot.signup_module_service.remove_slot_by_rank(slot_id)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SLOT_REMOVE', ?, '', ?)",
-                (interaction.user.id, str(interaction.user),
-                 # The durable slot ID, not the display ordinal the manager typed.
-                 json.dumps({"slot_id": target.slot_id, "day": target.day_of_week,
-                             "time": target.time_hhmm}), now),
-            )
-            await db.commit()
-
-        updated = await self.bot.signup_module_service.get_slots()
-        await interaction.response.send_message(
-            _format_slots(updated), ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot remove | Success\n"
-            f"  slot_id: {slot_id}\n"
-            f"  slot: {target.display_label}",
+        await self._ask_setting(
+            interaction, "time-slot remove",
+            {
+                "rank": slot_id,
+                "day": target.day_of_week if target else None,
+                "time": target.time_hhmm if target else None,
+            },
         )
 
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
@@ -894,7 +715,7 @@ class SignupCog(commands.Cog):
             return
         slots = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
-            _format_slots(slots), ephemeral=True
+            format_slots(slots), ephemeral=True
         )
 
     # ── /signup close-time (sub-group) ─────────────────────────────────

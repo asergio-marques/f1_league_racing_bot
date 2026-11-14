@@ -175,12 +175,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
     ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (2, PASS["signup"]),
 }
 
 
@@ -1989,12 +1984,7 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
 }
 
 
@@ -2139,16 +2129,8 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Attendance's pass
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.add_slot"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.remove_slot_by_rank"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),

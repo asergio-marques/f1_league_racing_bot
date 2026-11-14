@@ -317,27 +317,6 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             return await settings_on(db)
 
-    async def save_settings(self, settings: SignupModuleSettings) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO signup_module_settings
-                    (id, nationality_required, time_type, time_image_required)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    nationality_required = excluded.nationality_required,
-                    time_type            = excluded.time_type,
-                    time_image_required  = excluded.time_image_required
-                """,
-                (
-                    1,
-                    int(settings.nationality_required),
-                    settings.time_type,
-                    int(settings.time_image_required),
-                ),
-            )
-            await db.commit()
-
     # ── Availability slots ────────────────────────────────────────────
 
     async def get_slots(self) -> list[AvailabilitySlot]:
@@ -350,62 +329,6 @@ class SignupModuleService:
         """
         async with get_connection(self._db_path) as db:
             return await slots_on(db)
-
-    async def add_slot(self, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
-        """Insert a slot; raises ValueError on duplicate.
-
-        Nothing is renumbered. The display ordinals of later slots do shift, because
-        they are chronological positions computed on read, but no driver's recorded
-        availability moves with them — it names the slot itself (issue #126).
-        """
-        async with get_connection(self._db_path) as db:
-            try:
-                await db.execute(
-                    "INSERT INTO signup_availability_slots "
-                    "(day_of_week, time_hhmm) "
-                    "VALUES (?, ?)",
-                    (day_of_week, time_hhmm),
-                )
-            except Exception as exc:
-                if "UNIQUE constraint failed" in str(exc):
-                    raise ValueError(
-                        f"Slot already exists: day={day_of_week} time={time_hhmm}"
-                    ) from exc
-                raise
-            await db.commit()
-
-        # Fetch the newly assigned sequence ID for the inserted slot
-        slots = await self.get_slots()
-        inserted = next(
-            (s for s in slots if s.day_of_week == day_of_week and s.time_hhmm == time_hhmm),
-            None,
-        )
-        assert inserted is not None
-        return inserted
-
-    async def remove_slot_by_rank(self, slot_id: int) -> bool:
-        """Remove the slot at chronological rank slot_id. Returns False if not found.
-
-        The rank is the display ordinal a league types, not anything stored. Removing a
-        slot renumbers nothing: every remaining slot keeps its durable identity, so the
-        answers of drivers who chose them still mean the same times.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM signup_availability_slots "
-                " "
-                "ORDER BY day_of_week ASC, time_hhmm ASC",
-            )
-            rows = list(await cursor.fetchall())
-            if slot_id < 1 or slot_id > len(rows):
-                return False
-            target_id = rows[slot_id - 1]["id"]
-            await db.execute(
-                "DELETE FROM signup_availability_slots WHERE id = ?",
-                (target_id,),
-            )
-            await db.commit()
-        return True
 
     # ── Window state helpers ──────────────────────────────────────────
 
