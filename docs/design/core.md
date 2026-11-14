@@ -471,7 +471,8 @@ own design pass.
 | core | expired review prompts | asks each standing review's take-down, and routes its Approve view again |
 | core | hub | routes the hub's buttons again and asks the panel's refresh |
 | signup | signup close timer | asks the close of a signup window whose close passed, or the arming of the timer of one still ahead |
-| signup | wizards | asks the ending of each signup whose channel is gone, the release of each driver awaiting a correction parameter, the expiry of each signup left unanswered for 24 hours and the deletion of each hold that ran out; arms nothing |
+| signup | wizards | asks the ending of each signup whose channel is gone, the release of each driver awaiting a correction parameter, the expiry of each signup left unanswered for 24 hours; arms nothing |
+| signup | held signup channels | asks the deletion of each hold past its `held_until`, whatever signup's switch says (`runs_while_off`); arms nothing |
 | results | amendment sweep | arms results' standing sweep of lapsed amendments |
 | results | orphaned amend channels | asks each open amendment's lapse; before the submission channels, for the reason its comment gives |
 | results | orphaned submission channels | asks each open submission's review or restart |
@@ -561,7 +562,7 @@ the bot and hands it on, and a change type is handed it by the builder.
 
 `StartingHook` is of another shape: it holds core's own steps, signed up by name, and each module's,
 signed up as one function bound to the bot, under the module's switch key. The hook calls nothing:
-`start_up` reads it and runs each step contained, a module's only where its switch is on (see
+`start_up` reads it and runs each step contained, a module's only where its switch is on, save a step the module marks `runs_while_off` (see
 "Start-up"). `StartUpStep`, a name and what it runs, is declared beside it.
 
 ### The hooks core declares
