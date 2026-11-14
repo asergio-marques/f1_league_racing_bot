@@ -178,8 +178,8 @@ async def test_the_unsettled_signups_are_read_by_the_service(db_path):
             )
             if name:
                 await db.execute(
-                    "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, "
-                    "server_display_name) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, ?)",
+                    "INSERT INTO signup_records (created_at, season_id, discord_user_id, "
+                    "server_display_name) VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?)",
                     (SEASON_ID, user_id, name),
                 )
         await db.commit()

@@ -1596,9 +1596,9 @@ async def test_a_placed_driver_leaving_writes_the_line_through_the_queue(
             "VALUES (?, '2025-01-01', 'COMPLETED', 1)", OTHER_SEASON,
         )
         await league.write(
-            "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, "
+            "INSERT INTO signup_records (created_at, season_id, discord_user_id, "
             "server_display_name) VALUES ('2026-02-01T00:00:00+00:00', "
-            "'2026-02-01T00:00:00+00:00', ?, ?, 'Lewis From Another Season')",
+            "?, ?, 'Lewis From Another Season')",
             OTHER_SEASON, str(LEWIS),
         )
 

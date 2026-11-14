@@ -90,8 +90,8 @@ async def db_path(tmp_path):
                 (pid,),
             )
         await db.execute(
-            "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id) "
-            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 1, '1002')"
+            "INSERT INTO signup_records (created_at, season_id, discord_user_id) "
+            "VALUES ('2026-01-01T00:00:00+00:00', 1, '1002')"
         )
         await db.commit()
     return path

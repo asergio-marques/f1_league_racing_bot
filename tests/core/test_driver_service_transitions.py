@@ -122,8 +122,8 @@ class TestSignupDataClearing:
             )
             await db.execute(
                 "INSERT INTO signup_records "
-                "(created_at, updated_at, discord_user_id, discord_username, platform, platform_id) "
-                "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'TestUser', 'Steam', 'SteamUser123')",
+                "(created_at, discord_user_id, discord_username, platform, platform_id) "
+                "VALUES ('2026-01-01T00:00:00+00:00', ?, 'TestUser', 'Steam', 'SteamUser123')",
                 (user_id,),
             )
             await db.commit()

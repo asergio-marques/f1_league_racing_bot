@@ -164,9 +164,9 @@ async def league(db_path):
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (created_at, updated_at, discord_user_id, "
+                    "INSERT INTO signup_records (created_at, discord_user_id, "
                     "server_display_name, discord_username, nationality) "
-                    "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'd', 'British')",
+                    "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, 'd', 'British')",
                     (str(user_id), f"{team_name} {seat_number}"),
                 )
                 await db.execute(

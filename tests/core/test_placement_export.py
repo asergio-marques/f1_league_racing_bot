@@ -51,8 +51,8 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
             await db.execute(
                 "INSERT INTO signup_records (discord_user_id, discord_username, "
                 "server_display_name, platform, platform_id, availability_slot_ids, "
-                "driver_type, preferred_teams, total_lap_ms, updated_at, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "driver_type, preferred_teams, total_lap_ms, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     uid,
                     d.get("discord_username"),
@@ -63,7 +63,6 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
                     d.get("driver_type"),
                     json.dumps(d.get("preferred_teams", [])),
                     d.get("total_lap_ms"),
-                    d.get("updated_at", f"2026-01-0{i}T00:00:00+00:00"),
                     d.get("created_at", f"2026-01-0{i}T00:00:00+00:00"),
                 ),
             )
@@ -241,13 +240,11 @@ class TestExportRow:
                     "discord_user_id": "later",
                     "total_lap_ms": 85000,
                     "created_at": "2026-01-05T00:00:00+00:00",
-                    "updated_at": "2026-01-05T00:00:00+00:00",
                 },
                 {
                     "discord_user_id": "earlier_but_corrected",
                     "total_lap_ms": 85000,
                     "created_at": "2026-01-01T00:00:00+00:00",
-                    "updated_at": "2026-01-09T00:00:00+00:00",
                 },
             ],
         )

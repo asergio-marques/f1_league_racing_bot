@@ -576,7 +576,7 @@ class SignupModuleService:
         self, db: aiosqlite.Connection, record: SignupRecord, *, now: datetime
     ) -> int:
         """Store *record* on the connection handed, returning its id; commits nothing. *now*
-        stamps the moment a new signup was made and the moment a stored one was last changed.
+        stamps the moment a new signup was made.
 
         A record not yet stored (``id`` of -1 or below 1) is inserted as a new signup, under
         the season and window it names or, where it names none, under the server's active
@@ -602,10 +602,10 @@ class SignupModuleService:
                     discord_username = ?, server_display_name = ?, nationality = ?,
                     platform = ?, platform_id = ?, availability_slot_ids = ?,
                     driver_type = ?, preferred_teams = ?, preferred_teammate = ?,
-                    lap_times_json = ?, notes = ?, updated_at = ?
+                    lap_times_json = ?, notes = ?
                 WHERE id = ?
                 """,
-                (*fields, now.isoformat(), record.id),
+                (*fields, record.id),
             )
             return record.id
 
@@ -626,11 +626,10 @@ class SignupModuleService:
                 (season_id, window_id, discord_user_id, discord_username,
                  server_display_name, nationality, platform, platform_id,
                  availability_slot_ids, driver_type, preferred_teams,
-                 preferred_teammate, lap_times_json, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 preferred_teammate, lap_times_json, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (season_id, window_id, record.discord_user_id, *fields, now.isoformat(),
-             now.isoformat()),
+            (season_id, window_id, record.discord_user_id, *fields, now.isoformat()),
         )
         new_id = inserted_id(cursor)
         record.id, record.season_id, record.window_id = new_id, season_id, window_id

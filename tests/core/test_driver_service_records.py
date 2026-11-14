@@ -187,8 +187,8 @@ async def _seed_signup_record(db_path: str, user_id: str = OLD_USER) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO signup_records "
-            "(created_at, updated_at, discord_user_id, discord_username, server_display_name, platform) "
-            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'lewis', 'Lewis Hamilton', 'Steam')",
+            "(created_at, discord_user_id, discord_username, server_display_name, platform) "
+            "VALUES ('2026-01-01T00:00:00+00:00', ?, 'lewis', 'Lewis Hamilton', 'Steam')",
             (user_id,),
         )
         await db.commit()

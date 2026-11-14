@@ -835,7 +835,6 @@ CREATE TABLE "signup_records" (
     notes                 TEXT,
     total_lap_ms          INTEGER,
     created_at            TEXT    NOT NULL,
-    updated_at            TEXT    NOT NULL,
     approved              INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_signup_records_account ON signup_records(discord_user_id);

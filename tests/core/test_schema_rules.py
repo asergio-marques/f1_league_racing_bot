@@ -207,8 +207,8 @@ async def test_a_signup_window_s_deletion_clears_its_records_window(db_path):
         "INSERT INTO signup_windows (opened_at, id, season_id, selected_tracks_json) VALUES ('2026-01-01T00:00:00+00:00', 4, 1, '[\"1\"]')"
     )
     db.execute(
-        "INSERT INTO signup_records (created_at, updated_at, id, season_id, window_id, discord_user_id, platform) "
-        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 9, 1, 4, '11', 'Steam')"
+        "INSERT INTO signup_records (created_at, id, season_id, window_id, discord_user_id, platform) "
+        "VALUES ('2026-01-01T00:00:00+00:00', 9, 1, 4, '11', 'Steam')"
     )
     db.execute("DELETE FROM signup_windows WHERE id = 4")
     db.commit()
@@ -256,8 +256,6 @@ async def test_a_second_open_window_is_refused(db_path):
     db.close()
 
 
-@pytest.mark.xfail(strict=True, reason="#286: signup_records still carries updated_at, which "
-                   "nothing reads")
 async def test_a_signup_record_keeps_when_it_was_sent_in_and_no_time_of_its_last_change(db_path):
     """The schema `run_migrations` raises keeps on each signup record the moment it was sent in
     (`created_at`), which the unassigned listings order by, and no time of its last change

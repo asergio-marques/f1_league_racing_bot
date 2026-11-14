@@ -62,8 +62,8 @@ async def _seed_driver(db_path, *, name: str = "Ada Lovelace", nationality: str 
             (USER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_records (created_at, updated_at, discord_user_id, server_display_name, "
-            "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, ?, ?)",
+            "INSERT INTO signup_records (created_at, discord_user_id, server_display_name, "
+            "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?, ?)",
             (str(USER_ID), name, "ada", nationality),
         )
         await db.commit()
@@ -179,9 +179,9 @@ class TestSignupRecordsJoin:
             )
             profile_id = cursor.lastrowid
             await db.execute(
-                "INSERT INTO signup_records (created_at, updated_at, discord_user_id, "
+                "INSERT INTO signup_records (created_at, discord_user_id, "
                 "server_display_name, discord_username, nationality) "
-                "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'Ada Lovelace', 'ada', 'British')",
+                "VALUES ('2026-01-01T00:00:00+00:00', ?, 'Ada Lovelace', 'ada', 'British')",
                 (str(USER_ID),),
             )
             await db.execute(

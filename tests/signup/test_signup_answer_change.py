@@ -531,9 +531,9 @@ async def test_a_corrected_answer_commits_the_correction_and_posts_a_fresh_panel
     league = await _league(tmp_path, state="COLLECTING_PLATFORM_ID", draft=draft,
                            driver_state="PENDING_DRIVER_CORRECTION")
     await league.write(
-        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, nationality, platform, "
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, nationality, platform, "
         "platform_id, driver_type, notes) "
-        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', "
         "'Happy to race anywhere')",
         SEASON_ID, str(SIGNING_UP),
     )
@@ -675,10 +675,10 @@ async def _lapsed(tmp_path: Any) -> SeasonLeague:
         driver_state="AWAITING_CORRECTION_PARAMETER",
     )
     await league.write(
-        "INSERT INTO signup_records (created_at, updated_at, season_id, discord_user_id, "
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, "
         "server_display_name, nationality, platform, platform_id, driver_type) "
-        "VALUES (?, ?, ?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver')",
-        league.clock.now.isoformat(), league.clock.now.isoformat(), SEASON_ID, str(SIGNING_UP),
+        "VALUES (?, ?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver')",
+        league.clock.now.isoformat(), SEASON_ID, str(SIGNING_UP),
     )
     await league.write(
         "UPDATE signup_wizard_records SET correction_offered_at = ? WHERE discord_user_id = ?",

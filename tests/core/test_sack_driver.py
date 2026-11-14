@@ -120,8 +120,8 @@ async def _make_db(
             (cursor.lastrowid, PROFILE_ID),
         )
         await db.execute(
-            "INSERT INTO signup_records (created_at, updated_at, discord_user_id, "
-            "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'racer', 'GB')",
+            "INSERT INTO signup_records (created_at, discord_user_id, "
+            "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', ?, 'racer', 'GB')",
             (DISCORD_USER_ID,),
         )
         await db.execute(
