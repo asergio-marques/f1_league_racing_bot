@@ -873,9 +873,6 @@ def lapse_change(
     modules: "ModuleService",
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
-    config: "ConfigService",
-    router: "OutputRouter",
-    queue_of: Callable[[], "ChangeQueue"],
 ) -> ChangeType:
     """The `signup.correction.lapse` change type, for the builder to register, on the league lane
     (a timer's change is the league's whole, and so is the driver's status).
