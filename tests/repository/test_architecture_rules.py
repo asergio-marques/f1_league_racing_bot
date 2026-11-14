@@ -2492,20 +2492,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("signup/services/review_changes.py", "choices_change.open_"): (1, PASS["signup"]),
-    ("signup/services/review_changes.py", "recollect_change.open_"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService._live_season_id"):
-        (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.drivers_mid_signup"):
-        (1, PASS["signup"]),
-    ("signup/services/window_changes.py", "return_drivers_step.return_drivers"):
-        (1, PASS["signup"]),
-    ("signup/services/wizard_answers.py", "_driver_open"): (1, PASS["signup"]),
     ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_correction_timeouts"):
-        (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_gone_channels"):
-        (1, PASS["signup"]),
     ("weather/services/draw_guard.py", "<module>"): (3, PASS["weather"]),
     ("weather/services/forecast_changes.py", "_round_row"): (2, PASS["weather"]),
     ("weather/services/forecast_changes.py", "ask_forecast"): (2, PASS["weather"]),

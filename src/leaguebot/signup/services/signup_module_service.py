@@ -16,7 +16,10 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states
 from leaguebot.core.services.upkeep.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
 from leaguebot.core.services.modules.review_sections import Review, ReviewSection
-from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES
+from leaguebot.core.services.seasons.season_lifecycle_service import (
+    UNSETTLED_STATES,
+    live_season_stage_on,
+)
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -108,19 +111,23 @@ class SignupModuleService:
         wanted = tuple(state.value for state in states)
         if not wanted:
             return []
-        placeholders = ",".join("?" for _ in wanted)
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"SELECT p.discord_user_id, p.current_state, w.signup_channel_id "
-                f"FROM driver_profiles p "
-                f"LEFT JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
-                f"WHERE p.current_state IN ({placeholders}) ORDER BY p.id",
-                wanted,
-            )
-            rows = await cursor.fetchall()
+            drivers = await drivers_in_states(db, wanted)
+            channels = {}
+            for driver in drivers:
+                cursor = await db.execute(
+                    "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+                    (driver["discord_user_id"],),
+                )
+                wizard = await cursor.fetchone()
+                channels[driver["discord_user_id"]] = None if wizard is None else wizard["signup_channel_id"]
         return [
-            (row["discord_user_id"], DriverState(row["current_state"]), row["signup_channel_id"])
-            for row in rows
+            (
+                driver["discord_user_id"],
+                DriverState(driver["current_state"]),
+                channels[driver["discord_user_id"]],
+            )
+            for driver in drivers
         ]
 
     async def driver_signups(self, profile_ids: Iterable[int]) -> dict[int, aiosqlite.Row]:
@@ -440,12 +447,8 @@ class SignupModuleService:
 
     @staticmethod
     async def _live_season_id(db) -> int | None:
-        cursor = await db.execute(
-            "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE') "
-            "ORDER BY id DESC LIMIT 1"
-        )
-        row = await cursor.fetchone()
-        return int(row["id"]) if row is not None else None
+        live = await live_season_stage_on(db)
+        return None if live is None else live[0]
 
     async def get_windows(self, season_id: int) -> list[dict]:
         """Every signup window *season_id* opened, oldest first."""

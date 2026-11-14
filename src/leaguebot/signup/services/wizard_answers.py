@@ -59,6 +59,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.drivers.driver_service import state_of_account_on
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_types import (
@@ -439,16 +440,14 @@ def _channel_of(payload: dict[str, Any]) -> int:
 async def _driver_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
     """Whether the driver of the channel still has a signup in hand: their wizard stands and they
     are mid-signup or waiting on review. A close, a withdrawal or an expiry ends it."""
-    marks = ", ".join("?" for _ in _OPEN_DRIVER_STATES)
-    row = await (
-        await db.execute(
-            "SELECT 1 FROM signup_wizard_records w JOIN driver_profiles d "
-            "ON d.discord_user_id = w.discord_user_id "
-            f"WHERE w.signup_channel_id = ? AND d.current_state IN ({marks})",
-            (_channel_of(payload), *(each.value for each in _OPEN_DRIVER_STATES)),
-        )
-    ).fetchone()
-    return row is not None
+    cursor = await db.execute(
+        "SELECT discord_user_id FROM signup_wizard_records WHERE signup_channel_id = ?",
+        (_channel_of(payload),),
+    )
+    for row in await cursor.fetchall():
+        if await state_of_account_on(db, row["discord_user_id"]) in _OPEN_DRIVER_STATES:
+            return True
+    return False
 
 
 def _saved(ctx: StepContext) -> bool:

@@ -96,6 +96,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
+from leaguebot.core.services.drivers.driver_service import state_of_account_on
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.db.database import get_connection
@@ -445,6 +446,18 @@ def request_changes_change(
     )
 
 
+async def _driver_in_state(db: aiosqlite.Connection, channel_id: int, state: DriverState) -> bool:
+    """Whether the driver whose wizard names *channel_id* is in *state*, read on *db*."""
+    cursor = await db.execute(
+        "SELECT discord_user_id FROM signup_wizard_records WHERE signup_channel_id = ?",
+        (channel_id,),
+    )
+    for row in await cursor.fetchall():
+        if await state_of_account_on(db, row["discord_user_id"]) is state:
+            return True
+    return False
+
+
 def choices_change(
     *,
     signup: Callable[[], "SignupModuleService"],
@@ -474,15 +487,9 @@ def choices_change(
 
     async def open_(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
         """Whether the driver still awaits a correction choice in the channel."""
-        row = await (
-            await db.execute(
-                "SELECT 1 FROM signup_wizard_records w JOIN driver_profiles d "
-                "ON d.discord_user_id = w.discord_user_id "
-                "WHERE w.signup_channel_id = ? AND d.current_state = ?",
-                (int(payload["channel_id"]), DriverState.AWAITING_CORRECTION_PARAMETER.value),
-            )
-        ).fetchone()
-        return row is not None
+        return await _driver_in_state(
+            db, int(payload["channel_id"]), DriverState.AWAITING_CORRECTION_PARAMETER
+        )
 
     @posts_in_a_job
     async def post_choices(ctx: StepContext) -> StepResult:
@@ -752,15 +759,9 @@ def recollect_change(
         return Verdict.go()
 
     async def open_(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
-        row = await (
-            await db.execute(
-                "SELECT 1 FROM signup_wizard_records w JOIN driver_profiles d "
-                "ON d.discord_user_id = w.discord_user_id "
-                "WHERE w.signup_channel_id = ? AND d.current_state = ?",
-                (int(payload["channel_id"]), DriverState.PENDING_DRIVER_CORRECTION.value),
-            )
-        ).fetchone()
-        return row is not None
+        return await _driver_in_state(
+            db, int(payload["channel_id"]), DriverState.PENDING_DRIVER_CORRECTION
+        )
 
     @posts_in_a_job
     async def post_recollect(ctx: StepContext) -> StepResult:

@@ -21,6 +21,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.drivers.driver_service import drivers_in_states
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.core.utils.input_validator import parse_nationality, parse_time, render_lap_time
 from leaguebot.signup.services.closing_steps import (
@@ -418,17 +419,22 @@ class WizardService:
         from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
 
         asked: set[str] = set()
-        placeholders = ", ".join("?" for _ in IN_PROGRESS_STATES)
+        rows: list[dict[str, Any]] = []
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT d.discord_user_id, w.signup_channel_id "
-                "FROM driver_profiles d JOIN signup_wizard_records w "
-                "  ON w.discord_user_id = d.discord_user_id "
-                f"WHERE d.current_state IN ({placeholders}) "
-                "  AND w.signup_channel_id IS NOT NULL",
-                tuple(state.value for state in IN_PROGRESS_STATES),
-            )
-            rows = await cursor.fetchall()
+            for driver in await drivers_in_states(
+                db, [state.value for state in IN_PROGRESS_STATES]
+            ):
+                cursor = await db.execute(
+                    "SELECT signup_channel_id FROM signup_wizard_records "
+                    "WHERE discord_user_id = ? AND signup_channel_id IS NOT NULL",
+                    (driver["discord_user_id"],),
+                )
+                wizard = await cursor.fetchone()
+                if wizard is not None:
+                    rows.append({
+                        "discord_user_id": driver["discord_user_id"],
+                        "signup_channel_id": wizard["signup_channel_id"],
+                    })
         if not rows:
             return asked
         guild = await league_guild(self._bot)
@@ -493,11 +499,7 @@ class WizardService:
         from leaguebot.signup.services.review_changes import ask_lapse
 
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT discord_user_id FROM driver_profiles WHERE current_state = ?",
-                (DriverState.AWAITING_CORRECTION_PARAMETER.value,),
-            )
-            rows = await cursor.fetchall()
+            rows = await drivers_in_states(db, [DriverState.AWAITING_CORRECTION_PARAMETER.value])
 
         for row in rows:
             if row["discord_user_id"] in skip:

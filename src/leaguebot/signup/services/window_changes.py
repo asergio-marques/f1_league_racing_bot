@@ -59,7 +59,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.drivers.driver_service import write_transition
+from leaguebot.core.services.drivers.driver_service import drivers_in_states, write_transition
 from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -504,12 +504,7 @@ def return_drivers_step(
 
     async def return_drivers(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         states = [state.value for state in returned_by_close]
-        cursor = await db.execute(
-            "SELECT id, discord_user_id, current_state FROM driver_profiles "
-            f"WHERE current_state IN ({','.join('?' for _ in states)}) ORDER BY id",  # noqa: S608
-            states,
-        )
-        rows = await cursor.fetchall()
+        rows = await drivers_in_states(db, states)
         cursor = await db.execute(
             "SELECT signup_channel_id, signup_button_message_id FROM signup_module_config WHERE id = 1"
         )
