@@ -21,8 +21,8 @@ signup channel and the notice standing in it, which the plan of the jobs reads f
 the restart past the close time. Its jobs, in order, are:
 
 - `return_drivers` (a save) returns each driver still filling in the wizard to Not Signed Up, ends
-  their wizard, cancels their timers and plans every job that follows, so that a driver returned
-  is never left without their notice;
+  their wizard and plans every job that follows, so that a driver returned is never left without
+  their notice (the first job it plans, `disarm_timers`, takes their timers away);
 - `delete_button` takes the Sign Up button down, and `post_closed` posts "Signups are now closed"
   and, in the save that marks it done, records the window closed, moves the season on and audits
   the close: no window is ever recorded closed with its season left behind, and a post Discord
@@ -451,13 +451,12 @@ def return_drivers_step(
     *,
     signup_module_service: Callable[[], "SignupModuleService"],
     returned_by_close: Collection[DriverState],
-    cancel_timers: Callable[[str], None],
     name: str = RETURN_DRIVERS,
     plan_after: PlanAfter = planned_by_a_member_s_close,
     disarm_close_timer: bool = False,
 ) -> Step:
     """The job of a change that closes the window: one save that returns each driver still filling
-    in the wizard to Not Signed Up, ends their wizard, cancels their timers and plans every job
+    in the wizard to Not Signed Up, ends their wizard and plans every job
     that follows (*plan_after*), so that a driver returned is never left without their notice.
     It returns every driver or none: a save that fails returns nobody. By default (a close the
     queue was asked for, and `module.off:signup`) it plans the Sign Up button's deletion and the
@@ -515,15 +514,12 @@ def season_end_close_step(
     modules: Callable[[], "ModuleService"],
     signup_module_service: Callable[[], "SignupModuleService"],
     returned_by_close: Collection[DriverState],
-    cancel_timers: Callable[[str], None],
-    cancel_close_timer: Callable[[], None],
     line_prefix: str | None = None,
 ) -> Step:
     """The `close_window` job of a season's end (a completion, a cancellation, the abort of the
     season being set up and the wind-down's close as every division is done): where signup is on
-    and its window open, the close timer cancelled and the window's close done in one save that
-    returns every driver still filling in the wizard or none (`return_drivers_step`), planning the
-    Sign Up button's deletion, the "Signups are now closed" post that closes the window, and each
+    and its window open, the window's close done in one save that returns every driver still
+    filling in the wizard or none (`return_drivers_step`), planning the Sign Up button's deletion, the "Signups are now closed" post that closes the window, and each
     returned driver's notice and channel's closing. Its payload is the ``cause`` (a key of
     `CLOSE_CAUSES`) and the season's number where it has one.
 
@@ -535,7 +531,7 @@ def season_end_close_step(
 
     returning = return_drivers_step(
         signup_module_service=signup_module_service, returned_by_close=returned_by_close,
-        cancel_timers=cancel_timers, name=CLOSE_WINDOW, plan_after=planned_by_a_season_s_end,
+        name=CLOSE_WINDOW, plan_after=planned_by_a_season_s_end,
         disarm_close_timer=True,
     )
 
@@ -594,8 +590,7 @@ def season_end_steps(
         **window_close_steps(signup_module_service=signup_module_service, now=now),
         CLOSE_WINDOW: season_end_close_step(
             modules=modules, signup_module_service=signup_module_service,
-            returned_by_close=returned_by_close, cancel_timers=cancel_timers,
-            cancel_close_timer=cancel_close_timer, line_prefix=line_prefix,
+            returned_by_close=returned_by_close, line_prefix=line_prefix,
         ),
         DISARM_TIMERS: disarm_timers_step(
             cancel_timers=cancel_timers, cancel_close_timer=cancel_close_timer
@@ -772,7 +767,6 @@ def window_close_change(
         RETURN_DRIVERS: dataclasses.replace(
             return_drivers_step(
                 signup_module_service=signup_module_service, returned_by_close=returned_by_close,
-                cancel_timers=cancel_timers,
             ),
             still_due=not_left_to_the_season,
         ),

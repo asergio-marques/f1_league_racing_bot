@@ -18,15 +18,15 @@ twice before either runs, `time-slot remove 1` would remove two slots. The comma
 rank to the slot's day and time at the ask and the change carries those, so that the second removal
 finds its slot gone and is refused (`test_removing_slot_n_twice_removes_one_slot`).
 
-**A slot already held is refused by name:** the check judges it, and the save, which reads nothing
-before it writes, turns the database's own `sqlite3.IntegrityError` into the same refusal. A fault
-of any other kind after the insert is a fault, never read as a duplicate
+**A slot already held is refused by name, in the check:** the check is the last judgement before
+the save on the league lane, so the save's insert never meets a held slot. Were it to, the
+database's own unique constraint would fail the save, which is a fault and not a refusal; a fault
+after the insert is likewise never read as a duplicate
 (`test_a_fault_after_a_slot_is_saved_is_not_read_as_a_duplicate`).
 """
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -184,16 +184,12 @@ def _slot_add(*, modules: "ModuleService", signup: "SignupModuleService") -> Set
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
-        day = payload["day"]
-        time = parse_time_of_day(payload["time"])
-        assert time is not None  # judged in the check, which a change is never saved without
-        try:
-            await db.execute(
-                "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
-                (day, time),
-            )
-        except sqlite3.IntegrityError as error:
-            raise Refused(DUPLICATE_SLOT) from error
+        # The command carries the time as the normalised HH:MM it parsed, which the check judged.
+        day, time = payload["day"], payload["time"]
+        await db.execute(
+            "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+            (day, time),
+        )
         return Saved(
             changed=True,
             audits=(

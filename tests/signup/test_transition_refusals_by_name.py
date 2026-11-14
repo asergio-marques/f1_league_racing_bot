@@ -143,7 +143,6 @@ async def _window_closed(tmp_path, monkeypatch) -> None:
     step = window_changes.return_drivers_step(
         signup_module_service=MagicMock(),
         returned_by_close=[DriverState.PENDING_SIGNUP_COMPLETION],
-        cancel_timers=MagicMock(),
     )
     await _save(db_path, step, window_changes.CLOSE, {"audit_action": window_changes.AUDIT_CLOSE})
 
@@ -278,10 +277,9 @@ async def _close_after_one_moved_on(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(window_changes, "write_transition", write)
     signup_service = MagicMock()
     signup_service.end_wizard_on = AsyncMock()
-    cancel_timers = MagicMock()
     step = window_changes.return_drivers_step(
         signup_module_service=lambda: signup_service,
-        returned_by_close=[pending], cancel_timers=cancel_timers,
+        returned_by_close=[pending],
     )
     result, states = await _save(
         db_path, step, window_changes.CLOSE, {"audit_action": window_changes.AUDIT_CLOSE},
@@ -289,7 +287,6 @@ async def _close_after_one_moved_on(tmp_path, monkeypatch) -> None:
     assert result.result == {"returned": [OTHER_ID]}
     assert states == {USER_ID: pending.value, OTHER_ID: DriverState.NOT_SIGNED_UP.value}
     assert [call.args[1] for call in signup_service.end_wizard_on.await_args_list] == [OTHER_ID]
-    cancel_timers.assert_not_called()
     assert [(job.name, job.payload["accounts"]) for job in result.then[:1]] == [
         ("disarm_timers", [OTHER_ID])
     ]

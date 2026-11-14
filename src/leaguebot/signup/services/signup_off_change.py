@@ -304,7 +304,6 @@ def signup_off_change(
         **window_close_steps(signup_module_service=signup_module_service, now=now),
         RETURN_DRIVERS: return_drivers_step(
             signup_module_service=signup_module_service, returned_by_close=returned_by_close,
-            cancel_timers=cancel_timers,
         ),
         SWITCH_OFF: Step(SWITCH_OFF, StepKind.SAVE, switch_off, describe=describe_switch_off),
         DISARM_TIMERS: disarm_timers_step(
