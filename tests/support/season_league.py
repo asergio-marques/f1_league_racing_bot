@@ -1163,9 +1163,6 @@ def backup_saved(league: SeasonLeague) -> bool:
     return backup_path(league.db_path).is_file()
 
 
-
-
-
 def _locks(kwargs: dict[str, Any]) -> bool:
     """Whether a permission edit made with *kwargs* takes the member's typing away."""
     if kwargs.get("send_messages") is False:
