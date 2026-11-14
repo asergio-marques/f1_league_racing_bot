@@ -266,8 +266,10 @@ class SignupCog(commands.Cog):
     ) -> bool:
         """Whether the signup module is on; where it is not, refuse and return False.
 
-        Every `/signup` command but `config view` runs this in its own body, after its tier
-        guard, as the results cog's gate does. It used to be the cog's `interaction_check`,
+        The commands that ask no setting change run this in their own body, after their tier
+        guard, as the results cog's gate does: `time-slot list`, `open`, `close` and the two
+        `unassigned` commands. The setting commands leave the refusal to their change's check
+        (`signup_settings.open_to_change`), which judges it again when their turn comes. It used to be the cog's `interaction_check`,
         which answered the member and then raised `CheckFailure`: the error handler answered
         a second time and wrote a failure line for what was only a refusal. One reply, then,
         and one refusal line — unless *record* is False, which the lists pass, since they
