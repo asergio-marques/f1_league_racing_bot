@@ -78,7 +78,9 @@ def _interaction():
     return interaction
 
 
-async def _cog(db_path, *, attendance: bool = True, now: datetime | None = None):
+async def _cog(
+    db_path, *, attendance: bool = True, weather: bool = False, now: datetime | None = None,
+):
     cog = RoundCog.__new__(RoundCog)
     # The league's bot (`league_bot`), with each awaited member it reads named (issue #240). A
     # whole-bot ``AsyncMock`` answers an unpinned reader with a truthy mock, which for a file
@@ -86,8 +88,9 @@ async def _cog(db_path, *, attendance: bool = True, now: datetime | None = None)
     cog.bot = await league_bot(db_path)
     cog.bot.output_router.post_log = AsyncMock()
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    for module in ("weather", "signup", "results", "images"):
+    for module in ("signup", "results", "images"):
         setattr(cog.bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
     cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=SimpleNamespace(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
@@ -237,19 +240,68 @@ async def test_the_confirmation_shows_a_new_moment_in_utc_without_its_offset(tmp
     assert "  • `scheduled_at` → `2099-06-21 18:00:00`" in _reply(interaction)
 
 
+#: Why the confirmation still names forecasts never drawn, and promises a redraw, until #287 lands.
+_NAMES_UNDRAWN_FORECASTS = (
+    "#287: the confirmation names as withdrawn every phase still ahead, drawn or not, and "
+    "promises a redraw with weather off"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
 async def test_the_summary_names_the_forecasts_it_will_withdraw(tmp_path):
-    """A round a month out has drawn nothing yet, so all three phases are still to come. The
-    confirmation reads word for word as it always has: the field changed, then the phases it
-    withdraws and redraws, and no warning, the check-in call being days away still."""
-    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    """Weather is on and attendance off. Round 1 of Div A races in three hours, its Phase 1 and
+    Phase 2 forecasts drawn and Phase 3's not yet. A manager moves it a month out. The
+    confirmation names the field changed, then the drawn phases the move puts back in question,
+    Phase 1 and Phase 2, as withdrawn and redrawn; Phase 3, never drawn, is not named (core spec,
+    "Amending and cancelling a round"; criterion 5)."""
+    now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    path = await _db(tmp_path, scheduled_at=now + timedelta(hours=3), phase1_done=1, phase2_done=1)
     interaction = _interaction()
 
-    await _amend(await _cog(path), interaction, track=NEW_TRACK)
+    await _amend(await _cog(path, attendance=False, weather=True, now=now), interaction,
+                 scheduled_at="2031-04-04T05:06:00")
 
     assert _reply(interaction) == (
         "**Amend Round 1** in division **Div A**:\n"
-        "  \u2022 `track_name` \u2192 `Silverstone Circuit`\n"
-        "\n\u26a0\ufe0f This will withdraw and redraw Phase 1, Phase 2, Phase 3 for this round."
+        "  \u2022 `scheduled_at` \u2192 `2031-04-04 05:06:00`\n"
+        "\n\u26a0\ufe0f This will withdraw and redraw Phase 1, Phase 2 for this round."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
+async def test_the_summary_says_nothing_of_forecasts_where_none_was_drawn(tmp_path):
+    """Weather is on. Round 1 of Div A is a month out and has drawn nothing yet. A manager changes
+    its circuit. The confirmation names the field changed and says nothing about forecasts: none
+    is withdrawn and none stands (owner, 2026-11-14, "Nothing about forecasts"; criterion 5)."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    interaction = _interaction()
+
+    await _amend(await _cog(path, weather=True), interaction, track=NEW_TRACK)
+
+    assert _reply(interaction) == (
+        "**Amend Round 1** in division **Div A**:\n"
+        "  \u2022 `track_name` \u2192 `Silverstone Circuit`"
+    )
+    assert _offered_a_confirmation(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
+async def test_the_summary_promises_no_redraw_while_weather_is_off(tmp_path):
+    """Weather and attendance are off. Round 1 of Div A races in three hours, its Phase 1 and
+    Phase 2 forecasts drawn. A manager moves it a month out. The confirmation names Phase 1 and
+    Phase 2 as withdrawn and promises no redraw, since no phase is drawn while weather is off
+    (weather spec, "Changes to a round after generation"; criterion 5)."""
+    now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    path = await _db(tmp_path, scheduled_at=now + timedelta(hours=3), phase1_done=1, phase2_done=1)
+    interaction = _interaction()
+
+    await _amend(await _cog(path, attendance=False, now=now), interaction,
+                 scheduled_at="2031-04-04T05:06:00")
+
+    assert _reply(interaction) == (
+        "**Amend Round 1** in division **Div A**:\n"
+        "  \u2022 `scheduled_at` \u2192 `2031-04-04 05:06:00`\n"
+        "\n\u26a0\ufe0f This will withdraw Phase 1, Phase 2 for this round."
     )
 
 
@@ -279,24 +331,26 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NAMES_UNDRAWN_FORECASTS)
 async def test_the_check_in_warnings_follow_the_forecasts_line(tmp_path):
-    """The queue's clock reads 4 March 2031, 05:06 UTC. Round 1 of Div A is a month out, with
-    attendance on (check-in call 5 days before, last notice 24 hours, deadline 2 hours) and the
-    forecast horizons at their defaults (5 days, 2 days, 2 hours). A manager brings it to three
-    days out. The confirmation names the moment, then the phases the move withdraws and redraws
-    (Phase 2 and Phase 3, Phase 1's horizon being behind the clock), then the check-in warning
-    that the call is already due: the forecasts' line first and the check-in's after, word for
-    word as today."""
+    """The queue's clock reads 4 March 2031, 05:06 UTC. Round 1 of Div A races in three hours,
+    its Phase 1 and Phase 2 forecasts drawn, with weather on, attendance on (check-in call 5 days
+    before, last notice 24 hours, deadline 2 hours) and the forecast horizons at their defaults
+    (5 days, 2 days, 2 hours). A manager moves it to three days out. The confirmation names the
+    moment, then the drawn phase the move withdraws and redraws (Phase 2, Phase 1's horizon being
+    behind the clock and Phase 3 never drawn), then the check-in warning that the call is
+    already due: the forecasts' line first and the check-in's after."""
     now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
-    path = await _db(tmp_path, scheduled_at=now + timedelta(days=30))
+    path = await _db(tmp_path, scheduled_at=now + timedelta(hours=3), phase1_done=1, phase2_done=1)
     interaction = _interaction()
 
-    await _amend(await _cog(path, now=now), interaction, scheduled_at="2031-03-07T05:06:00")
+    await _amend(await _cog(path, weather=True, now=now), interaction,
+                 scheduled_at="2031-03-07T05:06:00")
 
     assert _reply(interaction) == (
         "**Amend Round 1** in division **Div A**:\n"
         "  \u2022 `scheduled_at` \u2192 `2031-03-07 05:06:00`\n"
-        "\n\u26a0\ufe0f This will withdraw and redraw Phase 2, Phase 3 for this round.\n"
+        "\n\u26a0\ufe0f This will withdraw and redraw Phase 2 for this round.\n"
         "\u26a0\ufe0f The check-in call for that moment is already due, so no fresh call will go "
         "out \u2014 the one already posted stands."
     )
