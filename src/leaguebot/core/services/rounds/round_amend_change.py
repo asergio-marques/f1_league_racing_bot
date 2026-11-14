@@ -622,8 +622,8 @@ def _round_change(
                 phase_1_days=weather["phase_1_days"],
                 phase_2_days=weather["phase_2_days"],
                 phase_3_hours=weather["phase_3_hours"],
-                # Drawn at once by a job of the amendment's: a timer for a horizon passed by
-                # less than the scheduler's misfire grace would draw it a second time.
+                # Drawn at once by a job of the amendment's: a timer armed for a horizon already
+                # passed has no lateness limit and would fire at once, asking for it a second time.
                 skip_phases=frozenset(draw),
             )
         else:

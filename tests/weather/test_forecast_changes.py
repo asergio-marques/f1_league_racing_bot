@@ -1279,13 +1279,6 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
 # A timer missed while the bot was down, firing beside the restart's own ask
 # ---------------------------------------------------------------------------
 
-#: Why the timer tests fail until weather's round jobs are armed with no lateness limit (#287, C5).
-STILL_A_LATENESS_LIMIT = (
-    "#287: a forecast timer is still armed with the five-minute lateness limit, so one missed "
-    "while the bot was down never fires"
-)
-
-
 @pytest.fixture
 def scheduler(tmp_path, monkeypatch):
     """Build the real scheduler service on a league's database and a job store of its own, as the
@@ -1350,7 +1343,6 @@ def _round_3(when: Any) -> Any:
     return SimpleNamespace(id=ROUND, division_id=PRO, round_number=3, scheduled_at=when)
 
 
-@pytest.mark.xfail(strict=True, reason=STILL_A_LATENESS_LIMIT)
 async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once(
     tmp_path, scheduler,
 ):
@@ -1385,7 +1377,6 @@ async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_on
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=STILL_A_LATENESS_LIMIT)
 async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_path, scheduler):
     """Round 3 was raced 25 hours ago, and its Phase 3 forecast (9303) still stands: its clean-up
     fell due an hour ago while the bot was down. The bot comes back: weather's start-up step for
