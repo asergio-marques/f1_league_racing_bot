@@ -58,6 +58,10 @@ from tests.support.change_queue import change_rows
 from tests.support.season_league import PRO, ongoing_league, round_id
 from tests.support.start_up_sweep import round_failures, run_weather_start_up_step
 
+#: Why a test of a failed catch-up's naming of its rounds fails until the build.
+_ROUNDS_BY_ID = ("#287: weather's RecoveryFailed names a round by its database id, and the "
+                 "sweep's failure line names none")
+
 #: The name weather's start-up step runs under.
 MISSED_PHASES = "missed phases"
 
@@ -357,16 +361,14 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
-@pytest.mark.xfail(strict=True, reason="#287: weather's RecoveryFailed names a round by its database id")
+@pytest.mark.xfail(strict=True, reason=_ROUNDS_BY_ID)
 async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
     """Rounds 1 and 2 of Division 1 are both past their Phase 1 horizon with Phase 1 not drawn,
     and the queue refuses round 1's ask. Run through the start-up sweep, the step still asks round
     2's Phase 1, then raises weather's `RecoveryFailed` naming round 1 alone with the queue's
     error, its message, which the host's log carries, naming it as a league reads it, "round 1 in
     **Division 1**" (#287, B10); and the sweep posts one line to the log channel, its failure line
-    for the step."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    for the step, naming that round in core's form (#287, B11)."""
     db_path = await _make_db(
         tmp_path,
         rounds=(
@@ -384,9 +386,13 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert type(error).__module__ == "leaguebot.weather.models.recovery_failed", type(error)
     assert round_failures(error, module="weather") == {1: refused}
     assert "round 1 in **Division 1**" in str(error), str(error)
-    assert sweep["lines"] == [start_up_failure_line(MISSED_PHASES, error)]
+    assert sweep["lines"] == [
+        "❌ The bot's start-up step `missed phases` failed for round 1 in **Division 1** — "
+        "RecoveryFailed. The details are in the host's log."
+    ]
 
 
+@pytest.mark.xfail(strict=True, reason=_ROUNDS_BY_ID)
 async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(tmp_path):
     """Round 1 is past its Phase 1 horizon with Phase 1 not drawn; round 2, of the same live
     division, has its start stored without its offset, which no writer produces and the bot refuses
@@ -394,9 +400,8 @@ async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(
     Phase 1, then raises weather's `RecoveryFailed` naming round 2 alone, with the `ValueError` its
     start raised, rather than passing it over in silence; and the sweep posts one line to the log
     channel, its failure line for the step, as the step's failure did before the catch-up became a
-    service, and as the forecast clean-up catch-up reports the same round."""
-    from leaguebot.core.utils.interaction_errors import start_up_failure_line
-
+    service, and as the forecast clean-up catch-up reports the same round, naming the round in
+    core's form, "round 2 in **Division 1**" (#287, B11)."""
     db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, True, True, "NORMAL"),))
     unreadable = (datetime.now(timezone.utc) + timedelta(days=3)).replace(tzinfo=None)
     async with get_connection(db_path) as db:
@@ -416,7 +421,10 @@ async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(
     failures = round_failures(error, module="weather")
     assert list(failures) == [2]
     assert isinstance(failures[2], ValueError), failures
-    assert sweep["lines"] == [start_up_failure_line(MISSED_PHASES, error)]
+    assert sweep["lines"] == [
+        "❌ The bot's start-up step `missed phases` failed for round 2 in **Division 1** — "
+        "RecoveryFailed. The details are in the host's log."
+    ]
 
 
 async def test_the_missed_phases_catch_up_reads_the_queue_s_clock(tmp_path):
