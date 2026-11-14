@@ -23,10 +23,11 @@ the round or shorten the window, and that is a choice only they can make.
 contributed by the modules that configure them, so a league running neither weather nor
 attendance offers none at all, and a season every round of which is already in the past would
 otherwise be approved in silence. Nothing would recover it: a round's result submission is
-armed against the round's own moment, a job that far behind is thrown away by the scheduler's
-300-second misfire grace rather than run, the round's start (`results.submission.open`) is the
-only route to a submission channel, and that job is the round's one clock-driven transition.
-Every round would stay at *not run* for good. `/round amend` refuses a backwards move on the
+armed against the round's own moment, with no lateness limit, so a job that far behind fires
+at once as the bot starts and the handler results signs up for it decides what becomes of a
+late one, and the round's start (`results.submission.open`) is the only route to a submission
+channel. Opened that late, every round of the season would open its submission at once and find
+its race long run, which is not the round's own moment. `/round amend` refuses a backwards move on the
 same reasoning and in the same words, so the two doors agree.
 
 **A division's faults are reduced to the latest round of each kind.** `calendar_faults` names the

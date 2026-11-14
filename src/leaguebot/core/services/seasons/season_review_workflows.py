@@ -657,9 +657,9 @@ async def approve_season(
     # **And the round's own moment is judged, whatever the modules**. The windows
     # above are contributed by the modules that configure them, so a league running
     # neither weather nor attendance has none, and a season every round of which is
-    # already in the past would be approved in silence, every round of it stuck at *not
-    # run* for good, because a result-submission job armed that far behind is thrown away
-    # by the misfire grace and nothing in production opens a submission channel afterwards.
+    # already in the past would be approved in silence, every round of it opening its
+    # submission late, because a result-submission job armed that far behind has no lateness
+    # limit and fires at once as the bot starts, not at the round's own moment.
     # `/round amend` refuses a backwards move on the same reasoning, so the two
     # doors agree about a round.
     #
