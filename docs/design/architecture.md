@@ -853,15 +853,15 @@ connection its caller was handed, in one transaction, and a named test pins each
 it. A running total kept beside the rows it sums is such a copy. A module's design file names each
 copy it keeps and the function that recomputes it.
 
+*Rejected:* a recompute whose steps each open and commit a connection of their own, which a stop
+leaves right up to one round and stale from the next, with nothing a league can run to repeat it
+(attendance's `_recalculate_forward` docstring).
+
 **A stored copy that cannot be recomputed is written together with what it copies.** A random
 draw's outputs, held once as the draw's record and again where another reader wants them, are no
 function of any other row, so there is no recompute to run. Each writer of the copy writes it with
 what it copies, in one save, on the connection it was handed, a named test pins each writer, and the
 module's design file names the copy and its writers (weather's draws, in `weather_module.md`).
-
-*Rejected:* a recompute whose steps each open and commit a connection of their own, which a stop
-leaves right up to one round and stale from the next, with nothing a league can run to repeat it
-(attendance's `_recalculate_forward` docstring).
 
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by rebuilding
 the table, so which rules go in the schema is settled before more tables are added.
@@ -975,12 +975,13 @@ store keeping the jobs and the start-up sweep catching up those missed (above), 
 test mode, whose advance brings forward work already armed or found due in the database. A round's
 next-day clean-ups, which its weather and its attendance arming both owe, are armed with them: the
 forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`. **In the amendment
-and the re-arming, whether a module's work is armed, and with what, is that module's answer through
-`round_armed`**: each module hands back its steps and the jobs it owes, and the arming step makes the
-scheduler's calls with what each hands back, so that core holds no module's rule about which jobs a
-moved round still to be run owes.
+and the re-arming of a round still to be run, whether a module's work is armed, and with what, is that
+module's answer through `round_armed`**: each module hands back its steps and the jobs it owes, and
+the arming step makes the scheduler's calls with what each hands back, so that core holds no
+module's rule about which jobs a moved round still to be run owes.
 `schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
-round raced, or ended cancelled because every session was entered as not held.
+round raced, or ended cancelled because every session was entered as not held; core makes that call
+from the modules' switches and attendance's windows.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
