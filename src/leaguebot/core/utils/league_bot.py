@@ -229,7 +229,8 @@ class LeagueBot(commands.Bot):
     round_clean_ups_due: AwaitedHook
     #: The steps each module defines for the amendment of a round and its arming again, by name
     #: (each subscriber hands back its definitions), and the words an outcome gives a step left
-    #: undone (each hands back a thing and what to do, or None for a step not its own).
+    #: undone (each is handed the discarded step and the change's steps, and hands back a thing and
+    #: what to do, `()` for a step of its own with nothing to name, or None for a step not its own).
     amendment_steps: Hook
     amendment_step_failure: Hook
     #: The moment the bot's in-memory state is cleared (`/bot pack`, `/bot factory-reset`): each

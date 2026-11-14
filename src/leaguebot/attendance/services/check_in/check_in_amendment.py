@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -66,7 +66,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round
 from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now
 from leaguebot.core.services.seasons import season_service
@@ -395,6 +395,99 @@ def amendment_steps(
         DELETE_MESSAGE: clean_up[DELETE_MESSAGE],
         MARK_CLEARED: clean_up[MARK_CLEARED],
     }
+
+
+_CALL_VANISHED = (
+    "check-in call",
+    "it could not be posted again and none can be seen; post it by hand with "
+    "`/attendance post-check-in` once the cause is cleared (or the check-in channel is set), and "
+    "see the log channel",
+)
+_EARLIER_CALL_KEPT = (
+    "check-in call",
+    "it could not be posted again, so the earlier call was kept and its answers count; see the "
+    "log channel",
+)
+
+
+def check_in_failure(
+    view: StepView, steps: Sequence[StepView]
+) -> tuple[str, str] | tuple[()] | None:
+    """What a league admin's discard of one of attendance's jobs leaves, as a core outcome names
+    it: the thing and what to do, `()` for a job of attendance's that leaves nothing of its own to
+    name, or None for a job that is not attendance's. Subscribed to core's
+    `amendment_step_failure`, which hands the discarded job and every job of the change (*steps*).
+
+    A take-down of the call and the posting of it again are named together, once: a call that
+    could not be posted again and none can be seen, or whose earlier call was kept, is named by the
+    take-down where that was discarded too, and the posting names it alone otherwise.
+    """
+    def last(name: str) -> StepView | None:
+        return next((each for each in reversed(steps) if each.name == name), None)
+
+    def gone(each: StepView | None) -> bool:
+        return each is not None and "discarded" in (each.result or {})
+
+    result = view.result or {}
+    if view.name == TAKE_DOWN_CALL:
+        posting = last(POST_CALL)
+        posted = (posting.result if posting is not None else None) or {}
+        if posted.get("vanished"):
+            return _CALL_VANISHED
+        if posted.get("earlier_left"):
+            return _EARLIER_CALL_KEPT
+        ids = ", ".join(str(one) for one in result.get("undeleted", []))
+        return (
+            "check-in call",
+            f"{len(result.get('undeleted', []))} message(s) could not be deleted and must be "
+            f"removed by hand (ids {ids})",
+        )
+    if view.name == POST_CALL:
+        if (result.get("vanished") or result.get("earlier_left")) and gone(last(TAKE_DOWN_CALL)):
+            return ()
+        if result.get("vanished"):
+            return _CALL_VANISHED
+        if result.get("earlier_left"):
+            return _EARLIER_CALL_KEPT
+        return (
+            "check-in call",
+            "the call could not be posted again, and a league admin discarded it; post it with "
+            "`/attendance post-check-in`",
+        )
+    if view.name == DISTRIBUTE:
+        return (
+            "check-in deadline",
+            "the reserves were not distributed, and a league admin discarded it; it is run when "
+            "the bot next starts, while the call stands",
+        )
+    if view.name == LOCK_CALL:
+        return (
+            "check-in call",
+            "the buttons could not be taken off the call at its deadline, and a league admin "
+            "discarded it; the placements stand, and the call can be taken down by hand",
+        )
+    if view.name == ANNOUNCE:
+        return (
+            "reserve announcement",
+            "the reserves' announcement could not be posted, and a league admin discarded it; the "
+            "placements stand",
+        )
+    if view.name == CLEAN_UP_CHECK_IN:
+        return (
+            "check-in call",
+            "the check-in was not taken down a day after the round, and a league admin discarded "
+            "it; it is taken down when the bot next starts",
+        )
+    if view.name == DELETE_MESSAGE:
+        # Named by the link its refused deletion kept, for an admin to open; by its channel where
+        # it kept none.
+        link = result.get("link") or f"in <#{view.payload.get('channel_id')}>"
+        return (
+            "check-in call",
+            f"the {view.payload.get('what', 'message')} could not be deleted a day after the "
+            f"round, and a league admin discarded it; delete it by hand ({link})",
+        )
+    return None
 
 
 def advance_steps(queue: ChangeQueue, db_path: str) -> dict[str, AdvanceStep]:

@@ -43,7 +43,6 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
-    forecasts_named,
 )
 from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
@@ -103,23 +102,12 @@ __all__ = [
 
 ROUND_AMEND = "season.round.amend"
 
-#: The job names, as the stop notice, the tests and `StepView` know them. The core ones first, then
-#: those the outcome names for the words of a step left undone (the modules define each step).
+#: The core job names, as the stop notice, the tests and `StepView` know them. The jobs each module
+#: defines are named by that module, which words them too (`amendment_step_failure`).
 UNARM = "unarm"
 APPLY = "apply"
 ARM = "arm"
 CLOSE = "close"
-TAKE_DOWN_CALL = "take_down_call"
-POST_CALL = "post_call"
-DELETE_FORECAST = "delete_forecast"
-NOTIFY_INVALIDATION = "notify_invalidation"
-RERUN_PHASE = "rerun_phase"
-DISTRIBUTE = "distribute"
-LOCK_CALL = "lock_call"
-ANNOUNCE = "announce"
-CLEAN_UP_FORECAST = "clean_up_forecast"
-CLEAN_UP_CHECK_IN = "clean_up_check_in"
-DELETE_MESSAGE = "delete_message"
 
 AMENDED = "✅ Round amended successfully."
 NOTHING_AMENDED = (
@@ -771,133 +759,16 @@ def _round_change(
         for each in ctx.steps:
             if not discarded(each):
                 continue
-            result = each.result or {}
-            if each.name == TAKE_DOWN_CALL:
-                ids = [str(one) for one in result.get("undeleted", [])]
-                posted = view(ctx, POST_CALL).result or {}
-                if posted.get("vanished"):
-                    # The call itself was deleted, posting it again failed, and no call can be
-                    # seen: what is left of it is named in the log channel.
-                    failures.append(notices.NoticeFailure(
-                        division, "check-in call",
-                        "it could not be posted again and none can be seen; post it by hand "
-                        "with `/attendance post-check-in` once the cause is cleared (or the "
-                        "check-in channel is set), and see the log channel",
-                    ))
-                    continue
-                if posted.get("earlier_left"):
-                    # Posting the call again failed too, and the earlier call was kept: it is the
-                    # round's only call, not one to delete.
-                    failures.append(notices.NoticeFailure(
-                        division, "check-in call",
-                        "it could not be posted again, so the earlier call was kept and its "
-                        "answers count; see the log channel",
-                    ))
-                    continue
-                failures.append(notices.NoticeFailure(
-                    division, "check-in call",
-                    f"{len(ids)} message(s) could not be deleted and must be removed by hand "
-                    f"(ids {', '.join(ids)})",
-                ))
-            elif each.name == POST_CALL:
-                if result.get("vanished") or result.get("earlier_left"):
-                    if discarded(view(ctx, TAKE_DOWN_CALL)):
-                        # The discarded take-down's entry says what is left of the call.
-                        continue
-                if result.get("vanished"):
-                    failures.append(notices.NoticeFailure(
-                        division, "check-in call",
-                        "it could not be posted again and none can be seen; post it by hand "
-                        "with `/attendance post-check-in` once the cause is cleared (or the "
-                        "check-in channel is set), and see the log channel",
-                    ))
-                elif result.get("earlier_left"):
-                    failures.append(notices.NoticeFailure(
-                        division, "check-in call",
-                        "it could not be posted again, so the earlier call was kept and its "
-                        "answers count; see the log channel",
-                    ))
-                else:
-                    failures.append(notices.NoticeFailure(
-                        division, "check-in call",
-                        "the call could not be posted again, and a league admin discarded it; "
-                        "post it with `/attendance post-check-in`",
-                    ))
-            elif each.name == DELETE_FORECAST:
-                where = (
-                    f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/"
-                    f"{result['message_id']}"
-                    if "guild_id" in result and "message_id" in result
-                    else f"message {result.get('message_id')} in <#{result.get('channel_id')}>"
-                )
-                if each.payload.get("clean_up"):
-                    what = f"the Phase {result.get('phase')} forecast could not be deleted a day after the round"
-                else:
-                    which = "superseded" if each.payload.get("superseded") else "withdrawn"
-                    what = f"the {which} Phase {result.get('phase')} forecast could not be deleted"
-                failures.append(notices.NoticeFailure(
-                    division, "forecast channel",
-                    f"{what}, and a league admin discarded it; delete it by hand ({where})",
-                ))
-            elif each.name == NOTIFY_INVALIDATION:
-                failures.append(notices.NoticeFailure(
-                    division, "forecast channel",
-                    "the notice that its forecasts no longer stand could not be posted, and a "
-                    "league admin discarded it",
-                ))
-            elif each.name == RERUN_PHASE:
-                failures.append(notices.NoticeFailure(
-                    division, f"Phase {each.payload.get('phase')} forecast",
-                    "not drawn, and a league admin discarded it; it is drawn when the bot next "
-                    "starts, while the round is still to be run",
-                ))
-            elif each.name == DISTRIBUTE:
-                failures.append(notices.NoticeFailure(
-                    division, "check-in deadline",
-                    "the reserves were not distributed, and a league admin discarded it; it is "
-                    "run when the bot next starts, while the call stands",
-                ))
-            elif each.name == LOCK_CALL:
-                failures.append(notices.NoticeFailure(
-                    division, "check-in call",
-                    "the buttons could not be taken off the call at its deadline, and a league "
-                    "admin discarded it; the placements stand, and the call can be taken down "
-                    "by hand",
-                ))
-            elif each.name == ANNOUNCE:
-                failures.append(notices.NoticeFailure(
-                    division, "reserve announcement",
-                    "the reserves' announcement could not be posted, and a league admin "
-                    "discarded it; the placements stand",
-                ))
-            elif each.name == CLEAN_UP_FORECAST:
-                standing = each.payload.get("standing", ())
-                several = len(set(standing)) > 1
-                failures.append(notices.NoticeFailure(
-                    division, "forecast channel",
-                    f"{forecasts_named(standing)} {'were' if several else 'was'} not deleted a "
-                    f"day after the round, and a league admin discarded it; "
-                    f"{'they are' if several else 'it is'} deleted when the bot next starts",
-                ))
-            elif each.name == CLEAN_UP_CHECK_IN:
-                failures.append(notices.NoticeFailure(
-                    division, "check-in call",
-                    "the check-in was not taken down a day after the round, and a league admin "
-                    "discarded it; it is taken down when the bot next starts",
-                ))
-            elif each.name == DELETE_MESSAGE:
-                # Named by the link its refused deletion kept, for an admin to open; by its
-                # channel where it kept none.
-                link = result.get("link") or f"in <#{each.payload.get('channel_id')}>"
-                failures.append(notices.NoticeFailure(
-                    division, "check-in call",
-                    f"the {each.payload.get('what', 'message')} could not be deleted a day "
-                    f"after the round, and a league admin discarded it; delete it by hand "
-                    f"({link})",
-                ))
-            elif (undone := next(
-                (line for line in amendment_step_failure.call(each) if line is not None), None
-            )) is not None:
+            # Each module words the jobs it defines: the first to know the job answers, `()`
+            # where the job leaves nothing of its own to name.
+            undone = next(
+                (
+                    answer for answer in amendment_step_failure.call(each, ctx.steps)
+                    if answer is not None
+                ),
+                (),
+            )
+            if undone:
                 failures.append(notices.NoticeFailure(division, *undone))
         if not failures:
             return ""

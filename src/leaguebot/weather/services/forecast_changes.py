@@ -733,17 +733,18 @@ def advance_steps(queue: ChangeQueue, db_path: str) -> dict[str, AdvanceStep]:
     }
 
 
-def forecast_failure(view: StepView) -> tuple[str, str] | None:
-    """What a league admin's discard of a forecast job leaves, as a core outcome names it: the
-    thing and what to do, or None for a job that is not a forecast's.
+def forecast_failure(view: StepView, _steps: Sequence[StepView]) -> tuple[str, str] | None:
+    """What a league admin's discard of one of weather's jobs leaves, as a core outcome names it:
+    the thing and what to do, or None for a job that is not weather's.
 
     Handed to core's amendment through its hooks, so that it names a discarded weather job without
-    importing weather. A discarded draw is made when the bot next starts, while its round is still
-    to be run; a discarded post leaves the draw standing in the log channel and nothing to post it
-    again; a discarded deletion of a part of any forecast posted in parts, which a `DELETE_FORECAST`
-    plans for each part before the last, is left to delete by hand, by its link. A discarded `DELETE_FORECAST` is not named here: the amendment names it itself, as a
-    forecast to delete by hand, before it asks this hook.
-    """
+    importing weather; *_steps* is every job of the change, which weather's words never read. A
+    discarded draw is made when the bot next starts, while its round is still to be run; a
+    discarded post leaves the draw standing in the log channel and nothing to post it again; a
+    discarded deletion of a forecast is left to delete by hand, by its link, as is a part of any
+    forecast posted in parts, which a `DELETE_FORECAST` plans for each part before the last; a
+    discarded notice that the forecasts no longer stand is not posted again, and the clean-up a day
+    after the round is made when the bot next starts."""
     result = view.result or {}
     phase = view.payload.get("phase", result.get("phase"))
     occasion = f"Phase {phase} forecast" if phase else "mystery round notice"
@@ -753,6 +754,34 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
     if view.name == POST_FORECAST:
         return (occasion, "drawn but not posted, and a league admin discarded it; the draw "
                 "stands in the log channel, and nothing posts it again")
+    if view.name == DELETE_FORECAST:
+        where = (
+            f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/"
+            f"{result['message_id']}"
+            if "guild_id" in result and "message_id" in result
+            else f"message {result.get('message_id')} in <#{result.get('channel_id')}>"
+        )
+        if view.payload.get("clean_up"):
+            what = f"the Phase {result.get('phase')} forecast could not be deleted a day after the round"
+        else:
+            which = "superseded" if view.payload.get("superseded") else "withdrawn"
+            what = f"the {which} Phase {result.get('phase')} forecast could not be deleted"
+        return ("forecast channel",
+                f"{what}, and a league admin discarded it; delete it by hand ({where})")
+    if view.name == NOTIFY_INVALIDATION:
+        return ("forecast channel", "the notice that its forecasts no longer stand could not be "
+                "posted, and a league admin discarded it")
+    if view.name == RERUN_PHASE:
+        return (f"Phase {view.payload.get('phase')} forecast",
+                "not drawn, and a league admin discarded it; it is drawn when the bot next "
+                "starts, while the round is still to be run")
+    if view.name == CLEAN_UP_FORECAST:
+        standing = view.payload.get("standing", ())
+        several = len(set(standing)) > 1
+        return ("forecast channel",
+                f"{forecasts_named(standing)} {'were' if several else 'was'} not deleted a day "
+                f"after the round, and a league admin discarded it; "
+                f"{'they are' if several else 'it is'} deleted when the bot next starts")
     if view.name == standing_posts.DELETE_REPLACED and "forecast" in str(
         view.payload.get("what", "")
     ):

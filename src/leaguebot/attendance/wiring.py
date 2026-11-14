@@ -65,6 +65,14 @@ def sign_up_to_round_amended(bot: "LeagueBot") -> None:
     bot.round_amended.subscribe(check_in_amendment.round_amended_on)
 
 
+def sign_up_to_amendment_step_failure(bot: "LeagueBot") -> None:
+    """Sign attendance's words for a step of its own left undone up to the hook an outcome gives a
+    step its words through."""
+    from leaguebot.attendance.services.check_in import check_in_amendment
+
+    bot.amendment_step_failure.subscribe(check_in_amendment.check_in_failure)
+
+
 def sign_up_to_round_armed(bot: "LeagueBot") -> None:
     """Sign attendance's posts up to the hook an amended round's arming again declares."""
     from leaguebot.attendance.services.check_in import check_in_amendment

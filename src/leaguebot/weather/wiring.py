@@ -32,7 +32,6 @@ def sign_up(bot: "LeagueBot") -> None:
     """Sign weather up to each hook only weather joins. The hooks several modules join are signed
     up by the entry point, in the order they are called, through the functions below."""
     sign_up_to_phases_drawn_read(bot)
-    sign_up_to_amendment_step_failure(bot)
     sign_up_to_test_mode_flushed(bot)
 
 
@@ -46,8 +45,8 @@ def sign_up_to_phases_drawn_read(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_amendment_step_failure(bot: "LeagueBot") -> None:
-    """Sign weather's words for a forecast step left undone up to the hook an outcome gives a step
-    its words through."""
+    """Sign weather's words for a step of its own left undone up to the hook an outcome gives a
+    step its words through."""
     from leaguebot.weather.services import forecast_changes
 
     bot.amendment_step_failure.subscribe(forecast_changes.forecast_failure)

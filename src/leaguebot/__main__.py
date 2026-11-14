@@ -230,7 +230,8 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     forecasts the amendment withdraws, then attendance's reopening of its check-in; as the round
     is armed again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the round,
     weather's then attendance's; the steps each defines for the amendment, weather's then
-    attendance's; and the words an outcome gives a step left undone, weather's for a forecast."""
+    attendance's; and the words an outcome gives a step left undone, weather's for a forecast then
+    attendance's for its check-in."""
     bot.round_amended = AwaitedHook()
     weather_wiring.sign_up_to_round_amended(bot)
     attendance_wiring.sign_up_to_round_amended(bot)
@@ -243,6 +244,8 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     bot.amendment_steps = Hook()
     weather_wiring.sign_up_to_amendment_steps(bot)
     attendance_wiring.sign_up_to_amendment_steps(bot)
+    weather_wiring.sign_up_to_amendment_step_failure(bot)
+    attendance_wiring.sign_up_to_amendment_step_failure(bot)
 
 
 def _sign_up_to_cancellations(bot: LeagueBot) -> None:
