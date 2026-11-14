@@ -1312,14 +1312,11 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test weather-p1", "images test weather-p2", "images test weather-p3" and "images test weather-mystery" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- Each of the four "images test weather-" commands shall generate one image, drawn for the division and round named. The template exercised is that of the round's own format: the sprint template of the phase where the round is of the sprint format, and the plain template of the phase otherwise.
-- The "images test weather-p1" command shall fabricate a likelihood of rain between 0 and 100 per cent, which shall not be a whole percentage, so that its rendering may be evaluated.
-- The "images test weather-p2" command shall fabricate a type of weather for each session the round named is run over. Where the round is of the sprint format each of the three types shall appear at least once among them; otherwise two shall appear.
-- The "images test weather-p3" command shall fabricate slots for each session the round named is run over, among which each of the five weather types shall appear at least once, so that each of their icons may be evaluated. The slots shall further include, insofar as the number of sessions and of slots the round and its template allow:
-    - a session of a single slot;
-    - a session all of whose slots carry the same weather, so that the summary of a session of one weather may be evaluated;
-    - a session whose slots do not all carry the same weather;
-    - a session holding the greatest number of slots the type of that session allows.
+- Each of the four "images test weather-" commands shall generate one image, drawn for the league's own division and round named. The template exercised is that of the round's own format: the sprint template of the phase where the round is of the sprint format, and the plain template of the phase otherwise.
+- The words of the forecast a preview draws are fabricated by the image module and composed in the shape in which the weather module hands a real forecast's over, so that a preview and a posting draw through one path: the description of the phase, the likelihood of rain as text, and for each session in run order its label, its type of weather and its slots. The preview reads no weather record of the league's.
+- The "images test weather-p1" command shall carry a likelihood of rain of 37%, a sample figure shown as a real forecast shows it, rounded to the nearest whole percentage.
+- The "images test weather-p2" command shall carry the description of Phase 2 and a type of weather for each session the round named is run over, dealt in turn from three types, so that a sprint round, which holds four sessions, shows each of the three and a round of two sessions shows two. Nothing is fabricated into existence to reach a case the format cannot hold.
+- The "images test weather-p3" command shall carry the description of Phase 3 and, for each session the round named is run over, as many slots as its type admits, the five weather types of a slot dealt in turn across the round so that each icon appears at least once; every format but the mystery format holds at least five slots in all. A session whose slots all carry one weather shall show that weather alone as its summary, and any other its slots in order, separated by an arrow.
 - The "images test weather-mystery" command shall generate the notice of the round named, which holds no session and carries no forecast.
 - Should the template declare fewer sessions than the round named holds, or fewer slots than a session of it holds, the fatal error defined above shall be met and reported, naming the template of the phase that was at fault.
 
