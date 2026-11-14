@@ -256,6 +256,19 @@ async def test_a_second_open_window_is_refused(db_path):
     db.close()
 
 
+@pytest.mark.xfail(strict=True, reason="#286: signup_records still carries updated_at, which "
+                   "nothing reads")
+async def test_a_signup_record_keeps_when_it_was_sent_in_and_no_time_of_its_last_change(db_path):
+    """The schema `run_migrations` raises keeps on each signup record the moment it was sent in
+    (`created_at`), which the unassigned listings order by, and no time of its last change
+    (`updated_at`), which nothing reads."""
+    db = _connect(db_path)
+    columns = {row[1] for row in db.execute("PRAGMA table_info(signup_records)")}
+    db.close()
+    assert "created_at" in columns
+    assert "updated_at" not in columns
+
+
 async def test_a_team_name_is_unique_in_the_league(db_path):
     db = _connect(db_path)
     db.execute("INSERT INTO default_teams (name, full_name) VALUES ('Alpha', 'Alpha')")
