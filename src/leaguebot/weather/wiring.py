@@ -84,21 +84,21 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
 
 def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
     """Sign weather's part of judging an amendment up to the hook a round's amendment is judged
-    through, handed the database's path, and the horizons where the amendment is asked outside a
-    save (in one, it reads them on the save's connection).
+    through, handed the database's path, and the horizons and whether weather is on where the
+    amendment is asked outside a save. In a save, which awaits nothing but its own connection, the
+    module reads both on the save's connection.
 
-    Whether weather is on is asked of the module switch's reader (`bot.module_service`) as the
-    judgement is asked for, a read of its own that holds no connection of the save's, so that
-    what the confirmation promises of the redraw is what the switch says."""
+    Outside a save, whether weather is on is asked of the module switch's reader
+    (`bot.module_service`) as the judgement is asked for, so that what the confirmation promises of
+    the redraw is what the switch says."""
     from leaguebot.weather.services import forecast_amendment, weather_config_service
 
     async def judged(*handed: Any, **context: Any) -> AmendmentPart:
-        # Asked outside a save (no connection handed), the horizons are read here; in one, the
-        # module reads them on the save's connection.
-        windows = await weather_config_service.windows_read(bot.db_path) if handed[0] is None else None
+        outside_a_save = handed[0] is None
+        windows = await weather_config_service.windows_read(bot.db_path) if outside_a_save else None
+        weather_on = await bot.module_service.is_weather_enabled() if outside_a_save else None
         return await forecast_amendment.amendment_judged(
-            *handed, db_path=bot.db_path, windows=windows,
-            weather_on=await bot.module_service.is_weather_enabled(), **context,
+            *handed, db_path=bot.db_path, windows=windows, weather_on=weather_on, **context,
         )
 
     bot.amendment_judged.subscribe(judged)
