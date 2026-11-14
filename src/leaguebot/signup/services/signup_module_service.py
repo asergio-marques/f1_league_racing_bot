@@ -1045,22 +1045,30 @@ async def configuration_confirmed_on(
 
 
 async def driver_signup_on(
-    db: aiosqlite.Connection, accounts: list[str]
+    db: aiosqlite.Connection, accounts: list[str], *, season_id: int | None = None
 ) -> aiosqlite.Row | None:
     """The signup record that is the driver's, read on *db*, or None where they have none.
 
     A driver's signups are kept under the account each was made from, so *accounts* are every
     account the driver has held (core's `accounts_of_profile`), and the signup is chosen across all
     of them in `SIGNUP_PRECEDENCE_SQL`'s order: records are kept, never overwritten, and an
-    approved one outranks a later one that was not.
+    approved one outranks a later one that was not. Where *season_id* is named, only the signups
+    kept under that season are considered.
+
+    This is the signup that stands for the driver. `get_record`, `get_record_on`,
+    `mark_approved_on` and `set_total_lap_ms_on` choose differently on purpose: the latest on one
+    account, the signup under review, which a review, a correction or an approval acts upon.
     """
     if not accounts:
         return None
+    where = f"discord_user_id IN ({', '.join('?' * len(accounts))})"
+    params: list[Any] = list(accounts)
+    if season_id is not None:
+        where += " AND season_id = ?"
+        params.append(season_id)
     cursor = await db.execute(
-        "SELECT * FROM signup_records "
-        f"WHERE discord_user_id IN ({', '.join('?' * len(accounts))}) "
-        f"ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1",
-        accounts,
+        f"SELECT * FROM signup_records WHERE {where} ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1",
+        params,
     )
     return await cursor.fetchone()
 
