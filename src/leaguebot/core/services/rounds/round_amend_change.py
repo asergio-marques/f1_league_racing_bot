@@ -604,7 +604,7 @@ def _round_change(
             if not results_left_to_advance(
                 test_mode=bool(found["test_mode"]),
                 results_on=await modules.is_results_enabled(),
-                weather_on=await modules.is_weather_enabled(),
+                weather_on=weather_on,
             ):
                 scheduler.schedule_result_submission_jobs(
                     [rnd], division_meta={rnd.division_id: (season_number, tier)}
