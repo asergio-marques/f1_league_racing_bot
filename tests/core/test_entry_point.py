@@ -353,13 +353,17 @@ _WINDOWS_PARTS = (
 #: Each module's part of a round amended, as the module names it: the moment's hook on the bot,
 #: the module, the subscriber, and what the test calls it, in the order the builder signs them up.
 _AMENDMENT_PARTS = (
+    ("amendment_judged", "leaguebot.attendance.services.check_in.check_in_amendment",
+     "amendment_judged", "attendance's judgement"),
+    ("amendment_judged", "leaguebot.weather.services.forecast_amendment", "amendment_judged",
+     "weather's judgement"),
     ("round_amended", "leaguebot.weather.services.phase_withdrawal", "round_amended_on",
      "weather's withdrawal"),
     ("round_amended", "leaguebot.attendance.services.check_in.check_in_amendment", "round_amended_on",
      "attendance's reopening"),
     ("round_armed", "leaguebot.attendance.services.check_in.check_in_amendment", "amendment_posts",
      "attendance's posts"),
-    ("round_armed", "leaguebot.weather.services.forecast_changes", "amendment_posts",
+    ("round_armed", "leaguebot.weather.services.forecast_amendment", "round_armed",
      "weather's posts"),
     ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
      "weather's clean-ups"),
@@ -501,6 +505,9 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#287: neither module yet signs up to amendment_judged, "
+                   "nor attendance to amendment_step_failure, nor weather's arming to round_armed "
+                   "from forecast_amendment")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -513,12 +520,14 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     module plans, results' deletion of a submission channel, attendance's take-down of a call,
     attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
     forecast note and results' results note. A round's timing windows read: attendance's window,
-    then weather's, each handed whether the round is being amended. A round amended: inside the
+    then weather's, each handed whether the round is being amended. A round amended: as it is judged,
+    attendance's judgement of its check-in, then weather's of its forecasts; inside the
     save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's reopening
     of its check-in; as the round is armed again, the posts each owes, attendance's then weather's,
     then the clean-ups due a day after the round, weather's then attendance's; the steps each
     defines, weather's then attendance's, under the names the amendment gives them today; and the
-    words an outcome gives a step that was not done, weather's for a forecast. A season's end: what
+    words an outcome gives a step that was not done, weather's for a forecast, then attendance's
+    for its check-in. A season's end: what
     stands in its way, results' refusal while a round is being amended; the drivers it returns,
     signup's ending of their wizards in the save, and the jobs signup plans for a driver returned;
     the jobs that close what a module holds open,
@@ -551,6 +560,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     from leaguebot.core.models.cancellation import SCOPE_ROUND
     from leaguebot.results.services.review import review_state
     from leaguebot.signup.services import signup_views
+    from leaguebot.attendance.services.check_in import check_in_amendment
     from leaguebot.weather.services import forecast_changes
 
     called: list[str] = []
@@ -582,6 +592,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
                             raising=False)
     monkeypatch.setattr(forecast_changes, "forecast_failure",
                         lambda *_args, **_kwargs: called.append("weather's words"))
+    monkeypatch.setattr(check_in_amendment, "check_in_failure",
+                        lambda *_args, **_kwargs: called.append("attendance's words"),
+                        raising=False)
     for _hook, module_name, name, part in _SEASON_END_PARTS:
         async def season_end_spy(*_args, part=part, **_kwargs):
             called.append(part)
@@ -641,7 +654,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     called.clear()
     await bot.round_windows_read.call(amending=True)
     assert called == ["attendance's window, amending True", "weather's window, amending True"]
-    for hook in ("round_amended", "round_armed", "round_clean_ups_due"):
+    for hook in ("amendment_judged", "round_amended", "round_armed", "round_clean_ups_due"):
         called.clear()
         await getattr(bot, hook).call(None, 0)
         assert called == [part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook]
@@ -655,7 +668,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     ]
     called.clear()
     bot.amendment_step_failure.call(None)
-    assert called == ["weather's words"]
+    assert called == ["weather's words", "attendance's words"]
     for hook in dict.fromkeys(each[0] for each in _SEASON_END_PARTS):
         called.clear()
         await getattr(bot, hook).call()
