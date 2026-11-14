@@ -249,7 +249,11 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         setting_change(
-            forecast_channel_setting(modules=bot.module_service, seasons=bot.season_service)
+            forecast_channel_setting(
+                modules=bot.module_service,
+                seasons=bot.season_service,
+                channel_uses_read=bot.channel_uses_read,
+            )
         )
     )
     bot.change_queue.register(

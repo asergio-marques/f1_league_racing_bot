@@ -1531,7 +1531,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
-    ("weather/services/weather_settings.py", "forecast_channel_setting.check"): (1, PASS["weather"]),
 }
 
 
