@@ -829,14 +829,35 @@ async def amendment_clean_ups(
                                             "standing": standing}),)
 
 
+def forecast_kept(view: StepView) -> str:
+    """The line for a forecast whose deletion a league admin discarded at a season's end, with its
+    link where the job kept one: it stands in its channel, to be deleted by hand."""
+    result = view.result or {}
+    message = result.get("message_id", view.payload.get("message_id"))
+    if "guild_id" in result and message is not None:
+        where = f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/{message}"
+    else:
+        where = f"message {message} in <#{result.get('channel_id')}>"
+    return (
+        f"The Phase {view.payload.get('phase', result.get('phase'))} forecast of round "
+        f"{view.payload.get('round_number', '?')} could not be deleted: delete it by hand "
+        f"({where})."
+    )
+
+
 def season_end_steps(
     *, now: Callable[[], datetime], line_prefix: str | None = None
 ) -> dict[str, Step]:
     """The job weather defines for a season's end, by name: the deletion of a forecast
     (`DELETE_FORECAST`), which the season end's `flush_forecasts` plans for each forecast posted
     under test mode. *now* is the queue's clock; *line_prefix* is the closing line some changes
-    write, which a forecast's deletion has no use for. Subscribed to core's `season_end_steps`."""
-    return {DELETE_FORECAST: forecast_steps(now=now)[DELETE_FORECAST]}
+    write, which a forecast's deletion has no use for. A deletion a league admin discards is named
+    by the step's own words (`forecast_kept`). Subscribed to core's `season_end_steps`."""
+    return {
+        DELETE_FORECAST: dataclasses.replace(
+            forecast_steps(now=now)[DELETE_FORECAST], not_done=forecast_kept
+        )
+    }
 
 
 def amendment_steps(

@@ -35,9 +35,6 @@ log = logging.getLogger(__name__)
 #: The jobs every end of a season shares, as the stop notice, the tests and ``StepView`` know them.
 REVOKE_ROLES = "revoke_roles"
 FLUSH_FORECASTS = "flush_forecasts"
-#: Weather's job that deletes one forecast, which the outcome names where one was left undone
-#: (weather defines the step and plans it for each forecast `flush_forecasts` clears).
-DELETE_FORECAST = "delete_forecast"
 DISCARD_PORTRAITS = "discard_portraits"
 DISCARD_BACKUP = "discard_backup"
 
@@ -311,7 +308,7 @@ def shared_steps(
             DISCARD_PORTRAITS, StepKind.ACT, discard_portraits, describe=describe_portraits
         ),
         DISCARD_BACKUP: discard_backup_step(scheduler),
-        # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
+        # A module's post made in parts has its deletion plan one for each earlier part.
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         **close_signup_steps(roles, season_end_steps=season_end_steps),
     }

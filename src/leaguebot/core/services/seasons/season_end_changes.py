@@ -85,7 +85,6 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_BACKUP,
-    DELETE_FORECAST,
     DISCARD_PORTRAITS,
     FLUSH_FORECASTS,
     REVOKE_ROLES,
@@ -212,22 +211,6 @@ FORECASTS_KEPT = (
     "forecast channel."
 )
 PORTRAITS_KEPT = "The portraits of the drivers deleted could not be discarded."
-
-
-def _forecast_kept(view: StepView) -> str:
-    """The line for a forecast whose deletion a league admin discarded, with its link where the
-    job kept one: it stands in its channel, to be deleted by hand."""
-    result = view.result or {}
-    message = result.get("message_id", view.payload.get("message_id"))
-    if "guild_id" in result and message is not None:
-        where = f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/{message}"
-    else:
-        where = f"message {message} in <#{result.get('channel_id')}>"
-    return (
-        f"The Phase {view.payload.get('phase', result.get('phase'))} forecast of round "
-        f"{view.payload.get('round_number', '?')} could not be deleted: delete it by hand "
-        f"({where})."
-    )
 
 
 def completion_in_hand_refusal(season_number: Any, job: int) -> str:
@@ -427,8 +410,6 @@ def shared_not_done(
             roles.append(f"<@{each['user_id']}>")
         elif view.name == FLUSH_FORECASTS:
             lines.append(FORECASTS_KEPT)
-        elif view.name == DELETE_FORECAST:
-            lines.append(_forecast_kept(view))
         elif view.name == standing_posts.DELETE_REPLACED:
             # A calendar's earlier post is named by the cancellation's own outcome; here only a
             # part of a forecast posted in parts.
