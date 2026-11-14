@@ -952,10 +952,13 @@ async def post_review_panel(
     return True
 
 
-def correction_lapse_line(lapse: dict[str, Any], *, panel: bool, gone: bool = False) -> str:
+def correction_lapse_line(
+    lapse: dict[str, Any], *, panel: bool, gone: bool = False, driver_gone: bool = False,
+) -> str:
     """The log channel's record of a correction's lapse, naming the manager who asked and the
     driver (*lapse*'s ``manager`` and ``driver``), and whether a fresh review panel is in the
-    driver's channel, or that the channel was gone and the signup ended."""
+    driver's channel, or that the channel was gone and the signup ended, or (*driver_gone*) that
+    the driver had withdrawn or left by the time the panel came to be posted, so none was."""
     driver = lapse["driver"]
     return abandoned_line(
         str(lapse["manager"]),
@@ -965,6 +968,9 @@ def correction_lapse_line(lapse: dict[str, Any], *, panel: bool, gone: bool = Fa
             f"{driver}'s signup channel was gone, so no fresh review panel could be posted "
             "and their signup is ended."
             if gone else
+            f"{driver} had gone by the time the fresh review panel came to be posted, "
+            "so no fresh review panel was posted."
+            if driver_gone else
             f"{driver} is back in the approval queue"
             + ("; a fresh review panel is in their channel." if panel else ".")
         ),
@@ -985,7 +991,7 @@ def panel_change(
     review panel (users may be notified, never a group, #362), divided into messages Discord takes
     where it is long, and only while the driver still awaits their review (a panel carrying a
     correction's lapse still writes the lapse's record where the driver has gone, posting
-    nothing); then `clear_mark` takes
+    nothing, and the parts of a divided panel a refused try sent are removed); then `clear_mark` takes
     the ⏳ off the last answer, the mark outliving the whole hand-over. The payload is ``user_id``,
     ``channel_id``, the ``mark`` and, where a correction's lapse asked it, the ``lapse`` whose
     record the job writes once the panel stands. A channel gone from the server is nothing to post in: the signup ends instead
@@ -1037,19 +1043,19 @@ def panel_change(
             ctx.step_payload["channel_id"]
         )
 
-    async def owed_or_to_record(ctx: StepContext) -> bool:
-        """The step's `still_due`: a panel carrying a correction's lapse always runs, for the
-        lapse happened and its record is written whether or not the panel is still owed, which
-        `post_panel` judges itself; any other panel is dropped where it is no longer owed."""
-        return ctx.step_payload.get("lapse") is not None or await owed(ctx)
-
     @posts_in_a_job
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
         lapse = ctx.step_payload.get("lapse")
-        if lapse is not None and not await owed(ctx):
+        if not await owed(ctx):
+            # Judged here, not in a `still_due`: the parts a refused try of a divided panel
+            # sent are the driver's answers with no buttons, and go with the panel.
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
             return StepResult(
-                result={"dropped": True}, lines=(correction_lapse_line(lapse, panel=False),),
+                result={"dropped": True},
+                lines=() if lapse is None else (
+                    correction_lapse_line(lapse, panel=False, driver_gone=True),
+                ),
             )
         channel = await _signup_channel_or_gone(ctx, int(ctx.step_payload["channel_id"]))
         if channel is None:
@@ -1086,8 +1092,7 @@ def panel_change(
         plan=plan,
         steps={
             POST_PANEL: Step(
-                POST_PANEL, StepKind.ACT, post_panel, still_due=owed_or_to_record,
-                describe=describe_panel,
+                POST_PANEL, StepKind.ACT, post_panel, describe=describe_panel,
                 undiscardable=would_wait_unreviewed,
             ),
             typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),

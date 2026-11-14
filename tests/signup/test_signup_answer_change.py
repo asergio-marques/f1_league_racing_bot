@@ -740,13 +740,6 @@ LAPSE_RECORDED = (
 )
 
 
-#: Why a lapse case fails until the record of a lapse whose driver went says so (product-3-1).
-_LAPSE_SAYS_HE_WENT = (
-    "#286: a correction lapse whose driver went before its panel still records him as back in "
-    "the approval queue, not that he had gone and no fresh review panel was posted"
-)
-
-
 def _lapse_detail(league: SeasonLeague) -> str:
     """The lines beneath the log channel's record of Kimi's correction lapsing, joined."""
     _, after = league.log().split(LAPSE_RECORDED, 1)
@@ -763,15 +756,9 @@ def _lapse_detail(league: SeasonLeague) -> str:
     pytest.param(
         _submitted_at_length, _press_cancel,
         id="after part of his divided panel is posted, he withdraws",
-        marks=pytest.mark.xfail(strict=True, reason=(
-            "#286: the earlier parts of a divided review panel stay in the driver's channel "
-            "once the panel is dropped for a driver who withdrew"
-        )),
     ),
-    pytest.param(_lapsed, _press_cancel, id="after his correction lapses, he withdraws",
-                 marks=pytest.mark.xfail(strict=True, reason=_LAPSE_SAYS_HE_WENT)),
-    pytest.param(_lapsed, _leave, id="after his correction lapses, he leaves",
-                 marks=pytest.mark.xfail(strict=True, reason=_LAPSE_SAYS_HE_WENT)),
+    pytest.param(_lapsed, _press_cancel, id="after his correction lapses, he withdraws"),
+    pytest.param(_lapsed, _leave, id="after his correction lapses, he leaves"),
 ])
 async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, going):
     """Kimi is owed a review panel in his channel (*waiting*: his signup just submitted, or his
