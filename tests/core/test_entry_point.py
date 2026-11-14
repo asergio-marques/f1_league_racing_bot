@@ -384,8 +384,8 @@ _SEASON_END_PARTS = (
      "season_end_refusal", "results' refusal of a season's end"),
     ("drivers_returned", "leaguebot.signup.services.closing_steps", "drivers_returned_on",
      "signup's wizards ended"),
-    ("test_mode_flushed", "leaguebot.weather.services.forecast_cleanup_service",
-     "forecast_deletes", "weather's forecast deletions"),
+    ("test_mode_flushed", "leaguebot.weather.services.forecast_changes", "test_mode_flushed_on",
+     "weather's forecast flush"),
     ("drivers_deleted", "leaguebot.image.services.driver_portrait_service", "discard_portraits",
      "image's portraits discarded"),
 )
@@ -508,7 +508,9 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 @pytest.mark.xfail(
     strict=True,
     reason="#287: weather hands a season's end only `delete_forecast`, its forecast's parts being "
-    "deleted by core's shared `delete_replaced`, not weather's own `delete_forecast_part`",
+    "deleted by core's shared `delete_replaced`, not weather's own `delete_forecast_part`, and "
+    "core defines `flush_forecasts` itself, weather answering the test-mode flush with its "
+    "deletions rather than with `test_mode_flushed_on`'s `flush_forecasts` job",
 )
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
@@ -535,7 +537,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     the jobs that close what a module holds open,
     signup's close of its window; the steps each module defines for it, signup's notice and close,
     its window's close, the Sign Up button's deletion and the closed post, then weather's deletion
-    of a forecast and of a forecast's earlier part; the jobs that clear what test mode posted, weather's; and the drivers deleted,
+    of a forecast, of a forecast's earlier part and the clearing of the forecasts posted under test
+    mode; the jobs that clear what test mode posted, weather's planning of that clearing; and the
+    drivers deleted,
     image's discard of their portraits. A season, division or round deleted, each module deleting
     its own rows: of the rounds, attendance's, results' then weather's; of the divisions,
     attendance's then results'; of the season, results' then signup's. A driver deleted, each module
@@ -686,7 +690,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
             "close_signup", "close_window", "delete_button", "disarm_timers", "post_closed",
             "signup_notice",
         ],
-        ["delete_forecast", "delete_forecast_part"],
+        ["delete_forecast", "delete_forecast_part", "flush_forecasts"],
     ]
     assert not hasattr(bot, "season_end_untold")
     for hook in dict.fromkeys(each[0] for each in _DELETE_PARTS):
