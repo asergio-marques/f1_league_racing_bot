@@ -107,6 +107,10 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **A restart keeps them too.** When the bot starts again with forecasts still outstanding, it works out which ones it missed from your settings rather than from 5 days, 2 days and 2 hours. It used to use the standard timings, which meant a longer phase 1 was never published at all and a shorter one was published days early; it no longer does. It only catches up on rounds still to come, though: if you cancelled a round or a division, or the race itself went by while the bot was down, that round gets no forecast. A mystery round whose notice fell due while the bot was down gets the notice when the bot starts, on the same terms.
 
+> **A mystery round can be changed to another type.** A mystery round's notice is no forecast, so it never blocks an amendment: give the round another format and a circuit together and it is allowed, the notice comes down as a job of the amendment whatever weather's switch, no invalidation notice is posted, and the round's forecasts follow at your timings, at once for any whose moment has passed. A notice Discord refuses to delete stops the queue until it is retried or discarded. Moving a mystery round's date, leaving it a mystery round, keeps its notice as it stands. A mystery round's weather is never revealed by amending it: the game sets it on the day.
+>
+> **The confirmation names only forecasts that were drawn.** Where a round has none it says nothing about forecasts, and with weather off it names each forecast withdrawn without promising a redraw.
+
 > **A round's circuit is fixed once its first forecast is out.** That forecast was drawn for that circuit and cannot be unsaid, so `/round amend` refuses a bare track change from then on — and refuses a format change once the second forecast is out, that one having been drawn for the round's sessions. Moving the round in the same change puts the forecasts back in question and lets both through, which is the way to correct a circuit late.
 
 To see what is currently set, run `/weather config view`. It answers privately with all three, at any time: with no season, while one is being set up, or mid-season, when what it shows is what the season is running on. Both season reviews list them too, in the same words.
@@ -130,7 +134,7 @@ A longer session gets more slots, so its weather has more room to change. None o
 
 > **Every forecast is posted by the change queue, in two steps.** A phase is first drawn and recorded, its calculation going to the log channel in the same step, and its forecast is posted in a step after it. A forecast Discord refuses, or whose forecast channel has been unset or deleted, stops the queue (the notice names `/weather channel` where the channel is the fault): put it right and press Retry, and the forecast is posted as text. The earlier phase's forecast is deleted by a job of its own once the new one is up, so the earlier forecast stands while anything is stopped. A phase or forecast whose turn on the queue comes after the race has started is dropped, nothing drawn or posted for it. If a league admin discards a forecast's post, the draw stands, recorded and logged, and nothing posts it again. See [When a job stops the queue](configuring-the-core-bot.md#when-a-job-stops-the-queue).
 
-**A round needs a track for weather to be possible.** The chance of rain is drawn from the circuit, so a round with no track recorded cannot be forecast. The bot stops — and says nothing, anywhere you can see. Nothing reaches the forecast channel and nothing reaches the log channel; only the bot's own log file on the host records it. Mystery rounds are the deliberate exception.
+**A round needs a track for weather to be possible.** The chance of rain is drawn from the circuit, so a round with no track recorded cannot be forecast. Phase 1 is blocked for that round, and the log channel says so, naming the round as "round 3 in **Pro**" and the reason. It does the same where a circuit's spread is too wide for a draw to be possible. Nothing reaches the forecast channel. Mystery rounds are the deliberate exception.
 
 ---
 
@@ -147,7 +151,7 @@ There are **six** weather drawing files, not three: one per phase, a sprint vers
 
 Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the weather symbols, and the flags a forecast draws for the round's country. A forecast leads with the **grand prix** and puts the **circuit** on the line beneath it, and names the country nowhere: that is what the flag is for.
 
-> **A picture never delays or changes a forecast.** The bot works the weather out, saves it and logs it first, and only then draws. If the drawing fails for any reason — the module off, a drawing file the bot will not accept, the converter missing — the text forecast is posted exactly as it always was, and the reason goes to the log channel. Your drivers always get a forecast.
+> **A picture never delays or changes a forecast.** The bot works the weather out, saves it and logs it first, and only then draws. If the drawing fails for any reason — a drawing file the bot will not accept, the converter missing, a setting or round it cannot read, or any fault in the drawing — the text forecast is posted exactly as it always was, and the reason goes to the log channel. Where you have switched pictures off no picture was due, so nothing is recorded. Your drivers always get a forecast.
 
 ---
 
@@ -231,11 +235,11 @@ Worth running through before the season is approved.
 | What you see | Usually means |
 |---|---|
 | No forecast at all for a division | No forecast channel set for it, or the module is off |
-| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season placements-review` |
+| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and the log channel says Phase 1 was blocked for it: set one with `/round amend` |
 | A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
 | A driver asks when the next forecast is due | The posts do not say, by design — they promise only that an accurate one follows later. `/weather config view` gives you your own deadlines |
 | `/weather config` refused | Either the season's placements are confirmed, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one round | It was amended twice after a forecast went out. One amendment posts one notice, however many things it changes |
-| Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter |
+| Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter. With pictures switched off, text is what was due and nothing is recorded |
 | A forecast that seems too wet for the stated chance of rain | Normal. The chance of rain shifts the odds; it does not decide the outcome |
 | Nothing in the log channel either | The module is off, or the season is not approved yet — nothing is scheduled until it is |
