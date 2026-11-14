@@ -639,10 +639,6 @@ async def test_a_forecast_whose_race_passed_while_its_post_stood_stopped_is_drop
     assert await _done(league, 2) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: a draw retried after its race is still drawn, recorded and logged",
-)
 async def test_a_draw_that_stood_stopped_until_its_race_passed_is_dropped_when_retried(tmp_path):
     """Phase 1 asked, and its draw's save fails, stopping the queue at the draw; the queue stays
     stopped past round 3's race. The fault mended, Retry: nothing drawn or recorded, no

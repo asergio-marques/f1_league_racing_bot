@@ -214,6 +214,19 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             return f"recording the mystery round notice of {where}"
         return f"drawing the Phase {phase} forecast of {where}"
 
+    async def draw_still_due(ctx: StepContext) -> bool:
+        """A draw stopped before its race and tried after it is dropped: nothing drawn, recorded
+        or logged. The race time is judged at the queue's clock, as the change judges it."""
+        phase = int(_value(ctx, "phase"))
+        async with get_connection(ctx.db_path) as db:
+            rnd = await weather_round_on(db, int(_value(ctx, "round_id")))
+            weather_on = await weather_enabled_on(db)
+        reason = _not_due(rnd, phase, weather_on, now(), posting=False)
+        if reason is not None:
+            log.info("The %s of round %s is no longer to be drawn: %s.", _occasion(phase),
+                     _value(ctx, "round_id"), reason)
+        return reason is None
+
     async def post_still_due(ctx: StepContext) -> bool:
         phase = int(_value(ctx, "phase"))
         async with get_connection(ctx.db_path) as db:
@@ -415,7 +428,9 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         return "finding the forecasts to delete"
 
     return {
-        DRAW_FORECAST: Step(DRAW_FORECAST, StepKind.SAVE, draw, describe=describe_draw),
+        DRAW_FORECAST: Step(
+            DRAW_FORECAST, StepKind.SAVE, draw, still_due=draw_still_due, describe=describe_draw,
+        ),
         POST_FORECAST: Step(
             POST_FORECAST, StepKind.ACT, post, still_due=post_still_due, describe=describe_post,
             record=record_post,
