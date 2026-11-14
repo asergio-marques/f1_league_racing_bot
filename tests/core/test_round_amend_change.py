@@ -2680,3 +2680,190 @@ async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp
     assert reposts.posted == [(R3, PRO)]
     assert len(_success_lines(league)) == 1
     assert [line for line in _log_lines(league) if "/attendance post-check-in" in line] == []
+
+
+# ── Every job a league admin discards is named in today's words ────────────────────────────
+#
+# Each case is the steps of one amendment of Pro's round 3 as its outcome reads them: the step's
+# name, its payload, and its result, "discarded" marking the job a league admin discarded. The
+# names are the queue's own, kept as they are stored, whichever module comes to name them.
+
+_LINK = "https://discord.com/channels/5/6/7"
+_VANISHED = (
+    "check-in call", "it could not be posted again and none can be seen; post it by hand with "
+    "`/attendance post-check-in` once the cause is cleared (or the check-in channel is set), "
+    "and see the log channel",
+)
+_EARLIER_KEPT = (
+    "check-in call", "it could not be posted again, so the earlier call was kept and its answers "
+    "count; see the log channel",
+)
+_GONE = {"discarded": True}
+
+_UNDONE_STEPS = [
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11, 12]})],
+        [("check-in call", "2 message(s) could not be deleted and must be removed by hand "
+          "(ids 11, 12)")],
+        id="take-down-call",
+    ),
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11]}),
+         ("post_call", {}, {"vanished": True})],
+        [_VANISHED], id="take-down-call-and-no-call-seen",
+    ),
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11]}),
+         ("post_call", {}, {"earlier_left": True})],
+        [_EARLIER_KEPT], id="take-down-call-and-the-earlier-call-kept",
+    ),
+    pytest.param(
+        [("take_down_call", {}, {**_GONE, "undeleted": [11]}),
+         ("post_call", {}, {**_GONE, "vanished": True})],
+        [_VANISHED], id="take-down-and-post-call-named-once",
+    ),
+    pytest.param(
+        [("post_call", {}, {**_GONE, "vanished": True})], [_VANISHED], id="post-call-none-seen",
+    ),
+    pytest.param(
+        [("post_call", {}, {**_GONE, "earlier_left": True})], [_EARLIER_KEPT],
+        id="post-call-earlier-kept",
+    ),
+    pytest.param(
+        [("post_call", {}, _GONE)],
+        [("check-in call", "the call could not be posted again, and a league admin discarded it; "
+          "post it with `/attendance post-check-in`")],
+        id="post-call",
+    ),
+    pytest.param(
+        [("delete_forecast", {},
+          {**_GONE, "phase": 1, "guild_id": 5, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the withdrawn Phase 1 forecast could not be deleted, and a league "
+          f"admin discarded it; delete it by hand ({_LINK})")],
+        id="delete-withdrawn-forecast",
+    ),
+    pytest.param(
+        [("delete_forecast", {"superseded": True},
+          {**_GONE, "phase": 2, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the superseded Phase 2 forecast could not be deleted, and a league "
+          "admin discarded it; delete it by hand (message 7 in <#6>)")],
+        id="delete-superseded-forecast-with-no-link",
+    ),
+    pytest.param(
+        [("delete_forecast", {"clean_up": True},
+          {**_GONE, "phase": 3, "guild_id": 5, "channel_id": 6, "message_id": 7})],
+        [("forecast channel", "the Phase 3 forecast could not be deleted a day after the round, "
+          f"and a league admin discarded it; delete it by hand ({_LINK})")],
+        id="delete-forecast-at-the-clean-up",
+    ),
+    pytest.param(
+        [("notify_invalidation", {}, _GONE)],
+        [("forecast channel", "the notice that its forecasts no longer stand could not be posted, "
+          "and a league admin discarded it")],
+        id="notify-invalidation",
+    ),
+    pytest.param(
+        [("rerun_phase", {"phase": 2}, _GONE)],
+        [("Phase 2 forecast", "not drawn, and a league admin discarded it; it is drawn when the "
+          "bot next starts, while the round is still to be run")],
+        id="rerun-phase",
+    ),
+    pytest.param(
+        [("distribute", {}, _GONE)],
+        [("check-in deadline", "the reserves were not distributed, and a league admin discarded "
+          "it; it is run when the bot next starts, while the call stands")],
+        id="distribute",
+    ),
+    pytest.param(
+        [("lock_call", {}, _GONE)],
+        [("check-in call", "the buttons could not be taken off the call at its deadline, and a "
+          "league admin discarded it; the placements stand, and the call can be taken down by "
+          "hand")],
+        id="lock-call",
+    ),
+    pytest.param(
+        [("announce", {}, _GONE)],
+        [("reserve announcement", "the reserves' announcement could not be posted, and a league "
+          "admin discarded it; the placements stand")],
+        id="announce",
+    ),
+    pytest.param(
+        [("clean_up_forecast", {"standing": [2]}, _GONE)],
+        [("forecast channel", "the Phase 2 forecast was not deleted a day after the round, and a "
+          "league admin discarded it; it is deleted when the bot next starts")],
+        id="clean-up-one-forecast",
+    ),
+    pytest.param(
+        [("clean_up_forecast", {"standing": [1, 2]}, _GONE)],
+        [("forecast channel", "the Phase 1 and 2 forecasts were not deleted a day after the "
+          "round, and a league admin discarded it; they are deleted when the bot next starts")],
+        id="clean-up-two-forecasts",
+    ),
+    pytest.param(
+        [("clean_up_check_in", {}, _GONE)],
+        [("check-in call", "the check-in was not taken down a day after the round, and a league "
+          "admin discarded it; it is taken down when the bot next starts")],
+        id="clean-up-check-in",
+    ),
+    pytest.param(
+        [("delete_message", {"what": "check-in call", "channel_id": 9},
+          {**_GONE, "link": _LINK})],
+        [("check-in call", "the check-in call could not be deleted a day after the round, and a "
+          f"league admin discarded it; delete it by hand ({_LINK})")],
+        id="delete-message",
+    ),
+    pytest.param(
+        [("delete_message", {"channel_id": 9}, _GONE)],
+        [("check-in call", "the message could not be deleted a day after the round, and a league "
+          "admin discarded it; delete it by hand (in <#9>)")],
+        id="delete-message-with-no-link",
+    ),
+    pytest.param(
+        [("draw_forecast", {"phase": 1}, _GONE)],
+        [("Phase 1 forecast", "not drawn, and a league admin discarded it; it is drawn when the "
+          "bot next starts, while the round is still to be run")],
+        id="draw-forecast",
+    ),
+    pytest.param(
+        [("post_forecast", {}, {**_GONE, "phase": 2})],
+        [("Phase 2 forecast", "drawn but not posted, and a league admin discarded it; the draw "
+          "stands in the log channel, and nothing posts it again")],
+        id="post-forecast",
+    ),
+    pytest.param(
+        [("delete_replaced", {"what": "Phase 1 forecast", "channel_id": 6}, _GONE)],
+        [("forecast channel", "a part of the Phase 1 forecast could not be deleted, and a league "
+          "admin discarded it; delete it by hand (in <#6>)")],
+        id="delete-a-part-of-a-forecast",
+    ),
+]
+
+
+@pytest.mark.parametrize("steps, named", _UNDONE_STEPS)
+async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, steps, named):
+    """The bot is the one the entry point builds, every module's hooks signed up. Pro's round 3
+    is amended, and a league admin discards one of the jobs the amendment planned: the check-in
+    call's take-down or repost, a forecast's deletion, the invalidation notice, a phase's redraw,
+    the reserves' distribution, the call's lock, the reserve announcement, a clean-up, a message's
+    deletion, a forecast's draw or post, or a part of a forecast left standing. The amendment's
+    outcome reads "Round amended successfully", then, under "Not done", one line per job naming
+    Pro, the thing left undone and what to do about it, word for word as today; a take-down whose
+    repost is discarded too is named once, by the take-down."""
+    from leaguebot.core.db.database import run_migrations
+    from leaguebot.core.services.queue.change_types import OutcomeContext, StepView
+    from tests.support.change_queue import league_bot
+
+    path = str(tmp_path / "words.db")
+    await run_migrations(path)
+    bot = await league_bot(path)
+    [amend] = [kind for kind in bot.change_queue.types if kind.kind == "season.round.amend"]
+    ctx = OutcomeContext(
+        bot=bot, db_path=path, change_id=1, kind="season.round.amend",
+        payload={"division_name": "Pro", "round_number": 3}, what="`/round amend`",
+        actor_id=None, actor_name=None, named="Admin",
+        steps=tuple(StepView(name, payload, result, True) for name, payload, result in steps),
+    )
+
+    assert amend.outcome(ctx) == "✅ Round amended successfully.\n⚠️ **Not done**\n" + "\n".join(
+        f"  • **Pro** — {target}: {reason}" for target, reason in named
+    )
