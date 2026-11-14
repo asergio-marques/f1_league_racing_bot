@@ -367,11 +367,12 @@ A forecast is a standing post: posted through the standing-post handler (`post_s
 superseded by the next phase's, and deleted through the same handler (`delete_standing`) from the
 channel and message ids recorded when it was posted, whether it went as text or as a graphic. The
 mystery notice is a standing post of the same kind. Two posts are notices, sent through the notice
-handler (`send_notice`) with mentions as the weather specification's "Changes to a round after
-generation" has them: the note that a round, division or season was called off
-(`cancellation_notice`), and the notice that the forecasts no longer stand
-(`notify_invalidation`). Neither is edited or deleted later, so neither keeps its id. A phase's
-calculation and BLOCKED lines are log lines ("The forecast change and its steps").
+handler (`send_notice`, the cancellation note through core's `post_cancellation_notice`) with
+mentions as the weather specification's "Changes to a round after generation" has them: the note
+that a round, division or season was called off (`cancellation_notice`), and the notice that the
+forecasts no longer stand (`notify_invalidation`). Neither is edited or deleted later, so neither
+keeps its id. A phase's calculation and BLOCKED lines are log lines ("The forecast change and its
+steps").
 
 A forecast is found again through `forecast_messages.message_ids` and `channel_id`: a forecast
 posted in parts deletes every part, and one posted before the channel was recorded is looked for in
