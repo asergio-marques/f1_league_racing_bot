@@ -60,7 +60,6 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint

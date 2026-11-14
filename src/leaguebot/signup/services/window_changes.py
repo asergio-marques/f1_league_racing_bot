@@ -42,22 +42,19 @@ import dataclasses
 from collections.abc import Callable
 from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.models.change import (
     AuditRecord,
     PlannedStep,
-    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.drivers.driver_service import drivers_in_states, write_transition
 from leaguebot.core.services.queue.change_types import (
@@ -153,8 +150,6 @@ def armed_close_refusal(close_at: str) -> str:
         "Clear the timer with `/signup close-time cancel` if you need to close manually, or "
         "move it with `/signup close-time modify`."
     )
-
-
 
 
 def window_open_change(
