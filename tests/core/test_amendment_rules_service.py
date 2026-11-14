@@ -317,22 +317,29 @@ def test_a_round_amendment_with_any_value_changed_changes_something(changes):
 # answering an `AmendmentPart`: what it refuses, warns and notes, and what it keeps for the save.
 # `judged_with_the_modules` asks the hook and `judge_amendment` gathers the parts.
 
+#: Core hands the modules no windows of theirs: each module reads its own (#287, T7).
+_WINDOWS_HANDED = (
+    "#287: core still hands each module's part the windows by name, attendance= and weather="
+)
+
+
 def _judged_hook(*answers):
     """An `amendment_judged` hook whose subscribers answer *answers* in sign-up order, and the
-    list each records what it was handed into: the connection, the round, the changes, the
-    amended moment, the clock and the windows."""
+    list each records what it was handed into: the connection, the round, the changes, and by
+    name the amended moment, the clock and anything else core hands it."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
     handed: list[tuple] = []
     for answer in answers:
-        async def part(db, rnd, changes, *, moment, now, attendance, weather, answer=answer):
-            handed.append((db, rnd, changes, moment, now, attendance, weather))
+        async def part(db, rnd, changes, *, moment, now, answer=answer, **named):
+            handed.append((db, rnd, changes, moment, now, named))
             return answer
         hook.subscribe(part)
     return hook, handed
 
 
+@pytest.mark.xfail(strict=True, reason=_WINDOWS_HANDED)
 async def test_a_module_s_refusal_refuses_the_amendment():
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
@@ -340,17 +347,17 @@ async def test_a_module_s_refusal_refuses_the_amendment():
     hook, _handed = _judged_hook(AmendmentPart(refusals=("The module refuses it.",)))
     rnd = _round(scheduled_at=NOW + timedelta(days=30))
     verdict = await judged_with_the_modules(
-        hook, rnd, {"track_name": "Silverstone Circuit"}, now=NOW,
-        attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=None,
+        hook, rnd, {"track_name": "Silverstone Circuit"}, now=NOW, db=None,
     )
     assert not verdict.allowed
     assert verdict.refusals == ["The module refuses it."]
 
 
+@pytest.mark.xfail(strict=True, reason=_WINDOWS_HANDED)
 async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
     """A round brought to an hour away with its track changed: with the modules signed up the
     check-in deadline would refuse it, and with none core finds nothing of its own to refuse,
-    warn or keep, whatever windows it is handed."""
+    warn or keep."""
     from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
 
     hook, _handed = _judged_hook()
@@ -358,7 +365,7 @@ async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
     verdict = await judged_with_the_modules(
         hook, rnd,
         {"scheduled_at": NOW + timedelta(hours=1), "track_name": "Silverstone Circuit"},
-        now=NOW, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=None,
+        now=NOW, db=None,
     )
     assert verdict.allowed, verdict.refusals
     assert verdict.warnings == []
@@ -367,7 +374,8 @@ async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
 
 @pytest.mark.xfail(
     strict=True,
-    reason="#287: the mystery round's refusal still says to amend its format to reveal it",
+    reason="#287: the mystery round's refusal still says to amend its format to reveal it, and "
+    "core still hands each module's part the windows by name",
 )
 async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_core_s_tail():
     """Every one of core's rules refusing at once, beside two modules': the field that cannot be
@@ -397,7 +405,7 @@ async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_c
             "scheduled_at": NOW - timedelta(hours=2),
             "track_name": "Silverstone Circuit",
         },
-        now=NOW, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=None,
+        now=NOW, db=None,
     )
     assert verdict.refusals == [
         "A round's round_number cannot be amended.",
@@ -435,11 +443,12 @@ def test_a_key_kept_by_two_modules_is_a_fault():
         )
 
 
+@pytest.mark.xfail(strict=True, reason=_WINDOWS_HANDED)
 @pytest.mark.parametrize("db", [pytest.param(None, id="asked"), pytest.param(object(), id="saved")])
 async def test_the_modules_are_handed_the_amended_moment_one_utc_now_and_the_save_s_connection(db):
     """The clock and the new moment given in another zone: each module is handed both in UTC, the
     one clock core judges by, and the connection of the save, or none where it is asked outside
-    one."""
+    one; and nothing else, core naming no module's windows, which each module reads itself."""
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
 
@@ -447,12 +456,9 @@ async def test_the_modules_are_handed_the_amended_moment_one_utc_now_and_the_sav
     zone = timezone(timedelta(hours=2))
     rnd = _round(scheduled_at=NOW + timedelta(days=30))
     changes = {"scheduled_at": datetime(2026, 7, 1, 20, 0, tzinfo=zone)}
-    await judged_with_the_modules(
-        hook, rnd, changes, now=NOW.astimezone(zone),
-        attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER, db=db,
-    )
+    await judged_with_the_modules(hook, rnd, changes, now=NOW.astimezone(zone), db=db)
     assert len(handed) == 2
-    for each_db, each_rnd, each_changes, moment, now, attendance, weather in handed:
+    for each_db, each_rnd, each_changes, moment, now, named in handed:
         assert each_db is db
         assert each_rnd is rnd
         assert each_changes == changes
@@ -460,5 +466,5 @@ async def test_the_modules_are_handed_the_amended_moment_one_utc_now_and_the_sav
         assert moment.utcoffset() == timedelta(0)
         assert now == NOW
         assert now.utcoffset() == timedelta(0)
-        assert (attendance, weather) == (DEFAULT_ATTENDANCE, DEFAULT_WEATHER)
+        assert named == {}
     assert handed[0][4] is handed[1][4]
