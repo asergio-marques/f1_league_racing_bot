@@ -31,6 +31,7 @@ from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
 from leaguebot.core.utils.interaction_errors import failure_reply
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.support.change_queue import (
+    ADMIN_ROLE_ID,
     INTERACTION_CHANNEL_ID,
     MANAGER_ROLE_ID,
     SERVER_ID,
@@ -205,6 +206,35 @@ async def test_the_interaction_role_is_read_for_the_overwrites(tmp_path):
     asked = [call.args[0] for call in league.guild.get_role.call_args_list]
     assert MANAGER_ROLE_ID in asked, "the interaction role was never looked up"
     assert BASE_ROLE in asked, "the base role was never looked up"
+
+
+@pytest.mark.parametrize("admin_role", [ADMIN_ROLE_ID, None], ids=["admin-role-set", "no-admin-role"])
+async def test_the_new_channel_is_opened_to_the_manager_and_admin_roles(tmp_path, admin_role):
+    """The league's interaction role is 900; its league admin role is 901, or none is set. The
+    manager sets 700 as the signup channel and the queue runs. Discord is asked to edit 700
+    once, and the overwrites it carries let the interaction role see and write in it, and the
+    admin role as well where one is set; where none is set, no overwrite names 901."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE server_configs SET league_admin_role_id = ?", (admin_role,))
+        await db.commit()
+    channel = _channel()
+    edits = _discord(league, channel)
+
+    await _run(league, channel)
+
+    [(edited, overwrites)] = edits
+    assert edited == NEW
+    opened = {
+        target.id for target, overwrite in overwrites.items()
+        if isinstance(getattr(target, "id", None), int)
+        and overwrite.view_channel is True and overwrite.send_messages is True
+    }
+    assert MANAGER_ROLE_ID in opened
+    if admin_role is None:
+        assert ADMIN_ROLE_ID not in {getattr(target, "id", None) for target in overwrites}
+    else:
+        assert ADMIN_ROLE_ID in opened
 
 
 async def test_a_channel_already_in_use_is_refused(tmp_path):
