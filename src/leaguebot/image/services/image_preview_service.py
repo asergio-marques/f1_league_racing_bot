@@ -1435,27 +1435,14 @@ async def build_weather_preview(bot: LeagueBot, context: PreviewContext, *, phas
     Phase 0 is the mystery notice, which holds no session and carries no forecast. The
     template drawn is the one the round's own format calls for.
     """
-    from leaguebot.image.services.image_preview_data import (
-        fabricate_phase2_sessions,
-        fabricate_phase3_sessions,
-        fabricate_rain_probability,
-    )
+    from leaguebot.image.services.image_preview_data import fabricate_forecast_values
     from leaguebot.image.services.image_weather_service import build_fill_spec, resolve_drawing
 
     round_obj = context.required_round()
     round_format = _format_of(round_obj)
     is_mystery = round_format == "MYSTERY"
 
-    sessions = None
-    rain = None
-    if phase == 1:
-        rain = fabricate_rain_probability()
-    elif phase == 2:
-        sessions = fabricate_phase2_sessions(round_format)
-        rain = fabricate_rain_probability()
-    elif phase == 3:
-        sessions = fabricate_phase3_sessions(round_format)
-        rain = fabricate_rain_probability()
+    values = fabricate_forecast_values(phase, round_format) if phase in (1, 2, 3) else None
 
     drawing = resolve_drawing(
         phase=phase,
@@ -1465,8 +1452,7 @@ async def build_weather_preview(bot: LeagueBot, context: PreviewContext, *, phas
         track_name=None if is_mystery else getattr(round_obj, "track_name", None),
         race_name=await _race_name(bot, context),
         country_name=await _country_of(bot, round_obj),
-        rain_probability=rain,
-        sessions=sessions,
+        values=values,
         division_tier=context.division_tier,
         season_number=context.season_number,
     )

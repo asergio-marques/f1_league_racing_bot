@@ -4,20 +4,18 @@
 subject and differ only in which parts of it they carry, so the resolution is parameterised by
 phase rather than split six ways.
 
-Nothing here is computed. The likelihood of rain, the type drawn for each session and the
-sequence drawn within it are all read as the weather module persisted them (Principle IV), and
-every value the graphic shares with the textual forecast is produced by the renderer that
-produces it for the message (Constitution XIV.7) — ``format_rain_probability``,
-``format_session_weather_type``, ``session_type_label`` and ``format_slot_sequence``. A change
-to how the forecast renders any of them is a change to the graphic by the same stroke.
+Nothing here is computed or formatted. The weather module hands the graphic the words of its
+forecast, composed as the textual forecast composes them (:class:`ForecastValues`, Constitution
+XIV.7), so the picture and the message cannot disagree, and the image module imports nothing of
+the weather module's. A change to how the forecast words any of them reaches the graphic by the
+same stroke, with nothing here to change.
 
 Two rules of v4.7.0 shape this module:
 
 * the **selecting datum** (XIV.10) — :func:`weather_template_key` is a pure function of the
   phase and the round's format, and reads nothing else;
-* **channel markup is not content** (XIV.16) — the summary is drawn from
-  ``format_slot_sequence``, which returns the value unadorned, and never by stripping the
-  italics out of the forecast message's own rendering.
+* **channel markup is not content** (XIV.16) — the summary is handed as a value, unadorned, and
+  never by stripping the italics out of the forecast message's own rendering.
 
 See specs/042-weather-image-generation/contracts/weather-catalogues.md.
 """
@@ -26,7 +24,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping
 
 from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
@@ -34,13 +32,7 @@ from leaguebot.image.models.image_catalogues import (
     CapacityError,
     catalogue_for,
 )
-from leaguebot.weather.utils.message_builder import (
-    PHASE_DESCRIPTIONS,
-    format_rain_probability,
-    format_session_weather_type,
-    format_slot_sequence,
-    session_type_label,
-)
+from leaguebot.image.models.forecast_values import ForecastValues
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 
@@ -65,14 +57,6 @@ _SPRINT_KEYS = {
 }
 
 MYSTERY_TEMPLATE_KEY = "weather_mystery_template"
-
-# The description of the phase the graphic stands for is ``PHASE_DESCRIPTIONS``, imported
-# above and re-exported here. No weather graphic draws a phase *number* (FR-011, FR-022).
-# It moved to ``leaguebot.weather.utils.message_builder`` with issue #112, which made it the textual forecast's
-# heading as well as the graphic's corner: a graphic and the message it stands in for cannot
-# disagree about what a phase is called, for the same reason the rain probability and the slot
-# sequence are rendered there (Constitution XIV.7).
-
 
 class WeatherDataError(Exception):
     """A fatal disagreement between a round and what a weather graphic needs.
@@ -181,22 +165,18 @@ def resolve_drawing(
     track_name: str | None = None,
     race_name: str | None = None,
     country_name: str | None = None,
-    rain_probability: float | None = None,
-    sessions: Sequence[Mapping] | None = None,
+    values: ForecastValues | None = None,
     division_tier: str | int | None = None,
     season_number: str | int | None = None,
     template_key: str | None = None,
 ) -> WeatherDrawing:
     """Resolve every value a weather graphic draws.
 
-    *sessions* is what the weather module persisted, one mapping per session in the order the
-    sessions are run: ``session_type`` (the enum value), ``slot_type`` (phase 2's draw) and
-    ``slots`` (phase 3's sequence). Phase 1 and the mystery notice take none.
-
-    *rain_probability* is the coefficient phase 1 computed and stored, as a fraction. It is
-    rendered here by the renderer the phase 1 message uses, and the **phase 2 and phase 3**
-    graphics carry that same stored value though neither of their messages does — XIV.7
-    (v4.7.0) admitting a value the text path published in another message of the same flow.
+    *values* is what the weather module composed and handed: the phase's description, the
+    likelihood of rain as text, which Phases 2 and 3 carry though neither of their messages does
+    (XIV.7, v4.7.0, admitting a value the text path published in another message of the same
+    flow), and, one per session in the order the sessions are run, its label, weather type and
+    slots. Phase 1 and the mystery notice take no session.
     """
     key = template_key or weather_template_key(phase, round_format)
 
@@ -214,25 +194,17 @@ def resolve_drawing(
         )
 
     drawn: list[SessionDrawing] = []
-    if phase in (2, 3):
-        for ordinal, entry in enumerate(sessions or (), start=1):
-            name = session_type_label(str(entry.get("session_type") or ""))
-            slot_type = entry.get("slot_type")
-            weather_type = (
-                format_session_weather_type(slot_type) if slot_type else None
-            )
-            labels = list(entry.get("slots") or ()) if phase == 3 else []
+    if phase in (2, 3) and values is not None:
+        for ordinal, entry in enumerate(values.sessions, start=1):
             drawn.append(
                 SessionDrawing(
                     ordinal=ordinal,
-                    name=name,
-                    weather_type=weather_type,
-                    # The sequence as a **value**: the emphasis the phase 3 message applies is
-                    # the channel's instruction and no part of what the picture draws (XIV.16).
-                    summary=format_slot_sequence(labels) if labels else None,
+                    name=entry.label,
+                    weather_type=entry.weather_type or None,
+                    summary=entry.summary or None,
                     slots=[
                         SlotDrawing(ordinal=i, label=str(label))
-                        for i, label in enumerate(labels, start=1)
+                        for i, label in enumerate(entry.slots, start=1)
                     ],
                 )
             )
@@ -242,14 +214,12 @@ def resolve_drawing(
         phase=phase,
         division_name=division_name,
         round_number=str(round_number),
-        phase_description=PHASE_DESCRIPTIONS.get(phase),
+        phase_description=None if values is None else values.description,
         track_name=track_name or None,
         race_name=race_name or None,
         country_name=country_name or None,
         track_datum=track_name or None,
-        rain_probability=(
-            None if rain_probability is None else format_rain_probability(rain_probability)
-        ),
+        rain_probability=None if values is None else values.rain_probability,
         division_tier=None if division_tier is None else str(division_tier),
         season_number=None if season_number is None else str(season_number),
         sessions=drawn,

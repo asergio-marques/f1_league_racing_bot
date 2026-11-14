@@ -1772,7 +1772,7 @@ OWN_COLUMNS: dict[str, dict[str, frozenset[str]]] = {
         "rounds": frozenset(
             {"phase1_done", "phase2_done", "phase3_done", "mystery_notice_given"}
         ),
-        "sessions": frozenset({"phase2_slot_type", "phase3_slots"}),
+        "sessions": frozenset({"phase2_slot_type"}),
         "divisions": frozenset({"forecast_channel_id"}),
         "server_configs": frozenset({"weather_module_enabled"}),
     },
@@ -2442,7 +2442,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_standings_post.py", "_seats"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
-    ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
+    ("image/services/image_weather_post.py", "build_drawing_for_round"): (4, PASS["image"]),
 }
 
 
@@ -2504,7 +2504,6 @@ def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
 #: Today's mentions of a module's own column outside it, under the design pass that removes each:
 #: core's under its own, each module's under its own, its wiring's included.
 KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/image_weather_post.py", "build_drawing_for_round"): (5, PASS["image"]),
 }
 
 
@@ -3107,6 +3106,9 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
+    ("image/services/image_weather_post.py", "attach_forecast"):
+        "around the drawing alone of a graphic that rides on a post: a fault is handed back as a "
+        "line for the log channel, and the forecast goes out as text",
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
         "a stated exception: a put-back after a press already answered logs the error in full and "
         "leaves the message as the press's edit left it, for a report would answer the press twice",
@@ -3196,7 +3198,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "team_key_for_entry"): (1, PASS["image"]),
     ("image/services/image_verdict_post.py", "team_name_for_entry"): (1, PASS["image"]),
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (1, PASS["image"]),
-    ("image/services/image_weather_post.py", "attach_forecast"): (1, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (1, PASS["image"]),
     ("image/utils/font_metrics.py", "_faces_of"): (3, PASS["image"]),

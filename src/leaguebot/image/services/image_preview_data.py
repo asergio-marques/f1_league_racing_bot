@@ -70,6 +70,7 @@ from leaguebot.results.models.session_result import (  # noqa: E402
     QualifyingSessionResult,
     RaceSessionResult,
 )
+from leaguebot.image.models.forecast_values import ForecastSession, ForecastValues  # noqa: E402
 from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
 
 #: The three types a phase 2 forecast draws for a session.
@@ -602,53 +603,71 @@ def fabricate_attendance_records(drivers, round_ordinals, limit: int | None = No
 # ── Forecasts (FR-029 to FR-031) ──────────────────────────────────────────
 
 
-def fabricate_rain_probability() -> float:
-    """A likelihood in [0, 1], deliberately not a whole percentage (FR-029).
+#: What each phase's forecast is called, as the weather module names it when it hands a real one
+#: over: the preview fabricates its own words, so the image module needs no import of its.
+_FORECAST_DESCRIPTIONS = {
+    1: "Initial chance of rain",
+    2: "Initial session forecast",
+    3: "Final session forecast",
+}
 
-    A whole number would leave the rounding of the rendered figure unjudged, which is the
-    one thing about this value worth looking at.
+
+def fabricate_rain_probability() -> str:
+    """A likelihood of rain as text, deliberately not a round figure (FR-029).
+
+    The sample figure is 37.4%, shown rounded to the nearest whole percentage as a real forecast
+    shows it, so the rounding is the one thing about this value a manager can still judge.
     """
-    return 0.374
+    return "37%"
 
 
-def fabricate_phase2_sessions(round_format):
-    """One weather type per session, covering what the format admits (FR-030).
+def _session_label(session: SessionType) -> str:
+    """A session as a forecast names it: its type with no qualifier of its length."""
+    label = session.value.replace("_", " ").title()
+    for prefix in ("Short ", "Long ", "Full "):
+        if label.startswith(prefix):
+            return label[len(prefix):]
+    return label
 
-    A sprint round runs four sessions and shows all three types; a two-session round shows
-    two. Nothing is fabricated into existence to reach a case the format cannot hold.
+
+def _slot_summary(slots) -> str:
+    """A session's slots as one value: the bare label of a session of one weather, else the
+    labels joined by an arrow (FR-031)."""
+    return slots[0] if len(set(slots)) == 1 else " → ".join(slots)
+
+
+def fabricate_forecast_values(phase: int, round_format) -> ForecastValues:
+    """The words of a forecast a preview draws, composed as a real one's are handed over.
+
+    Phase 1 carries a likelihood alone. Phase 2 adds one weather type per session, covering what
+    the format admits: a sprint round runs four sessions and shows all three types, a
+    two-session round shows two, and nothing is fabricated into existence to reach a case the
+    format cannot hold (FR-030). Phase 3 adds a slot sequence per session, with all five
+    conditions dealt round-robin across the round's slots so every icon appears: each session is
+    given the slots its own type admits and no more, and every non-mystery format holds at least
+    five slots in all, the normal format reaching it exactly (FR-031).
     """
-    return [
-        {
-            "session_type": session.value,
-            "slot_type": PHASE2_TYPES[index % len(PHASE2_TYPES)],
-        }
-        for index, session in enumerate(sessions_for(round_format))
-    ]
-
-
-def fabricate_phase3_sessions(round_format):
-    """A slot sequence per session, with all five conditions across the round (FR-031).
-
-    Each session is given the slots its own type admits and no more, and the five conditions
-    are dealt round-robin across the round's slots so every icon appears. Every non-mystery
-    format holds at least five slots in total, so the requirement is always reachable — the
-    normal format reaches it exactly, with nothing to spare.
-    """
-    result: list[dict[str, object]] = []
+    sessions: list[ForecastSession] = []
     slot_index = 0
-    for session in sessions_for(round_format):
-        slots = []
-        for _ in range(MAX_SLOTS.get(session, 1)):
-            slots.append(PHASE3_SLOTS[slot_index % len(PHASE3_SLOTS)])
-            slot_index += 1
-        result.append(
-            {
-                "session_type": session.value,
-                "slot_type": PHASE2_TYPES[len(result) % len(PHASE2_TYPES)],
-                "slots": slots,
-            }
+    for index, session in enumerate(sessions_for(round_format) if phase >= 2 else []):
+        slots: list[str] = []
+        if phase == 3:
+            for _ in range(MAX_SLOTS.get(session, 1)):
+                slots.append(PHASE3_SLOTS[slot_index % len(PHASE3_SLOTS)])
+                slot_index += 1
+        sessions.append(
+            ForecastSession(
+                label=_session_label(session),
+                weather_type=PHASE2_TYPES[index % len(PHASE2_TYPES)].capitalize(),
+                slots=tuple(slots),
+                summary=_slot_summary(slots) if slots else None,
+            )
         )
-    return result
+    return ForecastValues(
+        description=_FORECAST_DESCRIPTIONS[phase],
+        rain_probability=fabricate_rain_probability(),
+        sessions=tuple(sessions),
+    )
 
 
 # ── Verdicts (FR-032 to FR-034) ───────────────────────────────────────────

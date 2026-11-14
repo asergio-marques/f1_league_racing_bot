@@ -14,12 +14,6 @@ from leaguebot.image.services.image_weather_service import (
     weather_template_key,
 )
 
-#: Why a drawing cannot yet be resolved from what weather hands it.
-_TAKES_COMPOSED_VALUES = (
-    "#287: resolve_drawing takes the raw likelihood and sessions and formats them itself, not "
-    "the values weather composes"
-)
-
 #: Each session as weather composes it: its label, its drawn weather type, Phase 3's slots and
 #: their summary, in the order the sessions are run.
 SPRINT_SESSIONS = (
@@ -132,28 +126,24 @@ def test_a_phase_outside_the_pipeline_is_refused():
 # ── 2. Resolution (FR-022 … FR-031) ───────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 @pytest.mark.parametrize("phase", [1, 2, 3])
 def test_the_phase_description_is_drawn_as_handed(phase):
     """The phase is named in the words weather hands the picture, and nowhere else (W288)."""
     assert _drawing(phase).phase_description == _DESCRIPTIONS[phase]
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_the_likelihood_is_never_recomputed():
     """Whatever is handed in is what is drawn; no arithmetic or rounding of the graphic's own."""
     assert _drawing(2, rain_probability="75%").rain_probability == "75%"
     assert _drawing(2, rain_probability=None).rain_probability is None
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_the_weather_type_is_read_as_phase_two_drew_it():
     """FR-026 — each session carries the type weather hands for it, in run order."""
     drawing = _drawing(2, "SPRINT", SPRINT_SESSIONS)
     assert [s.weather_type for s in drawing.sessions] == ["Sunny", "Mixed", "Rain", "Mixed"]
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_phase_three_draws_the_sequence_in_the_order_drawn():
     """FR-030 — the slots as handed, numbered from one, each session holding its own count."""
     drawing = _drawing(3, "SPRINT", SPRINT_SESSIONS)
@@ -163,7 +153,6 @@ def test_phase_three_draws_the_sequence_in_the_order_drawn():
     assert [s.slot_count for s in drawing.sessions] == [2, 1, 2, 3]
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_the_summary_is_drawn_as_handed():
     """FR-029 — the summary weather composes is drawn as it is handed, and phase 2 has none."""
     drawing = _drawing(3, "SPRINT", SPRINT_SESSIONS)
@@ -173,7 +162,6 @@ def test_the_summary_is_drawn_as_handed():
     assert [s.summary for s in _drawing(2, "SPRINT", SPRINT_SESSIONS).sessions] == [None] * 4
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_sessions_are_numbered_from_one_in_the_order_they_are_run():
     drawing = _drawing(3, "SPRINT", SPRINT_SESSIONS)
     assert [(s.ordinal, s.name) for s in drawing.sessions] == [
@@ -211,7 +199,6 @@ def test_the_mystery_notice_carries_the_heading_fields_alone():
     assert drawing.sessions == []
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_a_mystery_round_ignores_any_forecast_handed_to_it():
     """It runs no phase, so there is nothing for a forecast to be of."""
     drawing = resolve_drawing(
@@ -231,14 +218,12 @@ def test_a_mystery_round_ignores_any_forecast_handed_to_it():
 # ── 4. What no weather graphic carries (FR-011) ───────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_no_drawing_carries_a_date_a_time_a_driver_or_a_team():
     fields = set(vars(_drawing(3, "SPRINT", SPRINT_SESSIONS)))
     for forbidden in ("round_date", "round_time", "driver_name", "team_name", "mention"):
         assert forbidden not in fields
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKES_COMPOSED_VALUES)
 def test_the_division_tier_is_carried_as_given_and_emptied_when_absent():
     """FR-031 — emptied rather than drawn as a placeholder."""
     assert _drawing(1, division_tier=None).division_tier is None

@@ -96,7 +96,16 @@ from leaguebot.weather.services.draw_guard import (
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 from leaguebot.weather.services.round_phases import phases_drawn_on, phases_due
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.weather.utils.message_builder import forecast_text, invalidation_message
+from leaguebot.image.models.forecast_values import ForecastSession, ForecastValues
+from leaguebot.weather.utils.message_builder import (
+    PHASE_DESCRIPTIONS,
+    forecast_text,
+    format_rain_probability,
+    format_session_weather_type,
+    format_slot_sequence,
+    invalidation_message,
+    session_type_label,
+)
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
@@ -251,6 +260,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             if rnd is None:
                 raise LookupError(f"round {round_id} is no longer there")
             payload = None if phase == 0 else await _active_payload(db, round_id, phase)
+            first = None if phase < 2 else await _active_payload(db, round_id, 1)
             earlier = None
             if phase >= 2:
                 cursor = await db.execute(
@@ -268,11 +278,13 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         mention = rnd.division.mention_role_id
         text = forecast_text(phase, mention, payload)
         attachment = None
+        lines: tuple[str, ...] = ()
         if ctx.tries == 0:
             from leaguebot.image.services import image_weather_post
 
-            attachment = await image_weather_post.attach_forecast(
-                ctx.bot, round_id, 1 if phase == 0 else phase
+            attachment, lines = await image_weather_post.attach_forecast(
+                ctx.bot, round_id, 1 if phase == 0 else phase,
+                values=forecast_values(phase, payload, payload if phase == 1 else first),
             )
         parts = await forecast_cleanup_service.post_phase_message(
             ctx.bot,
@@ -295,7 +307,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                 "round_id": round_id, "division_id": rnd.division.id, "phase": phase - 1,
                 "message_id": earlier, "superseded": True,
             }),)
-        return StepResult(result=result, then=then)
+        return StepResult(result=result, then=then, lines=tuple(lines))
 
     async def record_post(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         parts = [int(each) for each in result.result["new"]]
@@ -457,6 +469,32 @@ async def _active_payload(
     )
     found = await cursor.fetchone()
     return None if found is None else json.loads(found["payload"])
+
+
+def forecast_values(
+    phase: int, payload: dict[str, Any] | None, first: dict[str, Any] | None
+) -> ForecastValues:
+    """The words of *phase*'s forecast, composed as the text composes them, for its picture.
+
+    *payload* is the phase's own draw and *first* Phase 1's, whose likelihood of rain every phase
+    carries. The picture draws these and reads nothing of weather's tables. A mystery round's
+    notice (phase 0) is drawn from its template alone and carries none of them.
+    """
+    if phase == 0 or payload is None:
+        return ForecastValues(description=PHASE_DESCRIPTIONS.get(phase, ""))
+    rain = None if first is None or "rpc" not in first else format_rain_probability(first["rpc"])
+    sessions: list[ForecastSession] = []
+    for draw in payload.get("session_draws", ()) if phase >= 2 else ():
+        slots = tuple(draw.get("slots", ())) if phase == 3 else ()
+        sessions.append(ForecastSession(
+            label=session_type_label(draw["session_type"]),
+            weather_type=format_session_weather_type(draw["slot_type" if phase == 3 else "slot"]),
+            slots=slots,
+            summary=format_slot_sequence(list(slots)) if slots else None,
+        ))
+    return ForecastValues(
+        description=PHASE_DESCRIPTIONS[phase], rain_probability=rain, sessions=tuple(sessions),
+    )
 
 
 def _doing(payload: dict[str, Any]) -> str:

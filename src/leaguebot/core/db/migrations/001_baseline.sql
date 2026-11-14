@@ -30,7 +30,6 @@ CREATE TABLE sessions (
     round_id            INTEGER NOT NULL,
     session_type        TEXT    NOT NULL,
     phase2_slot_type    TEXT,   -- 'rain' | 'mixed' | 'sunny'
-    phase3_slots        TEXT,   -- JSON array of weather strings
     FOREIGN KEY (round_id) REFERENCES rounds(id)
 );
 CREATE INDEX idx_sessions_round ON sessions(round_id);

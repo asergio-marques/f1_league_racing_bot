@@ -48,12 +48,6 @@ def _bot(*, module_on=True, aspect_on=True, template_valid=True):
 # lines saying why a picture that was due was not drawn: a picture not due (the module or its
 # weather aspect off) hands back no line (weather spec, "Image generation"; #287, B3).
 
-#: Why the enablement cannot yet be read through `attach_forecast`'s answer.
-_HANDS_BACK_NO_LINES = (
-    "#287: attach_forecast takes no values from weather, hands back the file alone and reports "
-    "its reasons itself"
-)
-
 
 def _values(description="Initial session forecast", rain_probability="30%", sessions=()):
     """What weather hands the picture: the phase's description, Phase 1's likelihood of rain as
@@ -85,10 +79,6 @@ async def _attach(bot, monkeypatch, drawing, *, phase=2, png=None):
     return file, list(lines)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#287: the picture reads Phase 1's likelihood and the sessions' draws from weather's tables, "
-    "not from the values weather hands it"
-))
 async def test_the_drawing_is_made_from_the_values_weather_hands_it(tmp_path):
     """Pro's round 3, a normal round with two sessions, has a standing Phase 1 draw of a 90%
     likelihood of rain and each session's Phase 2 type stored as sunny. Weather hands the picture
@@ -128,7 +118,6 @@ async def test_the_drawing_is_made_from_the_values_weather_hands_it(tmp_path):
     assert drawing.round_number == "3" and drawing.division_name
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound(
     monkeypatch, tmp_path,
 ):
@@ -138,19 +127,16 @@ async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound(
     assert file is not None and lines == []
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_the_module_being_off_falls_back_to_text(monkeypatch):
     """No picture was due, so nothing is said of one."""
     assert await _attach(_bot(module_on=False), monkeypatch, _drawing()) == (None, [])
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_the_aspect_being_off_falls_back_to_text(monkeypatch):
     """No picture was due, so nothing is said of one."""
     assert await _attach(_bot(aspect_on=False), monkeypatch, _drawing()) == (None, [])
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_an_invalid_template_falls_back_to_text(monkeypatch):
     """A picture was due: the template's reason is handed back, naming the forecast."""
     bot = _bot(template_valid=False)
@@ -163,7 +149,6 @@ async def test_an_invalid_template_falls_back_to_text(monkeypatch):
         assert part in said, part
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_path):
     """One of six being invalid must not stop the other five (XIV.4).
 
@@ -185,7 +170,6 @@ async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_
     assert sprint is None and "too small" in "\n".join(lines)
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch):
     """The text stands, and the fault is handed back for the log channel."""
     bot = _bot()
@@ -317,7 +301,6 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
     return bot
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
     """FR-059 — the picture is handed back, and the substitution with it, as a line for the log
     channel naming what it pertains to."""
@@ -353,7 +336,6 @@ def test_no_notice_and_no_problem_reaches_a_forecast_channel():
         assert forbidden not in module_source, forbidden
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDS_BACK_NO_LINES)
 async def test_a_problem_is_reported_and_the_text_stands_instead(monkeypatch):
     bot = _attach_bot(draws=False, problem="no fallback in that directory")
     result, lines = await _attach(bot, monkeypatch, _drawing("weather_p3_template"), phase=3)

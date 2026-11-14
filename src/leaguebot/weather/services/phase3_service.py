@@ -109,11 +109,6 @@ async def draw_phase3_on(
         "session_draws": session_draws,
     }
 
-    for draw in session_draws:
-        await db.execute(
-            "UPDATE sessions SET phase3_slots = ? WHERE id = ?",
-            (json.dumps(draw["slots"]), draw["session_id"]),
-        )
     await db.execute(
         "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
         "VALUES (?, 3, ?, ?, ?)",

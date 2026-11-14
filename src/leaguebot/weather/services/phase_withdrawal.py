@@ -47,10 +47,6 @@ async def withdraw_phases_on(
         await db.execute(
             "UPDATE sessions SET phase2_slot_type = NULL WHERE round_id = ?", (round_id,)
         )
-    if 3 in withdrawn:
-        await db.execute(
-            "UPDATE sessions SET phase3_slots = NULL WHERE round_id = ?", (round_id,)
-        )
 
 
 async def round_amended_on(

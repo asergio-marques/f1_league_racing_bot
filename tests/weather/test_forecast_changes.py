@@ -214,12 +214,6 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     assert _notifies_no_member(retried)
 
 
-#: Why a picture was due and the forecast went out as text, until #287 lands.
-_PICTURE_FAULT_NOT_LOGGED = (
-    "#287: a picture that was due and not drawn reaches the host's log alone, not the log channel"
-)
-
-
 def _pictures_due(league: Any, *, valid: bool = True) -> None:
     """Images on, the weather aspect on, and every weather template answering *valid*, with the
     reason "the template file is too small" where it is not."""
@@ -236,14 +230,10 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
 
 
 @pytest.mark.parametrize("cause, reason", [
-    pytest.param("invalid drawing file", "the template file is too small",
-                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
-    pytest.param("unreadable switch", "the images switch could not be read",
-                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
-    pytest.param("unreadable round", "the round could not be read",
-                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
-    pytest.param("drawing fault", "the drawing broke",
-                 marks=pytest.mark.xfail(strict=True, reason=_PICTURE_FAULT_NOT_LOGGED)),
+    pytest.param("invalid drawing file", "the template file is too small"),
+    pytest.param("unreadable switch", "the images switch could not be read"),
+    pytest.param("unreadable round", "the round could not be read"),
+    pytest.param("drawing fault", "the drawing broke"),
     pytest.param("images off", None),
     pytest.param("weather pictures off", None),
 ])
@@ -288,10 +278,6 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         assert reason in written
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#287: weather hands the forecast's picture no values, and image reads them from weather's "
-    "tables"
-))
 @pytest.mark.parametrize("phase", [1, 2, 3])
 async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws(
     tmp_path, monkeypatch, phase,
