@@ -2729,8 +2729,6 @@ async def test_a_discarded_forecast_whose_server_was_not_found_is_named_by_its_m
     assert INCOMPLETE in line and named in line
 
 
-@pytest.mark.xfail(strict=True, reason="#287: a season's end names a discarded mystery round "
-                   "notice as the Phase 0 forecast")
 async def test_a_mystery_round_notice_that_will_not_delete_is_named_as_the_mystery_round_notice(
     tmp_path,
 ):

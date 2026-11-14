@@ -139,7 +139,7 @@ def _value(ctx: StepContext, key: str, default: Any = None) -> Any:
     return ctx.step_payload.get(key, ctx.payload.get(key, default))
 
 
-def _occasion(phase: int) -> str:
+def _occasion(phase: int | None) -> str:
     return "mystery round notice" if phase == 0 else f"Phase {phase} forecast"
 
 
@@ -891,17 +891,18 @@ async def amendment_clean_ups(
 
 def forecast_kept(view: StepView) -> str:
     """The line for a forecast whose deletion a league admin discarded at a season's end, with its
-    link where the job kept one: it stands in its channel, to be deleted by hand."""
+    link where the job kept one: it stands in its channel, to be deleted by hand. A mystery round's
+    notice is named the mystery round notice, never a Phase 0 forecast."""
     result = view.result or {}
     message = result.get("message_id", view.payload.get("message_id"))
     if "guild_id" in result and message is not None:
         where = f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/{message}"
     else:
         where = f"message {message} in <#{result.get('channel_id')}>"
+    phase = view.payload.get("phase", result.get("phase"))
     return (
-        f"The Phase {view.payload.get('phase', result.get('phase'))} forecast of round "
-        f"{view.payload.get('round_number', '?')} could not be deleted: delete it by hand "
-        f"({where})."
+        f"The {_occasion(phase)} of round {view.payload.get('round_number', '?')} could not be "
+        f"deleted: delete it by hand ({where})."
     )
 
 
