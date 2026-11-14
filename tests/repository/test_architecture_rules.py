@@ -3107,10 +3107,8 @@ CATCH_ALLS_ALLOWED = {
     ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
     ("image/services/image_weather_post.py", "attach_forecast"):
-        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
-        "back as a line for the log channel, and the forecast goes out as text; and place 3, "
-        "around reading the round to name the line of a switch that could not be read, which "
-        "must not fail the line",
+        "around the drawing alone of a graphic that rides on a post: a fault is handed back as a "
+        "line for the log channel, and the forecast goes out as text",
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
         "a stated exception: a put-back after a press already answered logs the error in full and "
         "leaves the message as the press's edit left it, for a report would answer the press twice",
