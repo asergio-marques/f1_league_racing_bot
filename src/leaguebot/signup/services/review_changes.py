@@ -225,8 +225,10 @@ def approve_change(
     """The `signup.approve` change type, for the builder to register.
 
     The payload is ``user_id`` (the driver's account, as text) and ``actor_name`` (the manager's
-    display name, which the driver's notice gives). *cancel_timers* takes away a driver's timers,
-    in a job after the save that approves, so that a save that fails keeps them.
+    display name, which the driver's notice gives). *cancel_timers* takes away a driver's inactivity
+    and correction timers, in a job after the save that approves, so that a save that fails keeps
+    them. It leaves the channel's deletion timer alone: the closing the save asks, on the driver's
+    own lane, arms it, and this job may run after it.
     """
 
     async def check(ctx: CheckContext) -> Verdict:

@@ -306,6 +306,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         end_change(
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
             cancel_timers=cancel_wizard_timers(bot),
+            cancel_unclosed_timers=cancel_wizard_timers(bot, deletion=False),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
@@ -331,7 +332,8 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         approve_change(
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            config=bot.config_service, cancel_timers=cancel_wizard_timers(bot),
+            config=bot.config_service,
+            cancel_timers=cancel_wizard_timers(bot, deletion=False),
         )
     )
     bot.change_queue.register(
@@ -431,20 +433,26 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     )
 
 
-def cancel_wizard_timers(bot: "LeagueBot") -> "Callable[[str], None]":
-    """Removes one driver's signup inactivity and channel-deletion timers, for the close that
-    returns them to Not Signed Up (`signup.close`, and a season's end's close of the window) and
-    for the signup module's switch-off."""
+def cancel_wizard_timers(bot: "LeagueBot", *, deletion: bool = True) -> "Callable[[str], None]":
+    """Removes one driver's signup timers: the inactivity and correction timers and, unless
+    *deletion* is false, the channel-deletion timer, for the close that returns them to Not Signed
+    Up (`signup.close`, and a season's end's close of the window) and for the signup module's
+    switch-off.
+
+    The end and the approval of a signup hand *deletion* false. Their closing, on the driver's own
+    lane, arms the channel's deletion, and the league lane's disarm after their save may run
+    after it: it must leave that timer standing, or the channel is never deleted."""
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
     from leaguebot.signup.services.review_changes import CORRECTION_TIMER
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
     def cancel(user_id: str) -> None:
         bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
-        bot.scheduler_service.cancel_job(channel_delete_job_id(user_id))
         bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
-        bot.scheduler_service.disarm(DELETE_TIMER, user_id)
         bot.scheduler_service.disarm(CORRECTION_TIMER, user_id)
+        if deletion:
+            bot.scheduler_service.cancel_job(channel_delete_job_id(user_id))
+            bot.scheduler_service.disarm(DELETE_TIMER, user_id)
 
     return cancel
 

@@ -375,15 +375,11 @@ async def _approve(league: SeasonLeague) -> None:
 
 #: The cases of the closing's deletion against the disarm: what ends the signup, the league
 #: lane's jobs that run up to and including its save, and which lane's work runs first.
-_CLOSING_FIRST = pytest.mark.xfail(
-    strict=True,
-    reason="#286: the end's and the approval's disarm takes away the deletion the closing armed",
-)
 _DELETION_AGAINST_THE_DISARM = [
     pytest.param(_approve, 1, False, id="approve-disarm-first"),
-    pytest.param(_approve, 1, True, id="approve-closing-first", marks=_CLOSING_FIRST),
+    pytest.param(_approve, 1, True, id="approve-closing-first"),
     pytest.param(_withdraw, 2, False, id="withdraw-disarm-first"),
-    pytest.param(_withdraw, 2, True, id="withdraw-closing-first", marks=_CLOSING_FIRST),
+    pytest.param(_withdraw, 2, True, id="withdraw-closing-first"),
 ]
 
 

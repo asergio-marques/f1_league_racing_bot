@@ -152,33 +152,46 @@ __all__ = [
 
 
 def disarming(
-    accounts: Sequence[str] = (), *, close_timer: bool = False
+    accounts: Sequence[str] = (), *, close_timer: bool = False, keep_deletion: bool = False
 ) -> tuple[PlannedStep, ...]:
     """The `disarm_timers` job for *accounts*' timers and, where *close_timer*, the window's close
     timer, to plan after the save that made them no longer due; none where there is nothing to
-    take away."""
+    take away. Where *keep_deletion*, a channel's deletion timer is left standing: the save asks a
+    closing on the driver's own lane, which arms it, and the league lane's disarm may run after
+    that."""
     if not accounts and not close_timer:
         return ()
-    return (PlannedStep(
-        DISARM_TIMERS, {"accounts": [str(account) for account in accounts], "close_timer": close_timer},
-    ),)
+    payload: dict[str, Any] = {
+        "accounts": [str(account) for account in accounts], "close_timer": close_timer,
+    }
+    if keep_deletion:
+        payload["keep_deletion"] = True
+    return (PlannedStep(DISARM_TIMERS, payload),)
 
 
 def disarm_timers_step(
     *,
     cancel_timers: Callable[[str], None],
     cancel_close_timer: Callable[[], None] | None = None,
+    cancel_unclosed_timers: Callable[[str], None] | None = None,
     still_due: Callable[[StepContext], Awaitable[bool]] | None = None,
 ) -> Step:
     """The `disarm_timers` job (`disarming`), for a change type to register: it takes away each
     account's timers (*cancel_timers*) and, where the payload asks it, the window's close timer
-    (*cancel_close_timer*, which a change that never asks it need not be handed). *still_due*
+    (*cancel_close_timer*, which a change that never asks it need not be handed). Where the payload
+    keeps the deletion, the account's timers other than the channel's deletion are taken away
+    instead (*cancel_unclosed_timers*, likewise handed only by a change that asks it). *still_due*
     judges the save it follows, as for any job that depends on one. Nothing is read or written in
     the database: a timer that is already gone is nothing to take away."""
 
     async def disarm(ctx: StepContext) -> StepResult:
+        cancel = cancel_timers
+        if ctx.step_payload.get("keep_deletion"):
+            if cancel_unclosed_timers is None:
+                raise RuntimeError("the deletion timer was asked kept of a change that has no way to")
+            cancel = cancel_unclosed_timers
         for account in ctx.step_payload["accounts"]:
-            cancel_timers(str(account))
+            cancel(str(account))
         if ctx.step_payload["close_timer"]:
             if cancel_close_timer is None:
                 raise RuntimeError("the close timer was asked taken away of a change that has none")

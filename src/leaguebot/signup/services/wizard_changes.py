@@ -507,6 +507,7 @@ def end_change(
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
     cancel_timers: Callable[[str], None],
+    cancel_unclosed_timers: Callable[[str], None],
     now: Callable[[], datetime],
     arm_once: Callable[[str, str, datetime], None],
 ) -> ChangeType:
@@ -525,7 +526,10 @@ def end_change(
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
     Signed Up and the wizard ended in the same save, and the line written
     ("Withdrawn", "Rejected" with the manager and the reason, or the lapse); `disarm_timers`
-    takes the timers away after it, as a job of its own, so that a save that fails keeps them.
+    takes the timers away after it, as a job of its own, so that a save that fails keeps them. Where a
+    closing follows on the driver's own lane (every reason but a gone channel), the job leaves the
+    channel's deletion timer, which that closing arms, to *cancel_unclosed_timers*' own to keep:
+    the two lanes run alongside each other, and the job may run after the closing.
 
     A withdrawal is refused by the check unless the driver's signup is still under way (answering,
     awaiting approval, or awaiting or making a correction): a driver not signed up, approved
@@ -642,7 +646,7 @@ def end_change(
             })
         planned = [
             PlannedStep(NAME_JOB, {"user_id": user_id}), PlannedStep(END_JOB, shared_end),
-            *disarming([user_id]),
+            *disarming([user_id], keep_deletion=True),
         ]
         channel_id = payload.get("channel_id")
         if payload["reason"] == EXPIRED and channel_id is not None:
@@ -779,7 +783,9 @@ def end_change(
                 END_JOB, StepKind.SAVE, end, describe=describe_end,
                 undiscardable=would_never_end,
             ),
-            DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers),
+            DISARM_TIMERS: disarm_timers_step(
+                cancel_timers=cancel_timers, cancel_unclosed_timers=cancel_unclosed_timers,
+            ),
             **closing_steps(now=now, arm_once=arm_once),
         },
         check=check,
