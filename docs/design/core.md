@@ -469,7 +469,7 @@ own design pass.
 | core | expired review prompts | asks each standing review's take-down, and routes its Approve view again |
 | core | hub | routes the hub's buttons again and asks the panel's refresh |
 | signup | signup close timer | asks the close of a signup window whose close passed, or the arming of the timer of one still ahead |
-| signup | wizards | asks the expiry of each signup left unanswered for 24 hours and the deletion of each hold that ran out; arms nothing |
+| signup | wizards | ends each signup whose channel is gone, releases each driver awaiting a correction parameter, and asks the expiry of each signup left unanswered for 24 hours and the deletion of each hold that ran out; arms nothing |
 | results | amendment sweep | arms results' standing sweep of lapsed amendments |
 | results | orphaned amend channels | asks each open amendment's lapse; before the submission channels, for the reason its comment gives |
 | results | orphaned submission channels | asks each open submission's review or restart |
