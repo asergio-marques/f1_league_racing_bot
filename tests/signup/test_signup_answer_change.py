@@ -711,17 +711,46 @@ async def _press_cancel(league: SeasonLeague) -> None:
     await view.withdraw_button.callback(press)
 
 
-@pytest.mark.parametrize("waiting", [
-    pytest.param(_submitted, id="after his signup is submitted"),
-    pytest.param(_lapsed, id="after his correction lapses"),
+async def _leave(league: SeasonLeague) -> None:
+    """Kimi leaves the league's server, and the signup cog's listener hears it."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    await cog.on_member_remove(_kimi(league))
+
+
+#: The head of the log channel's record of Kimi's correction lapsing, whatever follows it.
+LAPSE_RECORDED = (
+    "⌛ the correction request for Kimi's signup lapsed unconfirmed "
+    f"(started by Admin (`<@{REVIEWER}>`))"
+)
+#: Why the lapse's cases fail until its record is written whether or not the panel is owed.
+_LAPSE_UNRECORDED = (
+    "#286: the lapse is recorded only by the panel job, which is dropped once the driver goes"
+)
+
+
+@pytest.mark.parametrize("waiting, going", [
+    pytest.param(_submitted, _press_cancel, id="after his signup is submitted, he withdraws"),
+    pytest.param(
+        _lapsed, _press_cancel, id="after his correction lapses, he withdraws",
+        marks=pytest.mark.xfail(strict=True, reason=_LAPSE_UNRECORDED),
+    ),
+    pytest.param(
+        _lapsed, _leave, id="after his correction lapses, he leaves",
+        marks=pytest.mark.xfail(strict=True, reason=_LAPSE_UNRECORDED),
+    ),
 ])
-async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting):
+async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, going):
     """Kimi is owed a review panel in his channel (*waiting*: his signup just submitted, or his
     correction lapsed and he is back awaiting approval), and Discord refuses it. When the queue
     runs, the job posting it stops his channel's lane alone: the league lane is not stopped.
-    Kimi then presses Cancel Signup, and the league runs his withdrawal: he is Not Signed Up.
-    Discord takes the panel again, and a Retry on his lane clears it without posting the panel,
-    which is no longer owed to anyone."""
+    Kimi then goes (*going*: he presses Cancel Signup, or leaves the server), and the league
+    runs it: he is Not Signed Up. Discord takes the panel again, and a Retry on his lane clears
+    it without posting the panel, which is no longer owed to anyone. Where his correction had
+    lapsed, the log channel still records the lapse, naming manager 77 and Kimi: it happened,
+    whether or not the panel it owed him is ever posted."""
     league = await waiting(tmp_path)
     await run_queue(league.bot)
 
@@ -729,7 +758,7 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting):
     assert stopped is not None and stopped["name"] == "post_panel"
     assert await stopped_job(league.db_path, "league") is None
 
-    await _press_cancel(league)
+    await going(league)
     await run_queue(league.bot)
 
     assert await _driver_state(league) == "NOT_SIGNED_UP"
@@ -740,3 +769,5 @@ async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting):
     assert await stopped_job(league.db_path) is None
     assert [message for message in league.channel(KIMI_CHANNEL).messages.values()
             if type(message.view).__name__ == "AdminReviewView"] == []
+    if waiting is _lapsed:
+        assert LAPSE_RECORDED in league.log()
