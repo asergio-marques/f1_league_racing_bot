@@ -434,8 +434,10 @@ sweep of everything that came due while the bot was stopped:
 - **It runs core's own steps, then turns to each module in turn.** Inside the queue's `sweeping()`
   it runs core's steps in the order they signed up, one at a time. Then, for each module in sign-up
   order, it reads the module's switch (`ModuleService.is_enabled`, by the switch key), passes the
-  module over, with a line in the host's log, where it is off, and otherwise runs the module's own
-  steps in the module's own order. Each enabled module catches up its own missed events in its
+  module over, with a line in the host's log, where it is off, save for any step the module marks
+  `runs_while_off`, which runs whatever the switch says, and otherwise runs the module's own steps
+  in the module's own order. A module marks a step so only where it finishes work the module
+  announced while on (signup's deletion of a held channel past its `held_until`). Each enabled module catches up its own missed events in its
   turn: no pass interleaves the events of different modules by time (`architecture.md`, "Timed work
   and restarts"). *Rejected:* one list of every module's steps in core's hands, which ran a
   disabled module's recoveries and left the order of the modules' steps among themselves to the

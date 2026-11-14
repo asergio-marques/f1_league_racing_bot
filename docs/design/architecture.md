@@ -1009,7 +1009,11 @@ or one a start-up step asks, does nothing and the host's log says so. A stated e
 the module announced while on and which nothing could arm again later: a held signup channel's 24
 hours, whose deletion runs while the module is off, as the signup specification's "Enabling signup
 flow" (the disable bullet) says (the docstring of the deletion's change names it, and a test pins
-it).
+it). The start-up sweep honours the same exception: a module marks such a step with `runs_while_off`
+(`core/utils/hooks.py`), and the sweep runs it whatever the module's switch says, posting nothing.
+A module's step runs while the module is off only where it finishes work the module announced while
+on, as signup's catch-up of the holds past `held_until` does; a step that ends, expires or releases
+a conversation is never so marked, and the module's other steps are passed over.
 
 **A confirmation's lapse that changes nothing but the record of its own abandonment may be held in
 memory, and a restart drops it unrecorded.** Where a lapse writes nothing a restart would need (a
@@ -1055,8 +1059,8 @@ source code.
 **The sweep is core's own steps, then each enabled module's turn.** It runs the steps core signed up
 for the bot starting, one at a time, then turns to each module in the order the builder named them and
 reads its switch (`ModuleService.is_enabled`). A disabled module is passed over, with a line in the
-host's log; an enabled module's turn runs its own start-up steps, one at a time, in the order its
-wiring gives. A timed event that was missed is caught up in its module's turn, by the handler its
+host's log, save for a step it marks `runs_while_off`, which runs all the same; an enabled module's
+turn runs its own start-up steps, one at a time, in the order its wiring gives. A timed event that was missed is caught up in its module's turn, by the handler its
 module provides for the kind of job, so a job run on time and one caught up take one path; a module's
 start-up work that is no missed event (a review posted again, an interrupted submission reopened, the
 hub's panel posted again, as the core specification's "When the bot stops" lists) is a step of the same
