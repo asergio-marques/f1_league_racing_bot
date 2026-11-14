@@ -55,11 +55,11 @@ def sign_up_to_amendment_step_failure(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_test_mode_flushed(bot: "LeagueBot") -> None:
-    """Sign weather's deletion of the forecasts test mode posted up to the hook that clears what
-    test mode posted, handed the database's path."""
-    from leaguebot.weather.services import forecast_cleanup_service
+    """Sign weather's clearing of the forecasts test mode posted up to the hook that clears what
+    test mode posted: asked on the save's connection, it hands back weather's own job."""
+    from leaguebot.weather.services import forecast_changes
 
-    bot.test_mode_flushed.subscribe(partial(forecast_cleanup_service.forecast_deletes, bot.db_path))
+    bot.test_mode_flushed.subscribe(forecast_changes.test_mode_flushed_on)
 
 
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:

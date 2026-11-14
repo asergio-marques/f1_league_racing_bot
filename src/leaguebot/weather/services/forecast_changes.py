@@ -78,6 +78,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceStep,
     AdvanceStepFailed,
     PhaseEntry,
+    test_mode_on,
 )
 from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
 from leaguebot.weather.services import (
@@ -120,6 +121,12 @@ DELETE_FORECAST = forecast_cleanup_service.DELETE_FORECAST
 PLAN_FORECAST_DELETES = "plan_forecast_deletes"
 #: The deletion of a forecast's earlier part, which `delete_forecast` plans for each before the last.
 DELETE_FORECAST_PART = "delete_forecast_part"
+FORECASTS_KEPT = (
+    "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
+    "forecast channel."
+)
+#: The job that clears the forecasts posted under test mode, which plans a `delete_forecast` for each.
+FLUSH_FORECASTS = "flush_forecasts"
 #: The jobs an amendment plans through weather, under the names the amendment gives them.
 CLEAN_UP_FORECAST = "clean_up_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
@@ -897,17 +904,52 @@ def forecast_kept(view: StepView) -> str:
     )
 
 
+async def test_mode_flushed_on(
+    _db: aiosqlite.Connection, *, only_in_test_mode: bool = False
+) -> tuple[PlannedStep, ...]:
+    """The job that clears the forecasts posted under test mode, handed back to a change that
+    switches test mode off. *only_in_test_mode* is the flag of a change that plans it before the
+    save that switches test mode off (a season's abort): the job then reads, as it comes up, that
+    test mode is still on, and clears nothing where it is not. Subscribed to core's
+    `test_mode_flushed`."""
+    return (PlannedStep(FLUSH_FORECASTS, {"only_in_test_mode": True} if only_in_test_mode else {}),)
+
+
+def _flush_forecasts_step() -> Step:
+    """`flush_forecasts`, an ACT: plans a `delete_forecast` for each forecast posted, so that a
+    refusal of one stops the queue there, in the words a season's end gives a flush left undone."""
+
+    async def flush(ctx: StepContext) -> StepResult:
+        planned = await forecast_cleanup_service.forecast_deletes(ctx.db_path)
+        return StepResult(result={"planned": len(planned)}, then=planned)
+
+    async def still_due(ctx: StepContext) -> bool:
+        if not ctx.step_payload.get("only_in_test_mode"):
+            return True
+        async with get_connection(ctx.db_path) as db:
+            return await test_mode_on(db)
+
+    async def describe(_ctx: StepContext) -> str:
+        return "clearing the forecasts posted under test mode"
+
+    return Step(
+        FLUSH_FORECASTS, StepKind.ACT, flush, still_due=still_due, describe=describe,
+        not_done=lambda _view: FORECASTS_KEPT,
+    )
+
+
 def season_end_steps(
     *, now: Callable[[], datetime], line_prefix: str | None = None
 ) -> dict[str, Step]:
     """The jobs weather defines for a season's end, by name: the deletion of a forecast
-    (`DELETE_FORECAST`), which the season end's `flush_forecasts` plans for each forecast posted
-    under test mode, and of a forecast's earlier part (`DELETE_FORECAST_PART`). *now* is the queue's clock; *line_prefix* is the closing line some changes
+    (`DELETE_FORECAST`) and of a forecast's earlier part (`DELETE_FORECAST_PART`), and the
+    `flush_forecasts` that plans a deletion for each forecast posted under test mode. *now* is the queue's clock; *line_prefix* is the closing line some changes
     write, which a forecast's deletion has no use for. A deletion a league admin discards is named
     by the step's own words (`forecast_kept`; a part's by `standing_posts.not_deleted`). Subscribed
     to core's `season_end_steps`."""
     steps = forecast_steps(now=now)
     return {
+        FLUSH_FORECASTS: _flush_forecasts_step(),
         DELETE_FORECAST: dataclasses.replace(steps[DELETE_FORECAST], not_done=forecast_kept),
         DELETE_FORECAST_PART: steps[DELETE_FORECAST_PART],
     }

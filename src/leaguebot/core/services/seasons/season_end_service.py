@@ -33,7 +33,6 @@ log = logging.getLogger(__name__)
 
 #: The jobs every end of a season shares, as the stop notice, the tests and ``StepView`` know them.
 REVOKE_ROLES = "revoke_roles"
-FLUSH_FORECASTS = "flush_forecasts"
 DISCARD_PORTRAITS = "discard_portraits"
 DISCARD_BACKUP = "discard_backup"
 
@@ -222,22 +221,6 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
     return targets
 
 
-def flush_forecasts_step(test_mode_flushed: "AwaitedHook") -> Step:
-    """The `flush_forecasts` job, an ACT: plans the jobs the modules signed up to
-    *test_mode_flushed* hand back for what test mode posted (weather's deletion of each forecast),
-    so that each deletion is a job of its own and a refusal stops the queue there. Every change
-    that switches test mode off asks it after the save that does."""
-
-    async def flush_forecasts(_ctx: StepContext) -> StepResult:
-        planned = tuple(step for found in await test_mode_flushed.call() for step in found)
-        return StepResult(result={"planned": len(planned)}, then=planned)
-
-    async def describe_flush(_ctx: StepContext) -> str:
-        return "clearing the forecasts posted under test mode"
-
-    return Step(FLUSH_FORECASTS, StepKind.ACT, flush_forecasts, describe=describe_flush)
-
-
 def discard_backup_step(scheduler: "SchedulerService") -> Step:
     """The `discard_backup` job, an ACT: the saved test-mode state deleted, with the *scheduler*'s
     job store, and `deleted` in its result where one was there. It raises where a file cannot be
@@ -258,16 +241,12 @@ def shared_steps(
     scheduler: "SchedulerService",
     *,
     season_end_steps: "Hook",
-    test_mode_flushed: "AwaitedHook",
     drivers_deleted: "AwaitedHook",
 ) -> dict[str, Step]:
     """The jobs the completion, the cancellation and the abort share, each an ACT.
 
     - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
       the save read (`season_role_targets_on`). A member who left or a role gone is passed over.
-    - `flush_forecasts`: plans the jobs the modules signed up to *test_mode_flushed* hand back for
-      what test mode posted (weather's deletion of each forecast), so that each deletion is a job
-      of its own and a refusal stops the queue there.
     - `discard_portraits`: the portraits of the drivers the driver pass deleted removed, by the
       modules signed up to *drivers_deleted*.
     - `discard_backup`: the saved test-mode state deleted, with the *scheduler*'s job store (a
@@ -302,7 +281,6 @@ def shared_steps(
 
     return {
         REVOKE_ROLES: Step(REVOKE_ROLES, StepKind.ACT, revoke_roles, describe=describe_revoke),
-        FLUSH_FORECASTS: flush_forecasts_step(test_mode_flushed),
         DISCARD_PORTRAITS: Step(
             DISCARD_PORTRAITS, StepKind.ACT, discard_portraits, describe=describe_portraits
         ),

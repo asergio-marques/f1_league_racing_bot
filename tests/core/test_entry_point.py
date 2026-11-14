@@ -505,13 +505,6 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: weather hands a season's end only `delete_forecast`, its forecast's parts being "
-    "deleted by core's shared `delete_replaced`, not weather's own `delete_forecast_part`, and "
-    "core defines `flush_forecasts` itself, weather answering the test-mode flush with its "
-    "deletions rather than with `test_mode_flushed_on`'s `flush_forecasts` job",
-)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The

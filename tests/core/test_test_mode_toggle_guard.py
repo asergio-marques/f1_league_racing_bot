@@ -504,12 +504,6 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
 # ── The forecasts posted under test mode are cleared after the save ───────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: core plans its own `flush_forecasts` after the save and asks the hook from it, "
-    "handing it nothing, rather than asking the hook inside the save, on its connection, for the "
-    "jobs weather plans",
-)
 async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_off(cog, db_path):
     """The season is in Configuration, and a part is signed up to the bot's hook for clearing what
     test mode posted, beside weather's. Switching test mode on asks it not at all; switching it off
