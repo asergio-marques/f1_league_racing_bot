@@ -60,9 +60,6 @@ NAMED = "Admin"
 #: The signup channel the league holds before a move, and the channel it is moved to.
 OLD, NEW = 650, 700
 
-#: Why each test pinning `/signup channel` as a queued setting fails until it is one.
-_ON_THE_QUEUE = "#286: /signup channel is not yet a Setting asked of the change queue"
-
 
 async def _league(tmp_path, *, configured: bool = True, held: int | None = None):
     """The settings league with signup alone on (`settings_league`), its configuration read from
@@ -402,7 +399,6 @@ async def test_a_move_that_cannot_unlock_the_old_channel_says_so_and_stands(tmp_
     assert f"<#{OLD}>" in line
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(tmp_path):
     """Anything but Discord's refusal is a fault in the bot. The manager sets 700, and setting
     its overwrites raises an error of the bot's own once the channel is saved. It is work after
@@ -423,7 +419,8 @@ async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(tmp_path):
     assert "gateway closed" not in replied
     lines = await log_lines(league)
     [failed] = [line for line in lines if line.startswith("❌ ")]
-    assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} — RuntimeError.")
+    assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} (")
+    assert "— RuntimeError." in failed
     assert not any("gateway closed" in line for line in lines)
 
 

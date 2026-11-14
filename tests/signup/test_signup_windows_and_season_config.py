@@ -70,7 +70,9 @@ async def test_the_close_time_is_kept_with_the_window(db_path):
     svc = SignupModuleService(db_path)
     await _open(svc, db_path, 111, [])
 
-    await svc.set_close_at("2026-10-01T20:00:00+00:00")
+    async with get_connection(db_path) as db:
+        await svc.set_close_at_on(db, "2026-10-01T20:00:00+00:00")
+        await db.commit()
     await _close(svc, db_path)
 
     window = (await svc.get_windows(5))[0]

@@ -1504,11 +1504,6 @@ async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_job
     pytest.param("ASSIGNED", True, "Lewis Hamilton", id="assigned"),
     pytest.param("ASSIGNED", False, "Lewis", id="assigned-no-signup-record"),
 ])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: a placed driver's departure line is posted by the listener itself, and "
-           "signup.member_left drops their leaving as nothing to clean up",
-)
 async def test_a_placed_driver_leaving_writes_the_line_through_the_queue(
     tmp_path, state, record, named,
 ):
@@ -1538,7 +1533,7 @@ async def test_a_placed_driver_leaving_writes_the_line_through_the_queue(
     [change] = await _changes_of(league, MEMBER_LEFT_KIND)
     assert (_lane(change), change["state"]) == ("league", "DONE")
     [line] = [line for line in league.bot.log_channel.sent if "Driver left server" in line]
-    assert f"Driver left server: **{named}** (<@{LEWIS}>) | state: {state}" in line
+    assert f"Driver left server: **{named}** (`<@{LEWIS}>`) | state: {state}" in line
     assert await _driver_state(league, LEWIS) == state
     assert [call.args for call in league.bot.scheduler_service.disarm.call_args_list
             if str(LEWIS) in call.args] == []
@@ -1791,9 +1786,10 @@ async def test_a_member_leaving_while_waiting_on_a_manager_is_cleaned_up_too(tmp
 async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_path, approved):
     """A member leaves the server with no signup in progress: Kimi, who never signed up, or a
     driver (106) whose signup was approved and who is Unassigned. The listener asks
-    `signup.member_left` all the same; when the queue runs the change is dropped as no longer
-    due. No driver state is written or changed, no channel is deleted, and no signup or wizard
-    row is removed."""
+    `signup.member_left` all the same. When the queue runs, Kimi's is dropped as no longer due
+    and writes no line; the approved driver's is done, and writes only the one "Driver left
+    server" line. No driver state is written or changed, no channel is deleted, and no signup
+    or wizard row is removed."""
     from tests.support.season_league import UNASSIGNED, approved_unplaced
 
     league = await _league(tmp_path)
@@ -1806,7 +1802,9 @@ async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_pat
     await run_queue(league.bot)
 
     [change] = await _changes_of(league, MEMBER_LEFT_KIND)
-    assert change["state"] == "DROPPED"
+    assert change["state"] == ("DONE" if approved else "DROPPED")
+    left = [line for line in league.bot.log_channel.sent if "Driver left server" in line]
+    assert len(left) == (1 if approved else 0)
     assert await _driver_state(league, user_id) == ("UNASSIGNED" if approved else None)
     assert league.order == []
     assert await league.rows("SELECT * FROM signup_records") == signups
