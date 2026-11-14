@@ -18,8 +18,8 @@ They are judged here and not in the command because a change ahead on the queue 
 the channel since the command asked.
 
 **The overwrites follow the save, the new channel's set first and the old one's cleared last**
-(`SET_PERMISSIONS`, an `After` step carrying the line). A refusal on the new channel then never
-leaves the old one already stripped. What Discord refuses that the check could not foresee
+(`SET_PERMISSIONS`, an `After` step carrying the line), so the new channel is tried while the
+old one still stands as it was. What Discord refuses that the check could not foresee
 (`discord.HTTPException`, caught by name) leaves the channel saved and is named, in the reply
 and beside the line, by `describe_fault`; the old channel is cleared all the same, since it is
 no longer the signup channel. A fault of the bot's own in the step leaves the channel saved too,
