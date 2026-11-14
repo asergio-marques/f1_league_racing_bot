@@ -725,22 +725,12 @@ LAPSE_RECORDED = (
     "⌛ the correction request for Kimi's signup lapsed unconfirmed "
     f"(started by Admin (`<@{REVIEWER}>`))"
 )
-#: Why the lapse's cases fail until its record is written whether or not the panel is owed.
-_LAPSE_UNRECORDED = (
-    "#286: the lapse is recorded only by the panel job, which is dropped once the driver goes"
-)
 
 
 @pytest.mark.parametrize("waiting, going", [
     pytest.param(_submitted, _press_cancel, id="after his signup is submitted, he withdraws"),
-    pytest.param(
-        _lapsed, _press_cancel, id="after his correction lapses, he withdraws",
-        marks=pytest.mark.xfail(strict=True, reason=_LAPSE_UNRECORDED),
-    ),
-    pytest.param(
-        _lapsed, _leave, id="after his correction lapses, he leaves",
-        marks=pytest.mark.xfail(strict=True, reason=_LAPSE_UNRECORDED),
-    ),
+    pytest.param(_lapsed, _press_cancel, id="after his correction lapses, he withdraws"),
+    pytest.param(_lapsed, _leave, id="after his correction lapses, he leaves"),
 ])
 async def test_a_withdrawn_driver_s_panel_is_no_longer_owed(tmp_path, waiting, going):
     """Kimi is owed a review panel in his channel (*waiting*: his signup just submitted, or his

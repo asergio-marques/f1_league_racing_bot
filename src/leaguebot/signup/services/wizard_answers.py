@@ -972,7 +972,9 @@ def panel_change(
     league asked it back once the signup was saved. Its one job `post_panel` takes the driver's
     typing away, now that the channel holds a review rather than a question, and posts the
     review panel (users may be notified, never a group, #362), divided into messages Discord takes
-    where it is long, and only while the driver still awaits their review; then `clear_mark` takes
+    where it is long, and only while the driver still awaits their review (a panel carrying a
+    correction's lapse still writes the lapse's record where the driver has gone, posting
+    nothing); then `clear_mark` takes
     the ⏳ off the last answer, the mark outliving the whole hand-over. The payload is ``user_id``,
     ``channel_id``, the ``mark`` and, where a correction's lapse asked it, the ``lapse`` whose
     record the job writes once the panel stands. A channel gone from the server is nothing to post in: the signup ends instead
@@ -1001,6 +1003,8 @@ def panel_change(
         )
 
     async def open_(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+        if payload.get("lapse") is not None:
+            return True  # the lapse's record is owed whether or not the conversation stands
         row = await (
             await db.execute(
                 "SELECT 1 FROM signup_wizard_records WHERE signup_channel_id = ?",
@@ -1022,10 +1026,20 @@ def panel_change(
             ctx.step_payload["channel_id"]
         )
 
+    async def owed_or_to_record(ctx: StepContext) -> bool:
+        """The step's `still_due`: a panel carrying a correction's lapse always runs, for the
+        lapse happened and its record is written whether or not the panel is still owed, which
+        `post_panel` judges itself; any other panel is dropped where it is no longer owed."""
+        return ctx.step_payload.get("lapse") is not None or await owed(ctx)
+
     @posts_in_a_job
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
         lapse = ctx.step_payload.get("lapse")
+        if lapse is not None and not await owed(ctx):
+            return StepResult(
+                result={"dropped": True}, lines=(correction_lapse_line(lapse, panel=False),),
+            )
         channel = await _signup_channel_or_gone(ctx, int(ctx.step_payload["channel_id"]))
         if channel is None:
             ended = await channel_gone_ending(ctx, user_id, int(ctx.step_payload["channel_id"]))
@@ -1060,7 +1074,8 @@ def panel_change(
         plan=plan,
         steps={
             POST_PANEL: Step(
-                POST_PANEL, StepKind.ACT, post_panel, still_due=owed, describe=describe_panel,
+                POST_PANEL, StepKind.ACT, post_panel, still_due=owed_or_to_record,
+                describe=describe_panel,
                 undiscardable=would_wait_unreviewed,
             ),
             typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),
