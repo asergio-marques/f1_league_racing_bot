@@ -49,7 +49,6 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.seasons.approval_checks import SignupModuleSettings
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
@@ -61,7 +60,6 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
@@ -121,21 +119,19 @@ def configuration_confirm_change(
     *,
     drawing: ImageDrawing,
     modules: ModuleService,
-    signup_module: SignupModuleSettings,
-    configs: ConfigService,
     teams: TeamService,
     configuration_confirmed: AwaitedHook,
     confirmation_refused: AwaitedHook,
+    configuration_faults_read: AwaitedHook,
     fingerprint_areas_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's configuration; see the module.
 
     The builder hands in the image module's own drawing (*drawing*, which the fingerprint reads and
-    the faults read), the services the faults read (*modules*, *signup_module*, *configs* and
-    *teams*), the *configuration_confirmed* hook each module's part is kept through, called inside
-    the save on its connection, the *confirmation_refused* hook the modules' own faults are
-    read through, the *fingerprint_areas_read* hook each module's own areas of the fingerprint
+    the faults read), the services the faults read (*modules* and *teams*), the *configuration_confirmed* hook each module's part is kept through, called inside
+    the save on its connection, the *confirmation_refused* and *configuration_faults_read* hooks
+    the modules' own faults are read through, the *fingerprint_areas_read* hook each module's own areas of the fingerprint
     are asked through, and *now* (the queue's clock).
     """
 
@@ -173,10 +169,9 @@ def configuration_confirm_change(
             season_id,
             await league_guild(ctx.bot),
             module_service=modules,
-            signup_module_service=signup_module,
-            config_service=configs,
             team_service=teams,
             confirmation_refused=confirmation_refused,
+            configuration_faults_read=configuration_faults_read,
             image_drawing=drawing,
         )
         if found:

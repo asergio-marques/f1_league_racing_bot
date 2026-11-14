@@ -2,6 +2,7 @@
 carried out on the change queue (#439)."""
 from __future__ import annotations
 
+import contextlib
 import itertools
 import sqlite3
 import sys
@@ -135,7 +136,7 @@ class _Reposts:
         checkins = {DIVISIONS[division][3].checkin for division in DIVISIONS}
         sent = [(cid, mid) for kind, cid, mid in self.league.events
                 if kind == "send" and cid in checkins]
-        with sqlite3.connect(self.league.db_path) as db:
+        with contextlib.closing(sqlite3.connect(self.league.db_path)) as db, db:
             calls = {(int(channel), int(message)): (rid, division)
                      for rid, division, message, channel in db.execute(
                          "SELECT round_id, division_id, message_id, channel_id "

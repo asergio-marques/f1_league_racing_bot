@@ -2,9 +2,34 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection
+
+NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+async def _add_slot(db_path, day_of_week, time_hhmm):
+    """Add the slot at *day_of_week* and *time_hhmm*, as `/signup time-slot add` leaves the table."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+            (day_of_week, time_hhmm),
+        )
+        await db.commit()
+
+
+async def _remove_slot(db_path, rank):
+    """Remove the slot at chronological *rank* (from 1), as `/signup time-slot remove` leaves
+    the table."""
+    async with get_connection(db_path) as db:
+        rows = await (await db.execute(
+            "SELECT id FROM signup_availability_slots ORDER BY day_of_week, time_hhmm"
+        )).fetchall()
+        await db.execute("DELETE FROM signup_availability_slots WHERE id = ?", (rows[rank - 1][0],))
+        await db.commit()
 
 
 async def _delete_wizard(svc, db_path, discord_user_id):
@@ -17,7 +42,7 @@ async def _delete_wizard(svc, db_path, discord_user_id):
 async def _save_record(svc, db_path, record):
     """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
     async with get_connection(db_path) as db:
-        record_id = await svc.save_record_on(db, record)
+        record_id = await svc.save_record_on(db, record, now=NOW)
         await db.commit()
     return record_id
 
@@ -77,46 +102,9 @@ class TestSlotIdFormat:
     async def test_get_slots_populates_slot_id(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(5, "21:00")
+        await _add_slot(db_path, 5, "21:00")
         slots = await svc.get_slots()
         assert slots[0].slot_id == "Fri_21_00"
-
-
-class TestSlotAdd:
-    async def test_add_happy_path(self, db_path):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "14:30")
-        slots = await svc.get_slots()
-        assert len(slots) == 1
-        assert slots[0].day_of_week == 1
-        assert slots[0].time_hhmm == "14:30"
-        assert slots[0].slot_sequence_id == 1
-
-    async def test_add_duplicate_raises(self, db_path):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "14:30")
-        with pytest.raises(ValueError, match="already exists"):
-            await svc.add_slot(1, "14:30")
-
-
-class TestSlotRemove:
-    async def test_remove_happy_path(self, db_path):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        await svc.add_slot(2, "10:00")
-        result = await svc.remove_slot_by_rank(1)
-        assert result is True
-        slots = await svc.get_slots()
-        assert slots == []
-
-    @pytest.mark.parametrize("rank", [1, 99], ids=["first-rank", "out-of-range"])
-    async def test_no_slots_returns_false(self, db_path, rank):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        result = await svc.remove_slot_by_rank(rank)
-        assert result is False
 
 
 class TestChronologicalRanking:
@@ -124,9 +112,9 @@ class TestChronologicalRanking:
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         # Add out of order
-        await svc.add_slot(3, "19:00")   # Wed 19:00
-        await svc.add_slot(1, "20:00")   # Mon 20:00
-        await svc.add_slot(1, "14:30")   # Mon 14:30
+        await _add_slot(db_path, 3, "19:00")   # Wed 19:00
+        await _add_slot(db_path, 1, "20:00")   # Mon 20:00
+        await _add_slot(db_path, 1, "14:30")   # Mon 14:30
         slots = await svc.get_slots()
         assert len(slots) == 3
         # Ordered chronologically regardless of insertion order
@@ -140,8 +128,8 @@ class TestChronologicalRanking:
         """Wednesday added first, then Monday → Monday gets #1, Wednesday gets #2."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(3, "18:00")   # Wed 18:00 added first
-        await svc.add_slot(1, "17:00")   # Mon 17:00 added second
+        await _add_slot(db_path, 3, "18:00")   # Wed 18:00 added first
+        await _add_slot(db_path, 1, "17:00")   # Mon 17:00 added second
         slots = await svc.get_slots()
         assert slots[0].day_of_week == 1 and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].slot_sequence_id == 2
@@ -155,13 +143,13 @@ class TestChronologicalRanking:
         """
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "14:30")   # Mon 14:30 → seq 1
-        await svc.add_slot(1, "20:00")   # Mon 20:00 → seq 2
-        await svc.add_slot(3, "19:00")   # Wed 19:00 → seq 3
+        await _add_slot(db_path, 1, "14:30")   # Mon 14:30 → seq 1
+        await _add_slot(db_path, 1, "20:00")   # Mon 20:00 → seq 2
+        await _add_slot(db_path, 3, "19:00")   # Wed 19:00 → seq 3
         # Remove seq_id 2 (Mon 20:00); remaining: Mon 14:30, Wed 19:00
-        await svc.remove_slot_by_rank(2)
+        await _remove_slot(db_path, 2)
         # Add Fri 18:00; new chronological order: Mon 14:30(1), Wed 19:00(2), Fri 18:00(3)
-        await svc.add_slot(5, "18:00")
+        await _add_slot(db_path, 5, "18:00")
         slots = await svc.get_slots()
         assert len(slots) == 3
         assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30" and slots[0].slot_sequence_id == 1
@@ -180,9 +168,9 @@ class TestDurableSlotIdentity:
         """Mon 19:00 (#1), Wed 20:00 (#2), Fri 21:00 (#3) — the issue's worked example."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, "19:00")
-        await svc.add_slot(3, "20:00")
-        await svc.add_slot(5, "21:00")
+        await _add_slot(db_path, 1, "19:00")
+        await _add_slot(db_path, 3, "20:00")
+        await _add_slot(db_path, 5, "21:00")
         return svc
 
     async def test_removing_a_slot_does_not_change_other_slot_ids(self, db_path):
@@ -192,7 +180,7 @@ class TestDurableSlotIdentity:
         chosen = next(s for s in slots if s.slot_sequence_id == 3).slot_id
         assert chosen == "Fri_21_00"
 
-        await svc.remove_slot_by_rank(1)   # remove Mon 19:00
+        await _remove_slot(db_path, 1)   # remove Mon 19:00
 
         remaining = await svc.get_slots()
         # Friday's display ordinal has moved from 3 to 2 …
@@ -210,7 +198,7 @@ class TestDurableSlotIdentity:
             s for s in await svc.get_slots() if s.slot_sequence_id == 3
         ).slot_id
 
-        await svc.add_slot(1, "08:00")   # a new Monday morning slot, earliest of all
+        await _add_slot(db_path, 1, "08:00")   # a new Monday morning slot, earliest of all
 
         after = await svc.get_slots()
         assert [s.slot_sequence_id for s in after] == [1, 2, 3, 4]
@@ -221,10 +209,10 @@ class TestDurableSlotIdentity:
     async def test_a_re_added_slot_recovers_its_own_answers(self, db_path):
         """Remove a slot and put it back: answers naming it mean the same time again."""
         svc = await self._friday_league(db_path)
-        await svc.remove_slot_by_rank(2)   # remove Wed 20:00
+        await _remove_slot(db_path, 2)   # remove Wed 20:00
         assert "Wed_20_00" not in {s.slot_id for s in await svc.get_slots()}
 
-        await svc.add_slot(3, "20:00")
+        await _add_slot(db_path, 3, "20:00")
         assert "Wed_20_00" in {s.slot_id for s in await svc.get_slots()}
 
 
@@ -268,7 +256,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(day, time_hhmm)
+            await _add_slot(db_path, day, time_hhmm)
         await self._saved_snapshot(db_path, await svc.get_slots())
 
         async with get_connection(db_path) as db:
@@ -287,7 +275,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(day, time_hhmm)
+            await _add_slot(db_path, day, time_hhmm)
         await self._saved_snapshot(db_path, await svc.get_slots())
 
         snap = (await svc.get_wizard("snap")).config_snapshot
@@ -302,7 +290,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(day, time_hhmm)
+            await _add_slot(db_path, day, time_hhmm)
         scrambled = list(reversed(await svc.get_slots()))
         await self._saved_snapshot(db_path, scrambled)
 
@@ -333,10 +321,10 @@ class TestSnapshotStoresTheDurableIdentity:
         }
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_wizard_records (discord_user_id, "
+                "INSERT INTO signup_wizard_records (created_at, discord_user_id, "
                 "wizard_state, signup_channel_id, config_snapshot_json, "
                 "draft_answers_json, current_lap_track_index, last_activity_at) "
-                "VALUES ('legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
+                "VALUES ('2026-01-01T00:00:00+00:00', 'legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
                 "'2026-01-01T00:00:00')",
                 (json.dumps(legacy),),
             )
@@ -350,18 +338,15 @@ class TestSnapshotStoresTheDurableIdentity:
 
 class TestWindowState:
     async def _make_config(self, db_path):
-        """Helper: insert a signup_module_config row for server 1."""
+        """Helper: insert a signup_module_config row for server 1, in a save of the test's own."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
-        from leaguebot.signup.models.signup_module import SignupModuleConfig
-        svc = SignupModuleService(db_path)
-        cfg = SignupModuleConfig(
-            signup_channel_id=100,
-            signups_open=False,
-            signup_button_message_id=None,
-            selected_tracks=[],
-        )
-        await svc.save_config(cfg)
-        return svc
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO signup_module_config (id, signup_channel_id, signups_open)"
+                " VALUES (1, 100, 0)"
+            )
+            await db.commit()
+        return SignupModuleService(db_path)
 
     async def test_default_window_closed(self, db_path):
         svc = await self._make_config(db_path)
@@ -371,7 +356,9 @@ class TestWindowState:
         svc = await self._make_config(db_path)
         # Opened and closed in saves of the caller's, as the jobs do (#439, slice 6b, C66, C68).
         async with get_connection(db_path) as db:
-            await svc.set_window_open_on(db, button_message_id=999, selected_tracks=["01", "03"])
+            await svc.set_window_open_on(
+                db, button_message_id=999, selected_tracks=["01", "03"], now=NOW
+            )
             await db.commit()
         assert await svc.get_window_state() is True
         cfg = await svc.get_config()
@@ -379,7 +366,7 @@ class TestWindowState:
         assert cfg.selected_tracks == ["01", "03"]
 
         async with get_connection(db_path) as db:
-            await svc.set_window_closed_on(db)
+            await svc.set_window_closed_on(db, now=NOW)
             await db.commit()
         assert await svc.get_window_state() is False
         cfg2 = await svc.get_config()
@@ -407,7 +394,6 @@ def _make_record(user_id: str = "u1") -> "SignupRecord":
         preferred_teammate="partner1",
         lap_times={"01": "1:23.456"},
         notes="none",
-        signup_channel_id=555,
     )
 
 
@@ -560,7 +546,7 @@ class TestConfigSnapshotIsolation:
         )
         svc = SignupModuleService(db_path)
         # Add a slot and capture a snapshot with nationality_required=True
-        await svc.add_slot(1, "20:00")
+        await _add_slot(db_path, 1, "20:00")
         slot = (await svc.get_slots())[0]
         snapshot = ConfigSnapshot(
             nationality_required=True,
@@ -656,7 +642,7 @@ async def test_the_drivers_mid_signup_are_listed_oldest_first_with_the_channel_t
              ("4", pending.value)],
         )
         await db.executemany(
-            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) VALUES (?, ?)",
+            "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id) VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?)",
             [("1", 501), ("3", 503), ("4", None)],
         )
         await db.commit()

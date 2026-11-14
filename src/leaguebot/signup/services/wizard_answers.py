@@ -59,6 +59,8 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.drivers.driver_service import state_of_account_on
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_types import (
@@ -71,7 +73,8 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import name_of_member, refusal_line
+from leaguebot.core.utils.log_lines import abandoned_line, name_of_member, refusal_line
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.signup.services.closing_steps import CHANNEL_GONE, END, INACTIVITY_TIMER
@@ -89,6 +92,8 @@ from leaguebot.signup.services.wizard_service import (
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.drivers.driver_service import DriverService
+    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
@@ -179,6 +184,21 @@ def _refused(step: str, reply: str) -> Refused:
     return Refused(step, reply)
 
 
+#: The most of a wrong answer a refusal quotes back, and the most answers it quotes: a refusal is
+#: posted in a job that cannot be discarded, so what it quotes of what a driver typed is bounded
+#: where it is built (#459).
+_QUOTED_AT_MOST = 80
+_QUOTED_COUNT = 5
+
+
+def _quoted(typed: list[str]) -> list[str]:
+    """What a refusal quotes of the wrong answers *typed*: the first few, each cut short."""
+    return [
+        each if len(each) <= _QUOTED_AT_MOST else f"{each[:_QUOTED_AT_MOST]}…"
+        for each in typed[:_QUOTED_COUNT]
+    ]
+
+
 def _teams_of(snapshot: Any) -> tuple[list[str], dict[str, str]]:
     """The teams the wizard offers, by full name, and each typed name that stands for one."""
     names = list(snapshot.team_names)
@@ -237,7 +257,7 @@ def judge_answer(wizard: SignupWizardRecord, message: Any) -> Accepted | Refused
         bad = [str(number) for number in selected if number not in by_number]
         if bad:
             return _refused(step, (
-                f"❌ Unknown slot ID(s): {', '.join(bad)}. "
+                f"❌ Unknown slot ID(s): {', '.join(_quoted(bad))}. "
                 f"Valid IDs: {', '.join(str(number) for number in sorted(by_number))}"
             ))
         if not selected:
@@ -259,7 +279,7 @@ def judge_answer(wizard: SignupWizardRecord, message: Any) -> Accepted | Refused
             return _refused(step, "❌ Please select up to 3 teams.")
         bad_teams = [part for part in parts if part.casefold() not in typed]
         if bad_teams:
-            listed = ", ".join(f"`{each}`" for each in bad_teams)
+            listed = ", ".join(f"`{each}`" for each in _quoted(bad_teams))
             valid = ", ".join(f"`{name}`" for name in names)
             return _refused(step, f"❌ Unknown team(s): {listed}.\nValid teams: {valid}")
         return Accepted({"preferred_teams": [typed[part.casefold()] for part in parts]})
@@ -393,12 +413,14 @@ def _what(step: str, owner: str) -> str:
 
 
 async def take_typed_answer(
-    bot: "LeagueBot", message: discord.Message, wizard: SignupWizardRecord, *, queue: "ChangeQueue"
+    bot: "LeagueBot", message: discord.Message, wizard: SignupWizardRecord, *,
+    queue: "ChangeQueue", router: "OutputRouter",
 ) -> None:
     """What the signup cog does with a message the wizard's driver typed in their channel:
     nothing where the wizard asks nothing; else turned away where an earlier answer still waits
     (a note, the message deleted, a line in the log), else marked ⏳ at once and asked as a turn
-    of the driver's lane. The answer is judged when its turn comes."""
+    of the driver's lane. The answer is judged when its turn comes. *router* is the output router
+    the turned-away line is written through."""
     state = wizard.wizard_state
     if state not in STEP_NAMES:
         return
@@ -409,7 +431,7 @@ async def take_typed_answer(
         bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
     ):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
-        await bot.output_router.post_log(refusal_line(
+        await router.post_log(refusal_line(
             member_named(getattr(author, "display_name", None), author.id), what,
             "an earlier answer is still waiting its turn",
         ))
@@ -439,16 +461,14 @@ def _channel_of(payload: dict[str, Any]) -> int:
 async def _driver_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
     """Whether the driver of the channel still has a signup in hand: their wizard stands and they
     are mid-signup or waiting on review. A close, a withdrawal or an expiry ends it."""
-    marks = ", ".join("?" for _ in _OPEN_DRIVER_STATES)
-    row = await (
-        await db.execute(
-            "SELECT 1 FROM signup_wizard_records w JOIN driver_profiles d "
-            "ON d.discord_user_id = w.discord_user_id "
-            f"WHERE w.signup_channel_id = ? AND d.current_state IN ({marks})",
-            (_channel_of(payload), *(each.value for each in _OPEN_DRIVER_STATES)),
-        )
-    ).fetchone()
-    return row is not None
+    cursor = await db.execute(
+        "SELECT discord_user_id FROM signup_wizard_records WHERE signup_channel_id = ?",
+        (_channel_of(payload),),
+    )
+    for row in await cursor.fetchall():
+        if await state_of_account_on(db, row["discord_user_id"]) in _OPEN_DRIVER_STATES:
+            return True
+    return False
 
 
 def _saved(ctx: StepContext) -> bool:
@@ -672,13 +692,13 @@ def answer_change(
             picks = list(wizard.draft_answers.get("preferred_teams") or [])
             text = ordinal_prompt(int(wizard.draft_answers.get("_pref_teams_step", 1)), picks)
             view: discord.ui.View = PreferredTeamsButtonView(
-                user_id, queue, snapshot.team_names, excluded=picks
+                user_id, queue, snapshot.team_names, excluded=picks, signup=signup()
             )
         else:
             async with get_connection(ctx.db_path) as db:
                 track_map = await track_service.get_track_name_map(db)
             text = WizardService._prompt_for_state(state, snapshot, wizard, track_name_map=track_map)
-            view = build_step_view(queue, state, user_id, snapshot.team_names)
+            view = build_step_view(queue, state, user_id, snapshot.team_names, signup=signup())
         await post(
             channel, text, view=view, mentions=discord.AllowedMentions.none(),
             refused=f"the next question could not be posted in channel {channel.id}",
@@ -753,9 +773,11 @@ def submit_change(
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
     cancel_timers: Callable[[str], None],
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The `signup.submit` change type, for the builder to register, on the league lane: the last
     answer's hand-over (decision 22, Q-A, "every change of a driver's status is the league's").
+    *now* is the queue's clock, which stamps the signup the save stores.
 
     The payload is ``user_id``, ``channel_id`` and the ⏳ ``mark`` of the last typed answer, if
     any. `name_driver` reads the driver's name and state before anything is written (a save waits
@@ -822,7 +844,6 @@ def submit_change(
                 preferred_teams=draft.get("preferred_teams", []),
                 preferred_teammate=draft.get("preferred_teammate"),
                 lap_times=draft.get("lap_times", {}), notes=draft.get("notes"),
-                signup_channel_id=wizard.signup_channel_id,
             )
             if prior == DriverState.PENDING_DRIVER_CORRECTION.value and existing is not None:
                 record.id = existing.id
@@ -830,7 +851,7 @@ def submit_change(
             (key for key, state in _CORRECTION_PARAMETER_STATES.items() if state == wizard.wizard_state),
             None,
         )
-        await signup().save_record_on(db, record)
+        await signup().save_record_on(db, record, now=now())
         await drivers().transition_on(db, user_id, DriverState.PENDING_ADMIN_APPROVAL)
         wizard.wizard_state = WizardState.UNENGAGED
         wizard.draft_answers = {}
@@ -890,20 +911,101 @@ def submit_change(
     )
 
 
+async def post_review_panel(
+    channel: discord.TextChannel, user_id: str, *, signup: "SignupModuleService", db_path: str,
+    view: Callable[[], discord.ui.View],
+) -> bool:
+    """Post the review panel of *user_id*'s signup in *channel*, and say whether there was a
+    signup to post. The panel runs as long as the driver's answers do, so it is divided through
+    `chunk_message` into messages Discord takes, each posted whole, the Approve / Request Changes
+    / Reject buttons *view* gives on the last (#459). Raises `StepFailedOnDiscord` where Discord
+    refuses a part, its `result` holding the ids of the parts already sent (as `new`, in
+    `channel_id`) for the job to keep, so that its next try removes them before it posts the panel
+    again (`standing_posts.remove_kept`)."""
+    record = await signup.get_record(user_id)
+    if record is None:
+        return False
+    wizard = await signup.get_wizard(user_id)
+    slot_labels = {
+        slot.slot_id: slot.display_label
+        for slot in (wizard.config_snapshot.slots if wizard and wizard.config_snapshot else [])
+    }
+    async with get_connection(db_path) as db:
+        track_map = await track_service.get_track_name_map(db)
+    parts = chunk_message(
+        WizardService._format_review_panel(record, slot_labels, track_name_map=track_map)
+    )
+    sent: list[int] = []
+    for number, part in enumerate(parts, start=1):
+        try:
+            sent.append(await post(
+                channel, part, view=view() if number == len(parts) else None,
+                mentions=_REVIEW_PANEL_MENTIONS,
+                refused=f"the review panel could not be posted in channel {channel.id}",
+            ))
+        except StepFailedOnDiscord as refusal:
+            if sent:
+                raise StepFailedOnDiscord(
+                    refusal.reason, result={"new": sent, "channel_id": channel.id},
+                ) from refusal.__cause__
+            raise
+    return True
+
+
+def correction_lapse_line(
+    lapse: dict[str, Any], *, panel: bool, gone: bool = False, driver_gone: bool = False,
+) -> str:
+    """The log channel's record of a correction's lapse, naming the manager who asked and the
+    driver (*lapse*'s ``manager`` and ``driver``), and whether a fresh review panel is in the
+    driver's channel, or that the channel was gone and the signup ended, or (*driver_gone*) that
+    the driver was no longer awaiting review when the panel came to be posted, so none was.
+
+    The last is worded so that it holds however the signup ended before the panel posted: a
+    withdrawal, a departure or a season's end. The log records that ending beside it."""
+    driver = lapse["driver"]
+    return abandoned_line(
+        str(lapse["manager"]),
+        f"the correction request for {driver}'s signup",
+        lapsed=True,
+        detail=(
+            f"{driver}'s signup channel was gone, so no fresh review panel could be posted "
+            "and their signup is ended."
+            if gone else
+            f"{driver} was no longer awaiting review when the fresh review panel came to be "
+            "posted, so no fresh review panel was posted."
+            if driver_gone else
+            f"{driver} is back in the approval queue"
+            + ("; a fresh review panel is in their channel." if panel else ".")
+        ),
+    )
+
+
 def panel_change(
-    *, signup: Callable[[], "SignupModuleService"], queue_of: Callable[[], "ChangeQueue"]
+    *,
+    signup: Callable[[], "SignupModuleService"],
+    drivers: Callable[[], "DriverService"],
+    config: "ConfigService",
+    router: "OutputRouter",
+    queue_of: Callable[[], "ChangeQueue"],
 ) -> ChangeType:
     """The `signup.panel` change type, for the builder to register, on the driver's lane: the
     league asked it back once the signup was saved. Its one job `post_panel` takes the driver's
     typing away, now that the channel holds a review rather than a question, and posts the
-    review panel (users may be notified, never a group, #362); then `clear_mark` takes the ⏳ off
-    the last answer, the mark outliving the whole hand-over. The payload is ``user_id``,
-    ``channel_id`` and the ``mark``. A channel gone from the server is nothing to post in: the signup ends instead
+    review panel (users may be notified, never a group, #362), divided into messages Discord takes
+    where it is long, and only while the driver still awaits their review (a panel carrying a
+    correction's lapse still writes the lapse's record where the driver has gone, posting
+    nothing, and the parts of a divided panel a refused try sent are removed); then `clear_mark` takes
+    the ⏳ off the last answer, the mark outliving the whole hand-over. The payload is ``user_id``,
+    ``channel_id``, the ``mark`` and, where a correction's lapse asked it, the ``lapse`` whose
+    record the job writes once the panel stands. A channel gone from the server is nothing to post in: the signup ends instead
     (`channel_gone_ending`). *queue_of*
-    gives the change queue the panel's buttons are handed."""
+    gives the change queue the panel's buttons are handed, and *drivers*, *config* and *router* the
+    services they read."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "channel_id": _channel_of(payload)}
+        if payload.get("lapse") is not None:
+            shared["lapse"] = payload["lapse"]
         planned = [PlannedStep(POST_PANEL, shared)]
         if payload.get("mark") is not None:
             planned.append(PlannedStep(typed_turns.CLEAR_MARK, dict(payload["mark"])))
@@ -912,7 +1014,17 @@ def panel_change(
     async def standing(_ctx: CheckContext) -> Verdict:
         return Verdict.go()
 
+    def _review_view(user_id: str) -> discord.ui.View:
+        from leaguebot.signup.services.signup_views import AdminReviewView
+
+        return AdminReviewView(
+            user_id, change_queue=queue_of(), signup=signup(), drivers=drivers(),
+            config=config, router=router,
+        )
+
     async def open_(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+        if payload.get("lapse") is not None:
+            return True  # the lapse's record is owed whether or not the conversation stands
         row = await (
             await db.execute(
                 "SELECT 1 FROM signup_wizard_records WHERE signup_channel_id = ?",
@@ -921,34 +1033,60 @@ def panel_change(
         ).fetchone()
         return row is not None
 
+    async def owed(ctx: StepContext) -> bool:
+        """Whether the panel is still owed: the driver still awaits their review, and their
+        wizard still names the channel it is for. A driver who withdrew while it was stopped
+        has nothing left to be reviewed (#459)."""
+        user_id = str(ctx.step_payload["user_id"])
+        profile = await drivers().get_profile(user_id)
+        if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
+            return False
+        wizard = await signup().get_wizard(user_id)
+        return wizard is not None and str(wizard.signup_channel_id) == str(
+            ctx.step_payload["channel_id"]
+        )
+
     @posts_in_a_job
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
+        lapse = ctx.step_payload.get("lapse")
+        if not await owed(ctx):
+            # Judged here, not in a `still_due`: the parts a refused try of a divided panel
+            # sent are the driver's answers with no buttons, and go with the panel. Their
+            # removal is best effort, so that a step that cannot be discarded still completes
+            # once its panel is not owed (architecture.md, "How a change is carried out"): a
+            # deletion Discord refuses is named for removal by hand, and the parts go anyway
+            # with the held channel.
+            noted: list[str] = []
+            try:
+                await standing_posts.remove_kept(ctx.bot, ctx.kept)
+            except StepFailedOnDiscord as refused:
+                noted.append(
+                    f"  {refused}: the earlier parts of <@{user_id}>'s review panel in "
+                    f"<#{ctx.step_payload['channel_id']}> need removing by hand."
+                )
+            if lapse is not None:
+                noted.insert(0, correction_lapse_line(lapse, panel=False, driver_gone=True))
+            return StepResult(result={"dropped": True}, lines=tuple(noted))
         channel = await _signup_channel_or_gone(ctx, int(ctx.step_payload["channel_id"]))
         if channel is None:
-            return await channel_gone_ending(ctx, user_id, int(ctx.step_payload["channel_id"]))
+            ended = await channel_gone_ending(ctx, user_id, int(ctx.step_payload["channel_id"]))
+            if lapse is None:
+                return ended
+            return StepResult(
+                result=ended.result, follow_ons=ended.follow_ons,
+                lines=(correction_lapse_line(lapse, panel=False, gone=True),),
+            )
         member = channel.guild.get_member(int(user_id))
         if member is not None:
             await _set_typing(channel, member, allowed=False, reason="Signup wizard channel hold")
-        record = await signup().get_record(user_id)
-        wizard = await signup().get_wizard(user_id)
-        if record is None:
-            return StepResult(result={"no_record": True})
-        slot_labels = {
-            slot.slot_id: slot.display_label
-            for slot in (wizard.config_snapshot.slots if wizard and wizard.config_snapshot else [])
-        }
-        async with get_connection(ctx.db_path) as db:
-            track_map = await track_service.get_track_name_map(db)
-        from leaguebot.signup.services.signup_views import AdminReviewView
-
-        await post(
-            channel,
-            WizardService._format_review_panel(record, slot_labels, track_name_map=track_map),
-            view=AdminReviewView(user_id, change_queue=queue_of()), mentions=_REVIEW_PANEL_MENTIONS,
-            refused=f"the review panel could not be posted in channel {channel.id}",
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        posted = await post_review_panel(
+            channel, user_id, signup=signup(), db_path=ctx.db_path,
+            view=lambda: _review_view(user_id),
         )
-        return StepResult(result={})
+        lines = () if lapse is None else (correction_lapse_line(lapse, panel=posted),)
+        return StepResult(result={} if posted else {"no_record": True}, lines=lines)
 
     async def describe_panel(ctx: StepContext) -> str:
         return f"posting the review panel in <#{ctx.step_payload['channel_id']}>"

@@ -61,18 +61,18 @@ async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_w
     found: list[object] = []
     ran = asyncio.Event()
 
-    async def _close_signups() -> None:
+    async def _close_signups(_key: int) -> None:
         found.append(answering_now())
         await bot.output_router.post_log("Admin (<@4242>) | signups closed | Success")
         ran.set()
 
-    service.register_timer("signup_close", _close_signups)
+    service.register_timer("signup.close_timer", _close_signups)
     service.start()
     try:
         async def _command() -> None:
             assert await admits(bot, interaction)
             fire_at = datetime.now(timezone.utc) + timedelta(milliseconds=300)
-            service.schedule_signup_close_timer(fire_at.replace(tzinfo=None).isoformat())
+            service.arm_once("signup.close_timer", 1, fire_at)
             await interaction.response.send_message("✅ Signups close shortly.", ephemeral=True)
 
         await asyncio.create_task(_command())

@@ -20,7 +20,8 @@ windows hook, whose subscribers open their own, hands none. Its `call` is a coro
 `StartingHook` is not this type. It holds core's own start-up steps, signed up by name, then each
 module's, signed up as one function giving that module's named steps in its own order, under the
 module's switch key. It is not called: the sweep reads it and runs each step contained, a module's
-only where its switch is on (architecture.md, "Timed work and restarts").
+only where its switch is on, save a step the module marks with `runs_while_off`, which runs
+whatever its switch says (architecture.md, "Timed work and restarts").
 """
 
 from __future__ import annotations
@@ -31,6 +32,31 @@ from typing import Any, overload
 
 #: A start-up step: its name, for the log and the log channel, and what it runs, handed nothing.
 StartUpStep = tuple[str, Callable[[], Awaitable[None]]]
+
+
+class _RunsWhileOff:
+    """What a step's run is wrapped in by `runs_while_off`: the same call, and a mark the sweep reads."""
+
+    def __init__(self, run: Callable[[], Awaitable[None]]) -> None:
+        self._run = run
+
+    def __call__(self) -> Awaitable[None]:
+        return self._run()
+
+
+def runs_while_off(step: StartUpStep) -> StartUpStep:
+    """Mark *step* as one the start-up sweep runs whatever its module's switch says.
+
+    A module marks a step only where it finishes work the module announced while it was on and
+    which nothing else could carry out once it is off: the work is owed to those it was announced
+    to, not to the module's switch (architecture.md, "Timed work and restarts")."""
+    name, run = step
+    return name, _RunsWhileOff(run)
+
+
+def runs_whatever_the_switch_says(step: StartUpStep) -> bool:
+    """Whether *step* was marked with `runs_while_off`."""
+    return isinstance(step[1], _RunsWhileOff)
 
 
 class Hook:

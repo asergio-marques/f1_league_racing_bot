@@ -427,19 +427,28 @@ async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, m
 
 
 async def test_a_close_timer_that_cannot_be_cancelled_stops_the_queue(tmp_path):
+    """Signups are open and the season is aborted. Disarming the signup close timer fails, the job
+    store locked: the queue stops with the season still standing. Retried with the store free,
+    the close timer is disarmed once, the window is closed and the season is gone."""
     league = await setup_league(tmp_path, signups_open=True)
     scheduler = league.bot.scheduler_service
-    scheduler.cancel_signup_close_timer = MagicMock(side_effect=RuntimeError("job store locked"))
+    failing = {"now": True}
+
+    def _disarm(kind, _key):
+        if kind == "signup.close_timer" and failing["now"]:
+            raise RuntimeError("job store locked")
+
+    scheduler.disarm = MagicMock(side_effect=_disarm)
     await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await stopped_job(league.db_path) is not None
     assert await _season_stands(league)
-    assert await window_open(league)
 
-    scheduler.cancel_signup_close_timer = MagicMock()
+    failing["now"] = False
+    scheduler.disarm.reset_mock()
     await retry_job(league.bot)
-    scheduler.cancel_signup_close_timer.assert_called_once()
+    assert [c.args[0] for c in scheduler.disarm.call_args_list].count("signup.close_timer") == 1
     assert not await window_open(league)
     assert not await _season_stands(league)
 
@@ -632,8 +641,9 @@ async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-#: The jobs that close the signup window in its channel, wherever the close plans them.
-WINDOW_JOBS = ("delete_button", "post_closed")
+#: The jobs that close the signup window in its channel, wherever the close plans them, and the
+#: job after the close's save that takes its timers away.
+WINDOW_JOBS = ("delete_button", "post_closed", "disarm_timers")
 
 
 async def test_the_jobs_run_in_order(tmp_path):
@@ -899,6 +909,88 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     await run_queue(league.bot)
     assert await wizards_recovered(league) == {"armed": [], "expired": []}
 
+
+
+#: A second driver part-way through signing up when the season is aborted.
+ALSO_SIGNING_UP = SIGNING_UP + 10
+
+
+def _timer_fired(league: Any, timer: str) -> Any:
+    """The callback the builder registered for the scheduler service's *timer*."""
+    [callback] = [call.args[1]
+                  for call in league.bot.scheduler_service.register_timer.call_args_list
+                  if call.args and call.args[0] == timer]
+    return callback
+
+
+async def test_448_disabling_signup_after_a_season_end_keeps_the_deletions_and_posts_no_expiry(
+    tmp_path,
+):
+    """#448's path. Drivers 105 and 115 are part-way through signing up (Pending Signup
+    Completion, their wizards collecting their notes) when admin 77 aborts the season and the
+    queue runs: each signup channel is told, locked and held, its deletion armed a day after the
+    queue's clock. An hour
+    later league manager 77 runs `/module disable signup` and the queue runs: neither channel's
+    deletion is disarmed. An hour after that the bot restarts: recovering the wizards arms no
+    24-hour timer and asks no expiry. A day after the abort each channel's deletion timer fires
+    and the queue runs: both channels are deleted, and neither was posted anything after the
+    switch-off, no "expired due to inactivity" notice among it."""
+    from datetime import timedelta
+
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from tests.support.change_queue import member_interaction, tier_member
+    from tests.support.season_league import SIGNUP_CHANNEL_BASE
+
+    drivers = (SIGNING_UP, ALSO_SIGNING_UP)
+    league = await setup_league(tmp_path)
+    await league.switch("signup", True)
+    for user_id in drivers:
+        await signing_up(league, user_id, state="PENDING_SIGNUP_COMPLETION")
+        await league.write(
+            "UPDATE signup_wizard_records SET wizard_state = 'COLLECTING_NOTES' "
+            "WHERE discord_user_id = ?",
+            str(user_id),
+        )
+    held = {user_id: league.channel(SIGNUP_CHANNEL_BASE + user_id) for user_id in drivers}
+    for channel in held.values():
+        channel.delete = AsyncMock()
+    await _asked(league)
+    await run_queue(league.bot)
+    scheduler = league.bot.scheduler_service
+    due = league.clock.now + timedelta(hours=24)
+    assert sorted(call.args for call in scheduler.arm_once.call_args_list
+                  if call.args and call.args[0] == "signup_channel_delete") == [
+        ("signup_channel_delete", str(user_id), due) for user_id in drivers
+    ]
+
+    league.clock.advance(hours=1)
+    disarms_before = len(scheduler.disarm.call_args_list)
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = league.bot
+    manager = member_interaction(league.bot, user=tier_member("manager", member_id=77))
+    manager.guild = league.guild
+    manager.command = MagicMock(qualified_name="module disable")
+    await cog._disable_signup(manager)
+    await run_queue(league.bot)
+    assert not league.errors, league.errors
+    disarmed = {call.args[:2] for call in scheduler.disarm.call_args_list[disarms_before:]}
+    for user_id in drivers:
+        assert ("signup_channel_delete", str(user_id)) not in disarmed
+    posted = {user_id: list(channel.texts) for user_id, channel in held.items()}
+
+    league.clock.advance(hours=1)
+    assert await wizards_recovered(league) == {"armed": [], "expired": []}
+    await run_queue(league.bot)
+
+    league.clock.advance(hours=22)
+    for user_id in drivers:
+        await _timer_fired(league, "signup_channel_delete")(str(user_id))
+    await run_queue(league.bot)
+
+    for user_id, channel in held.items():
+        channel.delete.assert_awaited_once()
+        assert channel.texts == posted[user_id]
+        assert not any("expired" in text.lower() for text in channel.texts)
 
 
 def _no_channel_left(league: Any, user_id: int = SIGNING_UP) -> None:

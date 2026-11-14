@@ -107,7 +107,7 @@ async def _correction_lapsed(db_path: str, drivers: Callable[[], Any]) -> None:
     from leaguebot.signup.services.review_changes import LAPSE, LAPSE_JOB, lapse_change
 
     change = lapse_change(
-        modules=MagicMock(), signup=_wizard_signup, drivers=drivers, queue_of=MagicMock(),
+        modules=MagicMock(), signup=_wizard_signup, drivers=drivers,
     )
     await _save(db_path, change.steps[LAPSE_JOB], LAPSE, {
         "user_id": USER_ID, "restart": False,
@@ -142,7 +142,6 @@ async def _window_closed(tmp_path, monkeypatch) -> None:
     step = window_changes.return_drivers_step(
         signup_module_service=MagicMock(),
         returned_by_close=[DriverState.PENDING_SIGNUP_COMPLETION],
-        cancel_timers=MagicMock(),
     )
     await _save(db_path, step, window_changes.CLOSE, {"audit_action": window_changes.AUDIT_CLOSE})
 
@@ -207,7 +206,6 @@ async def _lapse_after_moving_on(tmp_path, monkeypatch) -> None:
     signup.save_wizard_on = AsyncMock()
     change = lapse_change(
         modules=MagicMock(), signup=lambda: signup, drivers=lambda: DriverService(db_path),
-        queue_of=MagicMock(),
     )
     result, states = await _save(db_path, change.steps[LAPSE_JOB], LAPSE, {
         "user_id": USER_ID, "restart": False,
@@ -236,7 +234,10 @@ async def _leaving_after_moving_on(tmp_path, monkeypatch) -> None:
         "user_id": USER_ID, "channel_id": None,
     })
     assert states == {USER_ID: DriverState.NOT_SIGNED_UP.value}
-    cancel_timers.assert_called_once_with(USER_ID)
+    cancel_timers.assert_not_called()
+    assert [(job.name, job.payload["accounts"]) for job in change.plan(
+        {"user_id": USER_ID, "channel_id": None}
+    ) if job.name == "disarm_timers"] == [("disarm_timers", [USER_ID])]
     signup.delete_wizard_on.assert_awaited_once()
     assert signup.delete_wizard_on.await_args.args[1] == USER_ID
     assert len(result.lines) == 1
@@ -274,10 +275,9 @@ async def _close_after_one_moved_on(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(window_changes, "write_transition", write)
     signup_service = MagicMock()
     signup_service.end_wizard_on = AsyncMock()
-    cancel_timers = MagicMock()
     step = window_changes.return_drivers_step(
         signup_module_service=lambda: signup_service,
-        returned_by_close=[pending], cancel_timers=cancel_timers,
+        returned_by_close=[pending],
     )
     result, states = await _save(
         db_path, step, window_changes.CLOSE, {"audit_action": window_changes.AUDIT_CLOSE},
@@ -285,7 +285,9 @@ async def _close_after_one_moved_on(tmp_path, monkeypatch) -> None:
     assert result.result == {"returned": [OTHER_ID]}
     assert states == {USER_ID: pending.value, OTHER_ID: DriverState.NOT_SIGNED_UP.value}
     assert [call.args[1] for call in signup_service.end_wizard_on.await_args_list] == [OTHER_ID]
-    cancel_timers.assert_called_once_with(OTHER_ID)
+    assert [(job.name, job.payload["accounts"]) for job in result.then[:1]] == [
+        ("disarm_timers", [OTHER_ID])
+    ]
 
 
 #: One case per catch: the save, where the state machine refuses the driver's move inside it.

@@ -45,6 +45,44 @@ def sign_up_confirmation_refused(bot: Any) -> None:
     bot.confirmation_refused.subscribe(results_refusals)
 
 
+def sign_up_signup_refusals(bot: Any) -> None:
+    """Sign signup's refusals of a season's confirmation up to *bot*'s `confirmation_refused`,
+    after whatever is signed up to it already (results', where `sign_up_confirmation_refused` gave
+    it), as signup's wiring signs them: handed *bot*'s module service and signup's service, then
+    what the hook is called with. Signup's function is looked up as the hook is called, and its
+    service read off *bot* then, as they stand when asked. It mirrors signup's wiring's
+    `sign_up_to_confirmation_refused` (#286, item 25)."""
+
+    async def signup_refusals(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.signup.services import signup_prerequisites
+
+        return await signup_prerequisites.confirmation_refusals(
+            bot.module_service, bot.signup_module_service, *args, **kwargs
+        )
+
+    bot.confirmation_refused.subscribe(signup_refusals)
+
+
+def sign_up_configuration_faults_read(bot: Any) -> None:
+    """Give *bot* the hook a season's configuration faults are read through
+    (`configuration_faults_read`), signup's faults signed up as its wiring signs them: handed
+    *bot*'s module service, signup's service and the config service, then the season judged and
+    the server. Signup's function is looked up as the hook is called, and the services read off
+    *bot* then, so a stand-in bot carries the hook whether or not any check asks it yet. It
+    mirrors signup's wiring's `sign_up_to_configuration_faults_read` (#286, item 25)."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    async def signup_faults(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.signup.services import signup_prerequisites
+
+        return await signup_prerequisites.configuration_faults(
+            bot.module_service, bot.signup_module_service, bot.config_service, *args, **kwargs
+        )
+
+    bot.configuration_faults_read = AwaitedHook()
+    bot.configuration_faults_read.subscribe(signup_faults)
+
+
 def sign_up_driver_names_read(bot: Any) -> None:
     """Give *bot* the hook a driver's name is read through (`driver_names_read`), signup's names
     signed up as its wiring signs them: signup's module service over *bot*'s database, then the

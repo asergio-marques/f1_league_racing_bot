@@ -19,17 +19,20 @@ SERVER_ID = 22040
 #: record and the close's (#439, slice 6b, C66, C68); the committing forms go (C72).
 
 
+NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
 async def _open(svc, db_path, button_message_id, selected_tracks):
     """Open the window in a save of the test's own, as the job that posts the information does."""
     async with get_connection(db_path) as db:
-        await svc.set_window_open_on(db, button_message_id, selected_tracks)
+        await svc.set_window_open_on(db, button_message_id, selected_tracks, now=NOW)
         await db.commit()
 
 
 async def _close(svc, db_path):
     """Close the window in a save of the test's own, as the close's job does."""
     async with get_connection(db_path) as db:
-        await svc.set_window_closed_on(db)
+        await svc.set_window_closed_on(db, now=NOW)
         await db.commit()
 
 
@@ -70,7 +73,9 @@ async def test_the_close_time_is_kept_with_the_window(db_path):
     svc = SignupModuleService(db_path)
     await _open(svc, db_path, 111, [])
 
-    await svc.set_close_at("2026-10-01T20:00:00+00:00")
+    async with get_connection(db_path) as db:
+        await svc.set_close_at_on(db, "2026-10-01T20:00:00+00:00")
+        await db.commit()
     await _close(svc, db_path)
 
     window = (await svc.get_windows(5))[0]
@@ -95,6 +100,15 @@ async def test_a_second_window_is_a_second_record(db_path):
 _CONFIRMED_AT = datetime(2026, 3, 1, 12, 30, tzinfo=timezone.utc)
 
 
+async def _seed(db_path, *statements: str) -> None:
+    """Write *statements* in a save of the test's own, as the signup settings' saves leave the
+    tables."""
+    async with get_connection(db_path) as db:
+        for statement in statements:
+            await db.execute(statement)
+        await db.commit()
+
+
 async def _confirmed(db_path, season_id: int, now: datetime = _CONFIRMED_AT) -> None:
     """Season *season_id*'s configuration confirmed: signup's subscriber to the "configuration
     confirmed" hook called on the save's connection, which commits nothing of its own."""
@@ -112,11 +126,12 @@ async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
     connection, season 5 and the queue's clock, keeps those settings and that slot for season 5,
     stamped with the queue's clock, on the save's connection, committing nothing itself."""
     svc = SignupModuleService(db_path)
-    await svc.add_slot(1, "19:00")
-    settings = await svc.get_settings()
-    settings.time_type = "SHORT_QUALIFICATION"
-    settings.nationality_required = False
-    await svc.save_settings(settings)
+    await _seed(
+        db_path,
+        "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (1, '19:00')",
+        "INSERT INTO signup_module_settings (id, nationality_required, time_type,"
+        " time_image_required) VALUES (1, 0, 'SHORT_QUALIFICATION', 1)",
+    )
 
     await _confirmed(db_path, 5)
 
@@ -134,7 +149,10 @@ async def test_the_snapshot_is_replaced_not_duplicated(db_path):
     one slot, stamped with the later clock."""
     svc = SignupModuleService(db_path)
     await _confirmed(db_path, 5)
-    await svc.add_slot(3, "20:00")
+    await _seed(
+        db_path,
+        "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (3, '20:00')",
+    )
     later = datetime(2026, 3, 2, 12, 30, tzinfo=timezone.utc)
 
     await _confirmed(db_path, 5, later)

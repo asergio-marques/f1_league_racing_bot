@@ -96,8 +96,8 @@ async def _reserves(league: SeasonLeague, *, rhea: Any, sam: Any) -> None:
             "VALUES (?, ?, 'ASSIGNED', 0)", profile, str(user_id),
         )
         await league.write(
-            "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
-            "VALUES (?, ?, ?)", SEASON_ID, str(user_id), name,
+            "INSERT INTO signup_records (created_at, season_id, discord_user_id, server_display_name) "
+            "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?)", SEASON_ID, str(user_id), name,
         )
         await league.write(
             "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "

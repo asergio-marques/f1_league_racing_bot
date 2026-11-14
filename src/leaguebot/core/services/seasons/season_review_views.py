@@ -24,7 +24,6 @@ from datetime import datetime
 import discord
 
 from leaguebot.core.services.seasons import season_fingerprint_service, season_review_workflows
-from leaguebot.core.services.seasons.approval_checks import SignupModuleSettings
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.seasons.configuration_confirm_change import (
@@ -122,7 +121,6 @@ class ApproveView(LeagueView):
         *,
         season_service: SeasonService,
         module_service: ModuleService,
-        signup_module_service: SignupModuleSettings,
         config_service: ConfigService,
         team_service: TeamService,
         db_path: str,
@@ -132,6 +130,7 @@ class ApproveView(LeagueView):
         output_router: OutputRouter,
         round_windows_read: AwaitedHook,
         confirmation_refused: AwaitedHook,
+        configuration_faults_read: AwaitedHook,
         driver_names_read: AwaitedHook,
         division_channel_faults_read: AwaitedHook,
         fingerprint_areas_read: AwaitedHook,
@@ -141,7 +140,6 @@ class ApproveView(LeagueView):
         self._reviewer_id = reviewer_id
         self._season_service = season_service
         self._module_service = module_service
-        self._signup_module_service = signup_module_service
         self._config_service = config_service
         self._team_service = team_service
         self._db_path = db_path
@@ -151,6 +149,7 @@ class ApproveView(LeagueView):
         self._output_router = output_router
         self._round_windows_read = round_windows_read
         self._confirmation_refused = confirmation_refused
+        self._configuration_faults_read = configuration_faults_read
         self._driver_names_read = driver_names_read
         self._division_channel_faults_read = division_channel_faults_read
         self._fingerprint_areas_read = fingerprint_areas_read
@@ -369,7 +368,6 @@ class ApproveView(LeagueView):
                 interaction,
                 season_service=self._season_service,
                 module_service=self._module_service,
-                signup_module_service=self._signup_module_service,
                 config_service=self._config_service,
                 team_service=self._team_service,
                 db_path=self._db_path,
@@ -524,13 +522,12 @@ class ConfirmConfigurationView(ApproveView):
             interaction,
             season_service=self._season_service,
             module_service=self._module_service,
-            signup_module_service=self._signup_module_service,
-            config_service=self._config_service,
             team_service=self._team_service,
             db_path=self._db_path,
             image_drawing=self._image_drawing,
             change_queue=self._change_queue,
             confirmation_refused=self._confirmation_refused,
+            configuration_faults_read=self._configuration_faults_read,
             fingerprint_areas_read=self._fingerprint_areas_read,
             what=what,
             fingerprint=fingerprint,

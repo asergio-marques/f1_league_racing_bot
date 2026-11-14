@@ -281,16 +281,15 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
 _SCHEDULER_KINDS = {
     "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",
-    "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup", "signup_close", "portrait_refresh",
-    "amendment_sweep",
+    "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup", "portrait_refresh", "amendment_sweep",
 }
 
 
 async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     """Straight after `build`, with the scheduler not yet started, every kind is signed up in the
     one registry: the scheduler's own jobs (the three weather phases, the forecast clean-up, the
-    result submission, the four check-in jobs, the signup close, the portrait refresh and the
-    amendment sweep) and every one-off timer kind."""
+    result submission, the four check-in jobs, the portrait refresh and the amendment sweep) and
+    every one-off timer kind, the signup close timer among them."""
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.results.services.round_amendment.amend_changes import TIMER as AMEND_TIMER
     from leaguebot.results.services.review.review_lock_change import TIMER as LOCK_TIMER
@@ -302,7 +301,8 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
 
     assert not scheduler._scheduler.running
     kinds = _SCHEDULER_KINDS | {AMEND_TIMER, LOCK_TIMER, DELETE_TIMER, INACTIVITY_TIMER,
-                                CORRECTION_TIMER, season_review_changes.TIMER}
+                                CORRECTION_TIMER, season_review_changes.TIMER,
+                                "signup.close_timer"}
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
 
 
@@ -667,7 +667,10 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         [job.name for job in jobs] for jobs in bot.season_end_closes.call(cause="season end")
     ] == [["close_window"]]
     assert [sorted(steps) for steps in bot.season_end_steps.call(line_prefix=None)] == [
-        ["close_signup", "close_window", "delete_button", "post_closed", "signup_notice"],
+        [
+            "close_signup", "close_window", "delete_button", "disarm_timers", "post_closed",
+            "signup_notice",
+        ],
         ["delete_forecast"],
     ]
     assert not hasattr(bot, "season_end_untold")
@@ -832,7 +835,7 @@ _CORE_STEPS = ["expired review prompts", "hub"]
 #: Each module's start-up steps by name, in its own order, keyed by its switch key, the modules in
 #: the order the builder signs them up: the core specification's.
 _MODULE_STEPS = {
-    "signup": ["signup close timer", "wizards"],
+    "signup": ["signup close timer", "wizards", "held signup channels"],
     "results": ["amendment sweep", "orphaned amend channels", "orphaned submission channels",
                 "missed round starts"],
     "attendance": ["missed check-in calls", "RSVP views and deadlines",
@@ -843,10 +846,13 @@ _MODULE_STEPS = {
 
 
 #: The module steps whose recovery is a function handed the bot, with where that function
-#: lives and its name: in its module's wiring, or, for results' and attendance's three
-#: recoveries each, the module's services.
+#: lives and its name: in its module's wiring, or, for signup's three and results' and attendance's
+#: three recoveries each, the module's services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
+    "signup close timer": ("leaguebot.signup.services.window_close", "recover_missed_close"),
+    "wizards": ("leaguebot.signup.services.closing_steps", "recover_wizards"),
+    "held signup channels": ("leaguebot.signup.services.closing_steps", "recover_held_channels"),
     "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
                                 "recover_orphaned_amend_channels"),
     "orphaned submission channels": ("leaguebot.results.services.submission.submission_recovery",
@@ -868,7 +874,8 @@ _RECOVERIES_OF_THE_STEPS = {
 #: The steps whose recovery is handed the bot's change queue as well, which a service does not look
 #: up on the bot (architecture.md, "Services stay attached to the bot, and are built in one place").
 _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
-    {"orphaned amend channels", "orphaned submission channels", "missed round starts",
+    {"signup close timer", "wizards", "held signup channels", "orphaned amend channels", "orphaned submission channels",
+     "missed round starts",
      "missed check-in calls", "RSVP views and deadlines", "missed check-in clean-ups"}
 )
 
@@ -899,10 +906,13 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     sweep then runs each step's own recovery, stubbed to record what it was handed, once, for the
     bot, in the same order, so that a name cannot stand over another step's recovery: the expired
     review prompts, a review left standing, ask the bot's queue for its take-down ending `restart`;
-    the hub hands its recovery the bot, its queue and its hub options; the signup close timer, a
-    close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
-    and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
-    the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
+    the hub hands its recovery the bot, its queue and its hub options; the signup close timer's
+    catch-up, `recover_missed_close` in signup's `window_close`, is handed the bot and its queue,
+    whose clock judges the close time; the wizards' catch-up, `recover_wizards` in signup's
+    `closing_steps`, is handed the bot and its queue, whose clock judges each 24 hours; the held
+    signup channels' catch-up, `recover_held_channels` in `closing_steps`, is handed the bot and
+    its queue, whose clock judges each hold; the
+    amendment sweep arms the bot's scheduler's sweep; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
     service does not look the queue up on the bot; each of the others in its module's wiring.
@@ -919,7 +929,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     from leaguebot.core.services.modules import hub_service
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.utils.hooks import StartingHook
-    from leaguebot.signup.services.wizard_service import WizardService
     from tests.support.review_prompts import store_review_prompt
 
     ran: list[tuple] = []
@@ -938,10 +947,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
     monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
     monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
-    monkeypatch.setattr(WizardService, "recover_wizards", recovery("recover_wizards"))
-    for method in ("schedule_amendment_sweep", "schedule_signup_close_timer"):
-        monkeypatch.setattr(SchedulerService, method, scheduling(method))
-    monkeypatch.setattr(SchedulerService, "has_job", lambda self, job_id: False)
+    monkeypatch.setattr(SchedulerService, "schedule_amendment_sweep",
+                        scheduling("schedule_amendment_sweep"))
 
     signed_up: list[tuple] = []
     subscribe = StartingHook.subscribe
@@ -1012,8 +1019,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
                                                         season_review_changes.RESTART), {}),
         "hub": ("recover_hub", (bot,), {"queue": bot.change_queue,
                                         "hub_options": bot.hub_options}),
-        "signup close timer": ("schedule_signup_close_timer", (scheduler, close_at), {}),
-        "wizards": ("recover_wizards", (bot.wizard_service,), {}),
         "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {
         step: (function, (bot,),
@@ -1268,3 +1273,49 @@ async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, 
     await bot.confirmation_refused.call(7, "the placements review")
 
     assert called == [((bot.module_service, bot.db_path, 7, "the placements review"), {})]
+
+
+async def test_the_builder_signs_signup_up_to_a_confirmation_refused_after_results(
+    tmp_path, monkeypatch
+):
+    """Straight after `build`, signup's refusals are signed up to the hook a season's confirmation
+    is refused through after results', so a league sees results' refusals first as today, and its
+    faults to the hook a season's configuration faults are read through; nothing is called yet.
+    Each is handed the league's module service and signup's service (the faults the configuration
+    service too), then what its hook is called with. Without them nothing refuses a season's
+    approval while signup is on with no signup channel."""
+    from leaguebot.results.services.points import season_points_service
+    from leaguebot.signup.services import signup_prerequisites
+
+    called: list[tuple] = []
+
+    async def results_spy(*args, **kwargs):
+        called.append(("results", args, kwargs))
+        return []
+
+    async def signup_spy(*args, **kwargs):
+        called.append(("signup", args, kwargs))
+        return []
+
+    async def faults_spy(*args, **kwargs):
+        called.append(("signup faults", args, kwargs))
+        return []
+
+    monkeypatch.setattr(season_points_service, "confirmation_refusals", results_spy,
+                        raising=False)
+    monkeypatch.setattr(signup_prerequisites, "confirmation_refusals", signup_spy, raising=False)
+    monkeypatch.setattr(signup_prerequisites, "configuration_faults", faults_spy, raising=False)
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert called == []
+
+    await bot.confirmation_refused.call(7, "the placements review")
+    await bot.configuration_faults_read.call(7, None)
+
+    assert called == [
+        ("results", (bot.module_service, bot.db_path, 7, "the placements review"), {}),
+        ("signup", (bot.module_service, bot.signup_module_service, 7, "the placements review"),
+         {}),
+        ("signup faults",
+         (bot.module_service, bot.signup_module_service, bot.config_service, 7, None), {}),
+    ]

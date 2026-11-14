@@ -138,10 +138,10 @@ async def _correcting(tmp_path: Any, state: str, draft: dict[str, Any]) -> Seaso
     league = await _league(tmp_path, state=state, draft=dict(draft, _is_correction=True),
                            driver_state="PENDING_DRIVER_CORRECTION")
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, nationality, platform, "
-        "platform_id, driver_type, notes, signup_channel_id) "
-        "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', NULL, ?)",
-        SEASON_ID, str(SIGNING_UP), KIMI_CHANNEL,
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, nationality, platform, "
+        "platform_id, driver_type, notes) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', NULL)",
+        SEASON_ID, str(SIGNING_UP),
     )
     return league
 
@@ -210,7 +210,7 @@ def _signup_lines(league: SeasonLeague) -> list[str]:
 
 async def test_every_answer_reaches_the_record(tmp_path):
     """Kimi has answered everything but his notes. He types "See you there"; once the queue runs
-    his signup record holds every answer, his notes and his signup channel. The record is built
+    his signup record holds every answer and his notes. The record is built
     from the draft, so it is saved before the draft is cleared: clearing first would save an
     empty one."""
     league = await _league(tmp_path)
@@ -231,7 +231,6 @@ async def test_every_answer_reaches_the_record(tmp_path):
     assert record.preferred_teammate == "George"
     assert record.lap_times == {"1": "1:23.456"}
     assert record.notes == "See you there"
-    assert record.signup_channel_id == KIMI_CHANNEL
 
 
 async def test_an_unanswered_question_arrives_as_its_empty_form(tmp_path):
@@ -377,6 +376,84 @@ async def test_the_review_panel_s_post_cannot_be_discarded(tmp_path):
     assert len([m for m in posted() if type(m.view).__name__ == "AdminReviewView"]) == 1
 
 
+#: The longest message Discord takes.
+DISCORD_LIMIT = 2000
+#: The longest answers a driver can give: a platform ID and a preferred teammate of 1,900
+#: characters each (the issue's reproduction), and a time for every one of 24 tracks.
+LONGEST_DRAFT = dict(
+    FULL_DRAFT,
+    platform_id="P" * 1900,
+    preferred_teammate="T" * 1900,
+    lap_times={str(track): "1:23.456" for track in range(1, 25)},
+)
+
+
+async def test_the_worst_case_panel_is_posted_in_parts(tmp_path):
+    """Kimi has answered everything but his notes with the longest answers he can give: a
+    platform ID and a preferred teammate of 1,900 characters each, and a time for each of 24
+    tracks. Discord refuses any message over 2,000 characters. He types "See you there"; once
+    the queue runs it is not stopped, and his review panel stands in his channel in two or more
+    parts, each no longer than Discord takes, his whole platform ID and preferred teammate among
+    them. The Approve / Request Changes / Reject buttons are on the last part alone."""
+    league = await _league(tmp_path, draft=LONGEST_DRAFT)
+    league.channel(KIMI_CHANNEL).fail_when = lambda content, _kwargs: len(content) > DISCORD_LIMIT
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    posted = [league.channel(KIMI_CHANNEL).messages[mid]
+              for mid in sorted(league.channel(KIMI_CHANNEL).messages)]
+    [start] = [at for at, message in enumerate(posted)
+               if message.content.startswith("**📋 Signup Review**")]
+    parts = posted[start:]
+    assert len(parts) >= 2
+    assert all(len(part.content) <= DISCORD_LIMIT for part in parts)
+    assert [type(part.view).__name__ for part in parts] == (
+        ["NoneType"] * (len(parts) - 1) + ["AdminReviewView"]
+    )
+    assert any("P" * 1900 in part.content for part in parts)
+    assert any("T" * 1900 in part.content for part in parts)
+
+
+async def test_a_divided_panel_retried_posts_its_earlier_parts_once(tmp_path):
+    """Kimi has given the longest answers he can (as above), so his review panel runs to two or
+    more messages. He types "See you there"; Discord takes the earlier parts but refuses the last,
+    the one carrying the Approve / Request Changes / Reject buttons, so the queue stops at
+    `post_panel` on his channel's lane. Once Discord takes posts again a league admin presses
+    Retry: the queue is no longer stopped, and his channel holds the panel once, each part
+    posted a single time, the buttons on the last part alone."""
+    league = await _league(tmp_path, draft=LONGEST_DRAFT)
+    lane = f"channel:{KIMI_CHANNEL}"
+    kimi = league.channel(KIMI_CHANNEL)
+    kimi.fail_when = lambda content, kwargs: (
+        len(content) > DISCORD_LIMIT or kwargs.get("view") is not None
+    )
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+
+    kimi.fail_when = lambda content, _kwargs: len(content) > DISCORD_LIMIT
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    posted = [kimi.messages[mid] for mid in sorted(kimi.messages)]
+    heads = [at for at, message in enumerate(posted)
+             if message.content.startswith("**📋 Signup Review**")]
+    assert len(heads) == 1, "the panel's first part was posted again"
+    [start] = heads
+    parts = [part.content for part in posted[start:]]
+    assert len(parts) >= 2
+    assert len(parts) == len(set(parts)), "a part of the panel was posted twice"
+    assert [type(part.view).__name__ for part in posted[start:]] == (
+        ["NoneType"] * (len(parts) - 1) + ["AdminReviewView"]
+    )
+    assert sum("P" * 1900 in part for part in parts) == 1
+    assert sum("T" * 1900 in part for part in parts) == 1
+
+
 #: The line the ending writes in the log channel, naming Kimi and his gone channel.
 CHANNEL_GONE_LINE = (
     f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
@@ -445,7 +522,8 @@ async def test_a_channel_gone_when_the_panel_is_due_ends_the_signup_once_it_is_s
     gone.send.assert_not_awaited()
     [ending] = [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
     assert (ending["state"], ending["lane"]) == ("DONE", "league")
-    assert [job["name"] for job in await step_rows(league.db_path, ending["id"])] == ["end"]
+    assert [job["name"] for job in await step_rows(league.db_path, ending["id"])] == [
+        "end", "disarm_timers"]
 
 
 async def test_a_signup_ended_for_its_gone_channel_is_logged_naming_the_driver_and_the_channel(

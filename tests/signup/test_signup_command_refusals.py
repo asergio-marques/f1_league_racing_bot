@@ -15,13 +15,23 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection
 from leaguebot.signup.cogs.signup_cog import SignupCog
+from tests.support.change_queue import run_queue
+from tests.support.settings_league import (
+    interaction,
+    last_said,
+    log_lines,
+    said,
+    settings_league,
+)
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 7731
 MANAGER = 42
 NOT_ENABLED = "Signup module is not enabled"
+#: The member a settings league's interaction is, as a refusal line names them.
+NAMED = "Admin"
 
 
 def _interaction(bot, command: str):
@@ -73,7 +83,7 @@ def _module_off_bot(tmp_path):
 
 def _day():
     day = MagicMock()
-    day.value = "0"
+    day.value = "1"
     day.name = "Monday"
     return day
 
@@ -107,17 +117,16 @@ async def test_a_command_refused_while_the_module_is_off_is_answered_once_and_re
     """Signups disabled, a manager runs a `/signup` command that would change something: they
     are told once that the module is not enabled, and one refusal line names the command.
     Nothing else runs, and no failure line is written."""
-    bot = _module_off_bot(tmp_path)
-    cog = SignupCog.__new__(SignupCog)
-    cog.bot = bot
-    interaction = _interaction(bot, name)
+    league = await settings_league(tmp_path, modules=())
+    asked = interaction(league.bot, name)
 
-    await undecorate(getattr(SignupCog, method))(cog, interaction, *args())
+    await undecorate(getattr(SignupCog, method))(SignupCog(league.bot), asked, *args())
+    await run_queue(league.bot)
 
-    [reply] = _replies(interaction)
-    assert NOT_ENABLED in reply
-    [line] = _lines(bot)
-    assert line.startswith(f"⛔ `/{name}` refused for Manager (<@{MANAGER}>) — ")
+    assert NOT_ENABLED in last_said(asked)
+    assert not any(NOT_ENABLED in word for word in said(asked)[:-1])
+    [line] = await log_lines(league)
+    assert line.startswith(f"⛔ `/{name}` refused for {NAMED} (")
     assert NOT_ENABLED in line
 
 
@@ -145,7 +154,9 @@ async def test_the_configuration_view_still_answers_while_the_module_is_off(tmp_
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
-    db_path = await _seed(tmp_path, signups_open=False, close_at=None, stage="CONFIGURATION")
+    db_path = (
+        await _seed(tmp_path, signups_open=False, close_at=None, stage="CONFIGURATION")
+    ).db_path
     bot = _module_off_bot(tmp_path)
     bot.db_path = db_path
     bot.signup_module_service = SignupModuleService(db_path)
@@ -191,15 +202,13 @@ async def test_a_command_run_in_a_dm_writes_no_league_line(tmp_path):
 # ── The commands' own refusals ──────────────────────────────────────────
 
 
-async def _seed(tmp_path, *, signups_open: bool, close_at: str | None, stage: str):
-    path = str(tmp_path / "refusals.db")
-    await run_migrations(path)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
+async def _seed(tmp_path, *, signups_open: bool, close_at: str | None, stage: str,
+                slots: int = 0):
+    """The settings league with signup on, its window open or not and closing at *close_at*,
+    one season at *stage*, and the first *slots* of Monday to Friday at 20:00, 18:00, 19:00,
+    21:00 and 22:00 saved, Monday 20:00 first."""
+    league = await settings_league(tmp_path, modules=("signup",))
+    async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO signup_module_config (id, signups_open, close_at) VALUES (?, ?, ?)",
             (1, 1 if signups_open else 0, close_at),
@@ -209,22 +218,14 @@ async def _seed(tmp_path, *, signups_open: bool, close_at: str | None, stage: st
             "VALUES ('2026-09-17', 'SETUP', 1, ?)",
             (stage,),
         )
+        every = [(day, f"{hour}:00") for day in range(1, 6) for hour in (20, 18, 19, 21, 22)]
+        for day, time_hhmm in every[:slots]:
+            await db.execute(
+                "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+                (day, time_hhmm),
+            )
         await db.commit()
-    return path
-
-
-def _cog(db_path):
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
-
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-    bot.scheduler_service = MagicMock()
-    bot.output_router.post_log = AsyncMock()
-    cog = SignupCog.__new__(SignupCog)
-    cog.bot = bot
-    return cog
+    return league
 
 
 ARMED = "2099-06-08T20:00:00+00:00"
@@ -282,30 +283,21 @@ async def test_a_signup_command_refusal_is_answered_as_before_and_recorded(
     away by its own check: the reply is today's, seen by them alone, and exactly one refusal line
     names the command, the manager and the reply's first line."""
     stage = "CONFIGURATION" if window == "configuration" else "SIGNUPS"
-    db_path = await _seed(
+    league = await _seed(
         tmp_path,
         signups_open=window in ("open", "armed"),
         close_at=ARMED if window == "armed" else None,
         stage=stage,
+        slots={"one slot": 1, "full": 25}.get(slots, 0),
     )
-    cog = _cog(db_path)
-    if slots == "one slot":
-        await cog.bot.signup_module_service.add_slot(0, "20:00")
-    elif slots == "full":
-        monkeypatch.setattr(
-            cog.bot.signup_module_service, "get_slots", AsyncMock(return_value=[MagicMock()] * 25)
-        )
-    interaction = _interaction(cog.bot, name)
+    asked = interaction(league.bot, name)
 
-    await undecorate(getattr(SignupCog, _METHODS[name]))(cog, interaction, *args())
+    await undecorate(getattr(SignupCog, _METHODS[name]))(SignupCog(league.bot), asked, *args())
+    await run_queue(league.bot)
 
-    [reply] = _replies(interaction)
-    assert said in reply
-    for call in (
-        interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-    ):
+    assert said in last_said(asked)
+    for call in asked.response.send_message.await_args_list + asked.followup.send.await_args_list:
         assert call.kwargs.get("ephemeral") is True
-    [line] = _lines(cog.bot)
-    assert line.startswith(f"⛔ `/{name}` refused for Manager (<@{MANAGER}>) — ")
+    [line] = await log_lines(league)
+    assert line.startswith(f"⛔ `/{name}` refused for {NAMED} (")
     assert said in line

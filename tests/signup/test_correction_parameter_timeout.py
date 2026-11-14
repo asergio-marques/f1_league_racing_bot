@@ -82,8 +82,7 @@ async def _league(tmp_path: Any, *, state: str = AWAITING,
                   requested_by: int | None = REVIEWER) -> SeasonLeague:
     """``setup_league`` at Signups, the window open; Kimi at *state*, his wizard unengaged in
     his channel and his signup record saved; the correction choices posted *offered_ago*, his
-    wizard naming *requested_by* as the manager who asked. Today's Request Changes handler off
-    the queue is a stand-in that does nothing, so that only what the reason asks shows."""
+    wizard naming *requested_by* as the manager who asked."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     league.roles_held[REVIEWER] = {MANAGER_ROLE_ID}
@@ -95,10 +94,10 @@ async def _league(tmp_path: Any, *, state: str = AWAITING,
         json.dumps(draft), str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, "
-        "nationality, platform, platform_id, driver_type, signup_channel_id) "
-        "VALUES (?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver', ?)",
-        SEASON_ID, str(SIGNING_UP), KIMI_CHANNEL,
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, server_display_name, "
+        "nationality, platform, platform_id, driver_type) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver')",
+        SEASON_ID, str(SIGNING_UP),
     )
     if offered_ago is not None:
         await league.write(
@@ -111,7 +110,6 @@ async def _league(tmp_path: Any, *, state: str = AWAITING,
     made.posted = []
     made.set_permissions = AsyncMock()
     league.channels[KIMI_CHANNEL] = made
-    league.bot.wizard_service.request_changes = AsyncMock(return_value=None)
     return league
 
 
@@ -130,8 +128,7 @@ async def _restart(league: SeasonLeague) -> None:
     from tests.support.season_league import wizard_service
 
     wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
-        change_queue=league.bot.change_queue,
+        league.bot, league.db_path, change_queue=league.bot.change_queue,
     )
     await wizards.recover_correction_timeouts()
 
@@ -172,7 +169,8 @@ async def test_request_changes_records_the_requesting_admin(tmp_path):
     """Kimi awaits approval. Manager 77 presses Request Changes and types the reason in Kimi's
     channel. When the queue reaches the request, Kimi's wizard names 77 as the manager who
     asked, so the lapse can mention him later."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     league = await _league(tmp_path, state="PENDING_ADMIN_APPROVAL", offered_ago=None,
                            requested_by=None)

@@ -185,8 +185,9 @@ async def _seed_channels(db_path: str) -> None:
             INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at)
             VALUES (1, 41, '[\"RACE\"]', '2026-01-09');
             INSERT INTO signup_module_config (id, signup_channel_id) VALUES (1, 30);
-            INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id)
-            VALUES ('900', 42), ('901', NULL);
+            INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id)
+            VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '900', 42),
+                   ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '901', NULL);
             INSERT INTO pending_messages (channel_id, content, failure_reason, enqueued_at)
             VALUES (31, 'x', 'Forbidden', '2026-01-01');
         """)

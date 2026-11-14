@@ -1,26 +1,17 @@
 """What happens when a member leaves the server, from the signup cog's listener.
 
 Issue #208. `SignupCog.on_member_remove` was untested; the clean-up it asks for,
-`signup.member_left`, is tested in `test_wizard_changes.py`. The listener adds one thing of its
-own, and it is the part a league notices.
+`signup.member_left`, is tested in `test_wizard_changes.py`.
 
-**Every departure is handed to the change queue first.** A driver halfway through signing up
-has a channel, jobs and a driver state to put right, and that is the `signup.member_left` change's
-work (#439, slice 6b, C80) — the listener asks the queue for it, as the bot, for every member,
-whoever they are, and the change's own check decides what there is to clean up.
+**Every departure is handed to the change queue, and the listener does nothing else.** A driver
+halfway through signing up has a channel, jobs and a driver state to put right, and a placed or
+approved driver leaving is a line in the log channel; both are the `signup.member_left` change's
+work (#439, slice 6b, C80; #286) — the listener asks the queue for it, as the bot, for every
+member, whoever they are, and the change's own check decides what there is to do. The line a
+placed or approved driver's leaving writes is pinned in `test_wizard_changes.py`.
 
-**A placed or approved driver leaving is announced.** A driver who is Unassigned or Assigned has
-no wizard to clean up, so the wizard path says nothing about them, yet a league has just lost a
-driver it may have seated. The listener logs it, by the name they signed up under — their Discord
-name may have changed, or they may already be unresolvable now they have gone.
-
-**Anyone else leaving is not.** A member who never signed up, or whose signup the wizard path
-already reported, is not a league event, and logging every departure from a large server would
-bury the ones that are.
-
-**The announcement cannot fail the clean-up.** The clean-up is asked first and the log is
-best effort: a missing signup record falls back to the member's own name, and a log failure is
-swallowed rather than raised out of a Discord event handler.
+**The listener announces nobody itself.** A member who never signed up is not a league event,
+and logging every departure from a large server would bury the ones that are.
 """
 from __future__ import annotations
 
@@ -53,8 +44,8 @@ async def _make_db(tmp_path, *, name="member_remove", state=None, record=True):
             )
         if record:
             await db.execute(
-                "INSERT INTO signup_records (discord_user_id, discord_username, "
-                "server_display_name) VALUES (?, 'racer', 'Racer One')",
+                "INSERT INTO signup_records (created_at, discord_user_id, discord_username, "
+                "server_display_name) VALUES ('2026-01-01T00:00:00+00:00', ?, 'racer', 'Racer One')",
                 (str(DRIVER),),
             )
         await db.commit()
@@ -65,9 +56,6 @@ def _cog(db_path):
     bot = MagicMock()
     bot.db_path = db_path
     bot.wizard_service = MagicMock()
-    # Today's clean-up off the queue, a stand-in that does nothing, so that only what the
-    # listener asks of the queue shows.
-    bot.wizard_service.handle_member_remove = AsyncMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
     bot.change_queue = MagicMock()
@@ -127,28 +115,6 @@ async def test_every_departure_goes_through_the_wizard_clean_up(tmp_path, state)
     assert (row[0] if row else None) == state
 
 
-@pytest.mark.parametrize("state", ["UNASSIGNED", "ASSIGNED"])
-async def test_a_placed_or_approved_driver_leaving_is_announced(tmp_path, state):
-    """The wizard path says nothing about them, yet the league has just lost a driver. They
-    are named by the name they signed up under."""
-    cog = _cog(await _make_db(tmp_path, name=f"mr_announce_{state}", state=state))
-
-    await _leave(cog)
-
-    logged = _logged(cog)
-    assert "Driver left server" in logged
-    assert f"state: {state}" in logged
-    assert "**Racer One**" in logged
-
-
-async def test_a_driver_with_no_signup_record_is_named_by_their_discord_name(tmp_path):
-    cog = _cog(await _make_db(tmp_path, name="mr_norecord", state="ASSIGNED", record=False))
-
-    await _leave(cog)
-
-    assert "**DiscordName**" in _logged(cog)
-
-
 @pytest.mark.parametrize(
     "state", [None, "NOT_SIGNED_UP", "PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL",
               "PENDING_DRIVER_CORRECTION"]
@@ -160,14 +126,3 @@ async def test_anyone_else_leaving_is_not_announced(tmp_path, state):
     await _leave(cog)
 
     cog.bot.output_router.post_log.assert_not_awaited()
-
-
-async def test_a_failing_announcement_is_not_raised_out_of_the_event(tmp_path):
-    """An Assigned driver leaves and the log channel refuses the announcement: the listener
-    raises nothing, and the clean-up was still asked of the queue."""
-    cog = _cog(await _make_db(tmp_path, name="mr_logfail", state="ASSIGNED"))
-    cog.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no log channel"))
-
-    await _leave(cog)  # must not raise
-
-    assert len(_asked_member_left(cog)) == 1

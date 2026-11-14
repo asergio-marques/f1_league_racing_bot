@@ -128,9 +128,6 @@ forbidden_modules =
     leaguebot.attendance
     leaguebot.weather
 allow_indirect_imports = True
-ignore_imports =
-    # #286: the wizard formats lap times with results' formatter.
-    leaguebot.signup.services.wizard_service -> leaguebot.results.utils.results_formatter
 
 [importlinter:contract:weather-uses-no-other-module-but-image]
 name = Weather uses no other module but image

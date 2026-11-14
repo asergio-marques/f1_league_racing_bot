@@ -14,9 +14,9 @@ naming the cause so that nothing is left to stop the queue. Its jobs are:
   that marks the job done, so the row names a channel only once it is certain to stand. A job
   that created a channel and failed to save its row keeps the channel's id; the next try deletes
   it before it creates another, so no channel is ever left unnamed;
-- `start` (a save) moves the driver to Pending Signup Completion and takes away the timers an
-  earlier signup left, and `arm_inactivity` arms the 24 hours they have to answer, from the
-  moment the job runs;
+- `start` (a save) moves the driver to Pending Signup Completion, `disarm_timers` takes away the
+  timers an earlier signup left (a job after the save, never inside it: a save that fails leaves
+  them), and `arm_inactivity` arms the 24 hours they have to answer, from the moment the job runs;
 - `post_welcome` takes the typing away where the first question is answered by a button, and posts
   the welcome and that question in the new channel, with the "Signup | Started" line.
 
@@ -74,7 +74,6 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.drivers.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
@@ -85,6 +84,7 @@ from leaguebot.signup.services.closing_steps import (
     CHANNEL_GONE,
     CLOSE_SIGNUP,
     DELETE_KIND,
+    DISARM_TIMERS,
     END,
     EXPIRED,
     EXPIRED_NOTICE,
@@ -92,8 +92,11 @@ from leaguebot.signup.services.closing_steps import (
     KIND as CLOSING,
     SIGNUP_NOTICE,
     closing_steps,
+    disarm_timers_step,
+    disarming,
     take_reason_down,
 )
+from leaguebot.signup.services.signup_module_service import signup_enabled_on
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, IN_PROGRESS_STATES
 from leaguebot.signup.services.wizard_answers import (
@@ -167,7 +170,7 @@ __all__ = [
     "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "LEAVE_JOB", "MEMBER_LEFT",
-    "ask_channel_gone", "ask_member_left", "channel_delete_change", "departed_placed_driver", "end_change", "member_left_change", "start_change",
+    "ask_channel_gone", "ask_member_left", "channel_delete_change", "end_change", "member_left_change", "start_change",
 ]
 
 
@@ -265,9 +268,13 @@ def start_change(
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"])}
-        return tuple(
-            PlannedStep(name, dict(shared))
-            for name in (DELETE_OLD_CHANNEL, CREATE_CHANNEL, START_JOB, ARM_INACTIVITY, POST_WELCOME)
+        return (
+            PlannedStep(DELETE_OLD_CHANNEL, dict(shared)),
+            PlannedStep(CREATE_CHANNEL, dict(shared)),
+            PlannedStep(START_JOB, dict(shared)),
+            *disarming([shared["user_id"]]),
+            PlannedStep(ARM_INACTIVITY, dict(shared)),
+            PlannedStep(POST_WELCOME, dict(shared)),
         )
 
     async def _guild(ctx: StepContext) -> discord.Guild:
@@ -363,7 +370,6 @@ def start_change(
 
     async def start(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        cancel_timers(user_id)
         await drivers().transition_on(db, user_id, DriverState.PENDING_SIGNUP_COMPLETION)
         return StepResult(result={})
 
@@ -407,7 +413,8 @@ def start_change(
                 record.wizard_state, record.config_snapshot, track_name_map=track_map
             ),
             view=build_step_view(
-                queue_of(), record.wizard_state, user_id, record.config_snapshot.team_names
+                queue_of(), record.wizard_state, user_id, record.config_snapshot.team_names,
+                signup=signup(),
             ),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
@@ -473,6 +480,7 @@ def start_change(
         START_JOB: Step(
             START_JOB, StepKind.SAVE, start, still_due=has_channel, describe=describe_start
         ),
+        DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers, still_due=has_started),
         ARM_INACTIVITY: Step(
             ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=has_started,
             describe=describe_arm,
@@ -499,6 +507,7 @@ def end_change(
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
     cancel_timers: Callable[[str], None],
+    cancel_unclosed_timers: Callable[[str], None],
     now: Callable[[], datetime],
     arm_once: Callable[[str, str, datetime], None],
 ) -> ChangeType:
@@ -515,13 +524,17 @@ def end_change(
     asker, and ``found``, `PANEL` (the default), `DELETED` or `RESTART`). Its job
     `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
-    Signed Up and the wizard ended in the same save, the timers taken
-    away and the line written ("Withdrawn", "Rejected" with the manager and the reason, or the
-    lapse).
+    Signed Up and the wizard ended in the same save, and the line written
+    ("Withdrawn", "Rejected" with the manager and the reason, or the lapse); `disarm_timers`
+    takes the timers away after it, as a job of its own, so that a save that fails keeps them. Where a
+    closing follows on the driver's own lane (every reason but a gone channel), the job leaves the
+    channel's deletion timer, which that closing arms, to *cancel_unclosed_timers*' own to keep:
+    the two lanes run alongside each other, and the job may run after the closing.
 
-    A withdrawal is refused by the check where the signup has already ended (the transition to Not
-    Signed Up is not one the state machine allows from where they stand), telling the driver so and
-    changing nothing; it asks back `signup.closing` for the driver's channel, which holds the
+    A withdrawal is refused by the check unless the driver's signup is still under way (answering,
+    awaiting approval, or awaiting or making a correction): a driver not signed up, approved
+    (Unassigned) or placed (Assigned) is told the signup has already ended and nothing changes, their
+    state, seat and roles as they were; it asks back `signup.closing` for the driver's channel, which holds the
     notice, the lock and the deletion's arming on the channel's own lane. A rejection is refused
     where the driver no longer awaits review (another manager approved them, they withdrew, a
     correction was asked for), telling the manager so and changing nothing, and otherwise asks back
@@ -529,7 +542,8 @@ def end_change(
     the reason. An expiry is the league's
     whole (a timer is a command's, decision 31): the change carries those three jobs itself, after
     `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
-    mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
+    mid-signup any longer, where signup is off (the module's work does not run while it is off), and
+    where an answer typed before the 24 hours ran out is still waiting
     on the driver's lane (the time typed counts, Q22). A gone channel's ending is due only while
     the driver is signing up (answering, awaiting approval, or awaiting or making a correction)
     and their wizard still names that channel: it posts, locks and deletes nothing, the channel
@@ -568,6 +582,10 @@ def end_change(
         user_id = str(ctx.payload["user_id"])
         profile = await drivers().get_profile(user_id)
         if ctx.payload.get("reason") == EXPIRED:
+            async with get_connection(ctx.db_path) as db:
+                switched_on = await signup_enabled_on(db)
+            if not switched_on:
+                return Verdict.not_due("signup is off")
             record = await signup().get_wizard(user_id)
             if record is None or record.wizard_state == WizardState.UNENGAGED:
                 return Verdict.not_due("the signup is no longer collecting answers")
@@ -604,9 +622,10 @@ def end_change(
             if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
                 return Verdict.refuse(REJECT_MOVED_ON)
             return Verdict.go()
-        if profile is None or DriverState.NOT_SIGNED_UP not in ALLOWED_TRANSITIONS.get(
-            profile.current_state, set()
-        ):
+        # A withdrawal is for a signup still under way. A driver already approved (Unassigned) or
+        # placed (Assigned) may be moved to Not Signed Up by the driver state machine, but not by
+        # a leftover Cancel Signup button: their state, seat and roles stand (#444).
+        if profile is None or profile.current_state not in IN_PROGRESS_STATES:
             if ctx.origin is ChangeOrigin.MEMBER:
                 return Verdict.refuse(f"⛔ {SIGNUP_ENDED}", SIGNUP_ENDED)
             return Verdict.not_due("the signup has already ended")
@@ -619,13 +638,16 @@ def end_change(
             # The panel's job found the name; the channel is gone, so nothing follows `end`.
             shared_end.update({key: payload[key] for key in ("channel_id", "named")})
             shared_end["found"] = payload.get("found", PANEL)
-            return (PlannedStep(END_JOB, shared_end),)
+            return (PlannedStep(END_JOB, shared_end), *disarming([user_id]))
         if payload["reason"] == REJECTED:
             shared_end.update({
                 key: payload[key]
                 for key in ("actor_id", "actor_name", "text", "reason_message_id")
             })
-        planned = [PlannedStep(NAME_JOB, {"user_id": user_id}), PlannedStep(END_JOB, shared_end)]
+        planned = [
+            PlannedStep(NAME_JOB, {"user_id": user_id}), PlannedStep(END_JOB, shared_end),
+            *disarming([user_id], keep_deletion=True),
+        ]
         channel_id = payload.get("channel_id")
         if payload["reason"] == EXPIRED and channel_id is not None:
             shared = {"user_id": user_id, "channel_id": int(channel_id)}
@@ -645,7 +667,6 @@ def end_change(
         wizard_row = await cursor.fetchone()
         await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
         await signup().end_wizard_on(db, user_id)
-        cancel_timers(user_id)
         named = member_named(None, int(user_id))
         for view in ctx.steps:
             if view.name == NAME_JOB and view.done:
@@ -762,6 +783,9 @@ def end_change(
                 END_JOB, StepKind.SAVE, end, describe=describe_end,
                 undiscardable=would_never_end,
             ),
+            DISARM_TIMERS: disarm_timers_step(
+                cancel_timers=cancel_timers, cancel_unclosed_timers=cancel_unclosed_timers,
+            ),
             **closing_steps(now=now, arm_once=arm_once),
         },
         check=check,
@@ -796,14 +820,20 @@ async def delete_signup_channel(ctx: StepContext, reason: str) -> StepResult:
     return StepResult(result={})
 
 
-def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> ChangeType:
+def channel_delete_change(
+    *, signup: Callable[[], "SignupModuleService"], now: Callable[[], datetime]
+) -> ChangeType:
     """The `signup.channel.delete` change type, for the builder to register.
 
     The payload is ``user_id`` (the account whose wizard holds the channel), ``channel_id`` (the
     channel held). A hold's 24-hour timer asks it on the driver's own lane (``channel:<id>``),
     where Discord's refusal stops that lane alone. It is not due, and is dropped, where the
-    driver's wizard no longer names the channel: a new signup, or a move to another account, has
-    taken it over. Its one job `delete_channel` deletes the channel, one already gone being
+    driver's wizard no longer names the channel, a new signup or a move to another account having
+    taken it over, or where the hold's end (the row's ``held_until``) is still ahead of *now*, the
+    queue's clock: a timer that fires early deletes nothing, and one lost to a restart is made up
+    by the start-up step, which asks for each hold past its end. Signup being off does not stop
+    it: a held channel is still deleted on time, the one piece of signup's work that runs while
+    the module is off. Its one job `delete_channel` deletes the channel, one already gone being
     nothing to do, and its record
     deletes the wizard's row in the save that marks the job done, so the row names a channel only
     while the channel may stand. *signup* is a getter, so that the service is the one the bot
@@ -814,6 +844,8 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
         row = await signup().get_wizard(str(ctx.payload["user_id"]))
         if row is None or row.signup_channel_id != int(ctx.payload["channel_id"]):
             return Verdict.not_due("the driver no longer holds that signup channel")
+        if row.held_until is not None and datetime.fromisoformat(row.held_until) > now():
+            return Verdict.not_due("the hold on the signup channel has not yet run out")
         return Verdict.go()
 
     async def held(ctx: StepContext) -> bool:
@@ -856,11 +888,15 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
     )
 
 
-async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> int | None:
+async def ask_member_left(
+    queue: "ChangeQueue", db_path: str, user_id: str, name: str | None = None
+) -> int | None:
     """Ask the queue, as the bot, to clean up after *user_id* leaving the league's server
     (`signup.member_left`): asked for every member who leaves, whoever they are, since the
-    change's own check decides what there is to clean up. Gives the change's id, or None where
-    there is nothing to do (that check judges it, and drops the change)."""
+    change's own check decides what there is to clean up. *name* is the member's name on the
+    server, which the line names a placed driver by where they have no signup record. Gives the
+    change's id, or None where there is nothing to do (that check judges it, and drops the
+    change)."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
@@ -869,7 +905,10 @@ async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> i
         row = await cursor.fetchone()
     return await queue.ask(
         MEMBER_LEFT,
-        {"user_id": user_id, "channel_id": None if row is None else row["signup_channel_id"]},
+        {
+            "user_id": user_id, "name": name,
+            "channel_id": None if row is None else row["signup_channel_id"],
+        },
         what=f"cleaning up after <@{user_id}> leaving the server",
         origin=ChangeOrigin.BOT,
     )
@@ -895,35 +934,6 @@ async def ask_channel_gone(
     )
 
 
-async def departed_placed_driver(
-    db_path: str, user_id: str, fallback_name: str
-) -> tuple[str, str] | None:
-    """The state and name to announce for a placed or approved driver (Unassigned or Assigned) who
-    has left the server, or None for anyone else. The name is the one on their latest signup, else
-    *fallback_name*, whichever of the two reads fails."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (user_id,)
-        )
-        row = await cursor.fetchone()
-    if row is None or row["current_state"] not in ("UNASSIGNED", "ASSIGNED"):
-        return None
-    try:
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT server_display_name, discord_username FROM signup_records "
-                "WHERE discord_user_id = ? ORDER BY id DESC LIMIT 1",
-                (user_id,),
-            )
-            rec = await cursor.fetchone()
-    except Exception:  # noqa: BLE001 — the line is posted under the server's name instead
-        log.warning("could not read the signup record of %s", user_id, exc_info=True)
-        return row["current_state"], fallback_name
-    if rec is None:
-        return row["current_state"], fallback_name
-    return row["current_state"], rec["server_display_name"] or rec["discord_username"] or user_id
-
-
 def member_left_change(
     *,
     signup: Callable[[], "SignupModuleService"],
@@ -933,13 +943,17 @@ def member_left_change(
     """The `signup.member_left` change type, for the builder to register, on the league lane (a
     member leaving counts as a command, and the driver's status is the league's).
 
-    The payload is ``user_id`` (the account that left) and ``channel_id`` (the signup channel their
-    wizard held when the change was asked, or None). It is not due, and is dropped, where there is
-    nothing to clean up: the driver has no wizard collecting answers and is not awaiting review or
-    a correction choice, or they have signed up again into another channel meanwhile. Its jobs
+    The payload is ``user_id`` (the account that left), ``name`` (their name on the server) and
+    ``channel_id`` (the signup channel their wizard held when the change was asked, or None). It
+    is not due, and is dropped, where there is nothing to clean up: the driver has no wizard
+    collecting answers and is not awaiting review or a correction choice, or they have signed up
+    again into another channel meanwhile. A driver approved or placed (Unassigned or Assigned) has
+    nothing to clean up either but the line that they left: `leave` is that line alone for them,
+    with no transition, no timer taken away and no channel deleted. Its jobs
     are `name_driver`, which finds the name and state for the line (a save waits on no second
-    connection); `leave` (a save), which takes the driver's timers away, moves them to Not Signed
-    Up, keeps the wizard's row while a channel stands to be deleted, and writes the line; and
+    connection), a placed driver being named from their signup for the live season; `leave` (a save), which moves them to Not Signed
+    Up, keeps the wizard's row while a channel stands to be deleted, and writes the line;
+    `disarm_timers`, which takes the driver's timers away once `leave` is saved; and
     `delete_channel`, which deletes the channel at once, with no hold, and whose record deletes the
     wizard's row. The check lets every departure be asked and judges it as the change comes up to
     run. A member who leaves while the queue is stopped keeps their channel and state
@@ -947,17 +961,19 @@ def member_left_change(
     """
     #: The states of a driver whose wizard is unengaged but who still has a channel to clean up.
     awaiting = (DriverState.PENDING_ADMIN_APPROVAL, DriverState.AWAITING_CORRECTION_PARAMETER)
+    #: The states of a driver approved or placed, whose leaving is a line and nothing else.
+    placed = (DriverState.UNASSIGNED, DriverState.ASSIGNED)
 
-    async def state_label(user_id: str) -> str | None:
+    async def state_label(user_id: str) -> tuple[str, bool] | None:
         """The state the driver leaves in, from whichever of the wizard and the driver is active,
-        or None where there is nothing to clean up."""
+        and whether they are placed (approved), or None where there is nothing to clean up."""
         wizard = await signup().get_wizard(user_id)
         if wizard is not None and wizard.wizard_state != WizardState.UNENGAGED:
-            return wizard.wizard_state.value
+            return wizard.wizard_state.value, False
         profile = await drivers().get_profile(user_id)
-        if profile is None or profile.current_state not in awaiting:
+        if profile is None or profile.current_state not in (*awaiting, *placed):
             return None
-        return profile.current_state.value
+        return profile.current_state.value, profile.current_state in placed
 
     async def check(ctx: CheckContext) -> Verdict:
         if ctx.change_id is None:
@@ -965,8 +981,11 @@ def member_left_change(
             # up to run, by which time the driver may have moved on or signed up again.
             return Verdict.go()
         user_id = str(ctx.payload["user_id"])
-        if await state_label(user_id) is None:
+        label = await state_label(user_id)
+        if label is None:
             return Verdict.not_due("the member has no signup to clean up")
+        if label[1]:
+            return Verdict.go()
         asked = ctx.payload.get("channel_id")
         wizard = await signup().get_wizard(user_id)
         if asked is not None and (wizard is None or wizard.signup_channel_id != int(asked)):
@@ -976,8 +995,9 @@ def member_left_change(
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         user_id = str(payload["user_id"])
         planned = [
-            PlannedStep(NAME_JOB, {"user_id": user_id}),
+            PlannedStep(NAME_JOB, {"user_id": user_id, "name": payload.get("name")}),
             PlannedStep(LEAVE_JOB, {"user_id": user_id, "channel_id": payload.get("channel_id")}),
+            *disarming([user_id]),
         ]
         if payload.get("channel_id") is not None:
             planned.append(PlannedStep(DELETE_CHANNEL, {
@@ -989,36 +1009,54 @@ def member_left_change(
         # A read that fails stops the lane like any job's (architecture, "Errors and failures"),
         # rather than write the line under the member's id.
         user_id = str(ctx.step_payload["user_id"])
-        record = await signup().get_record(user_id)
-        name = user_id
-        if record is not None:
-            name = record.server_display_name or record.discord_username or user_id
-        return StepResult(result={"name": name, "state": await state_label(user_id)})
+        label = await state_label(user_id)
+        placed_driver = label is not None and label[1]
+        # A placed driver without a signup record is named as the server names them.
+        name = (ctx.step_payload.get("name") if placed_driver else None) or user_id
+        if placed_driver:
+            # From the signup that stands for them in the live season, which another season's
+            # signup, saved later, is not.
+            profile = await drivers().get_profile(user_id)
+            row = None if profile is None else await signup().live_season_signup(profile.id)
+            if row is not None:
+                name = row["server_display_name"] or row["discord_username"] or user_id
+        else:
+            # A driver still signing up, from the signup under review.
+            record = await signup().get_record(user_id)
+            if record is not None:
+                name = record.server_display_name or record.discord_username or user_id
+        return StepResult(result={
+            "name": name, "state": None if label is None else label[0], "placed": placed_driver,
+        })
 
     async def leave(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        cancel_timers(user_id)
-        # A driver who has already moved on is cleaned up all the same; any other error is not
-        # swallowed (#457).
-        try:
-            await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
-        except InvalidDriverTransition:
-            pass
-        if ctx.step_payload.get("channel_id") is None:
-            await signup().delete_wizard_on(db, user_id)
         named = next(
             ((view.result or {}) for view in ctx.steps if view.name == NAME_JOB and view.done), {}
         )
+        if not named.get("placed"):
+            # A driver who has already moved on is cleaned up all the same; any other error is
+            # not swallowed (#457).
+            try:
+                await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
+            except InvalidDriverTransition:
+                pass
+            if ctx.step_payload.get("channel_id") is None:
+                await signup().delete_wizard_on(db, user_id)
         return StepResult(result={}, lines=(
             f"Driver left server: **{named.get('name') or user_id}** (<@{user_id}>) | "
             f"state: {named.get('state') or 'unknown'}",
         ))
 
     async def left(ctx: StepContext) -> bool:
-        """Whether `leave` took place, for the deletion after it: not where an admin discarded
-        it, which leaves the driver where they were."""
+        """Whether `leave` ended the driver's signup, for the jobs after it: not where an admin
+        discarded it, which leaves the driver where they were, nor for a placed driver, whose
+        leaving was a line alone."""
         return not any(
             view.name == LEAVE_JOB and "discarded" in (view.result or {}) for view in ctx.steps
+        ) and not any(
+            view.name == NAME_JOB and view.done and (view.result or {}).get("placed")
+            for view in ctx.steps
         )
 
     async def held(ctx: StepContext) -> bool:
@@ -1049,6 +1087,7 @@ def member_left_change(
         steps={
             NAME_JOB: Step(NAME_JOB, StepKind.ACT, name_driver, describe=describe_name),
             LEAVE_JOB: Step(LEAVE_JOB, StepKind.SAVE, leave, describe=describe_leave),
+            DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers, still_due=left),
             DELETE_CHANNEL: Step(
                 DELETE_CHANNEL, StepKind.DELETE, delete, still_due=held,
                 describe=describe_delete, record=forget,

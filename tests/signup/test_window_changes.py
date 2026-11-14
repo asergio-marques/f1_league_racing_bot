@@ -324,7 +324,8 @@ async def test_a_discarded_information_post_leaves_the_closed_notice_and_arms_no
     jobs = await _jobs(league)
     assert jobs["arm_close"]["done_at"] and jobs["delete_closed"]["done_at"]
     assert CLOSED_NOTICE in league.signup.messages
-    league.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+    assert [c for c in league.bot.scheduler_service.arm_once.call_args_list
+            if c.args[:1] == ("signup.close_timer",)] == []
     assert not (await league.config())["signups_open"]
 
 
@@ -343,9 +344,11 @@ async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp
     `/signup close-time add`, and that the bot arms it when it next starts, never to set it with
     `/signup close-time add` alone."""
     league = await _league(tmp_path)
-    league.bot.scheduler_service.schedule_signup_close_timer.side_effect = RuntimeError(
-        "the job store is locked"
-    )
+    def _arm_once(kind, _key, _run_at):
+        if kind == "signup.close_timer":
+            raise RuntimeError("the job store is locked")
+
+    league.bot.scheduler_service.arm_once.side_effect = _arm_once
     interaction = await _open(league, close_time="2999-01-01T20:00:00")
     await run_queue(league.bot)
     job = await stopped_job(league.db_path)
@@ -1032,6 +1035,64 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     assert len(_told(league)) == 1
     assert not await league.bot.module_service.is_signup_enabled()
     assert await league.rows("SELECT * FROM signup_module_config") == []
+
+
+async def test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on(tmp_path):
+    """The window is open in the signup channel (620) and the season is in Configuration, the
+    league's base role (819) and driver role (820) set and one availability slot saved. Manager 77
+    runs `/module disable signup`, which closes the window and posts "Signups are now closed" in
+    620. He runs `/module enable signup`, then `/signup channel` for 620 again: the channel holds
+    that one closed notice, never two. The season's configuration is confirmed (the season waiting
+    for its window) and he runs `/signup open`: the information message with its Sign Up button is
+    posted and the closed notice is taken down, so the channel shows signups open and nothing
+    saying they are closed."""
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from tests.support.season_league import BASE_ROLE as LEAGUE_BASE_ROLE
+    from tests.support.season_league import DRIVER_ROLE as LEAGUE_DRIVER_ROLE
+    from tests.support.settings_league import interaction as settings_interaction
+
+    league = await _close_league(tmp_path, stage="CONFIGURATION")
+    await league.write("UPDATE server_configs SET base_role_id = ?, driver_role_id = ?",
+                       LEAGUE_BASE_ROLE, LEAGUE_DRIVER_ROLE)
+    driver_role = league._role(LEAGUE_DRIVER_ROLE)
+    driver_role.managed = False
+    driver_role.is_default.return_value = False
+    driver_role.guild.me.guild_permissions.manage_roles = True
+    driver_role.guild.me.top_role.__gt__ = lambda _self, _other: True
+    await league.write(
+        "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (1, '19:00')"
+    )
+    modules = ModuleCog.__new__(ModuleCog)
+    modules.bot = league.bot
+    switching = _manager(league)
+    switching.command = MagicMock(qualified_name="module disable")
+    await modules._disable_signup(switching)
+    await run_queue(league.bot)
+    assert len(_closed_notices(league)) == 1
+
+    switching = _manager(league)
+    switching.command = MagicMock(qualified_name="module enable")
+    await modules._enable_signup(switching)
+    await run_queue(league.bot)
+    setting = settings_interaction(league.bot, "signup channel")
+    setting.guild = league.guild
+    await undecorate(SignupCog.signup_channel)(
+        SignupCog(league.bot), setting, league.channel(LEAGUE_SIGNUP_CHANNEL)
+    )
+    await run_queue(league.bot)
+    assert (await _window(league))["signup_channel_id"] == LEAGUE_SIGNUP_CHANNEL
+    assert len(_closed_notices(league)) == 1
+
+    await league.write("UPDATE seasons SET stage = 'WAITING' WHERE id = ?", SEASON_ID)
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    opening = _manager(league)
+    opening.command = MagicMock(qualified_name="signup open")
+    await undecorate(SignupCog.signup_open)(cog, opening, None, None)
+    await run_queue(league.bot)
+
+    assert (await _window(league))["signups_open"]
+    assert _closed_notices(league) == []
 
 
 async def test_a_close_posts_the_drivers_notices_on_the_league_lane(tmp_path):

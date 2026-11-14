@@ -83,8 +83,8 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
                 signup_button_message_id, signup_closed_message_id,
                 selected_tracks_json) VALUES (1, 80, 83, 84, '["1"]');
             INSERT INTO signup_module_settings (id, time_type) VALUES (1, 'SHORT_QUALI');
-            INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id)
-            VALUES ('903', 85);
+            INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id)
+            VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '903', 85);
             INSERT INTO pending_messages (channel_id, content, failure_reason, enqueued_at)
             VALUES (86, 'hello', 'Forbidden', '2026-01-01');
             INSERT INTO audit_entries (actor_id, actor_name, change_type, timestamp)

@@ -37,7 +37,6 @@ CANCELS = [
     ("cancel_round", (5,)),
     ("cancel_season_end", ()),
     ("cancel_portrait_refresh", ()),
-    ("cancel_signup_close_timer", ()),
     ("cancel_rounds", ([5],)),
     # A wizard's timer, which the signup switch-off disarms whether or not it has fired.
     ("disarm", ("signup_inactivity", "101")),
@@ -235,14 +234,12 @@ def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
 
 async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     """`has_job` answers whether a job is armed and not yet fired, read of a real job store: the
-    signup close timer, armed a day ahead, stands until it is cancelled, and a job never armed
-    does not. The finish of a signup window's close a stop cut off reads it to pass over a
-    channel already held."""
+    signup close timer, armed a day ahead, stands until it is disarmed, and a job never armed
+    does not."""
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.db.database import run_migrations
     from leaguebot.core.services import scheduler_service
-    from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
 
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
@@ -251,13 +248,13 @@ async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     service.start()
     try:
         fire_at = datetime.now(timezone.utc) + timedelta(days=1)
-        service.schedule_signup_close_timer(fire_at.replace(tzinfo=None).isoformat())
+        service.arm_once("signup.close_timer", 1, fire_at)
 
-        assert service.has_job(SIGNUP_CLOSE_JOB_ID) is True
+        assert service.has_job("once:signup.close_timer:1") is True
         assert service.has_job("wizard_channel_delete_102") is False
 
-        service.cancel_signup_close_timer()
-        assert service.has_job(SIGNUP_CLOSE_JOB_ID) is False
+        service.disarm("signup.close_timer", 1)
+        assert service.has_job("once:signup.close_timer:1") is False
     finally:
         service._scheduler.shutdown(wait=False)
         service._scheduler._jobstores["default"].engine.dispose()

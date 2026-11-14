@@ -93,8 +93,8 @@ async def _seed(db_path: str, drivers) -> None:
             )
             if display_name is not None or username is not None:
                 await db.execute(
-                    "INSERT INTO signup_records (discord_user_id, "
-                    "discord_username, server_display_name) VALUES (?, ?, ?)",
+                    "INSERT INTO signup_records (created_at, discord_user_id, "
+                    "discord_username, server_display_name) VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?)",
                     (str(user_id), username, display_name),
                 )
         await db.commit()

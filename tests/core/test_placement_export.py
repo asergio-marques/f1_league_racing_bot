@@ -51,8 +51,8 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
             await db.execute(
                 "INSERT INTO signup_records (discord_user_id, discord_username, "
                 "server_display_name, platform, platform_id, availability_slot_ids, "
-                "driver_type, preferred_teams, total_lap_ms, updated_at, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "driver_type, preferred_teams, total_lap_ms, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     uid,
                     d.get("discord_username"),
@@ -63,7 +63,6 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
                     d.get("driver_type"),
                     json.dumps(d.get("preferred_teams", [])),
                     d.get("total_lap_ms"),
-                    d.get("updated_at", f"2026-01-0{i}T00:00:00+00:00"),
                     d.get("created_at", f"2026-01-0{i}T00:00:00+00:00"),
                 ),
             )
@@ -81,6 +80,18 @@ def _signup_service(db_path):
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     return SignupModuleService(db_path)
+
+
+async def _slot(db_path, how, day, time_hhmm):
+    """Add ("INSERT") or remove ("DELETE") the slot at *day* and *time_hhmm*, as
+    `/signup time-slot add` or `remove` leaves the table."""
+    sql = {
+        "INSERT": "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+        "DELETE": "DELETE FROM signup_availability_slots WHERE day_of_week = ? AND time_hhmm = ?",
+    }[how]
+    async with get_connection(db_path) as db:
+        await db.execute(sql, (day, time_hhmm))
+        await db.commit()
 
 
 async def _export(db_path):
@@ -128,7 +139,7 @@ class TestSlotPresence:
         ]
         assert marked_before == ["Friday 21:00 UTC"]
 
-        await _signup_service(db_path).remove_slot_by_rank(1)  # remove Monday
+        await _slot(db_path, "DELETE", 1, "19:00")  # remove Monday
 
         after_rows, after_slots = await _export(db_path)
         marked_after = [
@@ -143,7 +154,7 @@ class TestSlotPresence:
             [{"availability": ["Wed_20_00"]}],
             slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        await _signup_service(db_path).add_slot(1, "08:00")
+        await _slot(db_path, "INSERT", 1, "08:00")
 
         rows, slots = await _export(db_path)
         marked = [s.display_label for s in slots if rows[0]["slot_presence"][s.slot_sequence_id]]
@@ -156,7 +167,7 @@ class TestSlotPresence:
             [{"availability": ["Mon_19_00"]}],
             slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        await _signup_service(db_path).remove_slot_by_rank(1)
+        await _slot(db_path, "DELETE", 1, "19:00")
 
         rows, _ = await _export(db_path)
         assert rows[0]["slot_presence"] == {1: False, 2: False}
@@ -220,8 +231,8 @@ class TestExportRow:
     async def test_a_tie_goes_to_whoever_submitted_first_not_whoever_was_corrected_last(
         self, tmp_path
     ):
-        """The seed tiebreak reads the moment a signup was sent in. A correction amends the
-        record and moves its last update, and must not cost the driver their place."""
+        """The seed tiebreak reads the moment a signup was sent in (`created_at`), so a
+        correction that amends the record later must not cost the driver their place."""
         db_path = await _seed(
             tmp_path,
             [
@@ -229,13 +240,11 @@ class TestExportRow:
                     "discord_user_id": "later",
                     "total_lap_ms": 85000,
                     "created_at": "2026-01-05T00:00:00+00:00",
-                    "updated_at": "2026-01-05T00:00:00+00:00",
                 },
                 {
                     "discord_user_id": "earlier_but_corrected",
                     "total_lap_ms": 85000,
                     "created_at": "2026-01-01T00:00:00+00:00",
-                    "updated_at": "2026-01-09T00:00:00+00:00",
                 },
             ],
         )

@@ -78,8 +78,6 @@ async def _team_step(tmp_path: Any, *, picks: list[str] | None = None,
     signing up unless a test says otherwise), his wizard
     at *state* (the team step unless a test says otherwise) offering Ferrari, Mercedes and
     McLaren and holding *picks*; his signup channel standing and recording what it is sent.
-    Today's wizard handler off the queue is a stand-in that does nothing, so that only what the
-    press asks of the queue shows.
 
     The wizard row is saved through `save_wizard_on` in a save of the test's own, as a signup
     job's record saves it, and through today's committing `save_wizard` until that form exists,
@@ -128,7 +126,6 @@ async def _team_step(tmp_path: Any, *, picks: list[str] | None = None,
     league.bot.wizard_service.get_wizard_by_channel = AsyncMock(
         side_effect=signups.get_wizard_by_channel
     )
-    league.bot.wizard_service.handle_preferred_teams_button = AsyncMock(return_value=None)
     return league
 
 
@@ -166,14 +163,19 @@ def _bare() -> Any:
     return SimpleNamespace(bot=SimpleNamespace(change_queue=MagicMock()))
 
 
-def _view(league: Any, *, registered: bool = False, team_names=TEAMS, excluded=None):
-    """Built for Kimi and handed the change queue (A23); *registered* is the restart path, with
-    no account and no names, stub buttons only."""
+def _view(league: Any, *, registered: bool = False, team_names=TEAMS, excluded=None,
+          signup: Any = None):
+    """Built for Kimi and handed the change queue (A23) and the signup service it finds his
+    wizard through (#286): *signup* where given, else the league's own, and none for a bare
+    league's layout; *registered* is the restart path, with no account and no names, stub
+    buttons only."""
+    handed = signup if signup is not None else getattr(league.bot, "signup_module_service", None)
+    built: dict[str, Any] = {} if handed is None else {"signup": handed}
     if registered:
-        return PreferredTeamsButtonView(None, league.bot.change_queue)
+        return PreferredTeamsButtonView(None, league.bot.change_queue, **built)
     return PreferredTeamsButtonView(
         str(SIGNING_UP), league.bot.change_queue,
-        team_names=list(team_names), excluded=excluded,
+        team_names=list(team_names), excluded=excluded, **built,
     )
 
 
@@ -338,11 +340,11 @@ async def test_a_wizard_with_no_snapshot_is_answered(tmp_path):
     from unittest.mock import AsyncMock
 
     league = await _team_step(tmp_path)
-    league.bot.wizard_service.get_wizard_by_channel = AsyncMock(return_value=SimpleNamespace(
+    signups = SimpleNamespace(get_wizard_by_channel=AsyncMock(return_value=SimpleNamespace(
         discord_user_id=str(SIGNING_UP), draft_answers={}, config_snapshot=None,
-    ))
+    )))
 
-    press = await _press_team(_view(league), 0, _press(league))
+    press = await _press_team(_view(league, signup=signups), 0, _press(league))
 
     assert "Wizard session not found" in _answered(press)
     _refused_line(league, "Wizard session not found.")
@@ -396,8 +398,8 @@ async def test_only_the_driver_whose_wizard_it_is_may_press(tmp_path, press):
 
 
 async def test_after_a_restart_the_owner_is_found_by_channel(tmp_path):
-    """The view is re-registered at start with no account, only the change queue, so the
-    channel is the only thing tying the buttons to a person: Kimi presses Ferrari on it, the
+    """The view is re-registered at start with no account, only the change queue and the signup
+    service, so the channel is the only thing tying the buttons to a person: Kimi presses Ferrari on it, the
     pick is asked of the queue as his, and once it runs Ferrari is his pick."""
     league = await _team_step(tmp_path)
 

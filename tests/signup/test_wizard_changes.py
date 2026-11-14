@@ -55,6 +55,7 @@ from tests.support.change_queue import (
 )
 from tests.support.review_league import channel
 from tests.support.season_league import (
+    LEWIS,
     SIGNING_UP,
     SIGNUP_CHANNEL,
     SIGNUP_CHANNEL_BASE,
@@ -62,6 +63,7 @@ from tests.support.season_league import (
     setup_league,
     signing_up,
 )
+from tests.support.start_up_sweep import run_signup_start_up
 
 #: The changes Sign Up and Cancel Signup ask, and the one the league asks back of the lane.
 START_KIND = "signup.start"
@@ -78,6 +80,8 @@ NEW_CHANNEL = 6500
 OLD_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
+#: A season other than the live one, under which Lewis holds a signup saved after his live one.
+OTHER_SEASON = 990
 
 
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
@@ -123,9 +127,6 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
             [("FER", "Scuderia Ferrari"), ("MCL", "McLaren Racing")],
         )
         await db.commit()
-    # Today's handlers off the queue, reached by the presses until the changes replace them.
-    league.bot.wizard_service.start_wizard = AsyncMock(return_value=None)
-    league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
     return league
 
 
@@ -441,8 +442,8 @@ async def test_an_old_channel_is_deleted_before_the_new_one_is_created(tmp_path)
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
     _held(league, OLD_CHANNEL)
@@ -469,8 +470,8 @@ async def test_a_discarded_deletion_of_the_earlier_channel_is_named_in_the_reply
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
     old = _held(league, OLD_CHANNEL)
@@ -572,11 +573,11 @@ async def test_the_first_question_is_nationality_only_where_required_and_a_butto
     taken away, so a stray message cannot be read as an answer to a button-only step."""
     league = await _league(tmp_path)
     # The settings row is saved, not updated: a league that never changed them has none.
-    from leaguebot.signup.models.signup_module import SignupModuleSettings
-
-    await league.bot.signup_module_service.save_settings(SignupModuleSettings(
-        nationality_required=nationality, time_type="TIME_TRIAL", time_image_required=True,
-    ))
+    await league.write(
+        "INSERT INTO signup_module_settings (id, nationality_required, time_type,"
+        " time_image_required) VALUES (1, ?, 'TIME_TRIAL', 1)",
+        int(nationality),
+    )
     await league.write("UPDATE season_signup_config SET nationality_required = ?", int(nationality))
 
     await _press_sign_up(league)
@@ -649,8 +650,8 @@ async def test_signing_up_again_disarms_the_abandoned_wizard_s_timers(tmp_path):
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
     _held(league, OLD_CHANNEL)
@@ -675,8 +676,8 @@ async def test_an_abandoned_channel_already_gone_does_not_stop_sign_up(tmp_path)
         str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(SIGNING_UP), OLD_CHANNEL,
     )
 
@@ -810,16 +811,13 @@ def _expired(league: SeasonLeague, user_id: int = SIGNING_UP) -> list[str]:
             if "expired" in text.lower()]
 
 
-def _wizards(league: SeasonLeague) -> Any:
-    """The wizard service as the builder makes it, handed the change queue when built, over the
-    league's real signup module service."""
-    from tests.support.season_league import wizard_service
+async def _recover_wizards(league: SeasonLeague) -> None:
+    """The wizards recovered as the bot does when it starts: signup's catch-up, `recover_wizards`
+    in `closing_steps`, handed the bot and the league's change queue, whose clock (`league.clock`)
+    judges each 24 hours (#286)."""
+    from leaguebot.signup.services.closing_steps import recover_wizards
 
-    wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
-        change_queue=league.bot.change_queue,
-    )
-    return wizards
+    await recover_wizards(league.bot, queue=league.bot.change_queue)
 
 
 async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
@@ -988,7 +986,8 @@ async def test_a_driver_moved_on_before_their_gone_channel_is_found_is_not_ended
 
 async def test_ending_a_signup_whose_channel_is_gone_cannot_be_discarded(tmp_path):
     """Kimi awaits approval, his signup channel 6405 deleted, and the ending of his signup for
-    the gone channel is asked with his name already found, so its one job is `end`. Its save
+    the gone channel is asked with his name already found, so its jobs are `end` and, after it,
+    `disarm_timers`. Its save
     fails, stopping the league lane there. A league admin's Discard on it is refused, saying Kimi
     would be left awaiting approval with no signup channel and no review panel, and the season's
     placements could not be confirmed; he is still awaiting approval and the queue stays stopped.
@@ -1004,7 +1003,7 @@ async def test_ending_a_signup_whose_channel_is_gone_cannot_be_discarded(tmp_pat
     await run_queue(league.bot)
     stopped = await stopped_job(league.db_path, "league")
     assert stopped is not None and stopped["name"] == "end"
-    assert await _job_names(league, END_KIND) == ["end"]
+    assert await _job_names(league, END_KIND) == ["end", "disarm_timers"]
 
     refused = await discard_job(league.bot, lane="league")
 
@@ -1137,25 +1136,35 @@ async def test_a_timer_that_fires_before_the_24_hours_since_the_last_answer_ends
     assert _armed(league, DELETE_TIMER) == []
 
 
-async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
-    """The bot starts again. Kimi was last active 25 hours ago, a second driver (115) an hour
-    ago, both part-way through signing up. Recovering the wizards (the wizard service built with
-    the change queue) asks the queue for Kimi's `signup.end` as the bot, on the league lane,
-    before the queue starts, and asks nothing for the second driver. When the queue runs Kimi is
-    Not Signed Up and told his signup expired; the second driver is still signing up."""
-    from datetime import datetime, timezone
-
+@pytest.mark.parametrize("naive", [False, True], ids=["with a zone", "without a zone"])
+async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path, naive):
+    """The bot starts again, its queue's clock two days ahead of the host's. Kimi was last active
+    25 hours before the queue's clock, a second driver (115) 23 hours before it, both part-way
+    through signing up, each time stored with its zone or, as in older rows, without one (read as
+    UTC). Recovering the wizards (signup's catch-up, handed the bot and the queue) judges the 24
+    hours by the queue's clock, not the host's: it asks the queue for Kimi's `signup.end` as the
+    bot, on the league lane, before the queue starts, asks nothing for the second driver, and
+    arms no 24-hour timer for either, the second's own timer still standing in the scheduler.
+    When the queue runs Kimi is Not Signed Up and told his signup expired; the second driver is
+    still signing up."""
     league = await _league(tmp_path)
-    host_now = datetime.now(timezone.utc)
-    await _idle(league, SIGNING_UP, host_now - timedelta(hours=25))
-    await _idle(league, OTHER, host_now - timedelta(hours=1))
+    league.clock.advance(days=2)
+    for user_id, idle_hours in ((SIGNING_UP, 25), (OTHER, 23)):
+        since = league.clock.now - timedelta(hours=idle_hours)
+        await _idle(league, user_id, since)
+        if naive:
+            await league.write(
+                "UPDATE signup_wizard_records SET last_activity_at = ? WHERE discord_user_id = ?",
+                since.replace(tzinfo=None).isoformat(), str(user_id),
+            )
 
-    await _wizards(league).recover_wizards()
+    await _recover_wizards(league)
 
     [end] = await _changes_of(league, END_KIND)
     assert (_lane(end), end["origin"]) == ("league", "BOT")
     assert str(SIGNING_UP) in str(end["payload"])
     assert str(OTHER) not in str(end["payload"])
+    assert _armed(league, INACTIVITY_TIMER) == []
 
     await run_queue(league.bot)
 
@@ -1163,6 +1172,24 @@ async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
     assert len(_expired(league)) == 1
     assert await _driver_state(league, OTHER) == "PENDING_SIGNUP_COMPLETION"
     assert _expired(league, OTHER) == []
+
+
+async def test_expiry_is_not_due_while_signup_is_off(tmp_path):
+    """Kimi is part-way through signing up, last active 24 hours and a minute ago, and the
+    signup module is off. His 24-hour timer fires and the queue runs: the expiry is not due. He
+    is still Pending Signup Completion, his channel is not told his signup expired, his typing
+    there is not revoked and no deletion of the channel is armed."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+    await league.switch("signup", False)
+
+    await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert _expired(league) == []
+    assert not _locked(league)
+    assert _armed(league, DELETE_TIMER) == []
 
 
 # ---------------------------------------------------------------------------
@@ -1195,7 +1222,8 @@ async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path)
     lane, whose `delete_reason` deletes the manager's message before `signup_notice` tells the
     channel the signup was rejected, giving the reason. His typing is revoked, the channel's
     deletion armed a day on, and the manager is told the signup was rejected."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
     from tests.support.change_queue import typed_message
 
     league = await _league(tmp_path)
@@ -1263,8 +1291,8 @@ async def _held_after_signup(league: SeasonLeague, user_id: int = SIGNING_UP,
         str(user_id),
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, 'UNENGAGED', ?)",
+        "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, 'UNENGAGED', ?)",
         str(user_id), cid,
     )
     return _held(league, cid)
@@ -1321,6 +1349,128 @@ async def test_the_24_hour_deletion_runs_on_the_driver_s_lane_and_a_refusal_stop
     assert league.channel(KIMI_CHANNEL) is held
 
 
+async def test_a_held_channel_due_while_down_is_deleted_on_start(tmp_path):
+    """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
+    channel (6405) is held for 24 hours. Twenty-three hours on, its deletion is asked early (its
+    timer fired before its time) and the queue runs: the deletion is not yet due, and the channel
+    and his wizard's row stand. The bot is then down past the 24 hours and starts again, the
+    queue's clock 25 hours after the withdrawal: signup's start-up steps, run in its turn of the
+    start-up sweep with signup on, ask `signup.channel.delete` of Kimi's channel, as the bot, on
+    his channel's lane, and when the queue runs the channel is deleted and his wizard's row with
+    it."""
+    league = await _mid_signup(tmp_path)
+    held = league.channel(KIMI_CHANNEL)
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    league.clock.advance(hours=23)
+    await _timer_callback(league, DELETE_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    held.delete.assert_not_awaited()
+    assert await _wizard(league) is not None
+
+    league.clock.advance(hours=2)
+    asked_before = len(await _changes_of(league, DELETE_KIND))
+    assert await run_signup_start_up(league.bot, on=True) == []
+
+    asked = await _changes_of(league, DELETE_KIND)
+    assert len(asked) == asked_before + 1
+    assert (_lane(asked[-1]), asked[-1]["origin"]) == (KIMI_LANE, "BOT")
+
+    await run_queue(league.bot)
+
+    held.delete.assert_awaited_once()
+    assert await _wizard(league) is None
+
+
+async def test_a_held_channel_is_deleted_while_signup_is_off(tmp_path):
+    """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
+    channel (6405) is told his signup was withdrawn and held for 24 hours. The signup module is
+    then switched off. A day on, the channel's deletion timer fires and the queue runs: the
+    channel is deleted on time though signup is off, the one piece of signup's work that runs
+    while it is off, and nothing more is posted in it first."""
+    league = await _mid_signup(tmp_path)
+    held = league.channel(KIMI_CHANNEL)
+    await _press_cancel(league)
+    await run_queue(league.bot)
+    posted = list(held.texts)
+    await league.switch("signup", False)
+
+    league.clock.advance(hours=24)
+    await _timer_callback(league, DELETE_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    held.delete.assert_awaited_once()
+    assert held.texts == posted
+    assert await _wizard(league) is None
+
+
+async def test_a_held_channel_due_while_signup_is_off_is_deleted_on_start(tmp_path):
+    """Kimi presses Cancel Signup part-way through signing up and the queue runs: his signup
+    channel (6405) is told his signup was withdrawn and held for 24 hours. The signup module is
+    then switched off, and the channel's deletion timer is lost (it never fires). The bot is down
+    past the 24 hours and starts again, the queue's clock 25 hours after the withdrawal, signup
+    still off: signup's start-up steps run in its turn of the start-up sweep, and when the queue
+    runs the channel is deleted and his wizard's row with it. Nothing more is posted in the
+    channel, and the sweep reports no failure to the log channel."""
+    league = await _mid_signup(tmp_path)
+    held = league.channel(KIMI_CHANNEL)
+    await _press_cancel(league)
+    await run_queue(league.bot)
+    posted = list(held.texts)
+    await league.switch("signup", False)
+
+    league.clock.advance(hours=25)
+    assert await run_signup_start_up(league.bot, on=False) == []
+    await run_queue(league.bot)
+
+    held.delete.assert_awaited_once()
+    assert held.texts == posted
+    assert await _wizard(league) is None
+
+
+#: A driver parked while a manager chooses what they are to correct.
+CORRECTING = SIGNING_UP + 20
+
+
+async def test_a_restart_while_signup_is_off_ends_releases_and_expires_no_signup(tmp_path):
+    """The signup module is off and the bot starts again. Kimi is part-way through signing up,
+    last active 25 hours ago, and his signup channel (6405) was deleted while the bot was down; a
+    second driver (115) is part-way through signing up, last active 25 hours ago, his channel
+    standing; a third (125) is parked awaiting a correction choice. Signup's start-up steps run in
+    its turn of the start-up sweep, signup's switch reading off, then the queue runs. No signup is
+    ended, for a channel gone or for inactivity, and no correction lapse is asked: each driver
+    keeps his state and his wizard, no 24-hour timer is armed, and nothing is written to the log
+    channel, the sweep reporting no failure."""
+    league = await _league(tmp_path)
+    idle_since = league.clock.now - timedelta(hours=25)
+    await _idle(league, SIGNING_UP, idle_since)
+    await _idle(league, OTHER, idle_since)
+    league.remove_channel(KIMI_CHANNEL)
+    await signing_up(league, CORRECTING, state="AWAITING_CORRECTION_PARAMETER")
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' WHERE discord_user_id = ?",
+        str(CORRECTING),
+    )
+    await league.switch("signup", False)
+    logged = league.log()
+
+    assert await run_signup_start_up(league.bot, on=False) == []
+    await run_queue(league.bot)
+
+    assert await _changes_of(league, END_KIND) == []
+    assert await _changes_of(league, "signup.correction.lapse") == []
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert await _driver_state(league, OTHER) == "PENDING_SIGNUP_COMPLETION"
+    assert await _driver_state(league, CORRECTING) == "AWAITING_CORRECTION_PARAMETER"
+    for user_id in (SIGNING_UP, OTHER, CORRECTING):
+        assert await _wizard(league, user_id) is not None
+    assert _armed(league, INACTIVITY_TIMER) == []
+    assert _expired(league, OTHER) == []
+    assert league.log() == logged
+
+
 # ---------------------------------------------------------------------------
 # A member leaving mid-signup (C80)
 # ---------------------------------------------------------------------------
@@ -1331,12 +1481,9 @@ KIMI_TURN = "test.kimi_turn"
 
 
 async def _leave(league: SeasonLeague, user_id: int = SIGNING_UP) -> None:
-    """Driver *user_id* leaves the league's server, and the signup cog's listener hears it.
-    Today's wizard clean-up off the queue is a stand-in that does nothing, so that only what the
-    listener asks of the queue shows."""
+    """Driver *user_id* leaves the league's server, and the signup cog's listener hears it."""
     from leaguebot.signup.cogs.signup_cog import SignupCog
 
-    league.bot.wizard_service.handle_member_remove = AsyncMock(return_value=None)
     cog = SignupCog.__new__(SignupCog)
     cog.bot = league.bot
     await cog.on_member_remove(league._member(user_id))
@@ -1413,6 +1560,64 @@ async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_job
                for line in league.bot.log_channel.sent)
 
 
+@pytest.mark.parametrize(("state", "record", "named"), [
+    pytest.param("UNASSIGNED", "live", "Lewis Hamilton", id="unassigned"),
+    pytest.param("ASSIGNED", "live", "Lewis Hamilton", id="assigned"),
+    pytest.param("ASSIGNED", None, "Lewis", id="assigned-no-signup-record"),
+    pytest.param(
+        "ASSIGNED", "another-season-after", "Lewis Hamilton",
+        id="assigned-another-season-s-signup-saved-after",
+    ),
+])
+async def test_a_placed_driver_leaving_writes_the_line_through_the_queue(
+    tmp_path, state, record, named,
+):
+    """Lewis, approved or placed (*state*), leaves the server. The listener posts nothing itself:
+    it asks the queue for `signup.member_left`, whose check admits him, and its save writes the
+    one line "Driver left server" naming him by the name he signed up under for the live season
+    ("Lewis Hamilton"), even where a signup of his for another season was saved after it under
+    another name, or by his Discord name ("Lewis") where he has no signup record, with his state.
+    The save is the line alone: he keeps his state, no timer of his is disarmed and no channel is
+    deleted."""
+    league = await _league(tmp_path)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?", state, str(LEWIS)
+    )
+    if record is None:
+        await league.write("DELETE FROM signup_records WHERE discord_user_id = ?", str(LEWIS))
+    else:
+        await league.write(
+            "UPDATE signup_records SET server_display_name = 'Lewis Hamilton' "
+            "WHERE discord_user_id = ?", str(LEWIS),
+        )
+    if record == "another-season-after":
+        await league.write(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2025-01-01', 'COMPLETED', 1)", OTHER_SEASON,
+        )
+        await league.write(
+            "INSERT INTO signup_records (created_at, season_id, discord_user_id, "
+            "server_display_name) VALUES ('2026-02-01T00:00:00+00:00', "
+            "?, ?, 'Lewis From Another Season')",
+            OTHER_SEASON, str(LEWIS),
+        )
+
+    await _leave(league, LEWIS)
+
+    assert not any("Driver left server" in line for line in league.bot.log_channel.sent)
+
+    await run_queue(league.bot)
+
+    [change] = await _changes_of(league, MEMBER_LEFT_KIND)
+    assert (_lane(change), change["state"]) == ("league", "DONE")
+    [line] = [line for line in league.bot.log_channel.sent if "Driver left server" in line]
+    assert f"Driver left server: **{named}** (`<@{LEWIS}>`) | state: {state}" in line
+    assert await _driver_state(league, LEWIS) == state
+    assert [call.args for call in league.bot.scheduler_service.disarm.call_args_list
+            if str(LEWIS) in call.args] == []
+    assert league.order == []
+
+
 async def test_a_member_leaving_whose_signup_record_cannot_be_read_stops_the_league_lane(
     tmp_path, monkeypatch
 ):
@@ -1435,6 +1640,32 @@ async def test_a_member_leaving_whose_signup_record_cannot_be_read_stops_the_lea
     assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
     assert league.order == []
     assert not any("Driver left server" in line for line in league.bot.log_channel.sent)
+
+
+async def test_a_save_that_fails_keeps_the_driver_s_timers(tmp_path, monkeypatch):
+    """Kimi, part-way through signing up, leaves the server, and the database fails as the
+    queue saves his leaving. The save is rolled back whole, so his timers are kept with it: his
+    24 hours of inactivity and his channel's deletion are not disarmed, the league lane stops at
+    the save's job, he is still Pending Signup Completion and his channel stands (D5: a timer is
+    disarmed by a job after the save, never inside it)."""
+    import sqlite3
+
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now)
+    monkeypatch.setattr(
+        league.bot.driver_service, "transition_on",
+        AsyncMock(side_effect=sqlite3.OperationalError("database or disk is full")),
+    )
+
+    await _leave(league)
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "leave"
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert league.order == []
+    assert [call.args for call in league.bot.scheduler_service.disarm.call_args_list
+            if str(SIGNING_UP) in call.args] == []
 
 
 async def test_a_member_leaving_while_the_queue_is_stopped_keeps_their_channel_until_it_clears(
@@ -1573,32 +1804,6 @@ async def test_an_expiry_for_a_driver_who_has_since_submitted_changes_nothing(tm
     assert _armed(league, DELETE_TIMER) == []
 
 
-@pytest.mark.parametrize("naive", [False, True], ids=["with a zone", "without a zone"])
-async def test_a_restart_re_arms_each_open_signup_from_its_own_last_activity(tmp_path, naive):
-    """The bot starts again. A driver (115) part-way through signing up was last active an hour
-    ago, the time stored with its zone or, as in older rows, without one (read as UTC).
-    Recovering the wizards (the wizard service built with the change queue) asks no expiry for
-    him, and arms his 24-hour timer for 24 hours after his last activity, not 24 hours from the
-    restart."""
-    from datetime import datetime, timezone
-
-    league = await _league(tmp_path)
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
-    await _idle(league, OTHER, since)
-    if naive:
-        await league.write(
-            "UPDATE signup_wizard_records SET last_activity_at = ? WHERE discord_user_id = ?",
-            since.replace(tzinfo=None).isoformat(), str(OTHER),
-        )
-
-    await _wizards(league).recover_wizards()
-
-    assert await _changes_of(league, END_KIND) == []
-    assert _armed(league, INACTIVITY_TIMER) == [
-        (INACTIVITY_TIMER, str(OTHER), since + timedelta(hours=24))
-    ]
-
-
 async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_a_manager(
     tmp_path,
 ):
@@ -1607,10 +1812,8 @@ async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_
     second driver (115) gave his last answer and waits on a manager: Pending Admin Approval, his
     wizard parked. Recovering the wizards asks no expiry of either and arms neither's 24-hour
     timer; when the queue runs nothing is posted in either channel."""
-    from datetime import datetime, timezone
-
     league = await _league(tmp_path)
-    since = datetime.now(timezone.utc) - timedelta(hours=30)
+    since = league.clock.now - timedelta(hours=30)
     for user_id, state in ((SIGNING_UP, "NOT_SIGNED_UP"), (OTHER, "PENDING_ADMIN_APPROVAL")):
         await _idle(league, user_id, since)
         await league.write(
@@ -1623,7 +1826,7 @@ async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_
             state, str(user_id),
         )
 
-    await _wizards(league).recover_wizards()
+    await _recover_wizards(league)
     await run_queue(league.bot)
 
     assert await _changes_of(league, END_KIND) == []
@@ -1661,9 +1864,10 @@ async def test_a_member_leaving_while_waiting_on_a_manager_is_cleaned_up_too(tmp
 async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_path, approved):
     """A member leaves the server with no signup in progress: Kimi, who never signed up, or a
     driver (106) whose signup was approved and who is Unassigned. The listener asks
-    `signup.member_left` all the same; when the queue runs the change is dropped as no longer
-    due. No driver state is written or changed, no channel is deleted, and no signup or wizard
-    row is removed."""
+    `signup.member_left` all the same. When the queue runs, Kimi's is dropped as no longer due
+    and writes no line; the approved driver's is done, and writes only the one "Driver left
+    server" line. No driver state is written or changed, no channel is deleted, and no signup
+    or wizard row is removed."""
     from tests.support.season_league import UNASSIGNED, approved_unplaced
 
     league = await _league(tmp_path)
@@ -1676,7 +1880,9 @@ async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_pat
     await run_queue(league.bot)
 
     [change] = await _changes_of(league, MEMBER_LEFT_KIND)
-    assert change["state"] == "DROPPED"
+    assert change["state"] == ("DONE" if approved else "DROPPED")
+    left = [line for line in league.bot.log_channel.sent if "Driver left server" in line]
+    assert len(left) == (1 if approved else 0)
     assert await _driver_state(league, user_id) == ("UNASSIGNED" if approved else None)
     assert league.order == []
     assert await league.rows("SELECT * FROM signup_records") == signups

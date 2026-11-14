@@ -15,6 +15,7 @@ Every test drives the real cog and the real queue through `tests/support/season_
 """
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import sqlite3
@@ -957,7 +958,7 @@ async def test_the_timed_work_is_removed_before_the_round_is_recorded_cancelled(
     seen: list[str] = []
 
     def _unarm(rid: int) -> None:
-        with sqlite3.connect(league.db_path) as db:
+        with contextlib.closing(sqlite3.connect(league.db_path)) as db, db:
             seen.append(db.execute("SELECT status FROM rounds WHERE id = ?", (rid,)).fetchone()[0])
         league.unarmed.append(rid)
 
@@ -1704,7 +1705,7 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
 
     def _unarm_and_accept(round_id: int, **_kwargs: Any) -> list[str]:
         league.unarmed.append(round_id)
-        with sqlite3.connect(league.db_path) as db:
+        with contextlib.closing(sqlite3.connect(league.db_path)) as db, db:
             db.execute(
                 "INSERT INTO session_results (round_id, division_id, session_type, status, "
                 "config_name, submitted_by, submitted_at) VALUES (?, ?, 'FEATURE_RACE', "

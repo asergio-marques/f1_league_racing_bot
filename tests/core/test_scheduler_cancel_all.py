@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 
 from leaguebot.core.services.scheduler_service import (
     PORTRAIT_REFRESH_JOB_ID,
-    SIGNUP_CLOSE_JOB_ID,
     SchedulerService,
 )
 
@@ -28,7 +27,7 @@ async def test_every_job_goes_but_those_kept(tmp_path):
     try:
         service.start()
         later = (datetime.now(timezone.utc) + timedelta(days=3)).replace(tzinfo=None)
-        service.schedule_signup_close_timer(later.isoformat())
+        service.arm_once("signup.close_timer", 1, later.replace(tzinfo=timezone.utc))
         service.schedule_portrait_refresh("03:00")
         service._scheduler.add_job(
             _noop, "date", run_date=later.replace(tzinfo=timezone.utc), id="wizard_inactivity_1"
@@ -47,11 +46,11 @@ async def test_nothing_kept_leaves_no_job(tmp_path):
     try:
         service.start()
         later = (datetime.now(timezone.utc) + timedelta(days=3)).replace(tzinfo=None)
-        service.schedule_signup_close_timer(later.isoformat())
+        service.arm_once("signup.close_timer", 1, later.replace(tzinfo=timezone.utc))
         service.schedule_portrait_refresh("03:00")
 
         assert service.cancel_all() == 2
         assert service._scheduler.get_jobs() == []
-        assert service._scheduler.get_job(SIGNUP_CLOSE_JOB_ID) is None
+        assert service._scheduler.get_job("once:signup.close_timer:1") is None
     finally:
         _dispose(service)

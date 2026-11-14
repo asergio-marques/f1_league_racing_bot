@@ -277,8 +277,8 @@ async def test_a_driver_the_server_no_longer_knows_is_drawn_under_their_signup_n
     )
     async with get_connection(league.db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (discord_user_id, discord_username, server_display_name) "
-            "VALUES (?, 'lewis44', 'Signed Up Lewis')",
+            "INSERT INTO signup_records (created_at, discord_user_id, discord_username, server_display_name) "
+            "VALUES ('2026-01-01T00:00:00+00:00', ?, 'lewis44', 'Signed Up Lewis')",
             (str(LEWIS),),
         )
         await db.commit()

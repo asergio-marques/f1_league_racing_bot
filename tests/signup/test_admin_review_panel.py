@@ -73,7 +73,7 @@ from tests.support.change_queue import (
     typed_message,
     updated_reply,
 )
-from tests.support.season_league import SIGNING_UP, SeasonLeague
+from tests.support.season_league import SIGNING_UP, SeasonLeague, review_services
 
 #: A second league manager, beside 77.
 SECOND_MANAGER = REVIEWER + 1
@@ -134,8 +134,9 @@ async def _press(
     channel_id: int = KIMI_CHANNEL,
 ) -> Any:
     """*by* presses *button* on a review panel built for *driver* (none: a panel rebuilt at a
-    restart), handed the change queue when it is built (A23)."""
-    view = AdminReviewView(driver, change_queue=league.bot.change_queue)
+    restart), handed the change queue (A23) and the services it reads (#286) when it is built."""
+    view = AdminReviewView(driver, change_queue=league.bot.change_queue,
+                           **review_services(league.bot))
     press = _pressed_by(league, by, channel_id=channel_id)
     await getattr(view, button).callback(press)
     return press
@@ -330,10 +331,7 @@ async def test_the_parked_entry_is_keyed_to_the_manager_who_pressed(tmp_path):
 async def _park(league: SeasonLeague, action: str) -> Any:
     """Manager 77 has pressed *action*'s button on Kimi's panel: the press deferred and its entry
     parked as the button parks it, with the press's own interaction, and the lapse task a reason
-    that arrives cancels (#482). Today's rejection off the queue is a stand-in that does nothing,
-    as `_league`'s other handlers are, so that only what the reason asks of the queue shows.
-    Gives the press."""
-    league.bot.wizard_service.reject_signup = AsyncMock(return_value=None)
+    that arrives cancels (#482). Gives the press."""
     press = _pressed_by(league, REVIEWER)
     await press.response.defer(ephemeral=True)
     # The acknowledgement of a deferred press is its first follow-up, and editing that message is

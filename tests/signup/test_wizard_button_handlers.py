@@ -120,6 +120,23 @@ async def test_a_first_team_pick_is_recorded_and_the_next_is_offered(tmp_path):
     assert len(league.channels[KIMI_CHANNEL].texts) == 1
 
 
+async def test_a_team_pressed_on_the_next_question_s_buttons_is_recorded(tmp_path):
+    """Discord hands a press to the view on the message pressed, so the buttons the answer
+    posts for the next pick must work as they stand, not only those registered at start.
+    Kimi presses Ferrari; once the queue runs, he presses Mercedes on the buttons posted with
+    the next question, and once the queue runs again his picks are Ferrari then Mercedes."""
+    league = await _team_step(tmp_path)
+    await _pick(league, "Ferrari", offered=("Ferrari", "Mercedes", "McLaren"))
+
+    _, posted = _last_post(league)
+    teams = [item.label for item in posted.children
+             if item.custom_id not in ("pteam_nopref", "pteam_cancel")]
+    await _press_team(posted, teams.index("Mercedes"), _press(league, labels=teams))
+    await run_queue(league.bot)
+
+    assert await _picks(league) == ["Ferrari", "Mercedes"]
+
+
 async def test_the_next_prompt_names_the_ordinal_and_the_picks_so_far(tmp_path):
     """The driver is several presses into a list they cannot see; the prompt is the only
     record of what they have already chosen."""

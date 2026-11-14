@@ -54,7 +54,7 @@ from tests.signup.test_review_changes import (
     _wizard,
 )
 from tests.support.change_queue import member_interaction, run_queue
-from tests.support.season_league import SIGNING_UP, SeasonLeague
+from tests.support.season_league import SIGNING_UP, SeasonLeague, correction_services
 
 #: Every question the wizard asks, as label and stored key.
 PARAMETERS = [
@@ -110,7 +110,8 @@ async def _choose(
     channel_id: int = KIMI_CHANNEL,
 ) -> Any:
     """*by* presses *label* on a panel built for *driver* (none: a panel rebuilt at a restart)."""
-    view = CorrectionParameterView(driver, change_queue=league.bot.change_queue)
+    view = CorrectionParameterView(driver, change_queue=league.bot.change_queue,
+                                   **correction_services(league.bot))
     press = _pressed_by(league, by, channel_id=channel_id)
     await _button(view, label).callback(press)
     return press
@@ -133,7 +134,8 @@ def _button(view, label: str):
 async def test_a_button_is_offered_for_every_question_the_wizard_asks():
     """A question with no button could never be corrected, and the manager would have to
     reject the whole signup to get it changed."""
-    view = CorrectionParameterView("4242", change_queue=MagicMock())
+    view = CorrectionParameterView("4242", change_queue=MagicMock(), signup=MagicMock(),
+                                   config=MagicMock())
 
     labels = [c.label for c in view.children if getattr(c, "label", None)]
     for label, _ in PARAMETERS:
@@ -143,7 +145,8 @@ async def test_a_button_is_offered_for_every_question_the_wizard_asks():
 async def test_each_button_carries_its_own_custom_id():
     """Persistent views are matched by custom id, so two buttons sharing one would make
     which parameter a press means depend on the order Discord matched them."""
-    view = CorrectionParameterView("4242", change_queue=MagicMock())
+    view = CorrectionParameterView("4242", change_queue=MagicMock(), signup=MagicMock(),
+                                   config=MagicMock())
 
     ids = [c.custom_id for c in view.children if getattr(c, "custom_id", None)]
     assert len(ids) == len(set(ids))

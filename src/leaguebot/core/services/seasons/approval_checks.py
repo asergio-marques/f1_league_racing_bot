@@ -17,7 +17,7 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, TypeVar
+from typing import Any, TypeVar
 
 import discord
 
@@ -25,14 +25,12 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
-from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
 from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
-from leaguebot.core.utils.channel_guard import league_role_faults
 from leaguebot.core.utils.formatting import discord_ts
 from leaguebot.core.utils.hooks import AwaitedHook
 
@@ -236,19 +234,6 @@ async def unsettled_signups(db_path: str, driver_names_read: AwaitedHook) -> lis
     ]
 
 
-class SignupSettings(Protocol):
-    """What the configuration's checks read of the signup module's settings."""
-
-    @property
-    def signup_channel_id(self) -> int | None: ...
-
-
-class SignupModuleSettings(Protocol):
-    """The signup module's settings, as the configuration's checks read them."""
-
-    async def get_config(self) -> SignupSettings | None: ...
-
-
 def divisions_without_rounds(
     divisions: Sequence[Division], rounds_of: Mapping[int, Sequence[Round]]
 ) -> list[str]:
@@ -274,20 +259,6 @@ def duplicate_round_times(
                 break
             seen.add(round_.scheduled_at)
     return problems
-
-
-async def signup_prerequisite_problems(
-    *, module_service: ModuleService, signup_module_service: SignupModuleSettings
-) -> list[str]:
-    """What the signup module, while it is on, still lacks for a season to be approved: its
-    signup channel. The league's two roles are not checked again, since confirming the
-    configuration required them while signup was on, and fixed them until the season ends."""
-    if not await module_service.is_signup_enabled():
-        return []
-    config = await signup_module_service.get_config()
-    if config is None or config.signup_channel_id is not None:
-        return []
-    return ["**Signup channel** (use `/signup channel`)"]
 
 
 async def team_name_problems(team_service: TeamService, season_id: int | None) -> list[str]:
@@ -528,10 +499,9 @@ async def configuration_faults(
     guild: discord.Guild | None = None,
     *,
     module_service: ModuleService,
-    signup_module_service: SignupModuleSettings,
-    config_service: ConfigService,
     team_service: TeamService,
     confirmation_refused: AwaitedHook,
+    configuration_faults_read: AwaitedHook,
     image_drawing: ImageDrawing,
 ) -> list[str]:
     """Every fault that stops a season's configuration being confirmed.
@@ -543,9 +513,9 @@ async def configuration_faults(
     between — save the league's two roles, which confirming the configuration fixes
     until the season ends, and so cannot have changed.
 
-    **The roles are judged upon the server, not merely as stored**, where *guild*
-    is given: both must still be on it, and the driver role must be one the bot can grant.
-    Confirming fixes them, so this is the last moment a league can choose others freely.
+    **The league's two roles are signup's to judge**, through *configuration_faults_read*,
+    which hands the season and *guild*: signup reads its own switch and settings, so this check
+    holds no rule of its. A module that is off hands nothing.
 
     **One check for the review and the confirmation**, so the button is withheld on
     exactly what the confirmation refuses. Each fault is a line a league manager reads,
@@ -554,24 +524,10 @@ async def configuration_faults(
     faults: list[str] = []
 
     # ── Signup ─────────────────────────────────────────────────────────────
-    # The two roles are the league's, but only the signup module needs
-    # them, so they are faults only while it is enabled.
-    if await module_service.is_signup_enabled():
-        signup_cfg = await signup_module_service.get_config()
-        server_cfg = await config_service.get_server_config()
-        base_role_id = server_cfg.base_role_id if server_cfg is not None else None
-        driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
-        if signup_cfg is None or signup_cfg.signup_channel_id is None:
-            faults.append("The signup module has no **signup channel** — `/signup channel`.")
-        if base_role_id is None:
-            faults.append(
-                "The signup module needs the league's **base role** — `/bot base-role`."
-            )
-        if driver_role_id is None:
-            faults.append(
-                "The signup module needs the league's **driver role** — `/bot driver-role`."
-            )
-        faults += league_role_faults(guild, base_role_id, driver_role_id)
+    # What a module faults the configuration on before the team names, read through the hook
+    # signup signs up to, in the place signup's lines have always stood.
+    for handed in await configuration_faults_read.call(season_id, guild):
+        faults.extend(handed)
 
     # ── Team names ─────────────────────────────────────────────────────────
     # The server's list alone: a season in configuration has no division to check.

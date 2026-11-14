@@ -34,10 +34,25 @@ from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
+from discord import app_commands
+
+from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.core.utils.interaction_errors import failure_reply
+from tests.support.change_queue import MEMBER_ID, run_queue
+from tests.support.settings_league import (
+    fault_in,
+    interaction,
+    last_said,
+    log_lines,
+    said,
+    settings_league,
+)
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 8908
-ACTOR_ID = 4242
+ACTOR_ID = MEMBER_ID
+#: The member as a log line names them.
+NAMED = "Admin"
 CHANNEL_ID = 777001
 BASE_ROLE_ID = 555001
 DRIVER_ROLE_ID = 555002
@@ -138,30 +153,81 @@ TOGGLES = [
     ("time_image", "time_image_required"),
 ]
 
+#: Each toggle's reply once run from the defaults, as the manager reads it.
+_TOGGLED = {
+    "nationality": "✅ Nationality requirement: **OFF**.",
+    "time_type": "✅ Time type: **Short Qualification**.",
+    "time_image": "✅ Time image requirement: **OFF**.",
+}
+
+
+async def _league(tmp_path, *, config: bool = True, slots=()):
+    """The settings league with signup alone on (`settings_league`), holding the module's
+    configuration where *config*, and each of *slots* (day, "HH:MM") saved."""
+    league = await settings_league(tmp_path, modules=("signup",))
+    async with get_connection(league.db_path) as db:
+        if config:
+            await db.execute(
+                "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
+                "VALUES (1, ?, 0)",
+                (CHANNEL_ID,),
+            )
+        for day, time_hhmm in slots:
+            await db.execute(
+                "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+                (day, time_hhmm),
+            )
+        await db.commit()
+    return league
+
+
+async def _ask(league, command: str, *args):
+    """Run `/signup <command>` (`SignupCog.<command>`) as the member, the queue not yet run."""
+    name = {"time_slot_add": "time-slot add", "time_slot_remove": "time-slot remove"}.get(
+        command, command.replace("_", "-")
+    )
+    asked = interaction(league.bot, f"signup {name}")
+    await undecorate(getattr(SignupCog, command))(SignupCog(league.bot), asked, *args)
+    return asked
+
+
+async def _run(league, command: str, *args):
+    """Run `/signup <command>` as the member, then the queue."""
+    asked = await _ask(league, command, *args)
+    await run_queue(league.bot)
+    return asked
+
+
+async def _settings(league):
+    return await league.bot.signup_module_service.get_settings()
+
+
+async def _rows(db_path: str, sql: str) -> list[tuple]:
+    async with get_connection(db_path) as db:
+        return [tuple(row) for row in await (await db.execute(sql)).fetchall()]
+
 
 @pytest.mark.parametrize("command,field", TOGGLES, ids=[c for c, _ in TOGGLES])
 async def test_a_toggle_flips_the_setting(tmp_path, command, field):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    before = getattr(await cog.bot.signup_module_service.get_settings(), field)
+    league = await _league(tmp_path)
+    before = getattr(await _settings(league), field)
 
-    await undecorate(getattr(SignupCog, command))(cog, _interaction())
+    await _run(league, command)
 
-    after = getattr(await cog.bot.signup_module_service.get_settings(), field)
+    after = getattr(await _settings(league), field)
     assert after is not before
 
 
 @pytest.mark.parametrize("command,field", TOGGLES, ids=[c for c, _ in TOGGLES])
 async def test_a_toggle_flips_back(tmp_path, command, field):
     """A toggle that only ever turned something on would leave a league unable to undo it."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    before = getattr(await cog.bot.signup_module_service.get_settings(), field)
+    league = await _league(tmp_path)
+    before = getattr(await _settings(league), field)
 
-    await undecorate(getattr(SignupCog, command))(cog, _interaction())
-    await undecorate(getattr(SignupCog, command))(cog, _interaction())
+    await _run(league, command)
+    await _run(league, command)
 
-    after = getattr(await cog.bot.signup_module_service.get_settings(), field)
+    after = getattr(await _settings(league), field)
     assert after is before
 
 
@@ -169,12 +235,11 @@ async def test_a_toggle_flips_back(tmp_path, command, field):
 async def test_a_toggle_records_what_it_was_and_what_it_became(tmp_path, command, field):
     """The league's only account of who changed a signup rule mid-season. An entry naming
     the same value twice would pass any test that merely counted the rows."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    league = await _league(tmp_path)
 
-    await undecorate(getattr(SignupCog, command))(cog, _interaction())
+    await _run(league, command)
 
-    entries = await _audit(db_path)
+    entries = await _audit(league.db_path)
     assert len(entries) == 1
     entry = entries[0]
     assert entry["change_type"] == "SIGNUP_SETTINGS_CHANGE"
@@ -189,23 +254,21 @@ async def test_a_toggle_records_what_it_was_and_what_it_became(tmp_path, command
 async def test_the_time_type_command_swaps_between_the_two_kinds(tmp_path):
     """Not a boolean — the two values are the two ways a league can ask for a lap time,
     and they are set in different places in the game."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    before = (await cog.bot.signup_module_service.get_settings()).time_type
+    league = await _league(tmp_path)
+    before = (await _settings(league)).time_type
 
-    await undecorate(SignupCog.time_type)(cog, _interaction())
-    after = (await cog.bot.signup_module_service.get_settings()).time_type
+    await _run(league, "time_type")
+    after = (await _settings(league)).time_type
 
     assert {before, after} == {"TIME_TRIAL", "SHORT_QUALIFICATION"}
 
 
 async def test_the_time_type_command_records_both_values(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    league = await _league(tmp_path)
 
-    await undecorate(SignupCog.time_type)(cog, _interaction())
+    await _run(league, "time_type")
 
-    entry = (await _audit(db_path))[0]
+    entry = (await _audit(league.db_path))[0]
     assert json.loads(entry["old_value"])["field"] == "time_type"
     assert json.loads(entry["old_value"])["value"] != json.loads(entry["new_value"])["value"]
 
@@ -214,14 +277,17 @@ async def test_the_time_type_command_records_both_values(tmp_path):
     "command", ["nationality", "time_type", "time_image"],
 )
 async def test_every_toggle_tells_the_manager_and_the_log(tmp_path, command):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    """The toggle is acknowledged at once as under way, and once run the manager reads what it
+    became; one Success line names the member and the command."""
+    league = await _league(tmp_path)
 
-    await undecorate(getattr(SignupCog, command))(cog, interaction)
+    asked = await _run(league, command)
 
-    interaction.response.send_message.assert_awaited_once()
-    cog.bot.output_router.post_log.assert_awaited_once()
+    assert said(asked)[0].startswith("⏳ ")
+    assert last_said(asked) == _TOGGLED[command]
+    [line] = await log_lines(league)
+    assert line.startswith(f"{NAMED} (")
+    assert f" | /signup {command.replace('_', '-')} | Success" in line.splitlines()[0]
 
 
 @pytest.mark.parametrize(
@@ -230,12 +296,100 @@ async def test_every_toggle_tells_the_manager_and_the_log(tmp_path, command):
 async def test_a_server_with_no_settings_row_starts_from_the_defaults(tmp_path, command):
     """`get_settings` invents a default row rather than returning None, so the first
     toggle a league ever runs has something to flip."""
-    db_path = await _make_db(tmp_path, config=False)
-    cog = _make_cog(db_path)
+    league = await _league(tmp_path, config=False)
 
-    await undecorate(getattr(SignupCog, command))(cog, _interaction())
+    await _run(league, command)
 
-    assert len(await _audit(db_path)) == 1
+    assert len(await _audit(league.db_path)) == 1
+
+
+_SLOTS = "SELECT day_of_week, time_hhmm FROM signup_availability_slots ORDER BY id"
+_SETTINGS = ("SELECT nationality_required, time_type, time_image_required "
+             "FROM signup_module_settings")
+_MONDAY = app_commands.Choice(name="Monday", value="1")
+
+# (command, its arguments, the slots saved first, the rows' query, the rows once saved, the kind
+# of its audit entry)
+_ONE_SAVE = [
+    ("nationality", (), (), _SETTINGS, [(0, "TIME_TRIAL", 1)], "SIGNUP_SETTINGS_CHANGE"),
+    ("time_type", (), (), _SETTINGS, [(1, "SHORT_QUALIFICATION", 1)], "SIGNUP_SETTINGS_CHANGE"),
+    ("time_image", (), (), _SETTINGS, [(1, "TIME_TRIAL", 0)], "SIGNUP_SETTINGS_CHANGE"),
+    ("time_slot_add", (_MONDAY, "20:00"), (), _SLOTS, [(1, "20:00")], "SIGNUP_SLOT_ADD"),
+    ("time_slot_remove", (1,), ((1, "20:00"),), _SLOTS, [], "SIGNUP_SLOT_REMOVE"),
+]
+
+
+@pytest.mark.parametrize(
+    "command, args, slots, query, saved, kind", _ONE_SAVE, ids=[case[0] for case in _ONE_SAVE]
+)
+async def test_a_signup_setting_saves_its_value_and_audit_in_one_save(
+    tmp_path, command, args, slots, query, saved, kind
+):
+    """`/signup nationality`, `time-type`, `time-image`, `time-slot add Monday 20:00` and
+    `time-slot remove 1` (Monday 20:00 saved): the two slot commands are acknowledged as under way
+    before the queue runs (the three toggles' acknowledgement is
+    `test_every_toggle_tells_the_manager_and_the_log`'s); asked while the audit entry's write
+    faults, the value is left as it was, the manager is told nothing was saved and to run it again,
+    and no Success line is written; asked again, the value, one audit entry of its kind by the
+    manager and one Success line are saved."""
+    league = await _league(tmp_path, slots=slots)
+    before = await _rows(league.db_path, query)
+    name = {"time_slot_add": "time-slot add", "time_slot_remove": "time-slot remove"}.get(
+        command, command.replace("_", "-")
+    )
+
+    faulted = await _ask(league, command, *args)
+    if command.startswith("time_slot_"):
+        assert said(faulted)[0].startswith("⏳ ")
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert last_said(faulted) == failure_reply(
+        f"`/signup {name}`", NOTHING_SAVED.format(command=f"/signup {name}")
+    )
+    assert await _rows(league.db_path, query) == before
+    assert await _audit(league.db_path) == []
+    assert not any(" | Success" in line for line in await log_lines(league))
+
+    await _run(league, command, *args)
+
+    assert await _rows(league.db_path, query) == saved
+    assert [(e["change_type"], e["actor_id"]) for e in await _audit(league.db_path)] == [
+        (kind, ACTOR_ID)
+    ]
+    assert [line for line in await log_lines(league) if " | Success" in line] != []
+
+
+async def test_a_fault_after_a_slot_is_saved_is_not_read_as_a_duplicate(tmp_path):
+    """`/signup time-slot add Monday 20:00`, no slot saved, whose audit entry's write raises a
+    `ValueError` after the slot's insert: the manager is told nothing was saved and to run it
+    again, never that the slot already exists, and no slot is saved."""
+    league = await _league(tmp_path)
+
+    asked = await _ask(league, "time_slot_add", _MONDAY, "20:00")
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on",
+                  ValueError("a fault after the slot's insert")):
+        await run_queue(league.bot)
+
+    assert not any("already exists" in word for word in said(asked))
+    assert last_said(asked) == failure_reply(
+        "`/signup time-slot add`", NOTHING_SAVED.format(command="/signup time-slot add")
+    )
+    assert await _rows(league.db_path, _SLOTS) == []
+
+
+async def test_removing_slot_n_twice_removes_one_slot(tmp_path):
+    """Monday 19:00 (#1), Wednesday 20:00 (#2) and Friday 21:00 (#3) saved;
+    `/signup time-slot remove 1` is asked twice before either runs: Monday alone is removed,
+    Wednesday and Friday stand, and one removal is audited."""
+    league = await _league(tmp_path, slots=((1, "19:00"), (3, "20:00"), (5, "21:00")))
+
+    await _ask(league, "time_slot_remove", 1)
+    await _ask(league, "time_slot_remove", 1)
+    await run_queue(league.bot)
+
+    assert await _rows(league.db_path, _SLOTS) == [(3, "20:00"), (5, "21:00")]
+    assert [e["change_type"] for e in await _audit(league.db_path)] == ["SIGNUP_SLOT_REMOVE"]
 
 
 # ---------------------------------------------------------------------------
@@ -322,13 +476,13 @@ async def test_a_server_that_has_configured_nothing_reports_not_set(tmp_path):
 
 
 async def test_the_report_reflects_a_toggle_that_has_been_flipped(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    league = await _league(tmp_path)
+    cog = _make_cog(league.db_path)
     before = _interaction()
     await undecorate(SignupCog.config_view)(cog, before)
     was = _fields(before)["Nationality Required"]
 
-    await undecorate(SignupCog.nationality)(cog, _interaction())
+    await _run(league, "nationality")
     after = _interaction()
     await undecorate(SignupCog.config_view)(cog, after)
 
@@ -350,9 +504,9 @@ async def test_open_signups_are_reported_as_open(tmp_path):
     assert _fields(interaction)["Signups Open"] == "Yes"
 
 
-#: The commands answered off the change queue that wait for the catch-up after a restart (#440):
-#: the `/signup` commands that set something, the `/attendance config` setters, `/attendance sync`,
-#: `/bot pack`, `/bot factory-reset` and the `/test-mode backup` commands that change something.
+#: The commands that wear the wait for the catch-up after a restart (#440): the `/signup` commands
+#: that set something, the `/attendance config` setters, `/attendance sync`, `/bot pack`,
+#: `/bot factory-reset` and the `/test-mode backup` commands that change something.
 _HELD_FOR_THE_CATCH_UP = {
     "signup channel", "signup nationality", "signup time-type", "signup time-image",
     "signup time-slot add", "signup time-slot remove", "signup close-time add",
@@ -383,8 +537,8 @@ def _the_wait_of(callback):
 
 async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
     """The bot has restarted and holds its change queue for the catch-up. Of every command the
-    signup, attendance, bot and test-mode cogs carry, exactly the twenty-three that change the league
-    without asking the queue wear the wait, `/attendance sync` among them; `/attendance config show`
+    signup, attendance, bot and test-mode cogs carry, exactly the twenty-three listed in
+    `_HELD_FOR_THE_CATCH_UP` wear the wait, `/attendance sync` among them; `/attendance config show`
     and `/test-mode backup status`, which change nothing, do not. A league manager then invokes one held
     command of each cog (`/signup nationality`, `/attendance config no-rsvp-penalty`, `/bot pack`,
     `/test-mode backup lock`): none acts while the queue is held, and once the catch-up ends and the
@@ -418,7 +572,7 @@ async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
 
         return run
 
-    signup._module_gate = acts("signup nationality", False)
+    signup._ask_setting = acts("signup nationality")
     attendance._ask_setting = acts("attendance config no-rsvp-penalty")
     test_mode._refuse_outside_test_mode = acts("test-mode backup lock", True)
     monkeypatch.setattr(bot_cog, "refuse", acts("bot pack"))

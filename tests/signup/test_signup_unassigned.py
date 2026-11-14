@@ -411,6 +411,28 @@ async def test_no_driver_is_lost_in_the_chunking(tmp_path):
         assert f"Driver Number {n}" in sent
 
 
+@pytest.mark.parametrize("field", ["notes", "teammate"])
+async def test_a_blank_line_in_a_driver_s_notes_never_splits_their_entry(tmp_path, field):
+    """The list is divided only between drivers, and a blank line marks the gap between two.
+    What a driver types (their notes, and the preferred teammate they name) may hold a blank
+    line of its own, which must not read as that gap: otherwise a message ends inside the
+    driver's entry, and the next begins with the rest of it and no name on it."""
+    interaction = _interaction()
+    first = _seeded(1, "Driver A", notes="a" * 600)
+    typed = "x" * 800 + "\n\n" + "y" * 800
+    second = _seeded(2, "Driver B", **{field: typed})
+    cog = _make_cog(listed=[first, second])
+
+    await _list(cog, interaction)
+
+    messages = _messages(interaction)
+    assert len(messages) > 1
+    holding_b = [m for m in messages if "Driver B" in m]
+    assert len(holding_b) == 1
+    assert "x" * 800 in holding_b[0]
+    assert "y" * 800 in holding_b[0]
+
+
 # ---------------------------------------------------------------------------
 # The export
 # ---------------------------------------------------------------------------

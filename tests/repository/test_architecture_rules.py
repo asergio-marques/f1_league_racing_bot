@@ -173,15 +173,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
-    ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (2, PASS["signup"]),
 }
 
 
@@ -368,9 +359,7 @@ def _awaits_inside_a_write(nodes=None) -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/services/module_switch_settings.py", "module_on_signup.save"): (1, PASS["signup"]),
-}
+KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_nothing_else_is_awaited_while_a_write_is_open():
@@ -558,8 +547,6 @@ def _scheduler_reached_around() -> Counter[tuple[str, str]]:
 
 
 KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 
 
@@ -600,7 +587,6 @@ KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`.
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
     ("core/services/scheduler_service.py", "SchedulerService._arm_forecast_cleanup"): (1, PASS["weather"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["signup"]),
 }
 
 
@@ -1007,9 +993,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
-    ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
@@ -1549,15 +1532,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
-    ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "PreferredTeamsButtonView._make_team_callback.callback"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
-    ("signup/services/wizard_answers.py", "take_typed_answer"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
     ("weather/services/weather_settings.py", "forecast_channel_setting.check"): (1, PASS["weather"]),
 }
 
@@ -2002,13 +1976,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
 }
 
 
@@ -2152,18 +2119,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Results' pass
     # Attendance's pass
     # Signup's pass
-    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.add_slot"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.remove_slot_by_rank"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
@@ -2495,20 +2450,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("signup/services/review_changes.py", "choices_change.open_"): (1, PASS["signup"]),
-    ("signup/services/review_changes.py", "recollect_change.open_"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService._live_season_id"):
-        (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.drivers_mid_signup"):
-        (1, PASS["signup"]),
-    ("signup/services/window_changes.py", "return_drivers_step.return_drivers"):
-        (1, PASS["signup"]),
-    ("signup/services/wizard_answers.py", "_driver_open"): (1, PASS["signup"]),
-    ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_correction_timeouts"):
-        (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_gone_channels"):
-        (1, PASS["signup"]),
     ("weather/services/draw_guard.py", "<module>"): (3, PASS["weather"]),
     ("weather/services/forecast_changes.py", "_round_row"): (2, PASS["weather"]),
     ("weather/services/forecast_changes.py", "ask_forecast"): (2, PASS["weather"]),
@@ -2941,29 +2882,16 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_record_on"):
-        (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.set_window_closed_on"):
-        (1, PASS["signup"]),
-}
+KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {}
 
 #: The schema's columns that default to SQLite's clock, keyed by ``("schema", "table.column")``: a
 #: default stamps a stored time from SQLite's clock as a statement does, and the rule makes no
 #: exception for it. `tests/core/test_schema_rules.py` checks them against the schema the
 #: migrations build.
-KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("schema", "signup_records.created_at"): (1, PASS["signup"]),
-    ("schema", "signup_records.updated_at"): (1, PASS["signup"]),
-    ("schema", "signup_windows.opened_at"): (1, PASS["signup"]),
-    ("schema", "signup_wizard_records.created_at"): (1, PASS["signup"]),
-    ("schema", "signup_wizard_records.last_activity_at"): (1, PASS["signup"]),
-}
+KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {}
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-    ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 
 
@@ -3294,14 +3222,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
     ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
-    ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.move_base_role_overwrite"):
-        (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_lapse_pending_reason"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
-    ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
 }
 
 

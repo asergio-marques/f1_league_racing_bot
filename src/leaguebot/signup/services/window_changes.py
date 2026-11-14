@@ -21,8 +21,8 @@ signup channel and the notice standing in it, which the plan of the jobs reads f
 the restart past the close time. Its jobs, in order, are:
 
 - `return_drivers` (a save) returns each driver still filling in the wizard to Not Signed Up, ends
-  their wizard, cancels their timers and plans every job that follows, so that a driver returned
-  is never left without their notice;
+  their wizard and plans every job that follows, so that a driver returned is never left without
+  their notice (the first job it plans, `disarm_timers`, takes their timers away);
 - `delete_button` takes the Sign Up button down, and `post_closed` posts "Signups are now closed"
   and, in the save that marks it done, records the window closed, moves the season on and audits
   the close: no window is ever recorded closed with its season left behind, and a post Discord
@@ -42,24 +42,21 @@ import dataclasses
 from collections.abc import Callable
 from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.models.change import (
     AuditRecord,
     PlannedStep,
-    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.drivers.driver_service import write_transition
+from leaguebot.core.services.drivers.driver_service import drivers_in_states, write_transition
 from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -84,25 +81,27 @@ from leaguebot.signup.services.closing_steps import (
     CLOSE_SIGNUP,
     CLOSE_WINDOW,
     DELETE_BUTTON,
+    DISARM_TIMERS,
     POST_CLOSED,
     SIGNUP_NOTICE,
     WINDOW_CLOSED_NOTICE,
     WINDOW_NOT_CLOSED,
     closing_steps,
-    season_end_steps as driver_steps,
+    disarm_timers_step,
+    disarming,
+    season_end_driver_steps,
     window_close_jobs,
     window_close_steps,
 )
-from leaguebot.signup.services.signup_posting import post
-from leaguebot.signup.services.signup_views import SignupButtonView
+from leaguebot.signup.services.information_post import post_information
+from leaguebot.signup.services.information_post import stamp as _stamp
+from leaguebot.signup.services.window_close import CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
-    from leaguebot.signup.services.wizard_service import WizardService
 
 OPEN = "signup.open"
 POST_INFO = "post_info"
@@ -153,25 +152,21 @@ def armed_close_refusal(close_at: str) -> str:
     )
 
 
-def _stamp(moment: datetime, fmt: Literal["F", "R"] = "F") -> str:
-    """A dynamic timestamp for *moment*, read as UTC where it carries no zone."""
-    return discord.utils.format_dt(moment, fmt)
-
-
 def window_open_change(
     *,
     modules: "ModuleService",
     signup: "SignupModuleService",
     config: "ConfigService",
-    schedule_close: Callable[[str], None],
+    arm_once: Callable[[str, str, datetime], None],
     queue: Callable[[], "ChangeQueue"],
 ) -> ChangeType:
     """The `signup.open` change type, for the builder to register.
 
     The payload is ``track_ids`` (the tracks chosen, ids as text), ``close_at`` (the normalised
     close time or None), and ``channel_id`` and ``closed_message_id`` (the signup channel and
-    the "signups closed" notice standing in it, each or None). *schedule_close* arms the close
-    timer at an ISO 8601 time, and *queue* is the change queue the Sign Up button is handed.
+    the "signups closed" notice standing in it, each or None). *arm_once* arms the close
+    timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is the change queue the Sign
+    Up button is handed.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -244,50 +239,11 @@ def window_open_change(
     async def post_info(ctx: StepContext) -> StepResult:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         payload = ctx.step_payload
-        guild = await league_guild(ctx.bot)
-        found = None if guild is None else guild.get_channel(int(payload["channel_id"]))
-        if guild is None or not isinstance(found, discord.TextChannel):
-            raise StepFailedOnDiscord("the signup channel could not be found to post in")
-        server_cfg = await config.get_server_config()
-        base_role_id = server_cfg.base_role_id if server_cfg is not None else None
-        base_role = guild.get_role(base_role_id) if base_role_id else None
-        track_ids = [str(each) for each in payload["track_ids"]]
-        if track_ids:
-            async with get_connection(ctx.db_path) as db:
-                names = await track_service.get_track_name_map(db)
-            tracks_display = "\n".join(f"• {names[each]}" for each in track_ids)
-        else:
-            tracks_display = "No tracks specified"
-        settings = await signup.get_settings()
-        slots = await signup.get_slots()
         close_at = payload["close_at"]
-        close_line = ""
-        if close_at:
-            parsed = datetime.fromisoformat(close_at)
-            close_line = f"\n**Auto-closes:** {_stamp(parsed)} ({_stamp(parsed, 'R')})"
-        role_line = f"\n\n{base_role.mention} — click below to sign up!" if base_role else ""
-        time_type = "Time Trial" if settings.time_type == "TIME_TRIAL" else "Short Qualification"
-        embed = discord.Embed(
-            title="🏁 Driver Signups Are Open!",
-            description=(
-                "**Available time slots:**\n"
-                + "\n".join(f"• {s.display_label}" for s in slots)
-                + f"\n\n**Tracks:**\n{tracks_display}"
-                + f"\n\n**Time type:** {time_type}"
-                + f"\n**Time image proof:** {'Required' if settings.time_image_required else 'Not required'}"
-                + f"\n**Nationality:** {'Required' if settings.nationality_required else 'Not required'}"
-                + close_line
-                + role_line
-            ),
-            color=discord.Color.green(),
-        )
-        mentions = (
-            discord.AllowedMentions(roles=[base_role]) if base_role
-            else discord.AllowedMentions.none()
-        )
-        message_id = await post(
-            found, embed=embed, view=SignupButtonView(queue()), mentions=mentions,
-            refused=f"the information message could not be posted in channel {found.id}",
+        track_ids = [str(each) for each in payload["track_ids"]]
+        message_id = await post_information(
+            ctx.bot, signup=signup, config=config, queue=queue(),
+            channel_id=int(payload["channel_id"]), track_ids=track_ids, close_at=close_at,
         )
         audited: dict[str, Any] = {"track_ids": track_ids}
         if close_at:
@@ -305,7 +261,8 @@ def window_open_change(
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         payload = ctx.step_payload
         await signup.set_window_open_on(
-            db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]]
+            db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]],
+            now=queue().now(),
         )
         await advance_on_window_open_on(db)
         if payload["close_at"]:
@@ -326,7 +283,7 @@ def window_open_change(
         return "posting the signup information and opening the window"
 
     async def arm_close(ctx: StepContext) -> StepResult:
-        schedule_close(str(ctx.step_payload["close_at"]))
+        arm_once(CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of(str(ctx.step_payload["close_at"])))
         return StepResult(result={})
 
     async def describe_arm(_ctx: StepContext) -> str:
@@ -481,7 +438,7 @@ def planned_by_a_season_s_end(
     ))
     for account, _wizard_channel in returned:
         planned.append(PlannedStep(SIGNUP_NOTICE, {"user_id": account, "notice": WINDOW_CLOSED_NOTICE}))
-        planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": account}))
+        planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": account, "hold": True}))
     return tuple(planned)
 
 
@@ -489,27 +446,27 @@ def return_drivers_step(
     *,
     signup_module_service: Callable[[], "SignupModuleService"],
     returned_by_close: Collection[DriverState],
-    cancel_timers: Callable[[str], None],
     name: str = RETURN_DRIVERS,
     plan_after: PlanAfter = planned_by_a_member_s_close,
+    disarm_close_timer: bool = False,
 ) -> Step:
     """The job of a change that closes the window: one save that returns each driver still filling
-    in the wizard to Not Signed Up, ends their wizard, cancels their timers and plans every job
+    in the wizard to Not Signed Up, ends their wizard and plans every job
     that follows (*plan_after*), so that a driver returned is never left without their notice.
     It returns every driver or none: a save that fails returns nobody. By default (a close the
     queue was asked for, and `module.off:signup`) it plans the Sign Up button's deletion and the
     "Signups are now closed" post, then each driver's notice, lock and deletion's arming; its
     payload is the ``audit_action`` the close is audited under. Its other arguments are those of
-    `window_close_change`; a season's end plans its own (`season_end_close_step`)."""
+    `window_close_change`; a season's end plans its own (`season_end_close_step`).
+
+    The timers are taken away by the first job it plans (`disarm_timers`, which the change
+    registers), never inside the save: a save that fails returns nobody and keeps every timer.
+    *disarm_close_timer* has that job take away the window's close timer too, whether or not any
+    driver was returned."""
 
     async def return_drivers(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         states = [state.value for state in returned_by_close]
-        cursor = await db.execute(
-            "SELECT id, discord_user_id, current_state FROM driver_profiles "
-            f"WHERE current_state IN ({','.join('?' for _ in states)}) ORDER BY id",  # noqa: S608
-            states,
-        )
-        rows = await cursor.fetchall()
+        rows = await drivers_in_states(db, states)
         cursor = await db.execute(
             "SELECT signup_channel_id, signup_button_message_id FROM signup_module_config WHERE id = 1"
         )
@@ -532,9 +489,13 @@ def return_drivers_step(
             )
             wizard = await cursor.fetchone()
             returned.append((account, None if wizard is None else wizard["signup_channel_id"]))
-        planned = plan_after(ctx, channel_id, button_id, returned)
-        for account, _wizard_channel in returned:
-            cancel_timers(account)
+        planned = (
+            *disarming(
+                [account for account, _ in returned],
+                close_timer=disarm_close_timer,
+            ),
+            *plan_after(ctx, channel_id, button_id, returned),
+        )
         return StepResult(result={"returned": [account for account, _ in returned]}, then=planned)
 
     async def describe_return(_ctx: StepContext) -> str:
@@ -548,15 +509,12 @@ def season_end_close_step(
     modules: Callable[[], "ModuleService"],
     signup_module_service: Callable[[], "SignupModuleService"],
     returned_by_close: Collection[DriverState],
-    cancel_timers: Callable[[str], None],
-    cancel_close_timer: Callable[[], None],
     line_prefix: str | None = None,
 ) -> Step:
     """The `close_window` job of a season's end (a completion, a cancellation, the abort of the
     season being set up and the wind-down's close as every division is done): where signup is on
-    and its window open, the close timer cancelled and the window's close done in one save that
-    returns every driver still filling in the wizard or none (`return_drivers_step`), planning the
-    Sign Up button's deletion, the "Signups are now closed" post that closes the window, and each
+    and its window open, the window's close done in one save that returns every driver still
+    filling in the wizard or none (`return_drivers_step`), planning the Sign Up button's deletion, the "Signups are now closed" post that closes the window, and each
     returned driver's notice and channel's closing. Its payload is the ``cause`` (a key of
     `CLOSE_CAUSES`) and the season's number where it has one.
 
@@ -568,11 +526,11 @@ def season_end_close_step(
 
     returning = return_drivers_step(
         signup_module_service=signup_module_service, returned_by_close=returned_by_close,
-        cancel_timers=cancel_timers, name=CLOSE_WINDOW, plan_after=planned_by_a_season_s_end,
+        name=CLOSE_WINDOW, plan_after=planned_by_a_season_s_end,
+        disarm_close_timer=True,
     )
 
     async def close_window(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        cancel_close_timer()
         return await returning.run(db, ctx)
 
     async def window_stands(_ctx: StepContext) -> bool:
@@ -605,8 +563,7 @@ def season_end_close_step(
 
 def season_end_steps(
     *,
-    wizard_service: Callable[[], "WizardService"],
-    scheduler_service: Callable[[], "SchedulerService"],
+    arm_once: Callable[[str, str, datetime], None],
     modules: Callable[[], "ModuleService"],
     signup_module_service: Callable[[], "SignupModuleService"],
     returned_by_close: Collection[DriverState],
@@ -622,15 +579,16 @@ def season_end_steps(
     `season_end_steps`; the services are getters, so that each is the one the bot holds when the
     job runs."""
     steps = {
-        **driver_steps(
-            wizard_service=wizard_service, scheduler_service=scheduler_service,
-            line_prefix=line_prefix,
+        **season_end_driver_steps(
+            now=now, arm_once=arm_once, cancel_timers=cancel_timers, line_prefix=line_prefix
         ),
         **window_close_steps(signup_module_service=signup_module_service, now=now),
         CLOSE_WINDOW: season_end_close_step(
             modules=modules, signup_module_service=signup_module_service,
-            returned_by_close=returned_by_close, cancel_timers=cancel_timers,
-            cancel_close_timer=cancel_close_timer, line_prefix=line_prefix,
+            returned_by_close=returned_by_close, line_prefix=line_prefix,
+        ),
+        DISARM_TIMERS: disarm_timers_step(
+            cancel_timers=cancel_timers, cancel_close_timer=cancel_close_timer
         ),
     }
     steps[POST_CLOSED] = dataclasses.replace(
@@ -800,10 +758,10 @@ def window_close_change(
     steps: dict[str, Step] = {
         **closing_steps(now=now, arm_once=arm_once),
         **window_close_steps(signup_module_service=signup_module_service, now=now),
+        DISARM_TIMERS: disarm_timers_step(cancel_timers=cancel_timers),
         RETURN_DRIVERS: dataclasses.replace(
             return_drivers_step(
                 signup_module_service=signup_module_service, returned_by_close=returned_by_close,
-                cancel_timers=cancel_timers,
             ),
             still_due=not_left_to_the_season,
         ),

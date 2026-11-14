@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -32,12 +31,13 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
-from leaguebot.core.db.database import get_connection
-from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
+from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
+from leaguebot.signup.services.signup_settings import format_slots, kind_of
 from leaguebot.signup.services.wizard_answers import take_typed_answer
 from leaguebot.signup.services.wizard_changes import (
-    DELETED, ask_channel_gone, ask_member_left, departed_placed_driver,
+    DELETED, ask_channel_gone, ask_member_left,
 )
 from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
@@ -52,9 +52,9 @@ from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
-from leaguebot.core.utils.formatting import discord_ts
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
@@ -72,15 +72,19 @@ _DAY_CHOICES = [
     app_commands.Choice(name="Sunday", value="7"),
 ]
 
-_MAX_SLOTS = 25
-
-
 #: How an unsettled signup that holds no seed is marked in `/signup unassigned list`.
 _REVIEW_LABELS = {
     "PENDING_ADMIN_APPROVAL": "Awaiting approval",
     "AWAITING_CORRECTION_PARAMETER": "Awaiting approval",
     "PENDING_DRIVER_CORRECTION": "Correcting",
 }
+
+
+def _without_blank_lines(typed: str | None) -> str:
+    """*typed*, a driver's own words, with each run of blank lines made one line break: a blank
+    line inside it would read as the gap between two drivers, where the unassigned list's
+    records are divided."""
+    return re.sub(r"\n{2,}", "\n", (typed or "").strip())
 
 
 def _parse_time(raw: str) -> str | None:
@@ -119,28 +123,6 @@ def _parse_close_time(
         return None, "❌ `close_time` must be a future datetime."
     return parsed.isoformat(), None
 
-
-def _same_instant(stored: str, other: str) -> bool:
-    """Whether two ISO 8601 times name one instant, a time with no timezone read as UTC.
-
-    `/signup close-time modify` uses it to tell a replacement from the time already armed:
-    the stored string is normalised, but a manager's need not be spelt the same way.
-    """
-    first, second = datetime.fromisoformat(stored), datetime.fromisoformat(other)
-    if first.tzinfo is None:
-        first = first.replace(tzinfo=timezone.utc)
-    if second.tzinfo is None:
-        second = second.replace(tzinfo=timezone.utc)
-    return first == second
-
-
-def _format_slots(slots: list) -> str:
-    if not slots:
-        return "No availability slots configured."
-    lines = [f"**Availability Time Slots**"]
-    for slot in slots:
-        lines.append(f"#{slot.slot_sequence_id} — {slot.display_label}")
-    return "\n".join(lines)
 
 
 #: How many drivers each group in the close confirmation names before it gives a count of the
@@ -271,7 +253,7 @@ class ConfirmCloseView(LeagueView):
         )
         try:
             await self._asked.edit_original_response(view=None)
-        except Exception:  # noqa: BLE001 — the lapse is recorded whether or not the reply goes
+        except discord.HTTPException:
             log.warning("could not take the close confirmation's buttons down", exc_info=True)
 
 
@@ -284,8 +266,10 @@ class SignupCog(commands.Cog):
     ) -> bool:
         """Whether the signup module is on; where it is not, refuse and return False.
 
-        Every `/signup` command but `config view` runs this in its own body, after its tier
-        guard, as the results cog's gate does. It used to be the cog's `interaction_check`,
+        The commands that ask no setting change run this in their own body, after their tier
+        guard, as the results cog's gate does: `time-slot list`, `open`, `close` and the two
+        `unassigned` commands. The setting commands leave the refusal to their change's check
+        (`signup_settings.open_to_change`), which judges it again when their turn comes. It used to be the cog's `interaction_check`,
         which answered the member and then raised `CheckFailure`: the error handler answered
         a second time and wrote a failure line for what was only a refusal. One reply, then,
         and one refusal line — unless *record* is False, which the lists pass, since they
@@ -315,7 +299,10 @@ class SignupCog(commands.Cog):
         )
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
-        await take_typed_answer(self.bot, message, wizard, queue=self.bot.change_queue)
+        await take_typed_answer(
+            self.bot, message, wizard, queue=self.bot.change_queue,
+            router=self.bot.output_router,
+        )
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
@@ -349,34 +336,18 @@ class SignupCog(commands.Cog):
         The clean-up is the change queue's: the listener asks it, as the bot, for
         `signup.member_left` for every member who leaves, and the change's own check decides what
         there is to clean up. A member who leaves while the queue is stopped keeps their channel
-        and state until it clears.
-
-        Also posts a log notification for UNASSIGNED and ASSIGNED drivers who
-        leave without going through the wizard path.
+        and state until it clears. Its line, "Driver left server", is the change's too, for a
+        driver approved or placed as for one still signing up.
 
         Only a member leaving the league's own server counts: the same person leaving another
         server the bot sits in is nothing to the league.
         """
         if await is_foreign_guild(self.bot, member.guild.id):
             return
-        await ask_member_left(self.bot.change_queue, self.bot.db_path, str(member.id))
-
-        # Handle UNASSIGNED / ASSIGNED drivers (not covered by `signup.member_left`)
-        try:
-            departed = await departed_placed_driver(
-                self.bot.db_path, str(member.id), member.display_name or str(member.id)
-            )
-            if departed is None:
-                return
-            state, display_name = departed
-            await self.bot.output_router.post_log(
-                f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
-            )
-        except Exception:
-            log.warning(
-                "on_member_remove: failed to post log for %s/%s",
-                member.guild.id, member.id, exc_info=True,
-            )
+        await ask_member_left(
+            self.bot.change_queue, self.bot.db_path, str(member.id),
+            member.display_name or str(member.id),
+        )
 
     # ── /signup (root group) ───────────────────────────────────────────
 
@@ -456,195 +427,33 @@ class SignupCog(commands.Cog):
     async def signup_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup channel"):
-            return
-        guild = interaction.guild
-        assert guild is not None
-
-        cfg = await self.bot.signup_module_service.get_config()
-        if cfg is None:
-            await refuse(
-                interaction, "❌ Signup module is not configured.", what=describe(interaction)
-            )
-            return
-
-        # A channel does one job (decided 2026-09-06). This stood as a guard against the
-        # bot interaction channel alone; every configurable channel of the server is
-        # checked now, the interaction channel among them.
-        from leaguebot.core.services.settings.channel_registry_service import (
-            ChannelUse,
-            find_channel_use,
-            refusal,
-        )
-
-        use = await find_channel_use(
-            self.bot.db_path, channel.id, channel_uses_read=self.bot.channel_uses_read
-        )
-        if use is not None:
-            await refuse(
-                interaction,
-                refusal(channel.mention, use, same_setting=(use == ChannelUse("signup"))),
-                what=describe(interaction),
-            )
-            return
-
-        # Setting who may see the channel needs both Manage Channels and Manage Roles, which
-        # Discord shows on a channel as Manage Channel and Manage Permissions. Either alone is
-        # refused here, before anything is edited, in the hub's words.
-        may_not_edit = (
-            f"❌ The bot needs **Manage Channel** and **Manage Permissions** on {channel.mention} "
-            "to set who may see it. The signup channel was not changed."
-        )
-        bot_user = self.bot.user
-        bot_member = guild.get_member(bot_user.id) if bot_user is not None else None
-        if bot_member:
-            perms = channel.permissions_for(bot_member)
-            if not (perms.manage_channels and perms.manage_roles):
-                await refuse(interaction, may_not_edit, what=describe(interaction))
-                return
-
-        await interaction.response.defer(ephemeral=True)
-        old_channel_id = cfg.signup_channel_id
-
-        # Revert bot-applied overwrites on old channel (if changing)
-        old_cleared: discord.TextChannel | None = None
-        # An old channel the bot cannot clear is reported and the move stands, as for the hub
-        # channel: the new channel is set either way, and the old one is put right by hand.
-        faults: list[str] = []
-        if old_channel_id and old_channel_id != channel.id:
-            old_channel = guild.get_channel(old_channel_id)
-            if old_channel and isinstance(old_channel, discord.TextChannel):
-                try:
-                    await old_channel.edit(overwrites={})
-                    old_cleared = old_channel
-                except Exception as exc:
-                    log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id, exc_info=True)
-                    faults.append(
-                        f"The permissions on the old signup channel {old_channel.mention} "
-                        f"could not be cleared: {exc}"
-                    )
-
-        # Apply overwrites to new channel. The server config is read here for the
-        # interaction role; it used to be read further up, by the guard against reusing
-        # the bot's own command channel, and this line was left orphaned when that guard
-        # became the server-wide `find_channel_use` check.
-        server_cfg = await self.bot.config_service.get_server_config()
-        interaction_role = guild.get_role(server_cfg.interaction_role_id) if server_cfg else None
-        # The league admin role gets the same sight of the channel as the interaction role.
-        # A league admin holds the league manager tier within their own, so a channel opened
-        # to one tier and not the other would show them a signup they may action and no way
-        # to read it (issue #116). Skipped where the two are the same role, or where the
-        # league has not set an admin role yet.
-        admin_role = (
-            guild.get_role(server_cfg.league_admin_role_id)
-            if server_cfg and server_cfg.league_admin_role_id
-            else None
-        )
-        # The base role is the league's, not this module's (issue #276).
-        base_role = (
-            guild.get_role(server_cfg.base_role_id)
-            if server_cfg and server_cfg.base_role_id
-            else None
-        )
-        overwrites: dict = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        if base_role:
-            overwrites[base_role] = discord.PermissionOverwrite(
-                view_channel=True,
-                send_messages=False,
-                use_application_commands=True,
-            )
-        for role in (interaction_role, admin_role):
-            if role is not None:
-                overwrites[role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=True
-                )
-        # Discord refusing the edit is the refusal above, met late. Any other error is a fault
-        # in the bot, and goes to the command's failure path with nothing saved.
-        try:
-            await channel.edit(overwrites=overwrites)
-        except discord.Forbidden:
-            reply = may_not_edit
-            reason = None
-            if old_cleared is not None:
-                # The whole reply is the line's reason: the old channel left bare is what
-                # whoever reads the log later most needs to know.
-                cleared = (
-                    f"The old signup channel {old_cleared.mention} has already had its "
-                    "permissions cleared, so it needs putting right by hand if you do not retry."
-                )
-                reply += f"\n{cleared}"
-                reason = f"{may_not_edit.removeprefix('❌ ')}\n{cleared}"
-            await refuse(interaction, reply, what=describe(interaction), reason=reason)
-            return
-
-        # Persist
-        cfg.signup_channel_id = channel.id
-        await self.bot.signup_module_service.save_config(cfg)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_CHANNEL_SET', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"channel_id": old_channel_id}),
-                 json.dumps({"channel_id": channel.id}), now),
-            )
-            await db.commit()
-
-        reply = f"✅ Signup channel set to {channel.mention}."
-        if faults:
-            reply += "\n⚠️ " + "\n⚠️ ".join(faults)
-        await interaction.followup.send(reply, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup channel | "
-            f"{'Success' if not faults else 'Success, with faults'}\n"
-            f"  channel: #{channel.name}"
-            + "".join(f"\n  {fault}" for fault in faults),
+        """Ask the change queue for `signup.setting.channel` (`channel_setting`): every refusal
+        is the setting's check, made as it is asked and again as the change starts, and the
+        permissions are set after the save."""
+        await self.bot.change_queue.ask(
+            SIGNUP_CHANNEL_KIND,
+            {"channel_id": channel.id, "channel_name": channel.name},
+            interaction=interaction, what=describe(interaction),
         )
 
     # ── /signup nationality toggle (T020) ──────────────────────────────
+
+    async def _ask_setting(
+        self, interaction: discord.Interaction, command: str, payload: dict | None = None
+    ) -> None:
+        """Ask the change queue to carry out `/signup <command>`: the setting's check judges every
+        refusal as it is asked and again as the change starts (`signup_settings`), so the command
+        holds no rule of its own. The queue's acknowledgement is the command's response, and it
+        writes the value, its audit entry and its log line in one save."""
+        await self.bot.change_queue.ask(
+            kind_of(command), payload or {}, interaction=interaction, what=describe(interaction)
+        )
 
     @signup.command(name="nationality", description="Toggle whether nationality is required in signups.")
     @league_manager_only
     @_after_the_catch_up
     async def nationality(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup nationality"):
-            return
-        settings = await self.bot.signup_module_service.get_settings()
-        old_val = settings.nationality_required
-        settings.nationality_required = not old_val
-        await self.bot.signup_module_service.save_settings(settings)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"field": "nationality_required", "value": old_val}),
-                 json.dumps({"field": "nationality_required", "value": settings.nationality_required}),
-                 now),
-            )
-            await db.commit()
-
-        state = "**ON**" if settings.nationality_required else "**OFF**"
-        await interaction.response.send_message(
-            f"✅ Nationality requirement: {state}.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup nationality | Success\n"
-            f"  nationality_required: {settings.nationality_required}",
-        )
+        await self._ask_setting(interaction, "nationality")
 
     # ── /signup time-type toggle (T021) ────────────────────────────────
 
@@ -652,38 +461,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @_after_the_catch_up
     async def time_type(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-type"):
-            return
-        settings = await self.bot.signup_module_service.get_settings()
-        old_val = settings.time_type
-        settings.time_type = (
-            "SHORT_QUALIFICATION" if old_val == "TIME_TRIAL" else "TIME_TRIAL"
-        )
-        await self.bot.signup_module_service.save_settings(settings)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"field": "time_type", "value": old_val}),
-                 json.dumps({"field": "time_type", "value": settings.time_type}),
-                 now),
-            )
-            await db.commit()
-
-        label = "Time Trial" if settings.time_type == "TIME_TRIAL" else "Short Qualification"
-        await interaction.response.send_message(
-            f"✅ Time type: **{label}**.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-type | Success\n"
-            f"  time_type: {settings.time_type}",
-        )
+        await self._ask_setting(interaction, "time-type")
 
     # ── /signup time-image toggle (T022) ───────────────────────────────
 
@@ -691,36 +469,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @_after_the_catch_up
     async def time_image(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-image"):
-            return
-        settings = await self.bot.signup_module_service.get_settings()
-        old_val = settings.time_image_required
-        settings.time_image_required = not old_val
-        await self.bot.signup_module_service.save_settings(settings)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"field": "time_image_required", "value": old_val}),
-                 json.dumps({"field": "time_image_required", "value": settings.time_image_required}),
-                 now),
-            )
-            await db.commit()
-
-        state = "**ON**" if settings.time_image_required else "**OFF**"
-        await interaction.response.send_message(
-            f"✅ Time image requirement: {state}.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-image | Success\n"
-            f"  time_image_required: {settings.time_image_required}",
-        )
+        await self._ask_setting(interaction, "time-image")
 
     # ── /signup time-slot (sub-group) ──────────────────────────────────
 
@@ -729,36 +478,6 @@ class SignupCog(commands.Cog):
         description="Manage signup availability time slots.",
         parent=signup,
     )
-
-    async def _refuse_while_configuration_fixed(
-        self, interaction: discord.Interaction, command: str, *, record: bool = True
-    ) -> bool:
-        """Refuse a change to the signup module's settings once a season has fixed them.
-
-        The settings are free while the server holds no active season and while its season
-        stands in Configuration; confirming that configuration fixes them until the season
-        ends (issue #220). This replaces the older guards that blocked a slot change while
-        the window was open or drivers awaited placement — both only ever happen inside a
-        season whose configuration is already fixed.
-
-        Returns True when the command replied and must stop, having recorded the refusal in
-        the log channel unless *record* is False.
-        """
-        from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
-
-        season_number = await configuration_fixed(self.bot.db_path)
-        if season_number is None:
-            return False
-        reply = (
-            f"❌ The signup module's settings are fixed for Season {season_number} now that "
-            f"its configuration has been confirmed. `{command}` is available again once the "
-            "season has ended, or while a new season is in configuration."
-        )
-        if record:
-            await refuse(interaction, reply, what=f"`{command}`")
-        else:
-            await interaction.response.send_message(reply, ephemeral=True)
-        return True
 
     @time_slot_group.command(name="add", description="Add an availability time slot.")
     @app_commands.describe(day="Day of week", time="Time in HH:MM 24h or 12h format (e.g. 14:30 or 2:30pm)")
@@ -771,63 +490,9 @@ class SignupCog(commands.Cog):
         day: app_commands.Choice[str],
         time: str,
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot add"):
-            return
-
-        # Guard: max slots
-        existing_slots = await self.bot.signup_module_service.get_slots()
-        if len(existing_slots) >= _MAX_SLOTS:
-            await refuse(
-                interaction, f"❌ Maximum of {_MAX_SLOTS} time slots reached.", what=describe(interaction)
-            )
-            return
-
-        # Parse time
-        normalized = _parse_time(time)
-        if normalized is None:
-            await refuse(
-                interaction,
-                f"❌ Could not parse time '{time}'. Use HH:MM 24h or 12h with am/pm.",
-                what=describe(interaction),
-            )
-            return
-
-        day_int = int(day.value)
-        try:
-            await self.bot.signup_module_service.add_slot(day_int, normalized)
-        except ValueError:
-            await refuse(
-                interaction, "❌ That time slot already exists.", what=describe(interaction)
-            )
-            return
-
-        updated = await self.bot.signup_module_service.get_slots()
-        new_slot = next((s for s in updated if s.day_of_week == day_int and s.time_hhmm == normalized), None)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SLOT_ADD', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 # The durable slot ID, not the display ordinal: an audit entry outlives
-                 # the list it was written against.
-                 json.dumps({"day": day_int, "time": normalized,
-                             "slot_id": new_slot.slot_id if new_slot else None}), now),
-            )
-            await db.commit()
-
-        await interaction.response.send_message(
-            _format_slots(updated), ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot add | Success\n"
-            f"  day: {day.name}\n"
-            f"  time: {normalized}",
+        await self._ask_setting(
+            interaction, "time-slot add",
+            {"day": int(day.value), "day_name": day.name, "time": _parse_time(time) or time},
         )
 
     @time_slot_group.command(name="remove", description="Remove an availability time slot by its sequence ID.")
@@ -837,49 +502,17 @@ class SignupCog(commands.Cog):
     async def time_slot_remove(
         self, interaction: discord.Interaction, slot_id: int
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-
-        if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot remove"):
-            return
-
+        # The rank is resolved to the slot's day and time here, as the list stands now: the change
+        # removes that slot, whatever is removed ahead of it (`signup_settings`).
         slots = await self.bot.signup_module_service.get_slots()
-        if not slots:
-            await refuse(
-                interaction, "❌ No slots configured.", what=describe(interaction)
-            )
-            return
-
         target = next((s for s in slots if s.slot_sequence_id == slot_id), None)
-        if target is None:
-            await refuse(
-                interaction, f"❌ Slot #{slot_id} does not exist.", what=describe(interaction)
-            )
-            return
-
-        await self.bot.signup_module_service.remove_slot_by_rank(slot_id)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_SLOT_REMOVE', ?, '', ?)",
-                (interaction.user.id, str(interaction.user),
-                 # The durable slot ID, not the display ordinal the manager typed.
-                 json.dumps({"slot_id": target.slot_id, "day": target.day_of_week,
-                             "time": target.time_hhmm}), now),
-            )
-            await db.commit()
-
-        updated = await self.bot.signup_module_service.get_slots()
-        await interaction.response.send_message(
-            _format_slots(updated), ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot remove | Success\n"
-            f"  slot_id: {slot_id}\n"
-            f"  slot: {target.display_label}",
+        await self._ask_setting(
+            interaction, "time-slot remove",
+            {
+                "rank": slot_id,
+                "day": target.day_of_week if target else None,
+                "time": target.time_hhmm if target else None,
+            },
         )
 
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
@@ -890,7 +523,7 @@ class SignupCog(commands.Cog):
             return
         slots = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
-            _format_slots(slots), ephemeral=True
+            format_slots(slots), ephemeral=True
         )
 
     # ── /signup close-time (sub-group) ─────────────────────────────────
@@ -901,49 +534,19 @@ class SignupCog(commands.Cog):
         parent=signup,
     )
 
-    async def _close_time_context(
-        self, interaction: discord.Interaction
-    ) -> SignupModuleConfig | None:
-        """Return the config for a close-time command, or reply and return None.
-
-        All three close-time commands need an open signup window: `close_at` only means
-        anything while one is running, and `set_window_closed` clears it, so a timer armed
-        against a closed window could only ever fire a forced close on nothing.
-        """
-        cfg = await self.bot.signup_module_service.get_config()
-        if cfg is None or not cfg.signups_open:
-            await refuse(
-                interaction,
-                "❌ Signups are not currently open, so there is no auto-close time to "
-                "manage. Set one when you open the window with "
-                "`/signup open close_time:`.",
-                what=describe(interaction),
-            )
-            return None
-        return cfg
-
-    async def _record_close_time_change(
-        self,
-        interaction: discord.Interaction,
-        *,
-        change_type: str,
-        old_value: str,
-        new_value: str,
-        log_line: str,
+    async def _ask_close_time(
+        self, interaction: discord.Interaction, command: str, close_time: str | None = None
     ) -> None:
-        """Write the audit row and the log line shared by all three close-time commands."""
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, ?, ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 change_type, old_value, new_value, now),
-            )
-            await db.commit()
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | {log_line}",
+        """Ask the change queue to carry out `/signup close-time <command>`: the setting's check
+        judges every refusal as it is asked and again as the change starts (`close_time_settings`).
+        The time the command was given is its own input, parsed here as `/signup open` parses it
+        and handed to the check as the time or the refusal."""
+        payload: dict = {}
+        if close_time is not None:
+            close_at, close_error = _parse_close_time(close_time)
+            payload = {"close_at": close_at, "close_error": close_error}
+        await self.bot.change_queue.ask(
+            close_time_kind(command), payload, interaction=interaction, what=describe(interaction)
         )
 
     @close_time_group.command(
@@ -957,45 +560,7 @@ class SignupCog(commands.Cog):
     async def close_time_add(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        cfg = await self._close_time_context(interaction)
-        if cfg is None:
-            return
-
-        if cfg.close_at is not None:
-            armed = datetime.fromisoformat(cfg.close_at)
-            await refuse(
-                interaction,
-                f"❌ Signups already auto-close at {discord_ts(armed)} "
-                f"({discord_ts(armed, 'R')}). Use `/signup close-time modify` to change "
-                "it, or `/signup close-time cancel` to clear it.",
-                what=describe(interaction),
-            )
-            return
-
-        close_at_iso, close_error = _parse_close_time(close_time)
-        if close_error is not None:
-            await refuse(interaction, close_error, what=describe(interaction))
-            return
-        assert close_at_iso is not None
-
-        await self.bot.signup_module_service.set_close_at(close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
-
-        armed = datetime.fromisoformat(close_at_iso)
-        await interaction.response.send_message(
-            f"✅ Signups will auto-close at {discord_ts(armed)} "
-            f"({discord_ts(armed, 'R')}).",
-            ephemeral=True,
-        )
-        await self._record_close_time_change(
-            interaction,
-            change_type="SIGNUP_CLOSE_TIME_ADD",
-            old_value="",
-            new_value=close_at_iso,
-            log_line=f"/signup close-time add | Success\n  close_time: {close_at_iso}",
-        )
+        await self._ask_close_time(interaction, "add", close_time)
 
     @close_time_group.command(
         name="cancel", description="Clear the auto-close time, leaving signups open."
@@ -1003,37 +568,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @_after_the_catch_up
     async def close_time_cancel(self, interaction: discord.Interaction) -> None:
-        if not await self._module_gate(interaction):
-            return
-        cfg = await self._close_time_context(interaction)
-        if cfg is None:
-            return
-
-        if cfg.close_at is None:
-            await refuse(
-                interaction,
-                "❌ No auto-close time is set. Signups stay open until you run "
-                "`/signup close`.",
-                what=describe(interaction),
-            )
-            return
-
-        previous = cfg.close_at
-        self.bot.scheduler_service.cancel_signup_close_timer()
-        await self.bot.signup_module_service.set_close_at(None)
-
-        await interaction.response.send_message(
-            "✅ Auto-close time cleared. Signups stay open until you close them with "
-            "`/signup close`.",
-            ephemeral=True,
-        )
-        await self._record_close_time_change(
-            interaction,
-            change_type="SIGNUP_CLOSE_TIME_CANCEL",
-            old_value=previous,
-            new_value="",
-            log_line=f"/signup close-time cancel | Success\n  was: {previous}",
-        )
+        await self._ask_close_time(interaction, "cancel")
 
     @close_time_group.command(
         name="modify", description="Replace the armed auto-close time with a new one."
@@ -1046,63 +581,7 @@ class SignupCog(commands.Cog):
     async def close_time_modify(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        cfg = await self._close_time_context(interaction)
-        if cfg is None:
-            return
-
-        if cfg.close_at is None:
-            await refuse(
-                interaction,
-                "❌ No auto-close time is set, so there is nothing to change. Use "
-                "`/signup close-time add` to arm one.",
-                what=describe(interaction),
-            )
-            return
-
-        close_at_iso, close_error = _parse_close_time(close_time)
-        if close_error is not None:
-            await refuse(interaction, close_error, what=describe(interaction))
-            return
-        assert close_at_iso is not None
-
-        previous = cfg.close_at
-        if _same_instant(previous, close_at_iso):
-            armed = datetime.fromisoformat(previous)
-            await interaction.response.send_message(
-                f"ℹ️ Signups already auto-close at {discord_ts(armed)} "
-                f"({discord_ts(armed, 'R')}). Nothing was changed.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                "/signup close-time modify | Nothing changed\n"
-                f"  close_time: {previous}\n"
-                "  reason: it is already the armed time",
-            )
-            return
-
-        self.bot.scheduler_service.cancel_signup_close_timer()
-        await self.bot.signup_module_service.set_close_at(close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
-
-        armed = datetime.fromisoformat(close_at_iso)
-        await interaction.response.send_message(
-            f"✅ Signups will now auto-close at {discord_ts(armed)} "
-            f"({discord_ts(armed, 'R')}).",
-            ephemeral=True,
-        )
-        await self._record_close_time_change(
-            interaction,
-            change_type="SIGNUP_CLOSE_TIME_MODIFY",
-            old_value=previous,
-            new_value=close_at_iso,
-            log_line=(
-                "/signup close-time modify | Success\n"
-                f"  was: {previous}\n  close_time: {close_at_iso}"
-            ),
-        )
+        await self._ask_close_time(interaction, "modify", close_time)
 
     # ── /signup open (T017) ───────────────────────────────────────────
 
@@ -1154,8 +633,9 @@ class SignupCog(commands.Cog):
         track_list: list[str] = []
         if track_ids and track_ids.strip():
             parts = [t.strip() for t in re.split(r"[,\s]+", track_ids.strip()) if t.strip()]
-            async with get_connection(self.bot.db_path) as db:
-                track_name_map = await track_service.get_track_name_map(db)
+            track_name_map = {
+                str(t["id"]): t["name"] for t in await track_service.list_tracks(self.bot.db_path)
+            }
             unknown = [t for t in parts if t not in track_name_map]
             if unknown:
                 bad = ", ".join(f"'{t}'" for t in unknown)
@@ -1173,7 +653,7 @@ class SignupCog(commands.Cog):
                 "track_ids": track_list,
                 "close_at": close_at_iso,
                 "channel_id": cfg.signup_channel_id,
-                "closed_message_id": cfg.signup_closed_message_id,
+                "closed_message_id": await self.bot.signup_module_service.closed_notice_of(cfg),
             },
             interaction=interaction,
             what="Opening signups",
@@ -1294,8 +774,9 @@ class SignupCog(commands.Cog):
         # Availability is the question a division is built around, so it is named in full
         # here rather than summarised: a league may configure 25 slots, and a driver who
         # ticks every one of them costs a ~500-character line, taking the worst single
-        # driver block to some 800 — inside the 1900-character chunk budget below, which
-        # splits between drivers and so could not divide one (decided 2026-09-20, #184).
+        # driver block to some 800 — well inside the message limit, so the records mode of
+        # `chunk_message` divides between drivers and never needs to divide one (decided
+        # 2026-09-20, #184).
         #
         # The labels are matched on the slot's durable ``slot_id`` and rendered in the
         # league's own chronological order. Matching on ``slot_sequence_id`` instead would
@@ -1310,7 +791,9 @@ class SignupCog(commands.Cog):
         lines: list[str] = [f"**Unsettled Signups — Seeded** ({len(drivers)} total)\n"]
         for d in drivers:
             preferred = ", ".join(d["preferred_teams"]) if d["preferred_teams"] else "—"
-            teammate = d["preferred_teammate"] or "—"
+            # What a driver types (the teammate and the notes) may hold a blank line, which would
+            # read as the gap between two drivers, where the records are divided.
+            teammate = _without_blank_lines(d["preferred_teammate"]) or "—"
             chosen = set(d["availability_slot_ids"])
             # An answer naming a slot the league has since removed is reported as unknown
             # rather than printed raw: the durable ID is a storage form no league should see.
@@ -1326,27 +809,11 @@ class SignupCog(commands.Cog):
                 f"  Teams: {preferred} | Teammate: {teammate}"
             )
             if d["notes"]:
-                lines[-1] += f"\n  Notes: {d['notes']}"
+                lines[-1] += f"\n  Notes: {_without_blank_lines(d['notes'])}"
 
-        # Discord has a 2000-char limit; chunk if needed
-        output = "\n\n".join(lines)
-        if len(output) <= 1900:
-            await interaction.followup.send(output, ephemeral=True)
-        else:
-            chunk, chunks = "", []
-            for line in lines:
-                if len(chunk) + len(line) + 2 > 1900:
-                    chunks.append(chunk)
-                    chunk = line
-                else:
-                    chunk = f"{chunk}\n\n{line}" if chunk else line
-            if chunk:
-                chunks.append(chunk)
-            for i, part in enumerate(chunks):
-                if i == 0:
-                    await interaction.followup.send(part, ephemeral=True)
-                else:
-                    await interaction.followup.send(part, ephemeral=True)
+        # Discord has a 2000-char limit; the records are divided between drivers only.
+        for part in chunk_message("\n\n".join(lines), records=True):
+            await interaction.followup.send(part, ephemeral=True)
 
     @unassigned_group.command(
         name="export",

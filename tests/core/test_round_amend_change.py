@@ -19,6 +19,7 @@ channel was sent (`reposts`).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import json
 import sqlite3
@@ -126,7 +127,7 @@ class _Reposts:
         checkins = {DIVISIONS[division][3].checkin for division in DIVISIONS}
         sent = [(cid, mid) for kind, cid, mid in self.league.events
                 if kind == "send" and cid in checkins]
-        with sqlite3.connect(self.league.db_path) as db:
+        with contextlib.closing(sqlite3.connect(self.league.db_path)) as db, db:
             calls = {(int(channel), int(message)): (rid, division)
                      for rid, division, message, channel in db.execute(
                          "SELECT round_id, division_id, message_id, channel_id "

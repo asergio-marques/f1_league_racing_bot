@@ -414,16 +414,19 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     its default and two slots are saved; the module is switched off through the queue (still on
     until it runs) and then enabled again through the queue: the settings and slots are as they
     were, the configuration naming no channel."""
-    from leaguebot.signup.models.signup_module import SignupModuleSettings
-
     league = await _league(tmp_path)
     signup = league.bot.signup_module_service
     # Every setting away from its default, so a reset to defaults cannot pass for kept.
-    await signup.save_settings(SignupModuleSettings(
-        nationality_required=False, time_type="SHORT_QUALIFICATION", time_image_required=False,
-    ))
-    await signup.add_slot(3, "19:00")
-    await signup.add_slot(6, "21:30")
+    await league.write(
+        "INSERT OR REPLACE INTO signup_module_settings "
+        "(id, nationality_required, time_type, time_image_required) "
+        "VALUES (1, 0, 'SHORT_QUALIFICATION', 0)"
+    )
+    for day, time_hhmm in ((3, "19:00"), (6, "21:30")):
+        await league.write(
+            "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (?, ?)",
+            day, time_hhmm,
+        )
     settings, slots = await signup.get_settings(), await signup.get_slots()
 
     await _switch_off(league)
@@ -477,13 +480,16 @@ async def test_a_window_closed_since_the_ask_refuses_the_switch_off(tmp_path):
 async def test_closed_signups_are_not_force_closed_again(tmp_path):
     """Closing transitions every in-progress driver and posts into their channels; running it
     over an already-closed signup would notice nobody and post nothing. With the window closed,
-    the switch-off has no close job: only `switch_off`, and the `clear_overwrites` it plans."""
+    the switch-off has no close job: only `switch_off`, and the `disarm_timers` and
+    `clear_overwrites` it plans."""
     league = await _league(tmp_path)
 
     await _switch_off(league)
     await run_queue(league.bot)
 
-    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "clear_overwrites"]
+    assert [job["name"] for job in await _off_jobs(league)] == [
+        "switch_off", "disarm_timers", "clear_overwrites",
+    ]
 
 
 async def test_the_close_timer_is_cancelled(tmp_path):
@@ -495,7 +501,8 @@ async def test_the_close_timer_is_cancelled(tmp_path):
     await _switch_off(league)
     await run_queue(league.bot)
 
-    league.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
+    assert [c.args[0] for c in league.bot.scheduler_service.disarm.call_args_list
+            ].count("signup.close_timer") == 1
 
 
 async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
@@ -516,6 +523,36 @@ async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
         (INACTIVITY_TIMER, str(OTHER)),
         (DELETE_TIMER, str(OTHER)),
     }
+
+
+async def test_switching_signup_off_keeps_a_held_channel_s_deletion(tmp_path):
+    """Kimi (105) presses Cancel Signup part-way through signing up and the queue runs: his
+    signup channel is held, its deletion armed a day on, as he is told. Within that day league
+    manager 77 runs `/module disable signup` and the queue runs: the switch-off disarms no
+    deletion of Kimi's channel, so it is still deleted on time."""
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
+    from tests.support.season_league import SIGNUP_CHANNEL_BASE
+
+    league = await _league(tmp_path, SIGNING_UP)
+    press = member_interaction(league.bot, user=league._member(SIGNING_UP))
+    press.guild = league.guild
+    press.channel_id = SIGNUP_CHANNEL_BASE + SIGNING_UP
+    press.channel = league.channel(SIGNUP_CHANNEL_BASE + SIGNING_UP)
+    view = WithdrawButtonView(str(SIGNING_UP), league.bot.change_queue)
+    await view.withdraw_button.callback(press)
+    await run_queue(league.bot)
+    assert [call.args[:2] for call in league.bot.scheduler_service.arm_once.call_args_list
+            if call.args and call.args[0] == DELETE_TIMER] == [(DELETE_TIMER, str(SIGNING_UP))]
+
+    disarms_before = len(league.bot.scheduler_service.disarm.call_args_list)
+
+    await _switch_off(league)
+    await run_queue(league.bot)
+
+    assert await _disables(league) != []
+    disarmed = {call.args[:2] for call
+                in league.bot.scheduler_service.disarm.call_args_list[disarms_before:]}
+    assert (DELETE_TIMER, str(SIGNING_UP)) not in disarmed
 
 
 async def test_a_league_with_no_configuration_still_disables(tmp_path):
@@ -574,7 +611,9 @@ async def test_the_overwrites_the_bot_applied_are_cleared(tmp_path):
     assert set(_cleared(channel)) == {
         guild.default_role, guild.me, guild.get_role(BASE_ROLE), guild.get_role(interaction_role),
     }
-    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "clear_overwrites"]
+    assert [job["name"] for job in await _off_jobs(league)] == [
+        "switch_off", "disarm_timers", "clear_overwrites",
+    ]
 
 
 async def test_a_league_with_no_base_role_reverts_the_rest(tmp_path):
@@ -668,7 +707,8 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
 async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
     """Nothing was ever applied, so there is nothing to revert, and asking Discord for
     channel `None` would raise: the module's configuration names no channel, and the
-    switch-off's only job is `switch_off`."""
+    switch-off's jobs are `switch_off` and the `disarm_timers` after it, with no
+    `clear_overwrites`."""
     league = await _league(tmp_path, configured=False)
     await league.write(
         "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
@@ -679,7 +719,7 @@ async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
     await _switch_off(league)
     await run_queue(league.bot)
 
-    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off"]
+    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "disarm_timers"]
     assert channel.set_permissions.await_count == 0
     assert not await league.bot.module_service.is_signup_enabled()
 

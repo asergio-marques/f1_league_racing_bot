@@ -31,6 +31,7 @@ loop is still open, and it waits there for any database thread a stopped worker 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import json
 import sqlite3
@@ -477,7 +478,7 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
     # by hand afterwards (`.return_value.attr = …`).
     hub_channel_id = None
     try:
-        with sqlite3.connect(bot.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(bot.db_path)) as conn, conn:
             row = conn.execute(
                 "SELECT hub_channel_id FROM server_configs WHERE server_id IS NOT NULL"
             ).fetchone()

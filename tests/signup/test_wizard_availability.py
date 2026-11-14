@@ -146,7 +146,6 @@ def _record(slot_ids):
         preferred_teammate=None,
         lap_times={},
         notes=None,
-        signup_channel_id=99,
     )
 
 

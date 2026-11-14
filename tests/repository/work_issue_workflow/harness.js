@@ -22,7 +22,15 @@ const fs = require('fs')
 const path = require('path')
 
 const WORKFLOW = path.join(__dirname, '..', '..', '..', '.claude', 'workflows', 'work-issue.js')
-const source = fs.readFileSync(WORKFLOW, 'utf8').replace(/^export const meta/, 'const meta')
+// The scenarios hold the workflow to a fixed table of design files, in which steward alone has
+// one, rather than to the table the repository carries. That table grows by a module with each
+// design pass, and a scenario that needs a module with no design file would otherwise have to move
+// to another module each time, until none was left.
+const SCENARIO_DESIGN_FILES = "const DESIGN_FILES = {\n  steward: 'docs/design/steward_module.md',\n}"
+const DESIGN_FILES_TABLE = /^const DESIGN_FILES = \{[^}]*\}/m
+const loaded = fs.readFileSync(WORKFLOW, 'utf8').replace(/^export const meta/, 'const meta')
+if (!DESIGN_FILES_TABLE.test(loaded)) throw new Error('work-issue.js no longer declares its DESIGN_FILES table as the harness expects')
+const source = loaded.replace(DESIGN_FILES_TABLE, SCENARIO_DESIGN_FILES)
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const scenarios = require(path.resolve(process.argv[2]))
 const only = process.argv[3]

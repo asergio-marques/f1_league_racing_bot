@@ -50,6 +50,7 @@ from tests.support.season_league import (
     SIGNING_UP,
     SIGNUP_CHANNEL_BASE,
     SeasonLeague,
+    review_services,
     setup_league,
     signing_up,
 )
@@ -67,8 +68,7 @@ async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
                   lap_times: dict[str, str] | None = None) -> SeasonLeague:
     """`setup_league` at Signups, the window open, the driver role (820) set; Kimi at *state*,
     his wizard unengaged in his signup channel, his signup record saved with *lap_times* (Kimi's
-    two times unless given); manager 77 holding the interaction role. Today's handlers off the
-    queue are stand-ins that do nothing, so that only what is asked of the queue shows."""
+    two times unless given); manager 77 holding the interaction role."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
@@ -79,21 +79,17 @@ async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
         "WHERE discord_user_id = ?", str(SIGNING_UP),
     )
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, "
-        "nationality, platform, platform_id, driver_type, lap_times_json, signup_channel_id) "
-        "VALUES (?, ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', ?, ?)",
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, server_display_name, "
+        "nationality, platform, platform_id, driver_type, lap_times_json) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', ?)",
         SEASON_ID, str(SIGNING_UP), str(SIGNING_UP),
-        json.dumps(LAP_TIMES if lap_times is None else lap_times), KIMI_CHANNEL,
+        json.dumps(LAP_TIMES if lap_times is None else lap_times),
     )
     made = league._recording(channel(KIMI_CHANNEL, league.events))
     made.guild = league.guild
     made.posted = []
     made.set_permissions = AsyncMock()
     league.channels[KIMI_CHANNEL] = made
-    wizards = league.bot.wizard_service
-    wizards.approve_signup = AsyncMock(return_value=None)
-    wizards.reject_signup = AsyncMock(return_value=None)
-    wizards.request_changes = AsyncMock(return_value=None)
     return league
 
 
@@ -113,12 +109,13 @@ def _press(league: SeasonLeague) -> Any:
 
 
 async def _approve(league: SeasonLeague, *, run: bool = True) -> Any:
-    """Manager 77 presses Approve on Kimi's review panel, handed the change queue when built
-    (A23), and the queue runs unless *run* is false."""
+    """Manager 77 presses Approve on Kimi's review panel, handed the change queue (A23) and the
+    services it reads (#286) when built, and the queue runs unless *run* is false."""
     from leaguebot.signup.services.signup_views import AdminReviewView
 
     press = _press(league)
-    view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue)
+    view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue,
+                           **review_services(league.bot))
     await view.approve_button.callback(press)
     if run:
         await run_queue(league.bot)
@@ -133,7 +130,8 @@ async def _type_reason(league: SeasonLeague, action: str, reason: str,
     signup moves on to that state meanwhile, and where *moved_after_ask* is given it moves on to
     that state only once the queue has accepted the press, before the queue runs. 77 types *reason* in Kimi's channel, the review cog
     hears it, and the queue runs. Gives the stored press."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     manager = _manager(league)
     press = _press(league)

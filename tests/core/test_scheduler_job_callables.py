@@ -41,7 +41,6 @@ EVERY_KIND = [
     ("rsvp_last_notice", ROUND_ID),
     ("rsvp_deadline", ROUND_ID),
     ("rsvp_cleanup", ROUND_ID),
-    ("signup_close", None),
     ("portrait_refresh", None),
     ("amendment_sweep", None),
 ]

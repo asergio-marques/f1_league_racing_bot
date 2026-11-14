@@ -79,7 +79,7 @@ def module_on_signup(*, modules: "ModuleService", config: "ConfigService") -> Se
             "ON CONFLICT(id) DO NOTHING"
         )
         await db.execute("UPDATE server_configs SET signup_module_enabled = 1")
-        server_cfg = await config.get_server_config()
+        server_cfg = await config.get_server_config_on(db)
         return Saved(
             changed=True,
             audits=(

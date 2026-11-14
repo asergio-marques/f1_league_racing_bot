@@ -750,7 +750,12 @@ CREATE TABLE "signup_module_settings" (
     id                      INTEGER PRIMARY KEY CHECK (id = 1),
     nationality_required    INTEGER NOT NULL DEFAULT 1,
     time_type               TEXT    NOT NULL DEFAULT 'TIME_TRIAL',
-    time_image_required     INTEGER NOT NULL DEFAULT 1
+    time_image_required     INTEGER NOT NULL DEFAULT 1,
+    -- Where the "signups are closed" notice the last close posted stands. The row outlives the
+    -- module's switch-off, which forgets the configuration, so that the next opening can still
+    -- take the notice down. Both NULL where none stands, or an opening has taken it down.
+    closed_notice_channel_id INTEGER,
+    closed_notice_message_id INTEGER
 );
 
 -- signup_module_config
@@ -777,11 +782,14 @@ CREATE TABLE "signup_wizard_records" (
     -- Index into the lap-time steps when collecting multi-track times
     current_lap_track_index     INTEGER NOT NULL DEFAULT 0,
     -- Timestamp of last wizard activity, used for inactivity timeout
-    last_activity_at            TEXT    NOT NULL DEFAULT (datetime('now')),
-    created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
+    last_activity_at            TEXT    NOT NULL,
+    created_at                  TEXT    NOT NULL,
     -- When the correction choices a manager asked for were posted in the driver's channel: the
     -- five minutes to choose run from then. NULL while no correction is awaited.
-    correction_offered_at       TEXT
+    correction_offered_at       TEXT,
+    -- When the hold on the driver's signup channel runs out: its deletion is due from then and
+    -- not before. NULL while the channel is not held.
+    held_until                  TEXT
 );
 CREATE INDEX idx_signup_wizard_channel
     ON signup_wizard_records(signup_channel_id);
@@ -800,10 +808,13 @@ CREATE TABLE "signup_windows" (
     season_id            INTEGER NOT NULL REFERENCES seasons(id),
     selected_tracks_json TEXT    NOT NULL DEFAULT '[]',
     close_at             TEXT,
-    opened_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    opened_at            TEXT    NOT NULL,
     closed_at            TEXT
 );
 CREATE INDEX idx_signup_windows_season ON signup_windows(season_id);
+-- A season has one open window at a time, so the close time and the close are written to that
+-- window alone: a second is refused while one has no closing.
+CREATE UNIQUE INDEX idx_signup_windows_one_open ON signup_windows(season_id) WHERE closed_at IS NULL;
 
 -- signup_records
 CREATE TABLE "signup_records" (
@@ -822,10 +833,8 @@ CREATE TABLE "signup_records" (
     preferred_teammate    TEXT,
     lap_times_json        TEXT,       -- JSON object: {track_id: "M:ss.mss"}
     notes                 TEXT,
-    signup_channel_id     INTEGER,
     total_lap_ms          INTEGER,
-    created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_at            TEXT    NOT NULL,
     approved              INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_signup_records_account ON signup_records(discord_user_id);

@@ -159,8 +159,9 @@ async def _may_review(member, config):
     from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(member)
-    interaction.client.config_service.get_server_config = AsyncMock(return_value=config)
-    return await _may_review_signup(interaction)
+    config_service = MagicMock()
+    config_service.get_server_config = AsyncMock(return_value=config)
+    return await _may_review_signup(interaction, config_service)
 
 
 @pytest.mark.parametrize("roles", [(MANAGER_ROLE,), (ADMIN_ROLE,)], ids=["manager", "admin"])
@@ -174,14 +175,17 @@ async def test_the_driver_may_not_action_their_own_signup_review():
 
 
 async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
+    """A league manager presses a button of a signup review while the server configuration
+    cannot be read ("database is locked"). The gate raises the fault rather than answering False,
+    so it is never turned into a quiet refusal (D7, #286)."""
     from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(_member(MANAGER_ROLE))
-    interaction.client.config_service.get_server_config = AsyncMock(
-        side_effect=RuntimeError("database is locked")
-    )
+    config_service = MagicMock()
+    config_service.get_server_config = AsyncMock(side_effect=RuntimeError("database is locked"))
 
-    assert await _may_review_signup(interaction) is False
+    with pytest.raises(RuntimeError, match="database is locked"):
+        await _may_review_signup(interaction, config_service)
 
 
 # ── The penalty and appeals reviews ───────────────────────────────────────

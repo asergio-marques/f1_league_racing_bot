@@ -128,7 +128,6 @@ class SignupRecord:
     preferred_teammate: str | None
     lap_times: dict[str, str]     # track_id → normalised "M:ss.mss"
     notes: str | None
-    signup_channel_id: int | None
     total_lap_ms: int | None = None  # computed once at approval; NULL = no times
     season_id: int | None = None
     window_id: int | None = None
@@ -148,3 +147,6 @@ class SignupWizardRecord:
     #: When the correction choices a manager asked for were posted in the driver's channel (the
     #: five minutes to choose run from then); None while no correction is awaited.
     correction_offered_at: str | None = None
+    #: When the hold on the driver's signup channel runs out, from which its deletion is due
+    #: (ISO-8601 UTC); None while the channel is not held.
+    held_until: str | None = None

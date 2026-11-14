@@ -115,6 +115,11 @@ class LeagueBot(commands.Bot):
     #: approval and configuration check read no module's service (architecture.md, "A hook core
     #: declares is a list of subscribers"); `read_refusals` gathers what they hand back.
     confirmation_refused: AwaitedHook
+    #: The faults a module finds in a season's configuration, as lines for a manager to read, or
+    #: nothing where it is off: signup signs up the lines for the signup channel and the league's
+    #: two roles, handed the season and the server. The configuration gate reads it, so that core
+    #: holds no rule of signup's.
+    configuration_faults_read: AwaitedHook
     #: A season configuration's faults, as lines for a manager to read: the reader the builder
     #: makes, handed the season and the server, that asks the configuration gate
     #: (`approval_checks.configuration_faults`) with the services it names on the bot as they

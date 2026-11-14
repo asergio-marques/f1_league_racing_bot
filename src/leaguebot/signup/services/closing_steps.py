@@ -19,14 +19,17 @@ lane alone. It needs only its channel to stand, not the signup it closes: that h
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timedelta
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.drivers.driver_service import drivers_in_states
 from leaguebot.core.models.change import (
     ChangeOrigin,
     FollowOn,
@@ -42,7 +45,6 @@ from leaguebot.core.services.seasons.season_end_changes import season_ending_on
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     NO_CHANNEL_LEFT,
     advance_on_window_close_on,
-    require_guild,
 )
 from leaguebot.core.services.queue.change_types import (
     ChangeType,
@@ -54,13 +56,14 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.signup.services.signup_posting import post
+from leaguebot.signup.services.signup_posting import post, post_standing_message
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
-    from leaguebot.signup.services.wizard_service import WizardService
+
+log = logging.getLogger(__name__)
 
 #: The job that deletes the reason a manager typed after Reject, ahead of the closing notice that
 #: gives it.
@@ -70,6 +73,11 @@ CLOSE_SIGNUP = "close_signup"
 ARM_DELETION = "arm_deletion"
 DELETE_BUTTON = "delete_button"
 POST_CLOSED = "post_closed"
+#: The job, after the save that made them no longer due, that takes timers away: a driver's
+#: inactivity, deletion and correction timers (``accounts``) and the window's close timer
+#: (``close_timer``). A timer is disarmed by a job after the save, never inside it, so that a
+#: save that fails leaves the timers it would have taken away.
+DISARM_TIMERS = "disarm_timers"
 #: The job that closes the window at a season's end, which core plans through its hook for the
 #: close of what a module holds open.
 CLOSE_WINDOW = "close_window"
@@ -134,13 +142,66 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
 __all__ = [
     "ARM_DELETION", "BUTTON_KEPT", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "CLOSE_WINDOW",
     "DELETE_BUTTON", "DELETE_REASON",
-    "DELETE_TIMER",
+    "DELETE_TIMER", "DISARM_TIMERS",
     "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
-    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry", "close_driver_signup",
-    "closing_change", "closing_steps", "driver_returned_jobs", "drivers_returned_on", "post_driver_notice",
-    "reason_delete_change", "season_end_closes", "season_end_steps", "take_reason_down", "window_close_jobs",
-    "window_close_steps",
+    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry", "recover_correction_timeouts", "recover_gone_channels", "recover_held_channels", "recover_wizards",
+    "closing_change", "closing_steps", "driver_returned_jobs", "drivers_returned_on",
+    "reason_delete_change", "season_end_closes", "season_end_driver_steps", "take_reason_down", "window_close_jobs",
+    "window_close_steps", "disarm_timers_step", "disarming",
 ]
+
+
+def disarming(
+    accounts: Sequence[str] = (), *, close_timer: bool = False, keep_deletion: bool = False
+) -> tuple[PlannedStep, ...]:
+    """The `disarm_timers` job for *accounts*' timers and, where *close_timer*, the window's close
+    timer, to plan after the save that made them no longer due; none where there is nothing to
+    take away. Where *keep_deletion*, a channel's deletion timer is left standing: the save asks a
+    closing on the driver's own lane, which arms it, and the league lane's disarm may run after
+    that."""
+    if not accounts and not close_timer:
+        return ()
+    payload: dict[str, Any] = {
+        "accounts": [str(account) for account in accounts], "close_timer": close_timer,
+    }
+    if keep_deletion:
+        payload["keep_deletion"] = True
+    return (PlannedStep(DISARM_TIMERS, payload),)
+
+
+def disarm_timers_step(
+    *,
+    cancel_timers: Callable[[str], None],
+    cancel_close_timer: Callable[[], None] | None = None,
+    cancel_unclosed_timers: Callable[[str], None] | None = None,
+    still_due: Callable[[StepContext], Awaitable[bool]] | None = None,
+) -> Step:
+    """The `disarm_timers` job (`disarming`), for a change type to register: it takes away each
+    account's timers (*cancel_timers*) and, where the payload asks it, the window's close timer
+    (*cancel_close_timer*, which a change that never asks it need not be handed). Where the payload
+    keeps the deletion, the account's timers other than the channel's deletion are taken away
+    instead (*cancel_unclosed_timers*, likewise handed only by a change that asks it). *still_due*
+    judges the save it follows, as for any job that depends on one. Nothing is read or written in
+    the database: a timer that is already gone is nothing to take away."""
+
+    async def disarm(ctx: StepContext) -> StepResult:
+        cancel = cancel_timers
+        if ctx.step_payload.get("keep_deletion"):
+            if cancel_unclosed_timers is None:
+                raise RuntimeError("the deletion timer was asked kept of a change that has no way to")
+            cancel = cancel_unclosed_timers
+        for account in ctx.step_payload["accounts"]:
+            cancel(str(account))
+        if ctx.step_payload["close_timer"]:
+            if cancel_close_timer is None:
+                raise RuntimeError("the close timer was asked taken away of a change that has none")
+            cancel_close_timer()
+        return StepResult(result={})
+
+    async def describe(_ctx: StepContext) -> str:
+        return "taking the signup's timers away"
+
+    return Step(DISARM_TIMERS, StepKind.ACT, disarm, still_due=still_due, describe=describe)
 
 
 async def ask_expiry(queue: "ChangeQueue", db_path: str, user_id: str) -> int | None:
@@ -185,18 +246,75 @@ async def ask_channel_delete(queue: "ChangeQueue", db_path: str, user_id: str) -
     )
 
 
-def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, datetime], None]) -> dict[str, Step]:
-    """The three jobs of one driver's signup channel's closing, named as above.
+async def wizard_channel(db_path: str, user_id: str) -> int | None:
+    """The signup channel *user_id*'s wizard holds, or None where they have no wizard or it holds
+    none."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+    return None if row is None or row["signup_channel_id"] is None else int(row["signup_channel_id"])
 
-    Each reads ``user_id`` and ``channel_id`` from its payload, and the notice its ``notice``. A
-    channel gone from the server is nothing to tell, lock or delete: `signup_notice` says so, and
-    the two after it find nothing to do. *now* and *arm_once* are the queue's clock and the
-    scheduler service's one-off timer.
+
+async def hold_until_on(db: aiosqlite.Connection, user_id: str, until: datetime) -> None:
+    """Record on the connection handed, committing nothing, that the hold on *user_id*'s signup
+    channel runs out at *until* (``held_until`` of their wizard's row). The channel's deletion is
+    due from then and not before, whether its timer survived a restart or not; the row's next
+    save as a wizard clears it."""
+    await db.execute(
+        "UPDATE signup_wizard_records SET held_until = ? WHERE discord_user_id = ?",
+        (until.isoformat(), user_id),
+    )
+
+
+def season_end_driver_steps(
+    *,
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, str, datetime], None],
+    cancel_timers: Callable[[str], None],
+    line_prefix: str | None = None,
+) -> dict[str, Step]:
+    """The two jobs of a driver's signup channel at a season's end, by name: `signup_notice` and
+    `close_signup`, which are `closing_steps`' own (it holds the deletion's arming, as above).
+    Where the change has no closing line of its own, *line_prefix* has the notice job write one.
+    Not subscribed itself: signup's `window_changes.season_end_steps`, which is, includes it."""
+    own = closing_steps(
+        now=now, arm_once=arm_once, cancel_timers=cancel_timers, line_prefix=line_prefix
+    )
+    return {name: own[name] for name in (SIGNUP_NOTICE, CLOSE_SIGNUP)}
+
+
+def closing_steps(
+    *,
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, str, datetime], None],
+    cancel_timers: Callable[[str], None] | None = None,
+    line_prefix: str | None = None,
+) -> dict[str, Step]:
+    """The jobs of one driver's signup channel's closing, named as above.
+
+    Each reads ``user_id`` and ``channel_id`` from its payload, and the notice its ``notice``; a
+    payload without ``channel_id`` (a season's end plans none, as it knows no channel) has the
+    channel the driver's wizard still holds read when the job runs. A channel gone from the
+    server is nothing to tell, lock or delete: `signup_notice` says so, and the two after it find
+    nothing to do. *now* and *arm_once* are the queue's clock and the scheduler service's one-off
+    timer.
+
+    A season's end closes a driver in two jobs, not three: its `close_signup` carries ``hold``,
+    and after the lock takes the driver's timers away (*cancel_timers*) and arms the channel's
+    deletion a day on from the queue's clock, so that the closing a season's end plans among
+    the drivers' jobs stays a notice and a lock. Where *line_prefix* is given ("System | Every
+    division is done"), the notice job writes a line naming a driver it found no channel for.
     """
 
     async def _channel(ctx: StepContext) -> discord.TextChannel | None:
+        channel_id = ctx.step_payload.get("channel_id")
+        if channel_id is None:
+            channel_id = await wizard_channel(ctx.db_path, str(ctx.step_payload["user_id"]))
         guild = await league_guild(ctx.bot)
-        found = None if guild is None else guild.get_channel(int(ctx.step_payload["channel_id"]))
+        found = None if guild is None or channel_id is None else guild.get_channel(int(channel_id))
         return found if isinstance(found, discord.TextChannel) else None
 
     def _passed_over(ctx: StepContext) -> bool:
@@ -210,7 +328,12 @@ def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, 
     async def signup_notice(ctx: StepContext) -> StepResult:
         channel = await _channel(ctx)
         if channel is None:
-            return StepResult(result={"no_channel": True})
+            user_id = ctx.step_payload["user_id"]
+            lines = (
+                (f"{line_prefix} | {NO_CHANNEL_LEFT.format(who=f'<@{user_id}>')}",)
+                if line_prefix else ()
+            )
+            return StepResult(result={"no_channel": True}, lines=lines)
         mentions = discord.AllowedMentions(
             everyone=False, roles=False, users=[discord.Object(id=int(ctx.step_payload["user_id"]))]
         )
@@ -220,9 +343,22 @@ def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, 
         )
         return StepResult(result={})
 
+    def _hold(ctx: StepContext, channel: discord.TextChannel | None) -> dict[str, Any]:
+        """A season's end's closing: the driver's timers away, the channel's deletion armed. Gives
+        the result the step's record keeps the hold's end from."""
+        user_id = str(ctx.step_payload["user_id"])
+        if cancel_timers is not None:
+            cancel_timers(user_id)
+        if channel is None:
+            return {}
+        until = now() + HOLD
+        arm_once(DELETE_TIMER, user_id, until)
+        return {"held_until": until.isoformat()}
+
     async def close_signup(ctx: StepContext) -> StepResult:
+        held = bool(ctx.step_payload.get("hold"))
         if _passed_over(ctx):
-            return StepResult(result={"no_channel": True})
+            return StepResult(result={"no_channel": True, **(_hold(ctx, None) if held else {})})
         channel = await _channel(ctx)
         member = None if channel is None else channel.guild.get_member(int(ctx.step_payload["user_id"]))
         if channel is not None and member is not None:
@@ -235,13 +371,21 @@ def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, 
                 raise StepFailedOnDiscord(
                     f"the signup channel {channel.id} could not be locked"
                 ) from error
-        return StepResult(result={})
+        return StepResult(result=_hold(ctx, channel) if held else {})
 
     async def arm_deletion(ctx: StepContext) -> StepResult:
         if _passed_over(ctx):
             return StepResult(result={"no_channel": True})
-        arm_once(DELETE_TIMER, str(ctx.step_payload["user_id"]), now() + HOLD)
-        return StepResult(result={})
+        until = now() + HOLD
+        arm_once(DELETE_TIMER, str(ctx.step_payload["user_id"]), until)
+        return StepResult(result={"held_until": until.isoformat()})
+
+    async def record_hold(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """In the save that marks the arming done, the hold's end on the wizard's row, so that the
+        deletion is due from then whatever becomes of the timer."""
+        until = (result.result or {}).get("held_until")
+        if until is not None:
+            await hold_until_on(db, str(ctx.step_payload["user_id"]), datetime.fromisoformat(until))
 
     async def describe_notice(ctx: StepContext) -> str:
         return f"telling <@{ctx.step_payload['user_id']}> that their signup has closed"
@@ -260,8 +404,12 @@ def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, 
             standing_posts.delete_replaced_step(DELETE_REASON), describe=describe_reason
         ),
         SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
-        CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
-        ARM_DELETION: Step(ARM_DELETION, StepKind.ACT, arm_deletion, describe=describe_arm),
+        CLOSE_SIGNUP: Step(
+            CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close, record=record_hold
+        ),
+        ARM_DELETION: Step(
+            ARM_DELETION, StepKind.ACT, arm_deletion, describe=describe_arm, record=record_hold
+        ),
     }
 
 
@@ -275,7 +423,7 @@ def driver_returned_jobs(driver: Mapping[str, Any], *, notice: str) -> tuple[Pla
     user_id = str(driver["user_id"])
     return (
         PlannedStep(SIGNUP_NOTICE, {"user_id": user_id, "notice": notice}),
-        PlannedStep(CLOSE_SIGNUP, {"user_id": user_id}),
+        PlannedStep(CLOSE_SIGNUP, {"user_id": user_id, "hold": True}),
     )
 
 
@@ -304,108 +452,174 @@ def season_end_closes(*, cause: str, season_number: int | None = None) -> tuple[
     return (PlannedStep(CLOSE_WINDOW, {"cause": cause, "season_number": season_number}),)
 
 
-async def post_driver_notice(
-    guild: discord.Guild, driver: Mapping[str, Any], *, wizard_service: "WizardService", notice: str
-) -> dict:
-    """Tell one driver's signup channel *notice*, before anything is locked (the `signup_notice`
-    job of a season's end).
+async def recover_wizards(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
+    """Signup's catch-up at start: ask, as the bot, for what the wizards missed while it was down,
+    before the queue starts.
 
-    *driver* holds their ``user_id``. A refusal from Discord raises, for the queue to stop on with
-    the channel still readable and writable; a wizard with no channel, or a channel gone, is
-    nothing to tell and the job is done.
+    A signup whose channel was deleted meanwhile is ended first (`recover_gone_channels`); a
+    driver parked awaiting a correction parameter is released (`recover_correction_timeouts`); and
+    each signup left unanswered for 24 hours, judged against *queue*'s clock, so that a caught-up
+    expiry and one run on time take one path, has its expiry asked (`ask_expiry`). The change's
+    check drops what the driver has since moved on from. It arms nothing: a deadline still ahead
+    is a timer the scheduler's own store keeps through the restart, and an expiry asked of a wizard
+    with no activity recorded is asked at once. The holds on signup channels are caught up apart,
+    by `recover_held_channels`, which runs whatever signup's switch says. SC-005.
     """
-    held = await wizard_service.trigger_channel_hold(
-        str(driver["user_id"]), guild, notice, lock=False, raise_on_failure=True
-    )
-    return {"no_channel": True} if held.channel_id is None else {}
-
-
-def cancel_signup_timeout(scheduler_service: "SchedulerService", user_id: str) -> None:
-    """Remove one driver's inactivity timeout, and the record of its timer; one the scheduler no
-    longer holds is nothing to remove."""
-    # Imported here: the wizard service imports this module.
-    from leaguebot.signup.services.wizard_service import inactivity_job_id
-
-    scheduler_service.cancel_job(inactivity_job_id(user_id))
-    scheduler_service.disarm(INACTIVITY_TIMER, user_id)
-
-
-async def close_driver_signup(
-    guild: discord.Guild,
-    driver: Mapping[str, Any],
-    *,
-    wizard_service: "WizardService",
-    scheduler_service: "SchedulerService",
-) -> dict:
-    """Close one driver's signup channel and cancel their inactivity timeout (the `close_signup`
-    job of a season's end).
-
-    The channel loses the driver's write access and its deletion is armed 24 hours on. It runs
-    whether the `signup_notice` job before it went through or was discarded. A timeout the
-    scheduler no longer holds is nothing to cancel.
-    """
-    user_id = str(driver["user_id"])
-    await wizard_service.lock_signup_channel(user_id, guild)
-    cancel_signup_timeout(scheduler_service, user_id)
-    return {}
-
-
-def season_end_steps(
-    *,
-    wizard_service: Callable[[], "WizardService"],
-    scheduler_service: Callable[[], "SchedulerService"],
-    line_prefix: str | None = None,
-) -> dict[str, Step]:
-    """The two jobs of one driver's signup channel at a season's end, by name: `signup_notice`
-    tells the channel why it closes and `close_signup` locks it. A driver with no signup channel
-    left is passed over by `signup_notice`, and `close_signup` then has nothing to lock or delete.
-    The change's closing outcome names them; where the change has no closing line of its own,
-    *line_prefix* ("System | Every division is done") has the notice job write one. Not subscribed
-    itself: signup's `window_changes.season_end_steps`, which is, includes it.
-
-    *wizard_service* and *scheduler_service* are getters, so that each is the one the bot holds
-    when the job runs.
-    """
-
-    async def signup_notice(ctx: StepContext) -> StepResult:
-        guild = await require_guild(ctx.bot)
-        result = await post_driver_notice(
-            guild, ctx.step_payload, wizard_service=wizard_service(),
-            notice=str(ctx.step_payload["notice"]),
+    gone = await recover_gone_channels(bot, queue=queue)
+    await recover_correction_timeouts(bot.db_path, queue, skip=gone)
+    now = queue.now()
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, last_activity_at FROM signup_wizard_records "
+            "WHERE wizard_state != 'UNENGAGED'"
         )
-        lines: tuple[str, ...] = ()
-        if result.get("no_channel") and line_prefix:
-            who = f"<@{ctx.step_payload['user_id']}>"
-            lines = (f"{line_prefix} | {NO_CHANNEL_LEFT.format(who=who)}",)
-        return StepResult(result=result, lines=lines)
+        wizards = await cursor.fetchall()
+    for wizard in wizards:
+        user_id = str(wizard["discord_user_id"])
+        if user_id in gone:
+            continue
+        if wizard["last_activity_at"]:
+            last = datetime.fromisoformat(wizard["last_activity_at"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if last + HOLD > now:
+                continue
+        await ask_expiry(queue, bot.db_path, user_id)
 
-    async def close_signup(ctx: StepContext) -> StepResult:
-        guild = await require_guild(ctx.bot)
-        user_id = str(ctx.step_payload["user_id"])
-        if any(
-            view.name == SIGNUP_NOTICE and view.done
-            and str(view.payload.get("user_id")) == user_id
-            and (view.result or {}).get("no_channel")
-            for view in ctx.steps
-        ):
-            # Nothing to lock or delete: the notice found no channel left.
-            cancel_signup_timeout(scheduler_service(), user_id)
-            return StepResult(result={"no_channel": True})
-        return StepResult(result=await close_driver_signup(
-            guild, ctx.step_payload, wizard_service=wizard_service(),
-            scheduler_service=scheduler_service(),
-        ))
 
-    async def describe_notice(ctx: StepContext) -> str:
-        return f"telling <@{ctx.step_payload['user_id']}> that their signup has closed"
+async def recover_held_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> None:
+    """Signup's catch-up of the holds on signup channels that ran out while the bot was down, as
+    the bot and before the queue starts: each hold whose ``held_until`` is past *queue*'s clock has
+    its deletion asked (`ask_channel_delete`), whose change drops it where the channel is no longer
+    the driver's. A hold's timer may not have survived the restart.
 
-    async def describe_close(ctx: StepContext) -> str:
-        return f"closing the signup of <@{ctx.step_payload['user_id']}>"
+    **It runs whatever signup's switch says** (the wiring marks it `runs_while_off`): the hold is
+    work signup announced while it was on, to the driver the channel told it would be deleted
+    after 24 hours, and nothing else would carry it out once signup is off. It posts nothing: the
+    deletion's change is the one that stays quiet while signup is off. Contrast the wizards'
+    catch-up, which ends and expires signups and so runs only while signup is on."""
+    now = queue.now()
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, held_until FROM signup_wizard_records "
+            "WHERE held_until IS NOT NULL"
+        )
+        holds = await cursor.fetchall()
+    for hold in holds:
+        if datetime.fromisoformat(hold["held_until"]) <= now:
+            await ask_channel_delete(queue, bot.db_path, str(hold["discord_user_id"]))
 
-    return {
-        SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
-        CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
-    }
+
+async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> set[str]:
+    """The first of the wizards' catch-up: end the signup of every driver whose signup channel was
+    deleted while the bot was down (#439, slice 8).
+
+    Every driver whose signup is under way (`IN_PROGRESS_STATES`) and whose wizard names a
+    channel is looked at. A channel the cache lacks is confirmed with `fetch_channel`: not
+    found, or found as no text channel, is gone, and the restart asks the queue, as the bot
+    and before it starts, for the ending of that signup (`signup.end`, reason `CHANNEL_GONE`,
+    found at a restart), whose check drops it where the driver has since moved on. Any other
+    failure of the lookup is logged and the channel treated as standing: a sweep cannot stop
+    the queue, and the deletion listener or the next restart tries again. With no league
+    server in the cache nothing is ended, and a warning says so.
+
+    Gives the accounts it asked an ending of, which the rest of the recovery skips.
+    """
+    from leaguebot.core.utils.log_lines import name_of_member
+    from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
+    from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
+
+    asked: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    async with get_connection(bot.db_path) as db:
+        for driver in await drivers_in_states(db, [state.value for state in IN_PROGRESS_STATES]):
+            cursor = await db.execute(
+                "SELECT signup_channel_id FROM signup_wizard_records "
+                "WHERE discord_user_id = ? AND signup_channel_id IS NOT NULL",
+                (driver["discord_user_id"],),
+            )
+            wizard = await cursor.fetchone()
+            if wizard is not None:
+                rows.append({
+                    "discord_user_id": driver["discord_user_id"],
+                    "signup_channel_id": wizard["signup_channel_id"],
+                })
+    if not rows:
+        return asked
+    guild = await league_guild(bot)
+    if guild is None:
+        log.warning(
+            "recover_gone_channels: the league's server is not in the cache, so no signup "
+            "channel was looked for"
+        )
+        return asked
+    for row in rows:
+        user_id = row["discord_user_id"]
+        channel_id = int(row["signup_channel_id"])
+        try:
+            if guild.get_channel(channel_id) is not None:
+                continue
+            try:
+                fetched = await guild.fetch_channel(channel_id)
+            except discord.NotFound:
+                fetched = None
+            if isinstance(fetched, discord.TextChannel):
+                continue
+            await ask_channel_gone(
+                queue,
+                user_id=user_id,
+                channel_id=channel_id,
+                named=await name_of_member(bot, int(user_id)),
+                found=RESTART,
+            )
+            asked.add(user_id)
+        except discord.HTTPException:
+            log.warning(
+                "recover_gone_channels: signup channel %s of %s could not be looked for; "
+                "treated as standing", channel_id, user_id, exc_info=True,
+            )
+        except Exception:  # noqa: BLE001 - one driver's refused ask must not strand the rest
+            log.exception("recover_gone_channels: could not ask the ending of %s's signup", user_id)
+    return asked
+
+
+async def recover_correction_timeouts(
+    db_path: str, queue: "ChangeQueue", *, skip: frozenset[str] | set[str] = frozenset()
+) -> None:
+    """Release every driver awaiting a correction parameter, save those in *skip*, whose signup
+    the restart has just ended for a channel gone.
+
+    The five-minute selection window is a one-off timer, so a restart discards it and nothing
+    re-creates it, which left the driver parked for good, shown in no listing and refused by
+    their own Sign Up button (issue #129). The restart asks the queue, as the bot and before it
+    starts, for the lapse of each such driver (`signup.correction.lapse`, with *restart* set,
+    which words the notice).
+
+    A restart releases them **unconditionally** rather than re-arming whatever time was left. The
+    state exists only while a manager is mid-decision, and a manager whose bot has restarted is no
+    longer mid-decision (decided 2026-09-15). That is also why nothing here reads a stored
+    deadline, and why a driver stranded by the old behaviour, whose record predates any of this,
+    is released on the same path.
+
+    These drivers cannot come from `recover_wizards`' own read of the wizards: the wizard record is
+    UNENGAGED for the whole window. The driver profile is the only record that the window is
+    open, so it is what is read here.
+    """
+    from leaguebot.signup.services.review_changes import ask_lapse
+
+    async with get_connection(db_path) as db:
+        rows = await drivers_in_states(db, [DriverState.AWAITING_CORRECTION_PARAMETER.value])
+
+    for row in rows:
+        if row["discord_user_id"] in skip:
+            continue
+        try:
+            await ask_lapse(queue, row["discord_user_id"], restart=True)
+        except Exception:  # noqa: BLE001 - one driver's refused ask must not strand the rest
+            log.exception(
+                "recover_correction_timeouts: could not ask the lapse of %s",
+                row["discord_user_id"],
+            )
 
 
 def window_close_jobs(
@@ -455,7 +669,7 @@ def window_close_steps(
         )
         if not isinstance(found, discord.TextChannel):
             raise StepFailedOnDiscord("the signup channel could not be found to post in")
-        message_id = await post(
+        message_id = await post_standing_message(
             found, CLOSED_NOTICE, mentions=discord.AllowedMentions.none(),
             refused=f"the closed notice could not be posted in channel {found.id}",
         )
@@ -469,7 +683,7 @@ def window_close_steps(
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         await signup_module_service().set_window_closed_on(
-            db, closed_msg_id=int((result.result or {})["new"])
+            db, now=now(), closed_msg_id=int((result.result or {})["new"])
         )
         await record_system_change_on(
             db, change_type=str(ctx.step_payload["audit_action"]), old_value="open",
@@ -541,7 +755,7 @@ def closing_change(
         doing=lambda payload: f"Closing the signup of <@{payload['user_id']}>",
         outcome=outcome,
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
-        writes=(),
+        writes=("signup_wizard_records",),
     )
 
 

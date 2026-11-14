@@ -7,6 +7,8 @@ season keeps its own.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -14,11 +16,13 @@ from leaguebot.signup.models.signup_module import SignupRecord
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.driver_transitions import transitioned
 
+NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
 
 async def _save_record(svc, db_path, record):
     """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
     async with get_connection(db_path) as db:
-        record_id = await svc.save_record_on(db, record)
+        record_id = await svc.save_record_on(db, record, now=NOW)
         await db.commit()
     return record_id
 
@@ -42,7 +46,6 @@ def _record(platform: str = "Steam") -> SignupRecord:
         preferred_teammate=None,
         lap_times={},
         notes=None,
-        signup_channel_id=None,
     )
 
 
@@ -86,7 +89,7 @@ async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_pa
     # The window is opened in a save of the caller's, as the `/signup open` job's record does it
     # (#439, slice 6b, C68).
     async with get_connection(db_path) as db:
-        await svc.set_window_open_on(db, 111, ["3"])
+        await svc.set_window_open_on(db, 111, ["3"], now=NOW)
         await db.commit()
     window_id = (await svc.get_windows(1))[0]["id"]
 
@@ -140,3 +143,22 @@ async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
         await db.commit()
 
     assert len(await svc.get_records(1)) == 1
+
+
+async def test_a_driver_s_signup_for_a_season_is_the_one_kept_under_it(db_path):
+    """Season 1 holds the driver's Steam signup and season 2, after it, their Xbox one. Asked for
+    season 1, the one function that says which signup is the driver's gives the Steam signup; asked
+    for no season, the latest season's; asked for a season they never signed up in, none."""
+    from leaguebot.signup.services.signup_module_service import driver_signup_on
+
+    svc = SignupModuleService(db_path)
+    await _season(db_path, 1)
+    await _save_record(svc, db_path, _record("Steam"))
+    await _archive(db_path, 1)
+    await _season(db_path, 2)
+    await _save_record(svc, db_path, _record("Xbox"))
+
+    async with get_connection(db_path) as db:
+        assert (await driver_signup_on(db, [USER], season_id=1))["platform"] == "Steam"
+        assert (await driver_signup_on(db, [USER]))["platform"] == "Xbox"
+        assert await driver_signup_on(db, [USER], season_id=3) is None

@@ -141,12 +141,8 @@ def _job_event_type(job_id: str) -> str | None:
 _GLOBAL_SERVICE: "SchedulerService | None" = None
 
 
-#: One league, so one signup window at a time and one timer to close it.
-SIGNUP_CLOSE_JOB_ID = "signup_close"
-
 #: The kinds of the standing and one-shot jobs no round owns, named for what they do. Each is
 #: signed up with `SchedulerService.register_timer`, and stored on its job as ``kind``.
-SIGNUP_CLOSE_KIND = "signup_close"
 PORTRAIT_REFRESH_KIND = "portrait_refresh"
 AMENDMENT_SWEEP_KIND = "amendment_sweep"
 
@@ -167,7 +163,7 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
 
     Looks up the handler the builder registered for *kind* (`SchedulerService.register_timer`)
     and awaits it, handed *key* (the round id of a round's job, the key of a one-off timer), which
-    reads its row again and asks its change. A standing job (the signup close, the portrait
+    reads its row again and asks its change. A standing job (the portrait
     refresh, the amendment sweep) is armed with no key, and its handler is handed nothing. A
     kind with no handler is passed over with a warning, and a handler that raises is logged with
     its traceback, naming the kind and the key: a job's fault belongs to its host's log, and
@@ -797,9 +793,8 @@ class SchedulerService:
         """Remove every job but those whose ids are in *keep*, and return how many went.
 
         For `/bot pack` and `/bot factory-reset`, which clear all of the league's scheduled work at
-        once rather than round by round, and so reach the jobs no round owns — the signup close
-        timer, a wizard's inactivity and channel-delete jobs, a stale season-end job. Pack keeps the
-        daily portrait refresh: it is a standing instruction from a setting pack keeps, and does
+        once rather than round by round, and so reach the jobs no round owns — a wizard's inactivity and channel-delete jobs, a stale
+        season-end job. Pack keeps the daily portrait refresh: it is a standing instruction from a setting pack keeps, and does
         nothing while no server is claimed.
         """
         removed = 0
@@ -980,24 +975,3 @@ class SchedulerService:
         job_id = PORTRAIT_REFRESH_JOB_ID
         if self._remove_job(job_id):
             log.info("Removed %s", job_id)
-
-    def schedule_signup_close_timer(self, close_at_iso: str) -> None:
-        """Schedule the one-shot signup auto-close job at the given ISO 8601 UTC timestamp.
-
-        Uses ``replace_existing=True`` so calling this again re-arms the timer.
-        """
-        fire_at = datetime.fromisoformat(close_at_iso).replace(tzinfo=timezone.utc)
-        self._scheduler.add_job(
-            _one_off_timer_job,
-            trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-            id=SIGNUP_CLOSE_JOB_ID,
-            replace_existing=True,
-            name="Signup auto-close",
-            kwargs={"kind": SIGNUP_CLOSE_KIND},
-        )
-        log.info("Scheduled %s at %s", SIGNUP_CLOSE_JOB_ID, fire_at.isoformat())
-
-    def cancel_signup_close_timer(self) -> None:
-        """Remove the signup close timer if it exists."""
-        if self._remove_job(SIGNUP_CLOSE_JOB_ID):
-            log.info("Removed the %s job", SIGNUP_CLOSE_JOB_ID)

@@ -16,7 +16,10 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states
 from leaguebot.core.services.upkeep.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
 from leaguebot.core.services.modules.review_sections import Review, ReviewSection
-from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES
+from leaguebot.core.services.seasons.season_lifecycle_service import (
+    UNSETTLED_STATES,
+    live_season_stage_on,
+)
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -28,6 +31,7 @@ from leaguebot.signup.models.signup_module import (
 )
 
 if TYPE_CHECKING:
+    from leaguebot.core.models.server_config import ServerConfig
     from leaguebot.core.services.modules.module_service import ModuleService
 
 log = logging.getLogger(__name__)
@@ -69,6 +73,42 @@ def _listing_order(pair: tuple[dict[str, Any], aiosqlite.Row | None]) -> tuple[A
     )
 
 
+def signup_channel_overwrites(
+    guild: discord.Guild, league: "ServerConfig | None"
+) -> dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite]:
+    """Who may see the signup channel, as `/signup channel` sets it.
+
+    Nobody but the bot, the league's base role (which may read and use commands but not write)
+    and its interaction role and league admin role (which may read and write). A league admin
+    holds the league manager tier within their own, so a channel opened to one tier and not the
+    other would show them a signup they may action and no way to read it (issue #116): the admin
+    role gets the interaction role's sight, skipped where the league has set none. The base role
+    is the league's, not this module's (issue #276). *league* is None where the server is not
+    configured, and the roles are then not read.
+    """
+    interaction_role = guild.get_role(league.interaction_role_id) if league else None
+    admin_role = (
+        guild.get_role(league.league_admin_role_id)
+        if league and league.league_admin_role_id
+        else None
+    )
+    base_role = (
+        guild.get_role(league.base_role_id) if league and league.base_role_id else None
+    )
+    overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+    }
+    if base_role:
+        overwrites[base_role] = discord.PermissionOverwrite(
+            view_channel=True, send_messages=False, use_application_commands=True
+        )
+    for role in (interaction_role, admin_role):
+        if role is not None:
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    return overwrites
+
+
 class SignupModuleService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -108,19 +148,23 @@ class SignupModuleService:
         wanted = tuple(state.value for state in states)
         if not wanted:
             return []
-        placeholders = ",".join("?" for _ in wanted)
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"SELECT p.discord_user_id, p.current_state, w.signup_channel_id "
-                f"FROM driver_profiles p "
-                f"LEFT JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
-                f"WHERE p.current_state IN ({placeholders}) ORDER BY p.id",
-                wanted,
-            )
-            rows = await cursor.fetchall()
+            drivers = await drivers_in_states(db, wanted)
+            channels = {}
+            for driver in drivers:
+                cursor = await db.execute(
+                    "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+                    (driver["discord_user_id"],),
+                )
+                wizard = await cursor.fetchone()
+                channels[driver["discord_user_id"]] = None if wizard is None else wizard["signup_channel_id"]
         return [
-            (row["discord_user_id"], DriverState(row["current_state"]), row["signup_channel_id"])
-            for row in rows
+            (
+                driver["discord_user_id"],
+                DriverState(driver["current_state"]),
+                channels[driver["discord_user_id"]],
+            )
+            for driver in drivers
         ]
 
     async def driver_signups(self, profile_ids: Iterable[int]) -> dict[int, aiosqlite.Row]:
@@ -133,6 +177,17 @@ class SignupModuleService:
                 if row is not None:
                     found[profile_id] = row
         return found
+
+    async def live_season_signup(self, profile_id: int) -> aiosqlite.Row | None:
+        """The signup that is the driver's for the live season, as `driver_signup_on` chooses it
+        across the accounts core holds for them, or None where they have none for it. Where no
+        season is live, their signups of every season are considered."""
+        async with get_connection(self._db_path) as db:
+            live = await live_season_stage_on(db)
+            return await driver_signup_on(
+                db, await accounts_of_profile(db, profile_id),
+                season_id=None if live is None else live[0],
+            )
 
     async def _unsettled_drivers(self) -> list[tuple[dict[str, Any], aiosqlite.Row | None]]:
         """Every driver whose signup is unsettled (core's `UNSETTLED_STATES`), each beside their
@@ -223,35 +278,6 @@ class SignupModuleService:
             })
         return results
 
-    async def save_config(self, cfg: SignupModuleConfig) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO signup_module_config
-                    (id, signup_channel_id,
-                     signups_open, signup_button_message_id, selected_tracks_json,
-                     signup_closed_message_id, close_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    signup_channel_id          = excluded.signup_channel_id,
-                    signups_open               = excluded.signups_open,
-                    signup_button_message_id   = excluded.signup_button_message_id,
-                    selected_tracks_json       = excluded.selected_tracks_json,
-                    signup_closed_message_id   = excluded.signup_closed_message_id,
-                    close_at                   = excluded.close_at
-                """,
-                (
-                    1,
-                    cfg.signup_channel_id,
-                    int(cfg.signups_open),
-                    cfg.signup_button_message_id,
-                    json.dumps(cfg.selected_tracks),
-                    cfg.signup_closed_message_id,
-                    cfg.close_at,
-                ),
-            )
-            await db.commit()
-
     async def delete_config_on(self, db: aiosqlite.Connection) -> None:
         """Forget the signup channel and the window state on *db*, committing nothing, so that
         the module's switch-off saves it together with the flag coming down.
@@ -262,7 +288,9 @@ class SignupModuleService:
         Principle X, rules 3 and 6). The time slots and the three question settings are not
         in this row, and no key joins their tables to it, so nothing cascades: they stand
         again when the module is next enabled, as the signup specification requires
-        (issue #127).
+        (issue #127). The closed-status message is the one id the disable does not lose: the
+        close kept it, with its channel, among the settings (`closed_notice_of`), so that the
+        first opening after the module is switched back on takes the notice down.
         """
         await db.execute("DELETE FROM signup_module_config")
 
@@ -279,9 +307,10 @@ class SignupModuleService:
         then add" on one role would briefly revoke it, and outright if the grant failed.
 
         Nothing is done without a signup channel, which exists only while the module is
-        enabled. A failure is logged and never raised: Discord refuses an overwrite for
-        reasons that have nothing to do with the setting, and the role the league chose is
-        still the right one to have stored. The channel is repairable by hand.
+        enabled. A refusal from Discord (`discord.HTTPException`) is logged and never raised:
+        Discord refuses an overwrite for reasons that have nothing to do with the setting, and
+        the role the league chose is still the right one to have stored. The channel is
+        repairable by hand.
         """
         cfg = await self.get_config()
         if cfg is None or cfg.signup_channel_id is None:
@@ -300,7 +329,7 @@ class SignupModuleService:
                 send_messages=False,
                 use_application_commands=True,
             )
-        except Exception:  # noqa: BLE001 — see the docstring
+        except discord.HTTPException:
             log.warning("move_base_role_overwrite: could not update the signup channel", exc_info=True)
 
     # ── Settings ──────────────────────────────────────────────────────
@@ -309,27 +338,6 @@ class SignupModuleService:
         """Return settings row; if missing, return defaults."""
         async with get_connection(self._db_path) as db:
             return await settings_on(db)
-
-    async def save_settings(self, settings: SignupModuleSettings) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO signup_module_settings
-                    (id, nationality_required, time_type, time_image_required)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    nationality_required = excluded.nationality_required,
-                    time_type            = excluded.time_type,
-                    time_image_required  = excluded.time_image_required
-                """,
-                (
-                    1,
-                    int(settings.nationality_required),
-                    settings.time_type,
-                    int(settings.time_image_required),
-                ),
-            )
-            await db.commit()
 
     # ── Availability slots ────────────────────────────────────────────
 
@@ -344,62 +352,6 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             return await slots_on(db)
 
-    async def add_slot(self, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
-        """Insert a slot; raises ValueError on duplicate.
-
-        Nothing is renumbered. The display ordinals of later slots do shift, because
-        they are chronological positions computed on read, but no driver's recorded
-        availability moves with them — it names the slot itself (issue #126).
-        """
-        async with get_connection(self._db_path) as db:
-            try:
-                await db.execute(
-                    "INSERT INTO signup_availability_slots "
-                    "(day_of_week, time_hhmm) "
-                    "VALUES (?, ?)",
-                    (day_of_week, time_hhmm),
-                )
-            except Exception as exc:
-                if "UNIQUE constraint failed" in str(exc):
-                    raise ValueError(
-                        f"Slot already exists: day={day_of_week} time={time_hhmm}"
-                    ) from exc
-                raise
-            await db.commit()
-
-        # Fetch the newly assigned sequence ID for the inserted slot
-        slots = await self.get_slots()
-        inserted = next(
-            (s for s in slots if s.day_of_week == day_of_week and s.time_hhmm == time_hhmm),
-            None,
-        )
-        assert inserted is not None
-        return inserted
-
-    async def remove_slot_by_rank(self, slot_id: int) -> bool:
-        """Remove the slot at chronological rank slot_id. Returns False if not found.
-
-        The rank is the display ordinal a league types, not anything stored. Removing a
-        slot renumbers nothing: every remaining slot keeps its durable identity, so the
-        answers of drivers who chose them still mean the same times.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM signup_availability_slots "
-                " "
-                "ORDER BY day_of_week ASC, time_hhmm ASC",
-            )
-            rows = list(await cursor.fetchall())
-            if slot_id < 1 or slot_id > len(rows):
-                return False
-            target_id = rows[slot_id - 1]["id"]
-            await db.execute(
-                "DELETE FROM signup_availability_slots WHERE id = ?",
-                (target_id,),
-            )
-            await db.commit()
-        return True
-
     # ── Window state helpers ──────────────────────────────────────────
 
     async def get_window_state(self) -> bool:
@@ -412,7 +364,12 @@ class SignupModuleService:
         return bool(row["signups_open"]) if row else False
 
     async def set_window_open_on(
-        self, db: aiosqlite.Connection, button_message_id: int, selected_tracks: list[str]
+        self,
+        db: aiosqlite.Connection,
+        button_message_id: int,
+        selected_tracks: list[str],
+        *,
+        now: datetime,
     ) -> None:
         """Open the window, and record it as a window of the server's active season, on the
         caller's connection, committing nothing: the Sign Up button's message is kept, the
@@ -430,22 +387,23 @@ class SignupModuleService:
             "",
             (button_message_id, json.dumps(selected_tracks)),
         )
+        # The notice the opening takes down is no longer one to find again.
+        await db.execute(
+            "UPDATE signup_module_settings "
+            "SET closed_notice_channel_id = NULL, closed_notice_message_id = NULL"
+        )
         season_id = await self._live_season_id(db)
         if season_id is not None:
             await db.execute(
-                "INSERT INTO signup_windows (season_id, selected_tracks_json) "
-                "VALUES (?, ?)",
-                (season_id, json.dumps(selected_tracks)),
+                "INSERT INTO signup_windows (season_id, selected_tracks_json, opened_at) "
+                "VALUES (?, ?, ?)",
+                (season_id, json.dumps(selected_tracks), now.isoformat()),
             )
 
     @staticmethod
     async def _live_season_id(db) -> int | None:
-        cursor = await db.execute(
-            "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE') "
-            "ORDER BY id DESC LIMIT 1"
-        )
-        row = await cursor.fetchone()
-        return int(row["id"]) if row is not None else None
+        live = await live_season_stage_on(db)
+        return None if live is None else live[0]
 
     async def get_windows(self, season_id: int) -> list[dict]:
         """Every signup window *season_id* opened, oldest first."""
@@ -469,11 +427,13 @@ class SignupModuleService:
         ]
 
     async def set_window_closed_on(
-        self, db: aiosqlite.Connection, *, closed_msg_id: int | None = None
+        self, db: aiosqlite.Connection, *, now: datetime, closed_msg_id: int | None = None
     ) -> None:
         """Record the window closed on the caller's connection, committing nothing: the Sign Up
         button's id and the close time are cleared, *closed_msg_id* is kept so the next opening
-        deletes the notice, and the window's record is stamped closed."""
+        deletes the notice, and the open window's record is stamped closed at *now*. The notice's
+        channel and id are kept with the module's settings as well, which a switch-off does not
+        forget, so that the next opening still finds the notice (`closed_notice_of`)."""
         await db.execute(
             "UPDATE signup_module_config "
             "SET signups_open = 0, signup_button_message_id = NULL, "
@@ -483,15 +443,41 @@ class SignupModuleService:
         )
         # The window record keeps the close time it carried; only its closing is stamped.
         await db.execute(
-            "UPDATE signup_windows SET closed_at = datetime('now') "
-            "WHERE closed_at IS NULL",
+            "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
+            (now.isoformat(),),
         )
+        if closed_msg_id is not None:
+            await db.execute(
+                "INSERT INTO signup_module_settings "
+                "(id, closed_notice_channel_id, closed_notice_message_id) "
+                "VALUES (1, (SELECT signup_channel_id FROM signup_module_config), ?) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "closed_notice_channel_id = excluded.closed_notice_channel_id, "
+                "closed_notice_message_id = excluded.closed_notice_message_id",
+                (closed_msg_id,),
+            )
 
-    async def set_close_at(self, close_at_iso: str | None) -> None:
-        """Persist (or clear) the auto-close ISO 8601 UTC timestamp."""
+    async def closed_notice_of(self, cfg: SignupModuleConfig) -> int | None:
+        """The id of the "signups are closed" notice standing in the signup channel of *cfg*, or
+        None where none is known.
+
+        The configuration holds it from the close until the next opening. A switch-off forgets
+        the configuration, so after the module is switched back on the notice is read from the
+        module's settings, where the close kept it, if it stands in this channel and no opening
+        has taken it down since.
+        """
+        if cfg.signup_closed_message_id is not None:
+            return cfg.signup_closed_message_id
+        if cfg.signup_channel_id is None:
+            return None
         async with get_connection(self._db_path) as db:
-            await self.set_close_at_on(db, close_at_iso)
-            await db.commit()
+            cursor = await db.execute(
+                "SELECT closed_notice_message_id FROM signup_module_settings "
+                "WHERE closed_notice_channel_id = ? AND closed_notice_message_id IS NOT NULL",
+                (cfg.signup_channel_id,),
+            )
+            row = await cursor.fetchone()
+        return None if row is None else int(row["closed_notice_message_id"])
 
     async def set_close_at_on(
         self, db: aiosqlite.Connection, close_at_iso: str | None
@@ -537,7 +523,7 @@ class SignupModuleService:
         "id, season_id, window_id, discord_user_id, discord_username, "
         "server_display_name, nationality, platform, platform_id, availability_slot_ids, "
         "driver_type, preferred_teams, preferred_teammate, lap_times_json, notes, "
-        "signup_channel_id, total_lap_ms"
+        "total_lap_ms"
     )
 
     async def get_record(
@@ -586,8 +572,11 @@ class SignupModuleService:
             rows = await cursor.fetchall()
         return [self._row_to_signup_record(row) for row in rows]
 
-    async def save_record_on(self, db: aiosqlite.Connection, record: SignupRecord) -> int:
-        """Store *record* on the connection handed, returning its id; commits nothing.
+    async def save_record_on(
+        self, db: aiosqlite.Connection, record: SignupRecord, *, now: datetime
+    ) -> int:
+        """Store *record* on the connection handed, returning its id; commits nothing. *now*
+        stamps the moment a new signup was made.
 
         A record not yet stored (``id`` of -1 or below 1) is inserted as a new signup, under
         the season and window it names or, where it names none, under the server's active
@@ -605,7 +594,6 @@ class SignupModuleService:
             record.preferred_teammate,
             json.dumps(record.lap_times),
             record.notes,
-            record.signup_channel_id,
         )
         if record.id is not None and record.id > 0:
             await db.execute(
@@ -614,8 +602,7 @@ class SignupModuleService:
                     discord_username = ?, server_display_name = ?, nationality = ?,
                     platform = ?, platform_id = ?, availability_slot_ids = ?,
                     driver_type = ?, preferred_teams = ?, preferred_teammate = ?,
-                    lap_times_json = ?, notes = ?, signup_channel_id = ?,
-                    updated_at = datetime('now')
+                    lap_times_json = ?, notes = ?
                 WHERE id = ?
                 """,
                 (*fields, record.id),
@@ -639,10 +626,10 @@ class SignupModuleService:
                 (season_id, window_id, discord_user_id, discord_username,
                  server_display_name, nationality, platform, platform_id,
                  availability_slot_ids, driver_type, preferred_teams,
-                 preferred_teammate, lap_times_json, notes, signup_channel_id)
+                 preferred_teammate, lap_times_json, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (season_id, window_id, record.discord_user_id, *fields),
+            (season_id, window_id, record.discord_user_id, *fields, now.isoformat()),
         )
         new_id = inserted_id(cursor)
         record.id, record.season_id, record.window_id = new_id, season_id, window_id
@@ -664,7 +651,6 @@ class SignupModuleService:
             preferred_teammate=row["preferred_teammate"],
             lap_times=json.loads(row["lap_times_json"] or "{}"),
             notes=row["notes"],
-            signup_channel_id=row["signup_channel_id"],
             total_lap_ms=row["total_lap_ms"] if "total_lap_ms" in row.keys() else None,
             season_id=row["season_id"] if "season_id" in row.keys() else None,
             window_id=row["window_id"] if "window_id" in row.keys() else None,
@@ -679,7 +665,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records WHERE discord_user_id = ?",
                 (discord_user_id,),
             )
@@ -695,7 +681,7 @@ class SignupModuleService:
         cursor = await db.execute(
             "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
             "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-            "       last_activity_at, correction_offered_at "
+            "       last_activity_at, correction_offered_at, held_until "
             "FROM signup_wizard_records WHERE discord_user_id = ?",
             (discord_user_id,),
         )
@@ -709,7 +695,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records "
                 "WHERE signup_channel_id = ?",
                 (channel_id,),
@@ -746,10 +732,12 @@ class SignupModuleService:
         snapshot_json: str | None,
         draft_answers: dict[str, Any],
         current_lap_track_index: int,
-        last_activity_at: str | None,
+        last_activity_at: str,
     ) -> None:
         """Insert or update a driver's wizard row on the connection handed; commits nothing.
 
+        A signup that begins or goes on is not held, so the row's ``held_until`` is cleared. A row
+        is created at the moment of its first activity, so *last_activity_at* stamps both.
         What `save_wizard_on` writes, for a change that saves the row in the same save as a job's
         mark. *snapshot_json* is the configuration as `_snapshot_to_dict` freezes it, already
         encoded, so that a job which made it can hand it on in its result.
@@ -759,15 +747,16 @@ class SignupModuleService:
             INSERT INTO signup_wizard_records
                 (discord_user_id, wizard_state, signup_channel_id,
                  config_snapshot_json, draft_answers_json, current_lap_track_index,
-                 last_activity_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 last_activity_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(discord_user_id) DO UPDATE SET
                 wizard_state             = excluded.wizard_state,
                 signup_channel_id        = excluded.signup_channel_id,
                 config_snapshot_json     = excluded.config_snapshot_json,
                 draft_answers_json       = excluded.draft_answers_json,
                 current_lap_track_index  = excluded.current_lap_track_index,
-                last_activity_at         = excluded.last_activity_at
+                last_activity_at         = excluded.last_activity_at,
+                held_until               = NULL
             """,
             (
                 discord_user_id,
@@ -776,6 +765,7 @@ class SignupModuleService:
                 snapshot_json,
                 json.dumps(draft_answers),
                 current_lap_track_index,
+                last_activity_at,
                 last_activity_at,
             ),
         )
@@ -844,7 +834,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records "
                 "WHERE wizard_state != 'UNENGAGED'",
             )
@@ -857,7 +847,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at, correction_offered_at "
+                "       last_activity_at, correction_offered_at, held_until "
                 "FROM signup_wizard_records WHERE wizard_state != 'UNENGAGED'"
             )
             rows = await cursor.fetchall()
@@ -910,6 +900,7 @@ class SignupModuleService:
             current_lap_track_index=row["current_lap_track_index"],
             last_activity_at=row["last_activity_at"],
             correction_offered_at=row["correction_offered_at"],
+            held_until=row["held_until"],
         )
 
     # ── Config snapshot ───────────────────────────────────────────────
@@ -1042,22 +1033,30 @@ async def configuration_confirmed_on(
 
 
 async def driver_signup_on(
-    db: aiosqlite.Connection, accounts: list[str]
+    db: aiosqlite.Connection, accounts: list[str], *, season_id: int | None = None
 ) -> aiosqlite.Row | None:
     """The signup record that is the driver's, read on *db*, or None where they have none.
 
     A driver's signups are kept under the account each was made from, so *accounts* are every
     account the driver has held (core's `accounts_of_profile`), and the signup is chosen across all
     of them in `SIGNUP_PRECEDENCE_SQL`'s order: records are kept, never overwritten, and an
-    approved one outranks a later one that was not.
+    approved one outranks a later one that was not. Where *season_id* is named, only the signups
+    kept under that season are considered.
+
+    This is the signup that stands for the driver. `get_record`, `get_record_on`,
+    `mark_approved_on` and `set_total_lap_ms_on` choose differently on purpose: the latest on one
+    account, the signup under review, which a review, a correction or an approval acts upon.
     """
     if not accounts:
         return None
+    where = f"discord_user_id IN ({', '.join('?' * len(accounts))})"
+    params: list[Any] = list(accounts)
+    if season_id is not None:
+        where += " AND season_id = ?"
+        params.append(season_id)
     cursor = await db.execute(
-        "SELECT * FROM signup_records "
-        f"WHERE discord_user_id IN ({', '.join('?' * len(accounts))}) "
-        f"ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1",
-        accounts,
+        f"SELECT * FROM signup_records WHERE {where} ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1",
+        params,
     )
     return await cursor.fetchone()
 
@@ -1180,6 +1179,10 @@ async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
     await db.execute(
         "UPDATE signup_module_config SET signup_channel_id = NULL, "
         "signup_button_message_id = NULL, signup_closed_message_id = NULL"
+    )
+    await db.execute(
+        "UPDATE signup_module_settings "
+        "SET closed_notice_channel_id = NULL, closed_notice_message_id = NULL"
     )
     return {
         CLEARED_WIZARDS: wizards,

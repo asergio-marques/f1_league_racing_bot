@@ -157,6 +157,23 @@ async def drivers_in_states(db, states: Sequence[str]) -> list[dict[str, Any]]:
     return [dict(row) for row in await cursor.fetchall()]
 
 
+async def state_of_account_on(db, discord_user_id) -> DriverState | None:
+    """The state of the driver whose current account is *discord_user_id*, read on *db*; None where
+    no profile holds it.
+
+    The one read a module judges a driver's state through on the connection its own check or save
+    holds, so it reads what that save has written and not yet committed, without reading
+    `driver_profiles` itself. `DriverService.state_of_account_on` is the same read, for a caller
+    holding the service.
+    """
+    cursor = await db.execute(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
+        (str(discord_user_id),),
+    )
+    row = await cursor.fetchone()
+    return None if row is None else DriverState(row["current_state"])
+
+
 async def accounts_of(db, discord_user_id) -> list[str]:
     """Every account of the driver holding *discord_user_id*, or just that account.
 
@@ -579,6 +596,11 @@ class DriverService:
         if row is None:
             return None
         return _row_to_profile(row)
+
+    async def state_of_account_on(self, db: aiosqlite.Connection, discord_user_id) -> DriverState | None:
+        """The state of the driver holding *discord_user_id*, read on the connection handed; see
+        `state_of_account_on`."""
+        return await state_of_account_on(db, discord_user_id)
 
     async def current_account(self, discord_user_id) -> str:
         """The current account of the driver holding *discord_user_id*; see `current_account_of`."""

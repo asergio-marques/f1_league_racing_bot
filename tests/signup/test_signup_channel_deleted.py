@@ -39,7 +39,7 @@ from tests.signup.test_wizard_changes import (
     _press_sign_up,
     _timer_callback,
     _wizard,
-    _wizards,
+    _recover_wizards,
 )
 from tests.support.change_queue import (
     acknowledgement,
@@ -122,8 +122,8 @@ def _disarmed(league: SeasonLeague) -> list[tuple[Any, ...]]:
 
 async def test_a_channel_deleted_while_its_signup_awaits_approval_ends_the_signup(tmp_path):
     """Kimi awaits approval, and his signup channel 6405 is deleted by hand. The bot hears it and
-    the queue runs: one `signup.end`, asked as the bot on the league lane, runs its single job
-    `end`. Kimi is Not Signed Up, his wizard ended (still naming 6405), nothing is sent to the
+    the queue runs: one `signup.end`, asked as the bot on the league lane, runs its job
+    `end` and `disarm_timers` after it. Kimi is Not Signed Up, his wizard ended (still naming 6405), nothing is sent to the
     gone channel, and the log channel is told once, naming him and the channel, that his signup
     channel was deleted and that he may press Sign Up again while signups are open."""
     league = await _league(tmp_path)
@@ -134,7 +134,7 @@ async def test_a_channel_deleted_while_its_signup_awaits_approval_ends_the_signu
 
     [end] = await _endings(league)
     assert (end["lane"] or "league", end["origin"], end["state"]) == ("league", "BOT", "DONE")
-    assert await _job_names(league, END_KIND) == ["end"]
+    assert await _job_names(league, END_KIND) == ["end", "disarm_timers"]
     assert await _driver_state(league) == "NOT_SIGNED_UP"
     wizard = await _wizard(league)
     assert wizard is not None
@@ -350,7 +350,7 @@ async def test_a_restart_ends_a_signup_whose_channel_was_deleted_while_the_bot_w
     await _under_way(league, state, wizard_state, idle_hours=25)
     league.remove_channel(KIMI_CHANNEL)
 
-    await _wizards(league).recover_wizards()
+    await _recover_wizards(league)
     await run_queue(league.bot)
 
     [end] = await _endings(league)
@@ -371,7 +371,7 @@ async def test_a_restart_with_no_league_server_ends_nothing(tmp_path, caplog):
     league.bot.get_guild.return_value = None
 
     with caplog.at_level(logging.WARNING, logger="leaguebot.signup"):
-        await _wizards(league).recover_wizards()
+        await _recover_wizards(league)
     await run_queue(league.bot)
 
     assert await _endings(league) == []
@@ -402,7 +402,7 @@ async def test_a_restart_that_cannot_confirm_a_channel_gone_ends_nothing(
     league.guild.fetch_channel.side_effect = refusal
 
     with caplog.at_level(logging.WARNING, logger="leaguebot.signup"):
-        await _wizards(league).recover_wizards()
+        await _recover_wizards(league)
     await run_queue(league.bot)
 
     league.guild.fetch_channel.assert_any_await(KIMI_CHANNEL)
@@ -425,7 +425,7 @@ async def test_a_channel_missing_from_the_cache_but_found_at_the_restart_is_left
         lambda cid: None if int(cid) == KIMI_CHANNEL else cached(cid)
     )
 
-    await _wizards(league).recover_wizards()
+    await _recover_wizards(league)
     await run_queue(league.bot)
 
     assert await _endings(league) == []

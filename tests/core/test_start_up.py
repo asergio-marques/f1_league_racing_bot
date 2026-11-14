@@ -215,6 +215,32 @@ async def test_a_disabled_module_s_steps_are_passed_over(caplog):
     assert record.lines == []
 
 
+@pytest.mark.parametrize(("on", "ran"), [
+    (False, ["held channels"]),
+    (True, ["amendment sweep", "held channels", "orphaned amend channels"]),
+], ids=["off", "on"])
+async def test_a_step_a_module_marks_runs_while_the_module_is_off(on, ran):
+    """Results signs up three steps: the amendment sweep, then the held channels, marked by
+    `runs_while_off` as a step that runs whatever results' switch says, then the orphaned amend
+    channels, unmarked. With results off, the sweep runs the held channels alone and passes over
+    the two unmarked steps; with results on, it runs all three in results' own order. Nothing is
+    posted to the log channel either way."""
+    from leaguebot.core.utils.hooks import runs_while_off
+
+    module = _fresh_start_up()
+    record = _Recorder({"results": on})
+    starting = _starting()
+    starting.subscribe(record.module_steps(record.step("amendment sweep"),
+                                           runs_while_off(record.step("held channels")),
+                                           record.step("orphaned amend channels")),
+                       module="results")
+
+    await record.start_up(module, starting)
+
+    assert record.ran() == ran
+    assert record.lines == []
+
+
 def _failing_core_step(record: _Recorder, starting: Any, error: BaseException) -> None:
     starting.subscribe(record.failing_step("expired review prompts", error)[1],
                        name="expired review prompts")

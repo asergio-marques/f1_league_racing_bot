@@ -53,6 +53,8 @@ from tests.support.season_league import (
     SIGNING_UP,
     SIGNUP_CHANNEL_BASE,
     SeasonLeague,
+    correction_services,
+    review_services,
     setup_league,
     signing_up,
 )
@@ -85,18 +87,12 @@ async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
                   offered_ago: timedelta | None = None) -> SeasonLeague:
     """`setup_league` at Signups, the window open, the driver role set; Kimi at *state*, his
     signup record saved, his channel standing; manager 77 holding the interaction role. Where
-    *offered_ago* is given the correction choices were posted that long ago, asked for by 77.
-    Today's handlers off the queue are stand-ins that do nothing, so that only what the presses
-    ask of the queue shows."""
+    *offered_ago* is given the correction choices were posted that long ago, asked for by 77."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
     league.roles_held[REVIEWER] = {MANAGER_ROLE_ID}
     await _signed_up(league, SIGNING_UP, state=state, offered_ago=offered_ago)
-    wizards = league.bot.wizard_service
-    wizards.approve_signup = AsyncMock(return_value=None)
-    wizards.request_changes = AsyncMock(return_value=None)
-    wizards.select_correction_parameter = AsyncMock(return_value=None)
     return league
 
 
@@ -114,10 +110,10 @@ async def _signed_up(league: SeasonLeague, user_id: int, *, state: str,
         json.dumps(draft), str(user_id),
     )
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, "
-        "nationality, platform, platform_id, driver_type, lap_times_json, signup_channel_id) "
-        "VALUES (?, ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', ?, ?)",
-        SEASON_ID, str(user_id), str(user_id), json.dumps(LAP_TIMES), cid,
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, server_display_name, "
+        "nationality, platform, platform_id, driver_type, lap_times_json) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', ?)",
+        SEASON_ID, str(user_id), str(user_id), json.dumps(LAP_TIMES),
     )
     if offered_ago is not None:
         await league.write(
@@ -149,22 +145,26 @@ def _press(league: SeasonLeague, *, at: datetime | None = None) -> Any:
 
 async def _press_approve(league: SeasonLeague) -> Any:
     """Manager 77 presses Approve on Kimi's review panel. The panel is handed the change queue
-    when it is built (A23), never reaching it through the bot."""
+    when it is built (A23), and the services it reads (#286), never reaching them through the
+    bot."""
     from leaguebot.signup.services.signup_views import AdminReviewView
 
     press = _press(league)
-    view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue)
+    view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue,
+                           **review_services(league.bot))
     await view.approve_button.callback(press)
     return press
 
 
 async def _press_choice(league: SeasonLeague, parameter: str = "nationality") -> Any:
     """Manager 77 presses *parameter* among the correction choices in Kimi's channel, now. The
-    choices are handed the change queue when they are built (A23)."""
+    choices are handed the change queue (A23) and the services they read (#286) when they are
+    built."""
     from leaguebot.signup.services.signup_views import CorrectionParameterView
 
     press = _press(league)
-    view = CorrectionParameterView(str(SIGNING_UP), change_queue=league.bot.change_queue)
+    view = CorrectionParameterView(str(SIGNING_UP), change_queue=league.bot.change_queue,
+                                   **correction_services(league.bot))
     [button] = [item for item in view.children
                 if getattr(item, "custom_id", None) == f"correct_{parameter}"]
     await button.callback(press)
@@ -175,7 +175,8 @@ async def _type_reason(league: SeasonLeague) -> tuple[Any, Any]:
     """Manager 77 has pressed Request Changes on Kimi's review panel (the press deferred and
     parked as the button parks it) and types the reason in Kimi's channel, which the review cog
     hears. Gives the stored press and the reason's message."""
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     manager = _manager(league)
     press = _press(league)
@@ -346,6 +347,74 @@ async def test_approve_saves_the_lap_sum_on_the_signup_record_itself(tmp_path):
     await run_queue(league.bot)
 
     assert (await _record(league))["total_lap_ms"] == LAP_SUM_MS
+
+
+def _standing_timers(league: SeasonLeague, *standing: tuple[str, str]) -> set[tuple[str, str]]:
+    """The timers the scheduler holds, as (kind, key), *standing* to begin with: arming one adds
+    it and disarming takes it away, as the scheduler does."""
+    held = set(standing)
+    scheduler = league.bot.scheduler_service
+    scheduler.arm_once.side_effect = lambda kind, key, _when: held.add((kind, str(key)))
+    scheduler.disarm.side_effect = lambda kind, key: held.discard((kind, str(key)))
+    return held
+
+
+async def _withdraw(league: SeasonLeague) -> None:
+    """Kimi withdraws his signup, as Cancel Signup asks: `signup.end` for the reason withdrawn."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await league.bot.change_queue.ask(
+        "signup.end", {"user_id": str(SIGNING_UP), "reason": "withdrawn"},
+        what=f"withdrawing <@{SIGNING_UP}>'s signup", origin=ChangeOrigin.BOT,
+    )
+
+
+async def _approve(league: SeasonLeague) -> None:
+    await _press_approve(league)
+
+
+#: The cases of the closing's deletion against the disarm: what ends the signup, the league
+#: lane's jobs that run up to and including its save, and which lane's work runs first.
+_DELETION_AGAINST_THE_DISARM = [
+    pytest.param(_approve, 1, False, id="approve-disarm-first"),
+    pytest.param(_approve, 1, True, id="approve-closing-first"),
+    pytest.param(_withdraw, 2, False, id="withdraw-disarm-first"),
+    pytest.param(_withdraw, 2, True, id="withdraw-closing-first"),
+]
+
+
+@pytest.mark.parametrize("ending, saved_after, closing_first", _DELETION_AGAINST_THE_DISARM)
+async def test_the_closing_s_deletion_survives_the_disarm_whichever_lane_runs_first(
+    tmp_path, ending, saved_after, closing_first
+):
+    """Kimi awaits approval; his 24-hour inactivity timer and a correction lapse stand. Manager
+    77 approves him, or Kimi withdraws. The league lane runs up to the save, which asks back
+    `signup.closing` on Kimi's lane. Then either the league lane finishes first (its
+    `disarm_timers` job) and Kimi's lane after it, or Kimi's lane first (the closing arms his
+    channel's deletion a day on) and the league lane after. Either way, once both have run, the
+    deletion of Kimi's channel still stands, and his inactivity and correction timers are gone:
+    the end's and the approval's disarm takes only those two, never the deletion the closing
+    arms."""
+    league = await _league(tmp_path)
+    held = _standing_timers(
+        league, (INACTIVITY_TIMER, str(SIGNING_UP)), (CORRECTION_TIMER, str(SIGNING_UP))
+    )
+
+    await ending(league)
+    queue = league.bot.change_queue
+    await queue.run_until_idle(lane="league", steps=saved_after)
+    assert await _changes_of(league, CLOSING_KIND)
+    if closing_first:
+        await queue.run_until_idle(lane=KIMI_LANE)
+        assert (DELETE_TIMER, str(SIGNING_UP)) in held
+    else:
+        await queue.run_until_idle(lane="league")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (DELETE_TIMER, str(SIGNING_UP)) in held
+    assert (INACTIVITY_TIMER, str(SIGNING_UP)) not in held
+    assert (CORRECTION_TIMER, str(SIGNING_UP)) not in held
 
 
 # ---------------------------------------------------------------------------
@@ -637,8 +706,7 @@ async def test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice(tmp_pat
     await _signed_up(league, OTHER, state="AWAITING_CORRECTION_PARAMETER",
                      offered_ago=timedelta(minutes=1))
     wizards = wizard_service(
-        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
-        change_queue=league.bot.change_queue,
+        league.bot, league.db_path, change_queue=league.bot.change_queue,
     )
 
     await wizards.recover_correction_timeouts()

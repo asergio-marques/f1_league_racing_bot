@@ -67,27 +67,21 @@ _ALREADY_ANSWERED = "That step has already been answered."
 # ---------------------------------------------------------------------------
 
 
-def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRIVER_ID):
-    """An interaction from *user_id*, on a bot whose wizard service is a double.
-
-    *wizard_user* is who `get_wizard_by_channel` reports as owning the channel, which is the
-    path a view rebuilt after a restart takes.
-    """
-    wizard_service = MagicMock()
-    # Today's handlers off the queue, stand-ins that do nothing; a refused press reaches none of
-    # them, nor the queue.
-    wizard_service.handle_platform_button = AsyncMock(return_value=None)
-    wizard_service.handle_driver_type_button = AsyncMock(return_value=None)
-    wizard_service.handle_preferred_teams_button = AsyncMock(return_value=None)
-    wizard_service.handle_no_preference_teammate = AsyncMock(return_value=None)
-    wizard_service.handle_no_notes = AsyncMock(return_value=None)
-    wizard_service.withdraw = AsyncMock(return_value=None)
-    wizard_service.get_wizard_by_channel = AsyncMock(
+def _signups(wizard_user: str | None = DRIVER_ID) -> Any:
+    """A signup service double, handed to a view when it is built (#286), whose
+    `get_wizard_by_channel` reports *wizard_user* as owning the channel (no wizard where None):
+    the path a view rebuilt after a restart takes."""
+    signups = MagicMock()
+    signups.get_wizard_by_channel = AsyncMock(
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
     )
+    return signups
 
+
+def _interaction(user_id: int = int(DRIVER_ID)):
+    """An interaction from *user_id*, on a bot carrying no service a view may look up: the
+    wizard is found through the signup service the view is handed (`_signups`)."""
     bot = MagicMock()
-    bot.wizard_service = wizard_service
     bot.output_router.post_log = AsyncMock()
 
     interaction = MagicMock()
@@ -180,8 +174,8 @@ async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     nothing must refuse rather than pass unauthenticated."""
     from leaguebot.signup.services.signup_views import PlatformButtonView
 
-    view = PlatformButtonView()
-    interaction = _interaction(wizard_user=None)
+    view = PlatformButtonView(signup=_signups(None))
+    interaction = _interaction()
 
     await type(view).steam(view, interaction, MagicMock())
 
@@ -193,7 +187,7 @@ async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     """The guard has to hold on the recovered identity too, not only the stored one."""
     from leaguebot.signup.services.signup_views import PlatformButtonView
 
-    view = PlatformButtonView()
+    view = PlatformButtonView(signup=_signups())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).steam(view, interaction, MagicMock())
@@ -388,20 +382,15 @@ _ALREADY_ENDED = "This signup has already ended. Nothing was changed."
 
 
 async def _kimi_at(tmp_path: Any, state: str, **kwargs: Any) -> SeasonLeague:
-    """Kimi's wizard at *state*, today's wizard handlers off the queue stand-ins that do
-    nothing, so that only what the press asks of the queue shows."""
-    league = await _team_step(tmp_path, state=state, **kwargs)
-    wizards = league.bot.wizard_service
-    for handler in ("handle_platform_button", "handle_driver_type_button",
-                    "handle_no_preference_teammate", "handle_no_notes"):
-        setattr(wizards, handler, AsyncMock(return_value=None))
-    return league
+    """Kimi's wizard at *state*."""
+    return await _team_step(tmp_path, state=state, **kwargs)
 
 
 async def _press_on(league: SeasonLeague, view_name: str, button: str, *,
                     registered: bool = False) -> Any:
     """Kimi presses *button* on *view_name*, built for him and handed the change queue (A23),
-    or re-registered at start with the queue alone; gives his press."""
+    or re-registered at start with the queue and the signup service it finds his wizard
+    through (#286); gives his press."""
     from leaguebot.signup.services import signup_views
     from tests.signup.test_preferred_teams_view import KIMI_CHANNEL, TEAMS
 
@@ -411,11 +400,14 @@ async def _press_on(league: SeasonLeague, view_name: str, button: str, *,
     press.channel_id = KIMI_CHANNEL
     press.channel = league.channel(KIMI_CHANNEL)
     account = None if registered else str(SIGNING_UP)
+    handed = {"signup": league.bot.signup_module_service} if registered else {}
     if view_name == "PreferredTeamsButtonView":
-        view = signup_views.PreferredTeamsButtonView(account, league.bot.change_queue, list(TEAMS))
+        view = signup_views.PreferredTeamsButtonView(
+            account, league.bot.change_queue, list(TEAMS), **handed
+        )
         await getattr(view, button)(press)
         return press
-    view = getattr(signup_views, view_name)(account, league.bot.change_queue)
+    view = getattr(signup_views, view_name)(account, league.bot.change_queue, **handed)
     await getattr(type(view), button)(view, press, MagicMock())
     return press
 
@@ -460,8 +452,8 @@ async def test_each_platform_button_reports_its_own_platform(tmp_path, button, p
 
 async def test_a_view_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     """The view is re-registered at start with no stored driver — the process that knew has
-    gone — and only the change queue, so the owner is found by looking the wizard up by
-    channel: Kimi presses Steam on it, the answer is asked of the queue as his, and once it
+    gone — and the change queue and the signup service, so the owner is found by looking the
+    wizard up by channel through that service: Kimi presses Steam on it, the answer is asked of the queue as his, and once it
     runs Steam is his platform."""
     league = await _kimi_at(tmp_path, "COLLECTING_PLATFORM")
 
@@ -546,15 +538,55 @@ async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+@pytest.mark.parametrize("driver_state", [
+    pytest.param("NOT_SIGNED_UP", id="not signed up"),
+    pytest.param("UNASSIGNED", id="unassigned"),
+    pytest.param("ASSIGNED", id="assigned"),
+])
 @pytest.mark.parametrize("view_name, button", CANCELS)
 async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(
-    tmp_path, view_name, button
+    tmp_path, view_name, button, driver_state
 ):
-    """Kimi presses a Cancel Signup left in his channel after his signup ended (Not Signed Up,
-    his wizard parked). The press is judged as the change runs: he is told "⛔ This signup has
-    already ended. Nothing was changed.", never that it was withdrawn, and one ⛔ line names
-    the Cancel Signup button of his signup wizard and the reason."""
-    league = await _kimi_at(tmp_path, "UNENGAGED", driver_state="NOT_SIGNED_UP")
+    """Kimi presses a Cancel Signup left in his channel after his signup ended, his wizard
+    parked: he is Not Signed Up; or he was approved and is Unassigned, holding the driver role;
+    or he was placed and is Assigned, in McLaren's second seat and holding the driver role and
+    McLaren's (#444). The press is judged as the change runs: he is told "⛔ This signup has
+    already ended. Nothing was changed.", never that it was withdrawn, and one ⛔ line names the
+    Cancel Signup button of his signup wizard and the reason. His state, his seat and his roles
+    are as they were."""
+    from tests.support.season_league import (
+        DRIVER_ROLE,
+        MCLAREN,
+        MCLAREN_ROLE,
+        SEASON_ID,
+        TEAMS as SEASON_TEAMS,
+        profile_id,
+    )
+
+    league = await _kimi_at(tmp_path, "UNENGAGED", driver_state=driver_state)
+    if driver_state != "NOT_SIGNED_UP":
+        await league.write(
+            "INSERT INTO signup_records (created_at, season_id, discord_user_id, server_display_name) "
+            "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, 'Kimi')", SEASON_ID, str(SIGNING_UP),
+        )
+        league.roles_held.setdefault(SIGNING_UP, set()).add(DRIVER_ROLE)
+    if driver_state == "ASSIGNED":
+        await league.write(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, 2, ?)", MCLAREN, profile_id(SIGNING_UP),
+        )
+        [seat] = await league.rows(
+            "SELECT id FROM team_seats WHERE driver_profile_id = ?", profile_id(SIGNING_UP)
+        )
+        await league.write(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id, committed) VALUES (?, ?, ?, ?, 1)",
+            profile_id(SIGNING_UP), SEASON_ID, SEASON_TEAMS[MCLAREN][0], seat["id"],
+        )
+        league.roles_held[SIGNING_UP].add(MCLAREN_ROLE)
+    seats = "SELECT team_instance_id, seat_number FROM team_seats WHERE driver_profile_id = ?"
+    seated = await league.rows(seats, profile_id(SIGNING_UP))
+    held = set(league.roles_held.get(SIGNING_UP, set()))
 
     press = await _press_on(league, view_name, button)
     await run_queue(league.bot)
@@ -563,3 +595,7 @@ async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recor
     assert f"⛔ {_ALREADY_ENDED}" in answered, answered
     assert "withdrawn" not in answered, answered
     _one_refusal(league, "Cancel Signup", _ALREADY_ENDED.split(".")[0])
+    assert await _driver_state(league) == driver_state
+    assert await league.rows(seats, profile_id(SIGNING_UP)) == seated
+    assert league.revoked.get(SIGNING_UP, []) == []
+    assert league.roles_held.get(SIGNING_UP, set()) == held

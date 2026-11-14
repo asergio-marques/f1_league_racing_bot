@@ -466,7 +466,8 @@ async def test_opening_without_a_close_time_arms_nothing(tmp_path):
 
     await _open(cog, _interaction())
 
-    cog.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+    assert [c for c in cog.bot.scheduler_service.arm_once.call_args_list
+            if c.args[:1] == ("signup.close_timer",)] == []
 
 
 async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
@@ -491,7 +492,8 @@ async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row
 
     await _open(cog, _interaction(), close_time=_future(7))
 
-    cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once()
+    assert [c.args[0] for c in cog.bot.scheduler_service.arm_once.call_args_list
+            ].count("signup.close_timer") == 1
     armed = (await SignupModuleService(db_path).get_config()).close_at
     assert armed is not None
     [line] = _lines(cog)
@@ -753,8 +755,8 @@ async def test_a_close_with_only_drivers_in_review_says_nobody_loses_their_signu
 async def _give_signup_channel(db_path: str, discord_user_id: str, channel_id: int) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
-            "VALUES (?, ?)",
+            "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id) "
+            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', ?, ?)",
             (discord_user_id, channel_id),
         )
         await db.commit()
@@ -789,8 +791,8 @@ async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path)
     )
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
-            "VALUES ('7001', NULL)"
+            "INSERT INTO signup_wizard_records (created_at, last_activity_at, discord_user_id, signup_channel_id) "
+            "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '7001', NULL)"
         )
         await db.commit()
     interaction = _interaction(members={})

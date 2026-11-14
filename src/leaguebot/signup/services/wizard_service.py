@@ -3,15 +3,14 @@
 The wizard itself runs as changes on the change queue (`wizard_changes`, `wizard_answers`,
 `review_changes`, `closing_steps`), each answer a turn on the driver's lane. What is left here is
 what those changes and the commands outside signup still reach: the channel's making and its lock,
-the prompts and the review panel's text, the views a question carries, and the restart's recovery
-of the timers. A held channel's move to a driver's new account is `held_channel_moves`'s.
+the prompts and the review panel's text, the views a question carries, and the restart's sweep
+of the drivers parked awaiting a correction (`recover_correction_timeouts`). A held channel's move to a driver's new account is `held_channel_moves`'s.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -19,23 +18,16 @@ import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from leaguebot.core.utils.input_validator import parse_nationality, parse_time
-from leaguebot.results.utils.results_formatter import render_lap_time
-from leaguebot.signup.services.closing_steps import (
-    DELETE_TIMER,
-    INACTIVITY_TIMER,
-    ask_expiry,
-)
+from leaguebot.core.utils.input_validator import parse_nationality, parse_time, render_lap_time
+from leaguebot.signup.services.closing_steps import recover_correction_timeouts
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.utils.league_bot import LeagueBot
 
-    from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)
 
@@ -79,8 +71,11 @@ def build_step_view(
     state: WizardState,
     discord_user_id: str,
     team_names: list[str] | None = None,
+    *,
+    signup: "SignupModuleService",
 ) -> discord.ui.View:
-    """The view that answers the wizard's question at *state*, for the driver *discord_user_id*."""
+    """The view that answers the wizard's question at *state*, for the driver *discord_user_id*,
+    handed the change queue and *signup*, the signup service it finds the wizard through."""
     from leaguebot.signup.services.signup_views import (  # lazy import — avoid circular
         WithdrawButtonView,
         PlatformButtonView,
@@ -90,16 +85,16 @@ def build_step_view(
         NoNotesButtonView,
     )
     if state == WizardState.COLLECTING_PLATFORM:
-        return PlatformButtonView(discord_user_id, queue)
+        return PlatformButtonView(discord_user_id, queue, signup=signup)
     if state == WizardState.COLLECTING_DRIVER_TYPE:
-        return DriverTypeButtonView(discord_user_id, queue)
+        return DriverTypeButtonView(discord_user_id, queue, signup=signup)
     if state == WizardState.COLLECTING_PREFERRED_TEAMS:
-        return PreferredTeamsButtonView(discord_user_id, queue, team_names or [])
+        return PreferredTeamsButtonView(discord_user_id, queue, team_names or [], signup=signup)
     if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
-        return NoPreferenceTeammateView(discord_user_id, queue)
+        return NoPreferenceTeammateView(discord_user_id, queue, signup=signup)
     if state == WizardState.COLLECTING_NOTES:
-        return NoNotesButtonView(discord_user_id, queue)
-    return WithdrawButtonView(discord_user_id, queue)
+        return NoNotesButtonView(discord_user_id, queue, signup=signup)
+    return WithdrawButtonView(discord_user_id, queue, signup=signup)
 
 
 # ---------------------------------------------------------------------------
@@ -137,21 +132,6 @@ _CORRECTION_LABELS: dict[str, str] = {
     "notes":                "Notes",
 }
 
-@dataclass(frozen=True)
-class HoldOutcome:
-    """What `WizardService.trigger_channel_hold` did, for a caller to name in its own line.
-
-    *channel_id* is None where there was nothing to hold (no wizard, or no text channel).
-    *posted* says the closing notice went out; *locked* that the driver's typing was taken away;
-    *reason* names the kind of Discord fault that refused the notice, when it was refused.
-    """
-
-    channel_id: int | None
-    posted: bool = False
-    locked: bool = False
-    reason: str | None = None
-
-
 class WizardService:
     """Manages the full lifecycle of a driver's signup wizard session.
 
@@ -164,31 +144,20 @@ class WizardService:
     def __init__(
         self,
         db_path: str,
-        scheduler_service: "SchedulerService",
-        output_router: "OutputRouter",
+        signup_module_service: "SignupModuleService",
         *,
         change_queue: "ChangeQueue",
         bot: "LeagueBot",
     ) -> None:
         self._db_path = db_path
-        self._scheduler = scheduler_service
-        # The one way a held channel's deletion is armed (the `signup_channel_delete` timer, a
-        # one-off with no lateness limit), for a lock the season's end asks.
-        self._arm_deletion = scheduler_service.arm_once
-        self._output_router = output_router
+        # Handed the signup module service it reads wizards through, rather than looking it up on
+        # the bot, and passed on to the step views it makes.
+        self._signup = signup_module_service
         # Handed the change queue when it is built, for the views it makes and the changes it asks
         # (docs/design/architecture.md, "Services stay attached to the bot, and are built in one place").
         self._change_queue = change_queue
 
         self._bot = bot
-
-    # ------------------------------------------------------------------
-    # Convenience accessors
-    # ------------------------------------------------------------------
-
-    @property
-    def _signup_svc(self):
-        return self._bot.signup_module_service
 
     # ------------------------------------------------------------------
     # Channel helpers
@@ -259,220 +228,10 @@ class WizardService:
     # Inactivity / channel-delete job helpers
     # ------------------------------------------------------------------
 
-
-
-
-
-
-
-
-    @posts_in_a_job
-    async def trigger_channel_hold(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-        terminal_message: str,
-        *,
-        lock: bool = True,
-        raise_on_failure: bool = False,
-    ) -> HoldOutcome:
-        """Post the terminal notice, then hold the channel: revoke the driver's write access and
-        schedule the channel's deletion +24 h (T033).
-
-        FR-026, SC-003.
-
-        **The notice is posted first**, so a driver is never locked out of a channel that says
-        nothing. No wizard, or a channel that is not a text channel, leaves nothing done and gives
-        `HoldOutcome(channel_id=None)`. Where Discord refuses the notice:
-
-        - with *raise_on_failure* (the change queue's notice job) `StepFailedOnDiscord` is raised
-          from the refusal, having locked and armed nothing, so a Retry finds the channel as it
-          was;
-        - by default (withdrawal, approval, rejection and expiry) the driver's typing is locked and
-          **no deletion is armed**: the channel stays readable for a manager to delete by hand, and
-          the outcome says so for the caller's log line.
-
-        *lock=False* posts the notice alone, leaving the lock and the deletion to `lock_signup_channel`.
-        """
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.signup_channel_id is None:
-            return HoldOutcome(channel_id=None)
-
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return HoldOutcome(channel_id=None)
-
-        try:
-            await channel.send(terminal_message)
-        except discord.HTTPException as exc:
-            if raise_on_failure:
-                raise StepFailedOnDiscord(
-                    f"the closing notice could not be posted in channel {channel.id}"
-                ) from exc
-            log.warning("trigger_channel_hold: failed to post terminal message in %s", channel.id)
-            reason = type(exc).__name__
-            if lock:
-                await self._lock_channel(discord_user_id, guild, channel, arm_deletion=False)
-            return HoldOutcome(channel.id, posted=False, locked=lock, reason=reason)
-
-        if lock:
-            await self._lock_channel(discord_user_id, guild, channel, arm_deletion=True)
-        return HoldOutcome(channel.id, posted=True, locked=lock)
-
-    async def _lock_channel(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-        channel: discord.TextChannel,
-        *,
-        arm_deletion: bool,
-    ) -> None:
-        """Revoke the driver's write access and, when asked, arm the deletion 24 hours on."""
-        member = guild.get_member(int(discord_user_id))
-        if member is not None:
-            await self._revoke_driver_write(channel, member)
-        if arm_deletion:
-            self._arm_deletion(
-                DELETE_TIMER, discord_user_id, datetime.now(timezone.utc) + timedelta(hours=24)
-            )
-
-    async def lock_signup_channel(self, discord_user_id: str, guild: discord.Guild) -> None:
-        """Lock a driver's signup channel and arm its deletion 24 hours on, posting nothing.
-
-        The change queue's `close_signup` job, after its `signup_notice` job. No wizard, or no
-        channel, is nothing to lock. A permission write Discord refuses raises
-        `StepFailedOnDiscord` from the refusal.
-        """
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
-        try:
-            await self._lock_channel(discord_user_id, guild, channel, arm_deletion=True)
-        except discord.HTTPException as exc:
-            raise StepFailedOnDiscord(
-                f"the signup channel {channel.id} could not be locked"
-            ) from exc
-
-
-    async def recover_wizards(self) -> None:
-        """Called at start-up, after the scheduler has started: re-arm inactivity jobs for
-        non-UNENGAGED wizards.
-
-        For each active wizard, if the inactivity deadline (last_activity_at
-        + 24 h) is still in the future, re-arm the signup's timer with the
-        correct fire time.  If it has already passed, ask the queue, as the bot, for the signup's
-        expiry (`signup.end`), before the queue starts; the change's check drops it where the
-        driver has since moved on.
-
-        A signup whose channel was deleted while the bot was down is ended first
-        (:meth:`recover_gone_channels`), and neither its expiry nor its correction's lapse is
-        then asked.
-
-        SC-005.
-        """
-        gone = await self.recover_gone_channels()
-        await self.recover_correction_timeouts(skip=gone)
-
-        wizards = await self._signup_svc.get_all_active_wizards_all_servers()
-        now = datetime.now(timezone.utc)
-        for wizard in wizards:
-            if wizard.wizard_state == WizardState.UNENGAGED:
-                continue
-            if wizard.discord_user_id in gone:
-                continue
-            last_str = wizard.last_activity_at
-            if last_str:
-                last = datetime.fromisoformat(last_str)
-                if last.tzinfo is None:
-                    last = last.replace(tzinfo=timezone.utc)
-                fire_at = last + timedelta(hours=24)
-            else:
-                fire_at = now  # No activity recorded — expire immediately
-
-            discord_user_id = wizard.discord_user_id
-            if fire_at > now:
-                self._scheduler.arm_once(INACTIVITY_TIMER, discord_user_id, fire_at)
-            else:
-                await ask_expiry(self._change_queue, self._db_path, discord_user_id)
-
-    async def recover_gone_channels(self) -> set[str]:
-        """Called first in recover_wizards: end the signup of every driver whose signup channel
-        was deleted while the bot was down (#439, slice 8).
-
-        Every driver whose signup is under way (`IN_PROGRESS_STATES`) and whose wizard names a
-        channel is looked at. A channel the cache lacks is confirmed with `fetch_channel`: not
-        found, or found as no text channel, is gone, and the restart asks the queue, as the bot
-        and before it starts, for the ending of that signup (`signup.end`, reason `CHANNEL_GONE`,
-        found at a restart), whose check drops it where the driver has since moved on. Any other
-        failure of the lookup is logged and the channel treated as standing: a sweep cannot stop
-        the queue, and the deletion listener or the next restart tries again. With no league
-        server in the cache nothing is ended, and a warning says so.
-
-        Gives the accounts it asked an ending of, which the rest of the recovery skips.
-        """
-        from leaguebot.core.utils.league_server import league_guild
-        from leaguebot.core.utils.log_lines import name_of_member
-        from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
-        from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
-
-        asked: set[str] = set()
-        placeholders = ", ".join("?" for _ in IN_PROGRESS_STATES)
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT d.discord_user_id, w.signup_channel_id "
-                "FROM driver_profiles d JOIN signup_wizard_records w "
-                "  ON w.discord_user_id = d.discord_user_id "
-                f"WHERE d.current_state IN ({placeholders}) "
-                "  AND w.signup_channel_id IS NOT NULL",
-                tuple(state.value for state in IN_PROGRESS_STATES),
-            )
-            rows = await cursor.fetchall()
-        if not rows:
-            return asked
-        guild = await league_guild(self._bot)
-        if guild is None:
-            log.warning(
-                "recover_gone_channels: the league's server is not in the cache, so no signup "
-                "channel was looked for"
-            )
-            return asked
-        for row in rows:
-            user_id = row["discord_user_id"]
-            channel_id = int(row["signup_channel_id"])
-            try:
-                if guild.get_channel(channel_id) is not None:
-                    continue
-                try:
-                    fetched = await guild.fetch_channel(channel_id)
-                except discord.NotFound:
-                    fetched = None
-                if isinstance(fetched, discord.TextChannel):
-                    continue
-                await ask_channel_gone(
-                    self._change_queue,
-                    user_id=user_id,
-                    channel_id=channel_id,
-                    named=await name_of_member(self._bot, int(user_id)),
-                    found=RESTART,
-                )
-                asked.add(user_id)
-            except discord.HTTPException:
-                log.warning(
-                    "recover_gone_channels: signup channel %s of %s could not be looked for; "
-                    "treated as standing", channel_id, user_id, exc_info=True,
-                )
-            except Exception:
-                log.exception(
-                    "recover_gone_channels: could not ask the ending of %s's signup", user_id,
-                )
-        return asked
-
     async def recover_correction_timeouts(self, *, skip: frozenset[str] | set[str] = frozenset()) -> None:
-        """Called from recover_wizards: release every driver awaiting a correction parameter,
-        save those in *skip*, whose signup the restart has just ended for a channel gone.
+        """Release every driver awaiting a correction parameter, save those in *skip* (the
+        restart's sweep, `closing_steps.recover_correction_timeouts`, which this hands its own
+        database and queue), whose signup the restart has just ended for a channel gone.
 
         The five-minute selection window is a one-off timer, so a restart discards it and nothing
         re-creates it — which left the driver parked for good, shown in no listing and refused by
@@ -491,26 +250,7 @@ class WizardService:
         ``get_all_active_wizards_all_servers`` filters that out in SQL. The driver profile
         is the only record that the window is open, so it is what is read here.
         """
-        from leaguebot.signup.services.review_changes import ask_lapse
-
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT discord_user_id FROM driver_profiles WHERE current_state = ?",
-                (DriverState.AWAITING_CORRECTION_PARAMETER.value,),
-            )
-            rows = await cursor.fetchall()
-
-        for row in rows:
-            if row["discord_user_id"] in skip:
-                continue
-            try:
-                await ask_lapse(self._change_queue, row["discord_user_id"], restart=True)
-            except Exception:
-                # One driver's refused ask must not strand the rest.
-                log.exception(
-                    "recover_correction_timeouts: could not ask the lapse of %s",
-                    row["discord_user_id"],
-                )
+        await recover_correction_timeouts(self._db_path, self._change_queue, skip=skip)
 
     async def get_wizard_by_channel(
         self, channel_id: int
@@ -520,7 +260,7 @@ class WizardService:
         Thin delegation to signup_module_service; exposed here so cogs only
         need a reference to wizard_service.
         """
-        return await self._signup_svc.get_wizard_by_channel(channel_id)
+        return await self._signup.get_wizard_by_channel(channel_id)
 
     # ------------------------------------------------------------------
     # Validation helpers (implemented in T020–T021)
@@ -559,7 +299,9 @@ class WizardService:
         team_names: list[str] | None = None,
     ) -> discord.ui.View:
         """Return the appropriate view for the given wizard state."""
-        return build_step_view(self._change_queue, state, discord_user_id, team_names)
+        return build_step_view(
+            self._change_queue, state, discord_user_id, team_names, signup=self._signup
+        )
 
 
 

@@ -2,9 +2,7 @@
 channel's deletion a day on, as the `signup.closing` change runs them on the driver's lane (#439,
 slice 6b, C66).
 
-Today the notice, the lock and the deletion's arming are `WizardService.trigger_channel_hold`,
-called off the queue: a refused notice leaves the channel locked and kept for deletion by hand.
-On the queue they are three jobs, `signup_notice`, `close_signup` and `arm_deletion`, which a
+They are three jobs, `signup_notice`, `close_signup` and `arm_deletion`, which a
 league change that ended a driver's signup (Withdraw, Approve, a Reject reason) asks back of the
 driver's lane; a refused notice stops that lane alone, with Retry and Discard.
 

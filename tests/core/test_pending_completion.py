@@ -246,7 +246,8 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
     [line] = [line for line in lines if "🔒 Signups closed as every division is done" in line]
     assert "<@" not in line, line
     assert any("returned" in text and "1" in text for text in line.splitlines()[1:]), line
-    league.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
+    assert [c.args[0] for c in league.bot.scheduler_service.disarm.call_args_list
+            ].count("signup.close_timer") == 1
     assert await _league_stage(league) == "PENDING_COMPLETION"
 
 

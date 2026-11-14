@@ -445,11 +445,11 @@ async def _correcting_platform(tmp_path: Any) -> SeasonLeague:
     league = await _league(tmp_path, "COLLECTING_PLATFORM", draft=draft,
                            driver_state="PENDING_DRIVER_CORRECTION")
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, nationality, platform, "
-        "platform_id, driver_type, notes, signup_channel_id) "
-        "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', "
-        "'Happy to race anywhere', ?)",
-        SEASON_ID, str(SIGNING_UP), KIMI_CHANNEL,
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, nationality, platform, "
+        "platform_id, driver_type, notes) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', "
+        "'Happy to race anywhere')",
+        SEASON_ID, str(SIGNING_UP),
     )
     return league
 

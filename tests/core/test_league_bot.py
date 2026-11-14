@@ -174,9 +174,9 @@ def test_the_season_s_end_is_registered():
 
 #: The settings commands of results, weather and images as the builder registers them (#439,
 #: slice 7), core's seven `/bot` settings, its two division channels and its test-mode nationality
-#: switch, weather's forecast channel, results' three division channels, attendance's two (#283)
-#: and its eight timings and sanctions (#285): one change type per setting, every one built by
-#: `setting_change`.
+#: switch, weather's forecast channel, results' three division channels, attendance's two (#283),
+#: its eight timings and sanctions (#285) and signup's channel, five toggles and slots (#286): one
+#: change type per setting, every one built by `setting_change`.
 SETTING_KINDS = (
     *(f"core.setting.{name}" for name in (
         "log_channel", "interaction_channel", "interaction_role", "admin_role",
@@ -202,12 +202,15 @@ SETTING_KINDS = (
         "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "no_rsvp_penalty", "absent_penalty",
         "no_show_penalty", "autosack", "autoreserve",
     )),
+    *(f"signup.setting.{name}" for name in (
+        "channel", "nationality", "time_type", "time_image", "time_slot_add", "time_slot_remove",
+    )),
 )
 
 
 def test_the_settings_changes_are_registered():
-    """The builder registers the forty-eight settings changes of core, results, weather, images
-    and attendance, once each, and no other kind carrying ".setting." (#439, slice 7; #283;
+    """The builder registers the fifty-four settings changes of core, results, weather, images,
+    attendance and signup, once each, and no other kind carrying ".setting." (#439, slice 7; #283;
     #285)."""
     from leaguebot.__main__ import register_change_types
 
@@ -217,12 +220,10 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 48
+    assert len(SETTING_KINDS) == 54
 
 
 #: Each channel the channel registry knows, by its key, and the setting that points the bot at it.
-#: The signup channel is the registry's but has none: `/signup channel` is not asked of the queue,
-#: so it never waits behind a stop.
 CHANNEL_SETTING_KINDS = {
     "calendar": "core.setting.calendar_channel_id",
     "lineup": "core.setting.lineup_channel_id",
@@ -235,13 +236,14 @@ CHANNEL_SETTING_KINDS = {
     "interaction": "core.setting.interaction_channel",
     "log": "core.setting.log_channel",
     "hub": "core.setting.hub_channel_id",
+    "signup": "signup.setting.channel",
 }
 
 
 def test_every_channel_setting_overtakes_a_stopped_job():
     """A stop notice for a channel tells the league to set the channel, then press Retry: a
     setting waiting behind the stop it is meant to clear could never do it. Every channel the
-    channel registry knows, the signup channel aside, has its setting registered, and each runs
+    channel registry knows, the signup channel among them, has its setting registered, and each runs
     past a stopped job; so do the interaction role and the league admin role, the league's way
     back in, and no other change. A channel added to the registry fails here until its setting is
     named and overtakes."""
@@ -255,7 +257,7 @@ def test_every_channel_setting_overtakes_a_stopped_job():
         call.args[0].kind: call.args[0].overtakes_a_stop
         for call in bot.change_queue.register.call_args_list
     }
-    assert set(SETTING_LABELS) - {"signup"} == set(CHANNEL_SETTING_KINDS)
+    assert set(SETTING_LABELS) == set(CHANNEL_SETTING_KINDS)
     assert {key: overtaking.get(kind) for key, kind in CHANNEL_SETTING_KINDS.items()} == {
         key: True for key in CHANNEL_SETTING_KINDS
     }

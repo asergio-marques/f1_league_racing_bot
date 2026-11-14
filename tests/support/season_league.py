@@ -60,9 +60,8 @@ For a season's end on the queue (slice 5), `ongoing_league` also takes *test_mod
 driver roles, each role taken back recorded in `league.revoked` and refused for a member in
 `league.revoke_fails`; each signing-up driver's signup channel standing on the server
 (`signup_channel`), recording each closing notice it is sent in `league.notices` and each lock
-of it in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say, whether
-the wizard service's double or signup's own closing jobs post there; and the window's close
-raising `league.close_fails`.
+of it in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say, whichever
+code posts there; and the window's close raising `league.close_fails`.
 `approved_unplaced` adds a driver approved and never placed (`UNASSIGNED`), holding the driver
 role. `pending_completion_league` builds the season with every round final and both divisions finished,
 results accepted for three rounds; `setup_league` the season before its placements are confirmed,
@@ -502,8 +501,8 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
                 (profile_id(user_id), str(user_id), int(user_id == TEST_DRIVER)),
             )
             await db.execute(
-                "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO signup_records (created_at, season_id, discord_user_id, server_display_name) "
+                "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?)",
                 (SEASON_ID, str(user_id), NAMES[user_id]),
             )
             cursor = await db.execute(
@@ -1121,11 +1120,10 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     """What a season's end reads beyond the season itself.
 
     Always: the real signup module and driver services, the window's recording of its close
-    raising `league.close_fails` where set; a wizard service double (`bot.wizard_service`) whose
-    `trigger_channel_hold` and `lock_signup_channel` post and lock through the driver's signup
-    channel (`signup_channel`), which records each closing notice in `league.notices` and each
-    lock in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say; and the
-    scheduler's job store under *tmp_path*, for the backup to be found beside it.
+    raising `league.close_fails` where set; and the scheduler's job store under *tmp_path*, for
+    the backup to be found beside it. A driver's signup channel (`signup_channel`) records each
+    closing notice it is sent in `league.notices` and each lock in `league.locked`, refusing as
+    `league.hold_fails` and `league.lock_fails` say.
 
     *test_mode*: test mode on, the test driver (104) seated at McLaren, and a saved test-mode
     backup of the league and of the job store present (`backup_saved`).
@@ -1134,14 +1132,12 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     *held*: the league's driver role (820) set, and every real driver holding their division
     role, their team role and the driver role; the test driver holds none.
 
-    The three services are swapped on the bot after the league's queue has registered the real
-    change types, which therefore read them when they run, not when registered: the signup module
-    and driver services through `lambda: bot.signup_module_service` and `lambda: bot.driver_service`,
-    the wizard service through the season's end's hold and lock, which read `bot.wizard_service`
-    when called. The builder keeps those reads late (#283).
+    The two services are swapped on the bot after the league's queue has registered the real
+    change types, which therefore read them when they run, not when registered: through
+    `lambda: bot.signup_module_service` and `lambda: bot.driver_service`. The builder keeps those
+    reads late (#283).
     """
     bot = league.bot
-    _wizard_double(league)
     _signup_services(league)
     bot.scheduler_service.jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
     if test_mode:
@@ -1165,37 +1161,6 @@ def backup_saved(league: SeasonLeague) -> bool:
     from leaguebot.core.services.upkeep.backup_service import backup_path
 
     return backup_path(league.db_path).is_file()
-
-
-def _wizard_double(league: SeasonLeague) -> None:
-    """A wizard service double whose `trigger_channel_hold` and `lock_signup_channel` act through
-    the driver's signup channel double (`signup_channel`), as the real ones do: the notice is that
-    channel's send and the lock its permission edit, so `league.notices` and `league.locked`
-    record what the channel was sent and how it was locked, by whichever code posts there. A
-    driver with no signup channel on the server is found with nothing to tell (`channel_id`
-    None)."""
-
-    async def _hold(user_id: Any, _guild: Any, notice: str, **kwargs: Any) -> Any:
-        uid = int(user_id)
-        held = league.channels.get(SIGNUP_CHANNEL_BASE + uid)
-        if held is None:
-            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
-        await held.send(notice)
-        lock = kwargs.get("lock", True)
-        if lock:
-            await held.set_permissions(league._member(uid), send_messages=False)
-        return SimpleNamespace(channel_id=held.id, posted=True, locked=lock, reason=None)
-
-    async def _lock(user_id: Any, _guild: Any) -> None:
-        uid = int(user_id)
-        held = league.channels.get(SIGNUP_CHANNEL_BASE + uid)
-        if held is not None:
-            await held.set_permissions(league._member(uid), send_messages=False)
-
-    wizard = MagicMock()
-    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
-    wizard.lock_signup_channel = AsyncMock(side_effect=_lock)
-    league.bot.wizard_service = wizard
 
 
 def _locks(kwargs: dict[str, Any]) -> bool:
@@ -1303,9 +1268,10 @@ async def signing_up(league: SeasonLeague, user_id: int = SIGNING_UP, *,
         profile_id(user_id), str(user_id), state,
     )
     await league.write(
-        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id, "
+        "created_at, last_activity_at) VALUES (?, ?, ?, ?, ?)",
         str(user_id), state, SIGNUP_CHANNEL_BASE + user_id,
+        league.clock.now.isoformat(), league.clock.now.isoformat(),
     )
     if SIGNUP_CHANNEL_BASE + user_id not in league.channels:
         signup_channel(league, user_id)
@@ -1320,8 +1286,8 @@ async def approved_unplaced(league: SeasonLeague, user_id: int = UNASSIGNED) -> 
         profile_id(user_id), str(user_id),
     )
     await league.write(
-        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, server_display_name) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?)",
         SEASON_ID, str(user_id), NAMES[user_id],
     )
     league.roles_held.setdefault(user_id, set()).add(DRIVER_ROLE)
@@ -1335,36 +1301,58 @@ async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
     return rows[0]["wizard_state"] if rows else None
 
 
-def wizard_service(bot: Any, db_path: str, scheduler: Any, router: Any, *,
-                   change_queue: Any) -> Any:
+def wizard_service(bot: Any, db_path: str, *, change_queue: Any) -> Any:
     """The signup wizard service as the builder makes it, holding *bot* from the moment it is
-    built (#283)."""
+    built (#283), and handed the signup module service it reads wizards through, *bot*'s own,
+    rather than looking it up on the bot; it holds no scheduler, its start-up catch-up having
+    moved to signup's `closing_steps` (#286)."""
     from leaguebot.signup.services.wizard_service import WizardService
 
-    return WizardService(db_path, scheduler, router, change_queue=change_queue, bot=bot)
+    return WizardService(
+        db_path, bot.signup_module_service, change_queue=change_queue, bot=bot
+    )
+
+
+def review_services(bot: Any) -> dict[str, Any]:
+    """The services a signup review panel (`AdminReviewView`) is handed when it is built, *bot*'s
+    own (#286): the signup service it finds the channel's driver through, the driver service it
+    reads their state from, the configuration service whose tiers judge the presser, and the
+    output router that writes its lines to the log channel."""
+    return {
+        "signup": bot.signup_module_service,
+        "drivers": bot.driver_service,
+        "config": bot.config_service,
+        "router": bot.output_router,
+    }
+
+
+def correction_services(bot: Any) -> dict[str, Any]:
+    """The services the correction choices (`CorrectionParameterView`) are handed when they are
+    built, *bot*'s own (#286): the signup service they find the channel's driver through and the
+    configuration service whose tiers judge the presser."""
+    return {"signup": bot.signup_module_service, "config": bot.config_service}
 
 
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
-    """The signup wizards recovered as the bot does when it starts (`recover_wizards`), the
-    wizard service built as the builder builds it, over the league's real signup module and
-    driver services; gives the accounts whose 24-hour timer was armed again (``armed``) and those
-    whose expiry was asked at once (``expired``), neither run.
+    """The signup wizards recovered as the bot does when it starts: signup's catch-up,
+    `recover_wizards` in `closing_steps`, handed the bot and the league's change queue (#286);
+    gives the accounts whose 24-hour timer was armed (``armed``), which the catch-up never does,
+    and those whose expiry was asked at once (``expired``), neither run.
 
-    The wizard service is handed the change queue (#439, slice 6b, C77): an expiry is then the
-    `signup.end` it asks of the queue, and an arming the scheduler service's `signup_inactivity`
-    timer. `recover_wizards` reads the host's clock, as a wizard's last activity written by
-    `signing_up` does."""
+    An expiry is the `signup.end` it asks of the queue, and an arming would be the scheduler
+    service's `signup_inactivity` timer. The catch-up judges each 24 hours with the queue's clock,
+    `league.clock`."""
     import asyncio
+
+    from leaguebot.signup.services.closing_steps import recover_wizards
 
     bot = league.bot
     armed: list[str] = []
     expired: list[str] = []
-    wizards = wizard_service(bot, league.db_path, bot.scheduler_service, bot.output_router,
-                             change_queue=bot.change_queue)
     asked_before = {row["id"] for row in await change_rows(league.db_path)}
     arms_before = len(bot.scheduler_service.arm_once.call_args_list)
     before = asyncio.all_tasks()
-    await wizards.recover_wizards()
+    await recover_wizards(bot, queue=bot.change_queue)
     await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
     for row in await change_rows(league.db_path):
         if row["id"] in asked_before or row["kind"] != "signup.end":
