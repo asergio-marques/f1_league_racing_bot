@@ -1,4 +1,4 @@
-"""The five `/signup` settings that are not the channel or the close time, as changes on the queue.
+"""The five `/signup` settings that are not the channel (`channel_setting`) or the close time, as changes on the queue.
 
 `/signup nationality`, `time-type`, `time-image`, `time-slot add` and `time-slot remove` each ask
 one change, `signup.setting.<name>` (underscores in place of the command's hyphens), built from
@@ -83,7 +83,7 @@ def _toggle(command: str, field: str, *, modules: "ModuleService") -> Setting:
     name = f"/signup {command}"
 
     async def check(ctx: CheckContext) -> Verdict:
-        refusal = await _open_to_change(modules, ctx.db_path, name)
+        refusal = await open_to_change(modules, ctx.db_path, name)
         return Verdict.refuse(refusal) if refusal else Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
@@ -145,7 +145,7 @@ def _toggle(command: str, field: str, *, modules: "ModuleService") -> Setting:
     )
 
 
-async def _open_to_change(modules: "ModuleService", db_path: str, command: str) -> str | None:
+async def open_to_change(modules: "ModuleService", db_path: str, command: str) -> str | None:
     """The words refusing a change to the signup settings: the module off, or a season whose
     confirmed configuration has fixed them. None where it may go ahead."""
     if not await modules.is_signup_enabled():
@@ -160,7 +160,7 @@ def _slot_add(*, modules: "ModuleService", signup: "SignupModuleService") -> Set
     name = "/signup time-slot add"
 
     async def check(ctx: CheckContext) -> Verdict:
-        refusal = await _open_to_change(modules, ctx.db_path, name)
+        refusal = await open_to_change(modules, ctx.db_path, name)
         if refusal:
             return Verdict.refuse(refusal)
         slots = await signup.get_slots()
@@ -220,7 +220,7 @@ def _slot_remove(*, modules: "ModuleService", signup: "SignupModuleService") -> 
     name = "/signup time-slot remove"
 
     async def check(ctx: CheckContext) -> Verdict:
-        refusal = await _open_to_change(modules, ctx.db_path, name)
+        refusal = await open_to_change(modules, ctx.db_path, name)
         if refusal:
             return Verdict.refuse(refusal)
         slots = await signup.get_slots()
@@ -285,5 +285,5 @@ def signup_settings(
 
 __all__ = [
     "DUPLICATE_SLOT", "KIND_PREFIX", "MAX_SLOTS", "NO_SLOTS", "NOT_ENABLED", "fixed_refusal",
-    "format_slots", "kind_of", "signup_settings",
+    "format_slots", "kind_of", "open_to_change", "signup_settings",
 ]

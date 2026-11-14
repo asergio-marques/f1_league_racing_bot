@@ -225,6 +225,7 @@ def register_change_types(bot: "LeagueBot") -> None:
 
     from leaguebot.core.services.queue.setting_change import setting_change
     from leaguebot.signup.services.module_switch_settings import module_on_signup
+    from leaguebot.signup.services.channel_setting import channel_setting
     from leaguebot.signup.services.close_time_settings import close_time_settings
     from leaguebot.signup.services.signup_settings import signup_settings
     from leaguebot.signup.services.window_close import (
@@ -369,6 +370,14 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     for setting in signup_settings(modules=bot.module_service, signup=bot.signup_module_service):
         bot.change_queue.register(setting_change(setting))
+    bot.change_queue.register(
+        setting_change(
+            channel_setting(
+                modules=bot.module_service, signup=bot.signup_module_service,
+                config=bot.config_service, channel_uses_read=bot.channel_uses_read,
+            )
+        )
+    )
     bot.change_queue.register(close_timer_arm_change(arm_once=bot.scheduler_service.arm_once))
     for setting in close_time_settings(
         modules=bot.module_service, signup=bot.signup_module_service,

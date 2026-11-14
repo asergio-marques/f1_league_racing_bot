@@ -31,6 +31,7 @@ from leaguebot.signup.models.signup_module import (
 )
 
 if TYPE_CHECKING:
+    from leaguebot.core.models.server_config import ServerConfig
     from leaguebot.core.services.modules.module_service import ModuleService
 
 log = logging.getLogger(__name__)
@@ -70,6 +71,42 @@ def _listing_order(pair: tuple[dict[str, Any], aiosqlite.Row | None]) -> tuple[A
         created is not None, created or "",
         record_id is not None, record_id or 0,
     )
+
+
+def signup_channel_overwrites(
+    guild: discord.Guild, league: "ServerConfig | None"
+) -> dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite]:
+    """Who may see the signup channel, as `/signup channel` sets it.
+
+    Nobody but the bot, the league's base role (which may read and use commands but not write)
+    and its interaction role and league admin role (which may read and write). A league admin
+    holds the league manager tier within their own, so a channel opened to one tier and not the
+    other would show them a signup they may action and no way to read it (issue #116): the admin
+    role gets the interaction role's sight, skipped where the league has set none. The base role
+    is the league's, not this module's (issue #276). *league* is None where the server is not
+    configured, and the roles are then not read.
+    """
+    interaction_role = guild.get_role(league.interaction_role_id) if league else None
+    admin_role = (
+        guild.get_role(league.league_admin_role_id)
+        if league and league.league_admin_role_id
+        else None
+    )
+    base_role = (
+        guild.get_role(league.base_role_id) if league and league.base_role_id else None
+    )
+    overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+    }
+    if base_role:
+        overwrites[base_role] = discord.PermissionOverwrite(
+            view_channel=True, send_messages=False, use_application_commands=True
+        )
+    for role in (interaction_role, admin_role):
+        if role is not None:
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    return overwrites
 
 
 class SignupModuleService:

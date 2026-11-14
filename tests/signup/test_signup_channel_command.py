@@ -220,7 +220,6 @@ async def test_a_channel_already_in_use_is_refused(tmp_path):
     assert await _stored(league.db_path) is None, "a refused channel was stored"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_command_runs_to_the_end_without_an_unbound_name(tmp_path):
     """A blunt guard against the class of fault, not the instance, and the answer every
     settings command gives (criterion 6).
@@ -248,7 +247,6 @@ async def test_the_command_runs_to_the_end_without_an_unbound_name(tmp_path):
     assert [kind for kind, _actor in await _audits(league.db_path)] == ["SIGNUP_CHANNEL_SET"]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_fault_in_the_save_saves_no_channel_and_says_to_run_it_again(tmp_path):
     """Criterion 6: the manager sets 700 as the signup channel while the audit entry's write
     faults. Nothing is saved, no channel's permissions are touched, the manager is told
@@ -280,18 +278,8 @@ async def test_a_fault_in_the_save_saves_no_channel_and_says_to_run_it_again(tmp
     [
         pytest.param("new", True, False, id="new-only-manage-channels"),
         pytest.param("new", False, True, id="new-only-manage-roles"),
-        pytest.param(
-            "old", True, False, id="old-only-manage-channels",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#286: the bot's permission on the old channel is not judged"
-            ),
-        ),
-        pytest.param(
-            "old", False, True, id="old-only-manage-roles",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#286: the bot's permission on the old channel is not judged"
-            ),
-        ),
+        pytest.param("old", True, False, id="old-only-manage-channels"),
+        pytest.param("old", False, True, id="old-only-manage-roles"),
     ],
 )
 async def test_signup_channel_refuses_early_without_both_permissions(
@@ -319,7 +307,6 @@ async def test_signup_channel_refuses_early_without_both_permissions(
     await _assert_one_refusal_line(league, "/signup channel", "Manage Permissions")
 
 
-@pytest.mark.xfail(strict=True, reason="#286: an overwrite Discord refuses unforeseen still refuses the channel unsaved")
 async def test_an_unforeseen_refusal_keeps_the_channel_and_names_the_fault(tmp_path):
     """The bot holds both permissions on 700, so the check foresees nothing; Discord refuses
     the overwrites all the same. 700 stays saved as the signup channel, and both the reply and
@@ -341,7 +328,6 @@ async def test_an_unforeseen_refusal_keeps_the_channel_and_names_the_fault(tmp_p
     assert "Discord refused or failed a request from the bot" in line
 
 
-@pytest.mark.xfail(strict=True, reason="#286: the old signup channel is cleared before the new one is set (#481)")
 async def test_moving_the_signup_channel_sets_the_new_before_clearing_the_old(tmp_path):
     """#481: the league's signup channel is 650 and the manager moves it to 700. Discord is
     asked to set 700's overwrites first and only then to clear 650's, so a refusal on 700 can

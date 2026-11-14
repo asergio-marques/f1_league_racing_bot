@@ -175,8 +175,8 @@ def test_the_season_s_end_is_registered():
 #: The settings commands of results, weather and images as the builder registers them (#439,
 #: slice 7), core's seven `/bot` settings, its two division channels and its test-mode nationality
 #: switch, weather's forecast channel, results' three division channels, attendance's two (#283),
-#: its eight timings and sanctions (#285) and signup's five toggles and slots (#286): one change
-#: type per setting, every one built by `setting_change`.
+#: its eight timings and sanctions (#285) and signup's channel, five toggles and slots (#286): one
+#: change type per setting, every one built by `setting_change`.
 SETTING_KINDS = (
     *(f"core.setting.{name}" for name in (
         "log_channel", "interaction_channel", "interaction_role", "admin_role",
@@ -203,13 +203,13 @@ SETTING_KINDS = (
         "no_show_penalty", "autosack", "autoreserve",
     )),
     *(f"signup.setting.{name}" for name in (
-        "nationality", "time_type", "time_image", "time_slot_add", "time_slot_remove",
+        "channel", "nationality", "time_type", "time_image", "time_slot_add", "time_slot_remove",
     )),
 )
 
 
 def test_the_settings_changes_are_registered():
-    """The builder registers the fifty-three settings changes of core, results, weather, images,
+    """The builder registers the fifty-four settings changes of core, results, weather, images,
     attendance and signup, once each, and no other kind carrying ".setting." (#439, slice 7; #283;
     #285)."""
     from leaguebot.__main__ import register_change_types
@@ -220,12 +220,10 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 53
+    assert len(SETTING_KINDS) == 54
 
 
 #: Each channel the channel registry knows, by its key, and the setting that points the bot at it.
-#: The signup channel is the registry's but has none: `/signup channel` is not asked of the queue,
-#: so it never waits behind a stop.
 CHANNEL_SETTING_KINDS = {
     "calendar": "core.setting.calendar_channel_id",
     "lineup": "core.setting.lineup_channel_id",
@@ -242,7 +240,6 @@ CHANNEL_SETTING_KINDS = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#286: /signup channel is not yet a Setting that overtakes a stop")
 def test_every_channel_setting_overtakes_a_stopped_job():
     """A stop notice for a channel tells the league to set the channel, then press Retry: a
     setting waiting behind the stop it is meant to clear could never do it. Every channel the

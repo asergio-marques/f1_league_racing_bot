@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -32,9 +31,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE, same_instant
-from leaguebot.core.db.database import get_connection
-from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
 from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
 from leaguebot.signup.services.signup_settings import fixed_refusal, format_slots, kind_of
 from leaguebot.signup.services.wizard_answers import take_typed_answer
@@ -437,157 +435,13 @@ class SignupCog(commands.Cog):
     async def signup_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._refuse_while_configuration_fixed(interaction, "/signup channel"):
-            return
-        guild = interaction.guild
-        assert guild is not None
-
-        cfg = await self.bot.signup_module_service.get_config()
-        if cfg is None:
-            await refuse(
-                interaction, "❌ Signup module is not configured.", what=describe(interaction)
-            )
-            return
-
-        # A channel does one job (decided 2026-09-06). This stood as a guard against the
-        # bot interaction channel alone; every configurable channel of the server is
-        # checked now, the interaction channel among them.
-        from leaguebot.core.services.settings.channel_registry_service import (
-            ChannelUse,
-            find_channel_use,
-            refusal,
-        )
-
-        use = await find_channel_use(
-            self.bot.db_path, channel.id, channel_uses_read=self.bot.channel_uses_read
-        )
-        if use is not None:
-            await refuse(
-                interaction,
-                refusal(channel.mention, use, same_setting=(use == ChannelUse("signup"))),
-                what=describe(interaction),
-            )
-            return
-
-        # Setting who may see the channel needs both Manage Channels and Manage Roles, which
-        # Discord shows on a channel as Manage Channel and Manage Permissions. Either alone is
-        # refused here, before anything is edited, in the hub's words.
-        may_not_edit = (
-            f"❌ The bot needs **Manage Channel** and **Manage Permissions** on {channel.mention} "
-            "to set who may see it. The signup channel was not changed."
-        )
-        bot_user = self.bot.user
-        bot_member = guild.get_member(bot_user.id) if bot_user is not None else None
-        if bot_member:
-            perms = channel.permissions_for(bot_member)
-            if not (perms.manage_channels and perms.manage_roles):
-                await refuse(interaction, may_not_edit, what=describe(interaction))
-                return
-
-        await interaction.response.defer(ephemeral=True)
-        old_channel_id = cfg.signup_channel_id
-
-        # Revert bot-applied overwrites on old channel (if changing)
-        old_cleared: discord.TextChannel | None = None
-        # An old channel the bot cannot clear is reported and the move stands, as for the hub
-        # channel: the new channel is set either way, and the old one is put right by hand.
-        faults: list[str] = []
-        if old_channel_id and old_channel_id != channel.id:
-            old_channel = guild.get_channel(old_channel_id)
-            if old_channel and isinstance(old_channel, discord.TextChannel):
-                try:
-                    await old_channel.edit(overwrites={})
-                    old_cleared = old_channel
-                except Exception as exc:
-                    log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id, exc_info=True)
-                    faults.append(
-                        f"The permissions on the old signup channel {old_channel.mention} "
-                        f"could not be cleared: {exc}"
-                    )
-
-        # Apply overwrites to new channel. The server config is read here for the
-        # interaction role; it used to be read further up, by the guard against reusing
-        # the bot's own command channel, and this line was left orphaned when that guard
-        # became the server-wide `find_channel_use` check.
-        server_cfg = await self.bot.config_service.get_server_config()
-        interaction_role = guild.get_role(server_cfg.interaction_role_id) if server_cfg else None
-        # The league admin role gets the same sight of the channel as the interaction role.
-        # A league admin holds the league manager tier within their own, so a channel opened
-        # to one tier and not the other would show them a signup they may action and no way
-        # to read it (issue #116). Skipped where the two are the same role, or where the
-        # league has not set an admin role yet.
-        admin_role = (
-            guild.get_role(server_cfg.league_admin_role_id)
-            if server_cfg and server_cfg.league_admin_role_id
-            else None
-        )
-        # The base role is the league's, not this module's (issue #276).
-        base_role = (
-            guild.get_role(server_cfg.base_role_id)
-            if server_cfg and server_cfg.base_role_id
-            else None
-        )
-        overwrites: dict = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        if base_role:
-            overwrites[base_role] = discord.PermissionOverwrite(
-                view_channel=True,
-                send_messages=False,
-                use_application_commands=True,
-            )
-        for role in (interaction_role, admin_role):
-            if role is not None:
-                overwrites[role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=True
-                )
-        # Discord refusing the edit is the refusal above, met late. Any other error is a fault
-        # in the bot, and goes to the command's failure path with nothing saved.
-        try:
-            await channel.edit(overwrites=overwrites)
-        except discord.Forbidden:
-            reply = may_not_edit
-            reason = None
-            if old_cleared is not None:
-                # The whole reply is the line's reason: the old channel left bare is what
-                # whoever reads the log later most needs to know.
-                cleared = (
-                    f"The old signup channel {old_cleared.mention} has already had its "
-                    "permissions cleared, so it needs putting right by hand if you do not retry."
-                )
-                reply += f"\n{cleared}"
-                reason = f"{may_not_edit.removeprefix('❌ ')}\n{cleared}"
-            await refuse(interaction, reply, what=describe(interaction), reason=reason)
-            return
-
-        # Persist
-        cfg.signup_channel_id = channel.id
-        await self.bot.signup_module_service.save_config(cfg)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_CHANNEL_SET', ?, ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"channel_id": old_channel_id}),
-                 json.dumps({"channel_id": channel.id}), now),
-            )
-            await db.commit()
-
-        reply = f"✅ Signup channel set to {channel.mention}."
-        if faults:
-            reply += "\n⚠️ " + "\n⚠️ ".join(faults)
-        await interaction.followup.send(reply, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup channel | "
-            f"{'Success' if not faults else 'Success, with faults'}\n"
-            f"  channel: #{channel.name}"
-            + "".join(f"\n  {fault}" for fault in faults),
+        """Ask the change queue for `signup.setting.channel` (`channel_setting`): every refusal
+        is the setting's check, made as it is asked and again as the change starts, and the
+        permissions are set after the save."""
+        await self.bot.change_queue.ask(
+            SIGNUP_CHANNEL_KIND,
+            {"channel_id": channel.id, "channel_name": channel.name},
+            interaction=interaction, what=describe(interaction),
         )
 
     # ── /signup nationality toggle (T020) ──────────────────────────────
