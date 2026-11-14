@@ -34,9 +34,9 @@ def register_switch(modules: "ModuleService") -> None:
 
 
 def sign_up(bot: "LeagueBot") -> None:
-    """Sign results up to each hook only results joins. The hooks several modules join are signed
-    up by the entry point, in the order they are called, through the functions below."""
-    sign_up_to_confirmation_refused(bot)
+    """Sign results up to each hook only results joins. The hooks several modules join (the one a
+    season's confirmation is refused through among them) are signed up by the entry point, in the
+    order they are called, through the functions below."""
     sign_up_to_cancellation_refused(bot)
     sign_up_to_rounds_made_final(bot)
     sign_up_to_test_mode_turned_on(bot)

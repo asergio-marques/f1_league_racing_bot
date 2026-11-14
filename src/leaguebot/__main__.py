@@ -147,7 +147,7 @@ def _make_hooks(bot: LeagueBot) -> None:
     """Make every hook only one module joins, before any module's `sign_up` runs, so that its
     wiring signs up on a hook that exists. The hooks several modules join are made by the function that
     signs those modules up, in the order the hook calls them."""
-    bot.confirmation_refused = AwaitedHook()
+    bot.configuration_faults_read = AwaitedHook()
     bot.cancellation_refused = AwaitedHook()
     bot.rounds_made_final = AwaitedHook()
     bot.test_mode_turned_on = AwaitedHook()
@@ -169,6 +169,15 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.season_end_closes = Hook()
     bot.drivers_returned = AwaitedHook()
     bot.driver_returned_jobs = Hook()
+
+
+def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
+    """Make the hook a season's confirmation is refused through, and sign each module up to it, in
+    the order core reads the refusals: results', then signup's. Each is handed the league's modules,
+    then the season and which confirmation is judged, and checks its own switch."""
+    bot.confirmation_refused = AwaitedHook()
+    results_wiring.sign_up_to_confirmation_refused(bot)
+    signup_wiring.sign_up_to_confirmation_refused(bot)
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
@@ -205,10 +214,9 @@ def _make_configuration_faults(
             season_id,
             guild,
             module_service=bot.module_service,
-            signup_module_service=bot.signup_module_service,
-            config_service=bot.config_service,
             team_service=bot.team_service,
             confirmation_refused=bot.confirmation_refused,
+            configuration_faults_read=bot.configuration_faults_read,
             image_drawing=bot.image_drawing,
         )
 
@@ -483,7 +491,6 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             int(payload["reviewer_id"]),
             season_service=bot.season_service,
             module_service=bot.module_service,
-            signup_module_service=bot.signup_module_service,
             config_service=bot.config_service,
             team_service=bot.team_service,
             db_path=bot.db_path,
@@ -493,6 +500,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             output_router=bot.output_router,
             round_windows_read=bot.round_windows_read,
             confirmation_refused=bot.confirmation_refused,
+            configuration_faults_read=bot.configuration_faults_read,
             driver_names_read=bot.driver_names_read,
             division_channel_faults_read=bot.division_channel_faults_read,
             fingerprint_areas_read=bot.fingerprint_areas_read,
@@ -777,11 +785,10 @@ def register_change_types(bot: LeagueBot) -> None:
         configuration_confirm_change(
             drawing=bot.image_drawing,
             modules=bot.module_service,
-            signup_module=bot.signup_module_service,
-            configs=bot.config_service,
             teams=bot.team_service,
             configuration_confirmed=bot.configuration_confirmed,
             confirmation_refused=bot.confirmation_refused,
+            configuration_faults_read=bot.configuration_faults_read,
             fingerprint_areas_read=bot.fingerprint_areas_read,
             now=lambda: bot.change_queue.now(),
         )
@@ -1098,6 +1105,7 @@ async def build(settings: Settings) -> LeagueBot:
         bot, bot.placement_service, roles=bot.team_role_service, lineups=bot.lineup_poster
     )
     _make_hooks(bot)
+    _sign_up_to_confirmation_refused(bot)
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
     bot.configuration_faults = _make_configuration_faults(bot)

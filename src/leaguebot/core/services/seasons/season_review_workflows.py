@@ -35,7 +35,6 @@ from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.seasons.approval_checks import SignupModuleSettings
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.seasons.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
@@ -90,13 +89,12 @@ async def confirm_configuration(
     *,
     season_service: SeasonService,
     module_service: ModuleService,
-    signup_module_service: SignupModuleSettings,
-    config_service: ConfigService,
     team_service: TeamService,
     db_path: str,
     image_drawing: ImageDrawing,
     change_queue: ChangeQueue,
     confirmation_refused: AwaitedHook,
+    configuration_faults_read: AwaitedHook,
     fingerprint_areas_read: AwaitedHook,
     what: str | None = None,
     fingerprint: dict | None = None,
@@ -134,10 +132,9 @@ async def confirm_configuration(
         season.id,
         interaction.guild,
         module_service=module_service,
-        signup_module_service=signup_module_service,
-        config_service=config_service,
         team_service=team_service,
         confirmation_refused=confirmation_refused,
+        configuration_faults_read=configuration_faults_read,
         image_drawing=image_drawing,
     )
     if faults:
@@ -509,7 +506,6 @@ async def approve_season(
     *,
     season_service: SeasonService,
     module_service: ModuleService,
-    signup_module_service: SignupModuleSettings,
     config_service: ConfigService,
     team_service: TeamService,
     db_path: str,
@@ -644,22 +640,6 @@ async def approve_season(
     if refusals:
         await refuse(
             interaction, refusals[0].message, what=what, reason=refusals[0].reason
-        )
-        return False
-
-    # ── Gate 2b: signup module config prerequisites ───────────────────────
-    missing = await approval_checks.signup_prerequisite_problems(
-        module_service=module_service, signup_module_service=signup_module_service
-    )
-    if missing:
-        bullet_list = "\n\u2022 ".join(missing)
-        await refuse(
-            interaction,
-            f"\u274c Season cannot be approved \u2014 signup module is enabled but "
-            f"missing required configuration:\n\u2022 {bullet_list}",
-            what=what,
-            reason="signup module is enabled but missing required configuration:\n"
-            + "\n".join(missing),
         )
         return False
 

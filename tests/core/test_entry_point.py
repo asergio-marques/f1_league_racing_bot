@@ -1272,10 +1272,6 @@ async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, 
     assert called == [((bot.module_service, bot.db_path, 7, "the placements review"), {})]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: core still reads signup's prerequisites through approval_checks' own protocol, and "
-    "the builder signs signup up to no confirmation_refused or configuration_faults_read"
-))
 async def test_the_builder_signs_signup_up_to_a_confirmation_refused_after_results(
     tmp_path, monkeypatch
 ):

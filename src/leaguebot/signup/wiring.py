@@ -39,6 +39,7 @@ def sign_up(bot: "LeagueBot") -> None:
     by the entry point, in the order they are called, through the functions below."""
     sign_up_to_base_role_changed(bot)
     sign_up_to_configuration_confirmed(bot)
+    sign_up_to_configuration_faults_read(bot)
     sign_up_to_driver_names_read(bot)
     sign_up_to_driver_turned_down(bot)
     sign_up_to_driver_account_changed(bot)
@@ -58,6 +59,30 @@ def sign_up_to_configuration_confirmed(bot: "LeagueBot") -> None:
     from leaguebot.signup.services import signup_module_service
 
     bot.configuration_confirmed.subscribe(signup_module_service.configuration_confirmed_on)
+
+
+def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
+    """Sign signup's refusal of a season's approval while its signup channel is unset up to the
+    hook a season's confirmation is refused through, after results': handed the league's modules
+    and signup's service, then the season and which confirmation is judged. Signup checks its own
+    switch."""
+    from leaguebot.signup.services import signup_prerequisites
+
+    bot.confirmation_refused.subscribe(partial(
+        signup_prerequisites.confirmation_refusals, bot.module_service, bot.signup_module_service
+    ))
+
+
+def sign_up_to_configuration_faults_read(bot: "LeagueBot") -> None:
+    """Sign signup's faults of a season's configuration up to the hook they are read through:
+    handed the league's modules, signup's service and the configuration service, then the season
+    judged and the server. Signup checks its own switch."""
+    from leaguebot.signup.services import signup_prerequisites
+
+    bot.configuration_faults_read.subscribe(partial(
+        signup_prerequisites.configuration_faults,
+        bot.module_service, bot.signup_module_service, bot.config_service,
+    ))
 
 
 def sign_up_to_driver_names_read(bot: "LeagueBot") -> None:

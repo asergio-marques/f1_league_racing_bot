@@ -53,10 +53,6 @@ from tests.support.review_workflows import (
     sign_up_signup_refusals,
 )
 
-#: What signup does not yet do before #286's item 25.
-_SIGNUP_REFUSES_THROUGH_THE_HOOK = (
-    "#286: signup does not yet answer its own prerequisites through confirmation_refused"
-)
 from tests.support.season_points import snapshot_points
 from tests.support.setup_reads import hold_setup
 
@@ -962,8 +958,7 @@ async def _a_review_expired_at_the_backup_question(db_path, monkeypatch):
     [
         _no_points_configuration,
         _a_wrongly_ordered_points_table,
-        pytest.param(_no_signup_channel, id="no_signup_channel", marks=pytest.mark.xfail(
-            strict=True, reason=_SIGNUP_REFUSES_THROUGH_THE_HOOK)),
+        pytest.param(_no_signup_channel, id="no_signup_channel"),
         _a_past_round,
         _an_unusable_team_name,
         _a_lineup_too_small,
@@ -1115,8 +1110,7 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
         _gate_0b_two_rounds_at_one_moment,
         _gate_2_no_points_configuration,
         _gate_2a_points_out_of_order,
-        pytest.param(_gate_2b_no_signup_channel, id="2b_no_signup_channel", marks=pytest.mark.xfail(
-            strict=True, reason=_SIGNUP_REFUSES_THROUGH_THE_HOOK)),
+        pytest.param(_gate_2b_no_signup_channel, id="2b_no_signup_channel"),
         _gate_2d_a_round_already_run,
         _gate_3a_an_unusable_team_name,
         _gate_4a_a_lineup_too_small,

@@ -254,9 +254,6 @@ _NO_SIGNUP_CHANNEL = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: signup does not yet answer its own prerequisites through confirmation_refused"
-))
 @pytest.mark.parametrize(
     "enabled, config, refused",
     [
@@ -293,9 +290,6 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
         assert await read_refusals(bot.confirmation_refused, SEASON_ID, other) == []
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#286: approval_checks still reads signup's settings through SignupSettings"
-))
 def test_core_names_no_signup_setting():
     """Core's season checks hold no signup rule: `approval_checks` defines no `SignupSettings`,
     `SignupModuleSettings` or `signup_prerequisite_problems`, and no function of it or of the
