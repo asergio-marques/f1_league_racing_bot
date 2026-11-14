@@ -638,6 +638,44 @@ async def test_a_close_time_still_ahead_is_armed_on_start(tmp_path):
     assert run_at == close_at
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#286: a start-up arming no longer wanted is refused, stopping the league's lane, "
+    "rather than dropped as not due",
+)
+@pytest.mark.parametrize(
+    "since",
+    [
+        "UPDATE server_configs SET signup_module_enabled = 0",
+        "UPDATE signup_module_config SET signups_open = 0",
+        "UPDATE signup_module_config SET close_at = '2099-01-01T20:00:00+00:00'",
+    ],
+    ids=["signup-switched-off", "signups-closed", "close-time-changed"],
+)
+async def test_a_start_up_arming_no_longer_wanted_is_dropped_and_stops_nothing(tmp_path, since):
+    """The window is open with its close time a day on, and the bot starts: signup's "signup
+    close timer" start-up step asks the close timer's arming. Before the queue reaches it, a
+    change asked before the restart runs first and switches signup off, closes signups or moves
+    the close time. When the queue reaches the arming it is dropped as no longer due: nothing
+    is armed, and the league's lane is not stopped, so no manager is asked to Retry or
+    Discard it."""
+    from leaguebot.signup.wiring import start_up_steps
+    from tests.support.change_queue import stopped_job
+
+    close_at = (datetime.now(timezone.utc) + timedelta(days=1)).replace(microsecond=0)
+    league = await _close_league(tmp_path, close_at=close_at.isoformat())
+
+    await dict(start_up_steps(league.bot))["signup close timer"]()
+    await league.write(since)
+    await run_queue(league.bot)
+
+    assert _armed(league) == []
+    assert await stopped_job(league.db_path) is None
+    [arming] = [row for row in await change_rows(league.db_path)
+                if row["kind"] == f"{CLOSE_TIMER}.arm"]
+    assert arming["state"] == "DROPPED"
+
+
 # ── One parser, two entry points ──────────────────────────────────────────
 
 
