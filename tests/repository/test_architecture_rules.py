@@ -1544,15 +1544,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
-    ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "PreferredTeamsButtonView._make_team_callback.callback"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
-    ("signup/services/wizard_answers.py", "take_typed_answer"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
     ("weather/services/weather_settings.py", "forecast_channel_setting.check"): (1, PASS["weather"]),
 }
 
@@ -3282,7 +3273,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService.move_base_role_overwrite"):
         (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_lapse_pending_reason"): (1, PASS["signup"]),
-    ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
     ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
 }
 

@@ -66,9 +66,6 @@ NO_WIZARD_CHANNEL = 6499
 #: A member who is not Kimi.
 SOMEONE_ELSE = 9999
 
-#: Why a view handed the signup service it finds the wizard through cannot be built yet.
-_HANDED = "#286: the team step's view looks the wizard up on the bot, and takes no signup service"
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -267,7 +264,6 @@ async def test_a_restarted_view_offers_stub_buttons_for_every_slot():
 
 @pytest.mark.parametrize("index, team", [(1, "Mercedes"), (2, "McLaren")],
                          ids=["second-button", "third-button"])
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_button_records_the_team_its_label_names(tmp_path, index, team):
     """Kimi, with no picks yet, sees the whole list and presses the second button, labelled
     Mercedes, or the third, labelled McLaren. At once he is answered privately that it is under
@@ -282,7 +278,6 @@ async def test_a_button_records_the_team_its_label_names(tmp_path, index, team):
     assert await _picks(league) == [team]
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_press_on_an_earlier_message_records_the_team_its_label_names(tmp_path):
     """Kimi picked Ferrari, scrolled up to the first sub-step's message, where Ferrari,
     Mercedes and McLaren are all still shown, and pressed Mercedes. Once the queue runs his
@@ -296,7 +291,6 @@ async def test_a_press_on_an_earlier_message_records_the_team_its_label_names(tm
     assert await _picks(league) == ["Ferrari", "Mercedes"]
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorded(tmp_path):
     """Kimi picked Ferrari, scrolled up to the first sub-step's message and pressed Ferrari
     again. The pick is judged when the queue reaches it: Kimi is told "That team has already
@@ -311,7 +305,6 @@ async def test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorde
     assert await _picks(league) == ["Ferrari"]
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_button_past_the_end_of_the_list_is_answered(tmp_path):
     """A stale screen: the third team button is pressed, but the message it was pressed on
     carries only two team buttons, so there is no label to name a team. It must not pick a
@@ -327,7 +320,6 @@ async def test_a_button_past_the_end_of_the_list_is_answered(tmp_path):
     assert await _picks(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_press_in_a_channel_with_no_wizard_is_answered(tmp_path):
     """Kimi's view, pressed in a channel that outlived its wizard (6499): acting on it would
     advance nothing. He is told "Wizard session not found.", the refusal is recorded, and
@@ -341,7 +333,6 @@ async def test_a_press_in_a_channel_with_no_wizard_is_answered(tmp_path):
     assert await _changes(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_wizard_with_no_snapshot_is_answered(tmp_path):
     """The channel's wizard carries no configuration snapshot, so there are no team names to
     resolve against: reading `.team_names` off `None` is the crash this refusal replaces. Kimi
@@ -362,7 +353,6 @@ async def test_a_wizard_with_no_snapshot_is_answered(tmp_path):
 
 @pytest.mark.parametrize("state", ["COLLECTING_PREFERRED_TEAMMATE", "COLLECTING_NOTES"],
                          ids=["teammate-step", "notes-step"])
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded(tmp_path, state):
     """Kimi has moved on to the teammate question, or on to his notes, and scrolls up to press
     a team button on the team step's old message. The pick is judged when the queue reaches it:
@@ -385,7 +375,6 @@ async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded
 
 
 @pytest.mark.parametrize("press", ["team", "no_preference", "cancel"])
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_only_the_driver_whose_wizard_it_is_may_press(tmp_path, press):
     """A private channel can have a manager added to it, and a wizard advanced by somebody
     else puts another person's answers into a driver's signup. Member 9999 presses a button
@@ -408,7 +397,6 @@ async def test_only_the_driver_whose_wizard_it_is_may_press(tmp_path, press):
     assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_after_a_restart_the_owner_is_found_by_channel(tmp_path):
     """The view is re-registered at start with no account, only the change queue and the signup
     service, so the channel is the only thing tying the buttons to a person: Kimi presses Ferrari on it, the
@@ -421,7 +409,6 @@ async def test_after_a_restart_the_owner_is_found_by_channel(tmp_path):
     assert await _picks(league) == ["Ferrari"]
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_restarted_view_in_a_channel_with_no_wizard_refuses(tmp_path):
     """A re-registered view pressed in a channel with no wizard: there is nobody to attribute
     the press to, and `None` must not be treated as a matching account. The press is told the
@@ -441,7 +428,6 @@ async def test_a_restarted_view_in_a_channel_with_no_wizard_refuses(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_no_preference_is_recorded_as_an_answer(tmp_path):
     """Not a skip: Kimi presses No Preference with no picks, and once the queue runs his picks
     are recorded as none and his wizard moves on to the teammate question."""
@@ -454,7 +440,6 @@ async def test_no_preference_is_recorded_as_an_answer(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_no_preference_advances_the_wizard_the_same_way_a_team_does(tmp_path):
     """In two leagues Kimi presses Ferrari in one and No Preference in the other. Each asks the
     same change, signup.answer, on the lane of his signup channel — so a later change to how a
@@ -472,7 +457,6 @@ async def test_no_preference_advances_the_wizard_the_same_way_a_team_does(tmp_pa
         assert asked.get("lane") == KIMI_LANE
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_cancelling_withdraws_the_signup(tmp_path):
     """Kimi presses Cancel Signup on the team step. It asks signup.end of the league lane, and
     once the queue runs he is Not Signed Up."""
@@ -491,7 +475,6 @@ async def test_cancelling_withdraws_the_signup(tmp_path):
     pytest.param("no_preference"),
     "cancel",
 ])
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_every_press_is_acknowledged_privately_as_under_way(tmp_path, press):
     """Each of Kimi's presses on the team step (a team, No Preference, Cancel Signup) is
     answered at once, privately, that it is under way (decision 8), before anything is done."""

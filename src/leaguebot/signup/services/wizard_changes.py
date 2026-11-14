@@ -407,7 +407,8 @@ def start_change(
                 record.wizard_state, record.config_snapshot, track_name_map=track_map
             ),
             view=build_step_view(
-                queue_of(), record.wizard_state, user_id, record.config_snapshot.team_names
+                queue_of(), record.wizard_state, user_id, record.config_snapshot.team_names,
+                signup=signup(),
             ),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=int(user_id))]

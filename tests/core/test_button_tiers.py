@@ -32,10 +32,6 @@ MANAGER_ROLE = 222
 ADMIN_ROLE = 444
 
 
-#: Why the review panel's gate cannot yet be handed the configuration service it reads.
-_HANDED_CONFIG = "#286: _may_review_signup reads the configuration service on the bot, not the one handed to it"
-
-
 def _config(*, admin_role: int | None = ADMIN_ROLE) -> ServerConfig:
     return ServerConfig(
         server_id=SERVER_ID,
@@ -168,23 +164,16 @@ async def _may_review(member, config):
     return await _may_review_signup(interaction, config_service)
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CONFIG)
 @pytest.mark.parametrize("roles", [(MANAGER_ROLE,), (ADMIN_ROLE,)], ids=["manager", "admin"])
 async def test_either_tier_may_action_a_signup_review(roles):
     assert await _may_review(_member(*roles), _config()) is True
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CONFIG)
 async def test_the_driver_may_not_action_their_own_signup_review():
     """The panel is posted in the driver's own channel, which they can read."""
     assert await _may_review(_member(), _config()) is False
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#286: _may_review_signup is not handed the configuration service, and turns a fault "
-    "reading it into a quiet refusal rather than failing the press",
-)
 async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
     """A league manager presses a button of a signup review while the server configuration
     cannot be read ("database is locked"). The gate raises the fault rather than answering False,

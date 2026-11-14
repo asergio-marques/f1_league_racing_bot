@@ -84,10 +84,6 @@ _ENDED = "This correction request has ended. Nothing was changed."
 # ---------------------------------------------------------------------------
 
 
-#: Why the correction choices cannot yet be built with the services they read handed to them.
-_HANDED_CHOICES = "#286: the correction choices look their services up on the bot, not on those handed to them"
-
-
 async def _awaiting(tmp_path: Any, **kwargs: Any) -> SeasonLeague:
     """Kimi awaiting a correction parameter, the choices posted a minute ago by 77."""
     kwargs.setdefault("state", "AWAITING_CORRECTION_PARAMETER")
@@ -135,7 +131,6 @@ def _button(view, label: str):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_button_is_offered_for_every_question_the_wizard_asks():
     """A question with no button could never be corrected, and the manager would have to
     reject the whole signup to get it changed."""
@@ -147,7 +142,6 @@ async def test_a_button_is_offered_for_every_question_the_wizard_asks():
         assert label in labels
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_each_button_carries_its_own_custom_id():
     """Persistent views are matched by custom id, so two buttons sharing one would make
     which parameter a press means depend on the order Discord matched them."""
@@ -164,7 +158,6 @@ async def test_each_button_carries_its_own_custom_id():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 @pytest.mark.parametrize("label,key", PARAMETERS, ids=[k for _, k in PARAMETERS])
 async def test_each_button_sends_back_its_own_parameter(tmp_path, label, key):
     """The nine callbacks are built in a loop. A loop variable captured by reference would
@@ -180,7 +173,6 @@ async def test_each_button_sends_back_its_own_parameter(tmp_path, label, key):
     assert (await _wizard(league))["wizard_state"] == COLLECTING[key]
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 @pytest.mark.parametrize("label,key", PARAMETERS, ids=[k for _, k in PARAMETERS])
 async def test_the_driver_is_told_which_answer_to_give_again(tmp_path, label, key):
     """Named in the league's words rather than the stored key — "platform id", not
@@ -199,7 +191,6 @@ async def test_the_driver_is_told_which_answer_to_give_again(tmp_path, label, ke
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_driver_cannot_choose_which_of_their_own_answers_to_re_open(tmp_path):
     """The panel lands in the driver's own channel, and re-opening an answer lets them
     change it. The check is easy to assume has already happened — a manager pressed a
@@ -217,7 +208,6 @@ async def test_a_driver_cannot_choose_which_of_their_own_answers_to_re_open(tmp_
     assert await _driver_state(league) == "AWAITING_CORRECTION_PARAMETER"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_choice_pressed_after_the_request_ended_is_refused_and_recorded(tmp_path):
     """Manager 77 presses "Platform" on Kimi's correction panel after the request has ended:
     its five minutes lapsed, another parameter was already chosen, or the signup was approved
@@ -237,7 +227,6 @@ async def test_a_choice_pressed_after_the_request_ended_is_refused_and_recorded(
     assert await _changes_of(league, RECOLLECT_KIND) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(tmp_path):
     """Manager 77 presses "Platform" on Kimi's correction panel while the request is still
     open, and the choice is asked of the queue; before the queue reaches it the request ends
@@ -262,7 +251,6 @@ async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(tmp
     assert await _changes_of(league, RECOLLECT_KIND) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_choice_writes_one_line_naming_the_parameter(tmp_path):
     """Manager 77 presses "Platform" on Kimi's correction panel while the request is still
     open. Once the queue runs, Kimi is sent back to the platform question, and one line records
@@ -286,7 +274,6 @@ async def test_a_choice_writes_one_line_naming_the_parameter(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     """The five-minute window can outlive a restart, so the panel has to work without the
     driver it was built with: a panel rebuilt with no driver, pressed in Kimi's channel, finds
@@ -301,7 +288,6 @@ async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     assert (await _wizard(league))["wizard_state"] == "COLLECTING_PLATFORM"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_panel_whose_channel_has_no_wizard_refuses(tmp_path):
     """Acting on `None` would reach the service with no driver and fail somewhere the
     manager could not interpret. A panel rebuilt with no driver is pressed in a channel
@@ -317,7 +303,6 @@ async def test_a_panel_whose_channel_has_no_wizard_refuses(tmp_path):
     assert await _changes_of(league, CHOOSE_KIND) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_stored_driver_is_preferred_over_the_lookup(tmp_path):
     """While the process that posted the panel is still alive there is no need to ask the
     database, and asking would make the panel depend on a wizard row that a withdrawal may

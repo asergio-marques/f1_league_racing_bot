@@ -90,6 +90,8 @@ from leaguebot.signup.services.wizard_service import (
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.drivers.driver_service import DriverService
+    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
@@ -394,12 +396,14 @@ def _what(step: str, owner: str) -> str:
 
 
 async def take_typed_answer(
-    bot: "LeagueBot", message: discord.Message, wizard: SignupWizardRecord, *, queue: "ChangeQueue"
+    bot: "LeagueBot", message: discord.Message, wizard: SignupWizardRecord, *,
+    queue: "ChangeQueue", router: "OutputRouter",
 ) -> None:
     """What the signup cog does with a message the wizard's driver typed in their channel:
     nothing where the wizard asks nothing; else turned away where an earlier answer still waits
     (a note, the message deleted, a line in the log), else marked ⏳ at once and asked as a turn
-    of the driver's lane. The answer is judged when its turn comes."""
+    of the driver's lane. The answer is judged when its turn comes. *router* is the output router
+    the turned-away line is written through."""
     state = wizard.wizard_state
     if state not in STEP_NAMES:
         return
@@ -410,7 +414,7 @@ async def take_typed_answer(
         bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
     ):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
-        await bot.output_router.post_log(refusal_line(
+        await router.post_log(refusal_line(
             member_named(getattr(author, "display_name", None), author.id), what,
             "an earlier answer is still waiting its turn",
         ))
@@ -677,7 +681,7 @@ def answer_change(
             async with get_connection(ctx.db_path) as db:
                 track_map = await track_service.get_track_name_map(db)
             text = WizardService._prompt_for_state(state, snapshot, wizard, track_name_map=track_map)
-            view = build_step_view(queue, state, user_id, snapshot.team_names)
+            view = build_step_view(queue, state, user_id, snapshot.team_names, signup=signup())
         await post(
             channel, text, view=view, mentions=discord.AllowedMentions.none(),
             refused=f"the next question could not be posted in channel {channel.id}",
@@ -890,7 +894,12 @@ def submit_change(
 
 
 def panel_change(
-    *, signup: Callable[[], "SignupModuleService"], queue_of: Callable[[], "ChangeQueue"]
+    *,
+    signup: Callable[[], "SignupModuleService"],
+    drivers: Callable[[], "DriverService"],
+    config: "ConfigService",
+    router: "OutputRouter",
+    queue_of: Callable[[], "ChangeQueue"],
 ) -> ChangeType:
     """The `signup.panel` change type, for the builder to register, on the driver's lane: the
     league asked it back once the signup was saved. Its one job `post_panel` takes the driver's
@@ -899,7 +908,8 @@ def panel_change(
     the last answer, the mark outliving the whole hand-over. The payload is ``user_id``,
     ``channel_id`` and the ``mark``. A channel gone from the server is nothing to post in: the signup ends instead
     (`channel_gone_ending`). *queue_of*
-    gives the change queue the panel's buttons are handed."""
+    gives the change queue the panel's buttons are handed, and *drivers*, *config* and *router* the
+    services they read."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "channel_id": _channel_of(payload)}
@@ -944,7 +954,11 @@ def panel_change(
         await post(
             channel,
             WizardService._format_review_panel(record, slot_labels, track_name_map=track_map),
-            view=AdminReviewView(user_id, change_queue=queue_of()), mentions=_REVIEW_PANEL_MENTIONS,
+            view=AdminReviewView(
+                user_id, change_queue=queue_of(), signup=signup(), drivers=drivers(),
+                config=config, router=router,
+            ),
+            mentions=_REVIEW_PANEL_MENTIONS,
             refused=f"the review panel could not be posted in channel {channel.id}",
         )
         return StepResult(result={})

@@ -84,13 +84,6 @@ LAP_TIMES = {"1": "1:30.000", "2": "1:31.500"}
 LAP_SUM_MS = 181_500
 
 
-#: Why the correction choices cannot yet be built with the services they read handed to them.
-_HANDED_CHOICES = "#286: the correction choices look their services up on the bot, not on those handed to them"
-
-#: Why the review panel cannot yet be built with the services it reads handed to it.
-_HANDED_REVIEW = "#286: the signup review panel looks its services up on the bot, not on those handed to it"
-
-
 async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
                   offered_ago: timedelta | None = None) -> SeasonLeague:
     """`setup_league` at Signups, the window open, the driver role set; Kimi at *state*, his
@@ -285,7 +278,6 @@ def _answered(press: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_approve_saves_grants_the_role_and_tells_the_driver_as_jobs(tmp_path):
     """Manager 77 presses Approve on Kimi's review panel. At once they are answered privately
     that the approval is under way; Kimi is still awaiting approval and holds no role. When the
@@ -326,7 +318,6 @@ async def test_approve_saves_grants_the_role_and_tells_the_driver_as_jobs(tmp_pa
     assert "approved" in updated_reply(press).lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queue(tmp_path):
     """Discord refuses to give Kimi the driver role. Manager 77 presses Approve and the queue
     runs: the league lane is not stopped, Kimi is Unassigned all the same, and his channel is
@@ -347,7 +338,6 @@ async def test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queu
     assert "driver role could not be granted" in league.log().lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_REVIEW)
 async def test_approve_saves_the_lap_sum_on_the_signup_record_itself(tmp_path):
     """Kimi's signup record holds lap times of 1:30.000 and 1:31.500. Manager 77 presses Approve
     and the queue runs: the record's total lap time is 181,500 ms, written by the approval
@@ -478,7 +468,6 @@ async def test_arming_the_five_minutes_cannot_be_discarded(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 @pytest.mark.parametrize("job", ["choose", "arm_inactivity"])
 async def test_the_choice_and_its_24_hours_cannot_be_discarded(tmp_path, job):
     """Kimi awaits a correction parameter, the choices posted a minute ago, and manager 77
@@ -561,7 +550,6 @@ async def test_request_changes_changes_the_status_on_the_league_and_the_choices_
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_choice_pressed_in_time_counts_though_it_runs_after(tmp_path):
     """Kimi awaits a correction parameter, the choices posted four minutes and 59 seconds ago.
     Manager 77 presses Nationality now; the queue reaches it two minutes later, past the five
@@ -590,7 +578,6 @@ async def test_a_choice_pressed_in_time_counts_though_it_runs_after(tmp_path):
     assert updated_reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_choice_pressed_after_the_five_minutes_is_refused(tmp_path):
     """Kimi awaits a correction parameter, the choices posted five minutes and one second ago,
     their lapse not yet run. Manager 77 presses Nationality and the queue runs: the press is
@@ -672,7 +659,6 @@ async def test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice(tmp_pat
     assert await _driver_state(league, OTHER) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED_CHOICES)
 async def test_a_lapse_is_not_due_where_a_choice_is_queued(tmp_path):
     """Kimi's correction choices were posted four minutes and 59 seconds ago. Manager 77 presses
     Nationality, which waits its turn; two minutes later the correction's timer fires and asks

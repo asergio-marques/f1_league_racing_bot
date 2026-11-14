@@ -41,7 +41,6 @@ from typing import Any
 import pytest
 
 from tests.signup.test_preferred_teams_view import (
-    _HANDED,
     TEAM_STEP,
     _picks,
     _press,
@@ -106,7 +105,6 @@ def _last_post(league: SeasonLeague) -> tuple[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_first_team_pick_is_recorded_and_the_next_is_offered(tmp_path):
     """The loop continues rather than advancing: a driver picking one team has not yet said
     they are finished. Kimi presses Ferrari; once the queue runs it is saved, the counter
@@ -122,7 +120,6 @@ async def test_a_first_team_pick_is_recorded_and_the_next_is_offered(tmp_path):
     assert len(league.channels[KIMI_CHANNEL].texts) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_the_next_prompt_names_the_ordinal_and_the_picks_so_far(tmp_path):
     """The driver is several presses into a list they cannot see; the prompt is the only
     record of what they have already chosen."""
@@ -135,7 +132,6 @@ async def test_the_next_prompt_names_the_ordinal_and_the_picks_so_far(tmp_path):
     assert "Ferrari" in prompt
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_team_already_picked_is_not_offered_again(tmp_path):
     """`excluded` is what stops a driver naming the same team as their first and second
     choice, which would waste a pick: the next sub-step's buttons leave Ferrari out."""
@@ -149,7 +145,6 @@ async def test_a_team_already_picked_is_not_offered_again(tmp_path):
     assert {"Mercedes", "McLaren"} <= set(labels)
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_continuing_loop_saves_the_wizard_and_resets_the_timeout(tmp_path):
     """Each press is activity. Without the reset a driver working through three picks could
     be timed out mid-choice: his 24 hours are armed again from now, and his last activity is
@@ -171,7 +166,6 @@ async def test_a_continuing_loop_saves_the_wizard_and_resets_the_timeout(tmp_pat
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_third_pick_ends_the_loop(tmp_path):
     """Three is the limit, so the third press moves the wizard on to the teammate question
     rather than offering a fourth."""
@@ -184,7 +178,6 @@ async def test_a_third_pick_ends_the_loop(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_running_out_of_teams_ends_the_loop(tmp_path):
     """A league with two teams cannot offer a third pick. Without this the driver would be
     shown a prompt with no buttons on it and no way forward: Kimi's second pick, Mercedes,
@@ -198,7 +191,6 @@ async def test_running_out_of_teams_ends_the_loop(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(tmp_path):
     """The third way out. A driver who wanted only one team says so by pressing No
     Preference, and that first pick must survive — discarding it would lose the one
@@ -212,7 +204,6 @@ async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 @pytest.mark.parametrize("ends_by", ["third-pick", "no-preference"])
 async def test_the_sub_step_counter_is_cleared_when_the_loop_ends(tmp_path, ends_by):
     """It is bookkeeping, not an answer. Left in `draft_answers` it would be carried into

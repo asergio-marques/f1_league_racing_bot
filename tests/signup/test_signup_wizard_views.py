@@ -58,9 +58,6 @@ DRIVER_ID = "7"
 OTHER_USER_ID = 8
 CHANNEL_ID = 99
 
-#: Why a view re-registered at start cannot yet find its driver through the service it is handed.
-_HANDED = "#286: the wizard's views look the wizard up on the bot, not on the signup service handed to them"
-
 #: The reason a step handler gives for a press on a step already answered (commit point 19).
 _ALREADY_ANSWERED = "That step has already been answered."
 
@@ -172,7 +169,6 @@ async def test_another_member_cannot_cancel_a_driver_s_signup():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     """A button left in a channel whose wizard has been cleared up. The lookup finding
     nothing must refuse rather than pass unauthenticated."""
@@ -187,7 +183,6 @@ async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     _assert_refusal_recorded(interaction, "Steam")
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     """The guard has to hold on the recovered identity too, not only the stored one."""
     from leaguebot.signup.services.signup_views import PlatformButtonView
@@ -455,7 +450,6 @@ async def test_each_platform_button_reports_its_own_platform(tmp_path, button, p
     assert (await _draft(league))["platform"] == platform
 
 
-@pytest.mark.xfail(strict=True, reason=_HANDED)
 async def test_a_view_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     """The view is re-registered at start with no stored driver — the process that knew has
     gone — and the change queue and the signup service, so the owner is found by looking the

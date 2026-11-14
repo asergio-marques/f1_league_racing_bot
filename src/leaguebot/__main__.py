@@ -1083,8 +1083,8 @@ async def build(settings: Settings) -> LeagueBot:
     bot.signup_module_service = SignupModuleService(settings.db_path)
     bot.wizard_service = WizardService(
         settings.db_path,
-        bot.scheduler_service,
-        bot.output_router,
+        bot.signup_module_service,
+        scheduler_service=bot.scheduler_service,
         change_queue=bot.change_queue,
         bot=bot,
     )
@@ -1192,14 +1192,21 @@ async def build(settings: Settings) -> LeagueBot:
 
     for _view in (
         SignupButtonView(bot.change_queue),
-        WithdrawButtonView(None, bot.change_queue),
-        NoNotesButtonView(None, bot.change_queue),
-        PlatformButtonView(None, bot.change_queue),
-        DriverTypeButtonView(None, bot.change_queue),
-        PreferredTeamsButtonView(None, bot.change_queue),   # registers pteam_0..pteam_19 stubs + nopref + cancel
-        NoPreferenceTeammateView(None, bot.change_queue),
-        AdminReviewView(change_queue=bot.change_queue),
-        CorrectionParameterView(change_queue=bot.change_queue),
+        WithdrawButtonView(None, bot.change_queue, signup=bot.signup_module_service),
+        NoNotesButtonView(None, bot.change_queue, signup=bot.signup_module_service),
+        PlatformButtonView(None, bot.change_queue, signup=bot.signup_module_service),
+        DriverTypeButtonView(None, bot.change_queue, signup=bot.signup_module_service),
+        # registers pteam_0..pteam_19 stubs + nopref + cancel
+        PreferredTeamsButtonView(None, bot.change_queue, signup=bot.signup_module_service),
+        NoPreferenceTeammateView(None, bot.change_queue, signup=bot.signup_module_service),
+        AdminReviewView(
+            change_queue=bot.change_queue, signup=bot.signup_module_service,
+            drivers=bot.driver_service, config=bot.config_service, router=bot.output_router,
+        ),
+        CorrectionParameterView(
+            change_queue=bot.change_queue, signup=bot.signup_module_service,
+            config=bot.config_service,
+        ),
         PenaltyReviewView(),
         ApprovalView(),
         AppealsReviewView(),

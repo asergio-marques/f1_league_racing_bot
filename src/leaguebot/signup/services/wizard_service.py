@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
 
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)
 
@@ -79,8 +79,11 @@ def build_step_view(
     state: WizardState,
     discord_user_id: str,
     team_names: list[str] | None = None,
+    *,
+    signup: "SignupModuleService",
 ) -> discord.ui.View:
-    """The view that answers the wizard's question at *state*, for the driver *discord_user_id*."""
+    """The view that answers the wizard's question at *state*, for the driver *discord_user_id*,
+    handed the change queue and *signup*, the signup service it finds the wizard through."""
     from leaguebot.signup.services.signup_views import (  # lazy import — avoid circular
         WithdrawButtonView,
         PlatformButtonView,
@@ -90,16 +93,16 @@ def build_step_view(
         NoNotesButtonView,
     )
     if state == WizardState.COLLECTING_PLATFORM:
-        return PlatformButtonView(discord_user_id, queue)
+        return PlatformButtonView(discord_user_id, queue, signup=signup)
     if state == WizardState.COLLECTING_DRIVER_TYPE:
-        return DriverTypeButtonView(discord_user_id, queue)
+        return DriverTypeButtonView(discord_user_id, queue, signup=signup)
     if state == WizardState.COLLECTING_PREFERRED_TEAMS:
-        return PreferredTeamsButtonView(discord_user_id, queue, team_names or [])
+        return PreferredTeamsButtonView(discord_user_id, queue, team_names or [], signup=signup)
     if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
-        return NoPreferenceTeammateView(discord_user_id, queue)
+        return NoPreferenceTeammateView(discord_user_id, queue, signup=signup)
     if state == WizardState.COLLECTING_NOTES:
-        return NoNotesButtonView(discord_user_id, queue)
-    return WithdrawButtonView(discord_user_id, queue)
+        return NoNotesButtonView(discord_user_id, queue, signup=signup)
+    return WithdrawButtonView(discord_user_id, queue, signup=signup)
 
 
 # ---------------------------------------------------------------------------
@@ -164,31 +167,25 @@ class WizardService:
     def __init__(
         self,
         db_path: str,
-        scheduler_service: "SchedulerService",
-        output_router: "OutputRouter",
+        signup_module_service: "SignupModuleService",
         *,
+        scheduler_service: "SchedulerService",
         change_queue: "ChangeQueue",
         bot: "LeagueBot",
     ) -> None:
         self._db_path = db_path
+        # Handed the signup module service it reads wizards through, rather than looking it up on
+        # the bot, and passed on to the step views it makes.
+        self._signup = signup_module_service
         self._scheduler = scheduler_service
         # The one way a held channel's deletion is armed (the `signup_channel_delete` timer, a
         # one-off with no lateness limit), for a lock the season's end asks.
         self._arm_deletion = scheduler_service.arm_once
-        self._output_router = output_router
         # Handed the change queue when it is built, for the views it makes and the changes it asks
         # (docs/design/architecture.md, "Services stay attached to the bot, and are built in one place").
         self._change_queue = change_queue
 
         self._bot = bot
-
-    # ------------------------------------------------------------------
-    # Convenience accessors
-    # ------------------------------------------------------------------
-
-    @property
-    def _signup_svc(self):
-        return self._bot.signup_module_service
 
     # ------------------------------------------------------------------
     # Channel helpers
@@ -294,7 +291,7 @@ class WizardService:
 
         *lock=False* posts the notice alone, leaving the lock and the deletion to `lock_signup_channel`.
         """
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
+        wizard = await self._signup.get_wizard(discord_user_id)
         if wizard is None or wizard.signup_channel_id is None:
             return HoldOutcome(channel_id=None)
 
@@ -343,7 +340,7 @@ class WizardService:
         channel, is nothing to lock. A permission write Discord refuses raises
         `StepFailedOnDiscord` from the refusal.
         """
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
+        wizard = await self._signup.get_wizard(discord_user_id)
         if wizard is None or wizard.signup_channel_id is None:
             return
         channel = guild.get_channel(wizard.signup_channel_id)
@@ -376,7 +373,7 @@ class WizardService:
         gone = await self.recover_gone_channels()
         await self.recover_correction_timeouts(skip=gone)
 
-        wizards = await self._signup_svc.get_all_active_wizards_all_servers()
+        wizards = await self._signup.get_all_active_wizards_all_servers()
         now = datetime.now(timezone.utc)
         for wizard in wizards:
             if wizard.wizard_state == WizardState.UNENGAGED:
@@ -521,7 +518,7 @@ class WizardService:
         Thin delegation to signup_module_service; exposed here so cogs only
         need a reference to wizard_service.
         """
-        return await self._signup_svc.get_wizard_by_channel(channel_id)
+        return await self._signup.get_wizard_by_channel(channel_id)
 
     # ------------------------------------------------------------------
     # Validation helpers (implemented in T020–T021)
@@ -560,7 +557,9 @@ class WizardService:
         team_names: list[str] | None = None,
     ) -> discord.ui.View:
         """Return the appropriate view for the given wizard state."""
-        return build_step_view(self._change_queue, state, discord_user_id, team_names)
+        return build_step_view(
+            self._change_queue, state, discord_user_id, team_names, signup=self._signup
+        )
 
 
 

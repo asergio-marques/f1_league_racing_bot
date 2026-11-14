@@ -143,6 +143,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 APPROVE = "signup.approve"
@@ -461,6 +462,7 @@ async def _driver_in_state(db: aiosqlite.Connection, channel_id: int, state: Dri
 def choices_change(
     *,
     signup: Callable[[], "SignupModuleService"],
+    config: "ConfigService",
     queue_of: Callable[[], "ChangeQueue"],
     now: Callable[[], datetime],
     arm_once: Callable[[str, str, datetime], None],
@@ -468,7 +470,8 @@ def choices_change(
     """The `signup.choices` change type, for the builder to register, on the driver's lane
     (``channel:<signup channel>``): the league asked it back once a manager's request for changes
     was saved. The payload is ``user_id``, ``channel_id``, ``actor_name`` (the manager) and
-    ``reason_message_id``. *queue_of* gives the change queue the choices are handed. *now* and
+    ``reason_message_id``. *queue_of* gives the change queue the choices are handed, and *signup* and *config* the services
+    they read. *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
@@ -507,7 +510,9 @@ def choices_change(
             found,
             f"{mention} **{ctx.step_payload['actor_name']}** has requested a correction.\n"
             "Please select the parameter to correct (5-minute window):",
-            view=CorrectionParameterView(user_id, change_queue=queue_of()),
+            view=CorrectionParameterView(
+                user_id, change_queue=queue_of(), signup=signup(), config=config
+            ),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
             ),
@@ -796,7 +801,8 @@ def recollect_change(
                 state, snapshot, wizard, track_name_map=track_map
             ),
             view=build_step_view(
-                queue_of(), state, user_id, snapshot.team_names if snapshot else []
+                queue_of(), state, user_id, snapshot.team_names if snapshot else [],
+                signup=signup(),
             ),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
@@ -854,6 +860,8 @@ def lapse_change(
     modules: "ModuleService",
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
+    config: "ConfigService",
+    router: "OutputRouter",
     queue_of: Callable[[], "ChangeQueue"],
 ) -> ChangeType:
     """The `signup.correction.lapse` change type, for the builder to register, on the league lane
@@ -1003,7 +1011,10 @@ def lapse_change(
             await post(
                 channel,
                 WizardService._format_review_panel(record, slot_labels, track_name_map=track_map),
-                view=AdminReviewView(user_id, change_queue=queue_of()),
+                view=AdminReviewView(
+                    user_id, change_queue=queue_of(), signup=signup(), drivers=drivers(),
+                    config=config, router=router,
+                ),
                 mentions=_REVIEW_PANEL_MENTIONS,
                 refused=f"the review panel could not be posted in channel {channel.id}",
             )

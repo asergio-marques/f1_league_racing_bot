@@ -316,7 +316,10 @@ class SignupCog(commands.Cog):
         )
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
-        await take_typed_answer(self.bot, message, wizard, queue=self.bot.change_queue)
+        await take_typed_answer(
+            self.bot, message, wizard, queue=self.bot.change_queue,
+            router=self.bot.output_router,
+        )
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:

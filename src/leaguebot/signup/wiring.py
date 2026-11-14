@@ -285,7 +285,11 @@ def register_change_types(bot: "LeagueBot") -> None:
         )
     )
     bot.change_queue.register(
-        panel_change(signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue)
+        panel_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            config=bot.config_service, router=bot.output_router,
+            queue_of=lambda: bot.change_queue,
+        )
     )
     bot.change_queue.register(
         approve_change(
@@ -300,7 +304,8 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         choices_change(
-            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            signup=lambda: bot.signup_module_service, config=bot.config_service,
+            queue_of=lambda: bot.change_queue,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
@@ -319,7 +324,8 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         lapse_change(
             modules=bot.module_service, signup=lambda: bot.signup_module_service,
-            drivers=lambda: bot.driver_service, queue_of=lambda: bot.change_queue,
+            drivers=lambda: bot.driver_service, config=bot.config_service,
+            router=bot.output_router, queue_of=lambda: bot.change_queue,
         )
     )
     # The timers below read the bot's queue when they fire, as the getters above do. A correction

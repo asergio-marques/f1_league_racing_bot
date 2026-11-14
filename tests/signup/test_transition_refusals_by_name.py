@@ -107,7 +107,8 @@ async def _correction_lapsed(db_path: str, drivers: Callable[[], Any]) -> None:
     from leaguebot.signup.services.review_changes import LAPSE, LAPSE_JOB, lapse_change
 
     change = lapse_change(
-        modules=MagicMock(), signup=_wizard_signup, drivers=drivers, queue_of=MagicMock(),
+        modules=MagicMock(), signup=_wizard_signup, drivers=drivers, config=MagicMock(),
+        router=MagicMock(), queue_of=MagicMock(),
     )
     await _save(db_path, change.steps[LAPSE_JOB], LAPSE, {
         "user_id": USER_ID, "restart": False,
@@ -207,7 +208,7 @@ async def _lapse_after_moving_on(tmp_path, monkeypatch) -> None:
     signup.save_wizard_on = AsyncMock()
     change = lapse_change(
         modules=MagicMock(), signup=lambda: signup, drivers=lambda: DriverService(db_path),
-        queue_of=MagicMock(),
+        config=MagicMock(), router=MagicMock(), queue_of=MagicMock(),
     )
     result, states = await _save(db_path, change.steps[LAPSE_JOB], LAPSE, {
         "user_id": USER_ID, "restart": False,
