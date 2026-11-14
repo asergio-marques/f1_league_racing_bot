@@ -267,10 +267,6 @@ def _failing_module_step_for_rounds(record: _Recorder, starting: Any, error: Bas
     _failing_module_step(record, starting, error)
 
 
-#: Why a case naming the rounds a step failed for fails until the build.
-_ROUNDS_NOT_NAMED = "#287: the sweep's failure line names no round a step's error carries"
-
-
 #: The first start-up step of each module a switch or list case fails, which never runs.
 _FIRST_STEP = {"results": "amendment sweep", "signup": "signup close timer"}
 
@@ -322,8 +318,7 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
                  "**Pro** — _Fault. The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step failing for one round",
-                 marks=pytest.mark.xfail(strict=True, reason=_ROUNDS_NOT_NAMED)),
+                 id="a module's step failing for one round"),
     pytest.param(functools.partial(_failing_module_step_for_rounds,
                                    rounds=("round 2 in **Pro**", "round 5 in **Am**")),
                  "RSVP views and deadlines",
@@ -331,8 +326,7 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
                  "**Pro** and round 5 in **Am** — _Fault. The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step failing for two rounds",
-                 marks=pytest.mark.xfail(strict=True, reason=_ROUNDS_NOT_NAMED)),
+                 id="a module's step failing for two rounds"),
     pytest.param(functools.partial(_failing_module_step_for_rounds,
                                    rounds=("round 2 in **Pro**", "round 5 in **Am**",
                                            "a round no longer there")),
@@ -342,8 +336,7 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
                  "The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step failing for three rounds, one gone",
-                 marks=pytest.mark.xfail(strict=True, reason=_ROUNDS_NOT_NAMED)),
+                 id="a module's step failing for three rounds, one gone"),
     pytest.param(functools.partial(_failing_module_step_for_rounds, rounds=()),
                  "RSVP views and deadlines",
                  "❌ The bot's start-up step `RSVP views and deadlines` failed — _Fault. "

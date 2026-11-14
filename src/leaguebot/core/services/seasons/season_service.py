@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -1587,6 +1587,16 @@ async def round_called_on(db: aiosqlite.Connection, round_id: int) -> str:
     if row is None:
         return "a round no longer there"
     return f"round {row['round_number']} in **{row['name']}**"
+
+
+async def rounds_called(db_path: str, round_ids: Sequence[int]) -> tuple[str, ...]:
+    """Each of *round_ids* as `round_called` names it, in the order given, read in one connection.
+
+    For the error a module's start-up step raises for some of its rounds (`RoundsFailed`), so that
+    the log channel's line can name them as a league reads them.
+    """
+    async with get_connection(db_path) as db:
+        return tuple([await round_called_on(db, round_id) for round_id in round_ids])
 
 
 @dataclass(frozen=True)

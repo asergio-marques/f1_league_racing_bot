@@ -299,8 +299,6 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
     assert asked == [ROUND_ID + 1, ROUND_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#287: attendance's RecoveryFailed names no round, nor does the sweep's line"))
 async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):

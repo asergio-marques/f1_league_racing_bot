@@ -72,8 +72,6 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     assert len(lines) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#287: results' RecoveryFailed names no round, nor does the sweep's line"))
 async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_still_are(
     tmp_path,
 ):

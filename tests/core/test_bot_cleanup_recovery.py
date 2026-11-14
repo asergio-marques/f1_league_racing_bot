@@ -40,10 +40,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.start_up_sweep import round_failures, run_weather_start_up_step
 
-#: Why a test of a failed catch-up's naming of its rounds fails until the build.
-_ROUNDS_BY_ID = ("#287: weather's RecoveryFailed names a round by its database id, and the "
-                 "sweep's failure line names none")
-
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
@@ -415,8 +411,6 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
     bot.change_queue.ask.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#287: attendance's RecoveryFailed names no round, nor does the sweep's line"))
 async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):
@@ -487,12 +481,10 @@ async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported
 
 
 @pytest.mark.parametrize("gone, called", [
-    pytest.param(False, "round 2 in **Division 1**", id="round-readable", marks=pytest.mark.xfail(
-        strict=True, reason=_ROUNDS_BY_ID)),
+    pytest.param(False, "round 2 in **Division 1**", id="round-readable"),
     # Round 22's rows are deleted as its ask fails, so the error names it as core's
     # `round_called` names a round no longer there (#287, B10).
-    pytest.param(True, "a round no longer there", id="round-gone", marks=pytest.mark.xfail(
-        strict=True, reason=_ROUNDS_BY_ID)),
+    pytest.param(True, "a round no longer there", id="round-gone"),
 ])
 async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path, gone, called):
     """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
@@ -547,7 +539,6 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path,
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_ROUNDS_BY_ID)
 async def test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone(tmp_path):
     """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
     22's, its start stored without its offset, which no writer produces and the bot refuses to

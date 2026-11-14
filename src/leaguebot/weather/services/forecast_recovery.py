@@ -39,6 +39,7 @@ from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.seasons.season_service import (
     round_facts_on,
+    rounds_called,
     rounds_of_the_active_season,
 )
 from leaguebot.weather.models.recovery_failed import RecoveryFailed
@@ -120,7 +121,7 @@ async def recover_missed_phases(db_path: str, *, queue: ChangeQueue) -> None:
                 log.exception("Recovery: Phase %d of round %s could not be asked", phase, each.id)
                 failures.setdefault(each.id, error)
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(db_path, list(failures)))
 
 
 async def recover_missed_forecast_clean_ups(db_path: str, *, queue: ChangeQueue) -> None:
@@ -170,7 +171,7 @@ async def recover_missed_forecast_clean_ups(db_path: str, *, queue: ChangeQueue)
             )
             failures[round_id] = error
     if failures:
-        raise RecoveryFailed(failures)
+        raise RecoveryFailed(failures, await rounds_called(db_path, list(failures)))
 
 
 async def _standing_forecasts(db: aiosqlite.Connection) -> dict[int, list[int]]:

@@ -421,8 +421,6 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#287: attendance's RecoveryFailed names no round, nor does the sweep's line"))
 async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
     """Division 1 has two calls standing whose deadlines passed while the bot was down: round 3
     (id 5) raced an hour ago and round 4 (id 6) half an hour ago. At the restart the queue

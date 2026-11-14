@@ -432,8 +432,6 @@ async def test_a_round_whose_start_passed_while_the_bot_was_down_opens_at_the_re
     assert "Results submission open for **Round 3** (Pro)" in league.texts(made)[0]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#287: results' RecoveryFailed names no round, nor does the sweep's line"))
 async def test_a_round_start_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):

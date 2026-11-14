@@ -58,10 +58,6 @@ from tests.support.change_queue import change_rows
 from tests.support.season_league import PRO, ongoing_league, round_id
 from tests.support.start_up_sweep import round_failures, run_weather_start_up_step
 
-#: Why a test of a failed catch-up's naming of its rounds fails until the build.
-_ROUNDS_BY_ID = ("#287: weather's RecoveryFailed names a round by its database id, and the "
-                 "sweep's failure line names none")
-
 #: The name weather's start-up step runs under.
 MISSED_PHASES = "missed phases"
 
@@ -361,7 +357,6 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
-@pytest.mark.xfail(strict=True, reason=_ROUNDS_BY_ID)
 async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
     """Rounds 1 and 2 of Division 1 are both past their Phase 1 horizon with Phase 1 not drawn,
     and the queue refuses round 1's ask. Run through the start-up sweep, the step still asks round
@@ -392,7 +387,6 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_ROUNDS_BY_ID)
 async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(tmp_path):
     """Round 1 is past its Phase 1 horizon with Phase 1 not drawn; round 2, of the same live
     division, has its start stored without its offset, which no writer produces and the bot refuses
