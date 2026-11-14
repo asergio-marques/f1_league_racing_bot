@@ -505,9 +505,6 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#287: neither module yet signs up to amendment_judged, "
-                   "nor attendance to amendment_step_failure, nor weather's arming to round_armed "
-                   "from forecast_amendment")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The

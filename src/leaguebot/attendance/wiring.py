@@ -57,6 +57,14 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     ))
 
 
+def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
+    """Sign attendance's judgement of its check-in up to the hook a round's amendment is judged
+    through."""
+    from leaguebot.attendance.services.check_in import check_in_amendment
+
+    bot.amendment_judged.subscribe(check_in_amendment.amendment_judged)
+
+
 def sign_up_to_round_amended(bot: "LeagueBot") -> None:
     """Sign attendance's reopening of its check-in up to the hook an amended round declares,
     inside the save."""

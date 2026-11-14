@@ -80,6 +80,16 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     ))
 
 
+def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
+    """Sign weather's part of judging an amendment up to the hook a round's amendment is judged
+    through, handed the database's path for where the amendment is asked outside a save."""
+    from leaguebot.weather.services import forecast_amendment
+
+    bot.amendment_judged.subscribe(
+        partial(forecast_amendment.amendment_judged, db_path=bot.db_path)
+    )
+
+
 def sign_up_to_round_amended(bot: "LeagueBot") -> None:
     """Sign weather's withdrawal of the forecasts an amendment withdraws up to the hook an amended
     round declares, inside the save."""

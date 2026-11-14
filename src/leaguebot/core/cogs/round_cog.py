@@ -26,7 +26,7 @@ from leaguebot.core.services.cancellations.cancellation_changes import (
     cancellation_holding_amendment,
 )
 from leaguebot.core.services.rounds.round_amend_change import ROUND_AMEND, payload_changes
-from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_windows
+from leaguebot.core.services.rounds.round_moments import read_round_windows
 from leaguebot.core.services.rounds.round_add_changes import (
     ADD as ROUND_ADD,
     IMPORT as ROUND_IMPORT,
@@ -459,14 +459,11 @@ class RoundCog(commands.Cog):
             )
             summary_lines.append(f"  \u2022 `{f_name}` \u2192 `{shown}`")
 
-        # Name the forecasts this actually throws away rather than claiming all of them: a
-        # phase that would still have run under the round's new moment is kept.
-        _withdrawn = sorted(n for n, phase in _verdict.phases.items() if phase.rearm)
-        if _withdrawn:
-            _named = ", ".join(f"Phase {n}" for n in _withdrawn)
-            summary_lines.append(f"\n\u26a0\ufe0f This will withdraw and redraw {_named} for this round.")
-        else:
-            summary_lines.append("\n\u26a0\ufe0f The forecasts already posted for this round will stand.")
+        # What the amendment costs, as the modules give it: the notes first (weather names the
+        # forecasts it actually throws away rather than claiming all of them, a phase that would
+        # still have run under the round's new moment being kept), then the warnings.
+        for _note in _verdict.notes:
+            summary_lines.append(f"\n\u26a0\ufe0f {_note}")
 
         for _warning in _verdict.warnings:
             summary_lines.append(f"\u26a0\ufe0f {_warning}")
@@ -628,18 +625,17 @@ async def _judge_round_amendment(
     A module that is switched off passes no windows and so has nothing refused on its account —
     a league without attendance has no check-in to lose.
     """
-    from leaguebot.core.services.rounds.amendment_rules_service import judge_amendment
+    from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
 
     # The windows are read through the bot's hook (`LeagueBot.round_windows_read`), as the change
     # on the queue reads them; weather's are read whatever the module's state, as a forecast
-    # posted while weather was on is still posted.
+    # posted while weather was on is still posted. Each module's part of the judgement is asked
+    # through `LeagueBot.amendment_judged`, outside any save.
     attendance, weather = await read_round_windows(bot.round_windows_read, amending=True)
 
-    drawn = await read_phases_drawn(bot.phases_drawn_read, [rnd.id])
-
-    return judge_amendment(
-        rnd, dict(amendments), now=now, attendance=attendance, weather=weather,
-        drawn=drawn.get(rnd.id),
+    return await judged_with_the_modules(
+        bot.amendment_judged, rnd, dict(amendments), now=now,
+        attendance=attendance, weather=weather, db=None,
     )
 
 

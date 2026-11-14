@@ -22,12 +22,6 @@ from tests.support.amendment_judging import judged
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 
-#: Why each test judged through `judged` fails until each module judges its own part.
-NOT_YET_THE_MODULES_JUDGES = (
-    "#287: attendance's judge_check_in and weather's judge_forecasts do not yet exist; the check-in "
-    "and the forecasts are still judged in core's judge_amendment"
-)
-
 #: The packaged defaults: call 5 days out, reminder 24 hours out, deadline 2 hours out.
 DEFAULT_ATTENDANCE = AttendanceWindows(notice_days=5, last_notice_hours=24, deadline_hours=2)
 #: The packaged forecast horizons.
@@ -57,7 +51,6 @@ def _round(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_MODULES_JUDGES)
 def test_a_round_well_ahead_may_be_amended():
     """A round 30 days out given another track, attendance on: nothing is refused."""
     rnd = _round(scheduled_at=NOW + timedelta(days=30))
@@ -103,7 +96,6 @@ def test_a_field_that_is_not_amendable_is_refused():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_MODULES_JUDGES)
 def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
     """The league's remedy, and the reason a change set is judged as one change.
 
@@ -136,7 +128,6 @@ def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
         (DEFAULT_ATTENDANCE, DEFAULT_WEATHER),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_MODULES_JUDGES)
 def test_moving_a_round_into_the_past_is_refused_whatever_the_modules(attendance, weather):
     """Decided 2026-09-14: the answer shall not turn on which modules a league runs.
 
@@ -166,7 +157,6 @@ def test_a_moment_falling_exactly_now_counts_as_the_past():
     assert any("cannot be moved into the past" in r for r in verdict.refusals)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_MODULES_JUDGES)
 def test_a_round_already_in_the_past_may_still_be_moved_forward():
     """The escape, and the guard against over-tightening: forward is always still open."""
     rnd = _round(scheduled_at=NOW - timedelta(days=2))
@@ -225,7 +215,6 @@ def test_revealing_a_mystery_round_amends_both_at_once():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_MODULES_JUDGES)
 def test_one_refused_field_refuses_the_whole_change_set():
     """Track and format together, with phase 2 out: the format alone is what refuses it, and the
     track goes with it. None of the amendment happens."""
@@ -327,10 +316,6 @@ def test_a_round_amendment_with_any_value_changed_changes_something(changes):
 # answering an `AmendmentPart`: what it refuses, warns and notes, and what it keeps for the save.
 # `judged_with_the_modules` asks the hook and `judge_amendment` gathers the parts.
 
-#: Why each test below fails until core asks the modules through the hook.
-NOT_YET_THE_HOOK = "#287: the modules' judgements are not yet gathered through amendment_judged"
-
-
 def _judged_hook(*answers):
     """An `amendment_judged` hook whose subscribers answer *answers* in sign-up order, and the
     list each records what it was handed into: the connection, the round, the changes, the
@@ -347,7 +332,6 @@ def _judged_hook(*answers):
     return hook, handed
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
 async def test_a_module_s_refusal_refuses_the_amendment():
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
@@ -362,7 +346,6 @@ async def test_a_module_s_refusal_refuses_the_amendment():
     assert verdict.refusals == ["The module refuses it."]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
 async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
     """A round brought to an hour away with its track changed: with the modules signed up the
     check-in deadline would refuse it, and with none core finds nothing of its own to refuse,
@@ -381,7 +364,6 @@ async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
     assert verdict.kept == {}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
 async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_core_s_tail():
     """Every one of core's rules refusing at once, beside two modules': the field that cannot be
     amended, the round's status and the move into the past, then attendance's refusal and
@@ -424,7 +406,6 @@ async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_c
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
 def test_what_the_modules_keep_is_merged_for_the_save():
     from leaguebot.core.models.amendment import AmendmentPart
 
@@ -437,7 +418,6 @@ def test_what_the_modules_keep_is_merged_for_the_save():
     assert verdict.kept == {"reopened": True, "withdrawn": [2, 3]}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
 def test_a_key_kept_by_two_modules_is_a_fault():
     """Neither module's value may silently replace the other's in what the save is handed."""
     from leaguebot.core.models.amendment import AmendmentPart
@@ -450,7 +430,6 @@ def test_a_key_kept_by_two_modules_is_a_fault():
         )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_HOOK)
 @pytest.mark.parametrize("db", [pytest.param(None, id="asked"), pytest.param(object(), id="saved")])
 async def test_the_modules_are_handed_the_amended_moment_one_utc_now_and_the_save_s_connection(db):
     """The clock and the new moment given in another zone: each module is handed both in UTC, the

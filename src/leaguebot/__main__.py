@@ -225,13 +225,17 @@ def _make_configuration_faults(
 
 def _sign_up_to_amendments(bot: LeagueBot) -> None:
     """Make the hooks an amended round declares, and sign each module's part up to them, in the
-    order core calls them: the phases weather says are drawn, asked of a round as it is judged and
-    again inside the save on its connection; inside the save, weather's withdrawal of the
+    order core calls them: as the amendment is judged, attendance's judgement of its check-in then
+    weather's of its forecasts, asked when it is offered and again inside the save on its
+    connection; inside the save, weather's withdrawal of the
     forecasts the amendment withdraws, then attendance's reopening of its check-in; as the round
     is armed again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the round,
     weather's then attendance's; the steps each defines for the amendment, weather's then
     attendance's; and the words an outcome gives a step left undone, weather's for a forecast then
     attendance's for its check-in."""
+    bot.amendment_judged = AwaitedHook()
+    attendance_wiring.sign_up_to_amendment_judged(bot)
+    weather_wiring.sign_up_to_amendment_judged(bot)
     bot.round_amended = AwaitedHook()
     weather_wiring.sign_up_to_round_amended(bot)
     attendance_wiring.sign_up_to_round_amended(bot)
@@ -892,7 +896,7 @@ def register_change_types(bot: LeagueBot) -> None:
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             round_windows_read=bot.round_windows_read,
-            phases_drawn_read=bot.phases_drawn_read,
+            amendment_judged=bot.amendment_judged,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
@@ -907,7 +911,7 @@ def register_change_types(bot: LeagueBot) -> None:
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             round_windows_read=bot.round_windows_read,
-            phases_drawn_read=bot.phases_drawn_read,
+            amendment_judged=bot.amendment_judged,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
