@@ -34,7 +34,8 @@ async def draw_phase1_on(
     Writes the draw (``phase_results``, created at *now*) and ``phase1_done`` on the connection
     it is handed, so they stand or fall with the save that made them. Returns the `Drawn`: the
     payload and its calculation line, which the save writes beside the draw, or the BLOCKED line
-    where the circuit's parameters cannot be resolved or sampled (nothing written).
+    where the round names no circuit or its parameters cannot be resolved or sampled (nothing
+    written). Each line names the round as a league reads it, "round 3 in **Pro**".
 
     Produces nothing at all, and says so by a `Drawn` with no payload and no line, while the
     weather module is disabled, for a round that is cancelled, or whose division is, and for
@@ -44,17 +45,19 @@ async def draw_phase1_on(
     if row is None:
         return Drawn(1)
 
+    called = f"round {row.facts.round_number} in **{row.facts.division_name}**"
     track_name = row.facts.track_name
     if not track_name:
-        log.error("Phase 1: round %s has no track_name", round_id)
-        return Drawn(1)
+        err_msg = f"\u26a0\ufe0f Phase 1 BLOCKED for {called}: the round names no circuit."
+        log.error(err_msg)
+        return Drawn(1, line=err_msg, blocked=True)
 
     # --- Resolve (mu, sigma) from the tracks table, through core's reader of it ---
     track_row = await get_track_by_name(db, track_name)
 
     if track_row is None:
         err_msg = (
-            f"\u26a0\ufe0f Phase 1 BLOCKED for round {round_id} ({track_name}): "
+            f"\u26a0\ufe0f Phase 1 BLOCKED for {called} ({track_name}): "
             "no track row found in the database for this circuit."
         )
         log.error(err_msg)
@@ -68,7 +71,7 @@ async def draw_phase1_on(
         raw_draw, rpc = compute_rpc_beta(mu, sigma)
     except ValueError as exc:
         err_msg = (
-            f"\u26a0\ufe0f Phase 1 BLOCKED for round {round_id} ({track_name}): "
+            f"\u26a0\ufe0f Phase 1 BLOCKED for {called} ({track_name}): "
             f"Beta sampling failed — {exc}"
         )
         log.error(err_msg)
@@ -102,5 +105,7 @@ async def draw_phase1_on(
     )
     log.info("Phase 1 drawn for round %s — Rpc=%.2f", round_id, rpc)
     return Drawn(
-        1, payload=payload, line=phase_log_message(1, round_id, track_name, payload), written=True
+        1, payload=payload, line=phase_log_message(
+            1, row.facts.round_number, row.facts.division_name, track_name, payload
+        ), written=True
     )

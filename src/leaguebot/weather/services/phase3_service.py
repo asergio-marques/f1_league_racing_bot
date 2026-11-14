@@ -122,5 +122,7 @@ async def draw_phase3_on(
     await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
     log.info("Phase 3 drawn for round %s", round_id)
     return Drawn(
-        3, payload=payload, line=phase_log_message(3, round_id, track_name, payload), written=True
+        3, payload=payload, line=phase_log_message(
+            3, row.facts.round_number, row.facts.division_name, track_name, payload
+        ), written=True
     )

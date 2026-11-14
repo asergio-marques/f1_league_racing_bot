@@ -148,10 +148,6 @@ def _accepting(league: Any) -> None:
     league.channel(FORECAST).send_fails = None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#287: the calculation line's header names the round by its database id",
-)
 @pytest.mark.parametrize("phase", [1, 2, 3])
 async def test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted(
     tmp_path, phase,
@@ -483,24 +479,12 @@ async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier
 
 @pytest.mark.parametrize("blocking, line", [
     pytest.param("UPDATE rounds SET track_name = 'Nowhere Circuit' WHERE id = ?",
-                 "Phase 1 BLOCKED for round 3 in **Pro** (Nowhere Circuit)", id="unknown circuit",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: the BLOCKED line names the round by its database id",
-                 )),
+                 "Phase 1 BLOCKED for round 3 in **Pro** (Nowhere Circuit)", id="unknown circuit"),
     pytest.param("UPDATE tracks SET sigma = 0.9 WHERE name = ?",
-                 f"Phase 1 BLOCKED for round 3 in **Pro** ({TRACK})", id="impossible distribution",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: the BLOCKED line names the round by its database id",
-                 )),
+                 f"Phase 1 BLOCKED for round 3 in **Pro** ({TRACK})", id="impossible distribution"),
     pytest.param("UPDATE rounds SET track_name = NULL WHERE id = ?",
                  "Phase 1 BLOCKED for round 3 in **Pro**: the round names no circuit.",
-                 id="no circuit",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#287: a round with no circuit blocks Phase 1 in the host's log alone",
-                 )),
+                 id="no circuit"),
 ])
 async def test_a_blocked_phase_writes_its_line_and_nothing_else(tmp_path, blocking, line):
     """Round 3's circuit is one the bot has no row for, or one whose σ makes the draw impossible,
