@@ -886,6 +886,8 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#287: a module's answer to the round armed again is "
+                   "not yet a RoundArming carrying its steps")
 async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_renumbering(
     tmp_path, reposts,
 ):
@@ -899,13 +901,15 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
     another connection still reads the old moment, since the save has not committed; and round 3
     still bears number 3, the division not yet renumbered. What it hands back is kept with the
     save, not in memory: the queue is restarted once the save is made, and the module's part of
-    the round armed again still finds it among what it is handed, and plans its own step from it.
+    the round armed again still finds it among what it is handed, and plans its own step from it,
+    answering the round armed again with that step and no timed work of its own.
     The steps run in order: attendance's take-down of the call, weather's deletion of the
     withdrawn forecast and its notice, then the further module's step, carrying what the save
     handed back, then the reply's round list. Once the queue has run, round 3 is round 4."""
     from collections.abc import Mapping
 
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.amendment import RoundArming
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
     from leaguebot.core.services.queue.change_types import Step
     from tests.support.change_queue import restart_queue
@@ -933,10 +937,10 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
                      outside == old["scheduled_at"]))
         return {further: [rid, number]}
 
-    async def _posts(*args: Any, **kwargs: Any) -> tuple[PlannedStep, ...]:
+    async def _posts(*args: Any, **kwargs: Any) -> RoundArming:
         [kept] = [each[further] for each in (*args, *kwargs.values())
                   if isinstance(each, Mapping) and further in each]
-        return (PlannedStep(further, {"from_the_save": kept}),)
+        return RoundArming(steps=(PlannedStep(further, {"from_the_save": kept}),))
 
     async def _post(ctx: Any) -> StepResult:
         carried.append(ctx.step_payload["from_the_save"])
@@ -2867,3 +2871,92 @@ async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, s
     assert amend.outcome(ctx) == "✅ Round amended successfully.\n⚠️ **Not done**\n" + "\n".join(
         f"  • **Pro** — {target}: {reason}" for target, reason in named
     )
+
+
+# ── Core arms what each module's arming answer hands back (#287) ───────────────────────────
+#
+# Whether a module's timed work is armed again, and with what, is that module's answer through
+# `round_armed`: a `RoundArming` carrying the steps it plans and its jobs, `ForecastJobs` for the
+# forecasts and `CheckInJobs` for the check-in. Core's arming makes the scheduler's calls, in
+# today's order, from what it is handed.
+
+#: Why each test below fails until core arms from the modules' answers.
+NOT_YET_THE_ARMING_ANSWER = (
+    "#287: core still arms the forecasts and the check-in from the switches and the windows it "
+    "stored, not from each module's RoundArming answer"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_ARMING_ANSWER)
+async def test_core_arms_what_a_module_s_arming_answer_hands_back(tmp_path):
+    """Weather and attendance both off. In place of the modules' own answers, one module answers
+    the round armed again with forecast jobs at horizons of 4 days, 1 day and 3 hours, its Phase 2
+    to be skipped, and another with check-in jobs at 6 days, 12 hours and 1 hour. Pro's round 3 is
+    moved to 60 days out. The round's forecasts are armed once, at those horizons and skipping
+    Phase 2; its check-in once, at those lead times; and its results submission is not armed on
+    its own, the forecasts' arming carrying it as today."""
+    league = await ongoing_league(tmp_path)
+    from leaguebot.core.models.amendment import RoundArming
+    from leaguebot.core.models.round import (
+        AttendanceWindows,
+        CheckInJobs,
+        ForecastJobs,
+        WeatherWindows,
+    )
+
+    forecasts = RoundArming(steps=(), jobs=ForecastJobs(
+        windows=WeatherWindows(phase_1_days=4, phase_2_days=1, phase_3_hours=3),
+        skip_phases=frozenset({2}),
+    ))
+    check_in = RoundArming(steps=(), jobs=CheckInJobs(
+        windows=AttendanceWindows(notice_days=6, last_notice_hours=12, deadline_hours=1),
+    ))
+
+    async def _forecasts(*_args: Any, **_kwargs: Any) -> Any:
+        return forecasts
+
+    async def _check_in(*_args: Any, **_kwargs: Any) -> Any:
+        return check_in
+
+    league.bot.round_armed._subscribers.clear()
+    league.bot.round_armed.subscribe(_forecasts)
+    league.bot.round_armed.subscribe(_check_in)
+    await _amended(league, scheduled_at=_at(league, days=60))
+
+    await run_queue(league.bot)
+
+    scheduler = league.bot.scheduler_service
+    assert (await _change(league))["state"] == "DONE"
+    [armed] = scheduler.schedule_round.call_args_list
+    assert armed.args[0].id == R3
+    assert {key: armed.kwargs[key] for key in
+            ("phase_1_days", "phase_2_days", "phase_3_hours", "skip_phases")} == {
+        "phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3, "skip_phases": frozenset({2}),
+    }
+    [called] = scheduler.schedule_attendance_round.call_args_list
+    assert called.args[0].id == R3
+    assert {key: called.kwargs[key] for key in
+            ("notice_days", "last_notice_hours", "deadline_hours")} == {
+        "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,
+    }
+    assert scheduler.schedule_result_submission_jobs.call_args_list == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_THE_ARMING_ANSWER)
+async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp_path):
+    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, but no module answers
+    the round armed again. Pro's round 3 is moved to 60 days out. Neither its forecasts nor its
+    check-in are armed; its results submission is armed, once, for round 3 alone, so that the
+    round still opens its submission and can finish."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    league.bot.round_armed._subscribers.clear()
+    await _amended(league, scheduled_at=_at(league, days=60))
+
+    await run_queue(league.bot)
+
+    scheduler = league.bot.scheduler_service
+    assert (await _change(league))["state"] == "DONE"
+    assert scheduler.schedule_round.call_args_list == []
+    assert scheduler.schedule_attendance_round.call_args_list == []
+    [armed] = scheduler.schedule_result_submission_jobs.call_args_list
+    assert [rnd.id for rnd in armed.args[0]] == [R3]
