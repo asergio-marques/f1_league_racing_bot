@@ -200,7 +200,8 @@ def test_a_mystery_round_may_not_be_given_a_track_without_a_format():
     assert any("mystery" in r.lower() for r in verdict.refusals)
 
 
-def test_revealing_a_mystery_round_amends_both_at_once():
+def test_a_mystery_round_changed_to_another_type_amends_both_at_once():
+    """A mystery round given another format and a circuit in one change is allowed."""
     rnd = _round(scheduled_at=NOW + timedelta(days=30), fmt=RoundFormat.MYSTERY, track=None)
     verdict = judge_amendment(
         rnd,
@@ -364,6 +365,10 @@ async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
     assert verdict.kept == {}
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#287: the mystery round's refusal still says to amend its format to reveal it",
+)
 async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_core_s_tail():
     """Every one of core's rules refusing at once, beside two modules': the field that cannot be
     amended, the round's status and the move into the past, then attendance's refusal and
@@ -402,7 +407,7 @@ async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_c
         "Attendance refuses it.",
         "Weather refuses it.",
         "This round has already started, so its track and format can no longer be amended.",
-        "A mystery round names no circuit. Amend its format as well to reveal it.",
+        "A mystery round names no circuit. Change its format as well to give it one.",
     ]
 
 

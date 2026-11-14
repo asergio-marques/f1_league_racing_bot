@@ -324,7 +324,7 @@ _FORMAT_DRAWN = (
     "present sessions. Amend the round's moment as well to put the forecasts back in question."
 )
 _STARTED = "This round has already started, so its track and format can no longer be amended."
-_MYSTERY = "A mystery round names no circuit. Amend its format as well to reveal it."
+_MYSTERY = "A mystery round names no circuit. Change its format as well to give it one."
 
 
 @pytest.mark.parametrize("round_format, track_name, asked, refusals", [
@@ -332,6 +332,10 @@ _MYSTERY = "A mystery round names no circuit. Amend its format as well to reveal
         "MYSTERY", None, {"track": NEW_TRACK},
         [_STATUS, _PAST, _DEADLINE, _TRACK_DRAWN, _STARTED, _MYSTERY],
         id="a-mystery-round-named-a-circuit",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#287: the mystery round's refusal still says to amend its format to reveal it",
+        ),
     ),
     pytest.param(
         "NORMAL", "Bahrain International Circuit", {"track": NEW_TRACK, "format": "SPRINT"},
