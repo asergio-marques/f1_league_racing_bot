@@ -1273,3 +1273,148 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
     assert result.result == {"none": True}
     assert _events(league) == []
     assert await _forecasts(league) == {3: 9303}
+
+
+# ---------------------------------------------------------------------------
+# A timer missed while the bot was down, firing beside the restart's own ask
+# ---------------------------------------------------------------------------
+
+#: Why the timer tests fail until weather's round jobs are armed with no lateness limit (#287, C5).
+STILL_A_LATENESS_LIMIT = (
+    "#287: a forecast timer is still armed with the five-minute lateness limit, so one missed "
+    "while the bot was down never fires"
+)
+
+
+@pytest.fixture
+def scheduler(tmp_path, monkeypatch):
+    """Build the real scheduler service on a league's database and a job store of its own, as the
+    bot does at its start; it is stopped and its job store closed once the test has run."""
+    from leaguebot.core.services import scheduler_service
+
+    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
+    made: list[Any] = []
+
+    def build(db_path: str) -> Any:
+        service = scheduler_service.SchedulerService(db_path, str(tmp_path / "jobs.db"))
+        made.append(service)
+        return service
+
+    yield build
+    for service in made:
+        try:
+            service._scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+        service._scheduler._jobstores["default"].engine.dispose()
+
+
+def _weather_timers(league: Any, service: Any) -> list[str]:
+    """Sign weather's timers up on *service*, each asking the league's queue as the bot's do; gives
+    the list each kind is written to as its timer fires."""
+    from leaguebot.weather.services.forecast_changes import timer_callbacks
+
+    fired: list[str] = []
+    callbacks = timer_callbacks(league.bot.change_queue, league.db_path)
+
+    def recorded(kind: str, handler: Any) -> Any:
+        async def fire(key: int) -> None:
+            fired.append(kind)
+            await handler(key)
+
+        return fire
+
+    for phase, handler in callbacks.phases.items():
+        service.register_timer(f"weather_p{phase}", recorded(f"weather_p{phase}", handler))
+    service.register_timer("cleanup", recorded("cleanup", callbacks.clean_up))
+    return fired
+
+
+async def _until_fired(fired: list[str], count: int) -> None:
+    """Wait, five seconds at most, for *count* timers to have fired, and then a moment more for
+    their asks to land."""
+    import asyncio
+
+    for _ in range(500):
+        if len(fired) >= count:
+            break
+        await asyncio.sleep(0.01)
+    for _ in range(10):
+        await asyncio.sleep(0.01)
+
+
+def _round_3(when: Any) -> Any:
+    """Round 3 as the scheduler arms it, its race at *when*."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=ROUND, division_id=PRO, round_number=3, scheduled_at=when)
+
+
+@pytest.mark.xfail(strict=True, reason=STILL_A_LATENESS_LIMIT)
+async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once(
+    tmp_path, scheduler,
+):
+    """Round 3's race is an hour away, and the bot was down through every one of its horizons
+    (5 days, 2 days and 2 hours before), its three phase timers armed and missed by an hour or
+    more. The bot comes back: weather's start-up step for missed phases asks for all three, and
+    the queue draws and posts them; the three timers, armed with no lateness limit, then fire as
+    the scheduler is resumed and ask again. Each phase is drawn once, three forecasts are posted
+    in Pro's forecast channel, and the timers' asks put no further forecast change on the queue."""
+    from datetime import timedelta
+
+    from leaguebot.weather.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+    race = league.clock.now + timedelta(hours=1)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", race.isoformat(), ROUND)
+    service = scheduler(league.db_path)
+    fired = _weather_timers(league, service)
+    service.start(paused=True)
+    service.schedule_round(_round_3(race), season_number=3, division_tier=1)
+
+    await dict(start_up_steps(league.bot))["missed phases"]()
+    await run_queue(league.bot)
+    service.resume()
+    await _until_fired(fired, 3)
+    await run_queue(league.bot)
+
+    assert sorted(fired) == ["weather_p1", "weather_p2", "weather_p3"]
+    assert [await _draws(league, phase) for phase in (1, 2, 3)] == [1, 1, 1]
+    assert [kind for kind, _ in _events(league)].count("send") == 3
+    assert len(await _states(league, KIND)) == 3
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=STILL_A_LATENESS_LIMIT)
+async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_path, scheduler):
+    """Round 3 was raced 25 hours ago, and its Phase 3 forecast (9303) still stands: its clean-up
+    fell due an hour ago while the bot was down. The bot comes back: weather's start-up step for
+    missed clean-ups asks for it, and the queue deletes 9303. The round's clean-up is then armed
+    again, past-dated, as the re-arming of a raced round does, and with no lateness limit its
+    timer fires at once and asks again. 9303 is deleted once, its record is gone, and the timer's
+    ask, finding no forecast recorded, is dropped: the queue holds the one clean-up change."""
+    from datetime import timedelta
+
+    from leaguebot.weather.wiring import start_up_steps
+
+    league = await _league(tmp_path)
+    race = league.clock.now - timedelta(hours=25)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", race.isoformat(), ROUND)
+    await posted_forecast(league, ROUND, 3, 9303)
+    service = scheduler(league.db_path)
+    fired = _weather_timers(league, service)
+    service.start(paused=True)
+
+    await dict(start_up_steps(league.bot))["missed forecast clean-ups"]()
+    await run_queue(league.bot)
+    service.schedule_round_cleanups(_round_3(race), season_number=3, division_tier=1,
+                                    now=league.clock.now, check_in=False)
+    service.resume()
+    await _until_fired(fired, 1)
+    await run_queue(league.bot)
+
+    assert fired == ["cleanup"]
+    assert _events(league) == [("delete", 9303)]
+    assert await _forecasts(league) == {}
+    assert await _states(league, CLEAN_UP_KIND) == ["DONE"]
+    assert await stopped_job(league.db_path) is None
