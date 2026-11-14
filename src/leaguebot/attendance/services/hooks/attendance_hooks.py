@@ -98,8 +98,9 @@ async def round_window(
 ) -> AttendanceWindows | None:
     """Attendance's part of a round's timing windows read: its three lead times, or None where
     the module is off, since a league without attendance has no check-in to lose or to be inside
-    the window of. The subscriber to the hook; the amendment's judgement and arming read the lead
-    times through `lead_times` itself."""
+    the window of. The subscriber to the hook; the amendment's judgement reads the lead times
+    through `lead_times` itself where it is asked outside a save, and on the save's connection
+    inside one."""
     return await lead_times(attendance, modules)
 
 
