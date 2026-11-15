@@ -8,8 +8,8 @@ season fingerprint (`take_fingerprint`) is handed it by its callers, and the sea
 `/team lineup`'s cogs reach it on the bot. So core never imports this module. The capacity
 questions ask whether the aspect is drawn at all, whether the template is valid, and whether it
 holds that many — answered off the event loop, since parsing and measuring a template takes real
-time. ``calendar_wanted``/
-``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the two gates,
+time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wanted``/
+``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
 to the log channel in one message. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
@@ -469,28 +469,41 @@ class ImageDrawing:
 
     # ── The calendar ───────────────────────────────────────────────────────
 
-    async def calendar_wanted(self) -> bool:
-        """Whether this league conveys its calendar as a picture: both the module and the
-        `calendar` aspect must be on.
+    async def aspect_wanted(self, aspect: str, template_key: str | None = None) -> bool:
+        """Whether *aspect* is drawn: the one gate every picture asks (architecture.md, "A
+        catch-all error handler").
 
-        A stated exception (architecture.md, "A catch-all error handler"): a gate that cannot
-        be read must never lose a league its calendar, so a fault here answers False, falling to
-        the text, and is recorded only in the host's log — never the log channel, since nothing
-        was drawn to report a notice about.
+        With no *template_key* the two switches alone are asked, the module and the aspect, so
+        that nothing is read for a picture before it is known to be due; with one, the template
+        behind the aspect must be valid as well, each template being the unit of failure
+        (XIV.4). A switch nobody signed up for (`SwitchNotSignedUp`) is a fault in the bot's
+        assembly and is raised, never read as off.
 
-        *Rejected:* treating a calendar gate that cannot be read as a picture that could not be
-        drawn: it would add a line to the log channel and refuse `/division calendar-sync` for a
-        fault in reading a switch.
+        A stated exception: a gate that cannot be read must never lose a league its picture's
+        text, so a fault here answers False, falling to the text, and is recorded in full, with
+        its traceback, in the host's log only — never the log channel, since nothing was drawn
+        to report a notice about.
+
+        *Rejected:* treating a gate that cannot be read as a picture that could not be drawn: it
+        would add a line to the log channel, and refuse a command, for a fault in reading a
+        switch.
         """
         try:
-            if not await self._modules.is_images_enabled():
-                return False
-            return await self._config.is_aspect_enabled(CALENDAR_ASPECT)
+            if template_key is None:
+                if not await self._modules.is_images_enabled():
+                    return False
+                return await self._config.is_aspect_enabled(aspect)
+            return await self._drawn_template(aspect, template_key) is not None
         except SwitchNotSignedUp:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception:  # noqa: BLE001 — a stated exception, see the docstring
-            log.exception("calendar: could not read the image gates")
+            log.exception("%s: could not read the image gates", aspect)
             return False
+
+    async def calendar_wanted(self) -> bool:
+        """Whether this league conveys its calendar as a picture: both the module and the
+        `calendar` aspect must be on (`aspect_wanted`)."""
+        return await self.aspect_wanted(CALENDAR_ASPECT)
 
     async def draw_calendar(
         self, division: Any, rounds: Any, tracks: Any, *, season_number: Any = None,
@@ -557,24 +570,8 @@ class ImageDrawing:
 
     async def lineup_wanted(self) -> bool:
         """Whether this league conveys its lineup as a picture: both the module and the
-        `lineup` aspect must be on, and a valid template configured.
-
-        A stated exception (architecture.md, "A catch-all error handler"), worded as the
-        calendar gate's: a fault here must never lose a league its lineup, so it answers False,
-        falling to the text, and is recorded only in the host's log — never the log channel,
-        since nothing was drawn to report a notice about.
-
-        *Rejected:* treating a lineup gate that cannot be read as a picture that could not be
-        drawn: it would add a line to the log channel for a fault in reading a switch.
-        """
-        try:
-            path = await self._drawn_template("lineup", LINEUP_TEMPLATE_KEY)
-            return path is not None
-        except SwitchNotSignedUp:
-            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
-        except Exception:  # noqa: BLE001 — a stated exception, see the docstring
-            log.exception("lineup: could not read the image gates")
-            return False
+        `lineup` aspect must be on, and a valid template configured (`aspect_wanted`)."""
+        return await self.aspect_wanted("lineup", LINEUP_TEMPLATE_KEY)
 
     async def _render_lineup(self, guild: Any, division_id: int) -> Any:
         """The gates already asked through `lineup_wanted`, the division's committed seats

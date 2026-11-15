@@ -147,8 +147,6 @@ ASPECTS = ["calendar", "lineup", "results", "standings", "attendance", "rsvp", "
            "verdicts", "verdict_banner"]
 
 
-@pytest.mark.xfail(strict=True, reason="#288: there is no one gate on the image drawing that every "
-                   "aspect asks")
 @pytest.mark.parametrize("aspect", ASPECTS)
 async def test_every_aspect_gate_lets_a_switch_nobody_signed_up_for_through(aspect):
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and the image

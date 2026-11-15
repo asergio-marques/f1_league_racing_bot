@@ -3089,8 +3089,8 @@ CATCH_ALLS_ALLOWED = {
         "fault a line of the job",
     ("core/services/rounds/calendar_post_service.py", "render_for_command"):
         "place 5, a commanded calendar that cannot be drawn is refused, its fault the review's line",
-    ("image/services/render/image_drawing.py", "ImageDrawing.calendar_wanted"):
-        "a stated exception: a calendar gate that cannot be read answers text, so none is lost",
+    ("image/services/render/image_drawing.py", "ImageDrawing.aspect_wanted"):
+        "a stated exception: a gate that cannot be read answers text, so no picture's text is lost",
     ("core/services/drivers/lineup_posting.py", "LineupPoster._refresh_lineup_post"):
         "place 5, a lineup that cannot be drawn is posted as text and its fault is the job's line",
     ("results/services/publishing/results_post_service.py", "produce_session_results"):
@@ -3109,8 +3109,6 @@ CATCH_ALLS_ALLOWED = {
         "place 5, the graphic's own assembling: a tier's colours that cannot be applied are drawn "
         "in the template's own, with a render notice; data that cannot be assembled or a template "
         "that cannot be filled comes back as a problem, from which the caller falls back to text",
-    ("image/services/render/image_drawing.py", "ImageDrawing.lineup_wanted"):
-        "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/render/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
     ("image/services/aspects/image_weather_post.py", "attach_forecast"):

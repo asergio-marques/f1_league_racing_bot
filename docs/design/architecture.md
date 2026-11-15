@@ -1417,15 +1417,12 @@ full tie ordered by user id, because a tie so ordered is the lesser fault than a
 ask the image module (`TemplateCapacityService._ask_drawing`) is a stated exception too: its
 catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, and the
 guard lets the placement through as if no problem were found, because a capacity check that cannot
-run must not block a placement (its docstring says so); the image module's calendar gate
-(`ImageDrawing.calendar_wanted`) is a stated exception likewise: its catch-all (a switch nobody
-signed up for aside) puts the error in the host's log alone, with no line to the log channel, and
-answers that the league does not draw its calendar, so the text calendar goes out, because a gate
-that cannot be read must not lose a league its calendar (its docstring says so); the image module's
-lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its catch-all (a switch
-nobody signed up for aside) puts the error in the host's log alone, with no line to the log channel,
-and answers that the league does not draw its lineup, so the text lineup goes out, because a gate
-that cannot be read must not lose a league its lineup (its docstring says so); the helper through
+run must not block a placement (its docstring says so); the image module's one gate
+(`ImageDrawing.aspect_wanted`, which every aspect's picture asks) is a stated exception likewise:
+its catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, with
+no line to the log channel, and answers that the league does not draw the aspect, so the text goes
+out, because a gate that cannot be read must not lose a league its text (its docstring says so);
+the helper through
 which the season's own capacity checks count and ask the image module
 (`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
 review's calendar and attendance warnings) — is a stated exception beside
