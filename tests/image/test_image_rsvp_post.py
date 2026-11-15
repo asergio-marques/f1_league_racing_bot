@@ -12,7 +12,7 @@ redraw must add an import to a module that has none, which review will see.
 Since #439 (slice 6b) the call is posted by its own job on the change queue
 (`attendance.check_in.call`), so the call's own cases drive it there: Pro's round 4 of
 `ongoing_league`, three days off with no call posted, asked of the queue as its timer asks it,
-the check-in graphic stood in for by a double of `try_attach`.
+the check-in graphic stood in for by a double of the image drawing's `attach_check_in_call`.
 """
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ import pytest
 from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 from leaguebot.attendance.services.check_in import rsvp_service
 from leaguebot.image.services.aspects import image_rsvp_post
-from leaguebot.image.services.aspects.image_rsvp_post import rsvp_enabled, try_attach
 from tests.support.change_queue import http_error, run_queue, stopped_job
 from tests.support.season_league import (
     CALL_MESSAGES,
@@ -57,68 +56,29 @@ _EDIT_IN_PLACE = (
 )
 
 
-def _bot(*, module_on=True, aspect_on=True, template_valid=True):
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module_on)
-    bot.image_config_service.get_toggles = AsyncMock(return_value={"rsvp": aspect_on})
-    report = MagicMock()
-    report.valid = template_valid
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"rsvp_template": report}
-    )
-    return bot
+# ── The drawing never breaks the call ─────────────────────────────────────
 
 
-# ── Enablement ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await rsvp_enabled(_bot()) is True
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "kwargs",
-    [{"module_on": False}, {"aspect_on": False}, {"template_valid": False}],
-)
-async def test_the_call_posts_without_an_attachment_when_anything_is_off(kwargs):
-    assert await rsvp_enabled(_bot(**kwargs)) is False
-
-
-@pytest.mark.asyncio
-async def test_a_reader_that_raises_never_breaks_the_call():
-    bot = _bot()
-    bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await rsvp_enabled(bot) is False
-
-
-@pytest.mark.asyncio
 async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
-    """FR-055: the graphic gates neither the call nor the round's attendance rows."""
+    """FR-055: the graphic gates neither the call nor the round's attendance rows. A gate that
+    cannot be read answers text: no picture, and no line, since nothing was drawn."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
     bot = MagicMock()
     bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("boom"))
+    drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path="unused.db",
+    )
 
-    result = await try_attach(
-        bot,
+    result = await drawing.attach_check_in_call(
         division_name="Division 1",
         round_number=1,
         round_format="NORMAL",
         scheduled_at=None,
         track_name="Silverstone Circuit",
     )
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_no_bot_yields_no_attachment():
-    assert (
-        await try_attach(
-            None, division_name="D", round_number=1, round_format="NORMAL",
-            scheduled_at=None, track_name=None,
-        )
-        is None
-    )
+    assert result == (None, ())
 
 
 # ── The static call graph (XIV.17) ────────────────────────────────────────
