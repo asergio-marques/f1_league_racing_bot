@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.sanctions.attendance_sync_change import SYNC_SAVE
@@ -328,3 +329,51 @@ async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_dis
     assert "deleting the earlier attendance sheet of **Pro**" in await _said(league)
     assert OLD_SHEET in league.channel(SHEET).messages
     assert _sends(league) == 1
+
+
+# ---------------------------------------------------------------------------
+# A sheet's render fault is named in the log channel as the attendance sheet image
+# ---------------------------------------------------------------------------
+
+#: The detail of the template fault the sheet's render below fails on.
+SHEET_RENDER_FAULT = "the template declares no `total_points` field"
+
+
+@pytest.mark.xfail(strict=True, reason="#288: an attendance sheet's render fault is logged as a "
+                   "'Results image' fault")
+async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp_path):
+    """The image module is on with the attendance graphic switched on and its template valid,
+    and the image module's render of Pro's sheet fails on a template fault. Alex runs
+    `/attendance sync` for Pro from round 1: the sheet posts once, as text with no picture, and
+    the queue runs to the end; the log channel gives the fault on one line headed "⚠️ Attendance
+    sheet image", the name `/images config toggle` offers, naming Pro and round 1, and nothing in
+    the log calls it a results image."""
+    from leaguebot.image.models.image_module import Problem, RenderOutcome
+    from leaguebot.image.services.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        problem=Problem(kind="TEMPLATE_INVALID", detail=SHEET_RENDER_FAULT,
+                        template_key=ATTENDANCE_TEMPLATE_KEY),
+    ))
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _sends(league) == 1
+    assert league.channel(SHEET).files[-1] is None
+    log = await _said(league)
+    [line] = [line for line in log.splitlines() if SHEET_RENDER_FAULT in line]
+    assert line.startswith("⚠️ Attendance sheet image — "), line
+    assert "Pro" in line and "round 1" in line.lower(), line
+    assert "Results image" not in log, log
