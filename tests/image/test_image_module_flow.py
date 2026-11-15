@@ -192,6 +192,31 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     league.scheduler.cancel_portrait_refresh.assert_called_once_with()
 
 
+@pytest.mark.parametrize("on", [True, False], ids=["images on", "images off"])
+async def test_a_restart_arms_the_daily_portrait_refresh_only_while_images_is_on(tmp_path, on):
+    """Images was switched on with portraits refreshed daily at 07:45, and the bot starts again:
+    image's start-up steps run in its turn of the start-up sweep. With images on, the daily refresh
+    is armed at 07:45; with images off, nothing is armed (Constitution X.3). Either way the sweep
+    posts nothing to the log channel."""
+    from tests.support.start_up_sweep import run_image_start_up
+
+    league, cog, _config_service = await _switched(tmp_path)
+    await _switch(league, cog, on=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE image_config SET use_pfp = 1, pfp_daily = 1, pfp_daily_time = '07:45'"
+        )
+        await db.commit()
+    league.scheduler.schedule_portrait_refresh.reset_mock()
+
+    assert await run_image_start_up(league.bot, on=on) == []
+
+    if on:
+        league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
+    else:
+        league.scheduler.schedule_portrait_refresh.assert_not_called()
+
+
 # ── T013 ──────────────────────────────────────────────────────────────────
 
 
