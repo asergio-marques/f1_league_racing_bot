@@ -3,9 +3,9 @@
 `evaluate_all_templates` parses all sixteen templates, which takes seconds on a Raspberry Pi,
 and a single template's parse a good part of a second; run on the loop either would leave the
 bot answering nothing until it finished. Each async entry point of the image module that runs
-a sweep or only reads a template hands it to a worker thread through `off_the_loop`. The render
-and the fastest-lap contrast measurement change the tree they parse on the loop, and so parse
-it there. Nothing parsed in a worker thread leaves it, neither a return value nor an exception
+a sweep or only reads a template hands it to a worker thread through `off_the_loop`, and the
+render and the fastest-lap contrast measurement hand over the whole of their work on the tree,
+from the parse to the serialised picture. Nothing parsed in a worker thread leaves it, neither a return value nor an exception
 (`load_svg`), which every test here also holds the entry point to.
 
 Each test patches the evaluation with a `Held` one (`tests/support/off_the_loop.py`), which
@@ -553,8 +553,12 @@ async def test_a_review_question_s_fault_crosses_back_with_nothing_it_parsed(
 
 
 # ---------------------------------------------------------------------------
-# The two parses kept on the loop, because the tree is changed there
+# The render and the contrast measurement, parse to picture in one worker thread
 # ---------------------------------------------------------------------------
+
+
+#: Why the two tests below fail until the render's whole work on the tree runs in one worker.
+RENDER_ON_THE_LOOP = "#288: the render and the contrast measurement still parse on the loop"
 
 
 def _parsed_where(monkeypatch) -> list[threading.Thread]:
@@ -570,9 +574,11 @@ def _parsed_where(monkeypatch) -> list[threading.Thread]:
     return threads
 
 
-async def test_a_render_parses_its_template_on_the_loop(monkeypatch):
-    """The render fills the tree on the loop, so it parses it there; nothing it runs in a
-    worker thread hands a tree back."""
+@pytest.mark.xfail(strict=True, reason=RENDER_ON_THE_LOOP)
+async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
+    """The calendar template rendered with a fill that fails after the parse: the parse runs
+    once, in a worker thread and never on the loop, the fill's fault still comes back as an
+    unresolved value, and nothing the worker hands back holds a tree."""
     threads = _parsed_where(monkeypatch)
     monkeypatch.setattr(image_render_service, "converter_available", lambda: True)
     validity = MagicMock()
@@ -587,13 +593,14 @@ async def test_a_render_parses_its_template_on_the_loop(monkeypatch):
         outcome = await ImageRenderService(MagicMock(), validity).render("calendar_template", stop)
 
     assert outcome.problem.kind == PROBLEM_UNRESOLVED_VALUE
-    assert threads == [threading.current_thread()]
+    assert len(threads) == 1 and threads[0] is not threading.current_thread()
     assert_no_tree_crossed(crossed)
 
 
-async def test_the_contrast_measurement_parses_its_template_on_the_loop(monkeypatch, tmp_path):
-    """The measurement paints each tier's palette into the tree on the loop, so it parses it
-    there; the sweep it reads first runs in a worker thread and hands back reports alone."""
+@pytest.mark.xfail(strict=True, reason=RENDER_ON_THE_LOOP)
+async def test_the_contrast_measurement_parses_its_template_off_the_loop(monkeypatch, tmp_path):
+    """The fastest-lap contrast measured against white over the shipped templates: every parse
+    runs in a worker thread, never on the loop, and nothing a worker hands back holds a tree."""
     db_path = str(tmp_path / "images.db")
     await run_migrations(db_path)
     config_service = ImageConfigService(db_path)
@@ -610,7 +617,7 @@ async def test_the_contrast_measurement_parses_its_template_on_the_loop(monkeypa
             seasons=MagicMock(),
         )
 
-    assert threads == [threading.current_thread()]
+    assert threads and threading.current_thread() not in threads
     assert crossed
     assert_no_tree_crossed(crossed)
 
