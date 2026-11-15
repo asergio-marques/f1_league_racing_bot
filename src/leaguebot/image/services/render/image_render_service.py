@@ -574,8 +574,8 @@ def grouped_notice_lines(notices: list[RenderNotice]) -> list[str]:
     line apiece buries the one notice that differs among nineteen that do not.
 
     Returned without a heading so the log block and a command's own reply can each supply
-    their own, and still be grouped identically. The audit trail is unaffected: `_persist`
-    writes one row per notice regardless. This is presentation, and only presentation.
+    their own, and still be grouped identically. The notices themselves are untouched: this is
+    presentation, and only presentation.
     """
     by_kind: dict[str, dict[tuple[str, str], list[str]]] = {}
     order: list[str] = []

@@ -8,8 +8,9 @@ verdict of its own, beside the first.
 
 Two consequences shape this module:
 
-* it **persists nothing**. No message id is recorded, nothing is edited, replaced or deleted,
-  and XIV.8's delete-and-repost does not arise in any form. There is no state to reconcile on
+* it **persists nothing**. It records no message id (the job that posts the verdict records the
+  message it was posted as, for the review's replay), and nothing is edited, replaced or deleted,
+  so XIV.8's delete-and-repost does not arise in any form. There is no state to reconcile on
   the fallback path either — a failed render simply leaves the textual announcement to be sent
   at the same point.
 * the graphic **displaces the whole announcement but the mention** (XIV.7). Heading, driver

@@ -87,8 +87,8 @@ def register_change_types(bot: "LeagueBot") -> None:
 def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     """Sign up the handler of the daily driver-portrait refresh through `register_timer`.
 
-    Unlike every other job the trigger is recurring, so recovery re-adds it rather than working
-    out whether it was missed: a cron job that did not fire while the bot was down simply fires at
+    The trigger is recurring, so recovery re-adds it at its stored time rather than working out
+    whether it was missed: a cron job that did not fire while the bot was down simply fires at
     its next due time. It reads the bot when it fires."""
 
     async def _portrait_refresh_cb() -> None:

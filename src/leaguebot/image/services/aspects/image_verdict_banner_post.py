@@ -30,21 +30,19 @@ only handle a search has. A league that would rather have searchable headers swi
 aspect off and gets them in words, which is now a choice between two headers rather than
 between a header and none.
 
-**`try_post` itself never raises, and a header never costs a verdict** where the poster is
-swallowed: it is posted before the first card of the batch, and a failure on that path is logged
-and returned as None. That holds for `/attendance sync`'s sanctions. A round's review is the
-exception (decided at the review's Gate 2): its heading is a job like any other, treating None as a
-failure, so a heading Discord refuses stops the queue until it is retried or discarded and the
-verdicts waiting behind it go out beneath none only once it is discarded.
+**`try_post` itself never raises**: every fault on its path is logged and it returns None for a
+banner not posted. What None means is the caller's, and both callers, a round's review and
+`/attendance sync`, head their verdicts and cards with a job (`ANNOUNCE_HEADING`) that treats it as
+a failure: a heading Discord refuses stops the queue until it is retried or discarded, and what
+waits behind it goes out beneath none only once it is discarded.
 
-Swallowing is safe where it is done because **a header is an aid to reading a channel and is no
-record of a decision** (decided 2026-09-21): it exists so a reader can tell at a glance which
-round the verdicts beneath it pertain to. Two things follow, and a later reader is apt to reach for
-either. It carries no repost or amendment marking, though a text heading now *could* carry
-one where a drawn banner could not — a re-headed batch reads identically to the one it
-replaced, and that is intended. And a batch that slips through unheaded is a want of
-organisation, not a correctness defect, so this path is not worth hardening beyond the
-posters that already route through it.
+**A header is an aid to reading a channel and is no record of a decision** (decided 2026-09-21): it
+exists so a reader can tell at a glance which round the verdicts beneath it pertain to. Two things
+follow, and a later reader is apt to reach for either. It carries no repost or amendment marking,
+though a text heading now *could* carry one where a drawn banner could not: a re-headed batch
+reads identically to the one it replaced, and that is intended. And a batch that goes unheaded is
+a want of organisation, not a correctness defect, which is why a discarded heading is allowed to
+let the verdicts through.
 """
 from __future__ import annotations
 
@@ -241,9 +239,9 @@ async def try_post(
     record, so nothing else knows where it is.
 
     Never raises: every fault on this path is logged and swallowed, and a banner not posted is
-    None. What that means is the caller's. `/attendance sync`'s sanctions go out beneath none, a
-    header being an aid to reading a channel; a round's review heads its verdicts with a job
-    that treats None as a failure, which stops the queue (`review_verdicts.announce_heading`).
+    None. What that means is the caller's: a round's review and `/attendance sync` each head
+    their verdicts and cards with a job that treats None as a failure, which stops the queue
+    (`review_verdicts.announce_heading`).
     """
     import discord
 

@@ -906,7 +906,7 @@ class SchedulerService:
                     log.info("Removed %s job", job.id)
 
     # ------------------------------------------------------------------
-    # Signup auto-close scheduling
+    # Standing jobs: the daily portrait refresh and the amendment sweep
     # ------------------------------------------------------------------
 
     def schedule_portrait_refresh(self, time_of_day: str) -> None:

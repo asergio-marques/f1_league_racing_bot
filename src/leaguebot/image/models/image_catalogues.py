@@ -5,17 +5,17 @@ split by the operation each receives and classified **mandatory** or **optional*
 (XIV.3). It is a code constant, not configuration: it describes what an image type *is*,
 and a league cannot vary it.
 
-**Every catalogue here is empty.** No image type has a generation specification yet, so
-there is nothing to declare. That is deliberate, and it is what the rest of the module is
-built to tolerate:
+**Every image type's catalogue is declared here**, one for each of the sixteen templates. A
+type with none (a catalogue is an empty `FieldCatalogue()` until one is declared) is what the
+rest of the module is built to tolerate:
 
 * the mandatory-field check at all three verification moments passes vacuously;
 * validity Layer 2 *skips* rather than passes, so a template is never reported as checked
   more deeply than it was (XIV.9, invariants 3 and 4);
 * the division-capacity guard finds no capacity and admits every division.
 
-Populating one entry is the whole of what a later image-type session must do to bring all
-four to life for that type. Nothing else changes — no cog, no command signature, no report
+Declaring one entry is the whole of what a later image-type session must do to bring all
+four to life for that type. Nothing else changes: no cog, no command signature, no report
 renderer (XIV.10).
 """
 from __future__ import annotations

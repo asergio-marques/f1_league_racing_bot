@@ -1,8 +1,7 @@
 """ImageValidityService — layered template validity (Constitution Principle XIV.9).
 
-What makes a template valid is deliberately not settled in this increment. It is defined
-incrementally, one image type at a time, as each type's field catalogue is written. This
-module builds the surface those later definitions plug into.
+What makes a template valid is defined in layers, each applied to an image type as far as that
+type's field catalogue allows. This module is the surface the layers plug into.
 
 Adding a layer is **one class and one list entry**. If a later session finds itself
 editing a cog, a command signature, ``ValidityReport`` or the report renderer in order to
@@ -76,11 +75,11 @@ log = logging.getLogger(__name__)
 
 _SVG_NS = "http://www.w3.org/2000/svg"
 
-#: Layer numbers. Only LAYER_RESOLUTION is implemented in this increment; the rest are
-#: reserved so their numbering is settled before their definitions arrive.
+#: Layer numbers. Layers 1 to 3 are implemented (`LAYERS`); LAYER_TRIAL_RENDER is reserved so
+#: that its numbering is settled before its definition arrives.
 LAYER_RESOLUTION = 1
-LAYER_CATALOGUE = 2       # reserved — needs the image type's field catalogue
-LAYER_BOUNDS = 3          # reserved — needs the catalogue plus which fields are unbounded
+LAYER_CATALOGUE = 2       # needs the image type's field catalogue
+LAYER_BOUNDS = 3          # needs the catalogue plus which fields are bounded
 LAYER_TRIAL_RENDER = 4    # reserved — needs sample data per type
 
 LAYER_NAMES = {
@@ -581,7 +580,7 @@ class CatalogueLayer:
     ``applies_to`` returns **False** for an image type whose catalogue is empty, so the
     layer is *skipped* rather than passed. That distinction is what satisfies Constitution
     XIV.9's "no silent pass": ``evaluate_template`` records depth only for layers that
-    actually ran, so a type with no generation specification still reports depth 1 and
+    actually ran, so a type whose catalogue is empty still reports depth 1 and
     ``depth_summary`` keeps saying the catalogue check was not applied.
 
     Passing trivially instead would report depth 2 for a template nothing was checked

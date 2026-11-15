@@ -1400,8 +1400,8 @@ class ImageCog(commands.Cog):
     async def build_tier_colour_section(self, config) -> list[str]:
         """The per-tier colours, listed here rather than behind a command of their own (051).
 
-        The `config` group holds seventeen of Discord's twenty-five subcommands and a third
-        per-tier command would spend one of the eight left to say what this section already
+        The `config` group holds nineteen of Discord's twenty-five subcommands and a third
+        per-tier command would spend one of the six left to say what this section already
         says. What is *missing* is not repeated here: a shortfall is a reason against the
         aspect it would stop, and the aspect section below prints it in the same words
         `/season placements-review` uses.
@@ -1432,7 +1432,7 @@ class ImageCog(commands.Cog):
         return lines
 
     async def build_aspect_section(self) -> list[str]:
-        """The eight aspects in their three states (FR-031, FR-032)."""
+        """The nine aspects in their three states (FR-031, FR-032)."""
         statuses = await self._validity_service.aspect_statuses()
 
         lines = ["**Output aspects**"]
@@ -1442,7 +1442,7 @@ class ImageCog(commands.Cog):
             for reason in status.reasons:
                 lines.append(f"      ↳ {reason}")
 
-        # Named individually rather than as a blanket claim over all eight, and gone
+        # Named individually rather than as a blanket claim over all nine, and gone
         # entirely once every aspect posts.
         if PENDING_POSTING_ASPECTS:
             pending = ", ".join(
