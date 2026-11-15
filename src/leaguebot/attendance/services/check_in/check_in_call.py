@@ -68,6 +68,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    drawn_lines_kept,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
 from leaguebot.core.services.posting import standing_posts
@@ -280,7 +281,14 @@ def check_in_steps(
         )
 
     async def post(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        # What the call's picture said when it was drawn, on the first try, is kept with every
+        # stop that follows, so that the try which posts hands it back, never lost with a refused
+        # post.
+        picture_lines = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(picture_lines) from stop.__cause__
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
             row = await call_row(db, round_id)
@@ -322,7 +330,7 @@ def check_in_steps(
                         "vanished": vanished},
                 notice=left if said is None else f"{left}; Discord said: {said}",
                 record=forget,
-            )
+            ).carrying(picture_lines)
 
         config = await service.get_division_config(division_id)
         if config is None or not config.rsvp_channel_id:
@@ -379,6 +387,10 @@ def check_in_steps(
                 country_name=row["track_country"],
                 faults=faults,
             )
+            picture_lines = tuple(
+                f"**{division}** — check-in call of round {row['round_number']}: {fault}"
+                for fault in faults
+            ) + drawn_lines
         try:
             parts: dict[str, Any] = {"embed": embed, "view": view_of(round_id)}
             if attachment is not None:
@@ -421,10 +433,7 @@ def check_in_steps(
                 })
                 for message_id, channel_id in earlier_messages(coming_down)
             )
-        lines: tuple[str, ...] = tuple(
-            f"**{division}** — check-in call of round {row['round_number']}: {fault}"
-            for fault in faults
-        ) + drawn_lines
+        lines: tuple[str, ...] = picture_lines
         if ctx.actor_id is not None and ctx.kind == CHECK_IN_CALL:
             # Only the call's own change was asked by the command: an amendment that borrows this
             # step to repost the call has its own line, and nobody ran /attendance post-check-in.

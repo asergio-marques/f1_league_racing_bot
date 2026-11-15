@@ -53,6 +53,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    drawn_lines_kept,
     forecasts_named,
 )
 from leaguebot.core.models.division import DivisionStatus
@@ -275,7 +276,13 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
         return reason is None
 
     async def post(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        # What the picture said when it was drawn, on the first try, is kept with every stop that
+        # follows, so that the try which posts hands it back, never lost with a refused post.
+        lines = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(lines) from stop.__cause__
         phase = int(_value(ctx, "phase"))
         round_id = int(_value(ctx, "round_id"))
         async with get_connection(ctx.db_path) as db:
@@ -297,26 +304,28 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
             raise StepFailedOnDiscord(
                 f"**{rnd.division.name}** has no forecast channel set: set one with "
                 f"`/weather channel`, then press Retry."
-            )
+            ).carrying(lines)
         mention = rnd.division.mention_role_id
         text = forecast_text(phase, mention, payload)
         attachment = None
-        lines: tuple[str, ...] = ()
         if ctx.tries == 0:
             attachment, lines = await drawing.attach_forecast(
                 round_id, phase,
                 values=forecast_values(phase, payload, payload if phase == 1 else first),
             )
-        parts = await forecast_cleanup_service.post_phase_message(
-            ctx.bot,
-            division_id=rnd.division.id,
-            channel_id=int(rnd.forecast_channel_id),
-            phase_number=phase,
-            text=text,
-            attachment=attachment,
-            attachment_text="" if phase == 0 else f"<@&{mention}>",
-            mentions=_forecast_mentions(phase, mention),
-        )
+        try:
+            parts = await forecast_cleanup_service.post_phase_message(
+                ctx.bot,
+                division_id=rnd.division.id,
+                channel_id=int(rnd.forecast_channel_id),
+                phase_number=phase,
+                text=text,
+                attachment=attachment,
+                attachment_text="" if phase == 0 else f"<@&{mention}>",
+                mentions=_forecast_mentions(phase, mention),
+            )
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(tuple(lines)) from stop.__cause__
         result = {
             "new": list(parts), "channel_id": int(rnd.forecast_channel_id),
             "phase": phase,

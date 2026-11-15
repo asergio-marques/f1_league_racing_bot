@@ -168,17 +168,7 @@ async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_imag
     assert "Results image" not in log, log
 
 
-#: What is not yet true of a call whose post Discord refuses: the drawing's line is lost with it.
-REFUSED_LOSES_ITS_LINE = (
-    "#288: a check-in call whose first post Discord refuses writes neither its picture's notice "
-    "nor its fault line, and its retry draws nothing to say them"
-)
-
-
-@pytest.mark.parametrize("outcome", [
-    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
-    pytest.param("fault", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
-])
+@pytest.mark.parametrize("outcome", ["notice", "fault"])
 async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_it_is_retried(
     tmp_path, outcome
 ):

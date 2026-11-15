@@ -299,17 +299,9 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
 FORECAST_NOTICE = "no `weather_icon` image for “Heavy rain”"
 #: The detail of the fault a forecast's render fails on.
 FORECAST_FAULT = "the template declares no `phase` field"
-#: What is not yet true of a forecast whose post Discord refuses: its picture's line is lost.
-REFUSED_LOSES_ITS_LINE = (
-    "#288: a forecast whose first post Discord refuses writes neither its picture's notice nor "
-    "its fault line, and its retry draws nothing to say them"
-)
 
 
-@pytest.mark.parametrize("outcome", [
-    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
-    pytest.param("fault", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
-])
+@pytest.mark.parametrize("outcome", ["notice", "fault"])
 async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is_retried(
     tmp_path, outcome,
 ):
