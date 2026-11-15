@@ -38,6 +38,7 @@ from leaguebot.results.services.publishing.results_post_service import standings
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 STANDINGS_SYNC = "results.standings.sync"
 PLAN_REPOST = "plan_repost"
@@ -46,7 +47,9 @@ CLOSE = "close"
 _COMMAND = "results standings sync"
 
 
-def standings_sync_change(seasons: "SeasonService", modules: "ModuleService") -> ChangeType:
+def standings_sync_change(
+    seasons: "SeasonService", modules: "ModuleService", drawing: "ImageDrawing | None" = None
+) -> ChangeType:
     """`results.standings.sync`: a member's change, repeatable, that posts a division's
     standings of every round again. The payload is `{"division_id", "division_name"}`."""
 
@@ -119,7 +122,7 @@ def standings_sync_change(seasons: "SeasonService", modules: "ModuleService") ->
         return f"✅ Standings for **{name}** synced to the standings channel."
 
     steps: dict[str, Step] = {
-        **review_posting.posting_steps(),
+        **review_posting.posting_steps(drawing),
         PLAN_REPOST: Step(PLAN_REPOST, StepKind.ACT, plan_repost, describe=describe_plan),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }

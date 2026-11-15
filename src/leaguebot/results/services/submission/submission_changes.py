@@ -128,7 +128,7 @@ from leaguebot.results.services.submission.submission_steps import (
 from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
@@ -731,8 +731,8 @@ def submission_all_cancelled_change(
             undiscardable=would_never_finish,
         ),
         NAMES: posting_steps()[NAMES],
-        POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
-        POST_STANDINGS: posting_steps()[POST_STANDINGS],
+        POST_SESSION_RESULTS: posting_steps(drawing)[POST_SESSION_RESULTS],
+        POST_STANDINGS: posting_steps(drawing)[POST_STANDINGS],
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
         **calendar_steps(seasons, drawing),
         **cancellation_steps,

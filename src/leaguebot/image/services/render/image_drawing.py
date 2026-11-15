@@ -12,8 +12,8 @@ time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wante
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
 to the log channel in one message. ``attach_forecast``, ``attach_check_in_call`` and
-``draw_attendance_sheet`` (after ``attendance_wanted``) and ``draw_verdict`` draw a weather forecast's, a
-check-in call's, an attendance sheet's and a verdict's picture for the post jobs, which are handed the drawing and write the
+``draw_attendance_sheet`` (after ``attendance_wanted``), ``draw_verdict`` and ``draw_results`` draw a weather
+forecast's, a check-in call's, an attendance sheet's, a verdict's and a session's results picture for the post jobs, which are handed the drawing and write the
 lines it hands back (weather's own gate reasons come back as its lines), and ``discard_attachment``
 removes a picture once its post is done. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
@@ -71,6 +71,7 @@ from leaguebot.image.services.aspects.image_calendar_service import (
     resolve_drawing,
 )
 from leaguebot.image.services.aspects import (
+    image_results_post,
     image_verdict_banner_post,
     image_verdict_post,
     image_weather_post,
@@ -793,6 +794,62 @@ class ImageDrawing:
         except Exception as exc:  # noqa: BLE001 — a banner never costs a batch its heading
             log.error("verdict banner: the graphic could not be drawn: %s", exc, exc_info=True)
             return None, (banner.fault(what, str(exc)),)
+
+    # ── A session's results ──────────────────────────────────────────────────
+
+    async def draw_results(
+        self,
+        *,
+        guild: Any,
+        session_result: Any,
+        driver_rows: Any,
+        points_map: Any,
+        round_number: Any,
+        race_name: str,
+        is_sprint: bool,
+        result_status: str,
+        division_name: str,
+        division_tier: Any = None,
+        season_number: Any = None,
+        dsq_phase_map: Any = None,
+    ) -> tuple[discord.File | None, tuple[str, ...]]:
+        """The ``discord.File`` one session's results ride on, or None to post the text, and the
+        lines saying what the drawing had to report.
+
+        None, and no line, where the league draws no results picture for this session
+        (`aspect_wanted`: the module, the `results` aspect and a valid template for the session's
+        own template, so that a sound qualifying template still draws while a faulty race
+        template falls back to text). Otherwise the session is resolved and drawn, and its
+        render's notices and the problem of a picture that was due and not drawn are handed back
+        as lines headed by the toggle's name, for the job that posts the results to write.
+
+        A fault in resolving the session or the directories is raised, for the post to name as the
+        reason the text stands; a switch nobody signed up for (`SwitchNotSignedUp`) is raised, as
+        everywhere.
+        """
+        import discord
+
+        from leaguebot.image.services.aspects.image_results_service import template_key_for
+
+        template_key = template_key_for(session_result.session_type)
+        if not await self.aspect_wanted(image_results_post.RESULTS_ASPECT, template_key):
+            return None, ()
+        if self._bot is None:
+            raise RuntimeError("this drawing was built without the bot, so it cannot draw results")
+        drawing = await image_results_post.build_drawing(
+            self._bot, guild, session_result=session_result, driver_rows=driver_rows,
+            points_map=points_map, round_number=round_number, race_name=race_name,
+            is_sprint=is_sprint, result_status=result_status, division_name=division_name,
+            division_tier=division_tier, season_number=season_number,
+            dsq_phase_map=dsq_phase_map,
+        )
+        decision = await image_results_post.render_png(self._config, self._renderer, drawing)
+        what = f"{division_name} round {round_number} — {drawing.session_name}"
+        lines = image_results_post.lines_of(what, decision)
+        if not decision.posts_image:
+            return None, lines
+        png = decision.png_paths[0]
+        return discord.File(str(png), filename=png.name), lines
 
     def discard_attachment(self, *attachments: discord.File | None) -> None:
         """Close a picture drawn for a post and delete the file behind it, once the post has been

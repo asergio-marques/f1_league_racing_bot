@@ -88,7 +88,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from collections.abc import Awaitable, Callable
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
 import discord
@@ -157,6 +157,9 @@ PROMPT_KIND = "results.review.prompt"
 APPEALS_STAGE = "appeals"
 REPORTS_APPROVE = "results.reports.approve"
 APPEALS_APPROVE = "results.appeals.approve"
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 _OPEN = "open"
 _POST_REVIEW_PROMPT = "post_review_prompt"
@@ -536,7 +539,7 @@ def _marked_channel(payload: dict[str, Any]) -> int | None:
 
 def review_open_change(
     *, queue: ChangeQueue, server_config: ReadServerConfig, router: OutputRouter,
-    attendance: AttendanceAfterReview,
+    attendance: AttendanceAfterReview, drawing: ImageDrawing | None = None,
 ) -> ChangeType:
     """The change that opens a round's penalty review; see the module. *queue* is the one its
     prompt's buttons ask their changes of, *server_config* reads the configuration their tier check
@@ -764,7 +767,7 @@ def review_open_change(
         return (PlannedStep(NAMES), PlannedStep(_OPEN), PlannedStep(_CLOSE))
 
     steps: dict[str, Step] = {
-        **{name: step for name, step in posting_steps().items()},
+        **{name: step for name, step in posting_steps(drawing).items()},
         _ABANDON: Step(_ABANDON, StepKind.SAVE, abandon, describe=describe_abandon),
         _POST_RESTART_NOTICE: Step(
             _POST_RESTART_NOTICE, StepKind.ACT, post_restart_notice, describe=notice.describe,

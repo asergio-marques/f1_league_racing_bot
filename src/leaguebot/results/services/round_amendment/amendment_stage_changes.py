@@ -654,7 +654,7 @@ def amendment_stage_changes(
         await _forget_banners_on(db, [int(ctx.step_payload["message_id"])])
 
     steps: dict[str, Step] = {
-        **posting_steps(),
+        **posting_steps(drawing),
         **review_verdicts.verdict_steps(now, attendance, drawing),
         TAKE_DOWN_VERDICT: Step(
             TAKE_DOWN_VERDICT, StepKind.DELETE, take_down_verdict, still_due=replacements_posted,

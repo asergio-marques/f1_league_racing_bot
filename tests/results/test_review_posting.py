@@ -280,7 +280,8 @@ async def _make_db(
 
 
 def _posting_type(
-    *, later_rounds: bool = False, notice: bool = False, label: str = LABEL
+    *, later_rounds: bool = False, notice: bool = False, label: str = LABEL,
+    drawing: Any = None,
 ) -> Any:
     """A change whose one opening job plans the round's republication through the module, under
     *label*."""
@@ -304,7 +305,7 @@ def _posting_type(
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep("plan"),),
-        steps={"plan": Step("plan", StepKind.SAVE, plan), **review_posting.posting_steps()},
+        steps={"plan": Step("plan", StepKind.SAVE, plan), **review_posting.posting_steps(drawing)},
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",
         doing=lambda _payload: "Republishing round 3",
@@ -312,14 +313,36 @@ def _posting_type(
     )
 
 
+def _a_picture() -> Any:
+    """A picture drawn for a post, as the drawing hands one back."""
+    import io
+
+    return discord.File(io.BytesIO(b"\x89PNG"), filename="results.png")
+
+
 async def _league(tmp_path: Any, **make: Any) -> _League:
     return _League(await _make_db(tmp_path, **make))
+
+
+def _drawing_of(league: _League) -> Any:
+    """The image drawing the posting change is handed: the builder's own where the league's bot is
+    the builder's, else one over the bot's services, which the double's switches answer."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    bot = league.bot
+    if isinstance(bot.image_drawing, ImageDrawing):
+        return bot.image_drawing
+    return ImageDrawing(
+        bot.module_service, MagicMock(), MagicMock(), renderer=MagicMock(), post_log=AsyncMock(),
+        db_path=league.db_path, bot=bot,
+    )
 
 
 async def _ask(league: _League, **kinds: Any) -> Any:
     """Attach a queue with the posting change alone, ask it for round 3, and give the asker's
     interaction; the queue is not yet run."""
-    attach_queue(league.bot, league.db_path, now=NOW, types=[_posting_type(**kinds)])
+    attach_queue(league.bot, league.db_path, now=NOW,
+                 types=[_posting_type(drawing=_drawing_of(league), **kinds)])
     interaction = member_interaction(league.bot)
     await league.bot.change_queue.ask(
         KIND, {"round_id": ROUND_ID}, interaction=interaction, what="the test's republication",
@@ -413,15 +436,10 @@ async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     results = league.channel(RESULTS_CHANNEL)
     results.send_fails = http_error(text="Discord is down")
-    pictures: list[int] = []
-
-    async def _picture(bot: Any, guild: Any, channel: Any, **_kwargs: Any) -> Any:
-        message = await channel.send("IMAGE")
-        pictures.append(message.id)
-        return MagicMock(applicable=True, message_id=message.id)
 
     with patch(
-        "leaguebot.image.services.aspects.image_results_post.try_post", new=AsyncMock(side_effect=_picture)
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
+        new=AsyncMock(return_value=(_a_picture(), ())),
     ) as try_post:
         await _ask(league)
         await run_queue(league.bot)
@@ -433,7 +451,6 @@ async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text
         await retry_job(league.bot)
 
     assert try_post.await_count == 1
-    assert pictures == []
     new = league.sent_to(RESULTS_CHANNEL)
     assert len(new) == 1
     assert "Round 3" in results.messages[new[0]].content
@@ -1187,8 +1204,8 @@ async def _republish_with_the_picture_declined(league: _League) -> Any:
     out as text after the picture was asked for; give the picture's stand-in."""
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.aspects.image_results_post.try_post",
-        new=AsyncMock(return_value=MagicMock(applicable=False, message_id=None)),
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
+        new=AsyncMock(return_value=(None, ())),
     ) as try_post:
         await _ask(league)
         await run_queue(league.bot)
@@ -1734,7 +1751,7 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.aspects.image_results_post.try_post",
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
         "leaguebot.image.services.aspects.image_standings_post.try_post",
@@ -1762,8 +1779,8 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.aspects.image_results_post.try_post",
-        new=AsyncMock(return_value=MagicMock(applicable=False, message_id=None)),
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
+        new=AsyncMock(return_value=(None, ())),
     ), patch(
         "leaguebot.image.services.aspects.image_standings_post.try_post",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
@@ -1795,7 +1812,7 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
         await db.commit()
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.aspects.image_results_post.try_post",
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
         "leaguebot.image.services.aspects.image_standings_post.try_post",
@@ -1822,9 +1839,12 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
 REFUSAL = "Discord failed part-way"
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a picture Discord refuses falls back to text and "
-                   "the log channel is told nothing")
-@pytest.mark.parametrize("picture", ["results", "standings"])
+@pytest.mark.parametrize("picture", [
+    "results",
+    pytest.param("standings", marks=pytest.mark.xfail(
+        strict=True, reason="#288: a picture Discord refuses falls back to text and "
+        "the log channel is told nothing")),
+])
 async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     tmp_path, picture,
 ):
@@ -1862,9 +1882,12 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a results or standings picture's render notices "
-                   "reach the log channel twice, once under no heading")
-@pytest.mark.parametrize("picture", ["results", "standings"])
+@pytest.mark.parametrize("picture", [
+    "results",
+    pytest.param("standings", marks=pytest.mark.xfail(
+        strict=True, reason="#288: a results or standings picture's render notices "
+        "reach the log channel twice, once under no heading")),
+])
 async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, picture,
 ):

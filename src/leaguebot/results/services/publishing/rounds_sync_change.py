@@ -39,6 +39,7 @@ from leaguebot.results.services.publishing.results_post_service import division_
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 ROUNDS_SYNC = "results.rounds.sync"
 PLAN_REPOST = "plan_repost"
@@ -51,7 +52,9 @@ def _discarded(view: StepView) -> bool:
     return "discarded" in (view.result or {})
 
 
-def rounds_sync_change(seasons: "SeasonService", modules: "ModuleService") -> ChangeType:
+def rounds_sync_change(
+    seasons: "SeasonService", modules: "ModuleService", drawing: "ImageDrawing | None" = None
+) -> ChangeType:
     """`results.rounds.sync`: a member's change, repeatable, that posts a division's results of
     every round again. The payload is `{"division_id", "division_name"}`."""
 
@@ -122,7 +125,7 @@ def rounds_sync_change(seasons: "SeasonService", modules: "ModuleService") -> Ch
         return f"✅ Results for all rounds in **{name}** synced to the results channel."
 
     steps: dict[str, Step] = {
-        **review_posting.posting_steps(),
+        **review_posting.posting_steps(drawing),
         PLAN_REPOST: Step(PLAN_REPOST, StepKind.ACT, plan_repost, describe=describe_plan),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }

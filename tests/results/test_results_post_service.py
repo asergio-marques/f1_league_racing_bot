@@ -1062,12 +1062,16 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
 
     # A session's results drawn as a picture: handed back with the posting it replaces, as a
     # text table is, for the caller's jobs to save and delete.
-    drew = MagicMock(applicable=True, message_id=9990, rejects=False, fallback_championships=[])
+    import io
+
+    drawing = MagicMock()
+    drawing.draw_results = AsyncMock(
+        return_value=(discord.File(io.BytesIO(b"\x89PNG"), filename="results.png"), ())
+    )
+    posted = await _results(drawing=drawing)
+    picture = [mid for kind, cid, mid in events if kind == "send" and cid == RESULTS_CHANNEL][-1]
+    assert posted == PostedTable([picture], [OLD_RESULTS], drawn=True)
     bot = MagicMock()
-    with patch(
-        "leaguebot.image.services.aspects.image_results_post.try_post", new=AsyncMock(return_value=drew)
-    ):
-        assert await _results(bot=bot) == PostedTable([9990], [OLD_RESULTS], drawn=True)
     # The standings drawn as pictures save and delete nothing either; what they report is
     # pinned in `test_image_standings_post.py`.
     from leaguebot.image.services.aspects.image_standings_post import (

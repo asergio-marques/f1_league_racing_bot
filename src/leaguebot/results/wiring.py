@@ -380,7 +380,7 @@ def register_change_types(
     bot.change_queue.register(
         submission_all_cancelled_change(
             seasons=bot.season_service,
-            drawing=bot.image_drawing,
+            drawing=_drawing_of(bot),
             attendance=attendance,
             cancellation_notices=bot.cancellation_notices,
             cancellation_steps=steps_of_the_modules(bot.cancellation_steps),
@@ -471,7 +471,7 @@ def register_change_types(
     bot.change_queue.register(
         review_open_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            router=bot.output_router, attendance=attendance,
+            router=bot.output_router, attendance=attendance, drawing=_drawing_of(bot),
         )
     )
     bot.change_queue.register(
@@ -529,8 +529,12 @@ def register_change_types(
             module_service=bot.module_service,
         )
     )
-    bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
-    bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))
+    bot.change_queue.register(
+        rounds_sync_change(bot.season_service, bot.module_service, _drawing_of(bot))
+    )
+    bot.change_queue.register(
+        standings_sync_change(bot.season_service, bot.module_service, _drawing_of(bot))
+    )
     bot.change_queue.register(
         setting_change(
             module_on_results(

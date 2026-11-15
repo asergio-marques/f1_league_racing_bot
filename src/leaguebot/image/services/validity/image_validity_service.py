@@ -1238,10 +1238,9 @@ async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
     """Whether *aspect* could cause a file to be attached to a posting on this server.
 
     **This predicate deliberately does NOT check template validity, and must not be
-    "fixed" to.** That is the one thing separating it from its three siblings —
-    ``image_results_post.results_enabled``, ``image_standings_post.standings_enabled`` and
-    ``image_attendance_post.attendance_enabled`` — every one of which takes the extra step
-    and asks whether a *particular* template is valid. Theirs is the right grain for their
+    "fixed" to.** That is the one thing separating it from the gate every picture asks,
+    ``ImageDrawing.aspect_wanted``, which takes the extra step
+    and asks whether a *particular* template is valid. That is the right grain for its
     question, which is whether **this** graphic draws or falls back to text. It is the
     wrong grain for this one.
 

@@ -106,7 +106,7 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
     )
 
     decision = await image_results_post.render_png(
-        bot, drawing, PostingOrigin.SCHEDULED
+        bot.image_config_service, bot.image_render_service, drawing, PostingOrigin.SCHEDULED
     )
 
     assert decision.posts_image
@@ -143,7 +143,9 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
         round_number="4",
     )
 
-    await image_results_post.render_png(bot, drawing, PostingOrigin.SCHEDULED)
+    await image_results_post.render_png(
+        bot.image_config_service, bot.image_render_service, drawing, PostingOrigin.SCHEDULED
+    )
 
     assert seen["image_type"] == "results_qualifying_template"
     assert (

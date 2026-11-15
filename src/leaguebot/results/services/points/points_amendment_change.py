@@ -444,7 +444,7 @@ def points_amendment_change(
         return "\n".join([APPROVED_BUT_INCOMPLETE, *left]) if left else SUCCESS
 
     steps: dict[str, Step] = {
-        **posting_steps(),
+        **posting_steps(drawing),
         **review_verdicts.verdict_steps(now, attendance, drawing),
         _PLAN_NAMES: Step(_PLAN_NAMES, StepKind.ACT, plan_names, describe=describe_plan_names),
         _APPLY: Step(

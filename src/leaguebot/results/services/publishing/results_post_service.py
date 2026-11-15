@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import aiosqlite
 import discord
@@ -55,6 +55,9 @@ from leaguebot.core.services.drivers.team_service import team_names_for_instance
 from leaguebot.results.utils import results_formatter
 from leaguebot.core.utils.league_bot import LeagueBot
 
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
 log = logging.getLogger(__name__)
 
 _MSG_MAX = 1990  # Leave a small margin under Discord's 2000-char limit
@@ -80,9 +83,10 @@ class PostedTable(NamedTuple):
     posted, which replaces what stood before as a text table does: *new* is its one message and
     *old* what it replaces. *championship* names the standings column the
     ids belong to, ``None`` for a session's results. *fault* is what kept a picture from posting
-    where this table went out as text in its place: the job returns it as a line of the log
-    (:func:`picture_fallback_line`), the image module having reported only the faults it
-    catches itself.
+    where this table went out as text in its place (a fault in drawing it, or Discord's refusal of
+    it): the job returns it as a line of the log (:func:`picture_fallback_line`). *lines* is what
+    the picture's drawing had to report, its render notices and the problem of a picture that was
+    due and not drawn, which the job returns as lines of its own.
     """
 
     new: list[int]
@@ -91,6 +95,7 @@ class PostedTable(NamedTuple):
     drawn: bool = False
     championship: str | None = None
     fault: str | None = None
+    lines: tuple[str, ...] = ()
 
 
 def picture_fallback_line(
@@ -113,6 +118,11 @@ def picture_fallback_line(
         f"  problem: round {round_number}'s {picture} picture could not be posted: {fault}\n"
         f"  to put it right: {put_right}"
     )
+
+
+#: The attribute a failed send carries the lines of the picture drawn for it on (`setattr`, as
+#: `left_standing` is), for the job to keep on the stop it raises.
+DRAWN_LINES_ATTRIBUTE = "drawn_lines"
 
 
 def fault_of(error: BaseException) -> str:
@@ -546,7 +556,7 @@ async def produce_session_results(
     label: str,
     is_sprint: bool = True,
     *,
-    bot: LeagueBot | None = None,
+    drawing: ImageDrawing | None = None,
     result_status: str | None = None,
 ) -> PostedTable:
     """Format and send a single session result, saving and deleting nothing.
@@ -557,19 +567,20 @@ async def produce_session_results(
 
     **The image path is a guard clause in front of an untouched body** (039). Where the
     images module is enabled, the `results` aspect is on and this session's template is
-    valid, ``image_results_post.try_post`` produces the PNG, posts it under the heading and
-    the lifecycle label, replaces the previous message and returns its id.
+    valid, *drawing* (the image module's, which the posting jobs are handed) draws the PNG, which
+    this posts under the heading and the lifecycle label, replaces the previous message and
+    returns its id. A picture that Discord refuses, or whose drawing raises, goes out as the text
+    in the same try, with the fault on the table for the job to say why.
 
-    Where it is not — no bot in scope, the module off, the aspect off, an invalid template,
-    or a render that failed an *uncommanded* posting — everything below runs exactly as it
-    did before 039. The graphic is an alternative output beside the text, not a reform of it
+    Where it is not — no drawing in scope, the module off, the aspect off, an invalid template,
+    or a render that failed — everything below runs exactly as it did before 039. The graphic is an alternative output beside the text, not a reform of it
     (Constitution XIV.7).
 
     This function is the single funnel every reposting occasion reaches, which is why the
     hook is here and not at its three call sites.
 
-    **A picture's message replaces what stood before as a text table's does**
-    (``image_results_post.try_post`` saves and deletes nothing): it is returned as ``drawn``,
+    **A picture's message replaces what stood before as a text table's does** (it saves and
+    deletes nothing): it is returned as ``drawn``,
     with its one message as *new* and what stood before as *old*, for the caller to save and
     take down.
     """
@@ -619,16 +630,12 @@ async def produce_session_results(
 
     # ── The image path (039) ──────────────────────────────────────────────
     fault: str | None = None
-    if bot is not None:
+    lines: tuple[str, ...] = ()
+    if drawing is not None:
+        file: discord.File | None = None
         try:
-            from leaguebot.image.services.aspects.image_results_post import try_post
-
-            outcome = await try_post(
-                bot,
-                guild,
-                results_channel,
-                heading=heading,
-                label=label,
+            file, lines = await drawing.draw_results(
+                guild=guild,
                 session_result=session_result,
                 driver_rows=driver_rows,
                 points_map=points_map,
@@ -642,16 +649,35 @@ async def produce_session_results(
                 division_tier=await _get_division_tier(db_path, session_result.division_id),
                 dsq_phase_map=dsq_phase_map,
             )
-            if outcome.applicable and outcome.message_id is not None:
-                return PostedTable([outcome.message_id], previous, drawn=True)
         except Exception as exc:  # noqa: BLE001 — a graphic never blocks a posting (XIV.4)
-            # A fault the image module reports itself is answered there; this one it let
-            # through, so it goes on the table for the job to say why the text stands.
+            # A fault in drawing the picture goes on the table for the job to say why the text
+            # stands.
             log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
             fault = fault_of(exc)
+        if file is not None:
+            try:
+                message_id = await post_standing(
+                    results_channel, f"{heading}\n{label}",
+                    mentions=discord.AllowedMentions.none(), file=file,
+                )
+            except discord.HTTPException as exc:
+                # Discord refused the upload: the text goes out in its place in this try, and the
+                # refusal and Discord's reason are on the table for the job to say so.
+                log.error("results: could not post image for session %s: %s", session_result.id, exc)
+                fault = f"Discord refused the picture ({fault_of(exc)})"
+            else:
+                return PostedTable([message_id], previous, drawn=True, lines=lines)
+            finally:
+                drawing.discard_attachment(file)
 
-    sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
-    return PostedTable(sent, previous, fault=fault)
+    try:
+        sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
+    except Exception as failure:
+        # What the picture had to say is kept on the stop, for the try that posts to hand back.
+        if lines:
+            setattr(failure, DRAWN_LINES_ATTRIBUTE, lines)
+        raise
+    return PostedTable(sent, previous, fault=fault, lines=lines)
 
 
 async def produce_cancelled_session_line(

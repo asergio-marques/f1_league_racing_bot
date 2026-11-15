@@ -119,6 +119,18 @@ def _drawing():
     return MagicMock(template_key="results_race_template", session_name="Race")
 
 
+def _image_drawing(bot):
+    """The image drawing a session's results are posted with, over *bot*'s services, which the
+    tests' switches answer."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    return ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=bot.output_router.post_log,
+        db_path=bot.db_path, bot=bot,
+    )
+
+
 # ── The textual path is untouched where the image path does not run ───────
 
 
@@ -163,7 +175,7 @@ async def test_the_module_being_disabled_leaves_the_text(tmp_path):
             round_number=5,
             track_name="Monaco",
             label="Provisional Results",
-            bot=_bot(db_path, module=False),
+            drawing=_image_drawing(_bot(db_path, module=False)),
         )
 
     assert len(sent) == 1 and "file" not in sent[0][1]
@@ -186,7 +198,7 @@ async def test_the_aspect_being_off_leaves_the_text(tmp_path):
             round_number=5,
             track_name="Monaco",
             label="Provisional Results",
-            bot=_bot(db_path, toggle=False),
+            drawing=_image_drawing(_bot(db_path, toggle=False)),
         )
 
     assert len(sent) == 1 and "file" not in sent[0][1]
@@ -210,7 +222,7 @@ async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
             round_number=5,
             track_name="Monaco",
             label="Provisional Results",
-            bot=_bot(db_path, valid=False),
+            drawing=_image_drawing(_bot(db_path, valid=False)),
         )
 
     assert len(sent) == 1
@@ -261,7 +273,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert posted.new == [4242]
@@ -312,7 +324,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     # The textual table went out in its place, handed back with the message it replaces, 111,
@@ -351,7 +363,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
         ),
     ):
         with in_a_job():
-            await produce_session_results(
+            posted = await produce_session_results(
                 db_path=db_path,
                 session_result=session_result,
                 driver_rows=[],
@@ -361,11 +373,14 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=bot,
+                drawing=_image_drawing(bot),
             )
 
-    bot.output_router.post_log.assert_awaited()
-    reported = bot.output_router.post_log.await_args.args[0]
+    # The problem comes back as a line of the job that posts, headed by the toggle's name, and is
+    # written to no log from here.
+    bot.output_router.post_log.assert_not_awaited()
+    [reported] = posted.lines
+    assert "Results image" in reported
     assert "Main" in reported and "5" in reported and "Race" in reported
     assert "no such field" in reported
     # And nothing of the sort reached the results channel.
@@ -427,11 +442,9 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
         image_results_post,
         "render_png",
         AsyncMock(return_value=_decision(png=png, notices=[notice])),
-    ), patch.object(
-        image_results_post, "report_notices", AsyncMock()
-    ) as reporter:
+    ):
         with in_a_job():
-            await produce_session_results(
+            posted = await produce_session_results(
                 db_path=db_path,
                 session_result=session_result,
                 driver_rows=[],
@@ -441,10 +454,12 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=bot,
+                drawing=_image_drawing(bot),
             )
 
-    reporter.assert_awaited()
+    # The notices come back as a line of the job that posts, once, naming the session.
+    [reported] = posted.lines
+    assert "Main round 5" in reported and "OPTIONAL_FIELD_EMPTIED" in reported
 
 
 # ── Enablement is checked per template, not per aspect ────────────────────
@@ -520,7 +535,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
                 round_number=5,
                 track_name="Monaco",
                 label="Provisional Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert captured["result_status"] == status
@@ -559,7 +574,7 @@ async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert captured["division_name"] == "Main"
@@ -615,7 +630,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert attempts == ["image", "text"]
@@ -630,10 +645,10 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
     with patch.object(
-        image_results_post,
-        "try_post",
-        AsyncMock(side_effect=RuntimeError("something unforeseen")),
+        ImageDrawing, "draw_results", AsyncMock(side_effect=RuntimeError("something unforeseen"))
     ):
         with in_a_job():
             await produce_session_results(
@@ -646,7 +661,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert len(sent) == 1
@@ -668,7 +683,7 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
         AsyncMock(side_effect=RuntimeError("no name could be resolved")),
     ):
         with in_a_job():
-            await produce_session_results(
+            posted = await produce_session_results(
                 db_path=db_path,
                 session_result=session_result,
                 driver_rows=[],
@@ -678,10 +693,12 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=bot,
+                drawing=_image_drawing(bot),
             )
 
-    bot.output_router.post_log.assert_awaited()
+    # The fault is on the table for the job to say why the text stands, not logged from here.
+    bot.output_router.post_log.assert_not_awaited()
+    assert posted.fault == "no name could be resolved"
     assert len(sent) == 1 and "file" not in sent[0][1]
 
 
@@ -723,7 +740,7 @@ async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert not png.exists()
@@ -767,7 +784,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert not png.exists(), "a failed upload must not strand the picture"
@@ -818,7 +835,7 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
                 round_number=5,
                 track_name="Monaco",
                 label="Final Results",
-                bot=_bot(db_path),
+                drawing=_image_drawing(_bot(db_path)),
             )
 
     assert posted.drawn is True and posted.new == [4242]

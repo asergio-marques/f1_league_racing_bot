@@ -55,7 +55,8 @@ import dataclasses
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, TypedDict
+from functools import partial
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
 import discord
@@ -67,6 +68,7 @@ from leaguebot.core.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
+    drawn_lines_kept,
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import SeasonStage
@@ -85,6 +87,7 @@ from leaguebot.results.models.standings_snapshot import (
 )
 from leaguebot.results.services.standings import standings_service
 from leaguebot.results.services.publishing.results_post_service import (
+    DRAWN_LINES_ATTRIBUTE,
     _delete_posting,
     _label_from_status,
     _parse_ids,
@@ -101,6 +104,9 @@ from leaguebot.results.services.publishing.results_post_service import (
     set_standings_message_id_on,
     standings_display_names,
 )
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -135,12 +141,17 @@ def delete_message_step(
     )
 
 
-def posting_steps() -> dict[str, Step]:
-    """The posting jobs, keyed by their names, for a change type's `steps`."""
+def posting_steps(drawing: ImageDrawing | None = None) -> dict[str, Step]:
+    """The posting jobs, keyed by their names, for a change type's `steps`.
+
+    *drawing* is the image module's, which the session's results post draws its picture with, handed
+    by the builder to each change type that posts results; a change type that takes only the
+    deletions and the names hands none, and its results post, never run, would post the text.
+    """
     return {
         NAMES: Step(NAMES, StepKind.ACT, _resolve_names, describe=_describe_names),
         POST_SESSION_RESULTS: Step(
-            POST_SESSION_RESULTS, StepKind.ACT, _post_session_results,
+            POST_SESSION_RESULTS, StepKind.ACT, partial(_post_session_results, drawing),
             still_due=_session_still_due, describe=_describe_session_post,
             record=_record_session_post,
         ),
@@ -716,7 +727,9 @@ async def _describe_session_post(ctx: StepContext) -> str:
     )
 
 
-async def _post_session_results(ctx: StepContext) -> StepResult:
+async def _post_session_results(
+    drawing: ImageDrawing | None, ctx: StepContext
+) -> StepResult:
     payload = ctx.step_payload
     row = await _session_row(ctx.db_path, payload["session_id"])
     if row is None:
@@ -759,24 +772,35 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
             ctx.db_path, _sr_from_row(row), driver_rows, points_map, channel, guild,
             rnd["round_number"], rnd["track_name"] or "Unknown", payload["label"], is_sprint,
             # The picture on the first try alone; a retry posts the text (XIV rule 8).
-            bot=ctx.bot if ctx.tries == 0 else None,
+            drawing=drawing if ctx.tries == 0 else None,
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
+        picture_lines = drawn_lines_kept(ctx.kept) + tuple(
+            getattr(error, DRAWN_LINES_ATTRIBUTE, ())
+        )
         if kept is not None:
             raise StepFailedOnDiscord(
                 "the results were posted in part and the rest was refused", result=kept
-            ) from error
+            ).carrying(picture_lines) from error
+        if picture_lines and isinstance(error, discord.HTTPException):
+            raise StepFailedOnDiscord(
+                "the results were refused", result=None
+            ).carrying(picture_lines) from error
         raise
     result = {
         "new": posted.new, "old": posted.old,
         "drawn": posted.drawn, "channel_id": channel_id,
     }
-    lines = () if posted.fault is None else (picture_fallback_line(
-        ctx.named, ctx.what, picture="results", division=rnd["division_name"],
-        round_number=rnd["round_number"], fault=posted.fault,
-        put_right=_put_right("results", payload["remedy"]),
-    ),)
+    # What the picture said when it was drawn on an earlier try, kept on that try's stop, is handed
+    # back with this one's.
+    lines = drawn_lines_kept(ctx.kept) + posted.lines
+    if posted.fault is not None:
+        lines += (picture_fallback_line(
+            ctx.named, ctx.what, picture="results", division=rnd["division_name"],
+            round_number=rnd["round_number"], fault=posted.fault,
+            put_right=_put_right("results", payload["remedy"]),
+        ),)
     return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
 
 

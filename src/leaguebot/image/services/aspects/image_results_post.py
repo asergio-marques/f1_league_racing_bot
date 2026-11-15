@@ -1,81 +1,41 @@
-"""Post one session's results as a graphic, or stand aside (039).
+"""What a session's results picture is drawn from, and the lines its drawing hands back (039).
 
-**One decision in one place**, as 038's lineup posting is. Every occasion that reposts a
-session's textual table reaches ``results_post_service.produce_session_results``, so hooking
-there covers all six of them — first provisional posting, penalty phase closed, appeal
-phase closed, resynchronised by command, amendment approved, and a points-configuration
-change causing recalculation — with one branch and no reachability argument.
+The picture is drawn by ``ImageDrawing.draw_results``, which the results module's posting jobs are
+handed: it asks the one gate every picture asks, resolves the session into a drawing
+(:func:`build_drawing`), renders it (:func:`render_png`) and hands back the file and the lines
+(:func:`lines_of`) the job writes. **This module posts nothing** and reports nothing itself: the
+results module posts the picture through core's standing-post handler, and a fault in drawing it is
+raised for the job to say why the text stands.
 
-The shape the caller uses:
+**The textual path is not reformed by this module.** Where the picture is not drawn, the caller's
+existing body runs exactly as it did before this feature. The graphic is an alternative output
+beside the text, never a replacement for it (Constitution XIV.7).
 
-    outcome = await try_post(bot, guild, channel, ...)
-    if outcome.applicable:
-        return outcome.message_id      # the graphic was posted, or the caller was told why
-    ...existing textual body, unchanged...
-
-**The textual path is not reformed by this module.** Where the image flow does not run —
-no bot in scope, the module disabled, the `results` toggle off, no valid template — the
-caller's existing body runs exactly as it did before this feature. The graphic is an
-alternative output beside the text, never a replacement for it (Constitution XIV.7).
+The readers of a driver's name, nationality and team here are the ones the other pictures share;
+they stay until the name chain is read through core.
 """
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.aspects.image_lineup_service import resolve_driver_name
 from leaguebot.core.utils.league_bot import LeagueBot
 
+if TYPE_CHECKING:
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+
 log = logging.getLogger(__name__)
 
-#: The image flow does not apply — the caller falls through to its textual body.
-NOT_APPLICABLE = "NOT_APPLICABLE"
-#: The graphic was produced and posted; the caller does nothing further.
-POSTED = "POSTED"
-#: The graphic could not be produced and the posting was **commanded**, so nothing is
-#: posted and the caller is told what is at fault.
-REJECTED = "REJECTED"
+RESULTS_ASPECT = "results"
 
-
-@dataclass
-class ResultsPostOutcome:
-    action: str = NOT_APPLICABLE
-    message: str | None = None
-    message_id: int | None = None
-    notices: list = field(default_factory=list)
-    png_path: Path | None = None
-
-    @property
-    def applicable(self) -> bool:
-        """True where this module handled the posting and the caller must not."""
-        return self.action != NOT_APPLICABLE
-
-
-async def results_enabled(bot: LeagueBot, template_key: str) -> bool:
-    """True where the module is on, the `results` aspect is on, and *template_key* is valid.
-
-    The aspect is what a league toggles; the two templates behind it are checked one at a
-    time, so a sound qualifying template still draws while a faulty race template falls back
-    to text (XIV.4 — the unit of failure is one graphic).
-    """
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False
-        toggles = await bot.image_config_service.get_toggles()
-        if not toggles.get("results"):
-            return False
-        reports = await bot.image_validity_service.template_reports()
-        report = reports.get(template_key)
-        return report is not None and report.valid
-    except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("results: enablement check failed: %s", exc, exc_info=True)
-        return False
+#: What the toggle draws, which heads a fault's line: the aspect `/images config toggle` offers.
+RESULTS_TOGGLE_NAME = "Results image"
 
 
 async def _nationality_collected(db_path: str) -> bool:
@@ -312,15 +272,24 @@ async def build_drawing(
     )
 
 
-async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
-    """Render one session's results. Returns the render service's PostingDecision."""
+async def render_png(
+    config_service: ImageConfigService,
+    renderer: ImageRenderService,
+    drawing,
+    origin: PostingOrigin = PostingOrigin.SCHEDULED,
+):
+    """Render one session's results. Returns the render service's PostingDecision.
+
+    A fault in resolving the directories or building the fill is raised, for the results' own
+    post to say why the text stands.
+    """
     from leaguebot.image.services.aspects.image_results_service import build_fill_spec
     from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
 
-    config = await bot.image_config_service.get_config()
+    config = await config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
         config,
         (
@@ -336,13 +305,12 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     # One template draws four sessions, so the *session's* own label names the file:
     # `feature_qualifying_results` rather than the template's `qualifying_results`,
     # which would not say which of a sprint weekend's two qualifyings was drawn.
-    return await bot.image_render_service.render_for_posting(
+    return await renderer.render_for_posting(
         drawing.template_key,
         spec_builder_with_faults(
             build_fill_spec, drawing, directories, directory_faults
         ),
         posting_origin=origin,
-        bot=bot,
         division_name=drawing.division_name,
         filename_stem=stem_for_drawing(
             drawing, subject=f"{drawing.session_name} results"
@@ -350,157 +318,18 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     )
 
 
-@posts_in_a_job
-async def try_post(
-    bot: LeagueBot,
-    guild,
-    channel,
-    *,
-    heading: str,
-    label: str,
-    session_result,
-    driver_rows,
-    points_map,
-    round_number,
-    race_name: str,
-    is_sprint: bool,
-    result_status: str,
-    division_name: str,
-    division_tier=None,
-    season_number=None,
-    dsq_phase_map=None,
-    origin: PostingOrigin = PostingOrigin.SCHEDULED,
-) -> ResultsPostOutcome:
-    """Post this session's classification as a graphic, or stand aside.
+def fault(what: str, detail: str) -> str:
+    """The line saying why the picture of *what* was not drawn, headed by the toggle's name."""
+    return f"⚠️ {RESULTS_TOGGLE_NAME} — {what}: {detail}"
 
-    **This posts and nothing else** (#439). An attachment cannot be introduced into a message
-    already posted, so the image flow replaces rather than edits: the PNG is produced first and
-    the new message posted. It saves no id and deletes no message: the caller returns the message
-    posted with the ones it replaces, and the change queue saves the new id with the job's mark
-    and deletes the old messages by jobs of their own once the new one stands. A render that
-    fails therefore leaves the channel holding the message it had, and the caller falls back to
-    text.
 
-    The heading and the lifecycle label stay **message text** — the graphic carries the table
-    alone (XIV.16).
-    """
-    if bot is None or guild is None or channel is None:
-        return ResultsPostOutcome()
+def lines_of(what: str, decision) -> tuple[str, ...]:
+    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
 
-    try:
-        from leaguebot.image.services.aspects.image_results_service import template_key_for
-
-        template_key = template_key_for(session_result.session_type)
-    except Exception as exc:  # noqa: BLE001
-        log.error("results: unknown session type %s: %s", session_result.session_type, exc, exc_info=True)
-        return ResultsPostOutcome()
-
-    if not await results_enabled(bot, template_key):
-        return ResultsPostOutcome()
-
-    session_label = f"{division_name} round {round_number}"
-
-    try:
-        drawing = await build_drawing(
-            bot,
-            guild,
-            session_result=session_result,
-            driver_rows=driver_rows,
-            points_map=points_map,
-            round_number=round_number,
-            race_name=race_name,
-            is_sprint=is_sprint,
-            result_status=result_status,
-            division_name=division_name,
-            division_tier=division_tier,
-            season_number=season_number,
-            dsq_phase_map=dsq_phase_map,
-        )
-        decision = await render_png(bot, drawing, origin)
-    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("results: render failed for session %s: %s", session_result.id, exc, exc_info=True)
-        await report(bot, drawing_label(drawing=None, fallback=session_label), str(exc))
-        if origin is PostingOrigin.COMMANDED:
-            return ResultsPostOutcome(action=REJECTED, message=f"❌ {exc}")
-        return ResultsPostOutcome()
-
-    if decision.rejects:
-        return ResultsPostOutcome(
-            action=REJECTED,
-            message=decision.caller_message(
-                f"the {drawing.session_name.lower()} results of {session_label}"
-            ),
-            notices=decision.notices,
-        )
-
-    if not decision.posts_image:
-        # An uncommanded posting whose render failed: the caller's textual body runs, and
-        # the previously posted message is left where it is until it does.
-        if decision.problem is not None:
-            await report(
-                bot,
-                f"{session_label} — {drawing.session_name}",
-                decision.problem.detail,
-            )
-        return ResultsPostOutcome()
-
-    from leaguebot.image.services.render.image_render_service import discard_attachment
-
-    png = decision.png_paths[0]
-    # Discarded through the attachment rather than the path: the file object holds the
-    # handle open, and closing it here rather than trusting the send to have done it keeps
-    # the cleanup independent of how far the send got.
-    attachment = discord.File(str(png), filename=png.name)
-    try:
-        message = await channel.send(f"{heading}\n{label}", file=attachment)
-    except discord.HTTPException as exc:
-        log.error("results: could not post image for session %s: %s", session_result.id, exc)
-        # A Discord failure rather than a generation one: the caller falls through and posts
-        # the **textual** table in its place, in the same try.
-        return ResultsPostOutcome()
-    finally:
-        discard_attachment(attachment)
-
+    lines: list[str] = []
     if decision.notices:
-        await report_notices(
-            bot, f"{session_label} — {drawing.session_name}", decision.notices
-        )
-
-    # No ``png_path``: the file was discarded the moment the send returned, and handing
-    # back a path to something deleted is worse than handing back nothing.
-    return ResultsPostOutcome(
-        action=POSTED, message_id=message.id, notices=decision.notices
-    )
-
-
-def drawing_label(*, drawing, fallback: str) -> str:
-    """A human label for a report, whether or not the drawing was built."""
-    if drawing is None:
-        return fallback
-    return f"{fallback} — {drawing.session_name}"
-
-
-async def report(bot: LeagueBot, what: str, detail: str) -> None:
-    """Report a fault to the server's logging channel, and never to a driver-read channel."""
-    try:
-        await bot.output_router.post_log(
-            f"⚠️ Results image — {what}: {detail}"
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.error("results: could not report to the log channel: %s", exc, exc_info=True)
-
-
-async def report_notices(bot: LeagueBot, what: str, notices) -> None:
-    """Report every non-fatal degradation, naming the session it pertains to.
-
-    `what` reaches the log as the block's subject. It used to be accepted and dropped,
-    which left a reader of a busy log unable to tell which session a notice came from.
-    """
-    if not notices:
-        return
-    try:
-        from leaguebot.image.services.render.image_render_service import ImageRenderService
-
-        await ImageRenderService.report_notices(bot, notices, subject=what)
-    except Exception as exc:  # noqa: BLE001
-        log.error("results: could not report notices: %s", exc, exc_info=True)
+        lines.append(ImageRenderService.format_notices(decision.notices, subject=what))
+    if decision.problem is not None:
+        lines.append(fault(what, decision.problem.detail))
+    return tuple(lines)

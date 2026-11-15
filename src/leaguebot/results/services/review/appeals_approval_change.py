@@ -321,7 +321,7 @@ def appeals_approval_change(
         return "\n".join([reply, *left])
 
     steps: dict[str, Step] = {
-        **posting_steps(),
+        **posting_steps(drawing),
         **review_verdicts.verdict_steps(now, attendance, drawing),
         _APPLY: Step(
             _APPLY, StepKind.SAVE, apply, still_due=names_not_discarded, describe=describe_apply,
