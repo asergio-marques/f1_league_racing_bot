@@ -138,7 +138,8 @@ async def _portrait_bot(tmp_path, *, use_pfp: int, pfp_daily: int):
 
 
 async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
-    """The job is recurring and in memory only, so a restart loses it until this re-adds it."""
+    """The job is recurring and its store survives a restart; this re-adds it at start-up at the
+    time the league has stored, replacing whatever the store kept."""
     from leaguebot.image.wiring import recover_portrait_refresh_job
 
     bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
