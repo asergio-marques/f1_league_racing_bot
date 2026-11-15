@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.image.models.forecast_values import ForecastValues
     from leaguebot.image.services.aspects.image_attendance_service import AttendanceDrawing
+    from leaguebot.image.services.aspects.image_verdict_banner_service import VerdictBannerDrawing
     from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
@@ -69,7 +70,11 @@ from leaguebot.image.services.aspects.image_calendar_service import (
     build_fill_spec,
     resolve_drawing,
 )
-from leaguebot.image.services.aspects import image_verdict_post, image_weather_post
+from leaguebot.image.services.aspects import (
+    image_verdict_banner_post,
+    image_verdict_post,
+    image_weather_post,
+)
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_KEY, render_for_command
 from leaguebot.image.services.render.image_render_service import (
@@ -748,6 +753,46 @@ class ImageDrawing:
         if render.png is None:  # `render.draws`, in a form the type check can follow
             return None, lines
         return discord.File(str(render.png), filename=Path(render.png).name), lines
+
+    # ── The verdict banner ───────────────────────────────────────────────────
+
+    async def draw_banner(
+        self, drawing: VerdictBannerDrawing
+    ) -> tuple[discord.File | None, tuple[str, ...]]:
+        """The ``discord.File`` the banner over a batch of verdicts rides on, or None to head the
+        batch in words, and the lines saying what the drawing had to report.
+
+        None, and no line, where the league draws no banner (`aspect_wanted`: the module, the
+        `verdict_banner` aspect and a valid template). Otherwise the render's notices and the fault
+        of a picture that was due and not drawn are handed back as lines headed by the toggle's
+        name, for the job that posts the heading to write (architecture.md, "Errors and
+        failures"); every batch is headed whatever happens here (STW-VER-026, STW-VER-027).
+
+        The catch-all is around the drawing alone, a graphic riding on a post (architecture.md,
+        "A catch-all error handler", place 6): a fault in any of it is a line, never a batch left
+        unheaded; a switch nobody signed up for (`SwitchNotSignedUp`) is not one, being a fault in
+        the bot's assembly, and is raised.
+        """
+        import discord
+
+        banner = image_verdict_banner_post
+        if not await self.aspect_wanted(banner.BANNER_ASPECT, banner.BANNER_TEMPLATE_KEY):
+            return None, ()
+        what = banner.describe(
+            division_name=drawing.division_name, round_number=drawing.round_number,
+            season_number=drawing.season_number,
+        )
+        try:
+            render = await banner.render_banner(self._config, self._renderer, drawing)
+            lines = banner.lines_of(what, render)
+            if render.png is None:  # `render.draws`, in a form the type check can follow
+                return None, lines
+            return discord.File(str(render.png), filename=Path(render.png).name), lines
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
+        except Exception as exc:  # noqa: BLE001 — a banner never costs a batch its heading
+            log.error("verdict banner: the graphic could not be drawn: %s", exc, exc_info=True)
+            return None, (banner.fault(what, str(exc)),)
 
     def discard_attachment(self, *attachments: discord.File | None) -> None:
         """Close a picture drawn for a post and delete the file behind it, once the post has been

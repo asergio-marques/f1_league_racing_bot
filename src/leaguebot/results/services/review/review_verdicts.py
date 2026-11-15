@@ -14,9 +14,10 @@ and presses Retry. A retry posts as text (Constitution XIV, rule 8).
 
 **The heading is a job of its own** (`announce_heading`), ahead of the verdicts, and a heading
 Discord refuses stops the queue with no verdict posted ahead of it; once discarded, the verdicts go
-out beneath none, and the outcome says so. It treats a banner `try_post` returns as None as a
-failure. Its `record` saves the banner row, so the sanctions that follow read the heading back from
-its row and a stop and a restart between a verdict and a sanction post no second one. **The
+out beneath none, and the outcome says so. It posts the banner `ImageDrawing.draw_banner` draws, or the
+words where none is drawn, and a refusal of Discord's stops the queue naming it. Its `record` saves the
+banner row, so the sanctions that follow read the heading back from its row and a stop and a restart
+between a verdict and a sanction post no second one. **The
 sanction cards' own heading is the same job** (owner, 2026-10-06, "Yes, it stops too"): where no
 penalty was applied, so no heading stands over the round's verdicts, the first `apply_sanction`
 that applies plans one ahead of its card (`_sanction_heading`), which stops the queue as the
@@ -71,6 +72,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+import discord
+
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     GuildUnavailable,
@@ -83,7 +86,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.posting.notice_handler import delete_notice
+from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
@@ -114,6 +117,9 @@ ANNOUNCE_SANCTION = "announce_sanction"
 REFRESH_LINEUP = "refresh_lineup"
 
 _SYNC = "Run `/attendance sync` to finish it."
+
+#: The heading over a batch of verdicts notifies nobody: it names a season, a division and a round.
+_NO_MENTIONS = discord.AllowedMentions.none()
 
 #: What an `announce_heading` payload carries where it heads a round's sanction cards and no
 #: verdict, so that its job and a Discard of it name what it heads.
@@ -180,7 +186,7 @@ def verdict_steps(
 
     return {
         ANNOUNCE_HEADING: Step(
-            ANNOUNCE_HEADING, StepKind.ACT, _announce_heading,
+            ANNOUNCE_HEADING, StepKind.ACT, with_drawing(_announce_heading),
             still_due=bound(_heading_still_due), describe=_describe_heading,
             record=record_heading,
         ),
@@ -574,11 +580,11 @@ async def _heading_still_due(ctx: StepContext, hook: AttendanceAfterReview) -> b
     return not await vas._banners_of(ctx.db_path, int(ctx.step_payload["round_id"]))
 
 
-async def _announce_heading(ctx: StepContext) -> StepResult:
+async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResult:
     round_id = int(ctx.step_payload["round_id"])
     channel, context = await _channel_of(ctx, round_id)
     await _take_down_kept(channel, ctx)
-    drawing = image_verdict_banner_post.build_drawing(
+    heading = image_verdict_banner_post.build_drawing(
         season_number=context.get("season_number"),
         division_name=context["division_name"],
         division_tier=context.get("division_tier"),
@@ -586,12 +592,28 @@ async def _announce_heading(ctx: StepContext) -> StepResult:
         race_name=context.get("race_name"),
         country_name=context.get("country_name"),
     )
-    message = await image_verdict_banner_post.try_post(
-        ctx.bot, channel, drawing, as_text=ctx.tries > 0
-    )
-    if message is None:
-        raise StepFailedOnDiscord("the heading over the verdicts could not be posted")
-    return StepResult(result={"message_id": message.id, "channel_id": channel.id})
+    # The picture is drawn on the first try alone, a retry heading the batch in words (Constitution
+    # XIV, rule 8); what it said is kept with every stop that follows, so that the try which posts
+    # hands it back with its own.
+    drawn = drawn_lines_kept(ctx.kept)
+    attachment = None
+    if ctx.tries == 0:
+        attachment, drawn = await drawing.draw_banner(heading)
+    try:
+        if attachment is None:
+            text: str | None = image_verdict_banner_post.heading_text(heading)
+            parts: dict[str, Any] = {}
+        else:
+            text, parts = None, {"file": attachment}  # a drawn banner's message carries no text
+        try:
+            message = await send_notice(channel, text, mentions=_NO_MENTIONS, **parts)
+        except discord.HTTPException as refused:
+            raise StepFailedOnDiscord(
+                f"the heading over the verdicts could not be posted: {refused}"
+            ).carrying(drawn) from refused
+    finally:
+        drawing.discard_attachment(attachment)
+    return StepResult(result={"message_id": message.id, "channel_id": channel.id}, lines=drawn)
 
 
 async def _describe_verdict(ctx: StepContext) -> str:

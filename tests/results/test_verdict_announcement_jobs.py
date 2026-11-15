@@ -398,8 +398,6 @@ async def _announced(league: ReviewLeague) -> int:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#288: the stop notice gives the heading's own reason, "
-                   "hiding that Discord refused it")
 async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp_path):
     """The verdicts channel refuses the written heading alone. The heading is a job of its own,
     so the queue stops at it and no verdict goes out ahead of it (owner, Gate 2, 2026-10-05:
@@ -435,9 +433,9 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
     """The banner's poster raising, a fault in the bot, stops the queue at the heading like any
     failure; no verdict goes out until it is cleared. A Retry once it works posts the heading
     first, then both verdicts beneath it."""
-    from leaguebot.image.services.aspects import image_verdict_banner_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-    real = image_verdict_banner_post.try_post
+    real = ImageDrawing.draw_banner
     broken = {"on": True}
 
     async def _boom(*args: Any, **kwargs: Any) -> Any:
@@ -445,7 +443,7 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
             raise RuntimeError("the banner could not be posted")
         return await real(*args, **kwargs)
 
-    monkeypatch.setattr(image_verdict_banner_post, "try_post", _boom)
+    monkeypatch.setattr(ImageDrawing, "draw_banner", _boom)
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
     await run_queue(league.bot)
@@ -467,20 +465,18 @@ async def test_a_banner_that_cannot_be_drawn_heads_the_verdicts_in_words(tmp_pat
     """The banner switched on, its render failing for want of a rasteriser: the verdicts are
     headed by the written heading instead, posted first, and the verdict follows it."""
     from leaguebot.image.services.aspects import image_verdict_banner_post as banner
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-    async def _enabled(_bot: Any) -> bool:
-        return True
+    real_wanted = ImageDrawing.aspect_wanted
 
-    async def _render(_bot: Any, _drawing: Any, **_kwargs: Any) -> Any:
+    async def _wanted(self: Any, aspect: str, template_key: str | None = None) -> bool:
+        return True if aspect == "verdict_banner" else await real_wanted(self, aspect, template_key)
+
+    async def _render(_config: Any, _renderer: Any, _drawing: Any, **_kwargs: Any) -> Any:
         return banner.BannerRender(png=None, problem="RASTERISER")
 
-    async def _quiet(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
-    monkeypatch.setattr(banner, "banner_enabled", _enabled)
+    monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(banner, "render_banner", _render)
-    monkeypatch.setattr(banner, "report", _quiet)
-    monkeypatch.setattr(banner, "report_notices", _quiet)
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -888,9 +884,7 @@ _FAULTED_PICTURES = [
 
 @pytest.mark.parametrize(("aspect", "template", "name"), [
     _FAULTED_PICTURES[0],
-    pytest.param(*_FAULTED_PICTURES[1], marks=pytest.mark.xfail(
-        strict=True, reason="#288: a verdict's or a banner's render fault is logged as a "
-        "'Results image' fault")),
+    *_FAULTED_PICTURES[1:],
 ], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
 async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     tmp_path, aspect, template, name,
@@ -930,9 +924,7 @@ NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 @pytest.mark.parametrize(("aspect", "template", "name"), [
     _FAULTED_PICTURES[0],
-    pytest.param(*_FAULTED_PICTURES[1], marks=pytest.mark.xfail(
-        strict=True, reason="#288: a verdict's or a banner's render notices reach the log channel "
-        "twice, once under no heading")),
+    *_FAULTED_PICTURES[1:],
 ], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
 async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, aspect, template, name,

@@ -983,7 +983,6 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "post_championship"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
 }
 
 
@@ -1512,8 +1511,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_standings_post.py", "report"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "standings_enabled"): (3, PASS["image"]),
     ("image/services/validity/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
-    ("image/services/aspects/image_verdict_banner_post.py", "banner_enabled"): (3, PASS["image"]),
-    ("image/services/aspects/image_verdict_banner_post.py", "render_banner"): (2, PASS["image"]),
 }
 
 
@@ -3119,6 +3116,9 @@ CATCH_ALLS_ALLOWED = {
     ("image/services/render/image_drawing.py", "ImageDrawing.draw_attendance_sheet"):
         "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
         "back as a line for the log channel, and the sheet goes out as text",
+    ("image/services/render/image_drawing.py", "ImageDrawing.draw_banner"):
+        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
+        "back as a line for the log channel, and the batch is headed in words",
     ("image/services/render/image_drawing.py", "ImageDrawing._weather_gate"):
         "place 6, around reading the switch of a graphic that rides on a post: a switch that "
         "cannot be read is a reason like any other, handed back as a line for the log channel, "
@@ -3196,9 +3196,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_standings_post.py", "standings_enabled"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/validity/image_validity_service.py", "aspect_attaches_files"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_banner_post.py", "banner_enabled"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_banner_post.py", "render_banner"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_banner_post.py", "try_post"): (2, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_driver_nationality"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_mention_names"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_round_context"): (1, PASS["image"]),

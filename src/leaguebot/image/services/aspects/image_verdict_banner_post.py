@@ -30,11 +30,12 @@ only handle a search has. A league that would rather have searchable headers swi
 aspect off and gets them in words, which is now a choice between two headers rather than
 between a header and none.
 
-**`try_post` itself never raises**: every fault on its path is logged and it returns None for a
-banner not posted. What None means is the caller's, and both callers, a round's review and
-`/attendance sync`, head their verdicts and cards with a job (`ANNOUNCE_HEADING`) that treats it as
-a failure: a heading Discord refuses stops the queue until it is retried or discarded, and what
-waits behind it goes out beneath none only once it is discarded.
+**The picture is drawn for the caller and posted by it.** `ImageDrawing.draw_banner` hands back the
+picture, or none where the text heading is to stand, with the lines saying what the drawing had to
+report; it never raises a fault of the drawing and never posts. Both callers, a round's review and
+`/attendance sync`, head their verdicts and cards with a job (`ANNOUNCE_HEADING`) that posts what it
+is handed and stops the queue where Discord refuses it: a heading Discord refuses stops the queue until
+it is retried or discarded, and what waits behind it goes out beneath none only once it is discarded.
 
 **A header is an aid to reading a channel and is no record of a decision** (decided 2026-09-21): it
 exists so a reader can tell at a glance which round the verdicts beneath it pertain to. Two things
@@ -49,26 +50,32 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.aspects.image_verdict_banner_service import VerdictBannerDrawing
-from leaguebot.core.utils.league_bot import LeagueBot
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
 
 log = logging.getLogger(__name__)
 
 BANNER_ASPECT = "verdict_banner"
 BANNER_TEMPLATE_KEY = "verdict_banner_template"
 
+#: The toggle's name in `/images config toggle` ("Verdict banner") and what it draws, which heads
+#: a fault's line.
+BANNER_TOGGLE_NAME = "Verdict banner image"
+
 
 @dataclass
 class BannerRender:
     """What the image path produced for one banner.
 
-    *png* is None wherever no picture is to be drawn — the module off, the aspect off, the
-    template invalid, or the render having failed. The caller need not know which. It says
-    nothing about whether a header is posted: each of those cases heads the batch in words
-    instead (#246).
+    *png* is None wherever no picture is to be drawn: the render having failed. The caller need
+    not know which. It says nothing about whether a header is posted: each of those cases heads
+    the batch in words instead (#246).
     """
 
     png: Path | None = None
@@ -78,27 +85,6 @@ class BannerRender:
     @property
     def draws(self) -> bool:
         return self.png is not None
-
-
-async def banner_enabled(bot: LeagueBot) -> bool:
-    """True where the module is on, the aspect is on, and the template is valid.
-
-    Read separately from `verdicts_enabled`: the two aspects are independent, so a league
-    may draw cards without banners or banners without cards, and an unusable banner file
-    cannot stop a verdict being posted.
-    """
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False
-        toggles = await bot.image_config_service.get_toggles()
-        if not toggles.get(BANNER_ASPECT):
-            return False
-        reports = await bot.image_validity_service.template_reports()
-        report = reports.get(BANNER_TEMPLATE_KEY)
-        return report is not None and report.valid
-    except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("verdict banner: enablement check failed: %s", exc, exc_info=True)
-        return False
 
 
 def build_drawing(
@@ -128,42 +114,56 @@ def build_drawing(
     )
 
 
+def fault(what: str, detail: str) -> str:
+    """The line saying why the picture of *what* was not drawn, headed by the toggle's name."""
+    return f"⚠️ {BANNER_TOGGLE_NAME} — {what}: {detail}"
+
+
+def lines_of(what: str, render: BannerRender) -> tuple[str, ...]:
+    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+
+    lines: list[str] = []
+    if render.notices:
+        lines.append(ImageRenderService.format_notices(render.notices, subject=what))
+    if render.problem:
+        lines.append(fault(what, render.problem))
+    return tuple(lines)
+
+
 async def render_banner(
-    bot: LeagueBot,
+    config_service: ImageConfigService,
+    renderer: ImageRenderService,
     drawing: VerdictBannerDrawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> BannerRender:
-    """Render *drawing* to a PNG, or report why no banner is to be posted."""
+    """Render *drawing* to a PNG, or report why no banner is to be posted.
+
+    A fault in resolving the directories or building the fill is raised, for the drawing to hand
+    back as the line saying why the heading is in words.
+    """
     from leaguebot.image.services.aspects.image_verdict_banner_service import build_fill_spec
     from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
-    try:
-        config = await bot.image_config_service.get_config()
-        directories, directory_faults = resolve_configured_directories(
-            config,
-            (("flag", "flag_directory"),),
-            image_type=BANNER_TEMPLATE_KEY,
-        )
+    config = await config_service.get_config()
+    directories, directory_faults = resolve_configured_directories(
+        config,
+        (("flag", "flag_directory"),),
+        image_type=BANNER_TEMPLATE_KEY,
+    )
 
-        from leaguebot.image.utils.image_naming import stem_for_drawing
-
-        decision = await bot.image_render_service.render_for_posting(
-            BANNER_TEMPLATE_KEY,
-            spec_builder_with_faults(
-                build_fill_spec, drawing, directories, directory_faults
-            ),
-            posting_origin=origin,
-            bot=bot,
-            division_name=drawing.division_name,
-            filename_stem=stem_for_drawing(drawing, BANNER_TEMPLATE_KEY),
-        )
-    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("verdict banner: render failed: %s", exc, exc_info=True)
-        return BannerRender(problem=str(exc))
+    decision = await renderer.render_for_posting(
+        BANNER_TEMPLATE_KEY,
+        spec_builder_with_faults(build_fill_spec, drawing, directories, directory_faults),
+        posting_origin=origin,
+        division_name=drawing.division_name,
+        filename_stem=stem_for_drawing(drawing, BANNER_TEMPLATE_KEY),
+    )
 
     if not decision.posts_image:
         return BannerRender(
@@ -177,27 +177,13 @@ async def render_banner(
 def heading_text(drawing: VerdictBannerDrawing) -> str:
     """The heading the banner draws, as message text.
 
-    Posted wherever the picture is not — the aspect off, the module off, the template
-    unusable, or the render having failed (#246). It is the ordinary case for a league not
-    using the banner, and the exception is the other way round: a banner that arrived says
-    all of this already, so nothing is posted beside it.
+    Posted wherever the picture is not: the aspect off, the module off, the template unusable,
+    the render having failed or a retry (#246). It is the ordinary case for a league not using the
+    banner, and the exception is the other way round: a banner that arrived says all of this
+    already, so nothing is posted beside it.
     """
     season = f"Season {drawing.season_number} " if drawing.season_number is not None else ""
     return f"**{season}{drawing.division_name} Round {drawing.round_number}**"
-
-
-def discard(render, attachment=None) -> None:
-    """Delete the banner once its posting has been attempted.
-
-    Here rather than in the caller because a source module reaches the image module through
-    its own posting façade and never through the render service — the boundary
-    ``test_no_source_module_posting_path_imports_the_render_service`` exists to hold.
-    """
-    from leaguebot.image.services.render.image_render_service import discard_attachment, discard_render
-
-    if attachment is not None:
-        discard_attachment(attachment)
-    discard_render(getattr(render, "png", None))
 
 
 def describe(*, division_name: str, round_number, season_number=None) -> str:
@@ -209,77 +195,3 @@ def describe(*, division_name: str, round_number, season_number=None) -> str:
     parts.append(f"Round {round_number}")
     parts.append("Verdict banner")
     return " · ".join(parts)
-
-
-async def report(bot: LeagueBot, what: str, detail: str) -> None:
-    """Report a fault to the server's logging channel, never to a verdicts channel."""
-    from leaguebot.image.services.aspects.image_results_post import report as _report
-
-    await _report(bot, what, detail)
-
-
-async def report_notices(bot: LeagueBot, what: str, notices) -> None:
-    """Report non-fatal degradations to the logging channel (XIV.4)."""
-    from leaguebot.image.services.aspects.image_results_post import report_notices as _report_notices
-
-    await _report_notices(bot, what, notices)
-
-
-@posts_in_a_job
-async def try_post(
-    bot: LeagueBot, channel, drawing: VerdictBannerDrawing, *, as_text: bool = False
-):
-    """Post the banner above a batch of verdicts. Returns the message sent, or None.
-
-    *as_text* heads the batch in words and never draws, as a queued retry does (Constitution
-    XIV, rule 8).
-
-    The message rather than a flag, so the caller can record which message carries the banner
-    and take it down when the run beneath it is replaced (#345). A banner belongs to no verdict
-    record, so nothing else knows where it is.
-
-    Never raises: every fault on this path is logged and swallowed, and a banner not posted is
-    None. What that means is the caller's: a round's review and `/attendance sync` each head
-    their verdicts and cards with a job that treats None as a failure, which stops the queue
-    (`review_verdicts.announce_heading`).
-    """
-    import discord
-
-    if as_text or not await banner_enabled(bot):
-        #  The picture is not to be drawn — the module off, the aspect off, or the template
-        #  unusable — so the batch is headed in words instead of not at all (STW-VER-027).
-        try:
-            return await channel.send(heading_text(drawing))
-        except Exception:
-            log.exception("verdict banner: could not head the batch in words")
-            return None
-
-    subject = describe(
-        division_name=drawing.division_name,
-        round_number=drawing.round_number,
-        season_number=drawing.season_number,
-    )
-
-    render = None
-    attachment = None
-    try:
-        render = await render_banner(bot, drawing)
-
-        if render.notices:
-            await report_notices(bot, subject, render.notices)
-
-        if render.png is None:  # `render.draws`, in a form the type check can follow
-            if render.problem:
-                await report(bot, subject, render.problem)
-            #  The aspect is on and the picture could not be drawn, so the batch is headed
-            #  in words rather than not at all.
-            return await channel.send(heading_text(drawing))
-
-        attachment = discord.File(str(render.png), filename=render.png.name)
-        return await channel.send(file=attachment)
-    except Exception:
-        log.exception("verdict banner: could not post")
-        return None
-    finally:
-        if render is not None:
-            discard(render, attachment)
