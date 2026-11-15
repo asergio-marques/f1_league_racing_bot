@@ -17,9 +17,8 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.models.image_module import ImageConfig
+from leaguebot.image.models.image_module import LAYER_BOUNDS, LAYER_CATALOGUE
 from leaguebot.image.services.validity.image_validity_service import (
-    LAYER_BOUNDS,
-    LAYER_CATALOGUE,
     TemplateContext,
     evaluate_template,
 )

@@ -22,10 +22,7 @@ from leaguebot.image.models.image_module import (
     STATE_ENABLED_INVALID,
     ValidityReport,
 )
-from leaguebot.image.services.validity.image_validity_service import (
-    build_aspect_statuses,
-    colour_shortfall,
-)
+from leaguebot.image.services.validity.aspect_status import build_aspect_statuses, colour_shortfall
 
 CALENDAR = "calendar_template"
 

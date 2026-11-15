@@ -414,10 +414,10 @@ def _kind_for_layer(failed_layer: int | None) -> str:
     and the season gate use, rather than flattening every invalid template to one kind.
     """
     from leaguebot.image.models.image_module import (
+        LAYER_CATALOGUE,
         PROBLEM_MISSING_MANDATORY_FIELD,
         PROBLEM_NOT_FOUND,
     )
-    from leaguebot.image.services.validity.image_validity_service import LAYER_CATALOGUE
 
     if failed_layer == LAYER_CATALOGUE:
         return PROBLEM_MISSING_MANDATORY_FIELD

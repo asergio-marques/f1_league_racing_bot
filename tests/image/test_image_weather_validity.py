@@ -17,14 +17,14 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.models.image_module import ImageConfig
+from leaguebot.image.models.image_module import LAYER_CATALOGUE
 from leaguebot.image.services.validity.image_validity_service import (
-    LAYER_CATALOGUE,
     CatalogueLayer,
     TemplateContext,
-    build_aspect_statuses,
     evaluate_all_templates,
     evaluate_template,
 )
+from leaguebot.image.services.validity.aspect_status import build_aspect_statuses
 
 HEADING = (
     b'<text id="division_name">D</text>'

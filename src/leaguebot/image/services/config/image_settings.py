@@ -184,7 +184,7 @@ async def aspect_blocking_reasons(
     rather than storing and then complaining. The configuration is left as it stands.
     """
     from leaguebot.image.services.render.image_render_service import converter_available
-    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses
+    from leaguebot.image.services.validity.aspect_status import build_aspect_statuses
 
     toggles = dict(await config.get_toggles())
     toggles[aspect] = True

@@ -1006,8 +1006,8 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
 ):
     import leaguebot.image.services.render.image_render_service as render_module
     from leaguebot.image.models.image_module import STATE_ENABLED_INVALID
+    from leaguebot.image.services.validity.aspect_status import PLAIN_NO_RASTERISER
     from leaguebot.image.services.validity.image_validity_service import (
-        PLAIN_NO_RASTERISER,
         PLAIN_REMEDY_ASK_OPERATOR,
         ImageValidityService,
     )

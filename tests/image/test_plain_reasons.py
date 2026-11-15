@@ -22,10 +22,8 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.models.image_module import DirectoryReport, ImageConfig, ValidityReport
+from leaguebot.image.models.image_module import LAYER_BOUNDS, LAYER_CATALOGUE, LAYER_RESOLUTION
 from leaguebot.image.services.validity.image_validity_service import (
-    LAYER_BOUNDS,
-    LAYER_CATALOGUE,
-    LAYER_RESOLUTION,
     PLAIN_DIRECTORY_MISSING,
     PLAIN_FILE_MISSING,
     PLAIN_FILE_OUTSIDE,
@@ -288,7 +286,7 @@ def test_every_template_fault_carries_a_remedy(tmp_path):
 
 def test_the_rasteriser_is_the_one_fault_no_command_of_theirs_mends(tmp_path):
     """Naming a command a manager cannot run would be worse than naming none."""
-    from leaguebot.image.services.validity.image_validity_service import (
+    from leaguebot.image.services.validity.aspect_status import (
         PLAIN_NO_RASTERISER,
         build_aspect_statuses,
     )
