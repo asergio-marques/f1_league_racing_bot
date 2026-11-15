@@ -192,6 +192,52 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     league.scheduler.cancel_portrait_refresh.assert_called_once_with()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#288: switching the image module off does not try to remove the daily portrait "
+    "refresh, so a removal that fails goes untold",
+)
+async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_off_as_one_failure(
+    tmp_path,
+):
+    """Images on with portraits refreshed daily, and the scheduler refuses to remove the daily
+    job: Admin runs `/module disable images`. The module is off; Admin is told the setting is
+    stored and the daily update does nothing while the module is off, with no success; the log
+    channel records one failure naming Admin and no success; and the queue goes on, stopped at
+    nothing (core specification, How a change is carried out; image specification :133)."""
+    from unittest.mock import MagicMock, patch
+
+    from tests.support.change_queue import MEMBER_ID, run_queue, stopped_job
+    from tests.support.settings_league import interaction, last_said, log_lines
+
+    league, cog, _config_service = await _switched(tmp_path)
+    await _switch(league, cog, on=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE image_config SET use_pfp = 1, pfp_daily = 1")
+        await db.commit()
+    league.scheduler.cancel_portrait_refresh.side_effect = RuntimeError(
+        "the job store refused the removal"
+    )
+    before = len(await log_lines(league))
+    asked = interaction(league.bot, "module disable")
+
+    with patch(
+        "leaguebot.image.services.image_render_service.converter_available",
+        new=MagicMock(return_value=True),
+    ):
+        await cog._disable_images(asked)
+        await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_images_enabled() is False
+    replied = last_said(asked)
+    assert "does nothing while" in replied and "✅" not in replied, replied
+    assert "stored" in replied or "saved" in replied, replied
+    lines = (await log_lines(league))[before:]
+    assert len(lines) == 1, lines
+    assert lines[0].startswith(f"❌ `/module disable` failed for Admin (`<@{MEMBER_ID}>`)"), lines
+    assert await stopped_job(league.db_path) is None
+
+
 @pytest.mark.parametrize("on", [True, False], ids=["images on", "images off"])
 async def test_a_restart_arms_the_daily_portrait_refresh_only_while_images_is_on(tmp_path, on):
     """Images was switched on with portraits refreshed daily at 07:45, and the bot starts again:
