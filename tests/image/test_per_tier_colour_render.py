@@ -57,35 +57,54 @@ def _service(*, enabled=True, palette=None):
 # ── Applying the palette ──────────────────────────────────────────────────
 
 async def test_the_palette_is_painted_in():
+    """Division 1's tier has the accent slot set to #A78BFA: the read on the loop answers it, and
+    painting it into the parsed template writes that colour in."""
+    from lxml import etree
+
+    from leaguebot.image.utils.svg_palette import apply_palette
+
     service, _ = _service(palette={"accent": "#A78BFA"})
+    palette = await service.tier_palette("Division 1")
+    assert palette == {"accent": "#A78BFA"}
     root = parse_svg_bytes(TEMPLATE)
-    await service.apply_tier_palette(root, "Division 1")
-    assert b"#A78BFA" in __import__("lxml.etree", fromlist=["etree"]).tostring(root)
+    apply_palette(root, palette)
+    assert b"#A78BFA" in etree.tostring(root)
 
 
 async def test_nothing_is_painted_while_the_feature_is_off():
     """And the palette is never even read — an inert feature costs no queries."""
-    service, config_service = _service(enabled=False, palette={"accent": "#A78BFA"})
-    root = parse_svg_bytes(TEMPLATE)
-    await service.apply_tier_palette(root, "Division 1")
     from lxml import etree
 
+    from leaguebot.image.utils.svg_palette import apply_palette
+
+    service, config_service = _service(enabled=False, palette={"accent": "#A78BFA"})
+    palette = await service.tier_palette("Division 1")
+    root = parse_svg_bytes(TEMPLATE)
+    apply_palette(root, palette)
+
+    assert palette == {}
     assert b"#A78BFA" not in etree.tostring(root)
     config_service.get_tier_palette.assert_not_awaited()
 
 
 async def test_a_tier_with_no_colours_leaves_the_template_alone():
+    from lxml import etree
+
+    from leaguebot.image.utils.svg_palette import apply_palette
+
     service, _ = _service(palette={})
+    palette = await service.tier_palette("Division 1")
     root = parse_svg_bytes(TEMPLATE)
-    before = __import__("lxml.etree", fromlist=["etree"]).tostring(root)
-    await service.apply_tier_palette(root, "Division 1")
-    assert __import__("lxml.etree", fromlist=["etree"]).tostring(root) == before
+    before = etree.tostring(root)
+    apply_palette(root, palette)
+    assert palette == {}
+    assert etree.tostring(root) == before
 
 
 async def test_a_server_with_no_image_config_is_not_an_error():
     service, config_service = _service()
     config_service.get_config = AsyncMock(return_value=None)
-    await service.apply_tier_palette(parse_svg_bytes(TEMPLATE), "Division 1")
+    assert await service.tier_palette("Division 1") == {}
 
 
 # ── Where it happens, and how it fails ────────────────────────────────────
@@ -156,9 +175,8 @@ async def test_a_failing_palette_never_stops_a_graphic_posting(tmp_path, monkeyp
 async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
     service, config_service = _service()
     config_service.get_config = AsyncMock(side_effect=RuntimeError("db is gone"))
-    root = parse_svg_bytes(TEMPLATE)
     with pytest.raises(RuntimeError):
-        await service.apply_tier_palette(root, "Division 1")
+        await service.tier_palette("Division 1")
     # ...but `render` is what must not raise, and it wraps the call.
     assert "except Exception" in inspect.getsource(ImageRenderService.render)
 
