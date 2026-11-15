@@ -1451,28 +1451,66 @@ async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path
 # A table drawn as a picture is saved and replaced by the jobs, as a text table is
 # ---------------------------------------------------------------------------
 
-def _results_drawn(league: _League, tmp_path: Any) -> Any:
-    """Image generation on for the results aspect, its template valid and its render giving a
-    PNG: the real picture poster runs, posting the table as a picture. Gives the patches, to
-    enter."""
-    from contextlib import ExitStack
+async def _built_league(tmp_path: Any) -> _League:
+    """Round 3's league of `_league`, its bot the one the entry point's `build` makes, every
+    service the builder's (the image module's among them), over the same channels and server."""
+    from tests.support.change_queue import league_bot, set_guilds
 
-    png = tmp_path / "results.png"
-    png.write_bytes(b"\x89PNG")
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
-    league.bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"results_race_template": MagicMock(valid=True)}
-    )
-    decision = MagicMock(posts_image=True, rejects=False, png_paths=[png], notices=[],
-                         problem=None)
-    drawing = MagicMock(template_key="results_race_template", session_name="Race")
-    stack = ExitStack()
-    stack.enter_context(patch("leaguebot.image.services.image_results_post.build_drawing",
-                              new=AsyncMock(return_value=drawing)))
-    stack.enter_context(patch("leaguebot.image.services.image_results_post.render_png",
-                              new=AsyncMock(return_value=decision)))
-    return stack
+    league = await _league(tmp_path)
+    double, bot = league.bot, await league_bot(league.db_path)
+    bot.log_channel, bot.interaction_channel = double.log_channel, double.interaction_channel
+    bot.get_channel, bot.fetch_channel = double.get_channel, double.fetch_channel
+    bot.get_guild = double.get_guild
+    set_guilds(bot, [league.guild])
+    league.bot = bot
+    return league
+
+
+async def _drawn(league: _League, tmp_path: Any, picture: str, *,
+                 championships: tuple[str, ...] = ("drivers", "constructors"),
+                 notice: str | None = None) -> Any:
+    """Image generation on for *picture* ("results" or "standings"), as the league stores it: the
+    module switched on with its default configuration and its packaged templates, the *picture*
+    aspect toggled on and every other aspect off; of the standings, each championship not among
+    *championships* has its template named as a file the league does not have, so it is not
+    drawn and goes out as text. Round 3's Feature Race classifies driver 1001, first for Team
+    3001. *league* is `_built_league`'s: everything the builder made runs but the render, stubbed
+    to give each picture a PNG and, where *notice* is given, one notice with that detail, a flag
+    falling back, on the race's results or the drivers' championship alone. Gives the patch, to
+    enter."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+    from leaguebot.image.services.image_render_service import ImageRenderService
+    from tests.support import saves
+    from tests.support.teams import seed_team_instances
+
+    noticed = "results_race_template" if picture == "results" else "standings_drivers_template"
+    async with get_connection(league.db_path) as db:
+        await seed_team_instances(db, DIVISION_ID, 3001)
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_instance_id, finishing_position, points_awarded) "
+            "SELECT id, 1001, 3001, 1, 25 FROM session_results WHERE round_id = ?",
+            (ROUND_ID,),
+        )
+        await db.commit()
+    await saves.create_image_defaults(league.db_path)
+    await set_module_flag(league.db_path, "images", True)
+    await saves.set_aspect(league.db_path, picture, True)
+    if picture == "standings":
+        for name in {"drivers", "constructors"} - set(championships):
+            await saves.set_field(league.db_path, f"standings_{name}_template", "missing.svg")
+    renders = itertools.count(1)
+
+    async def _render(_self: Any, image_type: str, _spec_builder: Any, **_kwargs: Any) -> Any:
+        png = tmp_path / f"{image_type}_{next(renders)}.png"
+        png.write_bytes(b"\x89PNG")
+        notices = [] if notice is None or image_type != noticed else [RenderNotice(
+            image_type=noticed, notice_kind="ASSET_FALLBACK_USED", detail=notice,
+            field_id="flag",
+        )]
+        return RenderOutcome(png_paths=[png], notices=notices)
+
+    return patch.object(ImageRenderService, "render", new=_render)
 
 
 async def test_a_drawn_table_s_id_is_saved_with_its_post_and_the_old_table_deleted_by_a_job(
@@ -1481,8 +1519,8 @@ async def test_a_drawn_table_s_id_is_saved_with_its_post_and_the_old_table_delet
     """Round 3's Feature Race results stand as message 8800; they are posted again as a picture.
     Once `post_session_results` is done, the picture's id is the session's, saved with the job,
     and 8800 still stands; then a `delete_message` job deletes 8800."""
-    league = await _league(tmp_path)
-    with _results_drawn(league, tmp_path):
+    league = await _built_league(tmp_path)
+    with await _drawn(league, tmp_path, "results"):
         await _ask(league)
         await _run_until_done(league, "post_session_results")
 
@@ -1505,10 +1543,10 @@ async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(t
     """Round 3's results are posted again as a picture, and Discord refuses to delete the old
     table, 8800: the queue stops at the `delete_message` job, both tables standing and the
     picture's id saved."""
-    league = await _league(tmp_path)
+    league = await _built_league(tmp_path)
     results = league.channel(RESULTS_CHANNEL)
     results.delete_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
-    with _results_drawn(league, tmp_path):
+    with await _drawn(league, tmp_path, "results"):
         await _ask(league)
         await run_queue(league.bot)
 
@@ -1524,42 +1562,6 @@ async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(t
 # ---------------------------------------------------------------------------
 
 
-def _standings_drawn(tmp_path: Any, *, championships: tuple[str, ...] = (
-    "drivers", "constructors",
-)) -> Any:
-    """Image generation on for the standings, each of *championships* drawing as a picture and
-    any other falling back to text: the real standings picture poster runs, its drawings and
-    renders stubbed. Gives the patches, to enter."""
-    from contextlib import ExitStack
-
-    from leaguebot.image.services import image_standings_post
-
-    wanted = {image_standings_post.TEMPLATE_KEYS[name] for name in championships}
-    renders = itertools.count(1)
-
-    async def _enabled(_bot: Any, key: str) -> bool:
-        return key in wanted
-
-    async def _render(_bot: Any, drawing: Any, _origin: Any) -> Any:
-        png = tmp_path / f"standings_{drawing.template_key}_{next(renders)}.png"
-        png.write_bytes(b"\x89PNG")
-        return MagicMock(posts_image=True, rejects=False, png_paths=[png], notices=[],
-                         problem=None)
-
-    drawings = tuple(
-        MagicMock(template_key=image_standings_post.TEMPLATE_KEYS[name])
-        for name in ("drivers", "constructors")
-    )
-    stack = ExitStack()
-    stack.enter_context(patch.object(image_standings_post, "standings_enabled",
-                                     new=AsyncMock(side_effect=_enabled)))
-    stack.enter_context(patch.object(image_standings_post, "build_drawings",
-                                     new=AsyncMock(return_value=drawings)))
-    stack.enter_context(patch.object(image_standings_post, "render_png",
-                                     new=AsyncMock(side_effect=_render)))
-    return stack
-
-
 async def _standings_ids(db_path: str) -> tuple[int | None, int | None]:
     return (
         await get_standings_message_id(db_path, DIVISION_ID, ROUND_ID),
@@ -1572,9 +1574,9 @@ async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
     championships drawn as pictures. Once `post_standings` is done the two pictures stand and
     8801 still stands beside them; then a `delete_message` job deletes 8801, after the
     pictures were sent."""
-    league = await _league(tmp_path)
+    league = await _built_league(tmp_path)
     standings = league.channel(STANDINGS_CHANNEL)
-    with _standings_drawn(tmp_path):
+    with await _drawn(league, tmp_path, "standings"):
         await _ask(league)
         await _run_until_done(league, "post_standings")
 
@@ -1605,7 +1607,7 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     together, and the new pictures' ids saved with their post. A league admin discards it, the
     queue stops again at the constructors' 8808, and the admin discards that too: the outcome
     links the old picture left standing."""
-    league = await _league(tmp_path)
+    league = await _built_league(tmp_path)
     async with get_connection(league.db_path) as db:
         await set_standings_message_id_on(
             db, DIVISION_ID, ROUND_ID, DRIVERS_GRAPHIC,
@@ -1621,7 +1623,7 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     standings.seed(CONSTRUCTORS_GRAPHIC, "constructors' standings graphic")
     old_link = standings.messages[DRIVERS_GRAPHIC].jump_url
     standings.delete_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
-    with _standings_drawn(tmp_path):
+    with await _drawn(league, tmp_path, "standings"):
         interaction = await _ask(league)
         await run_queue(league.bot)
 
@@ -1648,8 +1650,8 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
 async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
     """Round 3's standings are drawn as two pictures. Their ids are saved by `post_standings`'
     own record, with its done mark: the job's result names both pictures."""
-    league = await _league(tmp_path)
-    with _standings_drawn(tmp_path):
+    league = await _built_league(tmp_path)
+    with await _drawn(league, tmp_path, "standings"):
         await _ask(league)
         await _run_until_done(league, "post_standings")
 
@@ -1665,10 +1667,10 @@ async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_
     `post_standings` with the drivers' picture standing, recorded nowhere, and 8801 still
     standing. On Retry the picture is deleted before the retry's text is sent, so the channel
     is left with the retry's table alone beside round 4's, and 8801 comes down by its job."""
-    league = await _league(tmp_path)
+    league = await _built_league(tmp_path)
     standings = league.channel(STANDINGS_CHANNEL)
     standings.fail_send_at = 2
-    with _standings_drawn(tmp_path, championships=("drivers",)):
+    with await _drawn(league, tmp_path, "standings", championships=("drivers",)):
         await _ask(league)
         await run_queue(league.bot)
         assert (await stopped_job(league.db_path))["name"] == "post_standings"
@@ -1831,11 +1833,12 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     same try and the queue runs to the end, as it does today; and the log channel gains one line
     naming round 3 of Pro, the *picture* picture, that Discord refused it, Discord's reason, and
     that the table went out as text."""
-    league = await _league(tmp_path)
+    league = await _built_league(tmp_path)
     if picture == "results":
-        target, drawn = RESULTS_CHANNEL, _results_drawn(league, tmp_path)
+        target, drawn = RESULTS_CHANNEL, await _drawn(league, tmp_path, "results")
     else:
-        target, drawn = STANDINGS_CHANNEL, _standings_drawn(tmp_path, championships=("drivers",))
+        target, drawn = STANDINGS_CHANNEL, await _drawn(league, tmp_path, "standings",
+                                                        championships=("drivers",))
     league.channel(target).fail_send_at = 1
     with drawn:
         await _ask(league)
@@ -1859,63 +1862,6 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
-async def _built_league(tmp_path: Any) -> _League:
-    """Round 3's league of `_league`, its bot the one the entry point's `build` makes, every
-    service the builder's (the image module's among them), over the same channels and server."""
-    from tests.support.change_queue import league_bot, set_guilds
-
-    league = await _league(tmp_path)
-    double, bot = league.bot, await league_bot(league.db_path)
-    bot.log_channel, bot.interaction_channel = double.log_channel, double.interaction_channel
-    bot.get_channel, bot.fetch_channel = double.get_channel, double.fetch_channel
-    bot.get_guild = double.get_guild
-    set_guilds(bot, [league.guild])
-    league.bot = bot
-    return league
-
-
-async def _drawn_with_a_notice(league: _League, tmp_path: Any, picture: str) -> Any:
-    """Image generation on for *picture* ("results" or "standings"), as the league stores it: the
-    module switched on with its default configuration, its packaged templates, and the *picture*
-    aspect toggled on; round 3's Feature Race classifies driver 1001, first for Team 3001.
-    Everything the builder made runs but the render, stubbed: the drawn picture (the race's
-    results, or the drivers' championship) comes back with one notice, a flag falling back, and
-    any other picture comes back with none. Gives the patches, to enter."""
-    from contextlib import ExitStack
-
-    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
-    from leaguebot.image.services.image_render_service import ImageRenderService
-    from tests.support import saves
-    from tests.support.season_league import set_module_flag
-    from tests.support.teams import seed_team_instances
-
-    key = "results_race_template" if picture == "results" else "standings_drivers_template"
-    async with get_connection(league.db_path) as db:
-        await seed_team_instances(db, DIVISION_ID, 3001)
-        await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_instance_id, finishing_position, points_awarded) "
-            "SELECT id, 1001, 3001, 1, 25 FROM session_results WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        await db.commit()
-    await league.bot.image_config_service.create_with_defaults()
-    await set_module_flag(league.db_path, "images", True)
-    await saves.set_aspect(league.db_path, picture, True)
-    renders = itertools.count(1)
-
-    async def _render(_self: Any, image_type: str, _spec_builder: Any, **_kwargs: Any) -> Any:
-        png = tmp_path / f"{image_type}_{next(renders)}.png"
-        png.write_bytes(b"\x89PNG")
-        notices = [RenderNotice(image_type=key, notice_kind="ASSET_FALLBACK_USED",
-                                detail=NOTICE_DETAIL, field_id="flag")]
-        return RenderOutcome(png_paths=[png], notices=notices if image_type == key else [])
-
-    stack = ExitStack()
-    stack.enter_context(patch.object(ImageRenderService, "render", new=_render))
-    return stack
-
-
 @pytest.mark.xfail(strict=True, reason="#288: a results or standings picture's render notices "
                    "reach the log channel twice, once under no heading")
 @pytest.mark.parametrize("picture", ["results", "standings"])
@@ -1928,7 +1874,7 @@ async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_ro
     names Pro and round 3, and no block without a heading carries it a second time."""
     league = await _built_league(tmp_path)
     target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
-    with await _drawn_with_a_notice(league, tmp_path, picture):
+    with await _drawn(league, tmp_path, picture, notice=NOTICE_DETAIL):
         await _ask(league)
         await run_queue(league.bot)
 
