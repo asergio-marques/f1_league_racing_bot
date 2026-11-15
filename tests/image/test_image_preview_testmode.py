@@ -30,6 +30,7 @@ from leaguebot.core.services.test_mode import test_roster_service
 from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.image.services.image_preview_service import resolve_context
 from leaguebot.core.services.seasons.season_service import SeasonService
+from tests.support.saves import create_image_defaults
 
 SERVER_ID = 8484
 
@@ -56,7 +57,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),

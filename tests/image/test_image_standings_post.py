@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from tests.support.change_queue import in_a_job
-from tests.support.saves import set_field
+from tests.support.saves import create_image_defaults, set_field
 
 
 pytestmark = pytest.mark.asyncio
@@ -772,7 +772,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         return True
 
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     validity_service = ImageValidityService(
         config_service, SimpleNamespace(is_images_enabled=_true)
     )
@@ -1277,7 +1277,7 @@ async def _highlighted_svg(tmp_path):
     separately by the marked test below.
 
     **The marker directory is pinned to the packaged one, and must stay pinned** (2026-09-02).
-    `create_with_defaults` gives every asset class the default migration 043 set, which is
+    The defaults give every asset class the directory migration 043 set, which is
     `resources/league/<class>` — gitignored, unversioned, and holding whatever artwork the
     machine running the suite happens to carry. This fixture claims above to resolve "against
     the packaged artwork", and until it was pinned that claim was true only on a host whose
@@ -1320,7 +1320,7 @@ async def _highlighted_svg(tmp_path):
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
     bot = _bot(db_path)
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     # See the docstring: the default points into the league's own gitignored folder.
     await set_field(config_service, "marker_directory", packaged_directory_for("marker"))
     bot.image_config_service = config_service

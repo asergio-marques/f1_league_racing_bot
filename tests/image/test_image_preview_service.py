@@ -33,7 +33,7 @@ from leaguebot.image.services.image_preview_service import (
     resolve_context,
 )
 from leaguebot.core.services.seasons.season_service import SeasonService
-from tests.support.saves import set_field
+from tests.support.saves import create_image_defaults, set_field
 
 SERVER_ID = 4242
 
@@ -66,7 +66,7 @@ async def bot(db_path):
     and the database, which is the whole of its dependency surface.
     """
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),

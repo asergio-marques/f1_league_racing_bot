@@ -63,7 +63,7 @@ async def _enable(module_service, config_service):
     leaves it: the set-up of the tests whose subject is not the switch itself."""
     from tests.support.season_league import set_module_flag
 
-    await config_service.create_with_defaults()
+    await saves.create_image_defaults(config_service)
     await set_module_flag(config_service._db_path, "images", True)
 
 

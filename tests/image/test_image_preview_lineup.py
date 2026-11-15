@@ -19,7 +19,7 @@ from leaguebot.image.services.image_preview_service import (
     resolve_context,
 )
 from leaguebot.core.services.seasons.season_service import SeasonService
-from tests.support.saves import set_field
+from tests.support.saves import create_image_defaults, set_field
 
 SERVER_ID = 7272
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -42,7 +42,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),

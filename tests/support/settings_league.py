@@ -27,6 +27,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support import saves
 from tests.support.change_queue import (
     league_bot,
     league_queue,
@@ -66,7 +67,6 @@ async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
     """The league of the module docstring, with *modules* on."""
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
@@ -76,7 +76,7 @@ async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
     bot = await league_bot(db_path, scheduler=scheduler_double())
     await switch(bot, modules, on=True)
     if "images" in modules:
-        await bot.image_config_service.create_with_defaults()
+        await saves.create_image_defaults(db_path)
     league_queue(bot, db_path, now=now)
     return SettingsLeague(bot, db_path, bot.scheduler_service)
 

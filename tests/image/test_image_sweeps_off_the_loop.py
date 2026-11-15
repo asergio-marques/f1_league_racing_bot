@@ -42,6 +42,7 @@ from leaguebot.image.services.image_setting_advice import measure_fastest_lap_co
 from leaguebot.image.services.image_validity_service import ImageValidityService
 from leaguebot.image.utils import svg_document
 from leaguebot.image.utils.svg_document import FieldIndex, off_the_loop
+from tests.support.saves import create_image_defaults
 from tests.support.off_the_loop import (
     Held,
     answered_while,
@@ -604,8 +605,9 @@ async def test_the_contrast_measurement_parses_its_template_off_the_loop(monkeyp
     db_path = str(tmp_path / "images.db")
     await run_migrations(db_path)
     config_service = ImageConfigService(db_path)
+    await create_image_defaults(config_service)
     config = dataclasses.replace(
-        await config_service.create_with_defaults(), template_directory=str(SHIPPED)
+        await config_service.get_config(), template_directory=str(SHIPPED)
     )
     config_service.get_config = AsyncMock(return_value=config)
     validity = ImageValidityService(config_service, MagicMock())

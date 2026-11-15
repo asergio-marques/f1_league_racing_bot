@@ -316,7 +316,7 @@ async def test_an_account_belongs_to_one_driver_across_the_league(db_path):
 
 async def test_the_image_directory_defaults_match_the_constants(db_path):
     """Written twice — as column defaults in SQL and in `ASSET_DIRECTORIES` — and must not drift:
-    a row created by `create_with_defaults` carries the SQL defaults, and the rest of the module
+    the row `/module enable images` creates carries the SQL defaults, and the rest of the module
     reads the constants."""
     from leaguebot.image.models.image_constants import ASSET_DIRECTORIES
 

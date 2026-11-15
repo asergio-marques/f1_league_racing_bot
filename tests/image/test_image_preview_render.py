@@ -33,6 +33,7 @@ from leaguebot.image.services.image_preview_service import (
 )
 from leaguebot.image.services.image_validity_service import ImageValidityService
 from leaguebot.core.services.seasons.season_service import SeasonService
+from tests.support.saves import create_image_defaults
 
 SERVER_ID = 9494
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -86,7 +87,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     validity_service = ImageValidityService(
         config_service, SimpleNamespace(is_images_enabled=_true)
     )
