@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import inspect
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -89,17 +90,72 @@ async def test_a_server_with_no_image_config_is_not_an_error():
 
 # ── Where it happens, and how it fails ────────────────────────────────────
 
-def test_the_palette_is_applied_before_the_spec_builder():
+#: An image type no catalogue claims, so a render of it asks nothing of a template's fields.
+_PROBE = "palette_probe_template"
+
+
+async def _render(tmp_path, monkeypatch, palette, spec_builder=None):
+    """Render the one-rectangle template for Division 1 with per-tier colours on and *palette*
+    as the division's, with a rasteriser that writes a placeholder PNG."""
+    from leaguebot.image.services import image_render_service
+    from leaguebot.image.utils.svg_fill import FillSpec
+
+    monkeypatch.setattr(image_render_service, "converter_available", lambda *a, **k: True)
+
+    def _rasterise(svg, destination, canvas):
+        destination.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return destination
+
+    monkeypatch.setattr(image_render_service, "rasterise", _rasterise)
+    template = tmp_path / "probe.svg"
+    template.write_bytes(TEMPLATE)
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value={_PROBE: SimpleNamespace(
+        valid=True, reason=None, resolved_path=template,
+    )})
+    config_service = MagicMock()
+    config_service.get_config = AsyncMock(return_value=MagicMock(per_tier_colour_enabled=True))
+    config_service.get_tier_palette = AsyncMock(return_value=palette)
+    return await ImageRenderService(config_service, validity).render(
+        _PROBE,
+        spec_builder or (lambda root: FillSpec(root=root, image_type=_PROBE)),
+        output_dir=tmp_path / "out",
+        division_name="Division 1",
+    )
+
+
+async def test_the_palette_is_applied_before_the_spec_builder(tmp_path, monkeypatch):
     """After it, a builder reading the stylesheet would read the unpalette'd file."""
-    source = inspect.getsource(ImageRenderService.render)
-    assert source.index("self.apply_tier_palette") < source.index("spec = spec_builder(root)")
+    from leaguebot.image.utils.svg_fill import FillSpec
+
+    seen: list[bytes] = []
+
+    def builder(root):
+        from lxml import etree
+
+        seen.append(etree.tostring(root))
+        return FillSpec(root=root, image_type=_PROBE)
+
+    await _render(tmp_path, monkeypatch, {"accent": "#A78BFA"}, builder)
+
+    assert len(seen) == 1 and b"#A78BFA" in seen[0]
 
 
-def test_a_failing_palette_never_stops_a_graphic_posting():
-    """A graphic in the wrong shade beats no graphic at all."""
-    source = inspect.getsource(ImageRenderService.render)
-    palette_at = source.index("self.apply_tier_palette")
-    assert "except Exception" in source[palette_at - 400 : palette_at + 400]
+@pytest.mark.xfail(
+    strict=True,
+    reason="#288: tier colours that cannot be applied are only logged to the host, "
+    "never reported as a render notice",
+)
+async def test_a_failing_palette_never_stops_a_graphic_posting(tmp_path, monkeypatch):
+    """A graphic in the wrong shade beats no graphic at all, but the league is told: a tier's
+    colour that cannot be written into the template still lets the picture be drawn, and the
+    render hands back one notice saying the tier's colours were not applied."""
+    outcome = await _render(tmp_path, monkeypatch, {"accent": "#A78BFA\x00"})
+
+    assert outcome.problem is None, outcome.problem
+    assert len(outcome.png_paths) == 1
+    assert [notice.image_type for notice in outcome.notices] == [_PROBE]
+    assert "colour" in outcome.notices[0].detail.lower()
 
 
 async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
