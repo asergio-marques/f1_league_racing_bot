@@ -233,7 +233,9 @@ async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypa
         round_number="7",
     )
 
-    render = await image_weather_post.render_forecast(bot, drawing)
+    render = await image_weather_post.render_forecast(
+        bot.image_config_service, bot.image_render_service, drawing
+    )
 
     assert render.draws, render.problem
     assert render.png == png

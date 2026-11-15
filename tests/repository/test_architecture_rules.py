@@ -1520,8 +1520,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_verdict_banner_post.py", "render_banner"): (2, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "render_verdict"): (2, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
-    ("image/services/aspects/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
-    ("image/services/aspects/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
 }
 
 
@@ -3116,11 +3114,15 @@ CATCH_ALLS_ALLOWED = {
         "that cannot be filled comes back as a problem, from which the caller falls back to text",
     ("image/services/render/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
-    ("image/services/aspects/image_weather_post.py", "attach_forecast"):
+    ("image/services/render/image_drawing.py", "ImageDrawing.attach_forecast"):
         "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
         "back as a line for the log channel, and the forecast goes out as text; and place 3, "
         "around reading the round to name the line of a switch that could not be read, which "
         "must not fail the line",
+    ("image/services/render/image_drawing.py", "ImageDrawing._weather_gate"):
+        "place 6, around reading the switch of a graphic that rides on a post: a switch that "
+        "cannot be read is a reason like any other, handed back as a line for the log channel, "
+        "and the forecast goes out as text",
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
         "a stated exception: a put-back after a press already answered logs the error in full and "
         "leaves the message as the press's edit left it, for a report would answer the press twice",
@@ -3209,7 +3211,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_verdict_post.py", "team_name_for_entry"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "verdicts_enabled"): (1, PASS["image"]),
     ("image/services/aspects/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
-    ("image/services/aspects/image_weather_post.py", "weather_enabled"): (1, PASS["image"]),
 }
 
 

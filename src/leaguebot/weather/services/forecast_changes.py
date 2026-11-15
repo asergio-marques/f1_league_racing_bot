@@ -113,6 +113,7 @@ from leaguebot.weather.utils.message_builder import (
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -198,8 +199,9 @@ def _delete_forecast_part_step() -> Step:
     )
 
 
-def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
-    """The three jobs of a forecast, *now* being the queue's clock."""
+def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dict[str, Step]:
+    """The three jobs of a forecast, *now* being the queue's clock and *drawing* the image
+    module's, which the post job asks for the picture a forecast rides on."""
 
     async def draw(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         phase = int(_value(ctx, "phase"))
@@ -301,10 +303,8 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         attachment = None
         lines: tuple[str, ...] = ()
         if ctx.tries == 0:
-            from leaguebot.image.services.aspects import image_weather_post
-
-            attachment, lines = await image_weather_post.attach_forecast(
-                ctx.bot, round_id, phase,
+            attachment, lines = await drawing.attach_forecast(
+                round_id, phase,
                 values=forecast_values(phase, payload, payload if phase == 1 else first),
             )
         parts = await forecast_cleanup_service.post_phase_message(
@@ -526,7 +526,7 @@ def _doing(payload: dict[str, Any]) -> str:
     return f"drawing the Phase {phase} forecast of {where}"
 
 
-def forecast_change(*, now: Callable[[], datetime]) -> ChangeType:
+def forecast_change(*, now: Callable[[], datetime], drawing: ImageDrawing) -> ChangeType:
     """`weather.forecast`: the bot's change that draws, posts and supersedes one phase's forecast.
 
     Not repeatable: a phase is done once, and its check drops a second request once it is.
@@ -546,7 +546,7 @@ def forecast_change(*, now: Callable[[], datetime]) -> ChangeType:
     return ChangeType(
         kind=FORECAST,
         opening=(PlannedStep(DRAW_FORECAST),),
-        steps=forecast_steps(now=now),
+        steps=forecast_steps(now=now, drawing=drawing),
         check=check,
         key=lambda payload: f"{FORECAST}:{payload['round_id']}:{payload['phase']}",
         doing=_doing,
@@ -609,7 +609,7 @@ def _clean_up_doing(payload: dict[str, Any]) -> str:
     )
 
 
-def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
+def forecast_clean_up_change(*, now: Callable[[], datetime], drawing: ImageDrawing) -> ChangeType:
     """`weather.forecast.clean_up`: the bot's change that deletes a round's forecast a day after its
     race, whichever of Phases 1 to 3 still stands (a Phase 3 never posted leaves Phase 2 standing),
     one `delete_forecast` job for each, planned by `plan_forecast_deletes`. A round called off, or
@@ -647,7 +647,7 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
     return ChangeType(
         kind=FORECAST_CLEAN_UP,
         opening=(PlannedStep(PLAN_FORECAST_DELETES),),
-        steps=forecast_steps(now=now),
+        steps=forecast_steps(now=now, drawing=drawing),
         check=check,
         key=lambda payload: f"{FORECAST_CLEAN_UP}:{payload['round_id']}",
         doing=_clean_up_doing,
@@ -941,15 +941,15 @@ def _flush_forecasts_step() -> Step:
 
 
 def season_end_steps(
-    *, now: Callable[[], datetime], line_prefix: str | None = None
+    *, now: Callable[[], datetime], drawing: ImageDrawing, line_prefix: str | None = None
 ) -> dict[str, Step]:
     """The jobs weather defines for a season's end, by name: the deletion of a forecast
     (`DELETE_FORECAST`) and of a forecast's earlier part (`DELETE_FORECAST_PART`), and the
-    `flush_forecasts` that plans a deletion for each forecast posted under test mode. *now* is the queue's clock; *line_prefix* is the closing line some changes
+    `flush_forecasts` that plans a deletion for each forecast posted under test mode. *now* is the queue's clock and *drawing* the image module's; *line_prefix* is the closing line some changes
     write, which a forecast's deletion has no use for. A deletion a league admin discards is named
     by the step's own words (`forecast_kept`; a part's by `standing_posts.not_deleted`). Subscribed
     to core's `season_end_steps`."""
-    steps = forecast_steps(now=now)
+    steps = forecast_steps(now=now, drawing=drawing)
     return {
         FLUSH_FORECASTS: _flush_forecasts_step(),
         DELETE_FORECAST: dataclasses.replace(steps[DELETE_FORECAST], not_done=forecast_kept),
@@ -958,17 +958,18 @@ def season_end_steps(
 
 
 def amendment_steps(
-    *, now: Callable[[], datetime], seasons: SeasonService, modules: ModuleService
+    *, now: Callable[[], datetime], drawing: ImageDrawing, seasons: SeasonService,
+    modules: ModuleService,
 ) -> dict[str, Step]:
     """The jobs weather defines for an amendment, by name: a forecast's own jobs, the draw and the
     deletion named for what the amendment does with them, and the three the amendment plans
     through weather: the notice that the forecasts no longer stand (`NOTIFY_INVALIDATION`), the
     draw of a phase now due (`RERUN_PHASE`) and the deletion of the forecast a day after the round
     (`CLEAN_UP_FORECAST`, a forecast's planning of its deletions under the amendment's name for
-    it). *now* is the queue's clock, *seasons* names the round by the number it bears when a job
+    it). *now* is the queue's clock, *drawing* is the image module's, *seasons* names the round by the number it bears when a job
     is described, and *modules* says whether weather is on. Subscribed to core's
     `amendment_steps`."""
-    defined = forecast_steps(now=now)
+    defined = forecast_steps(now=now, drawing=drawing)
 
     def named(text: str) -> Callable[[StepContext], Awaitable[str]]:
         return named_now(seasons, text)

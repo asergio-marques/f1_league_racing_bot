@@ -28,12 +28,11 @@ from typing import TYPE_CHECKING
 
 from leaguebot.image.models.forecast_values import ForecastValues
 from leaguebot.image.models.image_module import PostingOrigin
-from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    import discord
-
     from leaguebot.image.services.aspects.image_weather_service import WeatherDrawing
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
 
 log = logging.getLogger(__name__)
 
@@ -59,39 +58,8 @@ class ForecastRender:
         return self.png is not None
 
 
-async def weather_enabled(bot: LeagueBot, template_key: str | None) -> tuple[bool, str | None]:
-    """Whether the graphic is to be drawn from *template_key*, and why not where it was due.
-
-    True where the module is on, the ``weather`` aspect is on, and *template_key* is valid; with
-    no *template_key* the two switches alone are asked, so that nothing is read for a picture
-    before it is known to be due. The reason is None wherever no picture was due (the module or
-    its weather aspect off) and otherwise says why a picture that was due is not drawn: the
-    template's reason, or the fault that kept a switch from being read.
-
-    The template is named per call because weather is drawn from six, and one being invalid
-    must not stop the other five: a league whose sprint phase 3 file is too small still gets a
-    picture for every round that is not a sprint (XIV.4, the unit of failure being one graphic).
-    """
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False, None
-        toggles = await bot.image_config_service.get_toggles()
-        if not toggles.get(WEATHER_ASPECT):
-            return False, None
-        if template_key is None:
-            return True, None
-        reports = await bot.image_validity_service.template_reports()
-        report = reports.get(template_key)
-        if report is not None and report.valid:
-            return True, None
-        return False, (getattr(report, "reason", None) or f"{template_key} is not valid")
-    except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("weather: enablement check failed: %s", exc, exc_info=True)
-        return False, f"it could not be read whether a picture is due: {exc}"
-
-
 async def build_drawing_for_round(
-    bot: LeagueBot, round_id: int, phase: int, *, values: ForecastValues
+    db_path: str, round_id: int, phase: int, *, values: ForecastValues
 ):
     """Load everything a weather graphic draws for *phase* of *round_id*.
 
@@ -103,7 +71,7 @@ async def build_drawing_for_round(
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services.aspects.image_weather_service import resolve_drawing
 
-    async with get_connection(bot.db_path) as db:
+    async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT r.round_number, r.format, r.track_name, r.division_id, "
             "       d.name AS division_name, d.tier, "
@@ -136,7 +104,8 @@ async def build_drawing_for_round(
 
 
 async def render_forecast(
-    bot: LeagueBot,
+    config_service: ImageConfigService,
+    renderer: ImageRenderService,
     drawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -149,7 +118,7 @@ async def render_forecast(
     )
 
     try:
-        config = await bot.image_config_service.get_config()
+        config = await config_service.get_config()
         directories, directory_faults = resolve_configured_directories(
             config,
             (
@@ -161,7 +130,7 @@ async def render_forecast(
 
         from leaguebot.image.utils.image_naming import stem_for_drawing
 
-        decision = await bot.image_render_service.render_for_posting(
+        decision = await renderer.render_for_posting(
             drawing.template_key,
             spec_builder_with_faults(
                 build_fill_spec, drawing, directories, directory_faults
@@ -196,79 +165,15 @@ def describe(*, division_name: str, round_number, phase: int) -> str:
     The round is named as a league reads it, "round 3 in **Pro**", as core names a round in the log
     channel.
     """
-    return f"round {round_number} in **{division_name}**, {_phase_name(phase)}"
+    return f"round {round_number} in **{division_name}**, {phase_name(phase)}"
 
 
-def _phase_name(phase: int) -> str:
+def phase_name(phase: int) -> str:
     """What a line calls *phase*: phase 0 is the mystery round's notice, never a phase."""
     return "the mystery round notice" if phase == 0 else f"phase {phase}"
 
 
-async def attach_forecast(
-    bot: LeagueBot, round_id: int, phase: int, *, values: ForecastValues
-) -> tuple[discord.File | None, tuple[str, ...]]:
-    """The ``discord.File`` a weather occasion rides on, or None to post the text, and the lines
-    saying why a picture that was due was not drawn.
-
-    The one entry point the weather post job calls, handing the *values* the forecast's words
-    were composed as. Phase 0 is the mystery round's notice: its line names it the notice, never a
-    phase, without reading the round, and its picture is drawn on phase 1's footing. Every reason a
-    graphic is not drawn — the module off, the aspect off, the template invalid, the round
-    unreadable, the render failed — hands back no file, and the caller posts the textual forecast it
-    was going to post anyway (XIV.7).
-
-    The two switches are asked before anything else is read, so that a picture that was not due
-    (the module or its weather aspect off) says nothing, whatever else could not be read. A switch
-    that cannot be read is a reason like any other, its line naming the forecast where the round can
-    be read and only its phase (or the notice) where it cannot. Every other
-    reason, and every notice the render gave, is handed back as a line for the log channel, which
-    the caller writes in its own save, naming the forecast it pertains to (FR-059).
-
-    There are two catch-alls. The outer is around the drawing, a graphic riding on a post
-    (architecture.md, "A catch-all error handler", place 6): a fault in any of it is a line, never a
-    break in the forecast. The inner is around reading the round to name the line of a switch that
-    could not be read (place 3, naming something in a line must not fail the line): a round that
-    cannot be read leaves the line naming the phase, or the notice, alone, and the switch's reason
-    still reaches it.
-    """
-    import discord
-
-    drawn_phase = 1 if phase == 0 else phase  # the notice is drawn on phase 1's footing
-    what = _phase_name(phase)
-    try:
-        due, why = await weather_enabled(bot, None)
-        if not due:
-            if why is None:
-                return None, ()
-            try:  # a switch that could not be read still names the forecast it was read for
-                named = await build_drawing_for_round(bot, round_id, drawn_phase, values=values)
-                if named is not None:
-                    what = _named(named, phase)
-            except Exception as exc:  # noqa: BLE001 — the line then names no more than the phase or the notice
-                log.error("weather: could not name round %s for a line: %s", round_id, exc, exc_info=True)
-            return None, (_fault(what, why),)
-
-        drawing = await build_drawing_for_round(bot, round_id, drawn_phase, values=values)
-        if drawing is None:
-            return None, (_fault(what, "the round could not be found"),)
-
-        what = _named(drawing, phase)
-        due, why = await weather_enabled(bot, drawing.template_key)
-        if not due:
-            return None, () if why is None else (_fault(what, why),)
-
-        render = await render_forecast(bot, drawing)
-        lines = _lines_of(what, render)
-        if render.png is None:  # `render.draws`, in a form the type check can follow
-            return None, lines
-
-        return discord.File(str(render.png), filename=Path(render.png).name), lines
-    except Exception as exc:  # noqa: BLE001 — a graphic never breaks a forecast
-        log.error("weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True)
-        return None, (_fault(what, str(exc)),)
-
-
-def _named(drawing: WeatherDrawing, phase: int) -> str:
+def named(drawing: WeatherDrawing, phase: int) -> str:
     """What a report names of *drawing*'s forecast: its round, as a league reads it, and its phase."""
     return describe(
         division_name=drawing.division_name,
@@ -277,12 +182,12 @@ def _named(drawing: WeatherDrawing, phase: int) -> str:
     )
 
 
-def _fault(what: str, detail: str) -> str:
+def fault(what: str, detail: str) -> str:
     """The line saying why the picture of *what* was not drawn."""
     return f"⚠️ Weather image — {what}: {detail}"
 
 
-def _lines_of(what: str, render: ForecastRender) -> tuple[str, ...]:
+def lines_of(what: str, render: ForecastRender) -> tuple[str, ...]:
     """The lines a render's notices and problem make, naming *what* they pertain to."""
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
@@ -290,5 +195,5 @@ def _lines_of(what: str, render: ForecastRender) -> tuple[str, ...]:
     if render.notices:
         lines.append(ImageRenderService.format_notices(render.notices, subject=what))
     if render.problem:
-        lines.append(_fault(what, render.problem))
+        lines.append(fault(what, render.problem))
     return tuple(lines)

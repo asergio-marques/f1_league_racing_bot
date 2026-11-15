@@ -11,7 +11,8 @@ holds that many — answered off the event loop, since parsing and measuring a t
 time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wanted``/
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
-to the log channel in one message. ``artwork_signature`` answers what the league's artwork
+to the log channel in one message. ``attach_forecast`` draws a weather forecast's picture for the weather post job, which is handed the
+drawing (weather's own gate reasons come back as its lines). ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
 command's output, ``draw_review_lineup`` draws it for a season review (through
 `image_lineup_post.render_for_command`, so it holds the bot), and ``discard_portraits`` removes the
@@ -25,7 +26,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    import discord
+
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.image.models.forecast_values import ForecastValues
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
 from leaguebot.core.services.modules.image_drawing import (
@@ -59,6 +63,7 @@ from leaguebot.image.services.aspects.image_calendar_service import (
     build_fill_spec,
     resolve_drawing,
 )
+from leaguebot.image.services.aspects import image_weather_post
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_KEY, render_for_command
 from leaguebot.image.services.render.image_render_service import (
@@ -466,6 +471,109 @@ class ImageDrawing:
             f"posted without one"
         )
         return CapacityProblem(problem=problem, remedy=_REVIEW_REMEDY)
+
+    async def _gate(self, aspect: str, template_key: str | None = None) -> tuple[bool, str | None]:
+        """Whether *aspect* is drawn, and why not where a picture that was due is not: the same
+        questions as `aspect_wanted`, raising the fault that kept a switch from being read.
+
+        The reason is None wherever no picture was due (the module or *aspect* off) and otherwise
+        the template's own reason. For the one aspect that says why it is not drawn, weather;
+        every other asks `aspect_wanted`, which answers a fault as text.
+        """
+        if not await self._modules.is_images_enabled():
+            return False, None
+        if not (await self._config.get_toggles()).get(aspect):
+            return False, None
+        if template_key is None:
+            return True, None
+        report = (await self._validity.template_reports()).get(template_key)
+        if report is not None and report.valid:
+            return True, None
+        return False, (getattr(report, "reason", None) or f"{template_key} is not valid")
+
+    # ── The weather forecast ─────────────────────────────────────────────────
+
+    async def _weather_gate(self, template_key: str | None) -> tuple[bool, str | None]:
+        """`_gate` for the weather aspect, a switch that cannot be read being a reason like any
+        other: recorded in full in the host's log, and handed back as the line's reason."""
+        try:
+            return await self._gate(image_weather_post.WEATHER_ASPECT, template_key)
+        except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
+            log.error("weather: enablement check failed: %s", exc, exc_info=True)
+            return False, f"it could not be read whether a picture is due: {exc}"
+
+    async def attach_forecast(
+        self, round_id: int, phase: int, *, values: ForecastValues
+    ) -> tuple[discord.File | None, tuple[str, ...]]:
+        """The ``discord.File`` a weather occasion rides on, or None to post the text, and the
+        lines saying why a picture that was due was not drawn.
+
+        The one entry point the weather post job calls, handing the *values* the forecast's words
+        were composed as. Phase 0 is the mystery round's notice: its line names it the notice,
+        never a phase, without reading the round, and its picture is drawn on phase 1's footing.
+        Every reason a graphic is not drawn (the module off, the aspect off, the template invalid,
+        the round unreadable, the render failed) hands back no file, and the caller posts the
+        textual forecast it was going to post anyway (XIV.7).
+
+        The two switches are asked before anything else is read, so that a picture that was not due
+        (the module or its weather aspect off) says nothing, whatever else could not be read. A
+        switch that cannot be read is a reason like any other, its line naming the forecast where
+        the round can be read and only its phase (or the notice) where it cannot. Every other
+        reason, and every notice the render gave, is handed back as a line for the log channel,
+        which the caller writes in its own save, naming the forecast it pertains to (FR-059).
+
+        There are two catch-alls. The outer is around the drawing, a graphic riding on a post
+        (architecture.md, "A catch-all error handler", place 6): a fault in any of it is a line,
+        never a break in the forecast. The inner is around reading the round to name the line of
+        a switch that could not be read (place 3, naming something in a line must not fail the
+        line): a round that cannot be read leaves the line naming the phase, or the notice, alone,
+        and the switch's reason still reaches it.
+        """
+        import discord
+
+        weather = image_weather_post
+        drawn_phase = 1 if phase == 0 else phase  # the notice is drawn on phase 1's footing
+        what = weather.phase_name(phase)
+        try:
+            due, why = await self._weather_gate(None)
+            if not due:
+                if why is None:
+                    return None, ()
+                try:  # a switch that could not be read still names the forecast it was read for
+                    named = await weather.build_drawing_for_round(
+                        self._db_path, round_id, drawn_phase, values=values
+                    )
+                    if named is not None:
+                        what = weather.named(named, phase)
+                except Exception as exc:  # noqa: BLE001 — the line then names no more than the phase or the notice
+                    log.error(
+                        "weather: could not name round %s for a line: %s", round_id, exc,
+                        exc_info=True,
+                    )
+                return None, (weather.fault(what, why),)
+
+            drawing = await weather.build_drawing_for_round(
+                self._db_path, round_id, drawn_phase, values=values
+            )
+            if drawing is None:
+                return None, (weather.fault(what, "the round could not be found"),)
+
+            what = weather.named(drawing, phase)
+            due, why = await self._weather_gate(drawing.template_key)
+            if not due:
+                return None, () if why is None else (weather.fault(what, why),)
+
+            render = await weather.render_forecast(self._config, self._renderer, drawing)
+            lines = weather.lines_of(what, render)
+            if render.png is None:  # `render.draws`, in a form the type check can follow
+                return None, lines
+
+            return discord.File(str(render.png), filename=Path(render.png).name), lines
+        except Exception as exc:  # noqa: BLE001 — a graphic never breaks a forecast
+            log.error(
+                "weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True
+            )
+            return None, (weather.fault(what, str(exc)),)
 
     # ── The calendar ───────────────────────────────────────────────────────
 

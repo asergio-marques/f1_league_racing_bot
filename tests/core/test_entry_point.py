@@ -12,6 +12,7 @@ from __future__ import annotations
 import inspect
 import logging
 from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 import pytest
 
@@ -622,7 +623,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
                         lambda *_args, **_kwargs: called.append("signup's jobs") or (),
                         raising=False)
     weather_steps = sorted(
-        {*forecast_changes.forecast_steps(now=lambda: _NOW),
+        {*forecast_changes.forecast_steps(now=lambda: _NOW, drawing=mock.MagicMock()),
          "clean_up_forecast", "notify_invalidation", "rerun_phase"}
     )
 

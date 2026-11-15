@@ -67,6 +67,17 @@ def _drawing(template_key="weather_p2_template", **facts):
     return MagicMock(template_key=template_key, **named)
 
 
+def _image_drawing(bot):
+    """The image module's drawing, over *bot*'s services: the object whose `attach_forecast` the
+    weather post job asks."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    return ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path=bot.db_path,
+    )
+
+
 async def _attach(bot, monkeypatch, drawing, *, phase=2, png=None):
     """`attach_forecast` for round 1's *phase*, its round read as *drawing* and, where *png* is
     given, its render drawing that file; the picture and the log lines it hands back."""
@@ -75,7 +86,7 @@ async def _attach(bot, monkeypatch, drawing, *, phase=2, png=None):
     monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
     if png is not None:
         monkeypatch.setattr(post, "render_forecast", AsyncMock(return_value=ForecastRender(png=png)))
-    file, lines = await post.attach_forecast(bot, round_id=1, phase=phase, values=_values())
+    file, lines = await _image_drawing(bot).attach_forecast(1, phase, values=_values())
     return file, list(lines)
 
 
@@ -106,7 +117,7 @@ async def test_the_drawing_is_made_from_the_values_weather_hands_it(tmp_path):
         ForecastSession(label="Race", weather_type="Rain", slots=("Rain",), summary="Rain"),
     ))
 
-    drawing = await build_drawing_for_round(league.bot, round_, 3, values=handed)
+    drawing = await build_drawing_for_round(league.db_path, round_, 3, values=handed)
 
     assert drawing.phase_description == "Final session forecast"
     assert drawing.rain_probability == "30%"
@@ -193,7 +204,7 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
              else AsyncMock(side_effect=RuntimeError("no round")))
     monkeypatch.setattr(post, "build_drawing_for_round", reads)
 
-    file, lines = await post.attach_forecast(bot, round_id=1, phase=2, values=_values())
+    file, lines = await _image_drawing(bot).attach_forecast(1, 2, values=_values())
 
     [line] = lines
     assert file is None and "boom" in line
@@ -230,7 +241,7 @@ async def test_a_mystery_round_notice_whose_round_cannot_be_read_is_named_as_the
 
     monkeypatch.setattr(post, "build_drawing_for_round", reads)
 
-    file, lines = await post.attach_forecast(_bot(), round_id=1, phase=0, values=_values())
+    file, lines = await _image_drawing(_bot()).attach_forecast(1, 0, values=_values())
 
     [line] = lines
     assert file is None
@@ -282,7 +293,8 @@ async def test_a_scheduled_posting_falls_back_rather_than_rejecting():
 
     bot = _render_bot(_decision(posts_image=False, problem_detail="template too small"))
     render = await render_forecast(
-        bot, MagicMock(template_key="weather_p2_template"),
+        bot.image_config_service, bot.image_render_service,
+        MagicMock(template_key="weather_p2_template"),
         origin=PostingOrigin.SCHEDULED,
     )
     assert render.draws is False
@@ -298,7 +310,8 @@ async def test_a_commanded_posting_rejects_rather_than_falling_back():
 
     bot = _render_bot(_decision(rejects=True, problem_detail="missing track_name"))
     render = await render_forecast(
-        bot, MagicMock(template_key="weather_p3_template"),
+        bot.image_config_service, bot.image_render_service,
+        MagicMock(template_key="weather_p3_template"),
         origin=PostingOrigin.COMMANDED,
     )
     assert render.rejects is True
@@ -315,10 +328,14 @@ async def test_a_resolution_fault_rejects_only_when_commanded():
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("no config"))
     drawing = MagicMock(template_key="weather_p1_template")
 
-    scheduled = await render_forecast(bot, drawing, origin=PostingOrigin.SCHEDULED)
+    scheduled = await render_forecast(
+        bot.image_config_service, bot.image_render_service, drawing, origin=PostingOrigin.SCHEDULED,
+    )
     assert scheduled.draws is False and scheduled.rejects is False
 
-    commanded = await render_forecast(bot, drawing, origin=PostingOrigin.COMMANDED)
+    commanded = await render_forecast(
+        bot.image_config_service, bot.image_render_service, drawing, origin=PostingOrigin.COMMANDED,
+    )
     assert commanded.rejects is True
 
 
@@ -327,7 +344,10 @@ async def test_a_successful_render_hands_back_the_png():
     from leaguebot.image.services.aspects.image_weather_post import render_forecast
 
     bot = _render_bot(_decision())
-    render = await render_forecast(bot, MagicMock(template_key="weather_p1_template"))
+    render = await render_forecast(
+        bot.image_config_service, bot.image_render_service,
+        MagicMock(template_key="weather_p1_template"),
+    )
     assert render.draws is True
     assert str(render.png) == "/tmp/weather.png"
 

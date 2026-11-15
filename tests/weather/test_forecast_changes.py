@@ -13,7 +13,7 @@ Silverstone Circuit, 90 days ahead, with a short qualifying and a long race; Pro
 is 605 and its role 801. Each test asks for a phase through weather's `ask_forecast`, as the timers
 do, runs the queue and reads the forecast channel, the log channel and the database. Images are
 off, so a forecast is posted as text, unless a test hands the job a picture by patching
-`image_weather_post.attach_forecast`, which the post job reaches through that module as it runs.
+the image drawing's `attach_forecast`, which the post job is handed.
 """
 from __future__ import annotations
 
@@ -180,14 +180,13 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     """The forecast refused stops the queue at its post, and nothing is put on the old retry
     queue; Retry posts it as text, with no picture drawn, and records its id. The forecast that
     finally stands notifies Pro's role 801, and no member, as the first would have."""
-    from leaguebot.image.services.aspects import image_weather_post
 
     league = await _league(tmp_path)
     drawn = AsyncMock(side_effect=lambda *_a, **_k: (
         discord.File(io.BytesIO(b"png"), filename="forecast.png"), (),
     ))
     if refused == "picture refused":
-        monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
+        monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", drawn)
         league.channel(FORECAST).fail_when = lambda _content, kwargs: kwargs.get("file") is not None
     else:
         _refusing(league)
@@ -306,7 +305,6 @@ async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws
     the phase's description, the likelihood of rain Phase 1 drew as text, and from Phase 2 on each
     session's label and drawn weather type in run order, with Phase 3's slots and their summary
     (#287, W288)."""
-    from leaguebot.image.services.aspects import image_weather_post
     from leaguebot.weather.utils.message_builder import (
         format_rain_probability,
         format_session_weather_type,
@@ -316,7 +314,7 @@ async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws
     league = await _league(tmp_path)
     await _posted(league, *range(1, phase))
     drawn = AsyncMock(return_value=(None, ()))
-    monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
+    monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", drawn)
 
     await _ask(league, phase)
     await run_queue(league.bot)
@@ -1379,7 +1377,7 @@ def _step_context(league: Any, payload: dict[str, Any]) -> Any:
 def _steps(league: Any) -> dict[str, Any]:
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
-    return forecast_steps(now=lambda: league.clock.now)
+    return forecast_steps(now=lambda: league.clock.now, drawing=league.bot.image_drawing)
 
 
 async def test_a_post_whose_round_is_gone_raises_naming_the_round(tmp_path):
