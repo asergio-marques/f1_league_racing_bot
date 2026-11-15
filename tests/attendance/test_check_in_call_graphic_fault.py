@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -94,3 +94,78 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     # Each line names the division and the round.
     heading = f"**{DIVISIONS[PRO][0]}** — check-in call of round 4: "
     assert lines == [heading + clause for clause in expected]
+
+
+# ---------------------------------------------------------------------------
+# What the render itself reports reaches the log channel once, under the check-in call's name
+# ---------------------------------------------------------------------------
+
+#: The detail of the one render notice the drawing below comes back with.
+NOTICE_DETAIL = "no `flag` image for “Silverstone”"
+#: The detail of the fault the drawing below fails on.
+RENDER_FAULT = "the template declares no `round_number` field"
+
+
+def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
+    """Image generation on for the check-in call, its template valid; its render, the image
+    module's own, comes back drawn with one notice (*outcome* "notice") or failed on a template
+    fault (*outcome* "fault")."""
+    from leaguebot.image.models.image_module import Problem, RenderNotice, RenderOutcome
+
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"rsvp": True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={"rsvp_template": MagicMock(valid=True)}
+    )
+    picture = tmp_path / "checkin.png"
+    picture.write_bytes(b"\x89PNG")
+    if outcome == "notice":
+        drawn = RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type="rsvp_template", notice_kind="ASSET_FALLBACK_USED",
+            detail=NOTICE_DETAIL, field_id="flag",
+        )])
+    else:
+        drawn = RenderOutcome(problem=Problem(
+            kind="TEMPLATE_INVALID", detail=RENDER_FAULT, template_key="rsvp_template",
+        ))
+    league.bot.image_render_service.render = AsyncMock(return_value=drawn)
+
+
+@pytest.mark.xfail(strict=True, reason="#288: a check-in call's render notices reach the log "
+                   "channel twice, once under no heading")
+async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
+    """Pro's round 4's check-in call is drawn, its flag falling back (one render notice). The
+    call posts with its picture, and the log channel carries the notice once, in a block whose
+    heading names Pro and round 4; no block without a heading carries it a second time."""
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, "notice")
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(CHECK_IN).files[-1] is not None
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    heading = block.splitlines()[0]
+    assert DIVISIONS[PRO][0] in heading and "round 4" in heading.lower(), block
+
+
+@pytest.mark.xfail(strict=True, reason="#288: a check-in call's render fault is logged as a "
+                   "'Results image' fault")
+async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(tmp_path):
+    """Pro's round 4's check-in call is drawn, and its render fails on a template fault. The call
+    posts without a picture, and the log channel gives the fault on one line headed "⚠️ Check-in
+    call image", the name `/images config toggle` offers, naming Pro and round 4; nothing in the
+    log calls it a results image."""
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, "fault")
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(CHECK_IN).files[-1] is None
+    log = league.log()
+    [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+    assert line.startswith("⚠️ Check-in call image — "), line
+    assert DIVISIONS[PRO][0] in line and "round 4" in line.lower(), line
+    assert "Results image" not in log, log
