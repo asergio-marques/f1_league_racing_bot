@@ -3199,9 +3199,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_verdict_post.py", "verdicts_enabled"): (1, PASS["image"]),
     ("image/services/aspects/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
     ("image/services/aspects/image_weather_post.py", "weather_enabled"): (1, PASS["image"]),
-    ("image/utils/font_metrics.py", "_faces_of"): (3, PASS["image"]),
-    ("image/utils/font_metrics.py", "_families_of"): (4, PASS["image"]),
-    ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
     ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
 }
 

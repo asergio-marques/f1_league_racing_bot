@@ -131,11 +131,6 @@ def test_measurement_falls_back_rather_than_raising():
     assert width > 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#288: a face whose metrics cannot be read is measured by estimate, with a "
-    "traceback in the host's log for every text measured",
-)
 def test_a_face_whose_metrics_cannot_be_read_is_a_fault_not_an_estimate(tmp_path, caplog):
     """A face resolved to a file that is no font: measuring a name in it raises, so the render
     falls back as on any fault rather than drawing text that may overflow its box, and nothing
