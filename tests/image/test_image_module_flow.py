@@ -171,6 +171,27 @@ async def test_disable_preserves_every_settable_column(tmp_path):
     assert all((await config_service.get_toggles()).values())
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#288: switching the image module off leaves the daily portrait refresh armed",
+)
+async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
+    """Images on with portraits refreshed daily: `/module disable images` switches the module
+    off and removes the daily refresh, which would otherwise go on firing while the module is
+    off (Constitution X.3)."""
+    league, cog, _config_service = await _switched(tmp_path)
+    await _switch(league, cog, on=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE image_config SET use_pfp = 1, pfp_daily = 1")
+        await db.commit()
+    league.scheduler.cancel_portrait_refresh.reset_mock()
+
+    await _switch(league, cog, on=False)
+
+    assert await league.bot.module_service.is_images_enabled() is False
+    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+
+
 # ── T013 ──────────────────────────────────────────────────────────────────
 
 

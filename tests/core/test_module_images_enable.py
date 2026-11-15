@@ -45,6 +45,14 @@ NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 #: The enable's reply where the host carries the rasteriser.
 ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
 
+#: What the enable says where the daily portrait refresh could not be armed (owner's wording,
+#: decided 2026-11-15 for #288).
+DAILY_NOT_SCHEDULED = (
+    "⚠️ The setting is stored, but the daily update could not be scheduled. It will be scheduled "
+    "the next time the bot starts with the image module on, or when the module is next switched "
+    "on."
+)
+
 #: The notice a host without Inkscape adds to the enable's reply, in today's words.
 NO_RASTERISER = (
     "⛔ **Inkscape is not installed on the machine running the bot.**\n"
@@ -120,6 +128,18 @@ async def _configuration_rows(db_path: str) -> dict[str, int]:
             cursor = await db.execute(f"SELECT COUNT(*) AS n FROM {table}")
             counts[table] = (await cursor.fetchone())["n"]
     return counts
+
+
+async def _keep_daily_portraits(db_path: str) -> None:
+    """Switch the module off with its configuration kept as a disable keeps it, portraits on and
+    refreshed daily at 07:45 UTC, so that switching it on again finds the daily refresh asked
+    for."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE image_config SET module_enabled = 0, use_pfp = 1, pfp_daily = 1, "
+            "pfp_daily_time = '07:45'"
+        )
+        await db.commit()
 
 
 async def _refuse_the_audit(db_path: str) -> None:
@@ -258,3 +278,77 @@ async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_o
     assert await log_lines(league) == [
         f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
     ]
+
+
+# ---------------------------------------------------------------------------
+# The daily portrait refresh
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("use_pfp", "pfp_daily", "armed"),
+    [
+        pytest.param(
+            1, 1, True,
+            id="daily updates asked for",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#288: switching the image module on does not arm the daily portrait "
+                "refresh",
+            ),
+        ),
+        pytest.param(1, 0, False, id="daily updates not asked for"),
+        pytest.param(0, 1, False, id="portraits off"),
+    ],
+)
+async def test_enabling_arms_the_daily_portrait_refresh_where_the_configuration_asks_for_it(
+    tmp_path, use_pfp, pfp_daily, armed
+):
+    """The module switched on again over a kept configuration: with portraits on and daily
+    updates set for 07:45, the daily refresh is armed at 07:45; with either off, nothing is
+    armed."""
+    league, cog = await _league(tmp_path, on=True)
+    await _keep_daily_portraits(league.db_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE image_config SET use_pfp = ?, pfp_daily = ?", (use_pfp, pfp_daily)
+        )
+        await db.commit()
+
+    await _enable(league, cog, _asked(league))
+
+    assert await _images_flag(league.db_path) == 1
+    if armed:
+        league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
+    else:
+        league.scheduler.schedule_portrait_refresh.assert_not_called()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#288: switching the image module on does not arm the daily portrait refresh",
+)
+async def test_an_enable_that_cannot_arm_the_daily_refresh_leaves_the_module_on_as_one_failure(
+    tmp_path,
+):
+    """The scheduler refuses the daily job as the module is switched on again with daily
+    portrait updates set. The module stays on; the member is told the refresh could not be
+    scheduled and when it will be, with no success; the log channel records one failure and no
+    success, as the portrait toggles do."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path, on=True)
+    await _keep_daily_portraits(league.db_path)
+    league.scheduler.schedule_portrait_refresh.side_effect = RuntimeError(
+        "the job store refused the job"
+    )
+    asked = _asked(league)
+
+    await _enable(league, cog, asked)
+
+    assert await _images_flag(league.db_path) == 1
+    replied = last_said(asked)
+    assert DAILY_NOT_SCHEDULED in replied and "✅" not in replied
+    lines = await log_lines(league)
+    assert len(lines) == 1, lines
+    assert lines[0].startswith(f"❌ `/module enable` failed for {NAMED}"), lines[0]
