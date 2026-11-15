@@ -81,23 +81,6 @@ class ImageConfigService:
     async def is_aspect_enabled(self, aspect: str) -> bool:
         return (await self.get_toggles()).get(aspect, False)
 
-    # ── Writes ────────────────────────────────────────────────────────────
-
-    async def create_with_defaults(self) -> ImageConfig:
-        """Create the config row and all nine toggle rows in one transaction.
-
-        Idempotent: an existing configuration is left exactly as it is, which is what
-        makes re-enabling after a disable lossless (FR-004a).
-        """
-        async with get_connection(self._db_path) as db:
-            await create_defaults_on(db)
-            await db.commit()
-
-            cursor = await db.execute("SELECT * FROM image_config")
-            row = await cursor.fetchone()
-
-        return _row_to_config(row)
-
     async def candidate_config(
         self, column: str, value: str
     ) -> ImageConfig | None:
@@ -217,8 +200,8 @@ class ImageConfigService:
 async def create_defaults_on(db: aiosqlite.Connection) -> None:
     """Create the config row and all nine toggle rows on *db*, where missing, committing nothing.
 
-    Called by the switch-on's save (`module_switch_settings.py`), and by `create_with_defaults`,
-    which commits for its own callers, so that a change to the defaults is made once.
+    Called by the switch-on's save (`module_switch_settings.py`), on the save's own connection, so
+    that the module stays off until everything the switch-on writes has been written too.
     """
     await db.execute("INSERT OR IGNORE INTO image_config (id) VALUES (1)")
     await db.executemany(

@@ -8,9 +8,8 @@ importing image. `docs/design/architecture.md`, "How modules and core fit togeth
 gap this closes: weather's switch (`weather/services/module_switch_settings.py`) is the model.
 
 **The switch-on is one save.** The configuration row and every aspect toggle are created where
-missing (`create_defaults_on`, the same `INSERT OR IGNORE`s `ImageConfigService.create_with_defaults`
-commits for its own callers, run here on the save's own connection and left uncommitted so the
-module stays off until everything below has been written too); the flag is raised and the audit
+missing (`create_defaults_on`, `INSERT OR IGNORE`s run on the save's own connection and left
+uncommitted so the module stays off until everything below has been written too); the flag is raised and the audit
 entry written, so a fault anywhere in the save leaves none of it: no
 configuration, no flag, no audit row — never the module on with nothing configured, and never a
 part-made configuration a later enable would build on. The module enables even without the host's

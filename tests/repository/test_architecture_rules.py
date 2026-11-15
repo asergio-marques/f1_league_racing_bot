@@ -2113,7 +2113,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Image's pass
     ("image/services/portraits/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "_record"): (1, PASS["image"]),
-    ("image/services/config/image_config_service.py", "ImageConfigService.create_with_defaults"): (1, PASS["image"]),
 }
 
 
