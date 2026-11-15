@@ -808,6 +808,55 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     assert str(raised.value) == fault
 
 
+@pytest.mark.xfail(strict=True, reason="#288: the review's draw_and_post drops its pictures' "
+                   "notices, which the drawing logs itself from inside the job")
+async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
+        posting, monkeypatch, tmp_path):
+    """The real change types are registered, as the builder registers them, and the drawing the
+    bot carries draws Alex's review's two pictures of Pro as PNGs: Pro's calendar of season 1 with
+    one notice (round 12 not fitting) and Pro's lineup with another (Zara's flag falling back).
+    Once the queue runs, both pictures are posted and the queue does not stop; the log channel
+    holds each notice once, in a line naming what was drawn (the calendar or the lineup, and
+    Pro), which the job that drew and posted it carries among its own lines (Constitution XIV.4;
+    the owner's decision on #288: code inside a job never calls `post_log`)."""
+    from leaguebot.core.services.modules.image_drawing import LineupPicture
+    from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
+    from tests.support.change_queue import queued_log_lines
+
+    drawn = {}
+    for kind in ("calendar", "lineup"):
+        folder = tmp_path / f"f1bot_render_{kind}"
+        folder.mkdir()
+        drawn[kind] = folder / f"{kind}.png"
+        drawn[kind].write_bytes(b"\x89PNG\r\n\x1a\n")
+    calendar_notice, lineup_notice = "round 12 did not fit", "a fallback flag stood in for Zara's"
+    draw_calendars_with(posting.bot, monkeypatch,
+                        CalendarDrawingStub(picture=drawn["calendar"], notices=(calendar_notice,)))
+    monkeypatch.setattr(posting.bot.image_drawing, "draw_review_lineup", AsyncMock(
+        return_value=LineupPicture(path=drawn["lineup"], problem=None, notices=(lineup_notice,))))
+    posting.bot.season_service.get_division = AsyncMock(
+        return_value=SimpleNamespace(id=11, name="Pro", tier=1))
+    posting.bot.season_service.get_division_rounds = AsyncMock(return_value=[])
+    attach_queue(posting.bot, posting.db_path, now=posting.clock)
+    interaction = member_interaction(posting.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    pictures = [{**PICTURES[0], "season_number": 1}, PICTURES[1]]
+    await posting.bot.change_queue.ask(
+        POST, {**_payload(), "pictures": pictures, "question": None},
+        interaction=interaction, what="posting the placements review",
+    )
+
+    await run_queue(posting.bot)
+
+    assert await stopped_job(posting.db_path) is None
+    assert len([m for m in _posts(posting.channel) if m.picture]) == 2
+    logged = [*posting.bot.log_channel.sent, *await queued_log_lines(posting.db_path)]
+    for notice, kind in ((calendar_notice, "calendar"), (lineup_notice, "lineup")):
+        named = [line for line in logged if notice in line]
+        assert len(named) == 1, logged
+        assert kind in named[0].lower() and "Pro" in named[0], named[0]
+
+
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
         posting, tmp_path):
     """Alex's review carries two pictures, each drawn by the image module into a directory of its
