@@ -498,9 +498,13 @@ class ImageDrawing:
 
     async def _weather_gate(self, template_key: str | None) -> tuple[bool, str | None]:
         """`_gate` for the weather aspect, a switch that cannot be read being a reason like any
-        other: recorded in full in the host's log, and handed back as the line's reason."""
+        other: recorded in full in the host's log, and handed back as the line's reason. A switch
+        nobody signed up for (`SwitchNotSignedUp`) is a fault in the bot's assembly and is raised,
+        as `aspect_wanted` raises it."""
         try:
             return await self._gate(image_weather_post.WEATHER_ASPECT, template_key)
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
             log.error("weather: enablement check failed: %s", exc, exc_info=True)
             return False, f"it could not be read whether a picture is due: {exc}"
@@ -530,7 +534,8 @@ class ImageDrawing:
         never a break in the forecast. The inner is around reading the round to name the line of
         a switch that could not be read (place 3, naming something in a line must not fail the
         line): a round that cannot be read leaves the line naming the phase, or the notice, alone,
-        and the switch's reason still reaches it.
+        and the switch's reason still reaches it. Neither takes a switch nobody signed up for
+        (`SwitchNotSignedUp`) for a fault of the drawing: it is raised, as `aspect_wanted` raises it.
         """
         import discord
 
@@ -572,6 +577,8 @@ class ImageDrawing:
                 return None, lines
 
             return discord.File(str(render.png), filename=Path(render.png).name), lines
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — a graphic never breaks a forecast
             log.error(
                 "weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True
@@ -608,7 +615,9 @@ class ImageDrawing:
         A stated exception to the gates: one that cannot be read answers no picture and no line
         (`aspect_wanted`). The catch-all is around the drawing, a graphic riding on a post
         (architecture.md, "A catch-all error handler", place 6): a fault in any of it is a line,
-        never a break in the call or in opening the round's attendance rows (XIV.7).
+        never a break in the call or in opening the round's attendance rows (XIV.7); a switch
+        nobody signed up for (`SwitchNotSignedUp`) is not one, being a fault in the bot's assembly,
+        and is raised, as `aspect_wanted` raises it.
         """
         what = image_rsvp_post.describe(division_name=division_name, round_number=round_number)
         try:
@@ -629,6 +638,8 @@ class ImageDrawing:
                 division_tier=division_tier,
                 deadline_at=deadline_at,
             )
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
             log.error("rsvp: the check-in graphic could not be drawn: %s", exc, exc_info=True)
             return None, (image_rsvp_post.fault(what, str(exc)),)

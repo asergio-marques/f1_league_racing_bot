@@ -1423,12 +1423,16 @@ ask the image module (`TemplateCapacityService._ask_drawing`) is a stated except
 catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, and the
 guard lets the placement through as if no problem were found, because a capacity check that cannot
 run must not block a placement (its docstring says so); the image module's one gate
-(`ImageDrawing.aspect_wanted`, which every aspect's picture asks) is a stated exception likewise:
-its catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, with
-no line to the log channel, and answers that the league does not draw the aspect, so the text goes
-out, because a gate that cannot be read must not lose a league its text (its docstring says so);
-the helper through
-which the season's own capacity checks count and ask the image module
+(`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the weather forecast's) is a
+stated exception likewise: its catch-all (a switch nobody signed up for aside) puts the error in
+the host's log in full, with no line to the log channel, and answers that the league does not draw
+the aspect, so the text goes out, because a gate that cannot be read must not lose a league its
+text (its docstring says so); the weather forecast's gate (`ImageDrawing._weather_gate`) is one
+more, the only gate that says why no picture was drawn: a switch it cannot read (a switch nobody
+signed up for aside) is recorded in full in the host's log, as the others are, and is handed back
+as the reason of a line of the forecast's job, the one place a gate's fault is a line, because the
+forecast's line already names why a picture that was due was not drawn (its docstring says so);
+the helper through which the season's own capacity checks count and ask the image module
 (`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
 review's calendar and attendance warnings) — is a stated exception beside
 `TemplateCapacityService._ask_drawing`'s: its catch-all (a switch nobody signed up for aside) puts
