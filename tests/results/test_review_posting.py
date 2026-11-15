@@ -1859,58 +1859,60 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
-def _drawn_with_a_notice(league: _League, tmp_path: Any, picture: str) -> Any:
-    """Image generation on for *picture* ("results", or "standings" for the drivers'
-    championship alone), its template valid: the image module's real posting runs, its drawing
-    stubbed and its render, the image module's own, drawn with one notice, a flag falling back.
-    Gives the patches, to enter."""
+async def _built_league(tmp_path: Any) -> _League:
+    """Round 3's league of `_league`, its bot the one the entry point's `build` makes, every
+    service the builder's (the image module's among them), over the same channels and server."""
+    from tests.support.change_queue import league_bot, set_guilds
+
+    league = await _league(tmp_path)
+    double, bot = league.bot, await league_bot(league.db_path)
+    bot.log_channel, bot.interaction_channel = double.log_channel, double.interaction_channel
+    bot.get_channel, bot.fetch_channel = double.get_channel, double.fetch_channel
+    bot.get_guild = double.get_guild
+    set_guilds(bot, [league.guild])
+    league.bot = bot
+    return league
+
+
+async def _drawn_with_a_notice(league: _League, tmp_path: Any, picture: str) -> Any:
+    """Image generation on for *picture* ("results" or "standings"), as the league stores it: the
+    module switched on with its default configuration, its packaged templates, and the *picture*
+    aspect toggled on; round 3's Feature Race classifies driver 1001, first for Team 3001.
+    Everything the builder made runs but the render, stubbed: the drawn picture (the race's
+    results, or the drivers' championship) comes back with one notice, a flag falling back, and
+    any other picture comes back with none. Gives the patches, to enter."""
     from contextlib import ExitStack
 
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
-    from leaguebot.image.services import image_results_post, image_standings_post
     from leaguebot.image.services.image_render_service import ImageRenderService
+    from tests.support import saves
+    from tests.support.season_league import set_module_flag
+    from tests.support.teams import seed_team_instances
 
-    key = ("results_race_template" if picture == "results"
-           else image_standings_post.TEMPLATE_KEYS["drivers"])
-    png = tmp_path / f"{picture}.png"
-    png.write_bytes(b"\x89PNG")
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    league.bot.image_config_service.get_config = AsyncMock(return_value=None)
-    league.bot.image_config_service.get_toggles = AsyncMock(return_value={picture: True})
-    league.bot.image_validity_service.template_reports = AsyncMock(
-        return_value={key: MagicMock(valid=True)}
-    )
-    renders = ImageRenderService(league.bot.image_config_service,
-                                 league.bot.image_validity_service)
-    renders.render = AsyncMock(return_value=RenderOutcome(png_paths=[png], notices=[RenderNotice(
-        image_type=key, notice_kind="ASSET_FALLBACK_USED", detail=NOTICE_DETAIL,
-        field_id="flag",
-    )]))
-    league.bot.image_render_service = renders
+    key = "results_race_template" if picture == "results" else "standings_drivers_template"
+    async with get_connection(league.db_path) as db:
+        await seed_team_instances(db, DIVISION_ID, 3001)
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_instance_id, finishing_position, points_awarded) "
+            "SELECT id, 1001, 3001, 1, 25 FROM session_results WHERE round_id = ?",
+            (ROUND_ID,),
+        )
+        await db.commit()
+    await league.bot.image_config_service.create_with_defaults()
+    await set_module_flag(league.db_path, "images", True)
+    await saves.set_aspect(league.db_path, picture, True)
+    renders = itertools.count(1)
 
-    def _drawing(template_key: str, **more: Any) -> Any:
-        return MagicMock(template_key=template_key, division_name="Pro", division_tier=None,
-                         season_number=None, round_number=3, **more)
+    async def _render(_self: Any, image_type: str, _spec_builder: Any, **_kwargs: Any) -> Any:
+        png = tmp_path / f"{image_type}_{next(renders)}.png"
+        png.write_bytes(b"\x89PNG")
+        notices = [RenderNotice(image_type=key, notice_kind="ASSET_FALLBACK_USED",
+                                detail=NOTICE_DETAIL, field_id="flag")]
+        return RenderOutcome(png_paths=[png], notices=notices if image_type == key else [])
 
     stack = ExitStack()
-    if picture == "results":
-        stack.enter_context(patch.object(
-            image_results_post, "build_drawing",
-            new=AsyncMock(return_value=_drawing(key, session_name="Race")),
-        ))
-    else:
-        async def _enabled(_bot: Any, template_key: str) -> bool:
-            return template_key == key
-
-        stack.enter_context(patch.object(image_standings_post, "standings_enabled",
-                                         new=AsyncMock(side_effect=_enabled)))
-        stack.enter_context(patch.object(
-            image_standings_post, "build_drawings",
-            new=AsyncMock(return_value=tuple(
-                _drawing(image_standings_post.TEMPLATE_KEYS[name])
-                for name in ("drivers", "constructors")
-            )),
-        ))
+    stack.enter_context(patch.object(ImageRenderService, "render", new=_render))
     return stack
 
 
@@ -1924,9 +1926,9 @@ async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_ro
     its render coming back with one notice, a flag falling back. The picture is posted and the
     queue runs to the end; the log channel carries the notice once, in a block whose heading
     names Pro and round 3, and no block without a heading carries it a second time."""
-    league = await _league(tmp_path)
+    league = await _built_league(tmp_path)
     target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
-    with _drawn_with_a_notice(league, tmp_path, picture):
+    with await _drawn_with_a_notice(league, tmp_path, picture):
         await _ask(league)
         await run_queue(league.bot)
 
