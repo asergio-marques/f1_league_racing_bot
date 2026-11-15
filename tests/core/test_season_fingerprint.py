@@ -549,10 +549,6 @@ _MODULE_EDITS = {
     ),
 }
 
-#: Why the tier colour's case fails until image hands its tier colours to the fingerprint.
-_TIER_COLOURS_UNSEEN = "#288: image's fingerprint area does not yet carry its tier colours"
-
-
 async def _handed(season) -> list:
     """What each module hands the fingerprint of the season, on a connection held open."""
     async with get_connection(season.path) as db:
@@ -577,11 +573,7 @@ async def test_each_module_hands_its_own_areas_whatever_its_switch(season):
     )
 
 
-@pytest.mark.parametrize("edit", [
-    pytest.param(edit, marks=pytest.mark.xfail(strict=True, reason=_TIER_COLOURS_UNSEEN))
-    if edit == "image's tier colours" else edit
-    for edit in sorted(_MODULE_EDITS)
-])
+@pytest.mark.parametrize("edit", sorted(_MODULE_EDITS))
 async def test_an_edit_to_a_module_s_configuration_changes_what_that_module_hands_alone(
     season, edit,
 ):

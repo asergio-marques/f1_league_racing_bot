@@ -3,7 +3,8 @@
 Core's `fingerprint_areas_read` hook asks each module for the rows of its own configuration, on
 the connection the fingerprint holds open, whatever the module's switch: a change to what the
 module is set to is a change to what the review reported, off or on. Image hands one area: its
-configuration, the module's switch among it, and its aspect toggles. The artwork on disk is
+configuration, the module's switch among it, its aspect toggles and its per-tier colours: a colour
+changed between a review and its approval reads as the review changed. The artwork on disk is
 asked of the image drawing, not read here. Reads only.
 """
 
@@ -24,6 +25,11 @@ async def fingerprint_areas(db: aiosqlite.Connection, season_id: int) -> dict[st
             await tuple_rows(db, "SELECT * FROM image_config"),
             await tuple_rows(
                 db, "SELECT aspect, enabled FROM image_aspect_toggles ORDER BY aspect"
+            ),
+            await tuple_rows(
+                db,
+                "SELECT division_slug, slot, colour FROM image_tier_colour "
+                "ORDER BY division_slug, slot",
             ),
         ],
     }
