@@ -628,10 +628,11 @@ Results needs no module. Attendance needs results (`NEEDS`, `core.md`, "The depe
 which is why results' switch-off offers the cascade above.
 
 Results imports no module but image (the `results-uses-no-other-module-but-image` contract). The
-image module draws results' pictures: for a session's table, the standings and the verdicts'
-heading its `try_post` posts the picture and hands back what it posted, which results' job records
-and whose predecessors it deletes; for a verdict, `image_verdict_post` renders it and results posts
-it. A retry asks for no picture (above, "Pictures and their fallbacks").
+image module draws results' pictures and posts none of them: the posting jobs are handed its
+drawing by the builder, ask it for the picture of a session's table, of the two standings and of a
+verdict, and post what it hands back themselves, through the standing-post handler. A picture
+Discord refuses goes out as its text in the same try, and what the drawing had to report comes back
+as lines of the job. A retry asks for no picture (above, "Pictures and their fallbacks").
 
 ### The `/results` group
 
