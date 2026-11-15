@@ -631,12 +631,18 @@ async def test_a_failure_beneath_the_gate_never_reaches_the_render(monkeypatch, 
 # ── The daily refresh ─────────────────────────────────────────────────────
 
 
-async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTIVE"):
+async def _season_db(
+    tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTIVE", images_on=True
+):
     """One season in *status*, each of *uids* assigned to its one division, and a test
-    driver beside them unless *test_uid* is None."""
+    driver beside them unless *test_uid* is None; the image module switched on unless
+    *images_on* is false."""
     path = str(tmp_path / "season.db")
     await run_migrations(path)
     async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO image_config (id, module_enabled) VALUES (1, ?)", (int(images_on),)
+        )
         await db.execute(
             "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', ?)",
             (status,),
@@ -679,11 +685,18 @@ async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path)
 
 
 def _daily_bot(db_path, directory, **config_overrides):
-    values = {"use_pfp": True, "pfp_daily": True,
+    """A bot whose image configuration asks for portraits refreshed daily at 03:00 UTC, the
+    stored default, reading the image module's switch from *db_path* as the bot does."""
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.image.services.module_switch_settings import images_enabled_on
+
+    values = {"use_pfp": True, "pfp_daily": True, "pfp_daily_time": "03:00",
               "driver_image_directory": str(directory)}
     values.update(config_overrides)
     bot = MagicMock()
     bot.db_path = db_path
+    bot.module_service = ModuleService(db_path)
+    bot.module_service.register_switch("images", images_enabled_on)
     bot.image_config_service.get_config = AsyncMock(return_value=SimpleNamespace(**values))
     guild = MagicMock()
     members = {11: _member(11, "k11"), 22: _member(22, "k22")}
@@ -708,21 +721,60 @@ async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatc
     assert sorted(p.name for p in directory.iterdir()) == ["11.svg", "22.svg"]
 
 
-async def test_the_daily_refresh_stands_aside_when_not_asked_for(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("config_overrides", "images_on"),
+    [
+        ({"pfp_daily": False}, True),
+        ({"use_pfp": False}, True),
+        pytest.param(
+            {}, False,
+            id="image-module-off",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#288: the daily refresh does not read the image module's switch",
+            ),
+        ),
+    ],
+)
+async def test_the_daily_refresh_stands_aside_when_not_asked_for(
+    tmp_path, monkeypatch, config_overrides, images_on
+):
+    from leaguebot.image.services import driver_portrait_service as m
+
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    path = await _season_db(tmp_path, images_on=images_on)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
+    bot = _daily_bot(path, directory, **config_overrides)
+
+    assert await m.run_daily_refresh(bot, now=NOW) == 0
+    assert list(directory.iterdir()) == []
+    assert await _rows(path) == {}
+    for user_id in (11, 22):
+        bot.get_guild.return_value.get_member(user_id).display_avatar.read.assert_not_awaited()
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#288: the daily refresh runs however late it fires"
+)
+async def test_a_daily_refresh_that_fires_hours_after_its_time_is_skipped(
+    tmp_path, monkeypatch
+):
+    """A run missed while the bot was down is skipped, not made late (core specification,
+    When the bot stops: "Anything else that came due while the bot was stopped is missed").
+    The lateness is judged from the *now* the handler is given against the time of day it is
+    due at, the job carrying no lateness limit of its own."""
     from leaguebot.image.services import driver_portrait_service as m
 
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path)
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
+    six_hours_late = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
 
-    assert await m.run_daily_refresh(
-        _daily_bot(path, directory, pfp_daily=False), now=NOW
-    ) == 0
-    assert await m.run_daily_refresh(
-        _daily_bot(path, directory, use_pfp=False), now=NOW
-    ) == 0
+    assert await m.run_daily_refresh(_daily_bot(path, directory), now=six_hours_late) == 0
     assert list(directory.iterdir()) == []
+    assert await _rows(path) == {}
 
 
 async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job(tmp_path):
