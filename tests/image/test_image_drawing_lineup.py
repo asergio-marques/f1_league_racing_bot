@@ -142,6 +142,27 @@ async def test_a_lineup_gate_whose_switch_nobody_signed_up_for_raises():
         await drawing.lineup_wanted()
 
 
+#: Every aspect `/images config toggle` offers, by the value it stores.
+ASPECTS = ["calendar", "lineup", "results", "standings", "attendance", "rsvp", "weather",
+           "verdicts", "verdict_banner"]
+
+
+@pytest.mark.xfail(strict=True, reason="#288: there is no one gate on the image drawing that every "
+                   "aspect asks")
+@pytest.mark.parametrize("aspect", ASPECTS)
+async def test_every_aspect_gate_lets_a_switch_nobody_signed_up_for_through(aspect):
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and the image
+    drawing is asked whether *aspect* is drawn: the fault is raised, not answered as text, whichever
+    of the nine pictures asks."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    drawing, _, _, modules = _drawing()
+    modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await drawing.aspect_wanted(aspect)
+
+
 @pytest.mark.parametrize("draw", DRAWS)
 async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, monkeypatch, draw):
     """Pro, in a season being raced, seats Zara (placement confirmed), Yuri (placed mid-season and
