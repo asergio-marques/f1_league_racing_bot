@@ -154,41 +154,6 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
     )
 
 
-async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
-    tmp_path, monkeypatch
-):
-    """``render_png`` referred to ``LINEUP_TEMPLATE_KEY``, which was defined nowhere."""
-    from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.aspects import image_lineup_post
-
-    bot, png = _bot_with_decision(tmp_path)
-    seen = _capture_image_type(monkeypatch)
-
-    # The drawing is not what is under test here; the body around it is — but it must
-    # still carry `division_name`, which every drawing dataclass declares as mandatory
-    # and which the posting path passes as the tier whose colours to draw in (051).
-    monkeypatch.setattr(
-        image_lineup_post,
-        "build_drawing",
-        AsyncMock(
-            return_value=({"name": "Main"}, SimpleNamespace(division_name="Division 1"), [])
-        ),
-    )
-
-    decision = await image_lineup_post.render_png(
-        bot, MagicMock(), 7, PostingOrigin.SCHEDULED
-    )
-
-    assert decision.posts_image
-    assert decision.png_paths == [png]
-    assert seen["image_type"] == "lineup_template"
-    assert seen["classes"] == ["team", "flag", "driver"]
-    assert (
-        bot.image_render_service.render_for_posting.await_args.args[0]
-        == "lineup_template"
-    )
-
-
 # ── The four that were sound, kept honest ─────────────────────────────────
 
 

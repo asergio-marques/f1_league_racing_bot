@@ -182,23 +182,37 @@ async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, mon
     assert "vexley" not in filled, spec.text
 
 
-@pytest.mark.parametrize("draw", DRAWS)
+#: Each way a lineup is drawn, what it is handed beyond the guild and the division, the drivers it
+#: draws, and whether it obtains the portraits missing among them: the placements review alone does
+#: (#407), and it draws Yuri, whose placement is not yet confirmed, beside Zara.
+PORTRAIT_TRIGGERS = [
+    pytest.param("draw_lineup", {}, [1001], False, id="of_record"),
+    pytest.param("draw_lineup_for_command", {}, [1001], False, id="for_command"),
+    pytest.param(
+        "draw_review_lineup", {"include_uncommitted": True}, [1001, 1002], True, id="for_review",
+    ),
+]
+
+
+@pytest.mark.parametrize("draw,handed,drawn,obtain_missing", PORTRAIT_TRIGGERS)
 async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
-    db_path, monkeypatch, draw,
+    db_path, monkeypatch, draw, handed, drawn, obtain_missing,
 ):
     """Pro's lineup drawn for a posting, or as `/team lineup`'s output: the portraits of the
     drivers it draws are brought up to date as the league's own trigger says, and none missing is
-    fetched beyond it, which only the placements review may ask for. Zara alone is drawn, so hers
-    alone is asked for."""
+    fetched beyond it. The placements review alone obtains the missing ones, since it draws the
+    lineup a season is judged on and a driver seated since the last daily update must be in it.
+    The drivers drawn, and they alone, are asked for, from the configured driver directory."""
     spy = _portraits_spied(monkeypatch)
-    guild, _, members = _guild()
+    guild, *_ = _guild()
     drawing, *_ = _drawing(db_path)
 
-    await getattr(drawing, draw)(guild, DIVISION_ID)
+    await getattr(drawing, draw)(guild, DIVISION_ID, **handed)
 
     spy.assert_awaited_once()
-    assert spy.await_args.args[1] == [members[1001]]
-    assert spy.await_args.kwargs["obtain_missing"] is False
+    assert sorted(m.id for m in spy.await_args.args[1]) == drawn
+    assert spy.await_args.kwargs["obtain_missing"] is obtain_missing
+    assert Path(spy.await_args.kwargs["directory"]).name == "drivers"
 
 
 def _two_lineup_notices():

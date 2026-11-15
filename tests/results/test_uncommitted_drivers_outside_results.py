@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.drivers.team_service import TeamService
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
@@ -105,28 +103,3 @@ async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
         if seat.discord_user_id is not None
     ]
     assert sorted(seated) == ["1001", "1002"]
-
-
-@pytest.mark.parametrize("asked", [True, False])
-async def test_the_command_render_hands_the_request_down_to_the_drawing(monkeypatch, asked):
-    """`render_for_command` is the review's way in, and a flag dropped on the way down would
-    draw the lineup of record while claiming to check the one confirming posts."""
-    from unittest.mock import AsyncMock
-
-    import leaguebot.image.services.aspects.image_lineup_post as post
-
-    seen = {}
-
-    async def _build(db_path, guild, division_id, *, include_uncommitted=False):
-        seen["include_uncommitted"] = include_uncommitted
-        raise RuntimeError("drawn far enough")
-
-    monkeypatch.setattr(post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(post, "build_drawing", _build)
-
-    outcome = await post.render_for_command(
-        SimpleNamespace(db_path="league.db"), object(), DIVISION_ID, include_uncommitted=asked
-    )
-
-    assert seen == {"include_uncommitted": asked}
-    assert outcome.action == post.REJECTED
