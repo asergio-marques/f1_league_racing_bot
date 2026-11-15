@@ -14,7 +14,7 @@ but the entry point.
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
@@ -22,6 +22,18 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+
+def _drawing_of(bot: "LeagueBot") -> "ImageDrawing":
+    """The image module's drawing, as image's own class, which the check-in call's post job asks
+    for its picture.
+
+    `LeagueBot` declares `image_drawing` as core's protocol, which holds what core asks of it, and
+    core reads no attribute typed from a module's package; the entry point attaches image's
+    `ImageDrawing`, which answers what attendance asks besides. A cast, true by construction.
+    """
+    return cast("ImageDrawing", bot.image_drawing)
 
 
 def register_switch(modules: "ModuleService") -> None:
@@ -127,6 +139,7 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
         bot.output_router,
         now=lambda: bot.change_queue.now(),
         view_of=_check_in_view(),
+        drawing=_drawing_of(bot),
         seasons=bot.season_service,
         modules=bot.module_service,
         deletes=check_in_clean_up.check_in_deletes(bot, bot.attendance_service),
@@ -305,6 +318,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         check_in_call_change(
             bot.attendance_service, bot.output_router,
             now=lambda: bot.change_queue.now(), view_of=_check_in_view(),
+            drawing=_drawing_of(bot),
         )
     )
     bot.change_queue.register(

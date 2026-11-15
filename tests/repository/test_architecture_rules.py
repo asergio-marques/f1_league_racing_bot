@@ -1510,8 +1510,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_results_post.py", "render_png"): (2, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "report"): (1, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "results_enabled"): (3, PASS["image"]),
-    ("image/services/aspects/image_rsvp_post.py", "rsvp_enabled"): (3, PASS["image"]),
-    ("image/services/aspects/image_rsvp_post.py", "try_attach"): (2, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "render_png"): (2, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "report"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "standings_enabled"): (3, PASS["image"]),
@@ -3119,6 +3117,9 @@ CATCH_ALLS_ALLOWED = {
         "back as a line for the log channel, and the forecast goes out as text; and place 3, "
         "around reading the round to name the line of a switch that could not be read, which "
         "must not fail the line",
+    ("image/services/render/image_drawing.py", "ImageDrawing.attach_check_in_call"):
+        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
+        "back as a line for the log channel, and the call goes out without the picture",
     ("image/services/render/image_drawing.py", "ImageDrawing._weather_gate"):
         "place 6, around reading the switch of a graphic that rides on a post: a switch that "
         "cannot be read is a reason like any other, handed back as a line for the log channel, "
@@ -3192,8 +3193,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_results_post.py", "report_notices"): (1, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "results_enabled"): (1, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "try_post"): (2, PASS["image"]),
-    ("image/services/aspects/image_rsvp_post.py", "rsvp_enabled"): (1, PASS["image"]),
-    ("image/services/aspects/image_rsvp_post.py", "try_attach"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "report"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "report_notices"): (1, PASS["image"]),

@@ -11,8 +11,10 @@ holds that many — answered off the event loop, since parsing and measuring a t
 time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wanted``/
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
-to the log channel in one message. ``attach_forecast`` draws a weather forecast's picture for the weather post job, which is handed the
-drawing (weather's own gate reasons come back as its lines). ``artwork_signature`` answers what the league's artwork
+to the log channel in one message. ``attach_forecast`` and ``attach_check_in_call`` draw a weather
+forecast's and a check-in call's picture for the post jobs, which are handed the drawing and write the
+lines it hands back (weather's own gate reasons come back as its lines), and ``discard_attachment``
+removes a picture once its post is done. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
 command's output, ``draw_review_lineup`` draws it for a season review (through
 `image_lineup_post.render_for_command`, so it holds the bot), and ``discard_portraits`` removes the
@@ -72,6 +74,7 @@ from leaguebot.image.services.render.image_render_service import (
     resolve_configured_directories,
     spec_builder_with_faults,
 )
+from leaguebot.image.services.aspects import image_rsvp_post
 from leaguebot.image.services.aspects.image_rsvp_post import RSVP_ASPECT, RSVP_TEMPLATE_KEY
 from leaguebot.image.services.aspects.image_standings_post import (
     CONSTRUCTORS_TEMPLATE_KEY,
@@ -574,6 +577,68 @@ class ImageDrawing:
                 "weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True
             )
             return None, (weather.fault(what, str(exc)),)
+
+    # ── The check-in call ────────────────────────────────────────────────────
+
+    async def attach_check_in_call(
+        self,
+        *,
+        division_name: str,
+        round_number: Any,
+        round_format: Any,
+        scheduled_at: Any,
+        track_name: str | None,
+        race_name: str | None = None,
+        country_name: str | None = None,
+        season_number: Any = None,
+        division_tier: Any = None,
+        deadline_at: Any = None,
+    ) -> tuple[discord.File | None, tuple[str, ...]]:
+        """The ``discord.File`` a check-in call rides on, or None to post the call without one,
+        and the lines saying what the drawing had to report.
+
+        The one entry point the check-in call's post job calls, handing the *deadline_at* it
+        computed. Every reason a call carries no picture (the module off, the aspect off, the
+        template invalid, the render failed) hands back no file, and the call is posted exactly as
+        the textual flow composes it (XIV.7). The lines are the render's notices, named for the
+        call they pertain to, and the fault of a picture that was due and not drawn, headed by
+        the toggle's name; the caller writes them in its own save (architecture.md, "Errors and
+        failures").
+
+        A stated exception to the gates: one that cannot be read answers no picture and no line
+        (`aspect_wanted`). The catch-all is around the drawing, a graphic riding on a post
+        (architecture.md, "A catch-all error handler", place 6): a fault in any of it is a line,
+        never a break in the call or in opening the round's attendance rows (XIV.7).
+        """
+        what = image_rsvp_post.describe(division_name=division_name, round_number=round_number)
+        try:
+            if not await self.aspect_wanted(RSVP_ASPECT, RSVP_TEMPLATE_KEY):
+                return None, ()
+            return await image_rsvp_post.render_check_in(
+                self._config,
+                self._renderer,
+                what,
+                division_name=division_name,
+                round_number=round_number,
+                round_format=round_format,
+                scheduled_at=scheduled_at,
+                track_name=track_name,
+                race_name=race_name,
+                country_name=country_name,
+                season_number=season_number,
+                division_tier=division_tier,
+                deadline_at=deadline_at,
+            )
+        except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
+            log.error("rsvp: the check-in graphic could not be drawn: %s", exc, exc_info=True)
+            return None, (image_rsvp_post.fault(what, str(exc)),)
+
+    def discard_attachment(self, *attachments: discord.File | None) -> None:
+        """Close a picture drawn for a post and delete the file behind it, once the post has been
+        sent or has failed."""
+        from leaguebot.image.services.render.image_render_service import discard_attachment
+
+        discard_attachment(*attachments)
 
     # ── The calendar ───────────────────────────────────────────────────────
 

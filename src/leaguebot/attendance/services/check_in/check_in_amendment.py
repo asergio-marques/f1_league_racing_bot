@@ -94,6 +94,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -287,6 +288,7 @@ def amendment_steps(
     *,
     now: Callable[[], datetime],
     view_of: CheckInViewFactory,
+    drawing: ImageDrawing,
     seasons: season_service.SeasonService,
     modules: ModuleService,
     deletes: Callable[[int, int], Awaitable[bool]],
@@ -298,10 +300,11 @@ def amendment_steps(
     the amendment's name `CLEAN_UP_CHECK_IN`, each deletion, the mark that it is over). *service* is
     attendance's, *router* writes the log channel's lines, *now* the queue's clock, *seasons* reads the round, *modules* says whether
     attendance is on, *deletes* is `check_in_deletes` and *view_of* builds the buttons of a call
-    posted again. Subscribed to core's `amendment_steps`.
+    posted again, *drawing* the image module's, which the call posted
+    again asks for its picture. Subscribed to core's `amendment_steps`.
     """
     taken_down = take_down_steps(seasons=seasons, modules=modules, deletes=deletes)
-    call = check_in_steps(service, router, now=now, view_of=view_of)
+    call = check_in_steps(service, router, now=now, view_of=view_of, drawing=drawing)
     deadline = check_in_deadline_steps(service, now=now)
     clean_up = check_in_clean_up_steps()
 

@@ -10,14 +10,17 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
-from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from leaguebot.attendance.services.check_in.attendance_config_service import (
+    AttendanceService,
+    derive_checkin_deadline,
+)
 from leaguebot.core.services.drivers.driver_service import driver_test_names_on
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import division_round_states_on, round_facts_on
@@ -27,6 +30,9 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -243,7 +249,7 @@ def call_failure_text(
 
 
 async def _checkin_attachment(
-    bot: LeagueBot,
+    drawing: ImageDrawing,
     service: AttendanceService,
     *,
     division_id: int,
@@ -257,8 +263,9 @@ async def _checkin_attachment(
     race_name,
     country_name,
     faults: list[str] | None = None,
-):
-    """The check-in graphic to attach, or None to post the call without one.
+) -> tuple[discord.File | None, tuple[str, ...]]:
+    """The check-in graphic to attach, or None to post the call without one, and the lines the
+    image module's drawing handed back, for the call's job to write.
 
     Every failure returns None and the call posts exactly as the textual flow composes it —
     role mention, embed, three buttons — because a graphic that displaces nothing has no text
@@ -266,10 +273,10 @@ async def _checkin_attachment(
 
     The full error of each fault goes to the host's log, and a clause saying what was left out is
     added to *faults*, if given, for the call's job to write as a line (architecture.md, "Errors
-    and failures", place 6).
+    and failures", place 6). The deadline the graphic draws is worked out here, from the division's
+    configured hours, and handed to the drawing.
     """
     try:
-        from leaguebot.image.services.aspects.image_rsvp_post import try_attach
         deadline_hours = None
         try:
             config = await service.get_config()
@@ -284,8 +291,11 @@ async def _checkin_attachment(
                     "the deadline could not be read, so the check-in graphic is drawn without it"
                 )
 
-        return await try_attach(
-            bot,
+        deadline_at = (
+            derive_checkin_deadline(scheduled_at, deadline_hours)
+            if deadline_hours is not None and scheduled_at is not None else None
+        )
+        return await drawing.attach_check_in_call(
             division_name=division_name,
             round_number=round_number,
             round_format=round_format,
@@ -295,7 +305,7 @@ async def _checkin_attachment(
             country_name=country_name,
             season_number=season_number,
             division_tier=division_tier,
-            deadline_hours=deadline_hours,
+            deadline_at=deadline_at,
         )
     except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
         log.error(
@@ -304,7 +314,7 @@ async def _checkin_attachment(
         )
         if faults is not None:
             faults.append(f"the graphic could not be drawn, so the call is posted without it: {exc}")
-        return None
+        return None, ()
 
 
 #: What a failed call's report says where no call stands but answers to an earlier one are

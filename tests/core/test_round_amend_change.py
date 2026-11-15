@@ -279,9 +279,10 @@ def _real_call(league: Any, monkeypatch: Any) -> None:
     (#439, slice 6b, C28): the attendance service's writers on a handed connection (its `_on`
     forms) are attendance's own, and its committing writers are left as the league's doubles."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.image.services.aspects import image_rsvp_post
 
-    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        league.bot.image_drawing, "attach_check_in_call", AsyncMock(return_value=(None, ()))
+    )
     attendance = AttendanceService(league.db_path)
     league.bot.attendance_service.get_division_config = attendance.get_division_config
     for name in dir(AttendanceService):

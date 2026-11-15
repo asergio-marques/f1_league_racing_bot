@@ -247,7 +247,7 @@ async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypa
 
 
 async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from leaguebot.image.services.aspects import image_rsvp_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -258,8 +258,11 @@ async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch
         return_value={"rsvp_template": report}
     )
 
-    attachment = await image_rsvp_post.try_attach(
-        bot,
+    drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path=bot.db_path,
+    )
+    attachment, _lines = await drawing.attach_check_in_call(
         division_name="Main",
         round_number=4,
         round_format="STANDARD",
@@ -267,7 +270,7 @@ async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch
         track_name="Silverstone",
         country_name="United Kingdom",
         season_number=3,
-        deadline_hours=24,
+        deadline_at=datetime(2026, 5, 31, 18, 0, tzinfo=timezone.utc),
     )
 
     assert attachment is not None

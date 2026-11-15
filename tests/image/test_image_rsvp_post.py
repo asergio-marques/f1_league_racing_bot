@@ -188,13 +188,13 @@ def _drawing(league: SeasonLeague, tmp_path: Any, monkeypatch: Any) -> AsyncMock
     a picture to attach."""
     picture = tmp_path / "checkin.png"
 
-    async def _attach(*_args: Any, **_kwargs: Any) -> discord.File:
+    async def _attach(*_args: Any, **_kwargs: Any) -> tuple[discord.File | None, tuple[str, ...]]:
         league.events.append(("draw", CHECK_IN, 0))
         picture.write_bytes(b"png")
-        return discord.File(str(picture), filename="checkin.png")
+        return discord.File(str(picture), filename="checkin.png"), ()
 
     drawing = AsyncMock(side_effect=_attach)
-    monkeypatch.setattr(image_rsvp_post, "try_attach", drawing)
+    monkeypatch.setattr(league.bot.image_drawing, "attach_check_in_call", drawing)
     return drawing
 
 
@@ -256,7 +256,7 @@ async def test_the_attachment_helper_never_raises(tmp_path, monkeypatch):
     """FR-055: a drawing that raises gates neither the call nor the round's attendance rows: the
     call is posted without a picture, its rows opened, and the queue does not stop."""
     league = await _call_league(tmp_path)
-    monkeypatch.setattr(image_rsvp_post, "try_attach",
+    monkeypatch.setattr(league.bot.image_drawing, "attach_check_in_call",
                         AsyncMock(side_effect=RuntimeError("boom")))
 
     [_posted] = await _post_the_call(league)

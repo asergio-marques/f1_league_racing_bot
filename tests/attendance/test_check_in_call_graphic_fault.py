@@ -66,18 +66,19 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     without it, the call posts with it, and the log channel is told so. (none) the graphic is drawn
     whole: no such line is written."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.image.services.aspects import image_rsvp_post
 
     league = await _league(tmp_path)
     picture = tmp_path / "checkin.png"
 
-    async def _attach(*_args: Any, **_kwargs: Any) -> discord.File:
+    async def _attach(*_args: Any, **_kwargs: Any) -> tuple[discord.File | None, tuple[str, ...]]:
         if fault == "not drawn":
             raise RuntimeError("template unreadable")
         picture.write_bytes(b"png")
-        return discord.File(str(picture), filename="checkin.png")
+        return discord.File(str(picture), filename="checkin.png"), ()
 
-    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(side_effect=_attach))
+    monkeypatch.setattr(
+        league.bot.image_drawing, "attach_check_in_call", AsyncMock(side_effect=_attach)
+    )
     if fault == "no deadline":
         monkeypatch.setattr(AttendanceService, "get_config",
                             AsyncMock(side_effect=RuntimeError("config unreadable")))
@@ -130,8 +131,6 @@ def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
     league.bot.image_render_service.render = AsyncMock(return_value=drawn)
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a check-in call's render notices reach the log "
-                   "channel twice, once under no heading")
 async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
     """Pro's round 4's check-in call is drawn, its flag falling back (one render notice). The
     call posts with its picture, and the log channel carries the notice once, in a block whose
@@ -150,8 +149,6 @@ async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_ro
     assert DIVISIONS[PRO][0] in heading and "round 4" in heading.lower(), block
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a check-in call's render fault is logged as a "
-                   "'Results image' fault")
 async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(tmp_path):
     """Pro's round 4's check-in call is drawn, and its render fails on a template fault. The call
     posts without a picture, and the log channel gives the fault on one line headed "⚠️ Check-in

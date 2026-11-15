@@ -206,17 +206,16 @@ async def test_a_refused_call_stops_the_queue_saying_what_is_left(tmp_path):
 async def test_a_retried_call_is_posted_as_text(tmp_path, monkeypatch):
     """Images on, the check-in graphic drawn. The first try is refused; the try that posts it
     carries no picture (Constitution XIV r8)."""
-    from leaguebot.image.services.aspects import image_rsvp_post
 
     league = await _call_league(tmp_path, images=True)
     picture = tmp_path / "checkin.png"
 
-    async def _attach(*_args: Any, **_kwargs: Any) -> discord.File:
+    async def _attach(*_args: Any, **_kwargs: Any) -> tuple[discord.File | None, tuple[str, ...]]:
         picture.write_bytes(b"png")
-        return discord.File(str(picture), filename="checkin.png")
+        return discord.File(str(picture), filename="checkin.png"), ()
 
     drawing = AsyncMock(side_effect=_attach)
-    monkeypatch.setattr(image_rsvp_post, "try_attach", drawing)
+    monkeypatch.setattr(league.bot.image_drawing, "attach_check_in_call", drawing)
     league.channel(CHECK_IN).send_fails = http_error(status=500, text="Internal Server Error")
 
     await _ask(league)
