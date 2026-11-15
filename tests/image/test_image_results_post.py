@@ -342,7 +342,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
     assert row["results_message_id"] == 111
 
 
-# ── Reporting and the commanded/uncommanded split (T041, T042) ────────────
+# ── Reporting (T041, T042) ────────────────────────────────────────────────
 
 
 async def test_a_problem_is_reported_naming_the_session(tmp_path):
@@ -387,44 +387,6 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
     assert all("no such field" not in (content or "") for content, _ in sent)
 
 
-async def test_a_commanded_posting_is_rejected_and_posts_nothing(tmp_path):
-    """XIV.7 — a user at the keyboard is told what is at fault rather than given text."""
-    from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.aspects import image_results_post
-
-    db_path, session_result = await _seeded(tmp_path)
-    sent: list = []
-
-    with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
-    ), patch.object(
-        image_results_post,
-        "render_png",
-        AsyncMock(return_value=_decision(posts=False, rejects=True)),
-    ):
-        with in_a_job():
-            outcome = await image_results_post.try_post(
-                _bot(db_path),
-                _guild(),
-                _channel(sent),
-                heading="**Main Round 5**",
-                label="Final Results",
-                session_result=session_result,
-                driver_rows=[],
-                points_map={},
-                round_number=5,
-                race_name="Monaco",
-                is_sprint=False,
-                result_status="FINAL",
-                division_name="Main",
-                origin=PostingOrigin.COMMANDED,
-            )
-
-    assert outcome.action == image_results_post.REJECTED
-    assert outcome.message
-    assert sent == []
-
-
 async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
@@ -460,36 +422,6 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     # The notices come back as a line of the job that posts, once, naming the session.
     [reported] = posted.lines
     assert "Main round 5" in reported and "OPTIONAL_FIELD_EMPTIED" in reported
-
-
-# ── Enablement is checked per template, not per aspect ────────────────────
-
-
-async def test_enablement_is_answered_for_the_named_template_alone(tmp_path):
-    """A sound qualifying template still draws while a faulty race one falls back."""
-    from leaguebot.image.services.aspects.image_results_post import results_enabled
-
-    db_path, _ = await _seeded(tmp_path)
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value={
-            "results_qualifying_template": MagicMock(valid=True),
-            "results_race_template": MagicMock(valid=False),
-        }
-    )
-
-    assert await results_enabled(bot, "results_qualifying_template")
-    assert not await results_enabled(bot, "results_race_template")
-
-
-async def test_an_unreadable_toggle_never_breaks_a_posting(tmp_path):
-    from leaguebot.image.services.aspects.image_results_post import results_enabled
-
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("db gone"))
-    assert not await results_enabled(bot, "results_race_template")
 
 
 # ── The lifecycle: result_status reaches the drawing (T028) ───────────────

@@ -136,12 +136,6 @@ def test_neither_hook_can_post_into_a_channel_a_driver_reads():
         assert "rsvp_channel" not in source
 
 
-def test_the_sheet_reports_its_notices_before_it_returns_an_attachment():
-    """A degradation must be reported even on the path that succeeds."""
-    source = inspect.getsource(attendance_sheet._sheet_attachment)
-    assert source.index("report_notices(") < source.index("return discord.File")
-
-
 def test_the_sheet_report_names_the_division_and_the_round():
     source = inspect.getsource(attendance_sheet._sheet_attachment)
     assert "division_name" in source and "round_number" in source

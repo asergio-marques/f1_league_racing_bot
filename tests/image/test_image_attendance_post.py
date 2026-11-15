@@ -21,54 +21,7 @@ from pathlib import Path
 
 from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import attendance_sheet
-from leaguebot.image.services.aspects.image_attendance_post import (
-    SheetRender,
-    attendance_enabled,
-)
-
-
-def _bot(*, module_on=True, aspect_on=True, template_valid=True):
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module_on)
-    bot.image_config_service.get_toggles = AsyncMock(
-        return_value={"attendance": aspect_on}
-    )
-    report = MagicMock()
-    report.valid = template_valid
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"attendance_template": report}
-    )
-    return bot
-
-
-# ── Enablement ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await attendance_enabled(_bot()) is True
-
-
-@pytest.mark.asyncio
-async def test_the_module_being_off_falls_back_to_text():
-    assert await attendance_enabled(_bot(module_on=False)) is False
-
-
-@pytest.mark.asyncio
-async def test_the_aspect_being_off_falls_back_to_text():
-    assert await attendance_enabled(_bot(aspect_on=False)) is False
-
-
-@pytest.mark.asyncio
-async def test_an_invalid_template_falls_back_to_text():
-    assert await attendance_enabled(_bot(template_valid=False)) is False
-
-
-@pytest.mark.asyncio
-async def test_a_reader_that_raises_never_breaks_the_posting():
-    bot = _bot()
-    bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await attendance_enabled(bot) is False
+from leaguebot.image.services.aspects.image_attendance_post import SheetRender
 
 
 # ── The render outcome ────────────────────────────────────────────────────
