@@ -45,8 +45,12 @@ DAILY = "`/images use-pfp daily-toggle`"
 FORM = "the “Daily portrait updates” form"
 #: What a failure to schedule the daily job says became of the change.
 STORED_AT_RESTART = (
-    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+    "⚠️ The setting is stored, but the daily update could not be scheduled. It will be scheduled "
+    "the next time the bot starts with the image module on, or when the module is next switched "
+    "on."
 )
+#: Why the tests of that reply fail until it names both moments the update is scheduled.
+DAILY_REWORDED = "#288: the reply still says the daily job is scheduled when the bot next starts"
 #: The two lines beneath a cancel or a lapse of the confirmation.
 ENDED = (
     "\n  Daily driver-portrait updates are unchanged."
@@ -347,9 +351,10 @@ async def test_cancelling_the_confirmation_changes_nothing(tmp_path):
     league.scheduler.schedule_portrait_refresh.assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason=DAILY_REWORDED)
 async def test_a_scheduler_failure_does_not_lose_the_setting(tmp_path):
-    """The setting is stored first, so startup recovery arms the job on the next restart; the
-    member is told so as a failure, never as a success (F1), and the one line is the failure."""
+    """The setting is stored first, so startup recovery arms the job on the next restart with the
+    module on, or the module's next switch-on does; the member is told so as a failure, never as a success (F1), and the one line is the failure."""
     cog, league = await _league(tmp_path, use_pfp=True)
     _fail_to_arm(league)
     view, _submitted = await _confirmation(cog, league)
@@ -438,6 +443,7 @@ async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_record
     assert_one_line(league.bot, "images use-pfp toggle")
 
 
+@pytest.mark.xfail(strict=True, reason=DAILY_REWORDED)
 async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_success(tmp_path):
     cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True)
     _fail_to_arm(league)

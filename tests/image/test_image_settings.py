@@ -57,10 +57,15 @@ from tests.support.undecorate import undecorate
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-#: What a daily job that cannot be armed says became of the change, as today (image :132).
+#: What a daily job that cannot be armed says became of the change (image :132): stored, and
+#: scheduled at the next start with the module on or at the module's next switch-on.
 DAILY_JOB_NOT_SCHEDULED = (
-    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+    "⚠️ The setting is stored, but the daily update could not be scheduled. It will be scheduled "
+    "the next time the bot starts with the image module on, or when the module is next switched "
+    "on."
 )
+#: Why the tests of that reply fail until it names both moments the update is scheduled.
+DAILY_REWORDED = "#288: the reply still says the daily job is scheduled when the bot next starts"
 #: What a daily job that cannot be removed adds to the success (plan 2.11, Assumed 12).
 NOT_REMOVED = (
     "⚠️ The setting is saved, but the daily job could not be removed; it does nothing while the "
@@ -738,14 +743,16 @@ async def test_the_daily_job_is_armed_by_a_job_after_the_save(tmp_path):
     assert (await log_lines(league)).count(success) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=DAILY_REWORDED)
 @pytest.mark.parametrize("route", ["confirm", "master-toggle"])
 async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lane_goes_on(
     tmp_path, route
 ):
     """The scheduler refusing the daily job: ✅ Confirm on daily updates at 04:30, or
     `/images use-pfp toggle` turning portraits back on with daily updates set at 05:00. The
-    setting stays stored, the member gets today's failure reply saying it is stored and will be
-    scheduled when the bot next starts, one failure line is written and no Success line, no job
+    setting stays stored, the member gets the failure reply saying it is stored, that the daily
+    update could not be scheduled, and that it will be scheduled the next time the bot starts
+    with the image module on or when the module is next switched on, one failure line is written and no Success line, no job
     is stopped, and `/images config time-format` asked behind it is saved."""
     if route == "confirm":
         league = await _league(tmp_path, use_pfp=1)
