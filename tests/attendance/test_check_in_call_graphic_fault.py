@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from tests.support.change_queue import run_queue, stopped_job
+from tests.support.change_queue import http_error, retry_job, run_queue, stopped_job
 from tests.support.season_league import (
     DIVISIONS,
     PRO,
@@ -166,3 +166,43 @@ async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_imag
     assert line.startswith("⚠️ Check-in call image — "), line
     assert DIVISIONS[PRO][0] in line and "round 4" in line.lower(), line
     assert "Results image" not in log, log
+
+
+#: What is not yet true of a call whose post Discord refuses: the drawing's line is lost with it.
+REFUSED_LOSES_ITS_LINE = (
+    "#288: a check-in call whose first post Discord refuses writes neither its picture's notice "
+    "nor its fault line, and its retry draws nothing to say them"
+)
+
+
+@pytest.mark.parametrize("outcome", [
+    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
+    pytest.param("fault", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
+])
+async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_it_is_retried(
+    tmp_path, outcome
+):
+    """Pro's round 4's check-in call is drawn with one render notice (*outcome* "notice") or its
+    render fails on a template fault ("fault"), and Discord refuses the post: the queue stops at
+    the call. Discord then accepts, Retry is pressed and the call goes out as text. The notice, or
+    the fault's "⚠️ Check-in call image" line, reaches the log channel once, as it did when the
+    call was posted at the first try: never lost with the refused post, and never twice."""
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, outcome)
+    league.channel(CHECK_IN).send_fails = http_error(status=500, text="Internal Server Error")
+
+    await _ask_and_run(league)
+    assert await stopped_job(league.db_path) is not None
+
+    league.channel(CHECK_IN).send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_sent(league)) == 1
+    assert league.channel(CHECK_IN).files[-1] is None
+    detail = NOTICE_DETAIL if outcome == "notice" else RENDER_FAULT
+    log = league.log()
+    assert log.count(detail) == 1, log
+    if outcome == "fault":
+        [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+        assert line.startswith("⚠️ Check-in call image — "), line
