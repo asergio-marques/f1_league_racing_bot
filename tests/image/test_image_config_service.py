@@ -1,7 +1,7 @@
 """Unit tests for ImageConfigService — T009.
 
-Covers the defaults every enable must produce, the single-transaction creation of the
-config row plus nine toggle rows, and the allow-list guarding the writers on a connection
+Covers the defaults every enable must produce, the creation, where missing, of the config row
+plus nine toggle rows (`create_defaults_on`), and the allow-list guarding the writers on a connection
 (`set_field_on`, `set_flag_on`, `set_aspect_on`, `set_tier_colours_on`), each of which writes on
 the connection it is handed, commits nothing and returns a `Saved` (#439, slice 7). Seeding goes
 through the tests' own committing writers, `tests/support/saves.py`.
@@ -51,8 +51,9 @@ def service(db_path):
 # ── Defaults ──────────────────────────────────────────────────────────────
 
 
-async def test_create_with_defaults_sets_every_packaged_default(service):
-    cfg = await service.create_with_defaults()
+async def test_create_defaults_on_sets_every_packaged_default(service, db_path):
+    await _on(db_path, "create_defaults_on")
+    cfg = await service.get_config()
 
     assert cfg.module_enabled is False
     assert cfg.template_directory == "resources/defaults/templates"
@@ -66,9 +67,10 @@ async def test_create_with_defaults_sets_every_packaged_default(service):
     assert cfg.fastest_lap_colour == "#A020F0"
 
 
-async def test_create_with_defaults_leaves_portraits_opt_in(service):
+async def test_create_defaults_on_leaves_portraits_opt_in(service, db_path):
     """Migration 047's defaults: off, but a working configuration the moment it is enabled."""
-    cfg = await service.create_with_defaults()
+    await _on(db_path, "create_defaults_on")
+    cfg = await service.get_config()
 
     assert cfg.use_pfp is False
     assert cfg.pfp_prerender is True
@@ -76,8 +78,8 @@ async def test_create_with_defaults_leaves_portraits_opt_in(service):
     assert cfg.pfp_daily_time == "03:00"
 
 
-async def test_create_with_defaults_inserts_exactly_nine_disabled_toggles(service):
-    await service.create_with_defaults()
+async def test_create_defaults_on_inserts_exactly_nine_disabled_toggles(service, db_path):
+    await _on(db_path, "create_defaults_on")
     toggles = await service.get_toggles()
 
     assert set(toggles) == set(ASPECTS)
@@ -85,12 +87,12 @@ async def test_create_with_defaults_inserts_exactly_nine_disabled_toggles(servic
     assert not any(toggles.values())
 
 
-async def test_create_with_defaults_is_idempotent(service):
-    await service.create_with_defaults()
+async def test_create_defaults_on_is_idempotent(service, db_path):
+    await _on(db_path, "create_defaults_on")
     await saves.set_field(service, "template_directory", "resources/custom")
     await saves.set_aspect(service, "standings", True)
 
-    await service.create_with_defaults()
+    await _on(db_path, "create_defaults_on")
 
     cfg = await service.get_config()
     assert cfg.template_directory == "resources/custom"
@@ -105,7 +107,7 @@ async def test_get_config_returns_none_before_creation(service):
 
 
 async def test_set_field_rejects_column_outside_allow_list(service, db_path):
-    await service.create_with_defaults()
+    await saves.create_image_defaults(db_path)
     for forbidden in ("module_enabled", "server_id", "nonexistent_column"):
         with pytest.raises(UnknownConfigField):
             await _on(db_path, "set_field_on", forbidden, "x")
@@ -118,7 +120,7 @@ async def test_allow_list_covers_all_settable_columns(service, db_path):
     # `set_flag_on`, not the string-valued `set_field_on`.
     assert len(SETTABLE_COLUMNS) == 30
     assert not (SETTABLE_COLUMNS & PFP_FLAG_COLUMNS)
-    await service.create_with_defaults()
+    await saves.create_image_defaults(db_path)
     for column in sorted(SETTABLE_COLUMNS):
         await _on(db_path, "set_field_on", column, "probe")
     cfg = await service.get_config()
@@ -127,13 +129,13 @@ async def test_allow_list_covers_all_settable_columns(service, db_path):
 
 
 async def test_set_aspect_rejects_unknown_aspect(service, db_path):
-    await service.create_with_defaults()
+    await saves.create_image_defaults(db_path)
     with pytest.raises(UnknownConfigField):
         await _on(db_path, "set_aspect_on", "not_an_aspect", True)
 
 
 async def test_toggling_one_aspect_leaves_the_others_alone(service, db_path):
-    await service.create_with_defaults()
+    await saves.create_image_defaults(db_path)
     saved = await _on(db_path, "set_aspect_on", "standings", True)
 
     assert saved.changed is True
@@ -624,7 +626,7 @@ async def _writes(db_path: str) -> int:
 
 
 async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_path):
-    await service.create_with_defaults()
+    await saves.create_image_defaults(db_path)
     first = await _on(db_path, "set_field_on", "template_directory", "resources/custom")
     assert first.changed is True
     assert [a.change_type for a in first.audits] == ["IMAGE_CONFIG_SET"]
@@ -640,7 +642,7 @@ async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_pat
 
 
 async def test_set_flag_reports_a_held_value_and_writes_nothing(service, db_path):
-    await service.create_with_defaults()
+    await saves.create_image_defaults(db_path)
     assert (await _on(db_path, "set_flag_on", "per_tier_colour_enabled", True)).changed is True
     await _count_writes(db_path)
 
