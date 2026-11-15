@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime
 from collections.abc import Callable
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import aiosqlite
 import discord
@@ -19,6 +19,7 @@ import discord
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import (
     current_account_map_for_division,
@@ -40,6 +41,9 @@ from leaguebot.core.utils.input_validator import (
     parse_penalty_seconds,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -377,26 +381,48 @@ async def _record_announcement_on(
     )
 
 
+class PictureRefused(Exception):
+    """Discord refused the post of a verdict's picture, *cause* being its refusal. The picture is
+    drawn on the first try alone, so *lines*, what it said when drawn, are kept with the stop for
+    the try that posts the text to hand back."""
+
+    def __init__(self, cause: discord.HTTPException, lines: tuple[str, ...]) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+        self.lines = lines
+
+
 class SentVerdict(NamedTuple):
-    """What :func:`_send_verdict` sent: the *message*, and the *fault* that kept the verdict's
-    picture from posting where it went out as text in its place (``None`` otherwise)."""
+    """What :func:`_send_verdict` sent: the *message*, the *fault* that kept the verdict's
+    picture from posting where it went out as text in its place (``None`` otherwise), and the
+    *lines* its picture was drawn with, the render's notices and the fault of a picture drawn
+    not at all, for the job to write to the log."""
 
     message: "object | None"
     fault: str | None = None
+    lines: tuple[str, ...] = ()
 
 
-def _fallback_line(
-    fault: str | None, division_name: str, round_number: int, put_right: str,
-) -> "Callable[[str, str], str] | None":
-    """The line a job writes to the log for a verdict *fault* ("the verdict picture could not
-    be drawn"), as the job's own member and change are given: ``None`` where the picture did not
-    fail (image specification, :1401)."""
-    if fault is None:
+def _fallback_lines(
+    sent: SentVerdict, division_name: str, round_number: int, put_right: str,
+) -> "Callable[[str, str], tuple[str, ...]] | None":
+    """The lines a job writes to the log for a verdict as it went out: what its picture was
+    drawn with, then, where it could not be drawn, the line saying so ("the verdict picture could
+    not be drawn"), as the job's own member and change are given: ``None`` where there is nothing
+    to say (image specification, :1401)."""
+    fault = sent.fault
+    if fault is None and not sent.lines:
         return None
-    return lambda named, what: picture_fallback_line(
-        named, what, picture="verdict", division=division_name, round_number=round_number,
-        fault=fault, put_right=put_right,
-    )
+
+    def lines(named: str, what: str) -> tuple[str, ...]:
+        if fault is None:
+            return sent.lines
+        return sent.lines + (picture_fallback_line(
+            named, what, picture="verdict", division=division_name,
+            round_number=round_number, fault=fault, put_right=put_right,
+        ),)
+
+    return lines
 
 
 class AnnouncedVerdict(NamedTuple):
@@ -406,12 +432,12 @@ class AnnouncedVerdict(NamedTuple):
 
     message_id: int
     channel_id: int
-    fallback: "Callable[[str, str], str] | None" = None
+    fallback: "Callable[[str, str], tuple[str, ...]] | None" = None
 
 
 @posts_in_a_job
 async def _send_verdict(
-    bot: LeagueBot,
+    drawing: ImageDrawing | None,
     target_channel,
     *,
     db_path: str,
@@ -449,14 +475,12 @@ async def _send_verdict(
     Called only after the review has been finalised or the sanction enforced. A graphic is
     downstream of every state change it depicts and is never a precondition of one.
     """
-    from leaguebot.image.services.aspects import image_verdict_post
-
-    render = None
+    attachment = None
     fault: str | None = None
-    if not as_text and await image_verdict_post.verdicts_enabled(bot):
+    lines: tuple[str, ...] = ()
+    if not as_text and drawing is not None:
         try:
-            drawing = await image_verdict_post.build_drawing(
-                bot,
+            attachment, lines = await drawing.draw_verdict(
                 guild=getattr(target_channel, "guild", None),
                 db_path=db_path,
                 round_id=round_id,
@@ -473,41 +497,28 @@ async def _send_verdict(
                 team_name=team_name,
                 team_key=team_key,
             )
-            render = await image_verdict_post.render_verdict(bot, drawing)
+        except SwitchNotSignedUp:
+            raise
         except Exception as exc:  # noqa: BLE001 — a graphic never costs a league its announcement (XIV.4)
-            # A fault the image module reports itself is answered there; this one it let
-            # through, so it goes back with the message for the job to say why the text stands.
+            # A fault the drawing does not hand back as a line, so it goes back with the message
+            # for the job to say why the text stands.
             log.exception("verdict graphic failed for driver %s", driver_discord_id)
             fault = fault_of(exc)
-            render = None
+            attachment = None
 
-        subject = image_verdict_post.describe(
-            division_name=division_name,
-            round_number=round_number,
-            session_name=session_label,
-            driver_name=driver_name,
-            season_number=season_number,
-        )
-        if render is not None and render.notices:
-            await image_verdict_post.report_notices(
-                bot, subject, render.notices
-            )
-        if render is not None and render.problem:
-            await image_verdict_post.report(bot, subject, render.problem)
-
-    if render is not None and render.png is not None:  # `render.draws`, followed by the check
-        import discord as _discord
-
-        # Named, rather than left to Discord to read the path's basename: the render
-        # service already wrote a name saying which season, division and round this
-        # verdict belongs to, and leaking the raw template key was never intended.
-        attachment = _discord.File(str(render.png), filename=Path(render.png).name)
+    if attachment is not None:
         try:
-            return SentVerdict(await send_notice(
-                target_channel, f"<@{driver_discord_id}>", mentions=_VERDICT_MENTIONS, file=attachment
-            ))
+            try:
+                message = await send_notice(
+                    target_channel, f"<@{driver_discord_id}>", mentions=_VERDICT_MENTIONS,
+                    file=attachment,
+                )
+            except discord.HTTPException as refused:
+                raise PictureRefused(refused, lines) from refused
+            return SentVerdict(message, None, lines)
         finally:
-            image_verdict_post.discard(render, attachment)
+            if drawing is not None:  # a picture is drawn only through it
+                drawing.discard_attachment(attachment)
 
     content = _build_announcement_message(
         season_number,
@@ -520,7 +531,9 @@ async def _send_verdict(
         justification_text,
         driver_display_name=driver_display_name,
     )
-    return SentVerdict(await send_notice(target_channel, content, mentions=_VERDICT_MENTIONS), fault)
+    return SentVerdict(
+        await send_notice(target_channel, content, mentions=_VERDICT_MENTIONS), fault, lines
+    )
 
 
 async def announce_sanction(
@@ -533,8 +546,9 @@ async def announce_sanction(
     description_text: str,
     justification_text: str,
     *,
+    drawing: ImageDrawing | None,
     as_text: bool = False,
-) -> "Callable[[str, str], str] | None":
+) -> "Callable[[str, str], tuple[str, ...]] | None":
     """Post a sanction's card in the round's verdicts channel, raising where it cannot.
 
     The card's three texts are handed in: the sanction is attendance's, and so is its wording,
@@ -548,8 +562,9 @@ async def announce_sanction(
     posts no heading, so a card whose heading was discarded stands beneath none. *as_text*
     leaves the picture out of the card.
 
-    Gives the line the job writes to the log where the card's picture went out as text, as
-    :func:`announce_verdict` does (``None`` where it did not; image specification, :1401).
+    Gives the lines the job writes to the log, as :func:`announce_verdict` does: what the card's
+    picture was drawn with, and where it went out as text the line saying why (``None`` where
+    there is nothing to say; image specification, :1401). *drawing* is the image module's.
 
     A division with no verdicts channel set is a failure, not a card skipped: a verdicts
     channel is one the season cannot be approved without.
@@ -569,7 +584,7 @@ async def announce_sanction(
 
     try:
         sent = await _send_verdict(
-            bot,
+            drawing,
             channel,
             db_path=db_path,
             round_id=round_id,
@@ -591,10 +606,14 @@ async def announce_sanction(
             justification_text=justification_text,
             as_text=as_text,
         )
+    except PictureRefused as refused:
+        raise StepFailedOnDiscord(
+            f"the sanction's announcement could not be posted: {refused.cause}"
+        ).carrying(refused.lines) from refused.cause
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the sanction's announcement could not be posted: {exc}") from exc
-    return _fallback_line(
-        sent.fault, ctx["division_name"], ctx["round_number"],
+    return _fallback_lines(
+        sent, ctx["division_name"], ctx["round_number"],
         "fix the verdict template; no command posts a sanction's card again, and the text card "
         "stands",
     )
@@ -607,6 +626,7 @@ async def announce_verdict(
     table: str,
     record: dict,
     *,
+    drawing: ImageDrawing | None,
     as_text: bool = False,
 ) -> AnnouncedVerdict:
     """Announce one verdict in the round's verdicts channel, raising where it cannot.
@@ -621,8 +641,8 @@ async def announce_verdict(
     picture out, as a retry does (Constitution XIV, rule 8).
 
     Gives the message's id and its channel's, which the job's record saves with the verdict, and
-    where the picture fell back to text, the line the job writes to the log, given the member and
-    the change it ran for.
+    the lines the job writes to the log, given the member and the change it ran for: what the
+    picture was drawn with and, where it fell back to text, why. *drawing* is the image module's.
     """
     ctx = await _get_announcement_context(db_path, round_id)
     if not ctx:
@@ -659,7 +679,7 @@ async def announce_verdict(
     guild = getattr(channel, "guild", None)
     try:
         sent = await _send_verdict(
-            bot,
+            drawing,
             channel,
             db_path=db_path,
             round_id=result_ctx["round_id"],
@@ -687,12 +707,16 @@ async def announce_verdict(
             ),
             as_text=as_text,
         )
+    except PictureRefused as refused:
+        raise StepFailedOnDiscord(
+            f"the verdict could not be posted: {refused.cause}"
+        ).carrying(refused.lines) from refused.cause
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the verdict could not be posted: {exc}") from exc
     if sent.message is None:
         raise StepFailedOnDiscord("the verdict could not be posted")
-    fallback = _fallback_line(
-        sent.fault, ctx["division_name"], result_ctx["round_number"],
+    fallback = _fallback_lines(
+        sent, ctx["division_name"], result_ctx["round_number"],
         "fix the verdict template, then, once the round is final, amend the round with "
         "`/results rounds amend` to announce it again",
     )

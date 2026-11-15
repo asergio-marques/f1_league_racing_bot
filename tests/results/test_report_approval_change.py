@@ -729,7 +729,7 @@ async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanctio
             league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
             *sanction_card_texts(
                 owed["sanction"], f"<@{owed['driver_user_id']}> (Max)", 10
-            ), as_text=as_text,
+            ), drawing=league.bot.image_drawing, as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
@@ -776,7 +776,7 @@ def _cards_posted_for_real(league: ReviewLeague) -> None:
             league.bot, league.db_path, round_id, owed["driver_user_id"], None,
             *sanction_card_texts(
                 owed["sanction"], f"<@{owed['driver_user_id']}>", 10
-            ), as_text=as_text,
+            ), drawing=league.bot.image_drawing, as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
@@ -1009,7 +1009,7 @@ async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, appl
     league = await review_league(tmp_path, attendance=True)
     hook = MagicMock()
     hook.apply_sanction_on = AsyncMock(return_value=applied)
-    step = review_verdicts.verdict_steps(lambda: NOW, hook)[review_verdicts.APPLY_SANCTION]
+    step = review_verdicts.verdict_steps(lambda: NOW, hook, MagicMock())[review_verdicts.APPLY_SANCTION]
     assert step.kind is StepKind.SAVE, "the sanction is not applied on the queue's save"
 
     async with get_connection(league.db_path) as db:
@@ -1050,7 +1050,7 @@ async def test_a_fault_working_out_the_cards_heading_rolls_the_sanction_back(
     hook = MagicMock()
     hook.apply_sanction_on = AsyncMock(side_effect=_apply_on)
     hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
-    step = review_verdicts.verdict_steps(lambda: NOW, hook)[review_verdicts.APPLY_SANCTION]
+    step = review_verdicts.verdict_steps(lambda: NOW, hook, MagicMock())[review_verdicts.APPLY_SANCTION]
     assert step.kind is StepKind.SAVE, "the sanction is not applied on the queue's save"
 
     async with get_connection(league.db_path) as db:

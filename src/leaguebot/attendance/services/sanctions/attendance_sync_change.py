@@ -419,7 +419,7 @@ def posting_steps(
     """The jobs a recalculation plans after its save, by name: a sanctioned driver's roles, the
     cards and their heading, the lineups, the sheets and the deletion of a post replaced. The
     sync's and a penalty's change both run them."""
-    announce = verdict_steps(now, attendance)
+    announce = verdict_steps(now, attendance, drawing)
     return {
         SYNC_ROLES: _noted_in_the_host_log(role_move_step(roles, SYNC_ROLES, reason=ROLES_REASON)),
         ANNOUNCE_HEADING: announce[ANNOUNCE_HEADING],

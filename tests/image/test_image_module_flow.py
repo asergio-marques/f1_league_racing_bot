@@ -2473,6 +2473,18 @@ class _RecordingChannel:
 
 
 @pytest.mark.rasteriser
+def _drawing_over(bot):
+    """The image drawing a verdict is posted with, over the services of *bot*."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    return ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path=bot.db_path, bot=bot,
+    )
+
+
 async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
@@ -2527,7 +2539,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     channel = _RecordingChannel()
     with in_a_job():
         await vas._send_verdict(
-            bot,
+            _drawing_over(bot),
             channel,
             db_path=db_path,
             round_id=1,
@@ -2578,7 +2590,7 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     channel = _RecordingChannel()
     with in_a_job():
         await vas._send_verdict(
-            bot,
+            _drawing_over(bot),
             channel,
             db_path=db_path,
             round_id=1,

@@ -106,6 +106,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     import discord
 
     from leaguebot.core.models.season import Season
@@ -259,11 +260,12 @@ def _left(ctx: OutcomeContext) -> list[str]:
 def points_amendment_change(
     *,
     attendance: AttendanceAfterReview,
+    drawing: ImageDrawing,
     now: Callable[[], datetime],
     module_service: ModuleService,
 ) -> ChangeType:
     """The change that approves a season's staged points; see the module. *attendance* is the
-    hook the builder hands every change type that reaches attendance, *now* the queue's clock,
+    hook the builder hands every change type that reaches attendance, *drawing* the image module's, which draws the verdicts' pictures, *now* the queue's clock,
     and *module_service* the module switches its check of the channels asks of."""
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -443,7 +445,7 @@ def points_amendment_change(
 
     steps: dict[str, Step] = {
         **posting_steps(),
-        **review_verdicts.verdict_steps(now, attendance),
+        **review_verdicts.verdict_steps(now, attendance, drawing),
         _PLAN_NAMES: Step(_PLAN_NAMES, StepKind.ACT, plan_names, describe=describe_plan_names),
         _APPLY: Step(
             _APPLY, StepKind.SAVE, apply, still_due=names_resolved, describe=describe_apply,

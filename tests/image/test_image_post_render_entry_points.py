@@ -213,7 +213,8 @@ async def test_the_verdict_render_body_runs_and_labels_itself(tmp_path, monkeypa
     seen = _capture_image_type(monkeypatch)
 
     render = await image_verdict_post.render_verdict(
-        bot, SimpleNamespace(division_name="Division 1")
+        bot.image_config_service, bot.image_render_service,
+        SimpleNamespace(division_name="Division 1"),
     )
 
     assert render.draws, render.problem

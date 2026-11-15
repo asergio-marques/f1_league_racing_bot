@@ -135,13 +135,16 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
     from leaguebot.image.services.aspects import image_verdict_post
     from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
     from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     png = tmp_path / "verdict.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     built: list[dict[str, Any]] = []
 
-    async def _enabled(_bot: Any) -> bool:
-        return True
+    real_wanted = ImageDrawing.aspect_wanted
+
+    async def _wanted(self: Any, aspect: str, template_key: str | None = None) -> bool:
+        return True if aspect == "verdicts" else await real_wanted(self, aspect, template_key)
 
     async def _build(_bot: Any, **kwargs: Any) -> Any:
         built.append(kwargs)
@@ -153,20 +156,15 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
             description=kwargs["description_text"], justification=kwargs["justification_text"],
         )
 
-    async def _render(_bot: Any, _drawing: Any, **_kwargs: Any) -> Any:
+    async def _render(_config: Any, _renderer: Any, _drawing: Any, **_kwargs: Any) -> Any:
         return VerdictRender(png=png, notices=[], problem=None)
-
-    async def _quiet(*_args: Any, **_kwargs: Any) -> None:
-        return None
 
     async def _team(_bot: Any, _guild: Any, **_kwargs: Any) -> str:
         return "Red Bull"
 
-    monkeypatch.setattr(image_verdict_post, "verdicts_enabled", _enabled)
+    monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
-    monkeypatch.setattr(image_verdict_post, "report", _quiet)
-    monkeypatch.setattr(image_verdict_post, "report_notices", _quiet)
     monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
     return built
 
@@ -591,7 +589,9 @@ def _real_attendance_hook(bot: Any, _db_path: str) -> Any:
         setattr(placement, name, AsyncMock(return_value=None))
     lineups = MagicMock()
     lineups.refresh_lineup = AsyncMock(return_value=None)
-    return AttendanceAfterReview(bot, placement, lineups=lineups)
+    return AttendanceAfterReview(
+        bot, placement, lineups=lineups, drawing=bot.image_drawing
+    )
 
 
 def _sheet_stop(league: ReviewLeague) -> str:
@@ -699,7 +699,8 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
         roles.revoke_roles = AsyncMock()
         placement = PlacementService(db_path, roles=roles)
         return AttendanceAfterReview(bot, placement, roles=roles,
-                                     lineups=LineupPoster(db_path))
+                                     lineups=LineupPoster(db_path),
+                                     drawing=bot.image_drawing)
 
     league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     async with get_connection(league.db_path) as db:
@@ -765,7 +766,8 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     def _hook(bot: Any, db_path: str) -> Any:
         roles = TeamRoleService(db_path)
         return AttendanceAfterReview(bot, PlacementService(db_path, roles=roles), roles=roles,
-                                     lineups=LineupPoster(db_path))
+                                     lineups=LineupPoster(db_path),
+                                     drawing=bot.image_drawing)
 
     league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     await _no_reserve_team(league)
@@ -884,10 +886,12 @@ _FAULTED_PICTURES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a verdict's or a banner's render fault is logged "
-                   "as a 'Results image' fault")
-@pytest.mark.parametrize(("aspect", "template", "name"), _FAULTED_PICTURES,
-                         ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+@pytest.mark.parametrize(("aspect", "template", "name"), [
+    _FAULTED_PICTURES[0],
+    pytest.param(*_FAULTED_PICTURES[1], marks=pytest.mark.xfail(
+        strict=True, reason="#288: a verdict's or a banner's render fault is logged as a "
+        "'Results image' fault")),
+], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
 async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     tmp_path, aspect, template, name,
 ):
@@ -924,10 +928,12 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a verdict's or a banner's render notices reach the "
-                   "log channel twice, once under no heading")
-@pytest.mark.parametrize(("aspect", "template", "name"), _FAULTED_PICTURES,
-                         ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+@pytest.mark.parametrize(("aspect", "template", "name"), [
+    _FAULTED_PICTURES[0],
+    pytest.param(*_FAULTED_PICTURES[1], marks=pytest.mark.xfail(
+        strict=True, reason="#288: a verdict's or a banner's render notices reach the log channel "
+        "twice, once under no heading")),
+], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
 async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, aspect, template, name,
 ):

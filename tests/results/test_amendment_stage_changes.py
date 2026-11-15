@@ -1170,7 +1170,7 @@ async def test_an_amendment_that_sanctions_keeps_the_banner_its_card_stands_unde
             league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
             *sanction_card_texts(
                 owed["sanction"], f"<@{owed['driver_user_id']}> (Max)", 10
-            ), as_text=as_text,
+            ), drawing=league.bot.image_drawing, as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
@@ -1265,7 +1265,8 @@ async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monk
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
     *_, prompt = stages.amendment_stage_changes(
-        attendance=hook, now=lambda: NOW, queue=MagicMock(), config=MagicMock(),
+        attendance=hook, drawing=MagicMock(), now=lambda: NOW, queue=MagicMock(),
+        config=MagicMock(),
         server_config=AsyncMock(return_value=None),
         router=MagicMock(),
     )

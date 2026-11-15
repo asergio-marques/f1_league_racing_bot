@@ -182,7 +182,9 @@ async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
     def _hook(bot: Any, path: str) -> Any:
         lineups = MagicMock()
         lineups.refresh_lineup = AsyncMock(return_value=None)
-        return AttendanceAfterReview(bot, PlacementService(path), lineups=lineups)
+        return AttendanceAfterReview(
+            bot, PlacementService(path), lineups=lineups, drawing=bot.image_drawing
+        )
 
     bot = await league_bot(db_path, attendance_hook_of=_hook)
     # The lineup a sack owes is not what these tests are about.

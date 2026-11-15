@@ -54,7 +54,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -94,6 +94,9 @@ from leaguebot.results.services.review.review_posting import (
 )
 from leaguebot.results.services.standings.standings_service import cascade_recompute_from_round_on
 
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
 __all__ = ["KIND", "report_approval_change"]
 
 KIND = "results.reports.approve"
@@ -125,10 +128,11 @@ def _plural(count: int, one: str, many: str) -> str:
 
 
 def report_approval_change(
-    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+    *, attendance: AttendanceAfterReview, drawing: ImageDrawing, now: Callable[[], datetime]
 ) -> ChangeType:
     """The change that approves a round's reports; see the module. *attendance* is the hook the
-    builder hands every change type of the review, and *now* the queue's clock."""
+    builder hands every change type of the review, *drawing* the image module's, which draws the
+    verdicts' pictures, and *now* the queue's clock."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -360,7 +364,7 @@ def report_approval_change(
 
     steps: dict[str, Step] = {
         **posting_steps(),
-        **review_verdicts.verdict_steps(now, attendance),
+        **review_verdicts.verdict_steps(now, attendance, drawing),
         _APPLY: Step(
             _APPLY, StepKind.SAVE, apply, still_due=names_not_discarded, describe=describe_apply,
         ),

@@ -4,7 +4,7 @@ sanctions that follow (#439, slice 2).
 The approvals of a round's reports and appeals, and an amendment's replay, plan these jobs from
 this module, as they plan their posts from `review_posting`: `plan_verdicts` gives the heading and
 one verdict for each record an approval saved, `plan_attendance` the sheet and the sanctions after
-it, `verdict_steps(now, attendance)` the jobs themselves for a change type's `steps`, and `not_done(ctx)` one
+it, `verdict_steps(now, attendance, drawing)` the jobs themselves for a change type's `steps`, and `not_done(ctx)` one
 line for each job a league admin discarded, for the outcome and the `Incomplete` line.
 
 **Every failure stops the queue** (the owner's rule), and so a job here never swallows what the
@@ -69,8 +69,7 @@ import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
-
+from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
@@ -79,6 +78,7 @@ from leaguebot.core.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
+    drawn_lines_kept,
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
@@ -96,6 +96,9 @@ from leaguebot.results.services.review.review_state import ReadServerConfig
 from leaguebot.results.services.review.review_prompts import _build_penalty_review_state, send_appeals_prompt
 from leaguebot.results.services.publishing.results_post_service import _delete_posting
 from leaguebot.results.services.review.review_posting import _channel, _deletes, _league_guild
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -118,11 +121,12 @@ _OVER_SANCTIONS = "sanctions"
 
 
 def verdict_steps(
-    now: Callable[[], datetime], attendance: AttendanceAfterReview
+    now: Callable[[], datetime], attendance: AttendanceAfterReview, drawing: ImageDrawing
 ) -> dict[str, Step]:
     """The jobs of this module, keyed by their names, for a change type's `steps`. *now* is the
-    queue's clock, which stamps the heading's record, the lineup's audit and a sanction's; *attendance* the hook
-    the builder handed the change type, which the jobs use and never look up on the bot."""
+    queue's clock, which stamps the heading's record, the lineup's audit and a sanction's;
+    *attendance* the hook the builder handed the change type, which the jobs use and never look
+    up on the bot, and *drawing* the image module's, which draws the verdicts' pictures."""
 
     def bound(fn: Any) -> Any:
         async def run(ctx: StepContext) -> Any:
@@ -130,6 +134,12 @@ def verdict_steps(
 
         return run
 
+
+    def with_drawing(fn: Any) -> Any:
+        async def run(ctx: StepContext) -> Any:
+            return await fn(ctx, drawing)
+
+        return run
 
     def bound_save(fn: Any) -> Any:
         async def run(db: Any, ctx: StepContext) -> Any:
@@ -175,7 +185,8 @@ def verdict_steps(
             record=record_heading,
         ),
         ANNOUNCE_VERDICT: Step(
-            ANNOUNCE_VERDICT, StepKind.ACT, _announce_verdict, describe=_describe_verdict,
+            ANNOUNCE_VERDICT, StepKind.ACT, with_drawing(_announce_verdict),
+            describe=_describe_verdict,
             record=record_verdict,
         ),
         ATTENDANCE_SHEET: Step(
@@ -592,16 +603,22 @@ async def _describe_verdict(ctx: StepContext) -> str:
     return f"announcing the {kind} verdict for <@{payload['record']['driver_user_id']}>{where}"
 
 
-async def _announce_verdict(ctx: StepContext) -> StepResult:
+async def _announce_verdict(ctx: StepContext, drawing: ImageDrawing) -> StepResult:
     payload = ctx.step_payload
     round_id = int(payload["round_id"])
     channel, _context = await _channel_of(ctx, round_id)
-    await _take_down_kept(channel, ctx)
-    announced = await vas.announce_verdict(
-        ctx.bot, ctx.db_path, round_id, payload["table"], payload["record"],
-        as_text=ctx.tries > 0,
-    )
-    lines = () if announced.fallback is None else (announced.fallback(ctx.named, ctx.what),)
+    # What the picture said when it was drawn, on the first try, is kept with every stop that
+    # follows, so that the try which posts hands it back with its own.
+    drawn = drawn_lines_kept(ctx.kept)
+    try:
+        await _take_down_kept(channel, ctx)
+        announced = await vas.announce_verdict(
+            ctx.bot, ctx.db_path, round_id, payload["table"], payload["record"],
+            drawing=drawing, as_text=ctx.tries > 0,
+        )
+    except StepFailedOnDiscord as stop:
+        raise stop.carrying(drawn) from stop.__cause__
+    lines = drawn + (() if announced.fallback is None else announced.fallback(ctx.named, ctx.what))
     return StepResult(
         result={"message_id": announced.message_id, "channel_id": announced.channel_id},
         lines=lines,
@@ -902,11 +919,15 @@ async def _describe_announce(ctx: StepContext) -> str:
 async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     # Headed by the approved round's banner, not the round the thresholds were read at.
-    fallback = await hook.announce_sanction(
-        int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
-        payload["candidate"], as_text=ctx.tries > 0,
-    )
-    return StepResult(lines=() if fallback is None else (fallback(ctx.named, ctx.what),))
+    drawn = drawn_lines_kept(ctx.kept)
+    try:
+        fallback = await hook.announce_sanction(
+            int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
+            payload["candidate"], as_text=ctx.tries > 0,
+        )
+    except StepFailedOnDiscord as stop:
+        raise stop.carrying(drawn) from stop.__cause__
+    return StepResult(lines=drawn + (() if fallback is None else fallback(ctx.named, ctx.what)))
 
 
 async def _describe_lineup(ctx: StepContext) -> str:

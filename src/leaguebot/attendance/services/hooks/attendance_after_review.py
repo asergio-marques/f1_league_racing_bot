@@ -281,7 +281,7 @@ class AttendanceAfterReview:
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
-    ) -> Callable[[str, str], str] | None:
+    ) -> Callable[[str, str], tuple[str, ...]] | None:
         if not await self.enabled():
             return None
         from leaguebot.results.services.review import verdict_announcement_service as vas
@@ -298,7 +298,7 @@ class AttendanceAfterReview:
         )
         return await vas.announce_sanction(
             self._bot, self._db_path, round_id, driver_discord_id, display_name,
-            label, description, justification, as_text=as_text,
+            label, description, justification, drawing=self._drawing, as_text=as_text,
         )
 
     async def refresh_lineup(

@@ -25,16 +25,25 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing, VerdictKind
 from leaguebot.core.utils.league_bot import LeagueBot
 
+if TYPE_CHECKING:
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+
 log = logging.getLogger(__name__)
 
 VERDICTS_ASPECT = "verdicts"
 VERDICTS_TEMPLATE_KEY = "verdicts_template"
+
+#: The toggle's name in `/images config toggle` ("Verdicts") and what it draws, which heads a
+#: fault's line.
+VERDICTS_TOGGLE_NAME = "Verdicts image"
 
 
 @dataclass
@@ -54,22 +63,6 @@ class VerdictRender:
     @property
     def draws(self) -> bool:
         return self.png is not None
-
-
-async def verdicts_enabled(bot: LeagueBot) -> bool:
-    """True where the module is on, the ``verdicts`` aspect is on, and the template is valid."""
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False
-        toggles = await bot.image_config_service.get_toggles()
-        if not toggles.get(VERDICTS_ASPECT):
-            return False
-        reports = await bot.image_validity_service.template_reports()
-        report = reports.get(VERDICTS_TEMPLATE_KEY)
-        return report is not None and report.valid
-    except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("verdicts: enablement check failed: %s", exc, exc_info=True)
-        return False
 
 
 async def _round_context(db_path: str, round_id: int) -> dict:
@@ -324,45 +317,59 @@ async def build_drawing(
     )
 
 
+def fault(what: str, detail: str) -> str:
+    """The line saying why the picture of *what* was not drawn, headed by the toggle's name."""
+    return f"⚠️ {VERDICTS_TOGGLE_NAME} — {what}: {detail}"
+
+
+def lines_of(what: str, render: VerdictRender) -> tuple[str, ...]:
+    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+
+    lines: list[str] = []
+    if render.notices:
+        lines.append(ImageRenderService.format_notices(render.notices, subject=what))
+    if render.problem:
+        lines.append(fault(what, render.problem))
+    return tuple(lines)
+
+
 async def render_verdict(
-    bot: LeagueBot,
+    config_service: ImageConfigService,
+    renderer: ImageRenderService,
     drawing: VerdictDrawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> VerdictRender:
-    """Render *drawing* to a PNG, or report why the textual announcement should stand."""
+    """Render *drawing* to a PNG, or report why the textual announcement should stand.
+
+    A fault in resolving the directories or building the fill is raised, for the verdict's own
+    post to say why the text stands.
+    """
     from leaguebot.image.services.aspects.image_verdict_service import build_fill_spec
     from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
-    try:
-        config = await bot.image_config_service.get_config()
-        directories, directory_faults = resolve_configured_directories(
-            config,
-            (
-                ("flag", "flag_directory"),
-                ("team", "team_image_directory"),
-            ),
-            image_type=VERDICTS_TEMPLATE_KEY,
-        )
+    config = await config_service.get_config()
+    directories, directory_faults = resolve_configured_directories(
+        config,
+        (
+            ("flag", "flag_directory"),
+            ("team", "team_image_directory"),
+        ),
+        image_type=VERDICTS_TEMPLATE_KEY,
+    )
 
-        from leaguebot.image.utils.image_naming import stem_for_drawing
-
-        decision = await bot.image_render_service.render_for_posting(
-            VERDICTS_TEMPLATE_KEY,
-            spec_builder_with_faults(
-                build_fill_spec, drawing, directories, directory_faults
-            ),
-            posting_origin=origin,
-            bot=bot,
-            division_name=drawing.division_name,
-            filename_stem=stem_for_drawing(drawing, VERDICTS_TEMPLATE_KEY),
-        )
-    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("verdicts: render failed: %s", exc, exc_info=True)
-        return VerdictRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
+    decision = await renderer.render_for_posting(
+        VERDICTS_TEMPLATE_KEY,
+        spec_builder_with_faults(build_fill_spec, drawing, directories, directory_faults),
+        posting_origin=origin,
+        division_name=drawing.division_name,
+        filename_stem=stem_for_drawing(drawing, VERDICTS_TEMPLATE_KEY),
+    )
 
     if decision.rejects:
         return VerdictRender(
@@ -378,26 +385,6 @@ async def render_verdict(
         )
 
     return VerdictRender(png=decision.png_paths[0], notices=decision.notices)
-
-
-def discard(render, attachment=None) -> None:
-    """Delete the verdict graphic once its announcement has been attempted.
-
-    The companion to :func:`render_verdict`, and here rather than in the caller because a
-    source module reaches the image module through its own posting façade and never
-    through the render service — the boundary
-    ``test_no_source_module_posting_path_imports_the_render_service`` exists to hold.
-
-    *attachment* is given where one was built, so that its handle is closed before the
-    file is removed rather than trusting the send to have closed it. The path is swept
-    afterwards regardless, for the case where the render succeeded and the attachment was
-    never built.
-    """
-    from leaguebot.image.services.render.image_render_service import discard_attachment, discard_render
-
-    if attachment is not None:
-        discard_attachment(attachment)
-    discard_render(getattr(render, "png", None))
 
 
 def describe(
@@ -417,17 +404,3 @@ def describe(
     parts.append(str(session_name) if session_name else "Attendance Sanction")
     parts.append(str(driver_name))
     return " · ".join(parts)
-
-
-async def report(bot: LeagueBot, what: str, detail: str) -> None:
-    """Report a fault to the server's logging channel, never to a verdicts channel."""
-    from leaguebot.image.services.aspects.image_results_post import report as _report
-
-    await _report(bot, what, detail)
-
-
-async def report_notices(bot: LeagueBot, what: str, notices) -> None:
-    """Report non-fatal degradations to the logging channel (XIV.4)."""
-    from leaguebot.image.services.aspects.image_results_post import report_notices as _report_notices
-
-    await _report_notices(bot, what, notices)

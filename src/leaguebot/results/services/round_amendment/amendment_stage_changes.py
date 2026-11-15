@@ -134,6 +134,7 @@ from leaguebot.results.services.review.verdict_announcement_service import (
 from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
 if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.core.services.settings.config_service import ConfigService
 
 log = logging.getLogger(__name__)
@@ -273,6 +274,7 @@ def _doing(stage: str) -> Callable[[dict[str, Any]], str]:
 def amendment_stage_changes(
     *,
     attendance: AttendanceAfterReview,
+    drawing: ImageDrawing,
     now: Callable[[], datetime],
     queue: ChangeQueue,
     config: ConfigService,
@@ -281,7 +283,7 @@ def amendment_stage_changes(
 ) -> tuple[ChangeType, ChangeType, ChangeType]:
     """The change types of an amendment's stages, the report stage's, the appeals stage's and the
     amendment's lane's prompt (`results.amend.prompt`); see the module. *attendance* is the hook
-    the builder hands every change type of the review, *now* the queue's clock and *queue* the queue
+    the builder hands every change type of the review, *drawing* the image module's, which draws the verdicts' pictures, *now* the queue's clock and *queue* the queue
     the review's buttons ask their changes of and *config* the league's configuration, read on the
     save's own connection (the server the rebuild's message links name) and *server_config* the
     reader of the configuration their tier check reads and *router* the output router their presses
@@ -653,7 +655,7 @@ def amendment_stage_changes(
 
     steps: dict[str, Step] = {
         **posting_steps(),
-        **review_verdicts.verdict_steps(now, attendance),
+        **review_verdicts.verdict_steps(now, attendance, drawing),
         TAKE_DOWN_VERDICT: Step(
             TAKE_DOWN_VERDICT, StepKind.DELETE, take_down_verdict, still_due=replacements_posted,
             describe=describe_take_down,

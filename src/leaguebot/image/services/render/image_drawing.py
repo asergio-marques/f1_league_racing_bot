@@ -12,8 +12,8 @@ time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wante
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
 to the log channel in one message. ``attach_forecast``, ``attach_check_in_call`` and
-``draw_attendance_sheet`` (after ``attendance_wanted``) draw a weather forecast's, a check-in call's
-and an attendance sheet's picture for the post jobs, which are handed the drawing and write the
+``draw_attendance_sheet`` (after ``attendance_wanted``) and ``draw_verdict`` draw a weather forecast's, a
+check-in call's, an attendance sheet's and a verdict's picture for the post jobs, which are handed the drawing and write the
 lines it hands back (weather's own gate reasons come back as its lines), and ``discard_attachment``
 removes a picture once its post is done. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.image.models.forecast_values import ForecastValues
     from leaguebot.image.services.aspects.image_attendance_service import AttendanceDrawing
+    from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
 from leaguebot.core.services.modules.image_drawing import (
@@ -68,7 +69,7 @@ from leaguebot.image.services.aspects.image_calendar_service import (
     build_fill_spec,
     resolve_drawing,
 )
-from leaguebot.image.services.aspects import image_weather_post
+from leaguebot.image.services.aspects import image_verdict_post, image_weather_post
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_KEY, render_for_command
 from leaguebot.image.services.render.image_render_service import (
@@ -686,6 +687,67 @@ class ImageDrawing:
         except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
             log.error("attendance: the sheet's graphic could not be drawn: %s", exc, exc_info=True)
             return None, (image_attendance_post.fault(what, str(exc)),)
+
+    # ── The verdict ──────────────────────────────────────────────────────────
+
+    async def draw_verdict(
+        self,
+        *,
+        guild: Any,
+        db_path: str,
+        round_id: int,
+        kind: VerdictKind,
+        season_number: Any,
+        division_name: str,
+        round_number: Any,
+        session_label: str | None,
+        driver_name: str,
+        driver_discord_id: int,
+        penalty_description: str,
+        description_text: str,
+        justification_text: str,
+        team_name: str | None = None,
+        team_key: str | None = None,
+    ) -> tuple[discord.File | None, tuple[str, ...]]:
+        """The ``discord.File`` one verdict rides on, or None to post the text, and the lines
+        saying what the drawing had to report.
+
+        None, and no line, where the league draws no verdict (`aspect_wanted`: the module, the
+        `verdicts` aspect and a valid template). Otherwise what the verdict says is resolved
+        (*guild* being where a steward's mention is resolved against), drawn, and its render's
+        notices and the fault of a picture that was due and not drawn handed back as lines headed
+        by the toggle's name, for the job that posts the verdict to write (architecture.md,
+        "Errors and failures").
+
+        A fault in resolving or in the resolution of the directories is raised, for the post to
+        name as the reason the text stands; a switch nobody signed up for (`SwitchNotSignedUp`) is
+        raised, as everywhere.
+        """
+        import discord
+
+        if not await self.aspect_wanted(
+            image_verdict_post.VERDICTS_ASPECT, image_verdict_post.VERDICTS_TEMPLATE_KEY
+        ):
+            return None, ()
+        if self._bot is None:
+            raise RuntimeError("this drawing was built without the bot, so it cannot draw a verdict")
+        drawing = await image_verdict_post.build_drawing(
+            self._bot, guild=guild, db_path=db_path, round_id=round_id, kind=kind,
+            season_number=season_number, division_name=division_name,
+            round_number=round_number, session_label=session_label, driver_name=driver_name,
+            driver_discord_id=driver_discord_id, penalty_description=penalty_description,
+            description_text=description_text, justification_text=justification_text,
+            team_name=team_name, team_key=team_key,
+        )
+        render = await image_verdict_post.render_verdict(self._config, self._renderer, drawing)
+        what = image_verdict_post.describe(
+            division_name=division_name, round_number=round_number, session_name=session_label,
+            driver_name=driver_name, season_number=season_number,
+        )
+        lines = image_verdict_post.lines_of(what, render)
+        if render.png is None:  # `render.draws`, in a form the type check can follow
+            return None, lines
+        return discord.File(str(render.png), filename=Path(render.png).name), lines
 
     def discard_attachment(self, *attachments: discord.File | None) -> None:
         """Close a picture drawn for a post and delete the file behind it, once the post has been
