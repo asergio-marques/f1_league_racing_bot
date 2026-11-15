@@ -217,7 +217,8 @@ def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
     if catalogue is None:
         return frozenset()
     # No catch: a template that cannot be counted never reaches here. The render's verify,
-    # which runs before fill, counts the same ids and reports an uncountable one as a problem.
+    # which runs before fill, counts the same ids, and a fault it meets in counting them is
+    # raised out of the render, not reported as a problem.
     return frozenset(catalogue.all_mandatory_ids(spec.root))
 
 

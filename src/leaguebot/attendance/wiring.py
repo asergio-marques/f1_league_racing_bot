@@ -29,8 +29,8 @@ def _drawing_of(bot: "LeagueBot") -> "ImageDrawing":
     """The image module's drawing, as image's own class, which the check-in call's post job asks
     for its picture.
 
-    `LeagueBot` declares `image_drawing` as core's protocol, which holds what core asks of it, and
-    core reads no attribute typed from a module's package; the entry point attaches image's
+    `LeagueBot` declares `image_drawing` as core's protocol, which holds only what core asks of
+    it; the entry point attaches image's
     `ImageDrawing`, which answers what attendance asks besides. A cast, true by construction.
     """
     return cast("ImageDrawing", bot.image_drawing)

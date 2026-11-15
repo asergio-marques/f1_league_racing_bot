@@ -650,8 +650,12 @@ def _draw(
     afterwards would leave them reading the unpalette'd file and a league unable to drive
     either through a slot.
 
-    Each fault is a problem or a notice, never raised: the handlers are the render's own
-    fallback, which the posting paths fall back from to text.
+    A template that cannot be read, a spec that cannot be built, data the verify finds unfit, a
+    fill that fails and a field the fill cannot resolve come back as a problem, and a palette that
+    cannot be applied and what the fill substituted as notices: the render's own fallback, which
+    the posting paths fall back from to text. A fault the verify meets in counting the template's
+    mandatory ids is not caught here: it leaves the worker and `off_the_loop` raises it out of
+    the render, for the caller's place-5 fallback.
     """
     from leaguebot.image.utils.svg_document import SvgError, load_svg
     from leaguebot.image.utils.svg_fill import fill
