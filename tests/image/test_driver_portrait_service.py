@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -507,6 +509,42 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
     assert written == 0
     assert await _rows(db_path) == {}
     assert not (directory / "1.svg").exists()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#288: the portrait's file is written before its row, so a cut-off between them "
+    "leaves a file the register does not own",
+)
+async def test_a_portrait_cut_off_once_written_stays_the_bot_s(db_path, directory, monkeypatch):
+    """A fetch cut off by the render budget, or by a stop, after the portrait's file is written
+    and before the register records it, still leaves the portrait the bot's: the next refresh
+    fetches it again, and a reassign or a season's end can discard it. Were the file left with
+    no row, it would read as the league's own artwork, never fetched over or removed again."""
+    from leaguebot.image.services.driver_portrait_service import remove_portrait
+
+    real_replace = os.replace
+    portrait = portrait_path(directory, "1")
+
+    def replace_then_cut_off(src, dst):
+        real_replace(src, dst)
+        if Path(dst) == portrait:
+            monkeypatch.setattr(os, "replace", real_replace)
+            asyncio.current_task().cancel()
+
+    monkeypatch.setattr(os, "replace", replace_then_cut_off)
+    member = _member(1, "a")
+
+    await refresh_portraits(db_path, [member], directory, budget_seconds=None)
+    assert portrait.is_file()
+
+    assert await refresh_portraits(db_path, [member], directory, budget_seconds=None) == 1
+    assert member.display_avatar.read.await_count == 2
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT discord_user_id, avatar_key FROM driver_portraits")
+        assert [tuple(row) for row in await cursor.fetchall()] == [("1", portrait_key("a", 1.0))]
+    assert await remove_portrait(db_path, "1", directory) is True
+    assert not portrait.exists()
 
 
 # ── The pre-render gate ───────────────────────────────────────────────────
