@@ -752,12 +752,6 @@ class ImageRenderService:
             return {}
         return await self._config_service.get_tier_palette(division_name)
 
-    async def apply_tier_palette(self, root, division_name: str) -> None:
-        """Paint this tier's configured colours into a parsed template, reading them first."""
-        from leaguebot.image.utils.svg_palette import apply_palette
-
-        apply_palette(root, await self.tier_palette(division_name))
-
     async def render(
         self,
         image_type: str,
