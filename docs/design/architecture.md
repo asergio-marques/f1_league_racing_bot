@@ -365,8 +365,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
 third is the image module's portrait register (`driver_portraits`, written by `_record` and
 `_disown`): a portrait is fetched from Discord and its file written outside any change, in a
 refresh the render budget or a stop may cut off, so the register is written around the file, the
-row claimed before it and the key recorded after, and each write commits on its own; as a job of
-the queue the record would wait on the file it exists to keep owned.
+row claimed before it and the key recorded after, and each write commits on its own connection,
+apart from any change, including where a queued job draws a lineup or discards a portrait; a
+queued job would make the file's write wait on a record of it.
 
 - **The queue is kept in the database,** so a change waiting on it survives a stop.
 - **What whoever asked is told,** and when, is for the core specification, which gains it with the
@@ -1610,15 +1611,15 @@ later on its own.
   `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
   loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
   1, the stated exceptions, place 3's guards around reporting and writing a log line, the fourth
-  place's hand-off across a thread, and the fifth and sixth places' handlers), and a save outside a queued change. The job check and the check of
-  cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
-  channel's check holds its six places for good; every other check lists today's breaches, each
-  under the work that removes it. The check of a save outside a queued change counts each
-  function's `.commit()` and `.executescript()` calls, and a function writing on a handed
-  connection commits nothing and is not counted. It allows for good the migrations run at start-up
-  (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
-  queue's own records, the retry queue for log lines, `/bot pack` (above), the
-  image module's portrait register (above), and
+  place's hand-off across a thread, and the fifth and sixth places' handlers), and a save outside
+  a queued change. The job check and the check of cogs handling their own errors are absolute,
+  with no list of breaches left to grow, and the log channel's check holds its six places for
+  good; every other check lists today's breaches, each under the work that removes it. The check
+  of a save outside a queued change counts each function's `.commit()` and `.executescript()`
+  calls, and a function writing on a handed connection commits nothing and is not counted. It
+  allows for good the migrations run at start-up (`run_migrations` and `_enable_wal`, the journal
+  mode set on the database file itself), the queue's own records, the retry queue for log lines,
+  `/bot pack` (above), the image module's portrait register (above), and
   `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
   league's. The connection-state check refuses, outside the database code, a SQL function added
   with `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and
