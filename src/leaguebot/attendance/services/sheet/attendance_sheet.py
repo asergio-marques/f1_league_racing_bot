@@ -12,7 +12,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
@@ -33,6 +33,9 @@ from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
 
 log = logging.getLogger(__name__)
 
@@ -48,12 +51,15 @@ async def post_attendance_sheet(
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     *,
     as_text: bool = False,
+    drawing: ImageDrawing | None = None,
+    earlier_lines: tuple[str, ...] = (),
 ) -> PostedSheet | None:
     """Post a new sheet to the division's attendance channel, which replaces the prior one.
 
     **This posts and nothing else** (#439): it saves no id and deletes no message. It returns
     the `PostedSheet` (the message posted, its channel, the sheet it replaces, whether the
-    occasion takes the division's live slot, and a line for each fault the graphic fell back from) for the job to save with its mark
+    occasion takes the division's live slot, and a line for each fault the graphic fell back from or
+    notice its render reported) for the job to save with its mark
     (`record_sheet_on`) and to plan the old sheet's deletion after (`standing_posts`); `None`
     where nothing was posted.
 
@@ -64,6 +70,13 @@ async def post_attendance_sheet(
     raises too, its message naming `/attendance channel attendance`, so the queue stops there and
     does not complete having posted nothing; a cancelled round posts nothing and raises nothing.
     *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
+
+    *drawing* is the image module's, which the graphic is asked of; none draws no picture, as
+    *as_text* does. What it hands back, the render's notices and the fault of a picture that was
+    due and not drawn, are lines of the sheet's job, kept with *faults* in `PostedSheet.faults`;
+    *earlier_lines* are those a try before this one kept on its stop (`drawn_lines_kept`), for the
+    try that posts to hand back. A post Discord refuses raises with them kept (`carrying`), so
+    that a picture drawn once is not lost with it.
 
     Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
     on this posting.
@@ -202,6 +215,7 @@ async def post_attendance_sheet(
     # was. The graphic never gates this posting, and this posting never gates a sanction
     # (XIV.7 — image output adds no precondition).
     faults: list[str] = []
+    drawn_lines: list[str] = []
     attachment = (
         None
         if as_text
@@ -209,6 +223,8 @@ async def post_attendance_sheet(
             bot,
             guild,
             db_path,
+            drawing=drawing,
+            lines=drawn_lines,
             round_id=round_id,
             division_id=division_id,
             sorted_drivers=sorted_drivers,
@@ -244,6 +260,8 @@ async def post_attendance_sheet(
         log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
         raise StepFailedOnDiscord(
             f"the attendance sheet could not be posted: {exc}"
+        ).carrying(
+            (*earlier_lines, *await _fault_lines(db_path, division_id, faults), *drawn_lines)
         ) from exc
     finally:
         # Posted or not, the picture has done all it will ever do: a try again posts the text
@@ -258,7 +276,7 @@ async def post_attendance_sheet(
     return PostedSheet(
         message_id=new_message_id, channel_id=channel_id, previous=prior_msg_id,
         takes_slot=occasion.takes_the_live_slot,
-        faults=await _fault_lines(db_path, division_id, faults),
+        faults=(*earlier_lines, *await _fault_lines(db_path, division_id, faults), *drawn_lines),
     )
 
 
@@ -421,6 +439,8 @@ async def _sheet_attachment(
     sanctioned_profile_ids: set[int] | None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     faults: list[str] | None = None,
+    drawing: ImageDrawing | None = None,
+    lines: list[str] | None = None,
 ):
     """The sheet graphic to attach, or None to post the textual sheet alone.
 
@@ -437,21 +457,19 @@ async def _sheet_attachment(
     **A fault the drawing falls back from is returned as well as logged** (architecture.md,
     "Errors and failures", place 6): each is appended to *faults*, if given, as a clause the
     posting turns into a line of its job, so that the league is told its graphic could not be
-    drawn, or drawn without a part, and the full error stays in the host's log.
+    drawn, or drawn without a part, and the full error stays in the host's log. What the image
+    drawing hands back, the render's notices and the fault of a picture that was due and not
+    drawn, is added to *lines*, if given, already worded, for the job to write beside them.
+
+    *drawing* is the image module's: none draws no picture.
     """
-    if bot is None or guild is None:
+    if bot is None or guild is None or drawing is None:
         return None
 
     try:
-        from leaguebot.image.services.aspects.image_attendance_post import (
-            attendance_enabled,
-            render_sheet,
-            report,
-            report_notices,
-        )
         from leaguebot.image.services.aspects.image_attendance_service import DriverRecord, resolve_drawing
 
-        if not await attendance_enabled(bot):
+        if not await drawing.attendance_wanted():
             return None
 
         from leaguebot.image.services.aspects.image_results_post import (
@@ -503,7 +521,7 @@ async def _sheet_attachment(
         division_name = await _division_name(db_path, division_id)
         round_number = await _round_number(db_path, round_id)
 
-        drawing = resolve_drawing(
+        sheet = resolve_drawing(
             division_name=division_name,
             occasion=occasion,
             round_number=round_number,
@@ -522,20 +540,15 @@ async def _sheet_attachment(
             nationality_collected=collected,
         )
 
-        render = await render_sheet(bot, drawing)
         label = (
             f"{division_name} — attendance after round {round_number}"
             if occasion.names_a_round
             else f"{division_name} — attendance, {occasion.label()}"
         )
-        if render.notices:
-            await report_notices(bot, label, render.notices)
-        if render.problem:
-            await report(bot, label, render.problem)
-        if render.png is None:  # `render.draws`, in a form the type check can follow
-            return None
-
-        return discord.File(str(render.png), filename=Path(render.png).name)
+        picture, drawn = await drawing.draw_attendance_sheet(sheet, what=label)
+        if lines is not None:
+            lines.extend(drawn)
+        return picture
     except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
         _stop_on_unreadable_grid(exc)
         log.error(

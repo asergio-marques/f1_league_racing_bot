@@ -274,7 +274,7 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.sheet import sheet_posting
 
     bot.placements_confirmed.subscribe(sheet_posting.placements_confirmed_on)
-    bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
+    bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service, _drawing_of(bot)))
 
 
 def sign_up_to_season_completed(bot: "LeagueBot") -> None:
@@ -283,7 +283,7 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 
     bot.season_completed.subscribe(sheet_posting.season_completed_on)
     bot.season_completed_steps.subscribe(
-        partial(sheet_posting.final_steps, bot.module_service)
+        partial(sheet_posting.final_steps, bot.module_service, _drawing_of(bot))
     )
 
 
@@ -333,7 +333,8 @@ def register_change_types(bot: "LeagueBot") -> None:
         attendance_sync_change(
             placement=bot.placement_service, roles=bot.team_role_service,
             lineups=bot.lineup_poster, attendance=bot.attendance_after_review,
-            modules=bot.module_service, now=lambda: bot.change_queue.now(),
+            modules=bot.module_service, drawing=_drawing_of(bot),
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
@@ -355,7 +356,7 @@ def register_change_types(bot: "LeagueBot") -> None:
                 change, column=PENALTY_COLUMNS[setting.kind], placement=bot.placement_service,
                 roles=bot.team_role_service, lineups=bot.lineup_poster,
                 attendance=bot.attendance_after_review, modules=bot.module_service,
-                now=lambda: bot.change_queue.now(),
+                drawing=_drawing_of(bot), now=lambda: bot.change_queue.now(),
             )
         bot.change_queue.register(change)
     for setting in attendance_channel_settings(

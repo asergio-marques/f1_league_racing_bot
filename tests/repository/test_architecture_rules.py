@@ -1496,8 +1496,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
-    ("image/services/aspects/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
-    ("image/services/aspects/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
     ("image/services/aspects/image_lineup_post.py", "lineup_enabled"): (3, PASS["image"]),
     ("image/services/aspects/image_lineup_post.py", "render_png"): (2, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_calendar_preview"): (1, PASS["image"]),
@@ -3120,6 +3118,9 @@ CATCH_ALLS_ALLOWED = {
     ("image/services/render/image_drawing.py", "ImageDrawing.attach_check_in_call"):
         "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
         "back as a line for the log channel, and the call goes out without the picture",
+    ("image/services/render/image_drawing.py", "ImageDrawing.draw_attendance_sheet"):
+        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
+        "back as a line for the log channel, and the sheet goes out as text",
     ("image/services/render/image_drawing.py", "ImageDrawing._weather_gate"):
         "place 6, around reading the switch of a graphic that rides on a post: a switch that "
         "cannot be read is a reason like any other, handed back as a line for the log channel, "
@@ -3181,8 +3182,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/portraits/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "refresh_portraits.fetch"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
-    ("image/services/aspects/image_attendance_post.py", "attendance_enabled"): (1, PASS["image"]),
-    ("image/services/aspects/image_attendance_post.py", "render_sheet"): (1, PASS["image"]),
     ("image/services/aspects/image_lineup_post.py", "lineup_enabled"): (1, PASS["image"]),
     ("image/services/aspects/image_lineup_post.py", "render_for_command"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (1, PASS["image"]),

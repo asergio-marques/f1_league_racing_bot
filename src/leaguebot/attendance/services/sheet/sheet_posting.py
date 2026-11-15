@@ -21,7 +21,7 @@ Neither reads `rounds` itself, and each raises where it cannot post, for the que
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -29,8 +29,10 @@ from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.core.models.change import (
     GuildUnavailable,
     PlannedStep,
+    StepFailedOnDiscord,
     StepKind,
     StepResult,
+    drawn_lines_kept,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.queue.change_types import (
@@ -43,12 +45,15 @@ from leaguebot.core.services.seasons.season_lifecycle_service import require_gui
 from leaguebot.core.services.seasons.season_service import division_first_round
 from leaguebot.core.utils.league_server import league_guild
 
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
 POST_SHEET = "post_sheet"
 OPENING_SHEET = "opening_sheet"
 FINAL_SHEET = "final_sheet"
 
 
-def sheet_step(modules: ModuleService) -> Step:
+def sheet_step(modules: ModuleService, drawing: ImageDrawing) -> Step:
     """The job that posts a division's attendance sheet for a round.
 
     The payload is `{"division_id", "division_name", "round_id", "sanctioned"}`, `sanctioned`
@@ -57,11 +62,16 @@ def sheet_step(modules: ModuleService) -> Step:
     text. The job returns the sheet posted, saves its id as the division's live sheet with its
     mark (`record_sheet_on`) and plans, where the sheet takes the slot, the deletion of the one it
     replaces; a sheet discarded plans none, so the earlier one stands. *modules* says whether
-    attendance is on.
+    attendance is on and *drawing* is the image module's, which the first try asks for the
+    picture; the lines it hands back are the job's, kept on a stop for the try that posts.
     """
 
     async def run(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        earlier = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(earlier) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
@@ -70,6 +80,7 @@ def sheet_step(modules: ModuleService) -> Step:
         posted = await attendance_sheet.post_attendance_sheet(
             ctx.bot, guild, ctx.db_path, int(payload["round_id"]), int(payload["division_id"]),
             sanctioned_profile_ids=sanctioned or None, as_text=ctx.tries > 0,
+            drawing=drawing, earlier_lines=earlier,
         )
         result = attendance_sheet.sheet_result(posted)
         then: tuple[PlannedStep, ...] = ()
@@ -111,7 +122,8 @@ async def _opening_round(db_path: str, division_id: int):
 
 
 async def post_opening_sheet(
-    bot: Any, guild: Any, db_path: str, division_id: int, *, as_text: bool = False
+    bot: Any, guild: Any, db_path: str, division_id: int, *, as_text: bool = False,
+    drawing: ImageDrawing | None = None, earlier_lines: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Post one division's opening attendance sheet, raising where it cannot be posted, and
     give the job its result (`attendance_sheet.sheet_result`).
@@ -120,7 +132,8 @@ async def post_opening_sheet(
     its failure naming `/attendance channel attendance`, and so does one given a channel the
     guild no longer holds. The opening sheet takes the division's live slot, which the job saves
     with its mark (`attendance_sheet.record_sheet_on`) and replaces by a job of its own.
-    *as_text* leaves the graphic out, which is how a job retries.
+    *as_text* leaves the graphic out, which is how a job retries; *drawing* and *earlier_lines*
+    are `attendance_sheet.post_attendance_sheet`'s.
     """
     opener = await _opening_round(db_path, division_id)
     if opener is None:
@@ -133,6 +146,8 @@ async def post_opening_sheet(
         division_id,
         occasion=ClassificationOccasion.SEASON_OPENING,
         as_text=as_text,
+        drawing=drawing,
+        earlier_lines=earlier_lines,
     ))
 
 
@@ -147,19 +162,24 @@ async def placements_confirmed_on(
     )
 
 
-def opening_steps(modules: ModuleService) -> dict[str, Step]:
+def opening_steps(modules: ModuleService, drawing: ImageDrawing) -> dict[str, Step]:
     """Attendance's step definition for the opening sheet, signed up to
     *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps`. The
     builder hands in *modules*, as it hands cancellation's steps theirs, so that `still_due`
     reads attendance's switch without looking the service up on the bot (architecture.md, "How
-    modules and core fit together")."""
+    modules and core fit together"), and *drawing*, the image module's, which the first try asks
+    for the picture."""
 
     async def run(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        earlier = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(earlier) from stop.__cause__
         guild = await require_guild(ctx.bot)
         result = await post_opening_sheet(
             ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0,
+            as_text=ctx.tries > 0, drawing=drawing, earlier_lines=earlier,
         )
         then: tuple[PlannedStep, ...] = ()
         if result.get("takes_slot"):
@@ -196,7 +216,8 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
 
 
 async def post_final_sheet(
-    bot: Any, guild: Any, db_path: str, division_id: int, round_id: int, *, as_text: bool = False
+    bot: Any, guild: Any, db_path: str, division_id: int, round_id: int, *, as_text: bool = False,
+    drawing: ImageDrawing | None = None, earlier_lines: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Post one division's final attendance sheet, drawn against *round_id*, raising where it
     cannot be posted, and give the job its result (`attendance_sheet.sheet_result`).
@@ -205,7 +226,8 @@ async def post_final_sheet(
     its failure naming `/attendance channel attendance`, and so does one given a channel the
     guild no longer holds. The final sheet stands beside the last round's and takes no live slot,
     so nothing is saved for it and nothing deleted. *as_text* leaves the graphic out, which is
-    how a job retries.
+    how a job retries; *drawing* and *earlier_lines* are
+    `attendance_sheet.post_attendance_sheet`'s.
     """
     return attendance_sheet.sheet_result(await attendance_sheet.post_attendance_sheet(
         bot,
@@ -215,6 +237,8 @@ async def post_final_sheet(
         division_id,
         occasion=ClassificationOccasion.SEASON_FINAL,
         as_text=as_text,
+        drawing=drawing,
+        earlier_lines=earlier_lines,
     ))
 
 
@@ -232,18 +256,19 @@ async def season_completed_on(
     )
 
 
-def final_steps(modules: ModuleService) -> dict[str, Step]:
+def final_steps(modules: ModuleService, drawing: ImageDrawing) -> dict[str, Step]:
     """Attendance's step definition for the final sheet, signed up to *season_completed_steps*
     beside results' `season_standings_posts.final_steps`. The builder hands in *modules*, as it
     hands the opening sheet's theirs, so that `still_due` reads attendance's switch without
     looking the service up on the bot (architecture.md, "How modules and core fit together")."""
 
     async def run(ctx: StepContext) -> StepResult:
+        earlier = drawn_lines_kept(ctx.kept)
         guild = await require_guild(ctx.bot)
         each = ctx.step_payload
         result = await post_final_sheet(
             ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
-            as_text=ctx.tries > 0,
+            as_text=ctx.tries > 0, drawing=drawing, earlier_lines=earlier,
         )
         # The final sheet stands beside the last round's: nothing is saved for it and nothing
         # deleted, so it plans no deletion and carries no record.

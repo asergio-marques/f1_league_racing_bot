@@ -77,6 +77,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 #: The job that reads each division's Reserve capacity, before the save.
@@ -171,12 +172,13 @@ def penalty_change(
     lineups: "LineupPoster",
     attendance: "AttendanceAfterReview",
     modules: "ModuleService",
+    drawing: "ImageDrawing",
     now: Callable[[], datetime],
 ) -> ChangeType:
     """*change*, the setting of the penalty in *column* as `setting_change` builds it, made to
     recalculate the ongoing season; see the module. *placement* applies the sanctions the new
-    value owes, *roles*, *lineups*, *attendance* and *modules* are the jobs' (`posting_steps`) and
-    *now* is the queue's clock."""
+    value owes, *roles*, *lineups*, *attendance*, *modules* and *drawing* are the jobs' (`posting_steps`)
+    and *now* is the queue's clock."""
     base_check, base_save, base_outcome = change.check, change.steps[SAVE], change.outcome
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -301,7 +303,8 @@ def penalty_change(
         CHECK_CAPACITY: Step(CHECK_CAPACITY, StepKind.ACT, check_capacity,
                              describe=describe_capacity, on_fault=capacity_unread),
         **sync.posting_steps(
-            roles=roles, lineups=lineups, attendance=attendance, modules=modules, now=now
+            roles=roles, lineups=lineups, attendance=attendance, modules=modules,
+            drawing=drawing, now=now,
         ),
     }
     return dataclasses.replace(

@@ -197,7 +197,8 @@ async def test_the_attendance_render_body_runs_and_labels_itself(tmp_path, monke
     seen = _capture_image_type(monkeypatch)
 
     render = await image_attendance_post.render_sheet(
-        bot, SimpleNamespace(division_name="Division 1")
+        bot.image_config_service, bot.image_render_service,
+        SimpleNamespace(division_name="Division 1"),
     )
 
     assert render.draws, render.problem

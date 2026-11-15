@@ -1065,11 +1065,12 @@ async def build(settings: Settings) -> LeagueBot:
     # their notices are reported, in one message, whichever change posts one. The
     # database path is what the lineup's drawing reads beyond the image module's own
     # services: the division, its committed seats, and whether nationality is collected.
-    bot.image_drawing = ImageDrawing(
+    image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
         db_path=settings.db_path, bot=bot,
     )
+    bot.image_drawing = image_drawing
 
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
@@ -1107,7 +1108,8 @@ async def build(settings: Settings) -> LeagueBot:
     # through, the team-role service and the lineup poster; results' change types reach
     # attendance through it alone.
     bot.attendance_after_review = AttendanceAfterReview(
-        bot, bot.placement_service, roles=bot.team_role_service, lineups=bot.lineup_poster
+        bot, bot.placement_service, roles=bot.team_role_service, lineups=bot.lineup_poster,
+        drawing=image_drawing,
     )
     _make_hooks(bot)
     _sign_up_to_confirmation_refused(bot)

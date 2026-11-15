@@ -1154,7 +1154,7 @@ _RETRIED_POSTS = {
     ),
     "the opening sheet": (
         "opening_sheet", lambda chans: chans.attendance, {"attendance": True},
-        ("leaguebot.image.services.aspects.image_attendance_post", "attendance_enabled", False, {}),
+        (lambda league: league.bot.image_drawing, "attendance_wanted", False, {}),
     ),
 }
 
@@ -1671,6 +1671,7 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
         module_service=MagicMock(spec=ModuleService),
         config_service=SimpleNamespace(get_league_server_id=AsyncMock(return_value=1)),
         get_guild=lambda _server_id: None,
+        image_drawing=MagicMock(),
     )
     _sign_up_to_placements_confirmed(bot)
     steps = {name: step for defined in bot.placements_confirmed_steps.call()

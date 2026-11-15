@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import aiosqlite
 import discord
@@ -52,6 +52,9 @@ from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 _Pardon = TypeVar("_Pardon")
 
@@ -85,10 +88,11 @@ def sanction_card_texts(sanction_type: str, driver_ref: str, threshold: int) -> 
 
 class AttendanceAfterReview:
     """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement,
-    roles=roles, lineups=lineups)``: *roles* is the team-role service that gives and takes a
-    sanction's roles and *lineups* the poster of the lineups a review owes. Each is optional so
-    that a hook which is never asked to change a sanction's roles or to post a lineup is built
-    without one, and asking it then raises."""
+    roles=roles, lineups=lineups, drawing=drawing)``: *roles* is the team-role service that gives
+    and takes a sanction's roles, *lineups* the poster of the lineups a review owes and *drawing*
+    the image module's, which a sheet it posts asks for its picture. Each is optional so that a
+    hook which is never asked to change a sanction's roles or to post a lineup is built without
+    one, and asking it then raises; one built without a *drawing* posts its sheets as text."""
 
     def __init__(
         self,
@@ -97,8 +101,10 @@ class AttendanceAfterReview:
         *,
         roles: TeamRoleService | None = None,
         lineups: LineupPoster | None = None,
+        drawing: ImageDrawing | None = None,
     ) -> None:
         self._bot = bot
+        self._drawing = drawing
         self._placement = placement
         self._roles = roles
         self._lineups = lineups
@@ -202,7 +208,7 @@ class AttendanceAfterReview:
         posted = await attendance_sheet.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
-            as_text=as_text,
+            as_text=as_text, drawing=self._drawing,
         )
         return attendance_sheet.sheet_result(posted)
 

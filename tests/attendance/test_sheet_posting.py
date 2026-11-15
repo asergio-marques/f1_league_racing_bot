@@ -265,7 +265,6 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
         ATTENDANCE_TEMPLATE_KEY,
-        attendance_enabled,
     )
 
     league = await _scored_league(tmp_path, images=True)
@@ -277,7 +276,9 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
     )
-    assert await attendance_enabled(league.bot), "the graphic is not drawn in this league"
+    assert await league.bot.image_drawing.attendance_wanted(), (
+        "the graphic is not drawn in this league"
+    )
 
     await _sync_pro(league)
     await _run_sync_through(league, SYNC_SAVE)
@@ -339,8 +340,6 @@ async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_dis
 SHEET_RENDER_FAULT = "the template declares no `total_points` field"
 
 
-@pytest.mark.xfail(strict=True, reason="#288: an attendance sheet's render fault is logged as a "
-                   "'Results image' fault")
 async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp_path):
     """The image module is on with the attendance graphic switched on and its template valid,
     and the image module's render of Pro's sheet fails on a template fault. Alex runs
@@ -383,8 +382,6 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp
 SHEET_NOTICE = "no `flag` image for “Lewis”"
 
 
-@pytest.mark.xfail(strict=True, reason="#288: an attendance sheet's render notices reach the log "
-                   "channel twice, once under no heading")
 async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
     """The image module is on with the attendance graphic switched on and its template valid,
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.

@@ -13,6 +13,7 @@ the ordering is pinned by the queued tests in ``tests/attendance/test_sheet_post
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import aiosqlite
 import discord
@@ -685,12 +686,20 @@ async def test_the_opening_sheet_reads_the_seats_rather_than_the_attendance_reco
 # ── A graphic's fallback told as a line of its job (architecture.md, place 6) ─
 
 
-class _Render:
-    """A render that drew nothing and has nothing to report: the sheet goes out as text."""
+def _drawing_that_draws_nothing(fault: str):
+    """The image drawing of a league that draws the sheet and draws nothing of it: the sheet goes
+    out as text, and the drawing raises where *fault* is "drawing"."""
+    from types import SimpleNamespace
 
-    png = None
-    notices: list = []
-    problem = None
+    async def _draw(*_args, **_kwargs):
+        if fault == "drawing":
+            raise RuntimeError("template unreadable")
+        return None, ()
+
+    return SimpleNamespace(
+        attendance_wanted=AsyncMock(return_value=True),
+        draw_attendance_sheet=AsyncMock(side_effect=_draw),
+    )
 
 
 @pytest.mark.parametrize("fault", [
@@ -712,24 +721,14 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
 
     from leaguebot.core.services.drivers.team_service import TeamService
     from leaguebot.core.services.rounds import calendar_post_service
-    from leaguebot.image.services.aspects import image_attendance_post, image_results_post
-
-    async def _on(*_args, **_kwargs):
-        return True
+    from leaguebot.image.services.aspects import image_results_post
 
     async def _empty(*_args, **_kwargs):
         return {}
 
-    async def _render(*_args, **_kwargs):
-        if fault == "drawing":
-            raise RuntimeError("template unreadable")
-        return _Render()
-
     async def _unreadable(*_args, **_kwargs):
         raise RuntimeError(f"{fault} unreadable")
 
-    monkeypatch.setattr(image_attendance_post, "attendance_enabled", _on)
-    monkeypatch.setattr(image_attendance_post, "render_sheet", _render)
     monkeypatch.setattr(image_results_post, "_driver_names", _empty)
     monkeypatch.setattr(image_results_post, "_nationalities", _empty)
     if fault == "track registry":
@@ -750,7 +749,8 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
 
     with in_a_job():
         posted = await post_attendance_sheet(
-            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            drawing=_drawing_that_draws_nothing(fault),
         )
 
     assert posted is not None and channel.sent_content is not None
@@ -790,7 +790,7 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
 
     from leaguebot.core.models.team import PlacedDriver
     from leaguebot.core.services.drivers.team_service import TeamService
-    from leaguebot.image.services.aspects import image_attendance_post, image_attendance_service, image_results_post
+    from leaguebot.image.services.aspects import image_attendance_service, image_results_post
 
     reads: list[int] = []
     drawn: dict = {}
@@ -808,19 +808,11 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
         drawn.update(kwargs)
         return SimpleNamespace()
 
-    async def _on(*_args, **_kwargs):
-        return True
-
     async def _empty(*_args, **_kwargs):
         return {}
 
-    async def _render(*_args, **_kwargs):
-        return _Render()
-
     monkeypatch.setattr(TeamService, "placed_drivers_on", _placed)
     monkeypatch.setattr(image_attendance_service, "resolve_drawing", _resolve)
-    monkeypatch.setattr(image_attendance_post, "attendance_enabled", _on)
-    monkeypatch.setattr(image_attendance_post, "render_sheet", _render)
     monkeypatch.setattr(image_results_post, "_driver_names", _empty)
     monkeypatch.setattr(image_results_post, "_nationalities", _empty)
     await _config(sheet_db, prior=None)
@@ -829,7 +821,8 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
 
     with in_a_job():
         posted = await post_attendance_sheet(
-            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            drawing=_drawing_that_draws_nothing("none"),
         )
 
     assert posted is not None and channel.sent_content is not None

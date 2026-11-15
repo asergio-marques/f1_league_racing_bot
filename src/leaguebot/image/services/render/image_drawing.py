@@ -11,8 +11,9 @@ holds that many — answered off the event loop, since parsing and measuring a t
 time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wanted``/
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
-to the log channel in one message. ``attach_forecast`` and ``attach_check_in_call`` draw a weather
-forecast's and a check-in call's picture for the post jobs, which are handed the drawing and write the
+to the log channel in one message. ``attach_forecast``, ``attach_check_in_call`` and
+``draw_attendance_sheet`` (after ``attendance_wanted``) draw a weather forecast's, a check-in call's
+and an attendance sheet's picture for the post jobs, which are handed the drawing and write the
 lines it hands back (weather's own gate reasons come back as its lines), and ``discard_attachment``
 removes a picture once its post is done. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
 
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.image.models.forecast_values import ForecastValues
+    from leaguebot.image.services.aspects.image_attendance_service import AttendanceDrawing
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
 from leaguebot.core.services.modules.image_drawing import (
@@ -56,6 +58,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
     TEMPLATE_LABELS,
 )
+from leaguebot.image.services.aspects import image_attendance_post
 from leaguebot.image.services.aspects.image_attendance_post import (
     ATTENDANCE_ASPECT,
     ATTENDANCE_TEMPLATE_KEY,
@@ -643,6 +646,46 @@ class ImageDrawing:
         except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
             log.error("rsvp: the check-in graphic could not be drawn: %s", exc, exc_info=True)
             return None, (image_rsvp_post.fault(what, str(exc)),)
+
+    # ── The attendance sheet ─────────────────────────────────────────────────
+
+    async def attendance_wanted(self) -> bool:
+        """Whether this league conveys a division's attendance sheet as a picture: the module and
+        the `attendance` aspect must be on, and a valid template configured (`aspect_wanted`).
+        Asked before anything is read for the sheet, so that a league that draws none is never
+        stopped by a read it does not need."""
+        return await self.aspect_wanted(ATTENDANCE_ASPECT, ATTENDANCE_TEMPLATE_KEY)
+
+    async def draw_attendance_sheet(
+        self, drawing: AttendanceDrawing, *, what: str
+    ) -> tuple[discord.File | None, tuple[str, ...]]:
+        """The ``discord.File`` a division's attendance sheet rides on, or None to post the text,
+        and the lines saying what the drawing had to report.
+
+        The gate already asked through `attendance_wanted`, and *what* naming the sheet the lines
+        pertain to ("Pro — attendance after round 3"). The lines are the render's notices and the
+        fault of a picture that was due and not drawn, headed by the toggle's name; the caller
+        writes them in its own save (architecture.md, "Errors and failures"). The sheet's rows are
+        its caller's, resolved in *drawing*.
+
+        The catch-all is around the drawing alone, a graphic riding on a post (architecture.md,
+        "A catch-all error handler", place 6): a fault in any of it is a line, never a break in
+        the posting or in the sanctions enforced beside it (XIV.7); a switch nobody signed up for
+        (`SwitchNotSignedUp`) is not one, being a fault in the bot's assembly, and is raised.
+        """
+        import discord
+
+        try:
+            render = await image_attendance_post.render_sheet(self._config, self._renderer, drawing)
+            lines = image_attendance_post.lines_of(what, render)
+            if render.png is None:  # `render.draws`, in a form the type check can follow
+                return None, lines
+            return discord.File(str(render.png), filename=Path(render.png).name), lines
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
+        except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
+            log.error("attendance: the sheet's graphic could not be drawn: %s", exc, exc_info=True)
+            return None, (image_attendance_post.fault(what, str(exc)),)
 
     def discard_attachment(self, *attachments: discord.File | None) -> None:
         """Close a picture drawn for a post and delete the file behind it, once the post has been

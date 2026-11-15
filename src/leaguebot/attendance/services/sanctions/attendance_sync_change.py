@@ -83,6 +83,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 log = logging.getLogger(__name__)
@@ -412,6 +413,7 @@ def posting_steps(
     lineups: "LineupPoster",
     attendance: "AttendanceAfterReview",
     modules: "ModuleService",
+    drawing: "ImageDrawing",
     now: Callable[[], datetime],
 ) -> dict[str, Step]:
     """The jobs a recalculation plans after its save, by name: a sanctioned driver's roles, the
@@ -423,7 +425,7 @@ def posting_steps(
         ANNOUNCE_HEADING: announce[ANNOUNCE_HEADING],
         ANNOUNCE_SANCTION: announce[ANNOUNCE_SANCTION],
         lineup_posting.POST_LINEUP: lineup_posting.lineup_step(lineups, now=now),
-        sheet_posting.POST_SHEET: sheet_posting.sheet_step(modules),
+        sheet_posting.POST_SHEET: sheet_posting.sheet_step(modules, drawing),
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
     }
 
@@ -435,12 +437,13 @@ def attendance_sync_change(
     lineups: "LineupPoster",
     attendance: "AttendanceAfterReview",
     modules: "ModuleService",
+    drawing: "ImageDrawing",
     now: Callable[[], datetime],
 ) -> ChangeType:
     """`attendance.sync`, see the module. *placement* applies the sanctions on the save, *roles*
     gives and takes a sanctioned driver's roles, *lineups* posts the lineups, *attendance* is the
-    hook results' jobs post the cards through, *modules* says whether attendance is on and *now*
-    is the queue's clock."""
+    hook results' jobs post the cards through, *modules* says whether attendance is on, *drawing* is
+    the image module's, which the sheets ask for their pictures, and *now* is the queue's clock."""
 
     async def check(ctx: CheckContext) -> Verdict:
         return await sync_verdict(ctx.bot, ctx.db_path, ctx.payload) or Verdict.go()
@@ -515,7 +518,8 @@ def attendance_sync_change(
         CHECK_RESERVE: Step(CHECK_RESERVE, StepKind.ACT, check_reserve, describe=describe_check),
         SYNC_SAVE: Step(SYNC_SAVE, StepKind.SAVE, save),
         **posting_steps(
-            roles=roles, lineups=lineups, attendance=attendance, modules=modules, now=now
+            roles=roles, lineups=lineups, attendance=attendance, modules=modules,
+            drawing=drawing, now=now,
         ),
         SYNC_CLOSE: Step(SYNC_CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
