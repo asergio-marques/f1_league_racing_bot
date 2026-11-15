@@ -3170,7 +3170,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
-    ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "portrait_aspect"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),

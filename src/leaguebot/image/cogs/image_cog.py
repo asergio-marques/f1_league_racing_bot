@@ -1482,17 +1482,14 @@ class ImageCog(commands.Cog):
         On a server holding no season this offers nothing, which is why the parameter is
         optional there: such a server draws a fabricated league and needs no name.
         """
-        try:
-            # One connection rather than two: the season lookup and the division list share
-            # it, which halves the connect/PRAGMA/close cost on a path racing Discord's
-            # three-second budget. The shorter lock wait means a contended database gives up
-            # in time to answer rather than answering into an expired token.
-            divisions = await self.bot.season_service.get_previewable_divisions(
-                timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
-            )
-        except Exception:  # noqa: BLE001 — an autocomplete never breaks the command
-            log.warning("images test: the divisions could not be offered", exc_info=True)
-            return []
+        # One connection rather than two: the season lookup and the division list share
+        # it, which halves the connect/PRAGMA/close cost on a path racing Discord's
+        # three-second budget. The shorter lock wait means a contended database gives up
+        # in time to answer rather than answering into an expired token. A fault here is
+        # answered with no choices, and logged, by `bounded_autocomplete`.
+        divisions = await self.bot.season_service.get_previewable_divisions(
+            timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
+        )
 
         typed = (current or "").strip().casefold()
         return [
