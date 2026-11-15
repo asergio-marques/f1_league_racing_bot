@@ -197,19 +197,22 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     reason="#288: switching the image module off does not try to remove the daily portrait "
     "refresh, so a removal that fails goes untold",
 )
-async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_off_as_one_failure(
+async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_off_and_says_so(
     tmp_path,
 ):
     """Images on with portraits refreshed daily, and the scheduler refuses to remove the daily
-    job: Admin runs `/module disable images`. The module is off; Admin is told the setting is
-    stored and the daily update does nothing while the module is off, with no success; the log
-    channel records one failure naming Admin and no success; and the queue goes on, stopped at
-    nothing (core specification, How a change is carried out; image specification :133)."""
+    job: Admin runs `/module disable images`. The module is off; Admin is told the switch-off's
+    success, followed by a note that the setting is saved and the daily update does nothing while
+    the module is off; the log channel gains the switch-off's Success line and one failure line
+    naming Admin; and the queue goes on, stopped at nothing (core specification, How a change is
+    carried out; image specification :133; the portrait toggles' own failed removal,
+    `tests/image/test_image_settings.py`)."""
     from unittest.mock import MagicMock, patch
 
     from tests.support.change_queue import MEMBER_ID, run_queue, stopped_job
     from tests.support.settings_league import interaction, last_said, log_lines
 
+    named = f"Admin (`<@{MEMBER_ID}>`)"
     league, cog, _config_service = await _switched(tmp_path)
     await _switch(league, cog, on=True)
     async with get_connection(league.db_path) as db:
@@ -230,11 +233,16 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
 
     assert await league.bot.module_service.is_images_enabled() is False
     replied = last_said(asked)
-    assert "does nothing while" in replied and "✅" not in replied, replied
-    assert "stored" in replied or "saved" in replied, replied
+    assert replied.startswith("✅ Image module disabled."), replied
+    note = replied.splitlines()[-1]
+    assert note.startswith("⚠️") and "does nothing while" in note, replied
+    assert "stored" in note or "saved" in note, replied
     lines = (await log_lines(league))[before:]
-    assert len(lines) == 1, lines
-    assert lines[0].startswith(f"❌ `/module disable` failed for Admin (`<@{MEMBER_ID}>`)"), lines
+    assert lines.count(f"{named} | /module disable images | Success") == 1, lines
+    failures = [
+        line for line in lines if line.startswith(f"❌ `/module disable` failed for {named}")
+    ]
+    assert len(failures) == 1 and len(lines) == 2, lines
     assert await stopped_job(league.db_path) is None
 
 
