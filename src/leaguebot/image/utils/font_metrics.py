@@ -142,22 +142,27 @@ def face_index() -> dict[tuple[str, bool], list[tuple[int, int, Path]]]:
 def _faces_of(path: Path) -> list[tuple[str, int, int, bool]]:
     """(family, OS/2 weight class, OS/2 width class, italic) per family name declared.
 
-    Raises for a font that cannot be read, its OS/2 table included. `face_index` skips that
-    file and logs it with its traceback, which is not noise: this is read only while the
-    indexes are built, each once a run, so an unreadable font is logged once for each index it
-    is read for, and never again while the bot runs. A family skipped here is still found by
+    A face with no OS/2 table is indexed as regular weight, normal width and upright, as it
+    was before the index's catches moved into its loops: its family's other faces must not
+    stand in for it, a bold face measuring a regular request too wide. Raises for a font that
+    cannot be read, a table that is there but corrupt included. `face_index` skips that file
+    and logs it with its traceback, which is not noise: this is read only while the indexes
+    are built, each once a run, so an unreadable font is logged once for each index it is read
+    for, and never again while the bot runs. A family skipped here is still found by
     `font_index`, which `_face` falls back to.
     """
+    weight, width, italic = _WEIGHT_REGULAR, _WIDTH_NORMAL, False
     with closing(TTFont(path, fontNumber=0, lazy=True)) as font:
-        os2 = font["OS/2"]
-        weight = int(getattr(os2, "usWeightClass", _WEIGHT_REGULAR))
-        width = int(getattr(os2, "usWidthClass", _WIDTH_NORMAL))
-        # fsSelection bit 0 is italic; bit 5 is bold, which some faces set without a
-        # usWeightClass to match.
-        selection = int(getattr(os2, "fsSelection", 0))
-        italic = bool(selection & 0x01)
-        if selection & 0x20:
-            weight = max(weight, _WEIGHT_BOLD)
+        if "OS/2" in font:
+            os2 = font["OS/2"]
+            weight = int(getattr(os2, "usWeightClass", _WEIGHT_REGULAR))
+            width = int(getattr(os2, "usWidthClass", _WIDTH_NORMAL))
+            # fsSelection bit 0 is italic; bit 5 is bold, which some faces set without a
+            # usWeightClass to match.
+            selection = int(getattr(os2, "fsSelection", 0))
+            italic = bool(selection & 0x01)
+            if selection & 0x20:
+                weight = max(weight, _WEIGHT_BOLD)
 
     return [(family, weight, width, italic) for family in _families_of(path)]
 

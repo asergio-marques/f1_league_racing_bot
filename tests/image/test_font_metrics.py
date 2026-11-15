@@ -166,10 +166,6 @@ def _a_font(path, family: str, *, weight: int | None) -> None:
     builder.save(str(path))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#288: a face whose OS/2 table cannot be read is left out of the face index, so its "
-    "family's bold face stands in for a regular request"
-))
 def test_a_regular_face_whose_os2_table_cannot_be_read_is_still_measured_as_the_regular(
     tmp_path, monkeypatch,
 ):
