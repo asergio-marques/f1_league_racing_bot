@@ -356,12 +356,17 @@ reported over a change only half done.
 which leaves every other change with the same risks. *Rejected:* each command writing its own
 audit record, which is how some settings came to have none.
 
-Beside the stop notice's presses and a restore's swap at start-up (both below), two changes stay off
-the queue, each a stated exception. `/bot pack` is refused while any lane holds a job (the core
+Beside the stop notice's presses and a restore's swap at start-up (both below), three changes stay
+off the queue, each a stated exception. `/bot pack` is refused while any lane holds a job (the core
 specification's "Packing the bot for another server"), so it cannot be a job itself, and it saves in
 one transaction (`pack_service`'s docstring). The factory reset's wipe puts a freshly migrated
 database in place of the one the queue lives in (`wipe` in `factory_reset_service`); its clean-up of
-Discord is an exception of its own (see "Posting to Discord", and `clean_discord`'s docstring).
+Discord is an exception of its own (see "Posting to Discord", and `clean_discord`'s docstring). The
+third is the image module's portrait register (`driver_portraits`, written by `_record` and
+`_disown`): a portrait is fetched from Discord and its file written outside any change, in a
+refresh the render budget or a stop may cut off, so the register is written around the file, the
+row claimed before it and the key recorded after, and each write commits on its own; as a job of
+the queue the record would wait on the file it exists to keep owned.
 
 - **The queue is kept in the database,** so a change waiting on it survives a stop.
 - **What whoever asked is told,** and when, is for the core specification, which gains it with the
@@ -1608,7 +1613,8 @@ later on its own.
   function's `.commit()` and `.executescript()` calls, and a function writing on a handed
   connection commits nothing and is not counted. It allows for good the migrations run at start-up
   (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
-  queue's own records, the retry queue for log lines, `/bot pack` (above), and
+  queue's own records, the retry queue for log lines, `/bot pack` (above), the
+  image module's portrait register (above), and
   `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
   league's. The connection-state check refuses, outside the database code, a SQL function added
   with `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and

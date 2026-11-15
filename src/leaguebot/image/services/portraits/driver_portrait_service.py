@@ -24,6 +24,17 @@ whatever. A render that changes nothing downloads nothing.
 the league itself; the bot never overwrites it and never fetches over it. This is what makes
 writing into `resources/league/drivers/` safe, that directory being the league's own.
 
+**The register is written around the file, never after it alone.** The row is claimed (with a
+key no avatar can match) before the file is written, the real key recorded after, and the row
+removed only after the file is (`remove_portrait`). A fetch cut off by the render budget or by a
+stop between the file and its key then leaves a row, and the portrait stays the bot's: the next
+refresh fetches it again, and a reassign or a season's end discards it. Were the file written
+first, a cut-off would leave a file with no row, which reads as the league's own artwork, never
+fetched over or removed again. The two writes of the register commit on their own, off the change
+queue, each a stated exception (architecture.md, "Every change goes through one queue"): a
+queued job would make the file's write wait on a record of it. Pinned by
+`test_driver_portrait_service.py::test_a_portrait_cut_off_once_written_stays_the_bot_s`.
+
 **A failure never reaches the render.** `Asset.read` goes through `HTTPClient.get_from_cdn`,
 which issues a bare session GET rather than passing through `HTTPClient.request` -- so it
 consumes no REST rate-limit budget, but equally gets none of discord.py's 429 handling: a 429
@@ -71,6 +82,10 @@ DEFAULT_RENDER_BUDGET_SECONDS = 2.0
 #: `refresh_before_render` as None, and re-resolving it there would obtain portraits into the
 #: very directory the render had just refused.
 _UNSET = object()
+
+#: The key a portrait's row holds from the moment it is claimed until its file is written: no
+#: `portrait_key` equals it, so a claim never reads as a portrait current at any shape.
+CLAIMED_KEY = ""
 
 
 def wrap_size(aspect: float) -> tuple[int, int]:
@@ -571,14 +586,16 @@ async def refresh_portraits(
                 )
                 return
 
+            target = portrait_path(directory, str(member.id))
+            await _record(db_path, str(member.id), CLAIMED_KEY)
             try:
-                _write_atomically(
-                    portrait_path(directory, str(member.id)), wrap_png(data, aspect)
-                )
+                _write_atomically(target, wrap_png(data, aspect))
             except OSError:
                 log.warning(
                     "driver portraits: could not write one for %s", member.id, exc_info=True
                 )
+                if not target.exists():
+                    await _disown(db_path, str(member.id))  # no file stands: nothing to own
                 return
 
             await _record(

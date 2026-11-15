@@ -511,11 +511,6 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
     assert not (directory / "1.svg").exists()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#288: the portrait's file is written before its row, so a cut-off between them "
-    "leaves a file the register does not own",
-)
 async def test_a_portrait_cut_off_once_written_stays_the_bot_s(db_path, directory, monkeypatch):
     """A fetch cut off by the render budget, or by a stop, after the portrait's file is written
     and before the register records it, still leaves the portrait the bot's: the next refresh

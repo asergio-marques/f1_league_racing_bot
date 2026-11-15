@@ -2085,6 +2085,13 @@ SAVES_ALLOWED = {
     ("core/services/upkeep/pack_service.py", "pack"):
         "`/bot pack` stays off the queue, refused while any lane holds a job (architecture.md, "
         "\"Every change goes through one queue\")",
+    ("image/services/portraits/driver_portrait_service.py", "_record"):
+        "the portrait register, written around the file it records and committed on its own, off "
+        "the queue, so that a fetch cut off between the file and its key leaves the portrait the "
+        "bot's (architecture.md, \"Every change goes through one queue\")",
+    ("image/services/portraits/driver_portrait_service.py", "_disown"):
+        "the portrait register, its row removed after the file and committed on its own, off the "
+        "queue (architecture.md, \"Every change goes through one queue\")",
 }
 
 
@@ -2111,8 +2118,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Attendance's pass
     # Signup's pass
     # Image's pass
-    ("image/services/portraits/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
-    ("image/services/portraits/driver_portrait_service.py", "_record"): (1, PASS["image"]),
 }
 
 
