@@ -1515,7 +1515,9 @@ async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classe
 async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
-    """Each tier is painted by the render's own palette step, once, in tier order.
+    """Each tier is painted by the render's own palette step, once, in tier order: its colours
+    read through the render's `tier_palette` and painted with the render's own `apply_palette`,
+    Division 1 with its plate colour and Divisions 2 and 3, which set none, with nothing.
 
     Pinned because a second way of resolving a tier's colours is the obvious shortcut —
     read the palette and look the slot up — and it would let the figure a league is told
@@ -1542,9 +1544,21 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
 
     monkeypatch.setattr(ImageRenderService, "tier_palette", _spy)
 
+    from leaguebot.image.utils import svg_palette
+
+    applied: list[dict[str, str]] = []
+    original_apply = svg_palette.apply_palette
+
+    def _apply_spy(root, palette):
+        applied.append(dict(palette))
+        return original_apply(root, palette)
+
+    monkeypatch.setattr(svg_palette, "apply_palette", _apply_spy)
+
     await _measure(config_service, module_service, "#FFFFFF")
 
     assert painted == ["Division 1", "Division 2", "Division 3"]
+    assert applied == [{"plate": "#111111"}, {}, {}]
 
 
 @pytest.mark.parametrize(
