@@ -203,15 +203,28 @@ async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
     assert spy.await_args.kwargs["obtain_missing"] is False
 
 
-@pytest.mark.parametrize("draw", DRAWS)
+#: The lineups whose notices the drawing reports: those of `DRAWS`, and the lineup a season review
+#: draws (`draw_review_lineup`, its uncommitted drivers in it), which today goes through the bot
+#: and reports its notices under no heading.
+NOTICED_DRAWS = [
+    *DRAWS,
+    pytest.param(
+        "draw_review_lineup", id="for_review",
+        marks=pytest.mark.xfail(strict=True, reason="#288: a season review's lineup is drawn "
+                                "through the bot, its notices logged under no heading"),
+    ),
+]
+
+
+@pytest.mark.parametrize("draw", NOTICED_DRAWS)
 async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_message(
     db_path, monkeypatch, draw,
 ):
-    """Pro's lineup drawn with two notices, as the lineup of record or as `/team lineup`'s output:
-    the drawing itself reports them to the log channel, in one message headed with the lineup and
-    the division, so they reach the log whichever change or command drew the lineup, and never
-    the lineup channel (Constitution XIV.4, "reported in one message"; the owner's decision on
-    #283)."""
+    """Pro's lineup drawn with two notices, as the lineup of record, as `/team lineup`'s output or
+    for a season review: the drawing itself reports them to the log channel, in one message headed
+    with the lineup and the division, so they reach the log whichever change or command drew the
+    lineup, and never the lineup channel (Constitution XIV.4, "reported in one message"; the
+    owner's decision on #283)."""
     from leaguebot.image.models.image_module import RenderNotice
 
     _portraits_spied(monkeypatch)
@@ -226,7 +239,8 @@ async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_mess
         db_path, outcome=NS(problem=None, notices=notices, png_paths=[])
     )
 
-    await getattr(drawing, draw)(guild, DIVISION_ID)
+    more = {"include_uncommitted": True} if draw == "draw_review_lineup" else {}
+    await getattr(drawing, draw)(guild, DIVISION_ID, **more)
 
     [call] = post_log.await_args_list
     assert call.args[0].startswith("Image render notices — lineup — Pro:\n"), call.args[0]
