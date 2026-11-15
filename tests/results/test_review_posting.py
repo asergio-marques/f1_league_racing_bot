@@ -1810,3 +1810,42 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
         assert (f"to put it right: fix the {picture} template, then amend the round with "
                 "`/results rounds amend`") in line, line
         assert "sync" not in line, line
+
+
+# ---------------------------------------------------------------------------
+# A picture Discord refuses is posted as text in the same try, and the log channel says so
+# ---------------------------------------------------------------------------
+
+#: The reason the fake channel gives for refusing a send (`_channel`'s `fail_send_at`).
+REFUSAL = "Discord failed part-way"
+
+
+@pytest.mark.xfail(strict=True, reason="#288: a picture Discord refuses falls back to text and "
+                   "the log channel is told nothing")
+@pytest.mark.parametrize("picture", ["results", "standings"])
+async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
+    tmp_path, picture,
+):
+    """Round 3's results and standings in Pro are posted again with *picture* drawn, and Discord
+    refuses the picture's upload, the first send to its channel. The table goes out as text in the
+    same try and the queue runs to the end, as it does today; and the log channel gains one line
+    naming round 3 of Pro, the *picture* picture, that Discord refused it, Discord's reason, and
+    that the table went out as text."""
+    league = await _league(tmp_path)
+    if picture == "results":
+        target, drawn = RESULTS_CHANNEL, _results_drawn(league, tmp_path)
+    else:
+        target, drawn = STANDINGS_CHANNEL, _standings_drawn(tmp_path, championships=("drivers",))
+    league.channel(target).fail_send_at = 1
+    with drawn:
+        await _ask(league)
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    channel = league.channel(target)
+    texts = [channel.messages[mid].content for kind, ch, mid in league.events
+             if ch == target and kind in ("send", "edit") and mid in channel.messages]
+    assert texts and all("Round 3" in text for text in texts)
+    line = _fault_line(league)
+    assert picture in line and ("picture" in line or "image" in line), line
+    assert "refused" in line and REFUSAL.lower() in line and "text" in line, line

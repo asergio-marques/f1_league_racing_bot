@@ -400,11 +400,14 @@ async def _announced(league: ReviewLeague) -> int:
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#288: the stop notice gives the heading's own reason, "
+                   "hiding that Discord refused it")
 async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp_path):
     """The verdicts channel refuses the written heading alone. The heading is a job of its own,
     so the queue stops at it and no verdict goes out ahead of it (owner, Gate 2, 2026-10-05:
-    "Heading stops the queue"). Once a league admin discards it, both verdicts are announced
-    beneath no heading, and the approval is recorded as incomplete."""
+    "Heading stops the queue"), and the stop notice names the fault in the core specification's
+    plain words, that Discord refused or failed a request. Once a league admin discards it, both
+    verdicts are announced beneath no heading, and the approval is recorded as incomplete."""
     league = await review_league(tmp_path)
     league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content == HEADING
     interaction = await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
@@ -413,6 +416,7 @@ async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp
     assert await stopped_at(league) == "announce_heading"
     assert league.sent_to(VERDICTS_CHANNEL) == []
     assert await _announced(league) == 0
+    assert "Discord refused or failed a request" in league.log(), league.log()
 
     # The channel would take the heading now, so a build that tried it again behind the
     # discarded job would show here.
