@@ -654,13 +654,20 @@ class TestTheNoticeBlock:
 
         assert "http://discord/x/1" in reply
 
+    @pytest.mark.xfail(strict=True, reason="#288: a preview's render notices are logged under "
+                       "a heading that names nothing drawn")
     async def test_the_notices_are_logged_as_well_as_shown(self, cog):
+        """`/images test standings` for Division 1 draws with one flag falling back. The notice
+        is logged once, in a block whose heading names what was drawn: the standings, of
+        Division 1."""
         cog.bot = self._bot()
 
         await self._run(cog, [self._notice("a flag fell back", "row_1_flag")])
 
         assert len(cog.bot.posted) == 1
         assert "a flag fell back" in cog.bot.posted[0]
+        heading = cog.bot.posted[0].splitlines()[0]
+        assert "Standings" in heading and "Division 1" in heading, heading
 
     async def test_a_log_failure_costs_the_link_and_nothing_else(self, cog):
         """A log-channel problem must never cost the preview, which is what was asked for."""
