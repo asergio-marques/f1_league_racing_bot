@@ -244,7 +244,7 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
 async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(tmp_path):
     """A calendar synced, drawn with a notice. The reply names the notice (Constitution XIV.4,
     alongside a command's output); the command's line in the log channel does not repeat it,
-    the render having reported it there itself, in one message."""
+    the calendar's posting job reporting it there once, among its own lines."""
     cog = await _make_cog()
     interaction = _interaction()
 
