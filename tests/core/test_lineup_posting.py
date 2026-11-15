@@ -469,8 +469,6 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
     return league, press
 
 
-@pytest.mark.xfail(strict=True, reason="#288: the lineup job drops its drawing's notices, which "
-                   "the drawing logs itself from inside the job")
 async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
     tmp_path, monkeypatch,
 ):

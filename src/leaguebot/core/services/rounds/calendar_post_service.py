@@ -54,7 +54,7 @@ from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.core.utils.log_lines import drawn_notices_line, refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 
 if TYPE_CHECKING:
@@ -178,7 +178,7 @@ async def render_for_command(
 ) -> CalendarCommandOutcome:
     """Produce a division's calendar PNG as **command output**, posting it nowhere.
 
-    The counterpart of :func:`image_lineup_post.render_for_command`, and it exists for the
+    The counterpart of the image drawing's `draw_review_lineup`, and it exists for the
     same reason: `/season placements-review` shows a manager what their league will see, and that is
     not the calendar *of record*. This function writes no ``calendar_message_id``, deletes
     nothing from the calendar channel and touches no channel at all — which
@@ -456,10 +456,15 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             commanded=bool(value_of(ctx, "commanded")),
             as_text=ctx.tries > 0,
         )
-        lines = (
-            (_fallen_back_to_text_line(ctx, division.name, str(posting.problem)),)
-            if posting.fell_back else ()
-        )
+        lines: tuple[str, ...] = ()
+        if posting.notices:
+            # The drawing writes nothing to the log channel itself: the notices go there as a
+            # line of this job, once, naming the calendar and its division.
+            lines += (drawn_notices_line(
+                ctx.named, ctx.what, f"calendar — {division.name}", posting.notices
+            ),)
+        if posting.fell_back:
+            lines += (_fallen_back_to_text_line(ctx, division.name, str(posting.problem)),)
         return StepResult(
             result={
                 "division": division.name,

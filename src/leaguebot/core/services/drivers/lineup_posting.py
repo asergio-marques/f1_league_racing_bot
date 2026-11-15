@@ -60,6 +60,7 @@ from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.log_lines import drawn_notices_line
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +77,8 @@ class LineupPosted:
     *previous* is the division's recorded lineup message as it stood when the post was made, and
     *form* is "image" for a picture and "text" for the embed. *problem* is the image module's
     words for why a picture could not be drawn, carried for the job's own line where the lineup
-    fell back to text, or None where nothing went wrong. Nothing is saved: the post job's
+    fell back to text, or None where nothing went wrong, and *notices* the drawing's words for what a
+    picture it drew survived, for the job's own line. Nothing is saved: the post job's
     `record` saves *message_id* (`lineup_posting.record_lineup_on`) and the job after it deletes
     *previous*.
     """
@@ -87,6 +89,7 @@ class LineupPosted:
     division_name: str
     form: str
     problem: str | None = None
+    notices: tuple[str, ...] = ()
 
 
 class LineupPoster:
@@ -198,12 +201,14 @@ class LineupPoster:
 
         image_path: Path | None = None
         problem: str | None = None
+        notices: tuple[str, ...] = ()
         drawing = self._drawing
         # Asked before the drawing's catch-all: the gate stands aside from its own faults, and a
         # switch nobody signed up for is a fault in the bot's assembly, not a picture not drawn.
         if not as_text and drawing is not None and await drawing.lineup_wanted():
             try:
                 picture = await drawing.draw_lineup(guild, division_id)
+                notices = tuple(picture.notices)
                 if picture.problem is not None:
                     problem = picture.problem
                 elif picture.path is not None:
@@ -233,6 +238,7 @@ class LineupPoster:
                 else:
                     return LineupPosted(
                         new_msg_id, lineup_channel_id, lineup_message_id, div_name, "image",
+                        notices=notices,
                     )
                 finally:
                     attachment.close()
@@ -248,7 +254,7 @@ class LineupPoster:
 
             return LineupPosted(
                 new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text",
-                problem=problem,
+                problem=problem, notices=notices,
             )
         finally:
             if drawing is not None:
@@ -316,6 +322,7 @@ def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "division_name": posted.division_name, "form": posted.form, "problem": posted.problem,
+        "notices": list(posted.notices),
     }
 
 
@@ -329,13 +336,20 @@ _FIX_IT = (
 
 
 def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tuple[str, ...]:
-    """The lineup posting job's own line where it fell back to text, as the calendar's does:
-    the member and the change it ran for, the division, the problem, and what puts it right.
-    Empty where nothing went wrong."""
+    """The lineup posting job's own lines, as the calendar's are: where the picture drawn came
+    back with render notices, one line naming the lineup and the division, which is where they
+    reach the log channel (the drawing writes none itself); and where it fell back to text, the
+    member and the change it ran for, the division, the problem, and what puts it right. Empty
+    where nothing went wrong."""
+    lines: tuple[str, ...] = ()
+    if result.get("notices"):
+        lines += (drawn_notices_line(
+            ctx.named, ctx.what, f"lineup — {result.get('division_name')}", result["notices"]
+        ),)
     problem = result.get("problem")
     if problem is None:
-        return ()
-    return (
+        return lines
+    return lines + (
         f"{ctx.named} | {ctx.what} | Lineup posted as text\n"
         f"  division: {result.get('division_name')}\n"
         f"  problem: {problem}\n"

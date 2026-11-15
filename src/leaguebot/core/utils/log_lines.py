@@ -35,6 +35,7 @@ them and so still offers them to its callers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 import discord
@@ -312,6 +313,16 @@ def abandoned_line(named: str, what: str, *, lapsed: bool, detail: str | None = 
     if detail:
         line += "".join(f"\n  {text}" for text in detail.splitlines())
     return line
+
+
+def drawn_notices_line(named: str, what: str, drawn: str, notices: Iterable[str]) -> str:
+    """The line of a job that drew a picture which came back with render notices: the member and
+    the change it ran for, as every job line opens, then *drawn*, what was drawn ("lineup —
+    Pro"), and each notice beneath. The notices are one line of the job, so they reach the log
+    channel once, in one message, never as a second unheaded block."""
+    return f"{named} | {what} | Image render notices — {drawn}:" + "".join(
+        f"\n  • {each}" for each in notices
+    )
 
 
 async def record_abandoned(

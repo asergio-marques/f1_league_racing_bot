@@ -1,69 +1,24 @@
-"""Resolve and render a division's lineup (038).
+"""Resolve a division's lineup (038).
 
-The lineup of record is drawn through core's drawing protocol, and posted by core
+Every lineup is drawn through core's drawing protocol (the lineup of record, `/team lineup`'s
+output and a season review's) and posted by core
 (`leaguebot.core.services.modules.image_drawing.ImageDrawing`, implemented by
 `leaguebot.image.services.render.image_drawing.ImageDrawing`): this module holds what that
-drawing, and a command's own output, both need — resolving the division into a
-`LineupDrawing` (`build_drawing`) and rendering it (`render_png`) — plus `render_for_command`,
-which produces the PNG as a command's output and posts nothing, for `/season
-placements-review`.
+drawing needs of the division, resolving it into a `LineupDrawing` (`build_drawing`) and finding
+the member behind each seat (`seated_members`).
 """
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, field
-from pathlib import Path
 from types import SimpleNamespace
 
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.image.models.image_module import PostingOrigin
-from leaguebot.core.utils.league_bot import LeagueBot
-
-log = logging.getLogger(__name__)
 
 #: The one template this aspect draws. Named here rather than inline because the render
 #: body labels its directory resolution with it as well as passing it to the renderer, and
 #: the two must not be able to drift.
 LINEUP_TEMPLATE_KEY = "lineup_template"
-
-#: The image flow does not apply — the caller falls through to its textual body.
-NOT_APPLICABLE = "NOT_APPLICABLE"
-#: The graphic was produced and posted; the caller does nothing further.
-POSTED = "POSTED"
-#: The graphic could not be produced and the posting was **commanded**, so the caller was
-#: told what is at fault and must post nothing.
-REJECTED = "REJECTED"
-
-
-@dataclass
-class LineupPostOutcome:
-    action: str = NOT_APPLICABLE
-    message: str | None = None
-    notices: list = field(default_factory=list)
-    png_path: Path | None = None
-
-    @property
-    def applicable(self) -> bool:
-        """True where this module handled the posting and the caller must not."""
-        return self.action != NOT_APPLICABLE
-
-
-async def lineup_enabled(bot: LeagueBot) -> bool:
-    """True where the module is on, the `lineup` aspect is on, and a template is named."""
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False
-        toggles = await bot.image_config_service.get_toggles()
-        if not toggles.get("lineup"):
-            return False
-        reports = await bot.image_validity_service.template_reports()
-        report = reports.get(LINEUP_TEMPLATE_KEY)
-        return report is not None and report.valid
-    except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("lineup: enablement check failed: %s", exc, exc_info=True)
-        return False
 
 
 def seated_members(guild, teams) -> dict[str, discord.Member]:
@@ -198,122 +153,3 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
         ),
         list(members.values()),
     )
-
-
-async def render_png(
-    bot: LeagueBot,
-    guild,
-    division_id: int,
-    origin: PostingOrigin,
-    *,
-    include_uncommitted: bool = False,
-    obtain_missing_portraits: bool = False,
-):
-    """Render one division's lineup. Returns the render service's PostingDecision.
-
-    *include_uncommitted* is `build_drawing`'s, and is for command output alone.
-    *obtain_missing_portraits* is `refresh_before_render`'s *obtain_missing*, and is for
-    the placements review alone.
-    """
-    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
-    from leaguebot.image.services.render.image_render_service import (
-        resolve_configured_directories,
-        spec_builder_with_faults,
-    )
-
-    _division, drawing, members = await build_drawing(
-        bot.db_path, guild, division_id, include_uncommitted=include_uncommitted
-    )
-
-    config = await bot.image_config_service.get_config()
-    directories, directory_faults = resolve_configured_directories(
-        config,
-        (
-            ("team", "team_image_directory"),
-            ("flag", "flag_directory"),
-            ("driver", "driver_image_directory"),
-        ),
-        image_type=LINEUP_TEMPLATE_KEY,
-    )
-
-    # Bring the portraits up to date before the fill looks for them, where the league asked
-    # for that. The drawing is already built, but it carries the user id as the datum and the
-    # file is not read until the fill -- so this is still in time. Never raises: a portrait
-    # that cannot be obtained resolves exactly as it would have done otherwise.
-    from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
-
-    await refresh_before_render(
-        bot.db_path,
-        members,
-        config=config,
-        directory=directories.get("driver"),
-        obtain_missing=obtain_missing_portraits,
-    )
-
-    from leaguebot.image.utils.image_naming import stem_for_drawing
-
-    return await bot.image_render_service.render_for_posting(
-        LINEUP_TEMPLATE_KEY,
-        spec_builder_with_faults(
-            build_fill_spec, drawing, directories, directory_faults
-        ),
-        posting_origin=origin,
-        bot=bot,
-        division_name=drawing.division_name,
-        filename_stem=stem_for_drawing(drawing, LINEUP_TEMPLATE_KEY),
-    )
-
-
-async def render_for_command(
-    bot: LeagueBot,
-    guild,
-    division_id: int,
-    *,
-    include_uncommitted: bool = False,
-    obtain_missing_portraits: bool = False,
-) -> LineupPostOutcome:
-    """Produce a division's lineup PNG as **command output**, posting it nowhere.
-
-    Used by `/season placements-review` alone; `/team lineup` draws through core's drawing
-    protocol instead (`ImageDrawing.draw_lineup_for_command`). Constitution XIV.7 makes a
-    commanded posting reject rather than fall back, so a fault comes back as ``REJECTED``
-    with the message to show the caller.
-
-    These images are output of a command and **not the lineup of record** (FR-028): this
-    function writes no ``lineup_message_id``, deletes nothing from the lineup channel, and
-    records no audit entry. That separation is why *include_uncommitted*, which draws a
-    lineup as it will stand once mid-season placements are confirmed, is offered here and not
-    on the drawing of record (`ImageDrawing.draw_lineup`).
-
-    *obtain_missing_portraits* obtains the portrait of each seated driver who has none,
-    whichever update trigger the league chose, so the review is not judged on a placeholder
-    the league will not see (image specification, "The drawing of placements under review").
-    """
-    if guild is None or not await lineup_enabled(bot):
-        return LineupPostOutcome()
-
-    try:
-        decision = await render_png(
-            bot,
-            guild,
-            division_id,
-            PostingOrigin.COMMANDED,
-            include_uncommitted=include_uncommitted,
-            obtain_missing_portraits=obtain_missing_portraits,
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.error("lineup: command render failed for division %s: %s", division_id, exc, exc_info=True)
-        return LineupPostOutcome(action=REJECTED, message=f"❌ {exc}")
-
-    if decision.posts_image:
-        return LineupPostOutcome(
-            action=POSTED, notices=decision.notices, png_path=decision.png_paths[0]
-        )
-
-    return LineupPostOutcome(
-        action=REJECTED,
-        message=decision.caller_message("the lineup"),
-        notices=decision.notices,
-    )
-
-

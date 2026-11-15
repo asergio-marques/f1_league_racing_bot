@@ -387,8 +387,6 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
             assert words not in told, told
 
 
-@pytest.mark.xfail(strict=True, reason="#288: the calendar job does not carry its drawing's "
-                   "notices, which the drawing logs itself from inside the job")
 async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     tmp_path, monkeypatch,
 ):

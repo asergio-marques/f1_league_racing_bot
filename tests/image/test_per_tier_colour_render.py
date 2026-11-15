@@ -34,7 +34,6 @@ TEMPLATE = (
 CALL_SITES = {
     "image/services/aspects/image_attendance_post.py": "drawing.division_name",
     "image/services/render/image_drawing.py": "drawing.division_name",
-    "image/services/aspects/image_lineup_post.py": "drawing.division_name",
     "image/services/aspects/image_results_post.py": "drawing.division_name",
     "image/services/aspects/image_rsvp_post.py": "drawing.division_name",
     "image/services/aspects/image_standings_post.py": "drawing.division_name",

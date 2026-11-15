@@ -147,8 +147,6 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault():
     assert "flag" in spec.asset_directory_faults
 
 
-@pytest.mark.xfail(strict=True, reason="#288: the calendar's drawing logs its notices itself from "
-                   "inside the job that posts it")
 async def test_a_calendar_drawing_hands_its_notices_back_and_logs_nothing():
     """Elite's calendar drawn with a notice. Every calendar is drawn inside a change's job, so the
     drawing writes nothing to the log channel itself and hands the notice back with the picture,

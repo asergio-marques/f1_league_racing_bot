@@ -1493,8 +1493,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
-    ("image/services/aspects/image_lineup_post.py", "lineup_enabled"): (3, PASS["image"]),
-    ("image/services/aspects/image_lineup_post.py", "render_png"): (2, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_calendar_preview"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_results_preview"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
@@ -3172,8 +3170,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/portraits/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "refresh_portraits.fetch"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
-    ("image/services/aspects/image_lineup_post.py", "lineup_enabled"): (1, PASS["image"]),
-    ("image/services/aspects/image_lineup_post.py", "render_for_command"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (1, PASS["image"]),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
         (1, PASS["image"]),

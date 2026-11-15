@@ -722,7 +722,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     import asyncio
 
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services.aspects import image_lineup_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change
@@ -734,10 +734,10 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
     drawn = posting.drawing.folder / "lineup-11.png"
     drawn.write_bytes(b"\x89PNG\r\n\x1a\n")
-    render = AsyncMock(return_value=SimpleNamespace(posts_image=True, png_paths=[drawn],
-                                                    notices=[]))
-    monkeypatch.setattr(image_lineup_post, "render_png", render)
-    monkeypatch.setattr(image_lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    render = AsyncMock(return_value=({}, SimpleNamespace(problem=None, png_paths=[drawn],
+                                                         notices=[])))
+    monkeypatch.setattr(ImageDrawing, "_render_lineup", render)
+    monkeypatch.setattr(ImageDrawing, "lineup_wanted", AsyncMock(return_value=True))
     _with_image_s_drawing(posting.bot)
     attach_queue(posting.bot, posting.db_path, now=posting.clock)
 
@@ -781,7 +781,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     import asyncio
 
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services.aspects import image_lineup_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change
@@ -791,11 +791,12 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
         return built(**kwargs)
 
     monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
-    render = AsyncMock(return_value=_lineup_will_not_post())
+    render = AsyncMock(return_value=({}, SimpleNamespace(
+        problem=_lineup_will_not_post().problem, png_paths=[], notices=[])))
     if failing == "render_raises":
         render = AsyncMock(side_effect=RuntimeError("the template's font could not be loaded"))
-    monkeypatch.setattr(image_lineup_post, "render_png", render)
-    monkeypatch.setattr(image_lineup_post, "lineup_enabled",
+    monkeypatch.setattr(ImageDrawing, "_render_lineup", render)
+    monkeypatch.setattr(ImageDrawing, "lineup_wanted",
                         AsyncMock(return_value=failing != "switched_off"))
     if failing == "no_server":
         posting.bot.get_guild = MagicMock(return_value=None)
@@ -808,8 +809,6 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     assert str(raised.value) == fault
 
 
-@pytest.mark.xfail(strict=True, reason="#288: the review's draw_and_post drops its pictures' "
-                   "notices, which the drawing logs itself from inside the job")
 async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
         posting, monkeypatch, tmp_path):
     """The real change types are registered, as the builder registers them, and the drawing the

@@ -83,9 +83,9 @@ class CalendarPicture:
 
     *path* is the drawn PNG's path, or None where it could not be drawn. *problem* is the image
     module's words for why, with no final stop, or None where it drew. *notices* are the
-    drawing's own words for what it survived; `draw_calendar` has already reported them to the
-    log channel, so the caller never posts them there a second time — only in a command's own
-    output, which is the caller's to decide.
+    drawing's own words for what it survived. `draw_calendar` writes nothing to the log channel: a
+    calendar is drawn inside a job, which records them among its own lines, once, and a command's
+    own output is the caller's to decide.
     """
 
     path: Path | None
@@ -99,8 +99,10 @@ class LineupPicture:
 
     *path* is the drawn PNG's path, or None where it could not be drawn. *problem* is the image
     module's words for why, with no final stop, or None where it drew. *notices* are the
-    drawing's own words for what it survived; `draw_lineup` has already reported them to the
-    log channel, so the caller never posts them there a second time.
+    drawing's own words for what it survived. `draw_lineup` and `draw_review_lineup` write nothing
+    to the log channel: the lineup of record and a review's are drawn inside a job, which records
+    them among its own lines, once. `draw_lineup_for_command` runs in no job and reports them
+    itself.
     """
 
     path: Path | None
@@ -193,8 +195,8 @@ class ImageDrawing(Protocol):
         """Draw *division_id*'s lineup in *guild*, as a command's own output rather than the
         lineup of record: not written to the lineup of record. Hands back the picture
         drawn, or the problem naming why it could not be — worded for the command's own
-        refusal rather than the text fallback's — and the notices it survived, already
-        reported to the log channel in one message. A fault reading the division itself (the
+        refusal rather than the text fallback's — and the notices it survived, which it has reported
+        to the log channel in one message, the command running in no job. A fault reading the division itself (the
         database cannot be opened) is let out, for the command's own failure path to report,
         rather than turned into refusal words."""
 
@@ -206,8 +208,9 @@ class ImageDrawing(Protocol):
         none first, so a review is not judged on a placeholder the league will not see, and with
         the drivers a mid-season confirmation has not yet committed in it where
         *include_uncommitted*. Hands back the picture drawn, or the problem naming why it could
-        not be, worded for the command's own refusal, and the notices it survived, already
-        reported to the log channel in one message."""
+        not be, worded for the command's own refusal, and the notices it survived, for the review's
+        job to record among its own lines. A render that raises raises, with its words after
+        "❌"."""
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a path `draw_calendar`, `draw_lineup`, `draw_lineup_for_command` or

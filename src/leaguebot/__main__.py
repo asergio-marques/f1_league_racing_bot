@@ -33,6 +33,7 @@ from leaguebot.weather import wiring as weather_wiring
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.seasons.season_review_changes import DrawnPicture
     from leaguebot.core.services.modules.hub_service import HubOptions
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
@@ -436,8 +437,12 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
     weather_wiring.sign_up_to_season_end_steps(bot)
 
 
-async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
-    """Draw one picture of a season review to a file, and give where it is.
+async def _draw_review_picture(
+    bot: LeagueBot, picture: Mapping[str, Any], notices: list[str] | None = None,
+) -> "Path":
+    """Draw one picture of a season review to a file, and give where it is. The drawing's render
+    notices are added to *notices*, where one is handed, for the job that posts the picture to
+    record among its own lines.
 
     A lineup is the image module's, drawn obtaining each seated driver's missing portrait first,
     so a review is not judged on a placeholder the league will not see, and, mid-season, with its
@@ -450,6 +455,8 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
             await league_guild(bot), division_id,
             include_uncommitted=bool(picture.get("include_uncommitted")),
         )
+        if notices is not None:
+            notices.extend(lineup.notices)
         if lineup.path is None:
             raise RuntimeError(lineup.problem or "the lineup could not be drawn")
         return lineup.path
@@ -461,18 +468,25 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
         await calendar_post_service.tracks_by_name(bot.db_path),
         season_number=picture.get("season_number"),
     )
+    if notices is not None:
+        notices.extend(outcome.notices)
     if outcome.png_path is None:
         raise RuntimeError(outcome.message or f"the {kind} could not be drawn")
     return outcome.png_path
 
 
-def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], Path]":
+def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], DrawnPicture]":
     """The drawing `season.review.post` is handed: it draws a picture in the worker thread the
     change runs it in, its coroutine awaited on the bot's event loop (`await_from_worker`)."""
-    from leaguebot.core.services.seasons.season_review_changes import await_from_worker
+    from leaguebot.core.services.seasons.season_review_changes import (
+        DrawnPicture,
+        await_from_worker,
+    )
 
-    def drawing(picture: Mapping[str, Any]) -> "Path":
-        return await_from_worker(_draw_review_picture(bot, picture))
+    def drawing(picture: Mapping[str, Any]) -> "DrawnPicture":
+        notices: list[str] = []
+        path = await_from_worker(_draw_review_picture(bot, picture, notices))
+        return DrawnPicture(path, tuple(notices))
 
     return drawing
 

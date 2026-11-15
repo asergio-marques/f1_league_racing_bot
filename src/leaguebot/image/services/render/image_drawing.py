@@ -10,16 +10,17 @@ questions ask whether the aspect is drawn at all, whether the template is valid,
 holds that many — answered off the event loop, since parsing and measuring a template takes real
 time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wanted``/
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
-the asset directories resolved absolutely, the file named, the render, and the notices reported
-to the log channel in one message. ``attach_forecast``, ``attach_check_in_call`` and
+the asset directories resolved absolutely, the file named, the render, and the notices handed
+back with the picture. ``attach_forecast``, ``attach_check_in_call`` and
 ``draw_attendance_sheet`` (after ``attendance_wanted``), ``draw_verdict``, ``draw_results`` and ``draw_standings`` draw a weather
 forecast's, a check-in call's, an attendance sheet's, a verdict's, a session's results and a round's two standings pictures for the post jobs, which are handed the drawing and write the
 lines it hands back (weather's own gate reasons come back as its lines), and ``discard_attachment``
 removes a picture once its post is done. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
-command's output, ``draw_review_lineup`` draws it for a season review (through
-`image_lineup_post.render_for_command`, so it holds the bot), and ``discard_portraits`` removes the
-portraits of accounts no longer drawn.
+command's output, ``draw_review_lineup`` draws it for a season review, and ``discard_portraits``
+removes the portraits of accounts no longer drawn. A picture drawn inside a job hands its notices
+back for the job to record, writing nothing to the log channel itself: the one picture it reports
+for is the lineup a command draws, which runs in no job.
 """
 from __future__ import annotations
 
@@ -79,7 +80,7 @@ from leaguebot.image.services.aspects import (
     image_weather_post,
 )
 from leaguebot.image.services.config.image_config_service import ImageConfigService
-from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_KEY, render_for_command
+from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_KEY
 from leaguebot.image.services.render.image_render_service import (
     ImageRenderService,
     discard_render,
@@ -201,10 +202,10 @@ class ImageDrawing:
         #: though the calendar and the capacity questions read none of it, so that a drawing
         #: is never built unable to do what `draw_lineup` needs.
         self._db_path = db_path
-        #: The bot, which the review's lineup alone needs: `render_for_command` reads the image
-        #: services off it as it draws. Optional so that a drawing built for the other answers
-        #: (the capacity questions, the calendar, the lineup of record) needs none. It stays
-        #: until image's design pass (#288) removes `render_for_command`'s lookups on the bot.
+        #: The bot, which the verdict's, the results' and the standings' resolving still read
+        #: the services of others through (steps 29 and 32 of image's design pass hand them
+        #: what they read instead). Optional so that a drawing built for the other answers (the
+        #: capacity questions, the calendar, either lineup) needs none.
         self._bot = bot
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
@@ -979,8 +980,8 @@ class ImageDrawing:
     ) -> CalendarPicture:
         """Draw *division*'s calendar of *rounds*, named against *tracks*: the two gates
         already asked through `calendar_wanted`, the asset directories resolved absolutely, the
-        file named, and the render. The notices are reported to the log channel in one message
-        before this returns, so the caller never posts them there again."""
+        file named, and the render. The notices come back with the picture, for the job that
+        posts it to record among its own lines: the drawing writes nothing to the log channel."""
         config = await self._config.get_config()
 
         drawing = resolve_drawing(
@@ -1014,22 +1015,6 @@ class ImageDrawing:
             division_name=drawing.division_name,
         )
 
-        # Every other posting path reaches the log channel through `render_for_posting`, which
-        # this one cannot use: its two callers differ in origin — the calendar of record is
-        # scheduled and falls back to text, the review's copy is commanded and rejects — and
-        # both read a `RenderOutcome` rather than a `PostingDecision`. So the report is made
-        # here instead, because a notice that is not reported reaches nobody at all — the log
-        # channel and a commanding command's own output are the only places one is seen
-        # (XIV.4), and the command's output is the caller's to add from what is handed back
-        # below. `post_log` (`OutputRouter.post_log`) already contains its own failures, so no
-        # catch is needed around it here.
-        if outcome.notices:
-            await self._post_log(
-                ImageRenderService.format_notices(
-                    outcome.notices, subject=f"calendar — {division.name}"
-                )
-            )
-
         problem = outcome.problem.detail if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
@@ -1042,20 +1027,31 @@ class ImageDrawing:
         `lineup` aspect must be on, and a valid template configured (`aspect_wanted`)."""
         return await self.aspect_wanted("lineup", LINEUP_TEMPLATE_KEY)
 
-    async def _render_lineup(self, guild: Any, division_id: int) -> Any:
-        """The gates already asked through `lineup_wanted`, the division's committed seats
-        read from the database, the portraits refreshed at the league's own trigger, and the
-        render: what `draw_lineup` and `draw_lineup_for_command` both need before them part.
-        The notices are reported to the log channel in one message before this returns, so
-        neither caller posts them there again. Hands back the division row and the render's
-        outcome, for each to word the problem its own way."""
+    async def _render_lineup(
+        self, guild: Any, division_id: int, *,
+        include_uncommitted: bool = False, obtain_missing_portraits: bool = False,
+    ) -> Any:
+        """The gates already asked through `lineup_wanted`, the division's seats read from the
+        database, the portraits refreshed at the league's own trigger, and the render: what
+        every lineup drawn needs before they part. Nothing is reported to the log channel here:
+        each caller hands the notices back or reports them, as it runs in a job or not. Hands
+        back the division row and the render's outcome, for each to word the problem its own
+        way.
+
+        *include_uncommitted* draws a placement not yet confirmed in, which the lineup of record
+        leaves out (#220), and is for a mid-season review. *obtain_missing_portraits* obtains
+        the portrait of each seated driver who has none, whichever update trigger the league
+        chose, and is for a season review alone.
+        """
         from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
         from leaguebot.image.services.aspects.image_lineup_post import build_drawing
         from leaguebot.image.services.aspects.image_lineup_service import (
             build_fill_spec as build_lineup_fill_spec,
         )
 
-        _division, drawing, members = await build_drawing(self._db_path, guild, division_id)
+        _division, drawing, members = await build_drawing(
+            self._db_path, guild, division_id, include_uncommitted=include_uncommitted
+        )
 
         config = await self._config.get_config()
         directories, directory_faults = resolve_configured_directories(
@@ -1073,7 +1069,7 @@ class ImageDrawing:
             members,
             config=config,
             directory=directories.get("driver"),
-            obtain_missing=False,
+            obtain_missing=obtain_missing_portraits,
         )
 
         outcome = await self._renderer.render(
@@ -1084,19 +1080,12 @@ class ImageDrawing:
             filename_stem=stem_for_drawing(drawing, LINEUP_TEMPLATE_KEY),
             division_name=drawing.division_name,
         )
-
-        if outcome.notices:
-            await self._post_log(
-                ImageRenderService.format_notices(
-                    outcome.notices, subject=f"lineup — {_division['name']}"
-                )
-            )
-
         return _division, outcome
 
     async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
-        """Draw *division_id*'s lineup in *guild*, as the lineup of record: the problem, where
-        one is met, is its bare detail — the words the text lineup's fallback line carries."""
+        """Draw *division_id*'s lineup in *guild*, as the lineup of record, which is drawn inside
+        the lineup job: the problem, where one is met, is its bare detail — the words the text
+        lineup's fallback line carries — and the notices come back for the job to record."""
         _division, outcome = await self._render_lineup(guild, division_id)
 
         problem = outcome.problem.detail if outcome.problem is not None else None
@@ -1107,9 +1096,19 @@ class ImageDrawing:
     async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's output: the problem, where
         one is met, names the lineup and the field at fault before the detail, and an internal
-        fault, which no league can act on, is never detailed (`Problem.message`)."""
-        _division, outcome = await self._render_lineup(guild, division_id)
+        fault, which no league can act on, is never detailed (`Problem.message`).
 
+        The command runs in no job, so its notices are reported to the log channel in one
+        message before this returns, naming the lineup and the division, as well as handed
+        back for its own output. (`post_log` contains its own failures.)"""
+        division, outcome = await self._render_lineup(guild, division_id)
+
+        if outcome.notices:
+            await self._post_log(
+                ImageRenderService.format_notices(
+                    outcome.notices, subject=f"lineup — {division['name']}"
+                )
+            )
         problem = outcome.problem.message("the lineup") if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
@@ -1118,21 +1117,30 @@ class ImageDrawing:
     async def draw_review_lineup(
         self, guild: Any, division_id: int, *, include_uncommitted: bool,
     ) -> LineupPicture:
-        """Draw *division_id*'s lineup in *guild* for a season review: `render_for_command`
-        asked to obtain each seated driver's missing portrait, and to include the uncommitted
-        drivers where *include_uncommitted*. It is the one method that holds the bot, because
-        `render_for_command` looks the image services up on it; a drawing built without the bot
-        cannot, and says so."""
-        if self._bot is None:
-            raise RuntimeError("this drawing was built without the bot, so it cannot draw a review's lineup")
-        outcome = await render_for_command(
-            self._bot, guild, division_id,
-            include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
-        )
-        return LineupPicture(
-            path=outcome.png_path, problem=outcome.message,
-            notices=tuple(each.detail for each in outcome.notices),
-        )
+        """Draw *division_id*'s lineup in *guild* for a season review, which is drawn inside the
+        review's job: each seated driver's missing portrait obtained, and the uncommitted
+        drivers drawn in where *include_uncommitted*. A commanded drawing rejects rather than
+        falling back (Constitution XIV.7), so a fault comes back as the problem's words after
+        "❌", a render that raises as a `RuntimeError` of its own words after "❌", and a lineup not drawn at all (a switch off, no
+        server) with no words. The notices come back for the job to record."""
+        if guild is None or not await self.lineup_wanted():
+            return LineupPicture(path=None, problem=None)
+        try:
+            _division, outcome = await self._render_lineup(
+                guild, division_id,
+                include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
+            )
+        except Exception as exc:
+            # Raised again with the words a commanded drawing gives a fault, for the review's
+            # job to record as the picture's fault: nothing is swallowed here.
+            raise RuntimeError(f"❌ {exc}") from exc
+        notices = tuple(each.detail for each in outcome.notices)
+        if outcome.problem is not None:
+            return LineupPicture(
+                path=None, problem=f"❌ {outcome.problem.message('the lineup')}", notices=notices
+            )
+        path = outcome.png_paths[0] if outcome.png_paths else None
+        return LineupPicture(path=path, problem=None, notices=notices)
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a drawn calendar's or lineup's file, whichever way its posting ended."""

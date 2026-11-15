@@ -235,20 +235,10 @@ async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_chann
 
 
 #: The lineups drawn inside a change's job: the lineup of record (the lineup job's), and the lineup
-#: a season review draws (`draw_review_lineup`, its uncommitted drivers in it). Today the first logs
-#: its notices from inside the job, and the second is drawn through the bot, which a drawing built
-#: without it cannot reach.
+#: a season review draws (`draw_review_lineup`, its uncommitted drivers in it).
 IN_A_JOB_DRAWS = [
-    pytest.param(
-        "draw_lineup", id="of_record",
-        marks=pytest.mark.xfail(strict=True, reason="#288: the lineup of record logs its notices "
-                                "itself from inside the job that posts it"),
-    ),
-    pytest.param(
-        "draw_review_lineup", id="for_review",
-        marks=pytest.mark.xfail(strict=True, reason="#288: a season review's lineup is drawn "
-                                "through the bot, its notices logged under no heading"),
-    ),
+    pytest.param("draw_lineup", id="of_record"),
+    pytest.param("draw_review_lineup", id="for_review"),
 ]
 
 

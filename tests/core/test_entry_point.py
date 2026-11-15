@@ -212,7 +212,6 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
 
     from leaguebot.__main__ import _draw_review_picture
     from leaguebot.core.services.modules.image_drawing import LineupPicture
-    from leaguebot.image.services.aspects import image_lineup_post
 
     bot = await built_bot(tmp_path, now=_NOW)
     png = tmp_path / "lineup.png"
@@ -229,8 +228,6 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
 
     monkeypatch.setattr(bot.image_drawing, "draw_review_lineup", draw_review_lineup,
                         raising=False)
-    monkeypatch.setattr(image_lineup_post, "render_for_command", AsyncMock(
-        side_effect=AssertionError("the review drew its lineup past the image module's drawing")))
 
     drawn = await _draw_review_picture(
         bot, {"kind": "lineup", "division_id": 11, "include_uncommitted": True})
@@ -257,7 +254,6 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
 
     from leaguebot.__main__ import _draw_review_picture
     from leaguebot.core.services.modules.image_drawing import LineupPicture
-    from leaguebot.image.services.aspects import image_lineup_post
 
     bot = await built_bot(tmp_path, now=_NOW)
     guild = SimpleNamespace(id=1)
@@ -270,8 +266,6 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
 
     monkeypatch.setattr(bot.image_drawing, "draw_review_lineup", draw_review_lineup,
                         raising=False)
-    monkeypatch.setattr(image_lineup_post, "render_for_command", AsyncMock(
-        side_effect=AssertionError("the review drew its lineup past the image module's drawing")))
 
     with pytest.raises(RuntimeError) as raised:
         await _draw_review_picture(bot, {"kind": "lineup", "division_id": 11})
