@@ -141,11 +141,6 @@ async def test_the_palette_is_applied_before_the_spec_builder(tmp_path, monkeypa
     assert len(seen) == 1 and b"#A78BFA" in seen[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#288: tier colours that cannot be applied are only logged to the host, "
-    "never reported as a render notice",
-)
 async def test_a_failing_palette_never_stops_a_graphic_posting(tmp_path, monkeypatch):
     """A graphic in the wrong shade beats no graphic at all, but the league is told: a tier's
     colour that cannot be written into the template still lets the picture be drawn, and the

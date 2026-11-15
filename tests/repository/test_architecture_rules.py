@@ -3102,6 +3102,10 @@ CATCH_ALLS_ALLOWED = {
     ("results/services/review/verdict_announcement_service.py", "_send_verdict"):
         "place 5, a verdict picture that cannot be drawn is announced as text and its fault is "
         "the job's line",
+    ("image/services/render/image_render_service.py", "ImageRenderService.render"):
+        "place 5, the graphic's own assembling: a tier's colours that cannot be applied are drawn "
+        "in the template's own, with a render notice; data that cannot be assembled or a template "
+        "that cannot be filled comes back as a problem, from which the caller falls back to text",
     ("image/services/render/image_drawing.py", "ImageDrawing.lineup_wanted"):
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/render/image_drawing.py", "ImageDrawing.artwork_signature"):
@@ -3174,7 +3178,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_lineup_post.py", "lineup_enabled"): (1, PASS["image"]),
     ("image/services/aspects/image_lineup_post.py", "render_for_command"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (1, PASS["image"]),
-    ("image/services/render/image_render_service.py", "ImageRenderService.render"): (3, PASS["image"]),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
         (1, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "_nationality_collected"): (1, PASS["image"]),

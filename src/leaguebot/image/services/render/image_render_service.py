@@ -20,6 +20,7 @@ from pathlib import Path
 
 from dataclasses import dataclass, field as dataclass_field
 
+from leaguebot.image.models.image_constants import NOTICE_TIER_COLOURS_NOT_APPLIED
 from leaguebot.image.models.image_module import (
     PROBLEM_NOT_SVG,
     PROBLEM_RASTERISER,
@@ -718,15 +719,27 @@ class ImageRenderService:
         # injecting afterwards would leave them reading the unpalette'd file and a league
         # unable to drive either through a slot.
         #
-        # Never fatal. A palette that cannot be read is a graphic drawn in the template's
+        # Never fatal. A palette that cannot be applied is a graphic drawn in the template's
         # own colours, which is exactly what every league saw before this existed; refusing
-        # to post over it would be a worse answer than posting the wrong shade of blue.
+        # to post over it would be a worse answer than posting the wrong shade of blue. It is
+        # reported, though: a render notice says the tier's colours were not applied.
+        notices: list[RenderNotice] = []
         if division_name:
             try:
                 await self.apply_tier_palette(root, division_name)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — place 5: the graphic is drawn in the template's colours
                 log.exception(
                     "render: per-tier palette failed for %s / %s", image_type, division_name
+                )
+                notices.append(
+                    RenderNotice(
+                        image_type=image_type,
+                        notice_kind=NOTICE_TIER_COLOURS_NOT_APPLIED,
+                        detail=(
+                            f"the colours of {division_name} could not be applied, so the "
+                            "graphic is drawn in the template's own colours"
+                        ),
+                    )
                 )
 
         try:
@@ -738,7 +751,8 @@ class ImageRenderService:
                     kind=PROBLEM_UNRESOLVED_VALUE,
                     detail=f"the data for this image could not be assembled — {exc}",
                     template_key=image_type,
-                )
+                ),
+                notices=notices,
             )
 
         # ── Verification against the concrete data (FR-010) ───────────────
@@ -747,7 +761,7 @@ class ImageRenderService:
         # both are in hand.
         problem = _verify_against_data(root, spec, image_type)
         if problem is not None:
-            return RenderOutcome(problem=problem)
+            return RenderOutcome(problem=problem, notices=notices)
 
         try:
             result = fill(spec)
@@ -758,7 +772,8 @@ class ImageRenderService:
                     kind=PROBLEM_UNRESOLVED_VALUE,
                     detail=f"the template could not be filled — {exc}",
                     template_key=image_type,
-                )
+                ),
+                notices=notices,
             )
 
         # Constitution XIV.3: an unresolved field aborts the render. Notices raised
@@ -770,7 +785,7 @@ class ImageRenderService:
                     detail="; ".join(result.unresolved),
                     template_key=image_type,
                 ),
-                notices=result.notices,
+                notices=[*notices, *result.notices],
             )
 
         directory = output_dir or Path(tempfile.mkdtemp(prefix=_RENDER_DIR_PREFIX))
@@ -789,10 +804,10 @@ class ImageRenderService:
                     detail=str(exc),
                     template_key=image_type,
                 ),
-                notices=result.notices,
+                notices=[*notices, *result.notices],
             )
 
-        return RenderOutcome(png_paths=[png], notices=result.notices)
+        return RenderOutcome(png_paths=[png], notices=[*notices, *result.notices])
 
     @staticmethod
     def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> str:

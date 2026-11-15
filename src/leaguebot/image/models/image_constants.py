@@ -316,6 +316,10 @@ NOTICE_OPTIONAL_FIELD_EMPTIED = "OPTIONAL_FIELD_EMPTIED"
 #: Where it does not, the cut is made there anyway and this is raised (037, FR-026).
 NOTICE_CROP_POINT_OFF_CANVAS = "CROP_POINT_OFF_CANVAS"
 
+#: A tier's colours could not be applied to the graphic, which was drawn in the template's own
+#: colours instead (051). Raised by the render, never by the fill: the palette is applied before it.
+NOTICE_TIER_COLOURS_NOT_APPLIED = "TIER_COLOURS_NOT_APPLIED"
+
 
 # ── Asset classes ─────────────────────────────────────────────────────────
 
