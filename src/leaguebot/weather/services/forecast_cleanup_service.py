@@ -293,7 +293,7 @@ async def post_phase_message(
         # its exits abandon the picture *before* the send — an unfetchable channel and one that
         # is not a text channel — and those are the paths a per-send cleanup would miss.
         if attachment is not None:
-            from leaguebot.image.services.image_render_service import discard_attachment
+            from leaguebot.image.services.render.image_render_service import discard_attachment
 
             discard_attachment(attachment)
 

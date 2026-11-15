@@ -712,7 +712,7 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
 
     from leaguebot.core.services.drivers.team_service import TeamService
     from leaguebot.core.services.rounds import calendar_post_service
-    from leaguebot.image.services import image_attendance_post, image_results_post
+    from leaguebot.image.services.aspects import image_attendance_post, image_results_post
 
     async def _on(*_args, **_kwargs):
         return True
@@ -736,7 +736,7 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
         monkeypatch.setattr(calendar_post_service, "tracks_by_name", _unreadable)
     drawn: dict = {}
     if fault == "teams":
-        from leaguebot.image.services import image_attendance_service
+        from leaguebot.image.services.aspects import image_attendance_service
 
         def _resolve(**kwargs):
             drawn.update(kwargs)
@@ -790,11 +790,7 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
 
     from leaguebot.core.models.team import PlacedDriver
     from leaguebot.core.services.drivers.team_service import TeamService
-    from leaguebot.image.services import (
-        image_attendance_post,
-        image_attendance_service,
-        image_results_post,
-    )
+    from leaguebot.image.services.aspects import image_attendance_post, image_attendance_service, image_results_post
 
     reads: list[int] = []
     drawn: dict = {}

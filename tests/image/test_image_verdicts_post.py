@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.results.services.review import verdict_announcement_service as vas
-from leaguebot.image.services.image_verdict_service import VerdictKind
+from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 from tests.support.change_queue import in_a_job
 
 
@@ -67,7 +67,7 @@ def stub_image_path(monkeypatch, tmp_path):
         the fallback and on what was posted, never on a name — but do not read it as the
         production rule. tests/image/test_image_verdict_mentions.py holds that.
         """
-        from leaguebot.image.services.image_verdict_service import VerdictDrawing, resolve_mentions
+        from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing, resolve_mentions
 
         state["built"].append(kwargs)
         return VerdictDrawing(
@@ -88,7 +88,7 @@ def stub_image_path(monkeypatch, tmp_path):
         )
 
     async def _render(_bot, drawing, **_kwargs):
-        from leaguebot.image.services.image_verdict_post import VerdictRender
+        from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
 
         state["rendered"].append(drawing)
         return VerdictRender(
@@ -106,7 +106,7 @@ def stub_image_path(monkeypatch, tmp_path):
     async def _team(_bot, _guild, **_kwargs):
         return "Red Bull"
 
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     monkeypatch.setattr(image_verdict_post, "verdicts_enabled", _enabled)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
@@ -183,7 +183,7 @@ def test_the_posting_module_persists_no_message_id():
     """No table records a verdict's message, so there is no state to reconcile."""
     import inspect
 
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     source = inspect.getsource(image_verdict_post)
     # SQL statements, not the prose: the module's own docstring explains why
@@ -195,7 +195,7 @@ def test_the_posting_module_persists_no_message_id():
 def test_the_posting_module_never_edits_or_deletes_a_message():
     import inspect
 
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     source = inspect.getsource(image_verdict_post)
     assert ".edit(" not in source
@@ -245,7 +245,7 @@ async def test_an_exception_in_the_image_path_still_posts_the_announcement(
     channel, stub_image_path, monkeypatch
 ):
     """A graphic never costs a league its announcement (XIV.7's precondition clause)."""
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("rasteriser exploded")
@@ -432,8 +432,8 @@ def _render_artifact(tmp_path):
 async def test_the_graphic_is_gone_once_the_verdict_has_posted(
     channel, stub_image_path, monkeypatch, tmp_path
 ):
-    from leaguebot.image.services import image_verdict_post
-    from leaguebot.image.services.image_verdict_post import VerdictRender
+    from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
 
     png = _render_artifact(tmp_path)
 
@@ -454,8 +454,8 @@ async def test_the_graphic_is_gone_when_the_send_fails(
     channel, stub_image_path, monkeypatch, tmp_path
 ):
     """The announcement raising must not leave the picture behind."""
-    from leaguebot.image.services import image_verdict_post
-    from leaguebot.image.services.image_verdict_post import VerdictRender
+    from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
 
     png = _render_artifact(tmp_path)
 

@@ -14,7 +14,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from leaguebot.image.services.image_lineup_service import (
+from leaguebot.image.services.aspects.image_lineup_service import (
     LineupDataError,
     resolve_driver_name,
     resolve_drawing,
@@ -280,7 +280,7 @@ def _tpl(blocks: int, seats: int, reserve_slots: int = 2, *, groups: bool = True
 
 def test_more_teams_than_blocks_is_fatal_and_names_the_teams():
     """FR-011. A count would not tell a manager which team vanished."""
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
 
     drawing = _draw([_team(f"Team {n}", [_seat(1, str(n))]) for n in range(1, 5)])
     with pytest.raises(LineupDataError) as exc:
@@ -293,7 +293,7 @@ def test_more_teams_than_blocks_is_fatal_and_names_the_teams():
 
 def test_more_drivers_than_slots_is_fatal_and_names_the_drivers():
     """FR-012. The drivers, not the seats: a driver is what would be dropped."""
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
 
     drawing = _draw(
         [_team("Red Bull", [_seat(1, "a"), _seat(2, "b"), _seat(3, "c")])],
@@ -311,7 +311,7 @@ def test_configured_seats_beyond_the_block_are_not_fatal_while_nobody_fills_them
     Three configured seats, two occupied, a block declaring two slots. Nobody is dropped,
     so the graphic draws — the empty third seat simply is not shown.
     """
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
 
     drawing = _draw(
         [_team("Red Bull", [_seat(1, "a"), _seat(2, "b"), _seat(3)])],
@@ -325,7 +325,7 @@ def test_configured_seats_beyond_the_block_are_not_fatal_while_nobody_fills_them
 
 def test_a_division_of_fewer_teams_draws_without_error():
     """FR-016: the ordinary case of a league whose divisions differ in size."""
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
 
     drawing = _draw([_team("Red Bull", [_seat(1, "a")])])
     spec = build_fill_spec(drawing, _tpl(blocks=4, seats=2))
@@ -337,7 +337,7 @@ def test_a_division_of_fewer_teams_draws_without_error():
 
 def test_a_division_fielding_no_team_at_all_draws():
     """FR-016 has no lower bound: every block goes, the reserve block alone remaining."""
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
 
     drawing = _draw([_team("Reserve", [_seat(1, "r")], True)])
     spec = build_fill_spec(drawing, _tpl(blocks=3, seats=2))
@@ -349,7 +349,7 @@ def test_a_division_fielding_no_team_at_all_draws():
 
 def test_the_team_count_is_carried_for_the_generic_guard():
     """A backstop behind the named check above."""
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
 
     drawing = _draw([_team("A", [_seat(1, "a")]), _team("B", [_seat(1, "b")])])
     spec = build_fill_spec(drawing, _tpl(blocks=4, seats=2))
@@ -362,7 +362,7 @@ def test_the_team_count_is_carried_for_the_generic_guard():
 
 def test_a_driver_created_by_test_mode_is_drawn_by_its_mock_name():
     """FR-047. Never an unoccupied seat, and at its team's ordinal."""
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
 
     seat = NS(
         seat_number=1,

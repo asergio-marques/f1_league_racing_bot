@@ -395,7 +395,7 @@ def check_in_steps(
                 said=str(exc) or type(exc).__name__,
             ) from exc
         finally:
-            from leaguebot.image.services.image_rsvp_post import discard_attachment
+            from leaguebot.image.services.aspects.image_rsvp_post import discard_attachment
 
             discard_attachment(attachment)
 

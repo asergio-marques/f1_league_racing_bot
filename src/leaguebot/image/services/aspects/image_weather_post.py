@@ -33,7 +33,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 if TYPE_CHECKING:
     import discord
 
-    from leaguebot.image.services.image_weather_service import WeatherDrawing
+    from leaguebot.image.services.aspects.image_weather_service import WeatherDrawing
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ async def build_drawing_for_round(
     name and the country. Returns None where the round cannot be found at all.
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.image.services.image_weather_service import resolve_drawing
+    from leaguebot.image.services.aspects.image_weather_service import resolve_drawing
 
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
@@ -142,8 +142,8 @@ async def render_forecast(
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> ForecastRender:
     """Render *drawing* to a PNG, or report why the textual forecast should stand instead."""
-    from leaguebot.image.services.image_weather_service import build_fill_spec
-    from leaguebot.image.services.image_render_service import (
+    from leaguebot.image.services.aspects.image_weather_service import build_fill_spec
+    from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -284,7 +284,7 @@ def _fault(what: str, detail: str) -> str:
 
 def _lines_of(what: str, render: ForecastRender) -> tuple[str, ...]:
     """The lines a render's notices and problem make, naming *what* they pertain to."""
-    from leaguebot.image.services.image_render_service import ImageRenderService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
 
     lines: list[str] = []
     if render.notices:

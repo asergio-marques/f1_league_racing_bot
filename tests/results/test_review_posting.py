@@ -421,7 +421,7 @@ async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text
         return MagicMock(applicable=True, message_id=message.id)
 
     with patch(
-        "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(side_effect=_picture)
+        "leaguebot.image.services.aspects.image_results_post.try_post", new=AsyncMock(side_effect=_picture)
     ) as try_post:
         await _ask(league)
         await run_queue(league.bot)
@@ -674,7 +674,7 @@ async def _standings_as_two_tables(league: _League) -> None:
 def _each_championship_as_text() -> Any:
     """The picture applies to the standings and draws neither championship, so each is posted
     as a text table of its own."""
-    from leaguebot.image.services.image_standings_post import (
+    from leaguebot.image.services.aspects.image_standings_post import (
         FELL_BACK,
         ChampionshipOutcome,
         StandingsPostOutcome,
@@ -684,7 +684,7 @@ def _each_championship_as_text() -> Any:
         drivers=ChampionshipOutcome(action=FELL_BACK),
         constructors=ChampionshipOutcome(action=FELL_BACK),
     )
-    return patch("leaguebot.image.services.image_standings_post.try_post",
+    return patch("leaguebot.image.services.aspects.image_standings_post.try_post",
                  new=AsyncMock(return_value=outcome))
 
 
@@ -1187,7 +1187,7 @@ async def _republish_with_the_picture_declined(league: _League) -> Any:
     out as text after the picture was asked for; give the picture's stand-in."""
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.image_results_post.try_post",
+        "leaguebot.image.services.aspects.image_results_post.try_post",
         new=AsyncMock(return_value=MagicMock(applicable=False, message_id=None)),
     ) as try_post:
         await _ask(league)
@@ -1479,7 +1479,7 @@ async def _drawn(league: _League, tmp_path: Any, picture: str, *,
     falling back, on the race's results or the drivers' championship alone. Gives the patch, to
     enter."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
-    from leaguebot.image.services.image_render_service import ImageRenderService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
     from tests.support import saves
     from tests.support.teams import seed_team_instances
 
@@ -1734,10 +1734,10 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.image_results_post.try_post",
+        "leaguebot.image.services.aspects.image_results_post.try_post",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         new=AsyncMock(return_value=MagicMock(applicable=False, rejects=False)),
     ):
         await _ask(league)
@@ -1762,10 +1762,10 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.image_results_post.try_post",
+        "leaguebot.image.services.aspects.image_results_post.try_post",
         new=AsyncMock(return_value=MagicMock(applicable=False, message_id=None)),
     ), patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ):
         await _ask(league)
@@ -1795,10 +1795,10 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
         await db.commit()
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.image_results_post.try_post",
+        "leaguebot.image.services.aspects.image_results_post.try_post",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ):
         await _ask(league)

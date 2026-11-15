@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_standings_service import (
+from leaguebot.image.services.aspects.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
     CellValue,
@@ -864,7 +864,7 @@ def test_every_datum_the_projection_can_emit_has_a_packaged_file():
     from pathlib import Path
 
     from leaguebot.image.models.image_constants import packaged_directory_for
-    from leaguebot.image.services.image_standings_service import HIGHLIGHT_DATA
+    from leaguebot.image.services.aspects.image_standings_service import HIGHLIGHT_DATA
     from leaguebot.core.utils.paths import PROJECT_ROOT
 
     packaged = Path(PROJECT_ROOT) / packaged_directory_for("marker")

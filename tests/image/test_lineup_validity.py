@@ -23,7 +23,7 @@ import pytest
 from lxml import etree
 
 from leaguebot.image.models.image_catalogues import LINEUP_CATALOGUE, CapacityError
-from leaguebot.image.services.image_validity_service import CatalogueLayer
+from leaguebot.image.services.validity.image_validity_service import CatalogueLayer
 
 SVG_NS = "http://www.w3.org/2000/svg"
 

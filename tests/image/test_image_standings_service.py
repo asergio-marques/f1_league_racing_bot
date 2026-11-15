@@ -14,7 +14,7 @@ import pytest
 
 from leaguebot.results.models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-from leaguebot.image.services.image_standings_service import (
+from leaguebot.image.services.aspects.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
     HIGHLIGHT_P1,

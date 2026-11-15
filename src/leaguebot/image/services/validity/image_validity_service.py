@@ -1559,7 +1559,7 @@ class ImageValidityService:
         return disabled
 
     async def aspect_statuses(self) -> list[AspectStatus]:
-        from leaguebot.image.services.image_render_service import converter_available
+        from leaguebot.image.services.render.image_render_service import converter_available
 
         reports = await self.template_reports()
         toggles = await self._config_service.get_toggles()

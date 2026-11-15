@@ -19,7 +19,7 @@ from leaguebot.image.models.image_catalogues import (
     row_capacity_problem,
     sibling_fields_declared,
 )
-from leaguebot.image.services.image_attendance_service import (
+from leaguebot.image.services.aspects.image_attendance_service import (
     AttendanceDataError,
     DriverRecord,
     RoundHeading,

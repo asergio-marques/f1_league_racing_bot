@@ -504,7 +504,7 @@ def _attendance_totals(count: int, limit: int) -> list[int]:
     total — a field where everyone holds the same number tells a manager nothing about how
     the sheet orders or draws it.
     """
-    from leaguebot.image.services.image_attendance_service import MARK_NEAR_BAND
+    from leaguebot.image.services.aspects.image_attendance_service import MARK_NEAR_BAND
 
     if count <= 0:
         return []
@@ -568,7 +568,7 @@ def fabricate_attendance_records(drivers, round_ordinals, limit: int | None = No
     that same number to ``resolve_drawing``, or the marks will answer to a limit the plate
     above them does not name.
     """
-    from leaguebot.image.services.image_attendance_service import DriverRecord
+    from leaguebot.image.services.aspects.image_attendance_service import DriverRecord
 
     ordinals = list(round_ordinals)
     limit = fabricate_attendance_limit(ordinals) if limit is None else limit

@@ -22,8 +22,8 @@ from types import SimpleNamespace
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_lineup_service import build_fill_spec, resolve_drawing
-from leaguebot.image.services.image_render_service import (
+from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec, resolve_drawing
+from leaguebot.image.services.render.image_render_service import (
     _removed_field_ids,
     _verify_against_data,
 )

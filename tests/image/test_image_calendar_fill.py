@@ -17,7 +17,7 @@ from types import SimpleNamespace as NS
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_calendar_service import (
+from leaguebot.image.services.aspects.image_calendar_service import (
     MYSTERY_COUNTRY,
     MYSTERY_DATUM,
     MYSTERY_RACE_NAME,

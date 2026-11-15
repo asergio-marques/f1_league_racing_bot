@@ -225,7 +225,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
     standing and the stored id unchanged: the caller's job saves the new id and deletes the old
     message after it."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
@@ -288,7 +288,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
 async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
     """The league keeps the results it had rather than losing them to a failed rebuild."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
@@ -334,7 +334,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
 
 
 async def test_a_problem_is_reported_naming_the_session(tmp_path):
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -375,7 +375,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
 async def test_a_commanded_posting_is_rejected_and_posts_nothing(tmp_path):
     """XIV.7 — a user at the keyboard is told what is at fault rather than given text."""
     from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -411,7 +411,7 @@ async def test_a_commanded_posting_is_rejected_and_posts_nothing(tmp_path):
 
 
 async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -452,7 +452,7 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
 
 async def test_enablement_is_answered_for_the_named_template_alone(tmp_path):
     """A sound qualifying template still draws while a faulty race one falls back."""
-    from leaguebot.image.services.image_results_post import results_enabled
+    from leaguebot.image.services.aspects.image_results_post import results_enabled
 
     db_path, _ = await _seeded(tmp_path)
     bot = MagicMock()
@@ -470,7 +470,7 @@ async def test_enablement_is_answered_for_the_named_template_alone(tmp_path):
 
 
 async def test_an_unreadable_toggle_never_breaks_a_posting(tmp_path):
-    from leaguebot.image.services.image_results_post import results_enabled
+    from leaguebot.image.services.aspects.image_results_post import results_enabled
 
     bot = MagicMock()
     bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("db gone"))
@@ -492,7 +492,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
     tmp_path, status, penalty_closed, appeal_closed
 ):
     """The stage is read from the round, so the label drawn and the phase rule agree."""
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, result_status=status)
@@ -525,14 +525,14 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
     assert captured["result_status"] == status
 
-    from leaguebot.image.services.image_results_service import _PENALTY_CLOSED_AT, _APPEAL_CLOSED_AT
+    from leaguebot.image.services.aspects.image_results_service import _PENALTY_CLOSED_AT, _APPEAL_CLOSED_AT
 
     assert (captured["result_status"] in _PENALTY_CLOSED_AT) is penalty_closed
     assert (captured["result_status"] in _APPEAL_CLOSED_AT) is appeal_closed
 
 
 async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -576,7 +576,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     gets posted and, if need be, enqueued for retry."""
     import discord
 
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -624,7 +624,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
 
 async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tmp_path):
     """The unit of failure is one graphic (XIV.4): the league still gets its results."""
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -655,7 +655,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
 
 
 async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path):
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -701,7 +701,7 @@ def _render_artifact(tmp_path, name="results_race_template.png"):
 
 
 async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -734,7 +734,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     """The textual table goes to the retry queue; the picture goes nowhere at all."""
     import discord
 
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -785,7 +785,7 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
     picture is handed back naming all three as the posting it replaces, for the caller's jobs to
     delete."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)

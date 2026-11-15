@@ -92,7 +92,7 @@ def _rasteriser(present: bool):
     where it would then never exercise the enable at all.
     """
     return patch(
-        "leaguebot.image.services.image_render_service.converter_available",
+        "leaguebot.image.services.render.image_render_service.converter_available",
         new=MagicMock(return_value=present),
     )
 
@@ -226,7 +226,7 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
     league, cog = await _league(tmp_path)
 
     with patch(
-        "leaguebot.image.services.image_render_service.converter_available",
+        "leaguebot.image.services.render.image_render_service.converter_available",
         new=MagicMock(return_value=True),
     ) as available:
         await cog._enable_images(_asked(league))

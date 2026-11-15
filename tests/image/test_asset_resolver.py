@@ -557,7 +557,7 @@ def test_a_relative_href_draws_exactly_what_a_missing_one_draws(tmp_path):
     import subprocess
 
     from leaguebot.image.models.image_constants import packaged_directory_for
-    from leaguebot.image.services.image_render_service import find_converter
+    from leaguebot.image.services.render.image_render_service import find_converter
     from leaguebot.core.utils.paths import PROJECT_ROOT
 
     asset = PROJECT_ROOT / packaged_directory_for("flag") / "other.svg"
@@ -863,7 +863,7 @@ def test_a_wrapped_portrait_resolves_as_an_ordinary_found_asset(tmp_path):
     `ASSET_EXTENSION` stays single-valued and this lookup stays one computed name and one
     existence test. If this ever fails, the wrapper has stopped being the right shape.
     """
-    from leaguebot.image.services.driver_portrait_service import portrait_path, wrap_png
+    from leaguebot.image.services.portraits.driver_portrait_service import portrait_path, wrap_png
 
     drivers = tmp_path / "drivers"
     drivers.mkdir()

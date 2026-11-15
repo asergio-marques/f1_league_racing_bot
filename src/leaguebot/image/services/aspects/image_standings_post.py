@@ -44,7 +44,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.models.image_module import PostingOrigin
-from leaguebot.image.services.image_standings_service import (
+from leaguebot.image.services.aspects.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
 )
@@ -180,8 +180,8 @@ async def _calendar(bot: LeagueBot, division_id: int):
     from one posting to the next. A round's *cells* are what emptying handles.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
-    from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
-    from leaguebot.image.services.image_standings_service import RoundHeading
+    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
+    from leaguebot.image.services.aspects.image_standings_service import RoundHeading
 
     tracks = await tracks_by_name(bot.db_path)
 
@@ -345,14 +345,14 @@ async def build_drawings(
     only in what a row stands for.
     """
     from leaguebot.results.services.standings import standings_service
-    from leaguebot.image.services.image_results_post import (
+    from leaguebot.image.services.aspects.image_results_post import (
         _driver_names,
         _nationality_collected,
         _nationalities,
         _team_keys,
         _team_names,
     )
-    from leaguebot.image.services.image_standings_service import resolve_drawing
+    from leaguebot.image.services.aspects.image_standings_service import resolve_drawing
 
     driver_keys = [s.driver_user_id for s in driver_snapshots]
     team_keys = [s.team_instance_id for s in team_snapshots]
@@ -442,11 +442,11 @@ async def build_drawings(
 
 async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     """Render one championship. Returns the render service's PostingDecision."""
-    from leaguebot.image.services.image_render_service import (
+    from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
-    from leaguebot.image.services.image_standings_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
 
     config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
@@ -533,7 +533,7 @@ async def post_championship(
             await report(bot, what, decision.problem.detail)
         return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices), None
 
-    from leaguebot.image.services.image_render_service import discard_attachment
+    from leaguebot.image.services.render.image_render_service import discard_attachment
 
     png = decision.png_paths[0]
     attachment = discord.File(str(png), filename=png.name)
@@ -781,7 +781,7 @@ async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     if not notices:
         return
     try:
-        from leaguebot.image.services.image_render_service import ImageRenderService
+        from leaguebot.image.services.render.image_render_service import ImageRenderService
 
         await ImageRenderService.report_notices(bot, notices, subject=what)
     except Exception as exc:  # noqa: BLE001

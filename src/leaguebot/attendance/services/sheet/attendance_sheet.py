@@ -248,7 +248,7 @@ async def post_attendance_sheet(
     finally:
         # Posted or not, the picture has done all it will ever do: a try again posts the text
         # and never the image, so nothing reads this file again.
-        from leaguebot.image.services.image_render_service import discard_attachment
+        from leaguebot.image.services.render.image_render_service import discard_attachment
 
         discard_attachment(attachment)
 
@@ -443,18 +443,18 @@ async def _sheet_attachment(
         return None
 
     try:
-        from leaguebot.image.services.image_attendance_post import (
+        from leaguebot.image.services.aspects.image_attendance_post import (
             attendance_enabled,
             render_sheet,
             report,
             report_notices,
         )
-        from leaguebot.image.services.image_attendance_service import DriverRecord, resolve_drawing
+        from leaguebot.image.services.aspects.image_attendance_service import DriverRecord, resolve_drawing
 
         if not await attendance_enabled(bot):
             return None
 
-        from leaguebot.image.services.image_results_post import (
+        from leaguebot.image.services.aspects.image_results_post import (
             _driver_names,
             _nationalities,
             _nationality_collected,
@@ -577,8 +577,8 @@ async def _round_grid(
     their flags, the full error goes to the host's log and a clause saying so is added to *faults*.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
-    from leaguebot.image.services.image_attendance_service import RoundHeading
-    from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
+    from leaguebot.image.services.aspects.image_attendance_service import RoundHeading
+    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
 
     headings: list = []
     cells: dict[int, dict[int, int | None]] = {}

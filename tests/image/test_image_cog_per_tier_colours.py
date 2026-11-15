@@ -28,7 +28,7 @@ from leaguebot.image.cogs.image_cog import (
     TierPaletteXmlModal,
 )
 from leaguebot.image.models.image_module import ValidityReport
-from leaguebot.image.services.image_config_service import ImageConfigService
+from leaguebot.image.services.config.image_config_service import ImageConfigService
 from tests.support import saves
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
@@ -313,7 +313,7 @@ def test_the_division_parameter_completes_like_every_other():
 async def test_the_flag_is_written_through_the_boolean_setter(tmp_path):
     """`set_field_on` is string-valued, and a boolean through it would store `'True'`: it
     refuses the flag, and the toggle stores an integer."""
-    from leaguebot.image.services.image_config_service import UnknownConfigField, set_field_on
+    from leaguebot.image.services.config.image_config_service import UnknownConfigField, set_field_on
 
     league = await _league(tmp_path)
     async with get_connection(league.db_path) as db:
@@ -331,7 +331,7 @@ async def test_the_flag_is_written_through_the_boolean_setter(tmp_path):
 
 def test_the_declared_slots_helper_reads_the_reports_rather_than_the_files():
     """Layer 1 has already parsed all sixteen; reading them again to ask this is waste."""
-    from leaguebot.image.services.image_setting_advice import declared_colour_slots
+    from leaguebot.image.services.config.image_setting_advice import declared_colour_slots
 
     source = inspect.getsource(declared_colour_slots)
     assert "template_reports" in source
@@ -339,7 +339,7 @@ def test_the_declared_slots_helper_reads_the_reports_rather_than_the_files():
 
 
 async def test_the_declared_slots_helper_ignores_invalid_templates():
-    from leaguebot.image.services.image_setting_advice import declared_colour_slots
+    from leaguebot.image.services.config.image_setting_advice import declared_colour_slots
 
     validity = MagicMock()
     validity.template_reports = AsyncMock(
@@ -356,7 +356,7 @@ async def test_the_declared_slots_helper_ignores_invalid_templates():
 
 
 def test_the_service_exposes_what_the_commands_call():
-    from leaguebot.image.services import image_config_service
+    from leaguebot.image.services.config import image_config_service
 
     for name in ("set_flag_on", "set_tier_colours_on"):
         assert callable(getattr(image_config_service, name))

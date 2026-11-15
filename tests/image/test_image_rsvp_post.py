@@ -26,8 +26,8 @@ import pytest
 
 from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 from leaguebot.attendance.services.check_in import rsvp_service
-from leaguebot.image.services import image_rsvp_post
-from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach
+from leaguebot.image.services.aspects import image_rsvp_post
+from leaguebot.image.services.aspects.image_rsvp_post import rsvp_enabled, try_attach
 from tests.support.change_queue import http_error, run_queue, stopped_job
 from tests.support.season_league import (
     CALL_MESSAGES,

@@ -11,8 +11,8 @@ from types import SimpleNamespace
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_results_post import _driver_names, _nationalities
-from leaguebot.image.services.image_verdict_post import _driver_nationality
+from leaguebot.image.services.aspects.image_results_post import _driver_names, _nationalities
+from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 
 SERVER_ID = 22060
 USER = 5150

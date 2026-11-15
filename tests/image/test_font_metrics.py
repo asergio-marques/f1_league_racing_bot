@@ -297,7 +297,7 @@ def test_measurement_errs_narrow_however_the_family_was_declared(where, template
 
     from lxml import etree  # noqa: PLC0415
 
-    from leaguebot.image.services.image_render_service import find_converter  # noqa: PLC0415
+    from leaguebot.image.services.render.image_render_service import find_converter  # noqa: PLC0415
     from leaguebot.image.utils.svg_document import computed_style, stylesheet  # noqa: PLC0415
 
     executable = find_converter()

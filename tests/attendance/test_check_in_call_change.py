@@ -206,7 +206,7 @@ async def test_a_refused_call_stops_the_queue_saying_what_is_left(tmp_path):
 async def test_a_retried_call_is_posted_as_text(tmp_path, monkeypatch):
     """Images on, the check-in graphic drawn. The first try is refused; the try that posts it
     carries no picture (Constitution XIV r8)."""
-    from leaguebot.image.services import image_rsvp_post
+    from leaguebot.image.services.aspects import image_rsvp_post
 
     league = await _call_league(tmp_path, images=True)
     picture = tmp_path / "checkin.png"

@@ -72,8 +72,8 @@ async def render_sheet(
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> SheetRender:
     """Render *drawing* to a PNG, or report why the textual sheet should stand instead."""
-    from leaguebot.image.services.image_attendance_service import build_fill_spec
-    from leaguebot.image.services.image_render_service import (
+    from leaguebot.image.services.aspects.image_attendance_service import build_fill_spec
+    from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -126,13 +126,13 @@ async def render_sheet(
 
 async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a driver-read channel."""
-    from leaguebot.image.services.image_results_post import report as _report
+    from leaguebot.image.services.aspects.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
 async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4, FR-056)."""
-    from leaguebot.image.services.image_results_post import report_notices as _report_notices
+    from leaguebot.image.services.aspects.image_results_post import report_notices as _report_notices
 
     await _report_notices(bot, what, notices)

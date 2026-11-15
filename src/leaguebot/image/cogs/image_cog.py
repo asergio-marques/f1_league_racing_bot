@@ -29,8 +29,8 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_LABELS,
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
-from leaguebot.image.services.image_config_service import tier_name_refusal
-from leaguebot.image.services.image_settings import (
+from leaguebot.image.services.config.image_config_service import tier_name_refusal
+from leaguebot.image.services.config.image_settings import (
     ASPECT,
     DAILY_PORTRAITS,
     DAILY_TOGGLE,
@@ -1325,12 +1325,12 @@ class ImageCog(commands.Cog):
         `/season placements-review` renders the aspect section from the same `AspectStatus` list, so
         the two surfaces cannot drift (FR-033).
         """
-        from leaguebot.image.services.image_render_service import (
+        from leaguebot.image.services.render.image_render_service import (
             CONVERTER_NAME,
             converter_absent_message,
             converter_available,
         )
-        from leaguebot.image.services.image_validity_service import (
+        from leaguebot.image.services.validity.image_validity_service import (
             ImageValidityService,
             plain_directory_reason,
             plain_directory_remedy,
@@ -1522,8 +1522,8 @@ class ImageCog(commands.Cog):
         carry — are read from `PREVIEW_KINDS` off it. One table, read in one place, rather
         than three rules restated at twelve call sites.
         """
-        from leaguebot.image.services.image_preview_service import PreviewRefused, resolve_context
-        from leaguebot.image.services.image_render_service import (
+        from leaguebot.image.services.preview.image_preview_service import PreviewRefused, resolve_context
+        from leaguebot.image.services.render.image_render_service import (
             converter_absent_message,
             converter_available,
         )
@@ -1599,7 +1599,7 @@ class ImageCog(commands.Cog):
     async def test_calendar(
         self, interaction: discord.Interaction, division: str
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_calendar_preview
+        from leaguebot.image.services.preview.image_preview_service import build_calendar_preview
 
         async def _build(context):
             return await build_calendar_preview(self.bot, context)
@@ -1624,7 +1624,7 @@ class ImageCog(commands.Cog):
     async def test_lineup(
         self, interaction: discord.Interaction, division: str
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_lineup_preview
+        from leaguebot.image.services.preview.image_preview_service import build_lineup_preview
 
         async def _build(context):
             return await build_lineup_preview(self.bot, context)
@@ -1653,7 +1653,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_results_preview
+        from leaguebot.image.services.preview.image_preview_service import build_results_preview
 
         async def _build(context):
             return await build_results_preview(self.bot, context)
@@ -1683,7 +1683,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_standings_preview
+        from leaguebot.image.services.preview.image_preview_service import build_standings_preview
 
         async def _build(context):
             return await build_standings_preview(self.bot, context)
@@ -1713,7 +1713,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_attendance_preview
+        from leaguebot.image.services.preview.image_preview_service import build_attendance_preview
 
         async def _build(context):
             return await build_attendance_preview(self.bot, context)
@@ -1743,7 +1743,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_rsvp_preview
+        from leaguebot.image.services.preview.image_preview_service import build_rsvp_preview
 
         async def _build(context):
             return await build_rsvp_preview(self.bot, context)
@@ -1773,7 +1773,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_verdict_preview
+        from leaguebot.image.services.preview.image_preview_service import build_verdict_preview
 
         async def _build(context):
             return await build_verdict_preview(self.bot, context)
@@ -1803,7 +1803,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_verdict_banner_preview
+        from leaguebot.image.services.preview.image_preview_service import build_verdict_banner_preview
 
         async def _build(context):
             return await build_verdict_banner_preview(self.bot, context)
@@ -1833,7 +1833,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=1)
@@ -1863,7 +1863,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=2)
@@ -1893,7 +1893,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=3)
@@ -1923,7 +1923,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from leaguebot.image.services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=0)
@@ -1962,7 +1962,7 @@ class ImageCog(commands.Cog):
         pictures were produced, which assets fell back to a placeholder and why, and
         whether the drivers drawn were their own or invented.
         """
-        from leaguebot.image.services.image_render_service import ImageRenderService
+        from leaguebot.image.services.render.image_render_service import ImageRenderService
 
         files: list[discord.File] = []
         header = f"**Preview — {title}** for `{context.division_name}`"
@@ -2039,7 +2039,7 @@ class ImageCog(commands.Cog):
             # Logged first, so the reply can point at what was written. A log-channel
             # failure returns None and simply costs the link — it must never cost the
             # preview, which is the thing actually asked for.
-            from leaguebot.image.services.image_render_service import grouped_notice_lines
+            from leaguebot.image.services.render.image_render_service import grouped_notice_lines
 
             logged = await ImageRenderService.report_notices(
                 self.bot, all_notices
@@ -2057,7 +2057,7 @@ class ImageCog(commands.Cog):
         # A preview puts nothing in a league's channel, but it renders through the same
         # pipeline and leaves the same files behind. An evening of template-checking would
         # otherwise litter the host exactly as a season of posting does.
-        from leaguebot.image.services.image_render_service import discard_attachment
+        from leaguebot.image.services.render.image_render_service import discard_attachment
 
         try:
             # The whole reply goes, in parts: cut short it would stop partway through a list

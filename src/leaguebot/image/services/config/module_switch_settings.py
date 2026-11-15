@@ -42,7 +42,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     modules_frozen_for_completion,
 )
 from leaguebot.core.services.queue.setting_change import Saved, Setting
-from leaguebot.image.services.image_config_service import create_defaults_on
+from leaguebot.image.services.config.image_config_service import create_defaults_on
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -99,7 +99,7 @@ def module_on_images(*, modules: "ModuleService", seasons: "SeasonService") -> S
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
-        from leaguebot.image.services.image_render_service import (
+        from leaguebot.image.services.render.image_render_service import (
             converter_absent_message,
             converter_available,
         )

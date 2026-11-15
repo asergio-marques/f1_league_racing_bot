@@ -60,7 +60,7 @@ class _Interaction:
 
 def _context(**overrides):
     """A resolved preview context, as `resolve_context` would return one."""
-    from leaguebot.image.services.image_preview_service import PreviewContext
+    from leaguebot.image.services.preview.image_preview_service import PreviewContext
 
     values = dict(
         season_number=1,
@@ -313,7 +313,7 @@ class TestTheReply:
 
     async def test_a_rejected_directory_is_named_with_its_value_and_reason(self, cog):
         """FR-037, FR-038 — the manager is told which value was refused, and why."""
-        from leaguebot.image.services.image_preview_service import DirectoryFault
+        from leaguebot.image.services.preview.image_preview_service import DirectoryFault
 
         interaction = _Interaction()
 
@@ -353,7 +353,7 @@ class TestTheReply:
         """Forty asset folders that did not resolve must not push a part of the reply past
         what Discord accepts, nor cost the end of the reply: every fault arrives, in as many
         parts as it needs, each seen by the manager alone, with the picture attached once."""
-        from leaguebot.image.services.image_preview_service import DirectoryFault
+        from leaguebot.image.services.preview.image_preview_service import DirectoryFault
 
         png = tmp_path / "standings_drivers_template.png"
         png.write_bytes(b"\x89PNG")
@@ -805,10 +805,10 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
         raise fault
 
     with patch(
-        "leaguebot.image.services.image_render_service.converter_available",
+        "leaguebot.image.services.render.image_render_service.converter_available",
         new=MagicMock(return_value=True),
     ), patch(
-        "leaguebot.image.services.image_preview_service.resolve_context",
+        "leaguebot.image.services.preview.image_preview_service.resolve_context",
         new=AsyncMock(return_value=_context()),
     ):
         with pytest.raises(RuntimeError) as raised:

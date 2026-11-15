@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.image.services.image_config_service import (
+from leaguebot.image.services.config.image_config_service import (
     create_defaults_on,
     set_aspect_on,
     set_daily_portraits_on,

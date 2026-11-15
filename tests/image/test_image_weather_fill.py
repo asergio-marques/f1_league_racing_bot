@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_weather_service import (
+from leaguebot.image.services.aspects.image_weather_service import (
     SessionDrawing,
     SlotDrawing,
     WeatherDataError,

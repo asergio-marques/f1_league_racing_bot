@@ -1,7 +1,7 @@
 """The image module's calendar drawing, its answer to core's drawing protocol (#283).
 
 Core asks whether the league draws its calendar and has one division's calendar drawn
-(`core/services/modules/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
+(`core/services/modules/image_drawing.py`); the image module answers in `image/services/render/image_drawing.py`.
 These tests hold its answers: both gates read, a gate that cannot be read answering no, the two
 asset directories made absolute, a rejected directory carried as a fault, and the notices reported
 to the log channel in one message. Core's posting of the calendar is tested against a stand-in for
@@ -45,7 +45,7 @@ def _drawing(*, images_on=True, aspect_on=True, flag_directory="resources/defaul
     """Image's drawing over doubles of its services: the module and the `calendar` aspect as
     given, the configured directories, and a renderer giving *outcome* (nothing drawn by
     default), keeping the spec builder it was handed in `captured`."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=images_on)

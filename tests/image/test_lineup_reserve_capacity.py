@@ -148,7 +148,7 @@ REMEDY = "Enlarge the template, or turn the `lineup` image aspect off with `/ima
 def _drawing(reports, *, toggle: bool = True, images: bool = True):
     """The image module's implementation of core's protocol, over stand-ins for its own services:
     the images module *images*, the `lineup` aspect *toggle*, and the template *reports*."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=images)

@@ -5,7 +5,7 @@ what the fastest-lap colour reads against the plate, which colour slots no templ
 a directory resolves to, which colours a per-tier switch-on still wants. None of it writes, and
 none of it is needed for the setting to stand: a setting is saved first and advised after, so a
 fault here cannot undo it. It lives apart from the cog so the settings
-(`image/services/image_settings.py`) can form it, a service importing no cog.
+(`image/services/config/image_settings.py`) can form it, a service importing no cog.
 """
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ from leaguebot.image.models.image_constants import LIVE_POSTING_ASPECTS
 
 if TYPE_CHECKING:
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import ImageRenderService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
 
 def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[str]:

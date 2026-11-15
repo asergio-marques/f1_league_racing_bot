@@ -50,29 +50,29 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
     TEMPLATE_LABELS,
 )
-from leaguebot.image.services.image_attendance_post import (
+from leaguebot.image.services.aspects.image_attendance_post import (
     ATTENDANCE_ASPECT,
     ATTENDANCE_TEMPLATE_KEY,
 )
-from leaguebot.image.services.image_calendar_service import (
+from leaguebot.image.services.aspects.image_calendar_service import (
     TEMPLATE_KEY as CALENDAR_TEMPLATE_KEY,
     build_fill_spec,
     resolve_drawing,
 )
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_lineup_post import LINEUP_TEMPLATE_KEY, render_for_command
-from leaguebot.image.services.image_render_service import (
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_KEY, render_for_command
+from leaguebot.image.services.render.image_render_service import (
     ImageRenderService,
     discard_render,
     resolve_configured_directories,
     spec_builder_with_faults,
 )
-from leaguebot.image.services.image_rsvp_post import RSVP_ASPECT, RSVP_TEMPLATE_KEY
-from leaguebot.image.services.image_standings_post import (
+from leaguebot.image.services.aspects.image_rsvp_post import RSVP_ASPECT, RSVP_TEMPLATE_KEY
+from leaguebot.image.services.aspects.image_standings_post import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
 )
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     ImageValidityService,
     plain_reason,
     plain_remedy,
@@ -583,9 +583,9 @@ class ImageDrawing:
         The notices are reported to the log channel in one message before this returns, so
         neither caller posts them there again. Hands back the division row and the render's
         outcome, for each to word the problem its own way."""
-        from leaguebot.image.services.driver_portrait_service import refresh_before_render
-        from leaguebot.image.services.image_lineup_post import build_drawing
-        from leaguebot.image.services.image_lineup_service import (
+        from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
+        from leaguebot.image.services.aspects.image_lineup_post import build_drawing
+        from leaguebot.image.services.aspects.image_lineup_service import (
             build_fill_spec as build_lineup_fill_spec,
         )
 
@@ -675,7 +675,7 @@ class ImageDrawing:
     async def discard_portraits(self, user_ids: Any) -> int:
         """Remove the portraits obtained for *user_ids*, through
         `driver_portrait_service.discard_portraits`."""
-        from leaguebot.image.services.driver_portrait_service import discard_portraits
+        from leaguebot.image.services.portraits.driver_portrait_service import discard_portraits
 
         return await discard_portraits(self._db_path, self._config, user_ids)
 
@@ -735,7 +735,7 @@ class ImageDrawing:
     def rasteriser_fault(self) -> str | None:
         """What is wrong with the host's drawing program, in these words, or None where there is
         nothing wrong (core/services/modules/image_drawing.py)."""
-        from leaguebot.image.services.image_render_service import (
+        from leaguebot.image.services.render.image_render_service import (
             CONVERTER_NAME,
             converter_available,
         )
@@ -761,7 +761,7 @@ class ImageDrawing:
         # Imported here, not at module level, so a test's `monkeypatch.setattr` on
         # `image_render_service.converter_available` is picked up (as `rasteriser_fault`'s
         # own import is, for the same reason).
-        from leaguebot.image.services.image_render_service import (
+        from leaguebot.image.services.render.image_render_service import (
             CONVERTER_NAME,
             converter_available,
         )
@@ -860,7 +860,7 @@ class ImageDrawing:
         deciding whether the season is configured, and "the bot is not obtaining portraits"
         is an answer to that rather than an absence of one.
         """
-        from leaguebot.image.services.image_config_service import portrait_configuration_fault
+        from leaguebot.image.services.config.image_config_service import portrait_configuration_fault
 
         if config is None or not getattr(config, "use_pfp", False):
             return ["  ❌ Driver portraits from Discord: disabled"]
@@ -920,7 +920,7 @@ class ImageDrawing:
 
         Lets a fault reading the configuration out, for the caller to stand aside on.
         """
-        from leaguebot.image.services.image_config_service import portrait_configuration_fault
+        from leaguebot.image.services.config.image_config_service import portrait_configuration_fault
 
         if not await self._modules.is_images_enabled():
             return None

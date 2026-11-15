@@ -174,7 +174,7 @@ async def test_the_render_service_names_the_png_from_the_stem(tmp_path, monkeypa
     and leave the one site that passes no filename at all — the verdict announcement —
     showing a league the raw template key.
     """
-    import leaguebot.image.services.image_render_service as render_service
+    import leaguebot.image.services.render.image_render_service as render_service
     from leaguebot.image.utils.svg_fill import FillSpec
     from lxml import etree
 
@@ -211,7 +211,7 @@ async def test_the_render_service_names_the_png_from_the_stem(tmp_path, monkeypa
 @pytest.mark.asyncio
 async def test_no_stem_still_falls_back_to_the_template_key(tmp_path, monkeypatch):
     """A caller that names nothing must still get a file, as it always did."""
-    import leaguebot.image.services.image_render_service as render_service
+    import leaguebot.image.services.render.image_render_service as render_service
     from leaguebot.image.utils.svg_fill import FillSpec
 
     monkeypatch.setattr(render_service, "converter_available", lambda *a, **k: True)

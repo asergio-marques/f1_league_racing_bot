@@ -2,7 +2,7 @@
 
 The lineup of record is drawn through core's drawing protocol, and posted by core
 (`leaguebot.core.services.modules.image_drawing.ImageDrawing`, implemented by
-`leaguebot.image.services.image_drawing.ImageDrawing`): this module holds what that
+`leaguebot.image.services.render.image_drawing.ImageDrawing`): this module holds what that
 drawing, and a command's own output, both need — resolving the division into a
 `LineupDrawing` (`build_drawing`) and rendering it (`render_png`) — plus `render_for_command`,
 which produces the PNG as a command's output and posts nothing, for `/season
@@ -101,8 +101,8 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
     see the lineup as it **will** stand: the mid-season placements review, which draws what
     confirming will post and withholds its button where that will not draw (#374).
     """
-    from leaguebot.image.services.image_lineup_service import resolve_drawing
-    from leaguebot.image.services.image_results_post import SIGNUP_FOR_SEASON_SQL
+    from leaguebot.image.services.aspects.image_lineup_service import resolve_drawing
+    from leaguebot.image.services.aspects.image_results_post import SIGNUP_FOR_SEASON_SQL
 
     async with get_connection(db_path) as db:
         division = await (
@@ -113,7 +113,7 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
             )
         ).fetchone()
         if division is None:
-            from leaguebot.image.services.image_lineup_service import LineupDataError
+            from leaguebot.image.services.aspects.image_lineup_service import LineupDataError
 
             raise LineupDataError(f"division {division_id} no longer exists")
         season_id = division["season_id"]
@@ -175,7 +175,7 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
     # league that switched nationality collection off configured, and raises nothing. Read
     # through the module's single reader rather than a copy of it — this path carried its
     # own, and its own read the wrong table.
-    from leaguebot.image.services.image_results_post import _nationality_collected
+    from leaguebot.image.services.aspects.image_results_post import _nationality_collected
 
     collected = await _nationality_collected(db_path)
 
@@ -215,8 +215,8 @@ async def render_png(
     *obtain_missing_portraits* is `refresh_before_render`'s *obtain_missing*, and is for
     the placements review alone.
     """
-    from leaguebot.image.services.image_lineup_service import build_fill_spec
-    from leaguebot.image.services.image_render_service import (
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -240,7 +240,7 @@ async def render_png(
     # for that. The drawing is already built, but it carries the user id as the datum and the
     # file is not read until the fill -- so this is still in time. Never raises: a portrait
     # that cannot be obtained resolves exactly as it would have done otherwise.
-    from leaguebot.image.services.driver_portrait_service import refresh_before_render
+    from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
         bot.db_path,

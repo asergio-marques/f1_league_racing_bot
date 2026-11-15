@@ -17,7 +17,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.models.image_module import ImageConfig
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     TemplateContext,
@@ -262,7 +262,7 @@ def test_the_three_bounds_faults_are_distinguishable(tmp_path, templates):
 
 def test_season_review_names_the_verdicts_template_individually(tmp_path, templates):
     from leaguebot.image.models.image_module import PROBLEM_MISSING_MANDATORY_FIELD
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         PLAIN_MISSING_FIELD,
         check_all_templates,
         describe,

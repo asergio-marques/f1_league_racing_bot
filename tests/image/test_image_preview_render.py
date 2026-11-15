@@ -17,9 +17,9 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_render_service import ImageRenderService
-from leaguebot.image.services.image_preview_service import (
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.render.image_render_service import ImageRenderService
+from leaguebot.image.services.preview.image_preview_service import (
     build_attendance_preview,
     build_calendar_preview,
     build_lineup_preview,
@@ -31,7 +31,7 @@ from leaguebot.image.services.image_preview_service import (
     build_weather_preview,
     resolve_context,
 )
-from leaguebot.image.services.image_validity_service import ImageValidityService
+from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.saves import create_image_defaults
 

@@ -50,7 +50,7 @@ def _drawing(template, *, toggle: bool = True, images: bool = True):
     """The image module's implementation of core's protocol, over stand-ins for its own services:
     the images module *images*, the `standings` aspect *toggle*, and *template* as the drivers
     template."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=images)

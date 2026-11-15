@@ -27,8 +27,8 @@ from leaguebot.core.services.drivers.driver_service import (
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.image.services import image_verdict_post
-from leaguebot.image.services.image_verdict_service import VerdictKind
+from leaguebot.image.services.aspects import image_verdict_post
+from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 from leaguebot.results.services.publishing.results_post_service import (
     fault_of,
     picture_fallback_line,
@@ -120,10 +120,10 @@ async def _graphic_name(
     error): a name is not worth a lost announcement, so an unreadable one leaves the behaviour
     exactly as it was before. Any other fault is a defect and is raised.
     """
-    from leaguebot.image.services.image_lineup_service import resolve_driver_name
+    from leaguebot.image.services.aspects.image_lineup_service import resolve_driver_name
 
     try:
-        from leaguebot.image.services.image_results_post import _driver_names
+        from leaguebot.image.services.aspects.image_results_post import _driver_names
 
         names = await _driver_names(bot, guild, [int(discord_user_id)])
     except sqlite3.Error as exc:
@@ -449,7 +449,7 @@ async def _send_verdict(
     Called only after the review has been finalised or the sanction enforced. A graphic is
     downstream of every state change it depicts and is never a precondition of one.
     """
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     render = None
     fault: str | None = None

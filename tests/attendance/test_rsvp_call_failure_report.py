@@ -142,7 +142,7 @@ async def test_both_failure_paths_of_the_notice_report_the_call(tmp_path):
 async def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites(tmp_path, monkeypatch):
     """Images on and the check-in graphic drawn: a refused call stops the queue with its notice
     as it does without one."""
-    from leaguebot.image.services import image_rsvp_post
+    from leaguebot.image.services.aspects import image_rsvp_post
 
     league = await _league(tmp_path, images=True)
     picture = tmp_path / "checkin.png"

@@ -17,8 +17,8 @@ import pytest
 from lxml import etree
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_preview_service import (
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.preview.image_preview_service import (
     build_attendance_preview,
     build_results_preview,
     build_rsvp_preview,
@@ -168,7 +168,7 @@ class TestRsvpPreview:
         self, bot, league, round_number, fmt, count
     ):
         """The session list follows the round's own format, not a fabricated one."""
-        from leaguebot.image.services.image_rsvp_service import session_names
+        from leaguebot.image.services.aspects.image_rsvp_service import session_names
 
         context = await _context(bot, round_number=round_number)
 
@@ -239,7 +239,7 @@ class TestResultsPreview:
 
     async def test_the_classification_is_over_the_leagues_own_drivers(self, bot, league):
         """The outcome is invented; who it happens to is not."""
-        from leaguebot.image.services.image_preview_data import fabricate_race_rows
+        from leaguebot.image.services.preview.image_preview_data import fabricate_race_rows
 
         context = await _context(bot, round_number=1, require_teams=True)
         role_of = {team.name: i + 1 for i, team in enumerate(context.teams)}
@@ -855,7 +855,7 @@ class TestAttendancePreview:
 
     async def test_no_record_falls_after_the_round_named(self, bot, league):
         """FR-027 — a round yet to be run confers nothing, and its cells stay empty."""
-        from leaguebot.image.services.image_preview_data import fabricate_attendance_records
+        from leaguebot.image.services.preview.image_preview_data import fabricate_attendance_records
 
         context = await _context(bot, round_number=2, require_teams=True)
 
@@ -873,7 +873,7 @@ class TestAttendancePreview:
         """
         from pathlib import Path
 
-        from leaguebot.image.services.image_attendance_service import (
+        from leaguebot.image.services.aspects.image_attendance_service import (
             MARK_ASSET_CLASS,
             MARK_NEAR,
             MARK_REACHED,

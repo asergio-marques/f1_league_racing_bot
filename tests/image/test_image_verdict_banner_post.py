@@ -26,7 +26,7 @@ import contextlib
 
 import pytest
 
-from leaguebot.image.services import image_verdict_banner_post as banner
+from leaguebot.image.services.aspects import image_verdict_banner_post as banner
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from tests.support.change_queue import in_a_job
 
@@ -123,7 +123,7 @@ def flow(monkeypatch, tmp_path):
     def _discard(render, attachment=None):
         state["discarded"].append(getattr(render, "png", None))
 
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     monkeypatch.setattr(vas, "_get_announcement_context", _context)
     monkeypatch.setattr(vas, "_get_result_context", _result_context)

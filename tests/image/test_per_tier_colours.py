@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_config_service import (
+from leaguebot.image.services.config.image_config_service import (
     FLAG_COLUMNS,
     PFP_FLAG_COLUMNS,
     SETTABLE_COLUMNS,

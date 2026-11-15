@@ -66,7 +66,7 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     without it, the call posts with it, and the log channel is told so. (none) the graphic is drawn
     whole: no such line is written."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.image.services import image_rsvp_post
+    from leaguebot.image.services.aspects import image_rsvp_post
 
     league = await _league(tmp_path)
     picture = tmp_path / "checkin.png"

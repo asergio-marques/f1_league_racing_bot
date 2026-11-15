@@ -699,7 +699,7 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
 def _with_image_s_drawing(bot: Any) -> None:
     """Attach to *bot* the image module's drawing, built over the bot's services as the builder
     builds it, so that a review's lineup drawn through it reaches image's own code."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot.image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
@@ -722,7 +722,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     import asyncio
 
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services import image_lineup_post
+    from leaguebot.image.services.aspects import image_lineup_post
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change
@@ -755,7 +755,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
 def _lineup_will_not_post() -> Any:
     """The image module's decision not to post Pro's lineup: its template has no rows."""
     from leaguebot.image.models.image_module import PROBLEM_MISSING_MANDATORY_FIELD, Problem
-    from leaguebot.image.services.image_render_service import REJECT_COMMAND, PostingDecision
+    from leaguebot.image.services.render.image_render_service import REJECT_COMMAND, PostingDecision
 
     return PostingDecision(action=REJECT_COMMAND, problem=Problem(
         kind=PROBLEM_MISSING_MANDATORY_FIELD, detail="the template has no rows"))
@@ -781,7 +781,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     import asyncio
 
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services import image_lineup_post
+    from leaguebot.image.services.aspects import image_lineup_post
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change
@@ -818,7 +818,7 @@ async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes
     from pathlib import Path
 
     from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
-    from leaguebot.image.services.image_render_service import discard_render
+    from leaguebot.image.services.render.image_render_service import discard_render
 
     made: list[Path] = []
 
@@ -847,7 +847,7 @@ async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_rend
     `season.review.post` is handed the image module's `discard_render`, so that a picture's render
     directory goes with it."""
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services.image_render_service import discard_render
+    from leaguebot.image.services.render.image_render_service import discard_render
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change

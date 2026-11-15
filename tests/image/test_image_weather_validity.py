@@ -17,7 +17,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.models.image_module import ImageConfig
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     LAYER_CATALOGUE,
     CatalogueLayer,
     TemplateContext,
@@ -295,8 +295,8 @@ def test_one_short_template_leaves_the_other_five_valid(templates, tmp_path):
 def test_the_naming_command_refuses_a_template_below_its_floor(
     templates, tmp_path, key, body, monkeypatch
 ):
-    from leaguebot.image.services import image_validity_service
-    from leaguebot.image.services.image_validity_service import check_template
+    from leaguebot.image.services.validity import image_validity_service
+    from leaguebot.image.services.validity.image_validity_service import check_template
 
     (templates / TEMPLATE_COLUMNS[key]).write_bytes(body)
     monkeypatch.setattr(
@@ -318,8 +318,8 @@ def test_the_naming_command_refuses_a_template_below_its_floor(
 def test_the_naming_command_accepts_a_template_above_its_floor(
     templates, tmp_path, key, body, monkeypatch
 ):
-    from leaguebot.image.services import image_validity_service
-    from leaguebot.image.services.image_validity_service import check_template
+    from leaguebot.image.services.validity import image_validity_service
+    from leaguebot.image.services.validity.image_validity_service import check_template
 
     (templates / TEMPLATE_COLUMNS[key]).write_bytes(body)
     monkeypatch.setattr(
@@ -341,7 +341,7 @@ async def test_nothing_is_written_before_the_check_passes(templates, tmp_path, m
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.cogs.image_cog import ImageCog
-    from leaguebot.image.services import image_validity_service
+    from leaguebot.image.services.validity import image_validity_service
     from tests.support.change_queue import run_queue
     from tests.support.image_cog_doubles import interaction as _interaction, log_bot
     from tests.support.settings_league import audit_rows, settings_league

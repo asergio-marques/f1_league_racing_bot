@@ -269,7 +269,7 @@ async def _checkin_attachment(
     and failures", place 6).
     """
     try:
-        from leaguebot.image.services.image_rsvp_post import try_attach
+        from leaguebot.image.services.aspects.image_rsvp_post import try_attach
         deadline_hours = None
         try:
             config = await service.get_config()

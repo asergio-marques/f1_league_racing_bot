@@ -345,7 +345,7 @@ async def driver_standings_for_display(
     if bot is None or guild is None or not snaps:
         return snaps
 
-    from leaguebot.image.services.image_results_post import _driver_names
+    from leaguebot.image.services.aspects.image_results_post import _driver_names
 
     names = await _driver_names(
         bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
@@ -383,7 +383,7 @@ async def standings_display_names(
     if not snaps:
         return None
 
-    from leaguebot.image.services.image_results_post import _driver_names
+    from leaguebot.image.services.aspects.image_results_post import _driver_names
 
     return await _driver_names(
         bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
@@ -621,7 +621,7 @@ async def produce_session_results(
     fault: str | None = None
     if bot is not None:
         try:
-            from leaguebot.image.services.image_results_post import try_post
+            from leaguebot.image.services.aspects.image_results_post import try_post
 
             outcome = await try_post(
                 bot,
@@ -825,7 +825,7 @@ async def produce_standings(
     fault: str | None = None
     if bot is not None and not cancelled:
         try:
-            from leaguebot.image.services.image_standings_post import try_post
+            from leaguebot.image.services.aspects.image_standings_post import try_post
 
             outcome = await try_post(
                 bot,
@@ -1467,7 +1467,7 @@ async def _channel_faults_for_rows(
     # service hands the image module an occasion and acts on what comes back, and does not
     # read its settings (#187, and the layering
     # `tests/image/test_image_module_flow.py` holds).
-    from leaguebot.image.services.image_validity_service import aspect_attaches_files
+    from leaguebot.image.services.validity.image_validity_service import aspect_attaches_files
 
     results_graphics = await aspect_attaches_files(bot, "results")
     standings_graphics = await aspect_attaches_files(bot, "standings")

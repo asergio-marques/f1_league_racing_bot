@@ -1,7 +1,7 @@
 """The image module's lineup drawing, its answer to core's drawing protocol (#283).
 
 Core asks whether the league draws its lineup and has one division's lineup drawn
-(`core/services/modules/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
+(`core/services/modules/image_drawing.py`); the image module answers in `image/services/render/image_drawing.py`.
 These tests hold its answers: the three gates read, a gate that cannot be read answering text with
 the error in the host's log alone, the lineup drawn from the division's committed seats with the
 portraits refreshed at the league's own trigger, the picture, the problem and the notices handed
@@ -54,7 +54,7 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
     lineup template's validity as given, the packaged directories configured, and a renderer
     giving *outcome* (nothing drawn by default), keeping the spec builder it was handed in
     `captured`. Handed the database path, as the builder hands it."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=images_on)
@@ -93,7 +93,7 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
 
 def _portraits_spied(monkeypatch):
     """Stand a spy in for the portrait refresh before a render; gives the spy."""
-    import leaguebot.image.services.driver_portrait_service as portraits
+    import leaguebot.image.services.portraits.driver_portrait_service as portraits
 
     spy = AsyncMock(return_value=0)
     monkeypatch.setattr(portraits, "refresh_before_render", spy)

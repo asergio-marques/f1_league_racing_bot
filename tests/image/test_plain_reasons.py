@@ -22,7 +22,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.models.image_module import DirectoryReport, ImageConfig, ValidityReport
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     LAYER_RESOLUTION,
@@ -288,7 +288,7 @@ def test_every_template_fault_carries_a_remedy(tmp_path):
 
 def test_the_rasteriser_is_the_one_fault_no_command_of_theirs_mends(tmp_path):
     """Naming a command a manager cannot run would be worse than naming none."""
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         PLAIN_NO_RASTERISER,
         build_aspect_statuses,
     )
@@ -322,7 +322,7 @@ def test_the_exact_fault_is_written_to_the_log(tmp_path, caplog):
         (directory / filename).write_bytes(VALID_SVG)
     (directory / TEMPLATE_COLUMNS["calendar_template"]).unlink()
 
-    with caplog.at_level(logging.INFO, logger="leaguebot.image.services.image_validity_service"):
+    with caplog.at_level(logging.INFO, logger="leaguebot.image.services.validity.image_validity_service"):
         evaluate_all_templates(_config("templates"), root=tmp_path)
 
     logged = "\n".join(record.getMessage() for record in caplog.records)
@@ -331,7 +331,7 @@ def test_the_exact_fault_is_written_to_the_log(tmp_path, caplog):
 
 
 def test_a_shared_directory_fault_is_logged_once_not_fifteen_times(tmp_path, caplog):
-    with caplog.at_level(logging.INFO, logger="leaguebot.image.services.image_validity_service"):
+    with caplog.at_level(logging.INFO, logger="leaguebot.image.services.validity.image_validity_service"):
         evaluate_all_templates(_config("no_such_dir"), root=tmp_path)
 
     messages = [r.getMessage() for r in caplog.records if "image validity" in r.getMessage()]

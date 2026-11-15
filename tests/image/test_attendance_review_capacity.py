@@ -61,7 +61,7 @@ def _drawing(tmp_path, *, columns=(1, 2, 3), sessions=(1, 2), aspects=("attendan
     """The image module's implementation of core's protocol, over stand-ins for its own
     services: the *aspects* switched on, and an attendance sheet drawing the round *columns*
     and a check-in call naming the *sessions*, both valid, unless other *reports* are given."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     if reports is None:
         sheet = _template_file(tmp_path, SHEET, [f"round_{n}_number" for n in columns])

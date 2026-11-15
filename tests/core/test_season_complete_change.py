@@ -271,7 +271,7 @@ def _modules() -> list[Any]:
                  "leaguebot.core.services.test_mode.test_mode_service",
                  "leaguebot.core.services.test_mode.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service",
-                 "leaguebot.image.services.driver_portrait_service"):
+                 "leaguebot.image.services.portraits.driver_portrait_service"):
         try:
             found.append(importlib.import_module(name))
         except ImportError:
@@ -449,8 +449,8 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
     league = await pending_completion_league(tmp_path, images=part)
     standings = league.channel(PRO_CH.standings)
     if part:
-        from leaguebot.image.services import image_standings_post
-        from leaguebot.image.services.image_standings_post import (
+        from leaguebot.image.services.aspects import image_standings_post
+        from leaguebot.image.services.aspects.image_standings_post import (
             FELL_BACK,
             ChampionshipOutcome,
             StandingsPostOutcome,
@@ -1476,7 +1476,7 @@ async def test_test_mode_is_switched_off_in_the_save_before_the_season_is_archiv
 async def test_the_portraits_of_the_drivers_deleted_are_discarded_after_the_save(
     tmp_path, monkeypatch,
 ):
-    from leaguebot.image.services import driver_portrait_service
+    from leaguebot.image.services.portraits import driver_portrait_service
 
     calls: list[tuple[str, str]] = []
     holder: dict[str, str] = {}

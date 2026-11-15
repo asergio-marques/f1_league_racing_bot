@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.image.services.image_preview_service import (
+from leaguebot.image.services.preview.image_preview_service import (
     PreviewContext,
     build_verdict_banner_preview,
     build_verdict_preview,
@@ -109,7 +109,7 @@ async def test_it_draws_on_a_server_with_no_driver_signed_up():
 
 
 async def test_a_mystery_round_keeps_the_phrase_and_drops_the_flag():
-    from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME
+    from leaguebot.image.services.aspects.image_rsvp_service import MYSTERY_RACE_NAME
 
     spec = await _spec(_context(_round(fmt="MYSTERY")))
     assert spec.text["race_name"] == MYSTERY_RACE_NAME

@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.image.services.image_lineup_post import POSTED, lineup_enabled
+from leaguebot.image.services.aspects.image_lineup_post import POSTED, lineup_enabled
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -93,7 +93,7 @@ def test_the_attendance_reserve_distribution_does_not_refresh_the_lineup():
 def test_render_for_command_persists_no_message_id_and_deletes_nothing():
     """FR-028 — `/team lineup` and `/season placements-review` must not touch the record."""
     source = _function_source(
-        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "render_for_command", code_only=True
+        SRC / "leaguebot" / "image" / "services" / "aspects" / "image_lineup_post.py", "render_for_command", code_only=True
     )
     assert "lineup_message_id" not in source
     assert "delete()" not in source
@@ -104,7 +104,7 @@ def test_render_for_command_persists_no_message_id_and_deletes_nothing():
 def test_render_for_command_is_always_a_commanded_posting():
     """A commanded posting rejects rather than falling back (Constitution XIV.7)."""
     source = _function_source(
-        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "render_for_command"
+        SRC / "leaguebot" / "image" / "services" / "aspects" / "image_lineup_post.py", "render_for_command"
     )
     assert "PostingOrigin.COMMANDED" in source
     assert "POST_TEXT_FALLBACK" not in source
@@ -114,7 +114,7 @@ def test_render_for_command_is_always_a_commanded_posting():
 
 
 def test_seated_members_reads_every_occupied_seat():
-    from leaguebot.image.services.image_lineup_post import seated_members
+    from leaguebot.image.services.aspects.image_lineup_post import seated_members
 
     guild = MagicMock()
     members = {5: MagicMock(name="a"), 6: MagicMock(name="b")}
@@ -134,7 +134,7 @@ def test_seated_members_reads_every_occupied_seat():
 
 
 def test_seated_members_is_empty_without_a_guild():
-    from leaguebot.image.services.image_lineup_post import seated_members
+    from leaguebot.image.services.aspects.image_lineup_post import seated_members
 
     teams = [SimpleNamespace(seats=[SimpleNamespace(discord_user_id="5")])]
     assert seated_members(None, teams) == {}
@@ -146,9 +146,9 @@ def _stub_lineup_render(monkeypatch, tmp_path):
     Returns the bot to render with, the spy standing in for `refresh_before_render`, and
     the one member the drawing seats.
     """
-    import leaguebot.image.services.driver_portrait_service as portraits
-    import leaguebot.image.services.image_lineup_post as post
-    import leaguebot.image.services.image_render_service as render_service
+    import leaguebot.image.services.portraits.driver_portrait_service as portraits
+    import leaguebot.image.services.aspects.image_lineup_post as post
+    import leaguebot.image.services.render.image_render_service as render_service
     import leaguebot.image.utils.image_naming as naming
 
     member = MagicMock(id=5)
@@ -184,7 +184,7 @@ async def test_the_placements_review_render_obtains_missing_portraits(
 ):
     """The review draws the lineup a season is judged on, so a driver seated since the last
     daily update is fetched before it is drawn (#407)."""
-    from leaguebot.image.services.image_lineup_post import render_for_command
+    from leaguebot.image.services.aspects.image_lineup_post import render_for_command
 
     bot, spy, member = _stub_lineup_render(monkeypatch, tmp_path)
 
@@ -203,7 +203,7 @@ async def test_a_lineup_command_render_obtains_nothing_beyond_its_trigger(
     monkeypatch, tmp_path
 ):
     """`/team lineup` is command output, not the review: the league's trigger governs."""
-    from leaguebot.image.services.image_lineup_post import render_for_command
+    from leaguebot.image.services.aspects.image_lineup_post import render_for_command
 
     bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
 

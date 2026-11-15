@@ -871,7 +871,7 @@ def _with_division_logo(catalogue: FieldCatalogue) -> FieldCatalogue:
 
 
 #: are *values*, and a catalogue classifies fields. They live with the resolution, in
-#: ``image/services/image_calendar_service.py``.
+#: ``image/services/aspects/image_calendar_service.py``.
 CALENDAR_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=frozenset({"division_name"}),
     optional=frozenset({"season_number", "division_tier"}),
@@ -944,7 +944,7 @@ FOOTER_GROUP_FIELD = "footer_group"
 #:
 #: The reserve team's display name ("Reserve") and the driver-name resolution chain are
 #: **values**, not fields, and live with the resolution in
-#: ``image/services/image_lineup_service.py``. See
+#: ``image/services/aspects/image_lineup_service.py``. See
 #: specs/038-lineup-image-generation/contracts/lineup-catalogue.md.
 LINEUP_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=frozenset({"division_name"}),

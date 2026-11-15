@@ -13,7 +13,7 @@ import os
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_verdict_post import _driver_nationality
+from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 async def _mark_approved(svc, db_path, discord_user_id):

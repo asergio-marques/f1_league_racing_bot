@@ -48,7 +48,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_LABELS,
 )
 from leaguebot.core.utils.interaction_errors import failure_reply
-from leaguebot.image.services.image_config_service import (
+from leaguebot.image.services.config.image_config_service import (
     pfp_change_refusal,
     read_config_on,
     set_aspect_on,
@@ -57,7 +57,7 @@ from leaguebot.image.services.image_config_service import (
     set_flag_on,
     set_tier_colours_on,
 )
-from leaguebot.image.services.image_setting_advice import (
+from leaguebot.image.services.config.image_setting_advice import (
     colour_shortfall_lines,
     declared_colour_slots,
     directory_verdict,
@@ -73,9 +73,9 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import ImageRenderService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
 ASPECT = "image.setting.aspect"
 DIRECTORY = "image.setting.directory"
@@ -183,8 +183,8 @@ async def aspect_blocking_reasons(
     overridden for this one question, which is what lets the setting refuse *before* storing
     rather than storing and then complaining. The configuration is left as it stands.
     """
-    from leaguebot.image.services.image_render_service import converter_available
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses
+    from leaguebot.image.services.render.image_render_service import converter_available
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses
 
     toggles = dict(await config.get_toggles())
     toggles[aspect] = True
@@ -286,7 +286,7 @@ def _template_directory(modules: "ModuleService", config: "ImageConfigService") 
     surfaces cannot disagree about whether a template is usable. It is scoped to the outputs that
     are switched on: switching an output on checks its own drawings at that moment.
     """
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         blocking_template_problems,
         describe,
     )
@@ -358,7 +358,7 @@ def _template(modules: "ModuleService", config: "ImageConfigService") -> Setting
     manager is present, holding the file, and able to fix it: nothing is written until every
     check passes. A filename carrying a path separator is refused at once by the command.
     """
-    from leaguebot.image.services.image_validity_service import check_template
+    from leaguebot.image.services.validity.image_validity_service import check_template
 
     async def check(ctx: CheckContext) -> Verdict:
         off = await _module_refusal(modules)

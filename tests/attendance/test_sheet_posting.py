@@ -262,7 +262,7 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     Pro's live sheet, rather than a sheet with an empty grid replacing it. The points become
     readable again and a league admin presses Retry: the new sheet is posted and replaces
     6200."""
-    from leaguebot.image.services.image_attendance_post import (
+    from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
         ATTENDANCE_TEMPLATE_KEY,
         attendance_enabled,
@@ -349,7 +349,7 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp
     sheet image", the name `/images config toggle` offers, naming Pro and round 1, and nothing in
     the log calls it a results image."""
     from leaguebot.image.models.image_module import Problem, RenderOutcome
-    from leaguebot.image.services.image_attendance_post import (
+    from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
         ATTENDANCE_TEMPLATE_KEY,
     )
@@ -392,7 +392,7 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
     queue runs to the end; the log channel carries the notice once, in a block whose heading
     names Pro and round 1, and no block without a heading carries it a second time."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
-    from leaguebot.image.services.image_attendance_post import (
+    from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
         ATTENDANCE_TEMPLATE_KEY,
     )

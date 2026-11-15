@@ -1065,12 +1065,12 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     drew = MagicMock(applicable=True, message_id=9990, rejects=False, fallback_championships=[])
     bot = MagicMock()
     with patch(
-        "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
+        "leaguebot.image.services.aspects.image_results_post.try_post", new=AsyncMock(return_value=drew)
     ):
         assert await _results(bot=bot) == PostedTable([9990], [OLD_RESULTS], drawn=True)
     # The standings drawn as pictures save and delete nothing either; what they report is
     # pinned in `test_image_standings_post.py`.
-    from leaguebot.image.services.image_standings_post import (
+    from leaguebot.image.services.aspects.image_standings_post import (
         POSTED,
         ChampionshipOutcome,
         StandingsPostOutcome,
@@ -1081,7 +1081,7 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
         constructors=ChampionshipOutcome(action=POSTED, message_id=9992),
     )
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         new=AsyncMock(return_value=pictures),
     ):
         await _standings(bot=bot)

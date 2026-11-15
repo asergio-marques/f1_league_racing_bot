@@ -415,7 +415,7 @@ def _kind_for_layer(failed_layer: int | None) -> str:
         PROBLEM_MISSING_MANDATORY_FIELD,
         PROBLEM_NOT_FOUND,
     )
-    from leaguebot.image.services.image_validity_service import LAYER_CATALOGUE
+    from leaguebot.image.services.validity.image_validity_service import LAYER_CATALOGUE
 
     if failed_layer == LAYER_CATALOGUE:
         return PROBLEM_MISSING_MANDATORY_FIELD

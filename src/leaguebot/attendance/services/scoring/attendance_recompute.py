@@ -135,7 +135,7 @@ async def recalculation_faults(
     the raced rounds of a division since cancelled too, so the channels of that division are
     part of its question, and the results specification's "every division's" holds.
     """
-    from leaguebot.image.services.image_validity_service import aspect_attaches_files
+    from leaguebot.image.services.validity.image_validity_service import aspect_attaches_files
     from leaguebot.results.services.publishing import results_post_service
 
     if guild is None:

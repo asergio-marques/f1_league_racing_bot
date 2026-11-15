@@ -6,7 +6,7 @@ nothing of the image module.
 The season fingerprint (`take_fingerprint`) is handed it by its callers: the cogs hand it
 `bot.image_drawing`, and the approval and the confirmation the drawing the builder gave them. Core
 calls these methods and the image module implements them
-(`leaguebot.image.services.image_drawing.ImageDrawing`). It is attached to the bot as
+(`leaguebot.image.services.render.image_drawing.ImageDrawing`). It is attached to the bot as
 `bot.image_drawing` and declared on `LeagueBot`, as results declares `AttendanceAfterReview` for
 attendance (architecture.md, "How modules and core fit together").
 

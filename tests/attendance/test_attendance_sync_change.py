@@ -819,7 +819,7 @@ async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_
     driver and their move to reserve, the queue runs to the end, and the log channel gains one
     line naming round 1 of Division 1, the verdict picture, the fault, that the card went out as
     text, and that no command posts it again."""
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     fault = "the verdict picture's file could not be opened"
 

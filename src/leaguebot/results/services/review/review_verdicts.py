@@ -89,7 +89,7 @@ from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.image.services import image_verdict_banner_post
+from leaguebot.image.services.aspects import image_verdict_banner_post
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.review_state import ReadServerConfig

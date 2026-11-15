@@ -95,7 +95,7 @@ NO_TEMPLATES = "resources/defaults/tracks"
 def _rasteriser_present(monkeypatch):
     """The rasteriser taken as present wherever the check asks for it: no test here draws, and
     switching an output on is refused on a host without it."""
-    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.render.image_render_service as render
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
 

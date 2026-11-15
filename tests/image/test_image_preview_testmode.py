@@ -27,8 +27,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.test_mode import test_roster_service
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_preview_service import resolve_context
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.preview.image_preview_service import resolve_context
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.saves import create_image_defaults
 
@@ -292,6 +292,6 @@ class TestTestModeChangesNoReading:
         """
         import inspect
 
-        from leaguebot.image.services import image_preview_service
+        from leaguebot.image.services.preview import image_preview_service
 
         assert "test_mode_active" not in inspect.getsource(image_preview_service)

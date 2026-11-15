@@ -13,8 +13,8 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_preview_service import (
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.preview.image_preview_service import (
     build_lineup_preview,
     resolve_context,
 )
@@ -148,7 +148,7 @@ class TestASeatedDivision:
         assert context.fabricated_drivers is False
 
     async def test_the_resolved_drawing_names_the_division(self, bot, db_path):
-        from leaguebot.image.services.image_lineup_service import resolve_drawing
+        from leaguebot.image.services.aspects.image_lineup_service import resolve_drawing
 
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
@@ -198,7 +198,7 @@ class TestAnUnseatedDivision:
                 assert seat.server_display_name
 
     async def test_the_drawing_shows_them_as_occupied_seats(self, bot, db_path):
-        from leaguebot.image.services.image_lineup_service import resolve_drawing
+        from leaguebot.image.services.aspects.image_lineup_service import resolve_drawing
 
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
@@ -242,7 +242,7 @@ class TestItUsesTheLeaguesOwnDirectories:
         self, bot, db_path
     ):
         """FR-035, and the faults ride along so the reply can name them (FR-038)."""
-        import leaguebot.image.services.image_lineup_service as lineup_service
+        import leaguebot.image.services.aspects.image_lineup_service as lineup_service
 
         await _seed(db_path, seat_drivers=True)
         await set_field(

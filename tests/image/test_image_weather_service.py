@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.image.services.image_weather_service import (
+from leaguebot.image.services.aspects.image_weather_service import (
     MYSTERY_TEMPLATE_KEY,
     WeatherDataError,
     resolve_drawing,

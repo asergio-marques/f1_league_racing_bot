@@ -45,7 +45,7 @@ from pathlib import Path
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.image.services.image_config_service import ImageConfigService
+from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.utils.asset_resolver import filename_for
 from leaguebot.image.utils.svg_document import off_the_loop
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -149,7 +149,7 @@ def portrait_aspect(config) -> float:
     it reads *config* and the file, and touches no database connection and no Discord object.
     """
     try:
-        from leaguebot.image.services.image_validity_service import class_aspect_of
+        from leaguebot.image.services.validity.image_validity_service import class_aspect_of
         from leaguebot.core.utils.paths import resolve_within_project_root
         from leaguebot.image.utils.svg_document import load_svg
 
@@ -296,7 +296,7 @@ async def discard_portraits(
         config = await config_service.get_config()
         if config is None:
             return 0
-        from leaguebot.image.services.image_render_service import resolve_configured_directories
+        from leaguebot.image.services.render.image_render_service import resolve_configured_directories
 
         directories, _faults = resolve_configured_directories(
             config,
@@ -370,7 +370,7 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
             log.warning("driver portraits: the league's server is not reachable")
             return 0
 
-        from leaguebot.image.services.image_render_service import resolve_configured_directories
+        from leaguebot.image.services.render.image_render_service import resolve_configured_directories
 
         directories, _faults = resolve_configured_directories(
             config,
@@ -441,7 +441,7 @@ async def refresh_before_render(
     """
     try:
         if config is None:
-            from leaguebot.image.services.image_config_service import read_config_on
+            from leaguebot.image.services.config.image_config_service import read_config_on
 
             async with get_connection(db_path) as db:
                 config = await read_config_on(db)
@@ -462,7 +462,7 @@ async def refresh_before_render(
             return 0
 
         if directory is _UNSET:
-            from leaguebot.image.services.image_render_service import resolve_configured_directories
+            from leaguebot.image.services.render.image_render_service import resolve_configured_directories
 
             directories, _faults = resolve_configured_directories(
                 config,

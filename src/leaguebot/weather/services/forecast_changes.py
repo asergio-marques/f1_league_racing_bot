@@ -301,7 +301,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         attachment = None
         lines: tuple[str, ...] = ()
         if ctx.tries == 0:
-            from leaguebot.image.services import image_weather_post
+            from leaguebot.image.services.aspects import image_weather_post
 
             attachment, lines = await image_weather_post.attach_forecast(
                 ctx.bot, round_id, phase,

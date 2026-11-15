@@ -280,7 +280,7 @@ def test_every_posting_path_resolves_the_directory_whatever_else_it_draws():
     """Added by the shared resolver, so a posting path added later cannot omit it."""
     from types import SimpleNamespace
 
-    from leaguebot.image.services.image_render_service import resolve_configured_directories
+    from leaguebot.image.services.render.image_render_service import resolve_configured_directories
 
     config = SimpleNamespace(
         flag_directory="resources/defaults/flags",
@@ -299,7 +299,7 @@ def test_the_preview_resolves_every_class_there_is():
     """A preview is a diagnostic: a class it did not resolve would be reported as
     unconfigured, which is a lie a manager would act on."""
     from leaguebot.image.models.image_constants import ASSET_CLASS_TO_COLUMN
-    from leaguebot.image.services.image_preview_service import ASSET_CLASS_COLUMNS
+    from leaguebot.image.services.preview.image_preview_service import ASSET_CLASS_COLUMNS
 
     assert dict(ASSET_CLASS_COLUMNS) == ASSET_CLASS_TO_COLUMN
 
@@ -327,7 +327,7 @@ def test_every_builder_offers_the_division_name_as_the_key(module):
     import importlib
     import inspect
 
-    source = inspect.getsource(importlib.import_module(f"leaguebot.image.services.{module}"))
+    source = inspect.getsource(importlib.import_module(f"leaguebot.image.services.aspects.{module}"))
 
     assert "DIVISION_LOGO_FIELD in declared" in source, module
     assert "DIVISION_LOGO_ASSET, drawing.division_name" in source, module
@@ -379,7 +379,7 @@ def test_the_calendar_keeps_the_division_logo_directory_it_was_handed():
     from pathlib import Path
     from types import SimpleNamespace
 
-    from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.aspects.image_calendar_service import build_fill_spec, resolve_drawing
 
     root = _calendar_template_declaring_a_logo()
     drawing = resolve_drawing(
@@ -453,7 +453,7 @@ def test_no_builder_narrows_the_asset_directories_without_naming_the_logo():
     )
     narrowing = []
     for module in builders:
-        source = inspect.getsource(importlib.import_module(f"leaguebot.image.services.{module}"))
+        source = inspect.getsource(importlib.import_module(f"leaguebot.image.services.aspects.{module}"))
         for line in source.splitlines():
             if "if asset_class in" in line:
                 narrowing.append((module, line.strip()))

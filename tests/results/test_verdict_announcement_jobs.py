@@ -132,9 +132,9 @@ def _verdicts(league: ReviewLeague) -> list[str]:
 def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
     """Switch the verdict graphic on, and capture what each verdict asks it to draw without a
     rasteriser. Gives the list of the drawings' arguments, in order."""
-    from leaguebot.image.services import image_verdict_post
-    from leaguebot.image.services.image_verdict_post import VerdictRender
-    from leaguebot.image.services.image_verdict_service import VerdictDrawing
+    from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
+    from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing
 
     png = tmp_path / "verdict.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -437,7 +437,7 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
     """The banner's poster raising, a fault in the bot, stops the queue at the heading like any
     failure; no verdict goes out until it is cleared. A Retry once it works posts the heading
     first, then both verdicts beneath it."""
-    from leaguebot.image.services import image_verdict_banner_post
+    from leaguebot.image.services.aspects import image_verdict_banner_post
 
     real = image_verdict_banner_post.try_post
     broken = {"on": True}
@@ -468,7 +468,7 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
 async def test_a_banner_that_cannot_be_drawn_heads_the_verdicts_in_words(tmp_path, monkeypatch):
     """The banner switched on, its render failing for want of a rasteriser: the verdicts are
     headed by the written heading instead, posted first, and the verdict follows it."""
-    from leaguebot.image.services import image_verdict_banner_post as banner
+    from leaguebot.image.services.aspects import image_verdict_banner_post as banner
 
     async def _enabled(_bot: Any) -> bool:
         return True
@@ -844,7 +844,7 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     the host alone. The verdict is announced as text naming Lewis, the queue runs to the end, and
     the log channel gains one line naming round 3 of Pro, the verdict picture, the fault, and
     that the verdict went out as text."""
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     fault = "the verdict picture's file could not be opened"
 

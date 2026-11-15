@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.image.services.image_render_service import ImageRenderService
+from leaguebot.image.services.render.image_render_service import ImageRenderService
 from leaguebot.image.utils.svg_document import parse_svg_bytes
 
 TEMPLATE = (
@@ -32,15 +32,15 @@ TEMPLATE = (
 
 #: Every module that renders, and the attribute it must pass as the tier.
 CALL_SITES = {
-    "image/services/image_attendance_post.py": "drawing.division_name",
-    "image/services/image_drawing.py": "drawing.division_name",
-    "image/services/image_lineup_post.py": "drawing.division_name",
-    "image/services/image_results_post.py": "drawing.division_name",
-    "image/services/image_rsvp_post.py": "drawing.division_name",
-    "image/services/image_standings_post.py": "drawing.division_name",
-    "image/services/image_verdict_post.py": "drawing.division_name",
-    "image/services/image_verdict_banner_post.py": "drawing.division_name",
-    "image/services/image_weather_post.py": "drawing.division_name",
+    "image/services/aspects/image_attendance_post.py": "drawing.division_name",
+    "image/services/render/image_drawing.py": "drawing.division_name",
+    "image/services/aspects/image_lineup_post.py": "drawing.division_name",
+    "image/services/aspects/image_results_post.py": "drawing.division_name",
+    "image/services/aspects/image_rsvp_post.py": "drawing.division_name",
+    "image/services/aspects/image_standings_post.py": "drawing.division_name",
+    "image/services/aspects/image_verdict_post.py": "drawing.division_name",
+    "image/services/aspects/image_verdict_banner_post.py": "drawing.division_name",
+    "image/services/aspects/image_weather_post.py": "drawing.division_name",
     "image/cogs/image_cog.py": "context.division_name",
 }
 
@@ -97,7 +97,7 @@ _PROBE = "palette_probe_template"
 async def _render(tmp_path, monkeypatch, palette, spec_builder=None):
     """Render the one-rectangle template for Division 1 with per-tier colours on and *palette*
     as the division's, with a rasteriser that writes a placeholder PNG."""
-    from leaguebot.image.services import image_render_service
+    from leaguebot.image.services.render import image_render_service
     from leaguebot.image.utils.svg_fill import FillSpec
 
     monkeypatch.setattr(image_render_service, "converter_available", lambda *a, **k: True)

@@ -1149,12 +1149,12 @@ _RETRIED_POSTS = {
     ),
     "the opening standings": (
         "opening_standings", lambda chans: chans.standings, {"results": True},
-        ("leaguebot.image.services.image_standings_post", "try_post",
+        ("leaguebot.image.services.aspects.image_standings_post", "try_post",
          MagicMock(rejects=False, applicable=False), {}),
     ),
     "the opening sheet": (
         "opening_sheet", lambda chans: chans.attendance, {"attendance": True},
-        ("leaguebot.image.services.image_attendance_post", "attendance_enabled", False, {}),
+        ("leaguebot.image.services.aspects.image_attendance_post", "attendance_enabled", False, {}),
     ),
 }
 
@@ -1207,8 +1207,8 @@ async def test_a_failed_opening_standings_post_leaves_one_copy_once_retried(
     not a second drivers' copy beside the first (#439). Only the outcome is pinned: whether the
     first copy comes down with the failure or at the start of the next try is the build's to
     choose."""
-    from leaguebot.image.services import image_standings_post
-    from leaguebot.image.services.image_standings_post import (
+    from leaguebot.image.services.aspects import image_standings_post
+    from leaguebot.image.services.aspects.image_standings_post import (
         FELL_BACK,
         ChampionshipOutcome,
         StandingsPostOutcome,
@@ -1241,8 +1241,8 @@ async def _opening_standings_posted_in_part(league: Any, monkeypatch: Any) -> li
     channel takes the drivers' table and refuses the teams', so the queue stops at
     `opening_standings`. The refusal is then cleared. Returns the ids standing in the channel,
     the drivers' table alone."""
-    from leaguebot.image.services import image_standings_post
-    from leaguebot.image.services.image_standings_post import (
+    from leaguebot.image.services.aspects import image_standings_post
+    from leaguebot.image.services.aspects.image_standings_post import (
         FELL_BACK,
         ChampionshipOutcome,
         StandingsPostOutcome,

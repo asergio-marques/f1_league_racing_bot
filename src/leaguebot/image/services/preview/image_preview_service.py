@@ -9,7 +9,7 @@ Every preview therefore resolves the league's own division and, where the kind p
 one, its own round; draws its own teams and seated drivers; and resolves its assets in the
 directories the league configured, exactly as the posting path does. Only the outcome data
 a league cannot configure in advance is fabricated, and that lives in
-:mod:`leaguebot.image.services.image_preview_data`.
+:mod:`leaguebot.image.services.preview.image_preview_data`.
 
 Nothing here writes. A preview leaves the league's records exactly as it found them.
 """
@@ -187,7 +187,7 @@ def _fabricated_driver(
     index: int, team_name: str, seat_number: int, *, collected: bool, team_key: str = ""
 ):
     """One invented driver. Deterministic in *index*, so a picture is reproducible."""
-    from leaguebot.image.services.image_preview_data import LONG_DRIVER_NAME
+    from leaguebot.image.services.preview.image_preview_data import LONG_DRIVER_NAME
 
     # The third fabricated driver carries a name no league controls the length of, so that
     # a template field's bound is exercised without waiting for an unlucky signup.
@@ -378,7 +378,7 @@ async def _load_teams_and_drivers(bot: LeagueBot, context: PreviewContext, *, gu
     ``resolve_drawing``, so the preview and the posting path hand the same thing to the
     same function.
     """
-    from leaguebot.image.services.image_results_post import SIGNUP_FOR_SEASON_SQL, season_of_division
+    from leaguebot.image.services.aspects.image_results_post import SIGNUP_FOR_SEASON_SQL, season_of_division
 
     season_id = await season_of_division(bot.db_path, context.division_id)
     async with get_connection(bot.db_path) as db:
@@ -446,7 +446,7 @@ async def _load_teams_and_drivers(bot: LeagueBot, context: PreviewContext, *, gu
     # The first link of the name chain is the account's display name on the server at the
     # moment of generation, which only the guild can answer. Read through the same helper the
     # posting path uses, this loop having been a verbatim copy of that one.
-    from leaguebot.image.services.image_lineup_post import seated_members
+    from leaguebot.image.services.aspects.image_lineup_post import seated_members
 
     members = seated_members(guild, teams)
     for user_id, member in members.items():
@@ -454,7 +454,7 @@ async def _load_teams_and_drivers(bot: LeagueBot, context: PreviewContext, *, gu
 
     # A preview draws the portraits a posting would, so it obtains them on the same terms.
     # `context.asset_directories` was resolved by `resolve_context` before this ran.
-    from leaguebot.image.services.driver_portrait_service import refresh_before_render
+    from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
         bot.db_path,
@@ -488,7 +488,7 @@ def _drivers_from_teams(
     what its posting would look like. A league that has seated none would otherwise draw an
     empty grid that tells it nothing, so every seat is filled with an invented driver.
     """
-    from leaguebot.image.services.image_lineup_service import resolve_driver_name
+    from leaguebot.image.services.aspects.image_lineup_service import resolve_driver_name
 
     seated: list[PreviewDriver] = []
     for team in teams:
@@ -552,7 +552,7 @@ async def _nationality_collected(bot: LeagueBot) -> bool:
     existed and two read a ``signup_config`` table no migration creates, so the switch
     reached no graphic at all until 2026-08-18.
     """
-    from leaguebot.image.services.image_results_post import _nationality_collected as read_switch
+    from leaguebot.image.services.aspects.image_results_post import _nationality_collected as read_switch
 
     return await read_switch(bot.db_path)
 
@@ -582,7 +582,7 @@ async def resolve_asset_directories(
     rejected, the reason is kept rather than discarded, so the reply can say which value
     was refused and why instead of calling the class unconfigured (FR-038).
     """
-    from leaguebot.image.services.image_render_service import resolve_configured_directories
+    from leaguebot.image.services.render.image_render_service import resolve_configured_directories
 
     faults: list[DirectoryFault] = []
 
@@ -645,7 +645,7 @@ async def build_calendar_preview(bot: LeagueBot, context: PreviewContext):
     league's own, and the crop falls where its own round count puts it.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
-    from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.aspects.image_calendar_service import build_fill_spec, resolve_drawing
 
     config = await bot.image_config_service.get_config()
     rounds = context.rounds
@@ -676,7 +676,7 @@ async def build_lineup_preview(bot: LeagueBot, context: PreviewContext):
     Where the division has seated nobody, every seat carries an invented driver — written
     onto the seats during resolution, so the lineup draws them as it draws any other.
     """
-    from leaguebot.image.services.image_lineup_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.aspects.image_lineup_service import build_fill_spec, resolve_drawing
 
     drawing = resolve_drawing(
         division_name=context.division_name,
@@ -806,7 +806,7 @@ async def _race_name(bot: LeagueBot, context: PreviewContext) -> str:
     place to empty it.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
-    from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME
+    from leaguebot.image.services.aspects.image_rsvp_service import MYSTERY_RACE_NAME
 
     round_obj = context.round
     if round_obj is None:
@@ -830,7 +830,7 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
     division's own check-in configuration the deadline.
     """
     from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
-    from leaguebot.image.services.image_rsvp_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.aspects.image_rsvp_service import build_fill_spec, resolve_drawing
 
     config = await bot.image_config_service.get_config()
     round_obj = context.required_round()
@@ -893,11 +893,11 @@ async def build_results_preview(bot: LeagueBot, context: PreviewContext):
     a round not yet run has none.
     """
     from leaguebot.core.models.round import RoundFormat
-    from leaguebot.image.services.image_preview_data import (
+    from leaguebot.image.services.preview.image_preview_data import (
         fabricate_qualifying_rows,
         fabricate_race_rows,
     )
-    from leaguebot.image.services.image_results_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.aspects.image_results_service import build_fill_spec, resolve_drawing
     from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 
     config = await bot.image_config_service.get_config()
@@ -996,12 +996,12 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     from types import SimpleNamespace
 
     from leaguebot.results.services.standings import standings_service
-    from leaguebot.image.services.image_preview_data import (
+    from leaguebot.image.services.preview.image_preview_data import (
         fabricate_standings_previous_positions,
         fabricate_standings_round_results,
         fabricate_standings_totals,
     )
-    from leaguebot.image.services.image_standings_service import (
+    from leaguebot.image.services.aspects.image_standings_service import (
         CONSTRUCTORS_TEMPLATE_KEY,
         DRIVERS_TEMPLATE_KEY,
         RoundHeading,
@@ -1016,7 +1016,7 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     names, teams, flags, team_key_of = _driver_maps(context, drivers)
     round_obj = context.required_round()
     racing_teams = _racing_teams(context)
-    from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
+    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
 
     tracks = await _tracks(bot)
 
@@ -1247,17 +1247,17 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
     including the named one, and for none after it, so the emptying of a round yet to be run
     can be judged beside those already finalised.
     """
-    from leaguebot.image.services.image_attendance_service import (
+    from leaguebot.image.services.aspects.image_attendance_service import (
         ATTENDANCE_TEMPLATE_KEY,
         RoundHeading,
         build_fill_spec,
         resolve_drawing,
     )
-    from leaguebot.image.services.image_preview_data import (
+    from leaguebot.image.services.preview.image_preview_data import (
         fabricate_attendance_limit,
         fabricate_attendance_records,
     )
-    from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
+    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
 
     names, _teams, flags, _team_key_of = _driver_maps(context)
     round_obj = context.required_round()
@@ -1338,9 +1338,9 @@ async def build_verdict_preview(bot: LeagueBot, context: PreviewContext):
     The driver is one of the division's own, the session one the named round is run over,
     and the sanction one the module can actually issue — never one it cannot.
     """
-    from leaguebot.image.services.image_preview_data import fabricate_verdict_cases
-    from leaguebot.image.services.image_rsvp_service import session_names
-    from leaguebot.image.services.image_verdict_service import (
+    from leaguebot.image.services.preview.image_preview_data import fabricate_verdict_cases
+    from leaguebot.image.services.aspects.image_rsvp_service import session_names
+    from leaguebot.image.services.aspects.image_verdict_service import (
         VerdictDrawing,
         VerdictKind,
         build_fill_spec,
@@ -1399,7 +1399,7 @@ async def build_verdict_banner_preview(bot: LeagueBot, context: PreviewContext):
     The grand prix and the country are read the way every posting path reads them, through
     the shared helpers, so a preview cannot disagree with what the bot will post.
     """
-    from leaguebot.image.services.image_verdict_banner_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.aspects.image_verdict_banner_service import build_fill_spec, resolve_drawing
 
     round_obj = context.round
     if round_obj is None:
@@ -1435,8 +1435,8 @@ async def build_weather_preview(bot: LeagueBot, context: PreviewContext, *, phas
     Phase 0 is the mystery notice, which holds no session and carries no forecast. The
     template drawn is the one the round's own format calls for.
     """
-    from leaguebot.image.services.image_preview_data import fabricate_forecast_values
-    from leaguebot.image.services.image_weather_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.preview.image_preview_data import fabricate_forecast_values
+    from leaguebot.image.services.aspects.image_weather_service import build_fill_spec, resolve_drawing
 
     round_obj = context.required_round()
     round_format = _format_of(round_obj)

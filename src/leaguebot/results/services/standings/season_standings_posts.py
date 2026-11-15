@@ -184,7 +184,7 @@ async def post_opening_standings(
     rule 8).
     """
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.image.services.image_results_post import _driver_names
+    from leaguebot.image.services.aspects.image_results_post import _driver_names
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import (
         produce_standings,

@@ -83,7 +83,7 @@ def _report(path, key, *, valid=True):
 def _drawing(reports, *, toggle=True):
     """The image module's implementation of core's protocol, over stand-ins for its own
     services: the `standings` aspect *toggle*, and *reports* as the templates in force."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=True)

@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
 from leaguebot.image.models.image_module import ImageConfig
-from leaguebot.image.services.image_config_service import (
+from leaguebot.image.services.config.image_config_service import (
     PFP_FLAG_COLUMNS,
     SETTABLE_COLUMNS,
     ImageConfigService,
@@ -28,7 +28,7 @@ from tests.support import saves
 async def _on(db_path: str, name: str, *args):
     """Call the image service's writer *name* on a connection of the test's own, commit what it
     wrote, and return its `Saved`."""
-    from leaguebot.image.services import image_config_service
+    from leaguebot.image.services.config import image_config_service
 
     form = getattr(image_config_service, name)
     async with get_connection(db_path) as db:
@@ -156,7 +156,7 @@ from leaguebot.image.models.image_module import (  # noqa: E402
     PROBLEM_NOT_FOUND,
     ImageConfig as _ImageConfig,
 )
-from leaguebot.image.services.image_validity_service import (  # noqa: E402
+from leaguebot.image.services.validity.image_validity_service import (  # noqa: E402
     check_all_templates,
     check_filename,
     check_template,
@@ -693,7 +693,7 @@ async def test_set_tier_colours_counts_only_the_slots_it_changes(service, db_pat
 
 @pytest.mark.parametrize("name", ["Division 1", "Pro", "7", "São Paulo"])
 def test_a_division_name_with_a_letter_or_digit_is_accepted(name):
-    from leaguebot.image.services.image_config_service import tier_name_refusal
+    from leaguebot.image.services.config.image_config_service import tier_name_refusal
 
     assert tier_name_refusal(name) is None
 
@@ -702,7 +702,7 @@ def test_a_division_name_with_a_letter_or_digit_is_accepted(name):
 def test_a_division_name_with_no_letter_or_digit_is_refused(name):
     """Such a name has no slug to store colours under. It is the league's entry at fault, not
     the bot, and the refusal says so before anything is written."""
-    from leaguebot.image.services.image_config_service import tier_name_refusal
+    from leaguebot.image.services.config.image_config_service import tier_name_refusal
 
     refusal = tier_name_refusal(name)
 

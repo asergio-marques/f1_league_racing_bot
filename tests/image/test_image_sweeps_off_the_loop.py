@@ -30,16 +30,17 @@ from lxml import etree
 
 from leaguebot.core.models.change import ChangeOrigin, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.image.services import driver_portrait_service, image_render_service
-from leaguebot.image.services import image_validity_service as validity_module
-from leaguebot.image.services.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
+from leaguebot.image.services.portraits import driver_portrait_service
+from leaguebot.image.services.render import image_render_service
+from leaguebot.image.services.validity import image_validity_service as validity_module
+from leaguebot.image.services.config.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
 from leaguebot.core.db.database import run_migrations
 from leaguebot.image.models.image_catalogues import CapacityError
 from leaguebot.image.models.image_module import PROBLEM_UNRESOLVED_VALUE
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_render_service import ImageRenderService
-from leaguebot.image.services.image_setting_advice import measure_fastest_lap_contrast
-from leaguebot.image.services.image_validity_service import ImageValidityService
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.render.image_render_service import ImageRenderService
+from leaguebot.image.services.config.image_setting_advice import measure_fastest_lap_contrast
+from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 from leaguebot.image.utils import svg_document
 from leaguebot.image.utils.svg_document import FieldIndex, off_the_loop
 from tests.support.saves import create_image_defaults
@@ -372,7 +373,7 @@ async def test_a_fault_that_cannot_say_its_message_leaks_nothing():
 def _drawing(aspect: str) -> Any:
     """The image module's answers to core's capacity questions, the images module and *aspect*
     on, over every template the bot ships, each reported valid at its own path."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=True)

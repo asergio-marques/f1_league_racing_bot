@@ -30,7 +30,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
     TEMPLATE_COMMAND_NAMES,
 )
-from leaguebot.image.services.image_validity_service import Problem
+from leaguebot.image.services.validity.image_validity_service import Problem
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
     assert_one_line,
@@ -89,7 +89,7 @@ def _argument(parameter: app_commands.Parameter):
 @pytest.fixture(autouse=True)
 def _rasteriser_present(monkeypatch):
     """The rasteriser taken as present wherever a check asks for it: no test here draws."""
-    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.render.image_render_service as render
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
 
@@ -192,7 +192,7 @@ async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts(tmp_path, monke
     """`/images config template-directory` on a folder the survey finds six long faults in: the
     refusal names every one and the folder searched, in more than one part, each fitting one
     Discord message."""
-    import leaguebot.image.services.image_validity_service as validity
+    import leaguebot.image.services.validity.image_validity_service as validity
 
     problems = [
         Problem(

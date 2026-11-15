@@ -254,7 +254,7 @@ async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
 
 async def test_results_graphic_names_a_team_after_its_role_is_replaced(tmp_path):
     """The graphic finds the name and badge from the team, not by asking Discord about a role."""
-    from leaguebot.image.services.image_results_post import _team_names
+    from leaguebot.image.services.aspects.image_results_post import _team_names
 
     db_path, teams, _ = await _season_raced_across_a_role_change(tmp_path)
     guild = MagicMock()

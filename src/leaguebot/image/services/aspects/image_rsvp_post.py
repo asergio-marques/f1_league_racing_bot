@@ -79,8 +79,8 @@ async def try_attach(
 
         from leaguebot.image.models.image_module import PostingOrigin
         from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
-        from leaguebot.image.services.image_rsvp_service import build_fill_spec, resolve_drawing
-        from leaguebot.image.services.image_render_service import (
+        from leaguebot.image.services.aspects.image_rsvp_service import build_fill_spec, resolve_drawing
+        from leaguebot.image.services.render.image_render_service import (
             resolve_configured_directories,
             spec_builder_with_faults,
         )
@@ -160,18 +160,18 @@ def discard_attachment(attachment) -> None:
     through the render service — the boundary
     ``test_no_source_module_posting_path_imports_the_render_service`` exists to hold.
     """
-    from leaguebot.image.services.image_render_service import discard_attachment as _discard
+    from leaguebot.image.services.render.image_render_service import discard_attachment as _discard
 
     _discard(attachment)
 
 
 async def _report(bot: LeagueBot, what: str, detail: str) -> None:
-    from leaguebot.image.services.image_results_post import report
+    from leaguebot.image.services.aspects.image_results_post import report
 
     await report(bot, what, detail)
 
 
 async def _report_notices(bot: LeagueBot, what: str, notices) -> None:
-    from leaguebot.image.services.image_results_post import report_notices
+    from leaguebot.image.services.aspects.image_results_post import report_notices
 
     await report_notices(bot, what, notices)

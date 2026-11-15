@@ -602,7 +602,7 @@ def register_change_types(bot: LeagueBot) -> None:
         steps_of_the_modules,
         wind_down_change,
     )
-    from leaguebot.image.services.image_render_service import discard_render
+    from leaguebot.image.services.render.image_render_service import discard_render
     from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(
@@ -1036,8 +1036,8 @@ async def build(settings: Settings) -> LeagueBot:
 
     from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     bot.module_service = ModuleService(settings.db_path)
     register_module_switches(bot.module_service)
@@ -1049,14 +1049,14 @@ async def build(settings: Settings) -> LeagueBot:
         bot.module_service,
     )
 
-    from leaguebot.image.services.image_render_service import ImageRenderService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
 
     bot.image_render_service = ImageRenderService(
         bot.image_config_service,
         bot.image_validity_service,
     )
 
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     # Core's drawing protocol, image's own implementation, made once and declared on the
     # bot so that core reaches it without importing this module (architecture.md, "How

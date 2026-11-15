@@ -535,7 +535,7 @@ async def season_league(
     db_path = await make_db(tmp_path, now, extra_drivers=extra_drivers)
     holder: dict[str, SeasonLeague] = {}
     if monkeypatch is not None:
-        from leaguebot.image.services import image_render_service
+        from leaguebot.image.services.render import image_render_service
 
         monkeypatch.setattr(
             image_render_service, "converter_available",
@@ -1551,7 +1551,7 @@ def draw_standings_pictures(monkeypatch: Any, tmp_path: Any) -> AsyncMock:
     """Have every standings picture draw, both championships, without a rasteriser: the image
     module's drawings and its render are stood in for, a PNG handed back for each, so that the
     posting reaches Discord with the picture. Returns the render, to count its calls."""
-    from leaguebot.image.services import image_standings_post
+    from leaguebot.image.services.aspects import image_standings_post
 
     monkeypatch.setattr(image_standings_post, "standings_enabled", AsyncMock(return_value=True))
     monkeypatch.setattr(image_standings_post, "build_drawings", AsyncMock(

@@ -38,9 +38,9 @@ if TYPE_CHECKING:
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import ImageRenderService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster

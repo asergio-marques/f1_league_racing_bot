@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
-from leaguebot.image.services.image_render_service import (
+from leaguebot.image.services.render.image_render_service import (
     resolve_configured_directories,
     spec_builder_with_faults,
 )

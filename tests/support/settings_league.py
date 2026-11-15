@@ -67,8 +67,8 @@ async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
     """The league of the module docstring, with *modules* on."""
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.image.services.image_render_service import ImageRenderService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     db_path = os.path.join(str(tmp_path), "settings.db")
     await run_migrations(db_path)

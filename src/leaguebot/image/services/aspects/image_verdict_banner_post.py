@@ -54,7 +54,7 @@ from pathlib import Path
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.image.models.image_module import PostingOrigin
-from leaguebot.image.services.image_verdict_banner_service import VerdictBannerDrawing
+from leaguebot.image.services.aspects.image_verdict_banner_service import VerdictBannerDrawing
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ def build_drawing(
     channel and the division, and joins `tracks` in the same query, so the banner adds no
     read to a path that runs on every review.
     """
-    from leaguebot.image.services.image_verdict_banner_service import resolve_drawing
+    from leaguebot.image.services.aspects.image_verdict_banner_service import resolve_drawing
 
     return resolve_drawing(
         division_name=division_name,
@@ -137,8 +137,8 @@ async def render_banner(
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> BannerRender:
     """Render *drawing* to a PNG, or report why no banner is to be posted."""
-    from leaguebot.image.services.image_verdict_banner_service import build_fill_spec
-    from leaguebot.image.services.image_render_service import (
+    from leaguebot.image.services.aspects.image_verdict_banner_service import build_fill_spec
+    from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -195,7 +195,7 @@ def discard(render, attachment=None) -> None:
     its own posting façade and never through the render service — the boundary
     ``test_no_source_module_posting_path_imports_the_render_service`` exists to hold.
     """
-    from leaguebot.image.services.image_render_service import discard_attachment, discard_render
+    from leaguebot.image.services.render.image_render_service import discard_attachment, discard_render
 
     if attachment is not None:
         discard_attachment(attachment)
@@ -215,14 +215,14 @@ def describe(*, division_name: str, round_number, season_number=None) -> str:
 
 async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a verdicts channel."""
-    from leaguebot.image.services.image_results_post import report as _report
+    from leaguebot.image.services.aspects.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
 async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4)."""
-    from leaguebot.image.services.image_results_post import report_notices as _report_notices
+    from leaguebot.image.services.aspects.image_results_post import report_notices as _report_notices
 
     await _report_notices(bot, what, notices)
 

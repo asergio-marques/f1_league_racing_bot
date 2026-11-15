@@ -22,7 +22,7 @@ from leaguebot.image.models.image_module import (
     STATE_ENABLED_INVALID,
     ValidityReport,
 )
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     build_aspect_statuses,
     colour_shortfall,
 )
@@ -158,7 +158,7 @@ async def test_nothing_is_demanded_while_the_feature_is_off():
     config_service.get_all_tier_colours = AsyncMock()
     config_service.season_division_names = AsyncMock()
 
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     service = ImageValidityService(config_service, MagicMock())
     assert await service.colour_shortfall({CALENDAR: _report(slots={"accent"})}) == {}
@@ -174,7 +174,7 @@ async def test_the_shortfall_is_computed_once_the_feature_is_on():
     config_service.get_all_tier_colours = AsyncMock(return_value={})
     config_service.season_division_names = AsyncMock(return_value=["Division 1"])
 
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     service = ImageValidityService(config_service, MagicMock())
     shortfall = await service.colour_shortfall({CALENDAR: _report(slots={"accent"})})
@@ -214,9 +214,9 @@ async def test_the_aspect_toggle_passes_the_shortfall_through(monkeypatch):
     reason, having asked the validity service it was handed; asked with every colour set, it
     names nothing.
     """
-    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.render.image_render_service as render
 
-    from leaguebot.image.services import image_settings
+    from leaguebot.image.services.config import image_settings
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
     config = MagicMock()

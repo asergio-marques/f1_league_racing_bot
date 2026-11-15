@@ -180,7 +180,7 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     """The forecast refused stops the queue at its post, and nothing is put on the old retry
     queue; Retry posts it as text, with no picture drawn, and records its id. The forecast that
     finally stands notifies Pro's role 801, and no member, as the first would have."""
-    from leaguebot.image.services import image_weather_post
+    from leaguebot.image.services.aspects import image_weather_post
 
     league = await _league(tmp_path)
     drawn = AsyncMock(side_effect=lambda *_a, **_k: (
@@ -257,7 +257,7 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     (weather spec, "Mystery rounds"), and a picture that cannot find its round names it the
     mystery round notice, never a phase (image spec, "Weather image generation", "Generation and
     posting"; criterion 13)."""
-    from leaguebot.image.services import image_weather_post
+    from leaguebot.image.services.aspects import image_weather_post
 
     mystery = cause.startswith("mystery")
     league = await _league(tmp_path, mystery=mystery)
@@ -306,7 +306,7 @@ async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws
     the phase's description, the likelihood of rain Phase 1 drew as text, and from Phase 2 on each
     session's label and drawn weather type in run order, with Phase 3's slots and their summary
     (#287, W288)."""
-    from leaguebot.image.services import image_weather_post
+    from leaguebot.image.services.aspects import image_weather_post
     from leaguebot.weather.utils.message_builder import (
         format_rain_probability,
         format_session_weather_type,

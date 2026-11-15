@@ -61,7 +61,7 @@ async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
 
 
 async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
-    from leaguebot.image.services.image_lineup_post import build_drawing
+    from leaguebot.image.services.aspects.image_lineup_post import build_drawing
     from unittest.mock import patch
 
     captured = {}
@@ -70,7 +70,7 @@ async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
         captured.update(kwargs)
         return "drawing"
 
-    with patch("leaguebot.image.services.image_lineup_service.resolve_drawing", side_effect=_resolve):
+    with patch("leaguebot.image.services.aspects.image_lineup_service.resolve_drawing", side_effect=_resolve):
         await build_drawing(db_path, None, DIVISION_ID)
 
     seated = [
@@ -86,7 +86,7 @@ async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
     """The review of mid-season placements draws what confirming will post, with the new
     drivers in it, so a lineup that will not draw withholds its button (#374). A seat with no
     placement row at all is still empty."""
-    from leaguebot.image.services.image_lineup_post import build_drawing
+    from leaguebot.image.services.aspects.image_lineup_post import build_drawing
     from unittest.mock import patch
 
     captured = {}
@@ -95,7 +95,7 @@ async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
         captured.update(kwargs)
         return "drawing"
 
-    with patch("leaguebot.image.services.image_lineup_service.resolve_drawing", side_effect=_resolve):
+    with patch("leaguebot.image.services.aspects.image_lineup_service.resolve_drawing", side_effect=_resolve):
         await build_drawing(db_path, None, DIVISION_ID, include_uncommitted=True)
 
     seated = [
@@ -113,7 +113,7 @@ async def test_the_command_render_hands_the_request_down_to_the_drawing(monkeypa
     draw the lineup of record while claiming to check the one confirming posts."""
     from unittest.mock import AsyncMock
 
-    import leaguebot.image.services.image_lineup_post as post
+    import leaguebot.image.services.aspects.image_lineup_post as post
 
     seen = {}
 

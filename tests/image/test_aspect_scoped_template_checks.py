@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.image.models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     aspect_attaches_files,
     blocking_template_problems,
     check_all_templates,
@@ -70,7 +70,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
     Built under the project root, because the directory check refuses a path outside it
     and would report fifteen faults rather than the one under test.
     """
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates  # noqa: F401
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates  # noqa: F401
 
     root = os.path.join(os.path.dirname(__file__), "..", "..")
     folder = os.path.join(root, "resources", "_test_templates_missing_verdicts")

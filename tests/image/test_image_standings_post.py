@@ -126,7 +126,7 @@ def _patched(render, *, previous_ids=None, stored=None, stored_lists=None):
     saving and may read the ids through public readers, and the save is deleted once nothing
     calls it, while *stored* still shows that nothing was written.
     """
-    from leaguebot.image.services import image_standings_post as m
+    from leaguebot.image.services.aspects import image_standings_post as m
 
     previous_ids = previous_ids or {}
     stored = stored if stored is not None else {}
@@ -166,7 +166,7 @@ def _patched(render, *, previous_ids=None, stored=None, stored_lists=None):
 async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
                     stored=None, occasion=None, stored_lists=None):
     from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.image_standings_post import try_post
+    from leaguebot.image.services.aspects.image_standings_post import try_post
 
     kwargs = dict(
         db_path="db",
@@ -206,7 +206,7 @@ async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
 
 
 async def test_the_aspect_is_read_per_template_so_one_faulty_half_does_not_stop_the_other():
-    from leaguebot.image.services.image_standings_post import standings_enabled
+    from leaguebot.image.services.aspects.image_standings_post import standings_enabled
 
     bot = _bot(constructors_valid=False)
     assert await standings_enabled(bot, DRIVERS) is True
@@ -214,20 +214,20 @@ async def test_the_aspect_is_read_per_template_so_one_faulty_half_does_not_stop_
 
 
 async def test_the_module_being_off_stands_the_whole_flow_aside():
-    from leaguebot.image.services.image_standings_post import standings_enabled
+    from leaguebot.image.services.aspects.image_standings_post import standings_enabled
 
     bot = _bot(module=False)
     assert await standings_enabled(bot, DRIVERS) is False
 
 
 async def test_the_toggle_being_off_stands_the_whole_flow_aside():
-    from leaguebot.image.services.image_standings_post import standings_enabled
+    from leaguebot.image.services.aspects.image_standings_post import standings_enabled
 
     assert await standings_enabled(_bot(toggle=False), DRIVERS) is False
 
 
 async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting():
-    from leaguebot.image.services.image_standings_post import standings_enabled
+    from leaguebot.image.services.aspects.image_standings_post import standings_enabled
 
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
@@ -358,7 +358,7 @@ async def test_the_whole_flow_stands_aside_when_neither_template_is_wanted():
 
 
 async def test_no_bot_no_guild_and_no_channel_each_stand_the_flow_aside():
-    from leaguebot.image.services.image_standings_post import StandingsPostOutcome, try_post
+    from leaguebot.image.services.aspects.image_standings_post import StandingsPostOutcome, try_post
 
     for args in ((None, _guild(), MagicMock()), (_bot(), None, MagicMock()), (_bot(), _guild(), None)):
         outcome = await try_post(
@@ -455,7 +455,7 @@ async def test_a_resolution_fault_reports_once_and_falls_both_back():
     bot = _bot()
     sent = []
 
-    from leaguebot.image.services import image_standings_post as m
+    from leaguebot.image.services.aspects import image_standings_post as m
 
     with patch.object(m, "build_drawings", AsyncMock(side_effect=RuntimeError("no calendar"))):
         outcome = await m.try_post(
@@ -643,7 +643,7 @@ def _snapshots(round_id, division_id):
 
 
 async def test_build_drawings_resolves_both_championships_against_real_tables(tmp_path):
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.image.services.aspects.image_standings_post import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -679,7 +679,7 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
 
 async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
     """The two graphics key their team names differently — by driver, and by role."""
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.image.services.aspects.image_standings_post import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -714,7 +714,7 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
 
 
 async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_path):
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.image.services.aspects.image_standings_post import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -755,15 +755,15 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
     import struct
     from types import SimpleNamespace
 
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import (
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import (
         ImageRenderService,
         resolve_configured_directories,
         spec_builder_with_faults,
     )
-    from leaguebot.image.services.image_standings_post import build_drawings
-    from leaguebot.image.services.image_standings_service import build_fill_spec
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -828,7 +828,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
 
 
 async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(tmp_path):
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.image.services.aspects.image_standings_post import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -908,7 +908,7 @@ def _outcome(*, applicable=True, rejects=False, fallbacks=()):
     """A real outcome, so that whatever the standings poster reads of it holds: the flow stood
     aside, a commanded posting refused, or each championship drawn (message 7701 for the
     drivers, 7702 for the constructors) but those named in *fallbacks*."""
-    from leaguebot.image.services.image_standings_post import (
+    from leaguebot.image.services.aspects.image_standings_post import (
         FELL_BACK,
         POSTED,
         REJECTED,
@@ -987,7 +987,7 @@ async def test_the_flow_standing_aside_leaves_the_textual_body_exactly_as_it_was
     captured: list[str] = []
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(applicable=False)),
     ):
         await _post(db_path, division_id, round_id, captured, bot=MagicMock())
@@ -1002,7 +1002,7 @@ async def test_both_graphics_posting_leaves_no_textual_message_at_all(tmp_path):
     captured: list[str] = []
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(fallbacks=())),
     ):
         await _post(db_path, division_id, round_id, captured, bot=MagicMock())
@@ -1016,7 +1016,7 @@ async def test_one_championship_falling_back_posts_that_section_and_no_other(tmp
     captured: list[str] = []
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(fallbacks=("drivers",))),
     ):
         await _post(db_path, division_id, round_id, captured, bot=MagicMock())
@@ -1031,7 +1031,7 @@ async def test_both_falling_back_posts_each_championship_exactly_once(tmp_path):
     captured: list[str] = []
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(fallbacks=("drivers", "constructors"))),
     ):
         await _post(db_path, division_id, round_id, captured, bot=MagicMock())
@@ -1046,7 +1046,7 @@ async def test_a_rejected_commanded_posting_posts_nothing_at_all(tmp_path):
     captured: list[str] = []
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(rejects=True)),
     ):
         await _post(db_path, division_id, round_id, captured, bot=MagicMock())
@@ -1060,7 +1060,7 @@ async def test_a_cancelled_round_never_enters_the_image_branch(tmp_path):
     captured: list[str] = []
     spy = AsyncMock(return_value=_outcome(fallbacks=()))
 
-    with patch("leaguebot.image.services.image_standings_post.try_post", spy):
+    with patch("leaguebot.image.services.aspects.image_standings_post.try_post", spy):
         await _post(db_path, division_id, round_id, captured, bot=MagicMock())
 
     assert spy.await_count == 0
@@ -1072,7 +1072,7 @@ async def test_the_image_path_raising_never_costs_the_league_its_standings(tmp_p
     captured: list[str] = []
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(side_effect=RuntimeError("boom")),
     ):
         await _post(db_path, division_id, round_id, captured, bot=MagicMock())
@@ -1096,7 +1096,7 @@ async def test_each_picture_is_reported_as_a_table_with_the_message_it_replaces(
     outcome.constructors.replaces = [4322]
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(return_value=outcome),
     ):
         tables = await _post(db_path, division_id, round_id, captured, bot=MagicMock())
@@ -1184,7 +1184,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
     )
 
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
+        "leaguebot.image.services.aspects.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(fallbacks=("drivers",))),
     ):
         with in_a_job():
@@ -1287,10 +1287,10 @@ async def _highlighted_svg(tmp_path):
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.models.image_constants import packaged_directory_for
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import resolve_configured_directories
-    from leaguebot.image.services.image_standings_post import build_drawings
-    from leaguebot.image.services.image_standings_service import build_fill_spec
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import resolve_configured_directories
+    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
     from leaguebot.image.utils.svg_document import load_svg
     from leaguebot.image.utils.svg_fill import fill
 
@@ -1415,7 +1415,7 @@ async def test_the_three_marks_reach_the_raster_in_their_own_corners(tmp_path):
     """
     from PIL import Image  # noqa: PLC0415
 
-    from leaguebot.image.services.image_render_service import rasterise
+    from leaguebot.image.services.render.image_render_service import rasterise
     from leaguebot.image.utils.svg_document import FieldIndex, canvas_of
     from leaguebot.image.utils.svg_fill import fill as fill_spec_onto
 

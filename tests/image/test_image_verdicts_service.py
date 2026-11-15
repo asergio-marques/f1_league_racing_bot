@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.image.services.image_verdict_service import (
+from leaguebot.image.services.aspects.image_verdict_service import (
     VerdictDrawing,
     VerdictKind,
     mention_ids,

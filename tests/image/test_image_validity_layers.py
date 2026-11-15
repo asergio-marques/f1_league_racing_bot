@@ -22,7 +22,7 @@ from leaguebot.image.models.image_module import (
     STATE_ENABLED_INVALID,
     ImageConfig,
 )
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     LAYER_RESOLUTION,
@@ -451,7 +451,7 @@ def test_one_bad_template_does_not_affect_the_others(tmp_path, templates):
 
 
 def test_missing_directory_reported_once_not_sixteen_times(tmp_path):
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     config = _config("templates_that_do_not_exist")
     reports = evaluate_all_templates(config, root=tmp_path)
@@ -465,7 +465,7 @@ def test_missing_directory_reported_once_not_sixteen_times(tmp_path):
 
 
 def test_present_directory_does_not_short_circuit(tmp_path, templates):
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     (templates / "calendar_template.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
@@ -476,7 +476,7 @@ def test_present_directory_does_not_short_circuit(tmp_path, templates):
 
 
 def test_directory_escaping_project_root_is_reported_not_raised(tmp_path):
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     reports = evaluate_all_templates(_config("../../elsewhere"), root=tmp_path)
     assert len(reports) == 16
@@ -530,7 +530,7 @@ class _SyntheticCatalogueLayer:
 def test_specific_attribution_names_weather_phase_and_variant(tmp_path, templates):
     """US3 scenario 3: phase 3 sprint alone is invalid; the other five stay valid."""
     from leaguebot.image.models.image_constants import ASPECT_TEMPLATES, TEMPLATE_LABELS
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     (templates / "weather_p3_sprint_template.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
@@ -557,7 +557,7 @@ def test_specific_attribution_names_weather_phase_and_variant(tmp_path, template
 
 def test_sprint_and_non_sprint_variants_are_distinguishable(tmp_path, templates):
     from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     (templates / "weather_p3_template.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
@@ -590,7 +590,7 @@ def test_specific_attribution_for_a_sibling_pair(
 ):
     """One of a pair named specifically, its sibling reported valid (US3 scenarios 4, 5)."""
     from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     (templates / f"{removed}.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
@@ -616,7 +616,7 @@ def test_every_template_label_is_unique():
 
 def test_declared_depth_follows_each_type_s_catalogue(tmp_path, templates):
     """Depth is what was *applied*, per type — not one number for the whole set."""
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         LAYER_TRIAL_RENDER,
         evaluate_all_templates,
     )
@@ -638,7 +638,7 @@ def test_declared_depth_follows_each_type_s_catalogue(tmp_path, templates):
 
 def test_depth_summary_names_what_was_not_checked(tmp_path, templates):
     """No silent pass: a shallow check must say what it did not do."""
-    from leaguebot.image.services.image_validity_service import ImageValidityService, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService, evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     summary = ImageValidityService.depth_summary(reports).lower()
@@ -657,7 +657,7 @@ def test_adding_a_layer_does_not_change_the_report_shape(tmp_path, templates):
     import dataclasses
 
     from leaguebot.image.models.image_module import ValidityReport
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     before = {f.name for f in dataclasses.fields(ValidityReport)}
 
@@ -675,7 +675,7 @@ def test_adding_a_layer_does_not_change_the_report_shape(tmp_path, templates):
 def test_adding_a_layer_does_not_change_the_command_surface(tmp_path, templates):
     """Registering a Layer 2 adds, removes and renames no command."""
     from leaguebot.image.cogs.image_cog import ImageCog
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     before = {
         "config": {c.name for c in ImageCog.config.commands},
@@ -697,7 +697,7 @@ def test_adding_a_layer_does_not_change_the_command_surface(tmp_path, templates)
 
 def test_adding_a_layer_does_not_change_the_three_states(tmp_path, templates):
     from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED, STATE_ENABLED_INVALID
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     reports = evaluate_all_templates(
         _config("templates"),
@@ -715,7 +715,7 @@ def test_adding_a_layer_does_not_change_the_three_states(tmp_path, templates):
 
 def test_a_deeper_layer_failure_is_reported_through_the_same_shape(tmp_path, templates):
     """A Layer 2 failure differs only in `failed_layer` and `reason`."""
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     reports = evaluate_all_templates(
         _config("templates"),
@@ -736,7 +736,7 @@ def test_a_deeper_layer_failure_is_reported_through_the_same_shape(tmp_path, tem
 
 def test_type_without_a_ratified_layer_reports_its_shallower_depth(tmp_path, templates):
     """A template Layer 2 does not apply to is checked to 1 and says so."""
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     reports = evaluate_all_templates(
         _config("templates"),
@@ -759,7 +759,7 @@ def test_type_without_a_ratified_layer_reports_its_shallower_depth(tmp_path, tem
 
 def test_layers_run_in_number_order_regardless_of_registration_order(tmp_path, templates):
     """A Layer 1 failure must not be masked by a Layer 2 registered first."""
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     (templates / "calendar_template.svg").unlink()
     reports = evaluate_all_templates(
@@ -774,7 +774,7 @@ def test_layers_run_in_number_order_regardless_of_registration_order(tmp_path, t
 
 def test_evaluation_stops_at_the_first_failing_layer(tmp_path, templates):
     """A template failing Layer 1 is not then run through Layer 2."""
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     (templates / "verdicts_template.svg").write_bytes(NOT_SVG)
     reports = evaluate_all_templates(
@@ -795,7 +795,7 @@ def test_evaluation_stops_at_the_first_failing_layer(tmp_path, templates):
 def test_disabled_aspect_reports_disabled_even_when_templates_are_broken(tmp_path, templates):
     from leaguebot.image.models.image_constants import TEMPLATE_LABELS
     from leaguebot.image.models.image_module import STATE_DISABLED
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     (templates / "calendar_template.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
@@ -810,7 +810,7 @@ def test_disabled_aspect_reports_disabled_even_when_templates_are_broken(tmp_pat
 
     # The cross says why it is off, then what the manager would meet on switching it on —
     # naming the individual template, never the group (FR-032).
-    from leaguebot.image.services.image_validity_service import PLAIN_ASPECT_OFF, PLAIN_WOULD_NEED_FIXING
+    from leaguebot.image.services.validity.image_validity_service import PLAIN_ASPECT_OFF, PLAIN_WOULD_NEED_FIXING
 
     assert len(calendar.disabled_reasons) == 3
     assert calendar.disabled_reasons[0].startswith(PLAIN_ASPECT_OFF)
@@ -824,7 +824,7 @@ def test_disabled_aspect_reports_disabled_even_when_templates_are_broken(tmp_pat
 
 def test_disabled_aspect_with_sound_templates_names_only_the_toggle(tmp_path, templates):
     """Nothing awaits it, so the row says why it is off and how to switch it on."""
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         PLAIN_ASPECT_OFF,
         build_aspect_statuses,
         evaluate_all_templates,
@@ -856,7 +856,7 @@ def test_the_toggle_remedy_names_a_choice_the_command_actually_offers():
 
 def test_disabled_aspect_names_its_switched_off_source_module(tmp_path, templates):
     """Standings is drawn from the results module, so its absence is what awaits."""
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     statuses = {
@@ -878,7 +878,7 @@ def test_disabled_aspect_names_its_switched_off_source_module(tmp_path, template
 
 def test_reasons_are_the_blocking_ones_while_an_aspect_is_enabled(tmp_path, templates):
     """The enabled path is untouched: what a report prints is what it always printed."""
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     (templates / "calendar_template.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
@@ -892,7 +892,7 @@ def test_reasons_are_the_blocking_ones_while_an_aspect_is_enabled(tmp_path, temp
 
 def test_a_disabled_row_promises_exactly_what_the_enabled_row_reports(tmp_path, templates):
     """One helper feeds both branches, so the promise cannot outlive the fault."""
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         PLAIN_WOULD_NEED_FIXING,
         build_aspect_statuses,
         evaluate_all_templates,
@@ -910,7 +910,7 @@ def test_a_disabled_row_promises_exactly_what_the_enabled_row_reports(tmp_path, 
 
 
 def test_enabled_aspect_with_valid_templates_reports_enabled(tmp_path, templates):
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     statuses = {s.aspect: s for s in build_aspect_statuses({"calendar": True}, reports)}
@@ -920,7 +920,7 @@ def test_enabled_aspect_with_valid_templates_reports_enabled(tmp_path, templates
 
 
 def test_absent_converter_makes_every_enabled_aspect_invalid(tmp_path, templates):
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         PLAIN_NO_RASTERISER,
         PLAIN_REMEDY_ASK_OPERATOR,
         build_aspect_statuses,
@@ -943,7 +943,7 @@ def test_absent_converter_makes_every_enabled_aspect_invalid(tmp_path, templates
 
 
 def test_all_nine_aspects_are_always_reported(tmp_path, templates):
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     statuses = build_aspect_statuses({}, reports)
@@ -966,7 +966,7 @@ from leaguebot.image.models.image_catalogues import (  # noqa: E402
     catalogue_for,
     declared_capacities,
 )
-from leaguebot.image.services.image_validity_service import (  # noqa: E402
+from leaguebot.image.services.validity.image_validity_service import (  # noqa: E402
     LAYERS,
     CatalogueLayer,
     ImageValidityService,
@@ -1298,7 +1298,7 @@ def test_an_identifier_belonging_to_no_catalogue_is_not_a_fault(tmp_path, templa
 
 def test_the_two_results_templates_are_reported_separately(tmp_path, templates):
     """FR-031 — a report names which of the pair is at fault, never the aspect."""
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
     (templates / "results_qualifying_template.svg").write_bytes(NO_CANVAS_SVG)
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
@@ -1349,7 +1349,7 @@ def test_flag_slots_that_agree_with_each_other_pass_whatever_shape_they_agree_on
     nothing else. A league drawing all of its flags 2:1 is drawing them correctly: one file
     per country goes into all of them and none of it is letterboxed.
     """
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     for shape in ((120, 80), (120, 60), (120, 120), (80, 120), (200, 41)):
         root = _root_with(_flags(shape, shape, shape))
@@ -1357,7 +1357,7 @@ def test_flag_slots_that_agree_with_each_other_pass_whatever_shape_they_agree_on
 
 
 def test_a_flag_slot_out_of_step_with_its_siblings_is_refused_and_named():
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     root = _root_with(_flags((120, 60), (120, 60), (120, 120)))
     faults = class_aspect_faults_of(root, "calendar_template")
@@ -1372,7 +1372,7 @@ def test_a_flag_slot_out_of_step_with_its_siblings_is_refused_and_named():
 
 def test_the_majority_sets_the_reference_rather_than_the_first_slot():
     """Document order must not decide it; twenty-three slots outvote the one before them."""
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     root = _root_with(_flags((120, 120), *[(120, 60)] * 23))
     faults = class_aspect_faults_of(root, "calendar_template")
@@ -1384,7 +1384,7 @@ def test_the_majority_sets_the_reference_rather_than_the_first_slot():
 def test_a_tie_is_broken_by_field_id_so_the_reference_is_the_same_everywhere():
     """Two shapes, one slot each. Either could be called the odd one out, so it must not
     depend on which the parser handed over first — the suite runs on three unlike hosts."""
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     forwards = class_aspect_faults_of(
         _root_with(_flags((120, 60), (120, 120))), "calendar_template"
@@ -1400,7 +1400,7 @@ def test_a_tie_is_broken_by_field_id_so_the_reference_is_the_same_everywhere():
 
 def test_two_classes_on_one_template_need_not_agree_with_each_other():
     """The constraint is within a class, never across two — flags and maps still differ."""
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     root = _root_with(
         _flags((120, 60), (120, 60))
@@ -1410,7 +1410,7 @@ def test_two_classes_on_one_template_need_not_agree_with_each_other():
 
 
 def test_a_class_drawing_a_single_slot_has_nothing_to_disagree_with():
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     root = _root_with([("round_1_flag", 200, 41)])
     assert class_aspect_faults_of(root, "calendar_template") == []
@@ -1419,14 +1419,14 @@ def test_a_class_drawing_a_single_slot_has_nothing_to_disagree_with():
 def test_authoring_noise_inside_the_tolerance_passes():
     """120.00001 / 80 is what Inkscape writes, and is not exactly 1.5 in binary floating
     point. An exact comparison would reject every template a human drew."""
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     root = _root_with(_flags((120, 80), (120.00001, 80)))
     assert class_aspect_faults_of(root, "calendar_template") == []
 
 
 def test_a_slot_declaring_no_usable_dimensions_defers_rather_than_dividing_by_zero():
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     for images in (
         [("round_1_flag", 120, 80), ("round_2_flag", None, None)],
@@ -1436,7 +1436,7 @@ def test_a_slot_declaring_no_usable_dimensions_defers_rather_than_dividing_by_ze
 
 
 def test_an_unknown_field_is_not_judged():
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     root = _root_with([("not_a_catalogue_field", 120, 120)])
     assert class_aspect_faults_of(root, "calendar_template") == []
@@ -1453,7 +1453,7 @@ def test_two_templates_may_disagree_with_each_other_about_a_class(tmp_path):
     of any re-shaping — the other thirteen would still disagree with it — and a league could
     never move a class off the shape it started on. The gap is documented to leagues instead.
     """
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     calendar = _root_with(_flags((120, 80), (120, 80)))
     standings = _root_with([("round_1_flag", 120, 60), ("round_2_flag", 120, 60)])
@@ -1465,7 +1465,7 @@ def test_two_templates_may_disagree_with_each_other_about_a_class(tmp_path):
 # ── only a marker slot may declare that it stretches ─────────────────────
 
 def test_a_marker_slot_may_stretch_and_its_shape_is_then_not_judged():
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         class_aspect_faults_of,
         stretch_faults_of,
     )
@@ -1480,7 +1480,7 @@ def test_a_marker_slot_may_stretch_and_its_shape_is_then_not_judged():
 def test_the_marker_class_is_not_held_to_one_shape_even_when_it_does_not_stretch():
     """Decided 2026-09-01: it carries several kinds of marker, so there is no shape for it
     to agree on. The 64 x 64 arrows sit in the same class as the marks."""
-    from leaguebot.image.services.image_validity_service import class_aspect_faults_of
+    from leaguebot.image.services.validity.image_validity_service import class_aspect_faults_of
 
     root = _root_with(
         [("round_1_position_change", 64, 64), ("round_2_position_change", 128, 64)]
@@ -1496,7 +1496,7 @@ def test_a_slot_of_a_class_that_does_not_stretch_may_not_say_that_it_does():
     passed. With the shape now taken from the template, a lineup whose portrait slots all
     stretch agrees with itself perfectly and would draw every face in the league squashed.
     """
-    from leaguebot.image.services.image_validity_service import stretch_faults_of
+    from leaguebot.image.services.validity.image_validity_service import stretch_faults_of
 
     cases = [
         ("lineup_template", "team_1_driver_1_image", 100, 50),   # wrong shape and stretching
@@ -1514,7 +1514,7 @@ def test_a_slot_of_a_class_that_does_not_stretch_may_not_say_that_it_does():
 
 def test_a_uniformly_stretching_portrait_set_is_caught_by_the_stretch_check_alone():
     """The loophole spelled out: the shape check has nothing to say about these."""
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         class_aspect_faults_of,
         stretch_faults_of,
     )
@@ -1528,7 +1528,7 @@ def test_a_uniformly_stretching_portrait_set_is_caught_by_the_stretch_check_alon
 
 def test_the_attendance_marks_stretch_and_the_arrows_beside_them_do_not():
     """One class, two kinds of slot, and only the marks say they stretch."""
-    from leaguebot.image.services.image_validity_service import stretch_faults_of
+    from leaguebot.image.services.validity.image_validity_service import stretch_faults_of
 
     root = _root_with(
         [("round_1_background", 36, 24), ("round_1_position_change", 64, 64)],
@@ -1543,7 +1543,7 @@ def test_a_shape_fault_is_reported_as_its_own_kind():
     """It read as "the drawing is missing something the bot has to fill in" until now,
     which told a manager to look for a field when nothing was missing."""
     from leaguebot.image.models.image_module import PROBLEM_ASPECT_DISAGREEMENT, ValidityReport
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         ASPECT_FAULT_PREFIX,
         LAYER_CATALOGUE,
         PLAIN_ASPECT_DISAGREEMENT,
@@ -1577,7 +1577,7 @@ def test_the_marker_never_reaches_the_manager_who_named_the_file(tmp_path):
     from lxml import etree
 
     from leaguebot.image.models.image_module import PROBLEM_ASPECT_DISAGREEMENT
-    from leaguebot.image.services.image_validity_service import ASPECT_FAULT_PREFIX, check_template
+    from leaguebot.image.services.validity.image_validity_service import ASPECT_FAULT_PREFIX, check_template
 
     directory = tmp_path / "templates"
     directory.mkdir()
@@ -1594,7 +1594,7 @@ def test_the_marker_never_reaches_the_manager_who_named_the_file(tmp_path):
 
 
 def test_only_the_calendar_and_check_in_may_declare_a_circuit_map():
-    from leaguebot.image.services.image_validity_service import map_bearing_faults_of
+    from leaguebot.image.services.validity.image_validity_service import map_bearing_faults_of
 
     for template_key in ("calendar_template", "rsvp_template"):
         root = _root_with([("track_image", 120, 120)] if template_key == "rsvp_template"
@@ -1603,7 +1603,7 @@ def test_only_the_calendar_and_check_in_may_declare_a_circuit_map():
 
 
 def test_a_standings_template_declaring_a_circuit_map_is_refused():
-    from leaguebot.image.services.image_validity_service import map_bearing_faults_of
+    from leaguebot.image.services.validity.image_validity_service import map_bearing_faults_of
 
     root = _root_with([("round_1_image", 120, 120)])
     faults = map_bearing_faults_of(root, "standings_drivers_template")
