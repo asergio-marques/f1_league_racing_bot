@@ -32,6 +32,7 @@ from leaguebot.image.models.image_module import (
     RenderOutcome,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.image.utils.svg_document import off_the_loop
 
 #: What a caller should do with the result of ``render_for_posting``.
 POST_IMAGE = "POST_IMAGE"
@@ -608,6 +609,122 @@ def grouped_notice_lines(notices: list[RenderNotice]) -> list[str]:
     return lines
 
 
+def _palette_notice(image_type: str, division_name: str) -> RenderNotice:
+    """The notice that a tier's colours could not be applied and the graphic is drawn in the
+    template's own."""
+    return RenderNotice(
+        image_type=image_type,
+        notice_kind=NOTICE_TIER_COLOURS_NOT_APPLIED,
+        detail=(
+            f"the colours of {division_name} could not be applied, so the graphic is drawn in "
+            "the template's own colours"
+        ),
+    )
+
+
+@dataclass
+class _Drawn:
+    """What the render's worker thread hands back: plain data, holding nothing parsed. The
+    serialised picture and its canvas, or the problem that stopped it, and the notices raised
+    on the way."""
+
+    problem: Problem | None = None
+    svg: bytes | None = None
+    canvas: tuple[int, int] | None = None
+    notices: list[RenderNotice] = dataclass_field(default_factory=list)
+
+
+def _draw(
+    path: Path,
+    image_type: str,
+    spec_builder,
+    palette: dict[str, str],
+    division_name: str | None,
+) -> _Drawn:
+    """Parse the template, paint the tier's palette into it, build and verify the spec, and
+    fill: the render's whole work on the tree, run in a worker thread through `off_the_loop`.
+
+    The palette goes in before the builder, deliberately. Builders read the template's
+    computed style — `_highlight_paints` pulls the standings highlight ink straight out of the
+    stylesheet, and the fit engine resolves `fill` through `computed_style` — so injecting
+    afterwards would leave them reading the unpalette'd file and a league unable to drive
+    either through a slot.
+
+    Each fault is a problem or a notice, never raised: the handlers are the render's own
+    fallback, which the posting paths fall back from to text.
+    """
+    from leaguebot.image.utils.svg_document import SvgError, load_svg
+    from leaguebot.image.utils.svg_fill import fill
+    from leaguebot.image.utils.svg_palette import apply_palette
+
+    try:
+        root = load_svg(path)
+    except SvgError as exc:
+        return _Drawn(
+            problem=Problem(
+                kind=PROBLEM_NOT_SVG,
+                detail=f"not a valid SVG file — {exc}",
+                template_key=image_type,
+            )
+        )
+
+    notices: list[RenderNotice] = []
+    if palette:
+        try:
+            apply_palette(root, palette)
+        except Exception:  # noqa: BLE001 — place 5: the graphic is drawn in the template's colours
+            log.exception("render: per-tier palette failed for %s / %s", image_type, division_name)
+            notices.append(_palette_notice(image_type, division_name or ""))
+
+    try:
+        spec = spec_builder(root)
+    except Exception as exc:  # noqa: BLE001 — place 5: the problem is what the caller falls back from
+        log.exception("render: spec build failed for %s", image_type)
+        return _Drawn(
+            problem=Problem(
+                kind=PROBLEM_UNRESOLVED_VALUE,
+                detail=f"the data for this image could not be assembled — {exc}",
+                template_key=image_type,
+            ),
+            notices=notices,
+        )
+
+    # ── Verification against the concrete data (FR-010) ───────────────
+    # Layer 2 checked the template when it was configured. The data has moved since:
+    # a division grew, a value stopped being determinable. This is the only moment
+    # both are in hand.
+    problem = _verify_against_data(root, spec, image_type)
+    if problem is not None:
+        return _Drawn(problem=problem, notices=notices)
+
+    try:
+        result = fill(spec)
+    except Exception as exc:  # noqa: BLE001 — place 5: the problem is what the caller falls back from
+        log.exception("render: fill failed for %s", image_type)
+        return _Drawn(
+            problem=Problem(
+                kind=PROBLEM_UNRESOLVED_VALUE,
+                detail=f"the template could not be filled — {exc}",
+                template_key=image_type,
+            ),
+            notices=notices,
+        )
+
+    notices.extend(result.notices)
+    # Constitution XIV.3: an unresolved field aborts the render. Notices raised
+    # before the problem are still reported, so an operator sees the whole picture.
+    if result.unresolved:
+        return _Drawn(
+            problem=Problem(
+                kind=PROBLEM_UNRESOLVED_VALUE,
+                detail="; ".join(result.unresolved),
+                template_key=image_type,
+            ),
+            notices=notices,
+        )
+    return _Drawn(svg=result.svg, canvas=result.canvas, notices=notices)
+
+
 class ImageRenderService:
     """Fill a template and rasterise it, reporting problems and notices separately."""
 
@@ -615,26 +732,31 @@ class ImageRenderService:
         self._config_service = config_service
         self._validity_service = validity_service
 
-    async def apply_tier_palette(self, root, division_name: str) -> None:
-        """Paint this tier's configured colours into the parsed template (051).
+    async def tier_palette(self, division_name: str) -> dict[str, str]:
+        """This tier's configured colours, or nothing while the feature is off (051).
 
-        Reads nothing while the feature is off, which is what keeps it inert: a league that
-        has not asked for per-tier colours pays not even a query for them.
+        Reads nothing else, and nothing at all while the feature is off, which is what keeps
+        it inert: a league that has not asked for per-tier colours pays not even a query for
+        them. It is the read half of painting a tier into a template, which is done in a worker
+        thread with what this answers (`apply_palette`), so that the read, which needs the
+        loop, comes first.
 
-        Public because it has two callers and must stay the one step both take. `render`
-        paints a division's graphic through it; the fastest-lap contrast check (#165)
-        paints each division's copy of the race results template through it before reading
-        the plate. A second way of resolving a tier's colours would let the figure a
-        league is told drift from the colour it is drawn in, which is the defect #165 was.
+        Public because it has two callers and must stay the one step both take. `render` paints
+        a division's graphic with what it answers; the fastest-lap contrast check (#165) paints
+        each division's copy of the race results template with it before reading the plate. A
+        second way of resolving a tier's colours would let the figure a league is told drift
+        from the colour it is drawn in, which is the defect #165 was.
         """
-        from leaguebot.image.utils.svg_palette import apply_palette
-
         config = await self._config_service.get_config()
         if config is None or not getattr(config, "per_tier_colour_enabled", False):
-            return
-        palette = await self._config_service.get_tier_palette(division_name)
-        if palette:
-            apply_palette(root, palette)
+            return {}
+        return await self._config_service.get_tier_palette(division_name)
+
+    async def apply_tier_palette(self, root, division_name: str) -> None:
+        """Paint this tier's configured colours into a parsed template, reading them first."""
+        from leaguebot.image.utils.svg_palette import apply_palette
+
+        apply_palette(root, await self.tier_palette(division_name))
 
     async def render(
         self,
@@ -664,9 +786,6 @@ class ImageRenderService:
         what keeps concurrent renders apart and what ``discard_render`` recognises as the
         bot's own, so the stem is free to be anything a filesystem will take.
         """
-        from leaguebot.image.utils.svg_document import SvgError, load_svg
-        from leaguebot.image.utils.svg_fill import fill
-
         if not converter_available():
             return RenderOutcome(
                 problem=Problem(
@@ -698,95 +817,31 @@ class ImageRenderService:
                 )
             )
 
-        try:
-            # Parsed on the event loop, unlike the other template reads: the tree is filled
-            # here, on the loop, and a tree parsed in a worker thread must never leave it
-            # (`load_svg`).
-            root = load_svg(report.resolved_path)
-        except SvgError as exc:
-            return RenderOutcome(
-                problem=Problem(
-                    kind=PROBLEM_NOT_SVG,
-                    detail=f"not a valid SVG file — {exc}",
-                    template_key=image_type,
-                )
-            )
-
-        # ── Per-tier colours (051) ────────────────────────────────────────
-        # Before the builder, deliberately. Builders read the template's computed style —
-        # `_highlight_paints` pulls the standings highlight ink straight out of the
-        # stylesheet, and the fit engine resolves `fill` through `computed_style` — so
-        # injecting afterwards would leave them reading the unpalette'd file and a league
-        # unable to drive either through a slot.
-        #
-        # Never fatal. A palette that cannot be applied is a graphic drawn in the template's
-        # own colours, which is exactly what every league saw before this existed; refusing
-        # to post over it would be a worse answer than posting the wrong shade of blue. It is
+        # ── Per-tier colours (051): the read, which needs the loop ─────────
+        # Never fatal. A palette that cannot be read is a graphic drawn in the template's own
+        # colours, which is exactly what every league saw before this existed; refusing to
+        # post over it would be a worse answer than posting the wrong shade of blue. It is
         # reported, though: a render notice says the tier's colours were not applied.
         notices: list[RenderNotice] = []
+        palette: dict[str, str] = {}
         if division_name:
             try:
-                await self.apply_tier_palette(root, division_name)
+                palette = await self.tier_palette(division_name)
             except Exception:  # noqa: BLE001 — place 5: the graphic is drawn in the template's colours
                 log.exception(
                     "render: per-tier palette failed for %s / %s", image_type, division_name
                 )
-                notices.append(
-                    RenderNotice(
-                        image_type=image_type,
-                        notice_kind=NOTICE_TIER_COLOURS_NOT_APPLIED,
-                        detail=(
-                            f"the colours of {division_name} could not be applied, so the "
-                            "graphic is drawn in the template's own colours"
-                        ),
-                    )
-                )
+                notices.append(_palette_notice(image_type, division_name))
 
-        try:
-            spec = spec_builder(root)
-        except Exception as exc:  # noqa: BLE001
-            log.exception("render: spec build failed for %s", image_type)
-            return RenderOutcome(
-                problem=Problem(
-                    kind=PROBLEM_UNRESOLVED_VALUE,
-                    detail=f"the data for this image could not be assembled — {exc}",
-                    template_key=image_type,
-                ),
-                notices=notices,
-            )
-
-        # ── Verification against the concrete data (FR-010) ───────────────
-        # Layer 2 checked the template when it was configured. The data has moved since:
-        # a division grew, a value stopped being determinable. This is the only moment
-        # both are in hand.
-        problem = _verify_against_data(root, spec, image_type)
-        if problem is not None:
-            return RenderOutcome(problem=problem, notices=notices)
-
-        try:
-            result = fill(spec)
-        except Exception as exc:  # noqa: BLE001 - a template surprise must not crash the bot
-            log.exception("render: fill failed for %s", image_type)
-            return RenderOutcome(
-                problem=Problem(
-                    kind=PROBLEM_UNRESOLVED_VALUE,
-                    detail=f"the template could not be filled — {exc}",
-                    template_key=image_type,
-                ),
-                notices=notices,
-            )
-
-        # Constitution XIV.3: an unresolved field aborts the render. Notices raised
-        # before the problem are still reported, so an operator sees the whole picture.
-        if result.unresolved:
-            return RenderOutcome(
-                problem=Problem(
-                    kind=PROBLEM_UNRESOLVED_VALUE,
-                    detail="; ".join(result.unresolved),
-                    template_key=image_type,
-                ),
-                notices=[*notices, *result.notices],
-            )
+        # The whole of the work on the tree, in one worker thread: parse, palette, spec,
+        # verify, fill, serialise. Nothing parsed leaves it, so what comes back is the
+        # serialised picture or a problem and the notices, plain data (`load_svg`).
+        drawn = await off_the_loop(
+            _draw, report.resolved_path, image_type, spec_builder, palette, division_name
+        )
+        notices.extend(drawn.notices)
+        if drawn.svg is None or drawn.canvas is None:
+            return RenderOutcome(problem=drawn.problem, notices=notices)
 
         directory = output_dir or Path(tempfile.mkdtemp(prefix=_RENDER_DIR_PREFIX))
         directory.mkdir(parents=True, exist_ok=True)
@@ -796,7 +851,7 @@ class ImageRenderService:
             # Blocking subprocess: it MUST NOT run on the event loop. On a single-process
             # asyncio bot that would stall the scheduler, the retry worker and every
             # in-flight interaction for its duration.
-            png = await asyncio.to_thread(rasterise, result.svg, destination, result.canvas)
+            png = await asyncio.to_thread(rasterise, drawn.svg, destination, drawn.canvas)
         except RasterisationError as exc:
             return RenderOutcome(
                 problem=Problem(
@@ -804,10 +859,10 @@ class ImageRenderService:
                     detail=str(exc),
                     template_key=image_type,
                 ),
-                notices=[*notices, *result.notices],
+                notices=notices,
             )
 
-        return RenderOutcome(png_paths=[png], notices=[*notices, *result.notices])
+        return RenderOutcome(png_paths=[png], notices=notices)
 
     @staticmethod
     def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> str:

@@ -559,10 +559,6 @@ async def test_a_review_question_s_fault_crosses_back_with_nothing_it_parsed(
 # ---------------------------------------------------------------------------
 
 
-#: Why the two tests below fail until the render's whole work on the tree runs in one worker.
-RENDER_ON_THE_LOOP = "#288: the render and the contrast measurement still parse on the loop"
-
-
 def _parsed_where(monkeypatch) -> list[threading.Thread]:
     """Record the thread each parse runs in."""
     load_svg = svg_document.load_svg
@@ -576,7 +572,6 @@ def _parsed_where(monkeypatch) -> list[threading.Thread]:
     return threads
 
 
-@pytest.mark.xfail(strict=True, reason=RENDER_ON_THE_LOOP)
 async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
     """The calendar template rendered with a fill that fails after the parse: the parse runs
     once, in a worker thread and never on the loop, the fill's fault still comes back as an
@@ -599,7 +594,6 @@ async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
     assert_no_tree_crossed(crossed)
 
 
-@pytest.mark.xfail(strict=True, reason=RENDER_ON_THE_LOOP)
 async def test_the_contrast_measurement_parses_its_template_off_the_loop(monkeypatch, tmp_path):
     """The fastest-lap contrast measured against white over the shipped templates: every parse
     runs in a worker thread, never on the loop, and nothing a worker hands back holds a tree."""

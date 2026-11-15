@@ -3103,6 +3103,9 @@ CATCH_ALLS_ALLOWED = {
         "place 5, a verdict picture that cannot be drawn is announced as text and its fault is "
         "the job's line",
     ("image/services/render/image_render_service.py", "ImageRenderService.render"):
+        "place 5, a tier's colours that cannot be read are drawn in the template's own, with a "
+        "render notice",
+    ("image/services/render/image_render_service.py", "_draw"):
         "place 5, the graphic's own assembling: a tier's colours that cannot be applied are drawn "
         "in the template's own, with a render notice; data that cannot be assembled or a template "
         "that cannot be filled comes back as a problem, from which the caller falls back to text",

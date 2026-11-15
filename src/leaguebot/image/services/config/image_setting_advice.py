@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from leaguebot.image.models.image_constants import LIVE_POSTING_ASPECTS
+from leaguebot.image.utils.svg_document import off_the_loop
 
 if TYPE_CHECKING:
     from leaguebot.core.services.seasons.season_service import SeasonService
@@ -244,9 +245,9 @@ async def measure_fastest_lap_contrast(
     the same divisions the colour shortfall is checked against — and the lowest figure
     is the one reported, with the division it belongs to (#165).
 
-    **Each division is painted by the render's own step, on a copy of its own.**
-    `ImageRenderService.apply_tier_palette` is what draws a division's graphic, so
-    measuring through it is what makes the figure the colour the plate is drawn in; a
+    **Each division is painted with the render's own palette, on a copy of its own.**
+    `ImageRenderService.tier_palette` is what a division's graphic is drawn with, so
+    measuring with it is what makes the figure the colour the plate is drawn in; a
     slot the tier has not set is left as authored there, and so here. The copy is
     because the palette is injected into the tree, and a second division painted over
     the first would be measured against whatever the first left behind.
@@ -255,10 +256,6 @@ async def measure_fastest_lap_contrast(
     The plate's absence is an unmeasurable contrast, not a template validity failure:
     Layer 1 cannot establish that the element exists (FR-026a).
     """
-    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
-    from leaguebot.image.utils.colour import contrast_ratio
-    from leaguebot.image.utils.svg_document import FieldIndex, SvgError, load_svg
-
     reports = await validity.template_reports()
     report = reports.get("results_race_template")
 
@@ -275,23 +272,46 @@ async def measure_fastest_lap_contrast(
         # A valid report names the file it read; none means there was nothing to measure.
         return FastestLapContrast(problem="the race results template could not be read.")
 
-    try:
-        # Parsed on the event loop, unlike the sweep above: each tier's palette is painted
-        # into a copy of the tree here, on the loop, and a tree parsed in a worker thread
-        # must never leave it (`load_svg`).
-        root = load_svg(report.resolved_path)
-    except SvgError as exc:
-        return FastestLapContrast(
-            problem=f"the race results template could not be parsed — {exc}"
-        )
-
     current = await config.get_config()
     per_tier = current is not None and current.per_tier_colour_enabled
     divisions: list[str] = []
     if per_tier:
         divisions = [division.name for division in await seasons.get_previewable_divisions()]
 
-    if not divisions:
+    # Every tier's palette is read here, on the loop, and the rest, from the parse to the
+    # figure, is done in one worker thread (`off_the_loop`): each tier's palette is painted
+    # into a copy of the tree there, and a tree parsed in a worker thread must never leave it
+    # (`load_svg`).
+    palettes = {division: await render.tier_palette(division) for division in divisions}
+    return await off_the_loop(
+        _measure_plate, report.resolved_path, colour, palettes, per_tier
+    )
+
+
+def _measure_plate(
+    path: Path, colour: str, palettes: dict[str, dict[str, str]], per_tier: bool
+) -> FastestLapContrast:
+    """The contrast of *colour* against the plate of the template at *path*, as drawn for each
+    division in *palettes*, read in a worker thread: it parses the template and paints each
+    tier's palette into a copy of it, and returns plain data alone.
+
+    *per_tier* says the feature is on, which is what `no_season` reports where it measured no
+    division. Each palette is the one `ImageRenderService.tier_palette` read, painted by the
+    render's own `apply_palette`.
+    """
+    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
+    from leaguebot.image.utils.colour import contrast_ratio
+    from leaguebot.image.utils.svg_document import FieldIndex, SvgError, load_svg
+    from leaguebot.image.utils.svg_palette import apply_palette
+
+    try:
+        root = load_svg(path)
+    except SvgError as exc:
+        return FastestLapContrast(
+            problem=f"the race results template could not be parsed — {exc}"
+        )
+
+    if not palettes:
         # Per-tier colours off, or on with no season under way — or one holding no
         # division yet. Either way no tier's colours exist to draw in, so the plate
         # as authored is the plate; with the feature on, the reply says so.
@@ -311,9 +331,9 @@ async def measure_fastest_lap_contrast(
 
     measured: list[tuple[float, str, str]] = []
     unmeasured: list[tuple[str, str]] = []
-    for division in divisions:
+    for division, palette in palettes.items():
         tree = copy.deepcopy(root)
-        await render.apply_tier_palette(tree, division)
+        apply_palette(tree, palette)
         background, problem = _plate_fill(tree)
         if background is None:
             unmeasured.append((division, problem or ""))
@@ -334,6 +354,6 @@ async def measure_fastest_lap_contrast(
         ratio=lowest,
         background=backgrounds.pop() if len(backgrounds) == 1 else None,
         divisions=tuple(division for _ratio, division, _background in tied),
-        every_division=len(divisions) > 1 and len(tied) == len(divisions),
+        every_division=len(palettes) > 1 and len(tied) == len(palettes),
         unmeasured=tuple(unmeasured),
     )

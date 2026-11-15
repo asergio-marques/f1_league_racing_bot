@@ -1534,13 +1534,13 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     )
 
     painted: list[str] = []
-    original = ImageRenderService.apply_tier_palette
+    original = ImageRenderService.tier_palette
 
-    async def _spy(self, root, division_name):
+    async def _spy(self, division_name):
         painted.append(division_name)
-        await original(self, root, division_name)
+        return await original(self, division_name)
 
-    monkeypatch.setattr(ImageRenderService, "apply_tier_palette", _spy)
+    monkeypatch.setattr(ImageRenderService, "tier_palette", _spy)
 
     await _measure(config_service, module_service, "#FFFFFF")
 

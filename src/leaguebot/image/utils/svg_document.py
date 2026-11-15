@@ -117,9 +117,10 @@ def load_svg(path: Path | str) -> etree._Element:
     memory. An exception counts because its traceback keeps the worker's frames, and the tree
     in them, alive until the loop drops it. So the thread hands back plain data alone (counts,
     names, reports), and a fault as its class and message, raised afresh on the loop. A caller
-    that changes the tree on the loop parses it on the loop: the render, which fills its
-    template there, and the fastest-lap contrast measurement, which paints each tier's palette
-    into it.
+    that changes the tree does all of its work on it in the one worker thread, from the parse
+    to the plain result: the render, which paints a tier's palette into the tree, fills it and
+    serialises it, and the fastest-lap contrast measurement, which paints each tier's palette
+    into a copy; what each needs of the loop, the palette read, it reads first.
 
     It must stay pure: it reads the file alone, and touches no database connection and no
     Discord object.
@@ -486,7 +487,7 @@ class Stylesheet(dict[str, dict[str, str]]):
         **Remembered per attribute, and must be.** Merging in declared order sorts every
         matched declaration, and `computed_style` asks for each element and again for each
         of its ancestors: uncached, that took resolving every element of the busiest league
-        template on the Pi from 0.40 s to 0.59 s, on the event loop every render runs on. A
+        template on the Pi from 0.40 s to 0.59 s, in every render. A
         template repeats a handful of class combinations across thousands of elements, so
         remembering them brings it back to 0.42 s (measured side by side, 2026-09-24).
         The dict returned is the one remembered: read it, never change it.
