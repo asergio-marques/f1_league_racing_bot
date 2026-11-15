@@ -174,6 +174,42 @@ class TestRsvpPreview:
         assert context.round.format.value == fmt
         assert len(session_names(context.round.format.value)) == count
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="#288: the check-in preview draws the deadline 24 hours before the round, "
+        "whatever the league configured",
+    )
+    @pytest.mark.parametrize(
+        ("stored", "hours"),
+        [((1, 5), 5), ((0, 5), 5), (None, 2)],
+        ids=["stored-while-on", "stored-while-off", "none-stored-draws-the-default"],
+    )
+    async def test_the_check_in_preview_draws_the_deadline_the_league_configured(
+        self, bot, league, db_path, stored, hours
+    ):
+        """Round 1 (two weeks out): the deadline drawn on `/images test rsvp` stands as many
+        hours before the round as the league's stored check-in deadline, whether or not the
+        attendance module is on, and two hours before it where none is stored."""
+        from leaguebot.image.utils.svg_document import load_svg
+
+        if stored is not None:
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "INSERT INTO attendance_config (id, module_enabled, rsvp_deadline_hours) "
+                    "VALUES (1, ?, ?)",
+                    stored,
+                )
+                await db.commit()
+        context = await _context(bot, round_number=1)
+
+        [(_label, key, spec_builder)] = await build_rsvp_preview(bot, context)
+        spec = spec_builder(load_svg(_TEMPLATES / f"{key}.svg"))
+
+        def hour(drawn: str) -> int:
+            return int(re.search(r"(\d{1,2}):\d{2}", drawn).group(1))
+
+        assert (hour(spec.text["round_time"]) - hour(spec.text["deadline_time"])) % 12 == hours
+
 
 # ── Results (T022) ────────────────────────────────────────────────────────
 
