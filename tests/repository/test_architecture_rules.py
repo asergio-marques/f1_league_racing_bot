@@ -3019,6 +3019,9 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: the Discard is refused all the same, whatever the reader does",
     ("results/services/round_amendment/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
+    ("image/utils/svg_document.py", "_contained"):
+        "place 4, around work run in a worker thread: the error is handed back as plain text and "
+        "raised again on the loop, so that nothing parsed leaves the thread with it",
     ("core/utils/interaction_errors.py", "report_failure"):
         "place 3, around reporting a failure, where the report itself might fail",
     ("core/utils/league_server.py", "on_event_error"):
@@ -3199,7 +3202,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_verdict_post.py", "verdicts_enabled"): (1, PASS["image"]),
     ("image/services/aspects/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
     ("image/services/aspects/image_weather_post.py", "weather_enabled"): (1, PASS["image"]),
-    ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
 }
 
 

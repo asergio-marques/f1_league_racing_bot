@@ -1386,7 +1386,10 @@ stated exceptions below them:
    dropped, a refusal's record that fails not being answered a second time, and a member who cannot
    be looked up being named by mention alone, because a line to the log channel must not fail the
    work it records (their docstrings say so);
-4. around a clean-up that then raises the error again;
+4. around a clean-up that then raises the error again, or around work run in another thread whose
+   error is handed back across the thread and raised again, afresh, on the loop that waited for it
+   (`off_the_loop`, in `image/utils/svg_document.py`, whose worker catches what the function raises
+   and nothing parsed may leave the thread with it);
 5. around work a specification gives a fallback for, as a picture that cannot be drawn is posted or
    shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
    posting it hands back, so that the fallback is recorded where the job's lines go, as the season
@@ -1600,8 +1603,8 @@ later on its own.
   `WALL_CLOCK_ALLOWED`), a catch-all handler outside the six places (one that raises again, calls
   `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
   loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
-  1, the stated exceptions, place 3's guards around reporting and writing a log line, and the fifth
-  and sixth places' handlers), and a save outside a queued change. The job check and the check of
+  1, the stated exceptions, place 3's guards around reporting and writing a log line, the fourth
+  place's hand-off across a thread, and the fifth and sixth places' handlers), and a save outside a queued change. The job check and the check of
   cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
   channel's check holds its six places for good; every other check lists today's breaches, each
   under the work that removes it. The check of a save outside a queued change counts each
