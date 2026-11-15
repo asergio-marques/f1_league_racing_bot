@@ -1849,3 +1849,92 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     line = _fault_line(league)
     assert picture in line and ("picture" in line or "image" in line), line
     assert "refused" in line and REFUSAL.lower() in line and "text" in line, line
+
+
+# ---------------------------------------------------------------------------
+# A drawn picture's render notices reach the log channel once, under what was drawn
+# ---------------------------------------------------------------------------
+
+#: The detail of the one render notice the picture below is drawn with.
+NOTICE_DETAIL = "no `flag` image for “Lewis”"
+
+
+def _drawn_with_a_notice(league: _League, tmp_path: Any, picture: str) -> Any:
+    """Image generation on for *picture* ("results", or "standings" for the drivers'
+    championship alone), its template valid: the image module's real posting runs, its drawing
+    stubbed and its render, the image module's own, drawn with one notice, a flag falling back.
+    Gives the patches, to enter."""
+    from contextlib import ExitStack
+
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+    from leaguebot.image.services import image_results_post, image_standings_post
+    from leaguebot.image.services.image_render_service import ImageRenderService
+
+    key = ("results_race_template" if picture == "results"
+           else image_standings_post.TEMPLATE_KEYS["drivers"])
+    png = tmp_path / f"{picture}.png"
+    png.write_bytes(b"\x89PNG")
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_config = AsyncMock(return_value=None)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={picture: True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={key: MagicMock(valid=True)}
+    )
+    renders = ImageRenderService(league.bot.image_config_service,
+                                 league.bot.image_validity_service)
+    renders.render = AsyncMock(return_value=RenderOutcome(png_paths=[png], notices=[RenderNotice(
+        image_type=key, notice_kind="ASSET_FALLBACK_USED", detail=NOTICE_DETAIL,
+        field_id="flag",
+    )]))
+    league.bot.image_render_service = renders
+
+    def _drawing(template_key: str, **more: Any) -> Any:
+        return MagicMock(template_key=template_key, division_name="Pro", division_tier=None,
+                         season_number=None, round_number=3, **more)
+
+    stack = ExitStack()
+    if picture == "results":
+        stack.enter_context(patch.object(
+            image_results_post, "build_drawing",
+            new=AsyncMock(return_value=_drawing(key, session_name="Race")),
+        ))
+    else:
+        async def _enabled(_bot: Any, template_key: str) -> bool:
+            return template_key == key
+
+        stack.enter_context(patch.object(image_standings_post, "standings_enabled",
+                                         new=AsyncMock(side_effect=_enabled)))
+        stack.enter_context(patch.object(
+            image_standings_post, "build_drawings",
+            new=AsyncMock(return_value=tuple(
+                _drawing(image_standings_post.TEMPLATE_KEYS[name])
+                for name in ("drivers", "constructors")
+            )),
+        ))
+    return stack
+
+
+@pytest.mark.xfail(strict=True, reason="#288: a results or standings picture's render notices "
+                   "reach the log channel twice, once under no heading")
+@pytest.mark.parametrize("picture", ["results", "standings"])
+async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_round(
+    tmp_path, picture,
+):
+    """Round 3's results and standings in Pro are posted again with the *picture* picture drawn,
+    its render coming back with one notice, a flag falling back. The picture is posted and the
+    queue runs to the end; the log channel carries the notice once, in a block whose heading
+    names Pro and round 3, and no block without a heading carries it a second time."""
+    league = await _league(tmp_path)
+    target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
+    with _drawn_with_a_notice(league, tmp_path, picture):
+        await _ask(league)
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert any(kwargs.get("file") is not None
+               for _args, kwargs in league.channel(target).send.call_args_list)
+    log = "\n".join(league.bot.log_channel.sent)
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 3" in heading.lower(), block

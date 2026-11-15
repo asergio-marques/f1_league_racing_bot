@@ -918,3 +918,48 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
     assert line.startswith(f"⚠️ {name} image — "), line
     assert "Results image" not in log, log
+
+
+#: The detail of the one render notice the drawing below comes back with.
+NOTICE_DETAIL = "no `flag` image for “Lewis”"
+
+
+@pytest.mark.xfail(strict=True, reason="#288: a verdict's or a banner's render notices reach the "
+                   "log channel twice, once under no heading")
+@pytest.mark.parametrize(("aspect", "template", "name"), _FAULTED_PICTURES,
+                         ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_round(
+    tmp_path, aspect, template, name,
+):
+    """Image generation is on with the *aspect* picture alone switched on and its template
+    valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
+    module's render of that picture is drawn with one notice, a flag falling back. The verdict is
+    announced naming Lewis and the queue runs to the end; the log channel carries the notice
+    once, in a block whose heading names Pro and round 3, and no block without a heading carries
+    it a second time."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={template: MagicMock(valid=True)}
+    )
+    picture = tmp_path / f"{aspect}.png"
+    picture.write_bytes(b"\x89PNG")
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        png_paths=[picture], notices=[RenderNotice(
+            image_type=template, notice_kind="ASSET_FALLBACK_USED", detail=NOTICE_DETAIL,
+            field_id="flag",
+        )],
+    ))
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 3" in heading.lower(), block

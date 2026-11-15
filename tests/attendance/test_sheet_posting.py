@@ -377,3 +377,50 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp
     assert line.startswith("⚠️ Attendance sheet image — "), line
     assert "Pro" in line and "round 1" in line.lower(), line
     assert "Results image" not in log, log
+
+
+#: The detail of the one render notice the sheet's render below comes back with.
+SHEET_NOTICE = "no `flag` image for “Lewis”"
+
+
+@pytest.mark.xfail(strict=True, reason="#288: an attendance sheet's render notices reach the log "
+                   "channel twice, once under no heading")
+async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
+    """The image module is on with the attendance graphic switched on and its template valid,
+    and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
+    Alex runs `/attendance sync` for Pro from round 1: the sheet posts once, as a picture, and the
+    queue runs to the end; the log channel carries the notice once, in a block whose heading
+    names Pro and round 1, and no block without a heading carries it a second time."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+    from leaguebot.image.services.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    picture = tmp_path / "sheet.png"
+    picture.write_bytes(b"\x89PNG")
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        png_paths=[picture], notices=[RenderNotice(
+            image_type=ATTENDANCE_TEMPLATE_KEY, notice_kind="ASSET_FALLBACK_USED",
+            detail=SHEET_NOTICE, field_id="flag",
+        )],
+    ))
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _sends(league) == 1
+    assert league.channel(SHEET).files[-1] is not None
+    log = await _said(league)
+    assert log.count(SHEET_NOTICE) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 1" in heading.lower(), block
