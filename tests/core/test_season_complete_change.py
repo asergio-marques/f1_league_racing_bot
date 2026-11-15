@@ -449,19 +449,11 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
     league = await pending_completion_league(tmp_path, images=part)
     standings = league.channel(PRO_CH.standings)
     if part:
-        from leaguebot.image.services.aspects import image_standings_post
-        from leaguebot.image.services.aspects.image_standings_post import (
-            FELL_BACK,
-            ChampionshipOutcome,
-            StandingsPostOutcome,
-        )
+        from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
         league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
-        monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
-            side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
-                drivers=ChampionshipOutcome(FELL_BACK),
-                constructors=ChampionshipOutcome(FELL_BACK),
-            )
+        monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
+            return_value=StandingsDrawn(applicable=True)
         ))
         standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")
     else:

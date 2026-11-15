@@ -1,35 +1,27 @@
-"""Post a round's two championships as graphics, or stand aside (040).
+"""Draw a round's two championships as graphics, or stand aside (040).
 
 **One decision in one place**, as 039's results posting is. Every occasion that reposts the
 textual standings reaches ``results_post_service.produce_standings``, the posting jobs of
-`review_posting` among them — so the branch lives there and nowhere else.
+`review_posting` among them, which asks the image drawing (`ImageDrawing.draw_standings`) for the
+pictures and posts them itself: this module draws and posts nothing.
 
 Two things make this module unlike the five before it.
 
-**It posts two messages from one call.** The textual standings are a single message carrying both
+**It draws two pictures from one call.** The textual standings are a single message carrying both
 championships; the graphics are two, the driver standings first and the constructors second, each
-with its own id column on the round's row in `round_standings_posts`. Every other post module
-produces one attachment per call and lets its caller loop.
+with its own id column on the round's row in `round_standings_posts`. Every other aspect draws
+one attachment per call and lets its caller loop.
 
 **Failure is per championship** (Constitution XIV.4). A drivers graphic that will not draw
 falls back to the drivers section **alone** — never to the whole textual message, which
 would print the constructors table a second time beside the graphic that just drew it. That
 is why ``results_post_service`` keeps section formatting and message composition apart, and
-why this module reports which championships fell back rather than simply whether it ran.
-
-The shape the caller uses::
-
-    outcome = await try_post(bot, guild, channel, ...)
-    if not outcome.applicable:
-        ...existing textual body, unchanged...
-    elif outcome.rejects:
-        return                          # commanded, and refused: nothing is posted
-    else:
-        ...post a section for each of outcome.fallback_championships...
+why :class:`StandingsDrawn` says which championships drew rather than simply whether it ran.
 
 **The textual path is not reformed by this module.** Where the image flow does not run — no
-bot in scope, the module disabled, the `standings` toggle off, neither template valid — the
-caller's body runs exactly as it did before 040 (Constitution XIV.7).
+drawing in scope, the module disabled, the `standings` toggle off, neither template valid —
+`StandingsDrawn.applicable` is False and the caller's body runs exactly as it did before 040
+(Constitution XIV.7).
 """
 from __future__ import annotations
 
@@ -40,7 +32,6 @@ from pathlib import Path
 
 import discord
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.models.image_module import PostingOrigin
@@ -52,16 +43,9 @@ from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
-#: The image flow does not apply — the caller falls through to its textual body.
-NOT_APPLICABLE = "NOT_APPLICABLE"
-#: The graphic was produced and posted; the caller posts no section for it.
-POSTED = "POSTED"
-#: The graphic could not be produced, and the posting was uncommanded — the caller posts
-#: this championship's section as text, and that section alone.
-FELL_BACK = "FELL_BACK"
-#: The graphic could not be produced and the posting was **commanded**, so nothing is
-#: posted at all and the caller is told what is at fault.
-REJECTED = "REJECTED"
+#: The standings' own aspect and the name its toggle goes by, which heads each line it hands back.
+STANDINGS_ASPECT = "standings"
+STANDINGS_TOGGLE_NAME = "Standings image"
 
 #: Championship -> the template that draws it, in the order the two are posted.
 TEMPLATE_KEYS: dict[str, str] = {
@@ -70,103 +54,43 @@ TEMPLATE_KEYS: dict[str, str] = {
 }
 
 
+@dataclass(frozen=True)
+class StandingsDrawn:
+    """What the image module drew of a round's two championships, for the standings to post.
 
-@dataclass
-class ChampionshipOutcome:
-    """What became of one championship's graphic."""
-
-    action: str = NOT_APPLICABLE
-    message: str | None = None
-    message_id: int | None = None
-    notices: list = field(default_factory=list)
-    png_path: Path | None = None
-    #: The ids of the messages this graphic replaces and leaves standing, the anchor first;
-    #: empty where nothing stood and for a season-boundary sheet. The poster deletes none of
-    #: them: the change queue's job takes them down once the graphic stands.
-    replaces: list[int] = field(default_factory=list)
-
-    @property
-    def posted(self) -> bool:
-        return self.action == POSTED
-
-
-@dataclass
-class StandingsPostOutcome:
-    """What became of both, and what the caller must do about it."""
-
-    drivers: ChampionshipOutcome = field(default_factory=ChampionshipOutcome)
-    constructors: ChampionshipOutcome = field(default_factory=ChampionshipOutcome)
-
-    @property
-    def applicable(self) -> bool:
-        """True where the image flow ran at all.
-
-        False means every reason the flow stands aside wholesale — no bot, the module off,
-        the aspect off, neither template valid — and the caller's untouched textual body is
-        what should run, message for message as before 040.
-        """
-        return (
-            self.drivers.action != NOT_APPLICABLE
-            or self.constructors.action != NOT_APPLICABLE
-        )
-
-    @property
-    def rejects(self) -> bool:
-        """True where a **commanded** posting failed: nothing is posted, anywhere."""
-        return REJECTED in (self.drivers.action, self.constructors.action)
-
-    @property
-    def message(self) -> str | None:
-        """The first rejection's reason, for the command that asked."""
-        for outcome in (self.drivers, self.constructors):
-            if outcome.action == REJECTED:
-                return outcome.message
-        return None
-
-    @property
-    def fallback_championships(self) -> list[str]:
-        """The championships whose section the caller must post as text, in posting order.
-
-        Empty where both graphics posted. Both, where the flow ran and neither drew — in
-        which case the caller composes exactly the message the textual flow always posted,
-        so a league reads each championship once either way.
-        """
-        return [
-            name
-            for name, outcome in (
-                ("drivers", self.drivers),
-                ("constructors", self.constructors),
-            )
-            if outcome.action == FELL_BACK
-        ]
-
-    @property
-    def notices(self) -> list:
-        return [*self.drivers.notices, *self.constructors.notices]
-
-
-# ── Enablement ────────────────────────────────────────────────────────────
-
-
-async def standings_enabled(bot: LeagueBot, template_key: str) -> bool:
-    """True where the module is on, the `standings` aspect is on, and *template_key* is valid.
-
-    Read per template rather than per aspect, so a sound drivers template still draws while a
-    faulty constructors template falls back to text (XIV.4 — the unit of failure is one
-    graphic, and the two championships are two graphics).
+    *applicable* is False where the image flow stood aside wholesale (no switch on and no
+    template valid), and the caller's untouched textual body is what should run, message for
+    message as before 040. Where it is True, a championship whose file is None is one the caller
+    posts as its text section, and that section alone. *lines* are what the drawing had to report
+    (its render notices, and the faults of pictures that were due and not drawn), headed by the
+    toggle's name, for the job that posts the standings to write.
     """
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False
-        toggles = await bot.image_config_service.get_toggles()
-        if not toggles.get("standings"):
-            return False
-        reports = await bot.image_validity_service.template_reports()
-        report = reports.get(template_key)
-        return report is not None and report.valid
-    except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("standings: enablement check failed: %s", exc, exc_info=True)
-        return False
+
+    applicable: bool = False
+    drivers: discord.File | None = None
+    constructors: discord.File | None = None
+    lines: tuple[str, ...] = ()
+
+    def file_of(self, championship: str) -> discord.File | None:
+        """The picture of *championship* ("drivers" or "constructors"), or None."""
+        return self.drivers if championship == "drivers" else self.constructors
+
+
+def fault(what: str, detail: str) -> str:
+    """The line saying why the picture of *what* was not drawn, headed by the toggle's name."""
+    return f"⚠️ {STANDINGS_TOGGLE_NAME} — {what}: {detail}"
+
+
+def lines_of(what: str, decision) -> tuple[str, ...]:
+    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+
+    lines: list[str] = []
+    if decision.notices:
+        lines.append(ImageRenderService.format_notices(decision.notices, subject=what))
+    if decision.problem is not None:
+        lines.append(fault(what, decision.problem.detail))
+    return tuple(lines)
 
 
 # ── The data behind the two drawings ──────────────────────────────────────
@@ -440,15 +364,19 @@ async def build_drawings(
 # ── Render ────────────────────────────────────────────────────────────────
 
 
-async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
-    """Render one championship. Returns the render service's PostingDecision."""
+async def render_png(config_service, renderer, drawing):
+    """Render one championship. Returns the render service's PostingDecision.
+
+    A fault in resolving the directories or building the fill is raised, for the drawing to
+    name as the reason this championship's text stands.
+    """
     from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
     from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
 
-    config = await bot.image_config_service.get_config()
+    config = await config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
         config,
         (
@@ -464,325 +392,12 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
 
     from leaguebot.image.utils.image_naming import stem_for_drawing
 
-    return await bot.image_render_service.render_for_posting(
+    return await renderer.render_for_posting(
         drawing.template_key,
         spec_builder_with_faults(
             build_fill_spec, drawing, directories, directory_faults
         ),
-        posting_origin=origin,
-        bot=bot,
+        posting_origin=PostingOrigin.SCHEDULED,
         division_name=drawing.division_name,
         filename_stem=stem_for_drawing(drawing),
     )
-
-
-# ── Post ──────────────────────────────────────────────────────────────────
-
-
-@posts_in_a_job
-async def post_championship(
-    bot: LeagueBot,
-    channel,
-    *,
-    championship: str,
-    drawing,
-    heading: str,
-    label: str,
-    subject: str,
-    origin: PostingOrigin,
-    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
-) -> tuple[ChampionshipOutcome, discord.Message | None]:
-    """Draw and post one championship's graphic, saving nothing and deleting nothing.
-
-    The public half of :func:`_post_one`, for a caller that records the message id and takes the
-    message it replaces down by its own means (the change queue saves a post's id with the job's
-    done mark and deletes the old message as a job of its own). Gives the outcome and, where it is
-    ``POSTED``, the message sent; where the graphic was not produced or not delivered the outcome
-    says so (``FELL_BACK`` or ``REJECTED``) and the message is None, and nothing was sent that a
-    caller must take down.
-
-    **Produce before destroying** (FR-048): the PNG is rendered and the new message sent, and
-    nothing already standing is touched, so a render that fails leaves the channel holding the
-    standings it had.
-    """
-    what = f"{subject} — {championship} standings"
-
-    try:
-        decision = await render_png(bot, drawing, origin)
-    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("standings: %s render failed: %s", championship, exc, exc_info=True)
-        await report(bot, what, str(exc))
-        if origin is PostingOrigin.COMMANDED:
-            return ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}"), None
-        return ChampionshipOutcome(action=FELL_BACK), None
-
-    if decision.rejects:
-        return (
-            ChampionshipOutcome(
-                action=REJECTED,
-                message=decision.caller_message(what),
-                notices=decision.notices,
-            ),
-            None,
-        )
-
-    if not decision.posts_image:
-        # Uncommanded, and it would not draw: this championship's section is posted as
-        # text by the caller, and the other championship is untouched by it.
-        if decision.problem is not None:
-            await report(bot, what, decision.problem.detail)
-        return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices), None
-
-    from leaguebot.image.services.render.image_render_service import discard_attachment
-
-    png = decision.png_paths[0]
-    attachment = discord.File(str(png), filename=png.name)
-    # A season-boundary sheet carries no text above it. There is no round to head it with and
-    # no lifecycle phase to label it — the phrase naming the occasion is drawn *on* the
-    # graphic, as the lineup and calendar posted at approval are sent bare.
-    content = f"{heading}\n{label}" if occasion.names_a_round else None
-    try:
-        message = await channel.send(content, file=attachment)
-    except discord.HTTPException as exc:
-        # A Discord failure rather than a generation one. The graphic was produced; it is
-        # the delivery that was not, so it is the **textual** standings the caller posts in
-        # its place, in the same try, whatever the occasion (Constitution XIV rule 8). A text
-        # Discord refuses in turn is the caller's failure, which stops the change queue where
-        # a job posts it.
-        log.error("standings: could not post the %s graphic: %s", championship, exc)
-        return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices), None
-    finally:
-        # Through the attachment, so the handle is closed before the file is removed.
-        discard_attachment(attachment)
-
-    # No ``png_path``: the file was discarded the moment the send returned, and handing
-    # back a path to something deleted is worse than handing back nothing.
-    return (
-        ChampionshipOutcome(action=POSTED, message_id=message.id, notices=decision.notices),
-        message,
-    )
-
-
-async def _post_one(
-    bot: LeagueBot,
-    channel,
-    *,
-    db_path: str,
-    division_id: int,
-    round_id: int,
-    championship: str,
-    drawing,
-    heading: str,
-    label: str,
-    subject: str,
-    origin: PostingOrigin,
-    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
-) -> ChampionshipOutcome:
-    """Draw and post one championship's message, and name the one it replaces.
-
-    :func:`post_championship`, then the previous message's ids read and handed back on the
-    outcome as *replaces*. The poster saves no id and deletes no message (#439 6b): the change
-    queue's job records the new id with its done mark and takes the old message down in a job
-    of its own, so a refused deletion stops the queue instead of being left standing untold.
-
-    **Produce before destroying** (FR-048): the PNG is rendered and the new message sent
-    before the previous one is named for deletion, so a render that fails leaves the channel
-    holding the standings it had, and the caller's text fallback replaces nothing prematurely.
-    """
-    from leaguebot.results.services.publishing.results_post_service import (
-        get_standings_message_id,
-        get_standings_message_ids,
-    )
-
-    what = f"{subject} — {championship} standings"
-    outcome, message = await post_championship(
-        bot,
-        channel,
-        championship=championship,
-        drawing=drawing,
-        heading=heading,
-        label=label,
-        subject=subject,
-        origin=origin,
-        occasion=occasion,
-    )
-    if message is None:
-        return outcome
-
-    # A standings message id is keyed by round, on the round's row in `round_standings_posts`. A
-    # season-boundary sheet has no round and no such row to carry one, replaces nothing, and will
-    # never be reposted — so it names nothing it replaces. See
-    # `leaguebot.core.models.classification_occasion`, which is where that reasoning is kept.
-    if occasion.names_a_round:
-        previous_id = await get_standings_message_id(
-            db_path, division_id, round_id, championship
-        )
-        if previous_id is not None:
-            # The whole posting it replaces, which may be a chunked textual one (#345).
-            previous_ids = await get_standings_message_ids(
-                db_path, division_id, round_id, championship
-            )
-            old = [int(each) for each in previous_ids or [previous_id]]
-            if previous_id not in old:
-                old.insert(0, previous_id)
-            outcome.replaces = old
-
-    if outcome.notices:
-        await report_notices(bot, what, outcome.notices)
-
-    return outcome
-
-
-async def try_post(
-    bot: LeagueBot,
-    guild,
-    channel,
-    *,
-    db_path: str,
-    division_id: int,
-    round_id: int,
-    round_number,
-    heading: str,
-    label: str,
-    driver_snapshots,
-    team_snapshots,
-    reserve_user_ids: set[int],
-    show_reserves: bool,
-    result_status: str | None,
-    division_name: str,
-    division_tier=None,
-    season_number=None,
-    race_name: str | None = None,
-    origin: PostingOrigin = PostingOrigin.SCHEDULED,
-    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
-) -> StandingsPostOutcome:
-    """Post both championships as graphics, or say which of them the caller must write out.
-
-    The two are posted in order — the driver standings first, the constructor standings
-    after — and each answers for itself. Neither the failure of one nor a template invalid
-    for one stops the other.
-    """
-    if bot is None or guild is None or channel is None:
-        return StandingsPostOutcome()
-
-    wanted = {
-        name: await standings_enabled(bot, key)
-        for name, key in TEMPLATE_KEYS.items()
-    }
-    if not any(wanted.values()):
-        return StandingsPostOutcome()
-
-    subject = (
-        f"{division_name} round {round_number}"
-        if occasion.names_a_round
-        else f"{division_name} — {occasion.label()}"
-    )
-
-    try:
-        drivers_drawing, constructors_drawing = await build_drawings(
-            bot,
-            guild,
-            db_path=db_path,
-            division_id=division_id,
-            round_id=round_id,
-            round_number=round_number,
-            driver_snapshots=driver_snapshots,
-            team_snapshots=team_snapshots,
-            reserve_user_ids=reserve_user_ids,
-            show_reserves=show_reserves,
-            result_status=result_status,
-            division_name=division_name,
-            division_tier=division_tier,
-            season_number=season_number,
-            race_name=race_name,
-            occasion=occasion,
-        )
-    except Exception as exc:  # noqa: BLE001 — the data behind both, so both answer for it
-        log.error("standings: the drawings could not be resolved: %s", exc, exc_info=True)
-        await report(bot, subject, str(exc))
-        if origin is PostingOrigin.COMMANDED:
-            return StandingsPostOutcome(
-                drivers=ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}"),
-                constructors=ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}"),
-            )
-        return StandingsPostOutcome(
-            drivers=ChampionshipOutcome(action=FELL_BACK),
-            constructors=ChampionshipOutcome(action=FELL_BACK),
-        )
-
-    outcome = StandingsPostOutcome()
-    for championship, drawing in (
-        ("drivers", drivers_drawing),
-        ("constructors", constructors_drawing),
-    ):
-        if not wanted[championship]:
-            # This championship's template is invalid, or nothing draws it. Its section is
-            # posted as text beside the other's graphic.
-            result = ChampionshipOutcome(action=FELL_BACK)
-        else:
-            result = await _post_one(
-                bot,
-                channel,
-                db_path=db_path,
-                division_id=division_id,
-                round_id=round_id,
-                championship=championship,
-                drawing=drawing,
-                heading=heading,
-                label=label,
-                subject=subject,
-                origin=origin,
-                occasion=occasion,
-            )
-        setattr(outcome, championship, result)
-
-        # A commanded posting that fails posts nothing at all, so the second championship
-        # is not attempted once the first has been refused.
-        if result.action == REJECTED:
-            break
-
-    if outcome.rejects:
-        for championship in ("drivers", "constructors"):
-            if getattr(outcome, championship).action == NOT_APPLICABLE:
-                setattr(
-                    outcome,
-                    championship,
-                    ChampionshipOutcome(action=REJECTED, message=outcome.message),
-                )
-
-    return outcome
-
-
-# ── Reporting ─────────────────────────────────────────────────────────────
-
-
-async def report(bot: LeagueBot, what: str, detail: str) -> None:
-    """Report a fault to the server's logging channel, never to the standings channel.
-
-    Drivers read the standings channel (FR-053); a template fault is the league manager's
-    business and belongs where they look for it.
-    """
-    try:
-        await bot.output_router.post_log(
-            f"⚠️ Standings image — {what}: {detail}"
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.error("standings: could not report to the log channel: %s", exc, exc_info=True)
-
-
-async def report_notices(bot: LeagueBot, what: str, notices) -> None:
-    """Report every non-fatal degradation, in one grouped block like every other path.
-
-    This used to post one Discord message per notice, which a twenty-driver championship
-    turned into twenty. `ImageRenderService.report_notices` writes a single grouped block,
-    and routing through it is also what stops this one path drifting from the format every
-    other posting path uses.
-    """
-    if not notices:
-        return
-    try:
-        from leaguebot.image.services.render.image_render_service import ImageRenderService
-
-        await ImageRenderService.report_notices(bot, notices, subject=what)
-    except Exception as exc:  # noqa: BLE001
-        log.error("standings: could not report notices: %s", exc, exc_info=True)

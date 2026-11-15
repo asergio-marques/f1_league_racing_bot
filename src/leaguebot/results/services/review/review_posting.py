@@ -68,6 +68,7 @@ from leaguebot.core.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
+    DRAWN_LINES,
     drawn_lines_kept,
 )
 from leaguebot.core.models.round import RoundStatus
@@ -156,11 +157,11 @@ def posting_steps(drawing: ImageDrawing | None = None) -> dict[str, Step]:
             record=_record_session_post,
         ),
         POST_STANDINGS: Step(
-            POST_STANDINGS, StepKind.ACT, _post_standings,
+            POST_STANDINGS, StepKind.ACT, partial(_post_standings, drawing),
             describe=_describe_standings_post, record=_record_standings_post,
         ),
         POST_STANDINGS_AFRESH: Step(
-            POST_STANDINGS_AFRESH, StepKind.ACT, _post_standings_afresh,
+            POST_STANDINGS_AFRESH, StepKind.ACT, partial(_post_standings_afresh, drawing),
             describe=_describe_standings_post, record=_record_standings_post,
         ),
         DELETE_MESSAGE: delete_message_step(),
@@ -834,7 +835,9 @@ async def _describe_standings_post(ctx: StepContext) -> str:
     return f"posting round {rnd['round_number']}'s standings{where}"
 
 
-async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepResult:
+async def _post_standings(
+    drawing: ImageDrawing | None, ctx: StepContext, *, recompute: bool = False
+) -> StepResult:
     """Post one round's standings, drawing the snapshots the round stores, or with *recompute*
     the standings worked out again from the results as they stand when the job runs."""
     payload = ctx.step_payload
@@ -866,18 +869,25 @@ async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepR
         tables = await produce_standings(
             ctx.db_path, division_id, round_id, rnd["round_number"], rnd["track_name"] or "Unknown",
             channel, driver_snaps, team_snaps, guild, show_reserves, payload["label"],
-            bot=ctx.bot if ctx.tries == 0 else None,
+            drawing=drawing if ctx.tries == 0 else None,
             # A retry after a part-posted try posts afresh: the earlier try went down the
             # picture path, whose tables replace what stood rather than edit it, and what it
             # sent has just been removed.
-            fresh=bool(payload.get("fresh")) or bool(ctx.kept),
+            fresh=bool(payload.get("fresh")) or _left_posted(ctx.kept),
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
+        picture_lines = drawn_lines_kept(ctx.kept) + tuple(
+            getattr(error, DRAWN_LINES_ATTRIBUTE, ())
+        )
         if kept is not None:
             raise StepFailedOnDiscord(
                 "the standings were posted in part and the rest was refused", result=kept
-            ) from error
+            ).carrying(picture_lines) from error
+        if picture_lines and isinstance(error, discord.HTTPException):
+            raise StepFailedOnDiscord(
+                "the standings were refused", result=None
+            ).carrying(picture_lines) from error
         raise
     what = f"round {rnd['round_number']}'s standings"
     then: list[PlannedStep] = []
@@ -895,17 +905,27 @@ async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepR
         "division_id": division_id, "round_id": round_id,
     }
     fault = next((t.fault for t in tables if t.fault is not None), None)
-    lines = () if fault is None else (picture_fallback_line(
-        ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
-        round_number=rnd["round_number"], fault=fault,
-        put_right=_put_right("standings", payload["remedy"]),
-    ),)
+    # What the pictures said when they were drawn on an earlier try, kept on that try's stop, is
+    # handed back with this one's.
+    lines = drawn_lines_kept(ctx.kept) + tuple(line for t in tables for line in t.lines)
+    if fault is not None:
+        lines += (picture_fallback_line(
+            ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
+            round_number=rnd["round_number"], fault=fault,
+            put_right=_put_right("standings", payload["remedy"]),
+        ),)
     return StepResult(result=result, lines=lines, then=tuple(then))
 
 
-async def _post_standings_afresh(ctx: StepContext) -> StepResult:
+def _left_posted(kept: dict[str, Any] | None) -> bool:
+    """True where an earlier try left a table posted in part, which this try's text replaces
+    afresh: what it kept beside the lines of its picture (`drawn_lines_kept`) is not one."""
+    return any(key != DRAWN_LINES for key in kept or {})
+
+
+async def _post_standings_afresh(drawing: ImageDrawing | None, ctx: StepContext) -> StepResult:
     """`/results standings sync`'s job: a round's standings recomputed, then posted anew."""
-    return await _post_standings(ctx, recompute=True)
+    return await _post_standings(drawing, ctx, recompute=True)
 
 
 async def _stored_standings(

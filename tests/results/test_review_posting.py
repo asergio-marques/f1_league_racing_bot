@@ -691,18 +691,9 @@ async def _standings_as_two_tables(league: _League) -> None:
 def _each_championship_as_text() -> Any:
     """The picture applies to the standings and draws neither championship, so each is posted
     as a text table of its own."""
-    from leaguebot.image.services.aspects.image_standings_post import (
-        FELL_BACK,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
-    )
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
-    outcome = StandingsPostOutcome(
-        drivers=ChampionshipOutcome(action=FELL_BACK),
-        constructors=ChampionshipOutcome(action=FELL_BACK),
-    )
-    return patch("leaguebot.image.services.aspects.image_standings_post.try_post",
-                 new=AsyncMock(return_value=outcome))
+    return patch("leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings", new=AsyncMock(return_value=StandingsDrawn(applicable=True)))
 
 
 async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first_before_its_next_try(
@@ -1748,14 +1739,16 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
     goes out as text in the results channel, the queue runs to the end, and the log channel
     gains one line naming round 3 of Pro, the results picture, the fault, and that the table
     went out as text."""
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
+
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
-        "leaguebot.image.services.aspects.image_standings_post.try_post",
-        new=AsyncMock(return_value=MagicMock(applicable=False, rejects=False)),
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
+        new=AsyncMock(return_value=StandingsDrawn()),
     ):
         await _ask(league)
         await run_queue(league.bot)
@@ -1782,7 +1775,7 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(return_value=(None, ())),
     ), patch(
-        "leaguebot.image.services.aspects.image_standings_post.try_post",
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ):
         await _ask(league)
@@ -1815,7 +1808,7 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
-        "leaguebot.image.services.aspects.image_standings_post.try_post",
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ):
         await _ask(league)
@@ -1839,12 +1832,7 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
 REFUSAL = "Discord failed part-way"
 
 
-@pytest.mark.parametrize("picture", [
-    "results",
-    pytest.param("standings", marks=pytest.mark.xfail(
-        strict=True, reason="#288: a picture Discord refuses falls back to text and "
-        "the log channel is told nothing")),
-])
+@pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     tmp_path, picture,
 ):
@@ -1882,12 +1870,7 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
-@pytest.mark.parametrize("picture", [
-    "results",
-    pytest.param("standings", marks=pytest.mark.xfail(
-        strict=True, reason="#288: a results or standings picture's render notices "
-        "reach the log channel twice, once under no heading")),
-])
+@pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, picture,
 ):

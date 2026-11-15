@@ -781,7 +781,7 @@ async def produce_standings(
     show_reserves: bool,
     label: str,
     *,
-    bot: LeagueBot | None = None,
+    drawing: ImageDrawing | None = None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     fresh: bool = False,
 ) -> list[PostedTable]:
@@ -797,12 +797,13 @@ async def produce_standings(
 
     **The image path is a guard clause in front of an untouched body** (040). Where the
     images module is enabled, the `standings` aspect is on and a template is valid,
-    ``image_standings_post.try_post`` produces the two PNGs, posts each under the heading
-    and the lifecycle label and names the messages each replaces. The
-    textual message below is then composed of whichever championships did *not* draw — one
-    section, or neither, or both.
+    *drawing* (the image module's, which the posting jobs are handed) draws the two PNGs, which
+    this posts each under the heading and the lifecycle label and names the messages each
+    replaces. A picture that Discord refuses goes out as its text section in the same try, with
+    the refusal on the table for the job to say so. The textual message below is then composed of
+    whichever championships did *not* draw — one section, or neither, or both.
 
-    Where the image flow does not run at all — no bot in scope, the module off, the aspect
+    Where the image flow does not run at all — no drawing in scope, the module off, the aspect
     off, neither template valid — everything below runs exactly as it did before 040, byte
     for byte. The graphic is an alternative output beside the text, not a reform of it
     (Constitution XIV.7).
@@ -849,20 +850,16 @@ async def produce_standings(
     # is not about a round and no round can cancel it, so the guard stands down there.
     cancelled = occasion.names_a_round and await _round_is_cancelled(db_path, round_id)
     fault: str | None = None
-    if bot is not None and not cancelled:
+    lines: tuple[str, ...] = ()
+    if drawing is not None and not cancelled:
+        drawn = None
         try:
-            from leaguebot.image.services.aspects.image_standings_post import try_post
-
-            outcome = await try_post(
-                bot,
-                guild,
-                standings_channel,
+            drawn = await drawing.draw_standings(
+                guild=guild,
                 db_path=db_path,
                 division_id=division_id,
                 round_id=round_id,
                 round_number=round_number,
-                heading=heading,
-                label=label,
                 driver_snapshots=driver_snapshots,
                 team_snapshots=team_snapshots,
                 reserve_user_ids=reserve_user_ids,
@@ -881,39 +878,65 @@ async def produce_standings(
                 round_id,
             )
             fault = fault_of(exc)
-        else:
-            if outcome.rejects:
-                # A commanded posting that would not draw posts nothing at all (XIV.7).
-                return []
-            if outcome.applicable:
-                # Each picture is a table of its own, with the message it replaces left
-                # standing, as a text table is: the caller saves the new id and takes the
-                # old message down once the picture stands.
-                pictures = [
-                    PostedTable(
-                        [each.message_id], list(each.replaces), drawn=True, championship=name
+        if drawn is not None and drawn.applicable:
+            lines = drawn.lines
+            pictures: list[PostedTable] = []
+            faults: dict[str, str] = {}
+            try:
+                for name in championships:
+                    file = drawn.file_of(name)
+                    if file is None:
+                        continue
+                    try:
+                        message_id = await post_standing(
+                            standings_channel,
+                            f"{heading}\n{label}" if occasion.names_a_round else None,
+                            mentions=discord.AllowedMentions.none(), file=file,
+                        )
+                    except discord.HTTPException as exc:
+                        # Discord refused the upload: this championship's text goes out in its
+                        # place in this try, and the refusal and Discord's reason are on its
+                        # table for the job to say so.
+                        log.error(
+                            "post_standings: could not post the %s picture for round %s: %s",
+                            name, round_id, exc,
+                        )
+                        faults[name] = f"Discord refused the picture ({fault_of(exc)})"
+                        continue
+                    pictures.append(PostedTable(
+                        [message_id], await _standings_replaced(
+                            db_path, division_id, round_id, name, occasion
+                        ), drawn=True, championship=name,
+                    ))
+            finally:
+                # Through the attachment, so the handle is closed before the file is removed, and
+                # a picture never posted is discarded whichever way the posting ended.
+                drawing.discard_attachment(drawn.drivers, drawn.constructors)
+            fallbacks = [name for name in championships if name not in {t.championship for t in pictures}]
+            try:
+                if not fallbacks:
+                    texts: list[PostedTable] = []
+                else:
+                    texts = await _produce_standings_sections(
+                        db_path,
+                        division_id,
+                        round_id,
+                        standings_channel,
+                        heading=heading,
+                        label=label,
+                        sections={name: sections_by_championship[name] for name in fallbacks},
+                        already_sent=[each for table in pictures for each in table.new],
+                        faults=faults,
                     )
-                    for name, each in (
-                        (STANDINGS_DRIVERS, outcome.drivers),
-                        (STANDINGS_CONSTRUCTORS, outcome.constructors),
-                    )
-                    if each.posted and each.message_id is not None
-                ]
-                championships = outcome.fallback_championships
-                if not championships:
-                    return pictures
-                return pictures + await _produce_standings_sections(
-                    db_path,
-                    division_id,
-                    round_id,
-                    standings_channel,
-                    heading=heading,
-                    label=label,
-                    sections={
-                        name: sections_by_championship[name] for name in championships
-                    },
-                    already_sent=[each for table in pictures for each in table.new],
-                )
+            except Exception as failure:
+                # What the pictures said is kept on the stop, for the try that posts to hand back.
+                if lines:
+                    setattr(failure, DRAWN_LINES_ATTRIBUTE, lines)
+                raise
+            tables = pictures + texts
+            if tables:
+                tables[0] = tables[0]._replace(lines=lines)
+            return tables
 
     content = compose_standings_message(
         heading,
@@ -1011,6 +1034,31 @@ async def _round_is_cancelled(db_path: str, round_id: int) -> bool:
     return facts is not None and facts.status == RoundStatus.CANCELLED
 
 
+async def _standings_replaced(
+    db_path: str, division_id: int, round_id: int, championship: str,
+    occasion: ClassificationOccasion,
+) -> list[int]:
+    """The ids of the messages a championship's picture replaces and leaves standing, the anchor
+    first; empty where nothing stood and for a season-boundary sheet.
+
+    A standings message id is keyed by round, on the round's row in `round_standings_posts`. A
+    season-boundary sheet has no round and no such row to carry one, replaces nothing, and will
+    never be reposted (`leaguebot.core.models.classification_occasion`). The poster deletes none
+    of them: the change queue's job takes them down once the picture stands.
+    """
+    if not occasion.names_a_round:
+        return []
+    previous_id = await get_standings_message_id(db_path, division_id, round_id, championship)
+    if previous_id is None:
+        return []
+    # The whole posting it replaces, which may be a chunked textual one (#345).
+    previous_ids = await get_standings_message_ids(db_path, division_id, round_id, championship)
+    old = [int(each) for each in previous_ids or [previous_id]]
+    if previous_id not in old:
+        old.insert(0, previous_id)
+    return old
+
+
 async def _produce_standings_sections(
     db_path: str,
     division_id: int,
@@ -1021,6 +1069,7 @@ async def _produce_standings_sections(
     label: str,
     sections: dict[str, str],
     already_sent: Sequence[int] = (),
+    faults: dict[str, str] | None = None,
 ) -> list[PostedTable]:
     """Post a textual section for each championship whose graphic did not draw, saving nothing.
 
@@ -1034,7 +1083,8 @@ async def _produce_standings_sections(
 
     *already_sent* names the pictures the job posted before these tables: a table refused
     after them carries their ids with its own on ``left_standing``, so the queue's job removes
-    them before its next try.
+    them before its next try. *faults* names, for a championship whose picture Discord refused,
+    why its text stands, which goes on its table for the job to say.
     """
     posted: list[PostedTable] = []
     for championship, body in sections.items():
@@ -1065,7 +1115,9 @@ async def _produce_standings_sections(
             old = list(previous_ids or [previous_id])
             if previous_id not in old:
                 old.insert(0, previous_id)
-        posted.append(PostedTable(sent, old, championship=championship))
+        posted.append(PostedTable(
+            sent, old, championship=championship, fault=(faults or {}).get(championship)
+        ))
     return posted
 
 

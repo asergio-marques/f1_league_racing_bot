@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
+from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
@@ -1149,8 +1150,8 @@ _RETRIED_POSTS = {
     ),
     "the opening standings": (
         "opening_standings", lambda chans: chans.standings, {"results": True},
-        ("leaguebot.image.services.aspects.image_standings_post", "try_post",
-         MagicMock(rejects=False, applicable=False), {}),
+        (lambda league: league.bot.image_drawing, "draw_standings",
+         StandingsDrawn(), {}),
     ),
     "the opening sheet": (
         "opening_sheet", lambda chans: chans.attendance, {"attendance": True},
@@ -1207,19 +1208,12 @@ async def test_a_failed_opening_standings_post_leaves_one_copy_once_retried(
     not a second drivers' copy beside the first (#439). Only the outcome is pinned: whether the
     first copy comes down with the failure or at the start of the next try is the build's to
     choose."""
-    from leaguebot.image.services.aspects import image_standings_post
-    from leaguebot.image.services.aspects.image_standings_post import (
-        FELL_BACK,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
-    )
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
-    monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
-        side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
-            drivers=ChampionshipOutcome(FELL_BACK), constructors=ChampionshipOutcome(FELL_BACK),
-        )
+    monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
+        return_value=StandingsDrawn(applicable=True)
     ))
     standings = league.channel(PRO_CH.standings)
     standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")
@@ -1241,18 +1235,11 @@ async def _opening_standings_posted_in_part(league: Any, monkeypatch: Any) -> li
     channel takes the drivers' table and refuses the teams', so the queue stops at
     `opening_standings`. The refusal is then cleared. Returns the ids standing in the channel,
     the drivers' table alone."""
-    from leaguebot.image.services.aspects import image_standings_post
-    from leaguebot.image.services.aspects.image_standings_post import (
-        FELL_BACK,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
-    )
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
-    monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
-        side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
-            drivers=ChampionshipOutcome(FELL_BACK), constructors=ChampionshipOutcome(FELL_BACK),
-        )
+    monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
+        return_value=StandingsDrawn(applicable=True)
     ))
     standings = league.channel(PRO_CH.standings)
     standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")

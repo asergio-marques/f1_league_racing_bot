@@ -1549,25 +1549,26 @@ async def seed_season_end(db_path: str, kind: str, *, season_id: int = SEASON_ID
 
 def draw_standings_pictures(monkeypatch: Any, tmp_path: Any) -> AsyncMock:
     """Have every standings picture draw, both championships, without a rasteriser: the image
-    module's drawings and its render are stood in for, a PNG handed back for each, so that the
-    posting reaches Discord with the picture. Returns the render, to count its calls."""
-    from leaguebot.image.services.aspects import image_standings_post
+    module's drawing of the standings is stood in for, a PNG handed back for each, so that the
+    posting reaches Discord with the picture. Returns the drawing, to count its calls."""
+    import discord
 
-    monkeypatch.setattr(image_standings_post, "standings_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(image_standings_post, "build_drawings", AsyncMock(
-        return_value=(MagicMock(template_key="drivers"), MagicMock(template_key="constructors"))
-    ))
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
     made = iter(range(1, 1000))
 
-    async def _render(*_args: Any, **_kwargs: Any) -> Any:
-        png = tmp_path / f"standings_{next(made)}.png"
-        png.write_bytes(b"\x89PNG")
-        return SimpleNamespace(posts_image=True, rejects=False, png_paths=[png], notices=[],
-                               problem=None)
+    async def _draw(*_args: Any, **_kwargs: Any) -> Any:
+        files = []
+        for _championship in ("drivers", "constructors"):
+            png = tmp_path / f"standings_{next(made)}.png"
+            png.write_bytes(b"\x89PNG")
+            files.append(discord.File(str(png), filename=png.name))
+        return StandingsDrawn(applicable=True, drivers=files[0], constructors=files[1])
 
-    render = AsyncMock(side_effect=_render)
-    monkeypatch.setattr(image_standings_post, "render_png", render)
-    return render
+    draw = AsyncMock(side_effect=_draw)
+    monkeypatch.setattr(ImageDrawing, "draw_standings", draw)
+    return draw
 
 
 def refuses_pictures(content: Any, kwargs: dict[str, Any]) -> bool:

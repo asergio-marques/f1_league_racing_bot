@@ -12,8 +12,8 @@ time. ``aspect_wanted`` is the one gate every picture asks, and ``calendar_wante
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the gate,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
 to the log channel in one message. ``attach_forecast``, ``attach_check_in_call`` and
-``draw_attendance_sheet`` (after ``attendance_wanted``), ``draw_verdict`` and ``draw_results`` draw a weather
-forecast's, a check-in call's, an attendance sheet's, a verdict's and a session's results picture for the post jobs, which are handed the drawing and write the
+``draw_attendance_sheet`` (after ``attendance_wanted``), ``draw_verdict``, ``draw_results`` and ``draw_standings`` draw a weather
+forecast's, a check-in call's, an attendance sheet's, a verdict's, a session's results and a round's two standings pictures for the post jobs, which are handed the drawing and write the
 lines it hands back (weather's own gate reasons come back as its lines), and ``discard_attachment``
 removes a picture once its post is done. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
@@ -60,6 +60,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
     TEMPLATE_LABELS,
 )
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.services.aspects import image_attendance_post
 from leaguebot.image.services.aspects.image_attendance_post import (
     ATTENDANCE_ASPECT,
@@ -72,6 +73,7 @@ from leaguebot.image.services.aspects.image_calendar_service import (
 )
 from leaguebot.image.services.aspects import (
     image_results_post,
+    image_standings_post,
     image_verdict_banner_post,
     image_verdict_post,
     image_weather_post,
@@ -89,6 +91,8 @@ from leaguebot.image.services.aspects.image_rsvp_post import RSVP_ASPECT, RSVP_T
 from leaguebot.image.services.aspects.image_standings_post import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
+    TEMPLATE_KEYS as STANDINGS_TEMPLATE_KEYS,
+    StandingsDrawn,
 )
 from leaguebot.image.services.validity.image_validity_service import (
     ImageValidityService,
@@ -125,7 +129,7 @@ _ROUND_REMEDY = (
 CALENDAR_ASPECT = "calendar"
 
 #: The standings' own aspect.
-STANDINGS_ASPECT = "standings"
+STANDINGS_ASPECT = image_standings_post.STANDINGS_ASPECT
 
 
 def _rows_and_rounds(catalogue: FieldCatalogue, path: Path) -> tuple[int, int]:
@@ -850,6 +854,80 @@ class ImageDrawing:
             return None, lines
         png = decision.png_paths[0]
         return discord.File(str(png), filename=png.name), lines
+
+    # ── A round's two championships ──────────────────────────────────────────
+
+    async def draw_standings(
+        self,
+        *,
+        guild: Any,
+        db_path: str,
+        division_id: int,
+        round_id: int,
+        round_number: Any,
+        driver_snapshots: Any,
+        team_snapshots: Any,
+        reserve_user_ids: set[int],
+        show_reserves: bool,
+        result_status: str | None,
+        division_name: str,
+        division_tier: Any = None,
+        season_number: Any = None,
+        race_name: str | None = None,
+        occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+    ) -> StandingsDrawn:
+        """The pictures a round's two championships ride on, for the standings to post, and the
+        lines saying what the drawing had to report.
+
+        Not applicable, and no line, where the league draws neither championship's picture
+        (`aspect_wanted`, asked for each template, so that a sound drivers template still draws
+        while a faulty constructors template falls back to text: the unit of failure is one
+        graphic, XIV.4). Otherwise each championship is drawn on its own: its render's notices
+        and the problem of a picture that was due and not drawn come back as lines headed by the
+        toggle's name, and a championship that did not draw has no file.
+
+        A fault in resolving the data behind both, or the directories or the fill of one, is
+        raised, for the post to name as the reason the text stands; a switch nobody signed up for
+        (`SwitchNotSignedUp`) is raised, as everywhere.
+        """
+        import discord
+
+        wanted = {
+            name: await self.aspect_wanted(STANDINGS_ASPECT, key)
+            for name, key in STANDINGS_TEMPLATE_KEYS.items()
+        }
+        if not any(wanted.values()):
+            return StandingsDrawn()
+        if self._bot is None:
+            raise RuntimeError("this drawing was built without the bot, so it cannot draw standings")
+        subject = (
+            f"{division_name} round {round_number}"
+            if occasion.names_a_round
+            else f"{division_name} — {occasion.label()}"
+        )
+        drawings = await image_standings_post.build_drawings(
+            self._bot, guild, db_path=db_path, division_id=division_id, round_id=round_id,
+            round_number=round_number, driver_snapshots=driver_snapshots,
+            team_snapshots=team_snapshots, reserve_user_ids=reserve_user_ids,
+            show_reserves=show_reserves, result_status=result_status,
+            division_name=division_name, division_tier=division_tier,
+            season_number=season_number, race_name=race_name, occasion=occasion,
+        )
+        lines: list[str] = []
+        files: dict[str, discord.File] = {}
+        for championship, drawing in zip(STANDINGS_TEMPLATE_KEYS, drawings):
+            if not wanted[championship]:
+                continue
+            what = f"{subject} — {championship} standings"
+            decision = await image_standings_post.render_png(self._config, self._renderer, drawing)
+            lines.extend(image_standings_post.lines_of(what, decision))
+            if decision.posts_image:
+                png = decision.png_paths[0]
+                files[championship] = discord.File(str(png), filename=png.name)
+        return StandingsDrawn(
+            applicable=True, drivers=files.get("drivers"),
+            constructors=files.get("constructors"), lines=tuple(lines),
+        )
 
     def discard_attachment(self, *attachments: discord.File | None) -> None:
         """Close a picture drawn for a post and delete the file behind it, once the post has been

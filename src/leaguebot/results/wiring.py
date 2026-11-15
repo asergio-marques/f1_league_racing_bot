@@ -274,7 +274,7 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
 
     bot.placements_confirmed.subscribe(season_standings_posts.placements_confirmed_on)
     bot.placements_confirmed_steps.subscribe(
-        partial(season_standings_posts.opening_steps, bot.module_service)
+        partial(season_standings_posts.opening_steps, bot.module_service, _drawing_of(bot))
     )
 
 
@@ -285,7 +285,7 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 
     bot.season_completed.subscribe(season_standings_posts.season_completed_on)
     bot.season_completed_steps.subscribe(
-        partial(season_standings_posts.final_steps, bot.module_service)
+        partial(season_standings_posts.final_steps, bot.module_service, _drawing_of(bot))
     )
 
 

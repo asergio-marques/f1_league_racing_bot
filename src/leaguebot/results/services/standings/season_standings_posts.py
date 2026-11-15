@@ -33,7 +33,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, drawn_lines_kept
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.modules.module_service import ModuleService
@@ -47,6 +47,8 @@ from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     import aiosqlite
+
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     from leaguebot.results.services.publishing.results_post_service import PostedTable
 
@@ -121,23 +123,35 @@ async def keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[No
         ) from failure
 
 
-async def produce_stranding(what: str, channel_id, posting) -> "list[PostedTable]":
+async def produce_stranding(
+    what: str, channel_id, posting, kept: dict[str, Any] | None = None
+) -> "list[PostedTable]":
     """Await *posting*, results' ``produce_standings``, and hand back the tables it put up, naming
     on its failure a table already sent.
 
     The ids are recorded only once the posting is done, so a table already sent when a later one
-    failed is put on the failure for the job to keep, and the next try removes it.
+    failed is put on the failure for the job to keep, and the next try removes it. What the
+    pictures drawn for it said, on the failure or kept from an earlier try (*kept*), is kept
+    beside them, for the try that posts to hand back.
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    import discord
+
+    from leaguebot.core.models.change import StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.results.services.publishing.results_post_service import DRAWN_LINES_ATTRIBUTE
 
     try:
         return await posting
     except Exception as failure:
         stranded = [int(each) for each in getattr(failure, "left_standing", None) or []]
+        lines = drawn_lines_kept(kept) + tuple(getattr(failure, DRAWN_LINES_ATTRIBUTE, ()))
         if stranded:
             raise StepFailedOnDiscord(
                 f"the {what} standings were posted in part and the rest was refused",
                 result={"new": stranded, "channel_id": int(channel_id)},
+            ).carrying(lines) from failure
+        if lines and isinstance(failure, discord.HTTPException):
+            raise StepFailedOnDiscord(f"the {what} standings were refused").carrying(
+                lines
             ) from failure
         raise
 
@@ -164,6 +178,7 @@ async def post_opening_standings(
     db_path: str,
     division_id: int,
     *,
+    drawing: "ImageDrawing | None" = None,
     as_text: bool = False,
     kept: dict[str, Any] | None = None,
 ) -> "list[PostedTable]":
@@ -180,7 +195,7 @@ async def post_opening_standings(
     that copy, from the channel it was posted in, before it posts both again, failing again, with
     what it still has to remove, where a message will not delete. Once that copy is down, any
     failure of the try names what the try left, even nothing, so that the job no longer keeps the
-    copy removed. *as_text* leaves the graphic out, which is how a job retries (Constitution XIV
+    copy removed. *drawing* is the image module's, which draws the pictures (none is drawn where it is None); *as_text* leaves the graphic out, which is how a job retries (Constitution XIV
     rule 8).
     """
     from leaguebot.core.models.change import StepFailedOnDiscord
@@ -231,9 +246,10 @@ async def post_opening_standings(
                 guild,
                 await reserves_in_standings(db_path, division_id),
                 "",
-                bot=None if as_text else bot,
+                drawing=None if as_text else drawing,
                 occasion=ClassificationOccasion.SEASON_OPENING,
             ),
+            kept,
         )
 
 
@@ -307,6 +323,7 @@ async def post_final_standings(
     division_id: int,
     round_id: int,
     *,
+    drawing: "ImageDrawing | None" = None,
     as_text: bool = False,
     kept: dict[str, Any] | None = None,
 ) -> "list[PostedTable]":
@@ -372,10 +389,11 @@ async def post_final_standings(
                 guild,
                 await reserves_in_standings(db_path, division_id),
                 "",
-                bot=None if as_text else bot,
+                drawing=None if as_text else drawing,
                 occasion=ClassificationOccasion.SEASON_FINAL,
                 fresh=True,
             ),
+            kept,
         )
 
 
@@ -449,7 +467,7 @@ async def season_completed_on(
     )
 
 
-def opening_steps(modules: ModuleService) -> dict[str, Step]:
+def opening_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, Step]:
     """Results' step definition for the opening standings, signed up to
     *placements_confirmed_steps* beside :func:`placements_confirmed_on`. The builder hands in
     *modules*, as it hands cancellation's steps theirs, so that `still_due` reads results'
@@ -461,11 +479,14 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
         division_id = int(ctx.step_payload["division_id"])
         channel_id = await standings_channel_of(ctx.db_path, division_id)
         tables = await post_opening_standings(
-            ctx.bot, guild, ctx.db_path, division_id, as_text=ctx.tries > 0, kept=ctx.kept,
+            ctx.bot, guild, ctx.db_path, division_id, drawing=drawing, as_text=ctx.tries > 0,
+            kept=ctx.kept,
         )
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_OPENING, tables,
             channel_id,
+        ), lines=drawn_lines_kept(ctx.kept) + tuple(
+            line for table in tables for line in table.lines
         ))
 
     async def still_due(_ctx: StepContext) -> bool:
@@ -502,7 +523,7 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
     }
 
 
-def final_steps(modules: ModuleService) -> dict[str, Step]:
+def final_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, Step]:
     """Results' step definition for the final standings, signed up to
     *season_completed_steps* beside :func:`season_completed_on`. The builder hands in *modules*,
     as it hands the opening standings' theirs, so that `still_due` reads results' switch
@@ -515,12 +536,14 @@ def final_steps(modules: ModuleService) -> dict[str, Step]:
         division_id = int(each["division_id"])
         channel_id = await standings_channel_of(ctx.db_path, division_id)
         tables = await post_final_standings(
-            ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]),
+            ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]), drawing=drawing,
             as_text=ctx.tries > 0, kept=ctx.kept,
         )
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_FINAL, tables,
             channel_id,
+        ), lines=drawn_lines_kept(ctx.kept) + tuple(
+            line for table in tables for line in table.lines
         ))
 
     async def still_due(_ctx: StepContext) -> bool:
