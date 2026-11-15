@@ -867,3 +867,54 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     assert "text" in line and fault in line, line
     assert ("to put it right: fix the verdict template, then, once the round is final, amend "
             "the round with `/results rounds amend`") in line, line
+
+
+# ---------------------------------------------------------------------------
+# A verdict's or a banner's render fault is named by its own picture in the log channel
+# ---------------------------------------------------------------------------
+
+#: The detail of the template fault the render below fails on.
+RENDER_FAULT = "the template declares no `driver_name` field"
+
+#: Each picture: the toggle `/images config toggle` offers it under, its template, and the name
+#: its fault line is headed with.
+_FAULTED_PICTURES = [
+    ("verdicts", "verdicts_template", "Verdicts"),
+    ("verdict_banner", "verdict_banner_template", "Verdict banner"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason="#288: a verdict's or a banner's render fault is logged "
+                   "as a 'Results image' fault")
+@pytest.mark.parametrize(("aspect", "template", "name"), _FAULTED_PICTURES,
+                         ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
+    tmp_path, aspect, template, name,
+):
+    """Image generation is on with the *aspect* picture alone switched on and its template
+    valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
+    module's render of that picture fails on a template fault. The verdict is announced naming
+    Lewis and the queue runs to the end; the log channel gives the fault on a line headed
+    "⚠️ <name> image", the name `/images config toggle` offers, and nothing in the log calls it
+    a results image."""
+    from leaguebot.image.models.image_module import Problem, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={template: MagicMock(valid=True)}
+    )
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        problem=Problem(kind="TEMPLATE_INVALID", detail=RENDER_FAULT, template_key=template),
+    ))
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    [verdict] = _verdicts(league)
+    assert f"<@{LEWIS}>" in verdict
+    log = league.log()
+    [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+    assert line.startswith(f"⚠️ {name} image — "), line
+    assert "Results image" not in log, log
