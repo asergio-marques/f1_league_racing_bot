@@ -295,6 +295,65 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         assert [line for line in written.splitlines() if "Weather image" in line] == [reason]
 
 
+#: The detail of the one render notice a drawn forecast comes back with.
+FORECAST_NOTICE = "no `weather_icon` image for “Heavy rain”"
+#: The detail of the fault a forecast's render fails on.
+FORECAST_FAULT = "the template declares no `phase` field"
+#: What is not yet true of a forecast whose post Discord refuses: its picture's line is lost.
+REFUSED_LOSES_ITS_LINE = (
+    "#288: a forecast whose first post Discord refuses writes neither its picture's notice nor "
+    "its fault line, and its retry draws nothing to say them"
+)
+
+
+@pytest.mark.parametrize("outcome", [
+    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
+    pytest.param("fault", marks=pytest.mark.xfail(strict=True, reason=REFUSED_LOSES_ITS_LINE)),
+])
+async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is_retried(
+    tmp_path, outcome,
+):
+    """Phase 1 of Pro's round 3 is asked with pictures due, and its picture is drawn with one
+    render notice (*outcome* "notice") or its render fails on a template fault ("fault"). Discord
+    refuses the forecast's post, and the queue stops at it; Discord then accepts, Retry is pressed
+    and the forecast goes out as text. The notice, or the picture's "⚠️ Weather image" fault line,
+    reaches the log channel once, as it does when the forecast posts at the first try: never lost
+    with the refused post, and never twice."""
+    from leaguebot.image.models.image_module import Problem, RenderNotice, RenderOutcome
+
+    league = await _league(tmp_path)
+    _pictures_due(league)
+    picture = tmp_path / "forecast.png"
+    picture.write_bytes(b"\x89PNG")
+    if outcome == "notice":
+        drawn = RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type="weather_p1_template", notice_kind="ASSET_FALLBACK_USED",
+            detail=FORECAST_NOTICE, field_id="weather_icon",
+        )])
+    else:
+        drawn = RenderOutcome(problem=Problem(
+            kind="TEMPLATE_INVALID", detail=FORECAST_FAULT, template_key="weather_p1_template",
+        ))
+    league.bot.image_render_service.render = AsyncMock(return_value=drawn)
+    _refusing(league)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+
+    _accepting(league)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(FORECAST).files == [None]
+    detail = FORECAST_NOTICE if outcome == "notice" else FORECAST_FAULT
+    said = await _said(league)
+    assert said.count(detail) == 1, said
+    if outcome == "fault":
+        [line] = [line for line in said.splitlines() if FORECAST_FAULT in line]
+        assert line.startswith("⚠️ Weather image — "), line
+
+
 @pytest.mark.parametrize("phase", [1, 2, 3])
 async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws(
     tmp_path, monkeypatch, phase,
