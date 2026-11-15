@@ -64,9 +64,9 @@ async def _rows(db_path):
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT discord_user_id, avatar_key, fetched_at FROM driver_portraits"
+            "SELECT discord_user_id, avatar_key FROM driver_portraits"
         )
-        return {r["discord_user_id"]: (r["avatar_key"], r["fetched_at"]) for r in await cursor.fetchall()}
+        return {r["discord_user_id"]: (r["avatar_key"],) for r in await cursor.fetchall()}
 
 
 # ── The wrapper ───────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ def test_a_server_avatar_counts_even_where_the_account_has_none():
 async def test_a_first_fetch_writes_the_file_and_the_row(db_path, directory):
     member = _member(7, "abc")
 
-    written = await refresh_portraits(db_path, [member], directory, now=NOW)
+    written = await refresh_portraits(db_path, [member], directory)
 
     assert written == 1
     assert (directory / "7.svg").is_file()
@@ -183,25 +183,25 @@ async def test_a_first_fetch_writes_the_file_and_the_row(db_path, directory):
     assert base64.b64encode(PNG).decode() in (directory / "7.svg").read_text()
     # The shape it was wrapped at is part of what is recorded, so a later re-shaping of the
     # lineup template makes this row stale on its own.
-    assert await _rows(db_path) == {"7": (portrait_key("abc", 1.0), NOW.isoformat())}
+    assert await _rows(db_path) == {"7": (portrait_key("abc", 1.0),)}
 
 
 async def test_an_unchanged_hash_downloads_nothing(db_path, directory):
     member = _member(7, "abc")
-    await refresh_portraits(db_path, [member], directory, now=NOW)
+    await refresh_portraits(db_path, [member], directory)
     member.display_avatar.read.reset_mock()
 
-    written = await refresh_portraits(db_path, [member], directory, now=NOW)
+    written = await refresh_portraits(db_path, [member], directory)
 
     assert written == 0
     member.display_avatar.read.assert_not_awaited()
 
 
 async def test_a_changed_hash_refetches(db_path, directory):
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
 
     later = _member(7, "def", data=b"NEWBYTES")
-    written = await refresh_portraits(db_path, [later], directory, now=NOW)
+    written = await refresh_portraits(db_path, [later], directory)
 
     assert written == 1
     assert base64.b64encode(b"NEWBYTES").decode() in (directory / "7.svg").read_text()
@@ -213,7 +213,7 @@ async def test_a_file_the_league_supplied_is_never_touched(db_path, directory):
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
     member = _member(7, "abc")
 
-    written = await refresh_portraits(db_path, [member], directory, now=NOW)
+    written = await refresh_portraits(db_path, [member], directory)
 
     assert written == 0
     member.display_avatar.read.assert_not_awaited()
@@ -222,12 +222,12 @@ async def test_a_file_the_league_supplied_is_never_touched(db_path, directory):
 
 
 async def test_a_generated_avatar_is_skipped_and_an_owned_file_removed(db_path, directory):
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
     assert (directory / "7.svg").is_file()
 
     # The driver removes their avatar: the seat must revert to the class fallback.
     written = await refresh_portraits(
-        db_path, [_member(7, generated=True)], directory, now=NOW
+        db_path, [_member(7, generated=True)], directory
     )
 
     assert written == 0
@@ -239,7 +239,7 @@ async def test_a_generated_avatar_does_not_remove_a_file_the_league_supplied(db_
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
 
     await refresh_portraits(
-        db_path, [_member(7, generated=True)], directory, now=NOW
+        db_path, [_member(7, generated=True)], directory
     )
 
     assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
@@ -249,7 +249,7 @@ async def test_removing_a_portrait_takes_the_file_and_the_row(db_path, directory
     """What `/driver reassign` does with the account a driver has left (issue #222)."""
     from leaguebot.image.services.portraits.driver_portrait_service import remove_portrait
 
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
 
     assert await remove_portrait(db_path, "7", directory) is True
     assert not (directory / "7.svg").exists()
@@ -271,7 +271,7 @@ async def test_removing_a_portrait_whose_file_has_gone_still_takes_the_row(db_pa
     """The row is the ownership register; left behind it would claim a file that is not there."""
     from leaguebot.image.services.portraits.driver_portrait_service import remove_portrait
 
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
     (directory / "7.svg").unlink()
 
     assert await remove_portrait(db_path, "7", directory) is True
@@ -282,7 +282,7 @@ async def test_removing_one_driver_s_portrait_leaves_the_rest(db_path, directory
     from leaguebot.image.services.portraits.driver_portrait_service import remove_portrait
 
     await refresh_portraits(
-        db_path, [_member(7, "abc"), _member(8, "def")], directory, now=NOW
+        db_path, [_member(7, "abc"), _member(8, "def")], directory
     )
 
     await remove_portrait(db_path, "7", directory)
@@ -298,11 +298,11 @@ async def test_the_new_account_is_fetched_fresh_once_the_old_portrait_has_gone(
     own, and the next refresh obtains it."""
     from leaguebot.image.services.portraits.driver_portrait_service import remove_portrait
 
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
     await remove_portrait(db_path, "7", directory)
 
     written = await refresh_portraits(
-        db_path, [_member(9, "xyz")], directory, now=NOW
+        db_path, [_member(9, "xyz")], directory
     )
 
     assert written == 1
@@ -311,11 +311,11 @@ async def test_the_new_account_is_fetched_fresh_once_the_old_portrait_has_gone(
 
 
 async def test_a_missing_file_is_refetched_even_where_the_hash_matches(db_path, directory):
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
     (directory / "7.svg").unlink()
 
     written = await refresh_portraits(
-        db_path, [_member(7, "abc")], directory, now=NOW
+        db_path, [_member(7, "abc")], directory
     )
 
     assert written == 1
@@ -350,7 +350,7 @@ async def test_discarding_takes_the_portrait_of_every_account_named(
     from leaguebot.image.services.portraits.driver_portrait_service import discard_portraits
 
     await refresh_portraits(
-        db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory, now=NOW
+        db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory
     )
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
@@ -378,7 +378,7 @@ async def test_discarding_removes_nothing_where_no_directory_resolves(
     from leaguebot.image.services.render import image_render_service
     from leaguebot.image.services.portraits.driver_portrait_service import discard_portraits
 
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
     monkeypatch.setattr(
         image_render_service,
@@ -396,7 +396,7 @@ async def test_discarding_removes_nothing_where_the_league_has_no_image_config(
 ):
     from leaguebot.image.services.portraits.driver_portrait_service import discard_portraits
 
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
     bot = _bot_with_portraits(db_path, directory, monkeypatch, config=False)
 
     assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
@@ -419,7 +419,7 @@ async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_n
 ):
     from leaguebot.image.services.portraits.driver_portrait_service import discard_portraits
 
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory)
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("unreadable"))
 
@@ -470,7 +470,7 @@ async def test_an_http_error_abandons_the_rest_of_the_batch(db_path, directory):
 
     written = await refresh_portraits(
         db_path, [failing] + others, directory,
-        concurrency=1, budget_seconds=None, now=NOW,
+        concurrency=1, budget_seconds=None,
     )
 
     assert written == 0
@@ -486,7 +486,7 @@ async def test_one_unreadable_avatar_does_not_stop_the_others(db_path, directory
     ok = _member(2, "b")
 
     written = await refresh_portraits(
-        db_path, [failing, ok], directory, budget_seconds=None, now=NOW
+        db_path, [failing, ok], directory, budget_seconds=None
     )
 
     assert written == 1
@@ -503,7 +503,7 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
     slow.display_avatar.read = AsyncMock(side_effect=never)
 
     written = await refresh_portraits(
-        db_path, [slow], directory, budget_seconds=0.05, now=NOW
+        db_path, [slow], directory, budget_seconds=0.05
     )
 
     assert written == 0
@@ -1179,12 +1179,11 @@ async def test_the_review_obtains_a_missing_portrait_where_only_daily_updates_ar
         config=_config(pfp_prerender=False, pfp_daily=True),
         directory=directory,
         obtain_missing=True,
-        now=NOW,
     )
 
     assert written == 1
     assert (directory / "7.svg").is_file()
-    assert await _rows(db_path) == {"7": (portrait_key("abc", 1.0), NOW.isoformat())}
+    assert await _rows(db_path) == {"7": (portrait_key("abc", 1.0),)}
 
 
 async def test_the_review_does_not_obtain_again_a_portrait_the_driver_already_has(
@@ -1285,7 +1284,7 @@ async def test_the_image_drawing_discards_the_portraits_of_the_accounts_named(
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     await refresh_portraits(
-        db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory, now=NOW
+        db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory
     )
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
     drawing = ImageDrawing(

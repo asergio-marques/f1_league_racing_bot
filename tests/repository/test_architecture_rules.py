@@ -2871,9 +2871,7 @@ KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {}
 #: migrations build.
 KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {}
 
-KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/portraits/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-}
+KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_no_statement_reads_sqlites_clock():

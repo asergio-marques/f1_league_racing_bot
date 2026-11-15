@@ -298,8 +298,8 @@ async def _obtained(db_path, directory, *accounts) -> None:
         for account in accounts:
             (directory / f"{account}.svg").write_text("<svg>obtained</svg>")
             await db.execute(
-                "INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at) "
-                "VALUES (?, 'hash@1.0000', '2026-09-01T03:00:00+00:00')",
+                "INSERT INTO driver_portraits (discord_user_id, avatar_key) "
+                "VALUES (?, 'hash@1.0000')",
                 (account,),
             )
         await db.commit()

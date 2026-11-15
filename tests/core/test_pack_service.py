@@ -74,8 +74,8 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
             INSERT INTO driver_accounts (driver_profile_id, discord_user_id) VALUES (1, '902');
             INSERT INTO driver_history_entries (discord_user_id, driver_profile_id,
                 season_number, division_name) VALUES ('900', 1, 1, 'Pro');
-            INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at)
-            VALUES ('900', 'abc', '2026-01-01');
+            INSERT INTO driver_portraits (discord_user_id, avatar_key)
+            VALUES ('900', 'abc');
             INSERT INTO default_teams (name, full_name) VALUES ('Ferrari', 'Ferrari');
             INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Ferrari', 70, '2031-03-04T05:06:07+00:00');
             INSERT INTO points_config_store (config_name) VALUES ('standard');

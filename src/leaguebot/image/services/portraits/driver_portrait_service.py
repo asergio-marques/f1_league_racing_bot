@@ -39,7 +39,7 @@ import base64
 import logging
 import os
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import discord
@@ -214,14 +214,13 @@ async def _load_owned(db_path: str) -> dict[str, str]:
     return {str(row["discord_user_id"]): row["avatar_key"] for row in rows}
 
 
-async def _record(db_path: str, user_id: str, key: str, now) -> None:
+async def _record(db_path: str, user_id: str, key: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at) "
-            "VALUES (?, ?, ?) "
-            "ON CONFLICT(discord_user_id) DO UPDATE SET "
-            "avatar_key = excluded.avatar_key, fetched_at = excluded.fetched_at",
-            (str(user_id), key, now.isoformat()),
+            "INSERT INTO driver_portraits (discord_user_id, avatar_key) "
+            "VALUES (?, ?) "
+            "ON CONFLICT(discord_user_id) DO UPDATE SET avatar_key = excluded.avatar_key",
+            (str(user_id), key),
         )
         await db.commit()
 
@@ -395,7 +394,6 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
             directory,
             aspect=await off_the_loop(portrait_aspect, config),
             budget_seconds=None,
-            now=now,
         )
     except Exception:  # noqa: BLE001 -- a scheduled job that raises is a job that stops
         log.warning("driver portraits: the daily refresh failed", exc_info=True)
@@ -409,7 +407,6 @@ async def refresh_before_render(
     config=None,
     directory=_UNSET,
     obtain_missing: bool = False,
-    now: datetime | None = None,
 ) -> int:
     """Refresh the portraits a graphic is about to draw, where the league asked for that.
 
@@ -492,7 +489,6 @@ async def refresh_before_render(
             members,
             directory,
             aspect=await off_the_loop(portrait_aspect, config),
-            now=now,
         )
     except Exception:  # noqa: BLE001 -- a portrait never fails a render
         # Beneath this lie reads of the database and the directory, either of which can
@@ -511,7 +507,6 @@ async def refresh_portraits(
     aspect: float = 1.0,
     budget_seconds: float | None = DEFAULT_RENDER_BUDGET_SECONDS,
     concurrency: int = DEFAULT_CONCURRENCY,
-    now: datetime | None = None,
 ) -> int:
     """Bring the portraits of *members* up to date. Returns how many were written.
 
@@ -524,7 +519,6 @@ async def refresh_portraits(
     never run.
     """
     directory = Path(directory)
-    now = now or datetime.now(timezone.utc)
     owned = await _load_owned(db_path)
 
     stale: list = []
@@ -588,7 +582,7 @@ async def refresh_portraits(
                 return
 
             await _record(
-                db_path, str(member.id), portrait_key(asset.key, aspect), now
+                db_path, str(member.id), portrait_key(asset.key, aspect)
             )
             written += 1
 
