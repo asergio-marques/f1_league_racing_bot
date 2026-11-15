@@ -203,11 +203,49 @@ async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
     assert spy.await_args.kwargs["obtain_missing"] is False
 
 
-#: The lineups whose notices the drawing reports: those of `DRAWS`, and the lineup a season review
-#: draws (`draw_review_lineup`, its uncommitted drivers in it), which today goes through the bot
-#: and reports its notices under no heading.
-NOTICED_DRAWS = [
-    *DRAWS,
+def _two_lineup_notices():
+    """Two notices a lineup of Pro's is drawn with: Zara's flag and portrait each falling back."""
+    from leaguebot.image.models.image_module import RenderNotice
+
+    return [
+        RenderNotice(image_type="lineup", notice_kind="ASSET_FALLBACK_USED",
+                     detail="a fallback flag stood in for Zara's"),
+        RenderNotice(image_type="lineup", notice_kind="ASSET_FALLBACK_USED",
+                     detail="a fallback portrait stood in for Zara's"),
+    ]
+
+
+async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_channel_in_one_message(
+    db_path, monkeypatch,
+):
+    """Pro's lineup drawn with two notices as `/team lineup`'s output, which runs in no job: the
+    drawing itself reports them to the log channel, in one message headed with the lineup and the
+    division, and never to the lineup channel (Constitution XIV.4, "reported in one message")."""
+    _portraits_spied(monkeypatch)
+    guild, channel, _ = _guild()
+    drawing, _, post_log, _ = _drawing(
+        db_path, outcome=NS(problem=None, notices=_two_lineup_notices(), png_paths=[])
+    )
+
+    await drawing.draw_lineup_for_command(guild, DIVISION_ID)
+
+    [call] = post_log.await_args_list
+    assert call.args[0].startswith("Image render notices — lineup — Pro:\n"), call.args[0]
+    assert "a fallback flag stood in for Zara's" in call.args[0]
+    assert "a fallback portrait stood in for Zara's" in call.args[0]
+    channel.send.assert_not_awaited()
+
+
+#: The lineups drawn inside a change's job: the lineup of record (the lineup job's), and the lineup
+#: a season review draws (`draw_review_lineup`, its uncommitted drivers in it). Today the first logs
+#: its notices from inside the job, and the second is drawn through the bot, which a drawing built
+#: without it cannot reach.
+IN_A_JOB_DRAWS = [
+    pytest.param(
+        "draw_lineup", id="of_record",
+        marks=pytest.mark.xfail(strict=True, reason="#288: the lineup of record logs its notices "
+                                "itself from inside the job that posts it"),
+    ),
     pytest.param(
         "draw_review_lineup", id="for_review",
         marks=pytest.mark.xfail(strict=True, reason="#288: a season review's lineup is drawn "
@@ -216,36 +254,27 @@ NOTICED_DRAWS = [
 ]
 
 
-@pytest.mark.parametrize("draw", NOTICED_DRAWS)
-async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_message(
+@pytest.mark.parametrize("draw", IN_A_JOB_DRAWS)
+async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothing(
     db_path, monkeypatch, draw,
 ):
-    """Pro's lineup drawn with two notices, as the lineup of record, as `/team lineup`'s output or
-    for a season review: the drawing itself reports them to the log channel, in one message headed
-    with the lineup and the division, so they reach the log whichever change or command drew the
-    lineup, and never the lineup channel (Constitution XIV.4, "reported in one message"; the
-    owner's decision on #283)."""
-    from leaguebot.image.models.image_module import RenderNotice
-
+    """Pro's lineup drawn with two notices inside a change's job, as the lineup of record or for a
+    season review: the drawing writes nothing to the log channel itself, and hands both notices
+    back with the picture, for the job that posts it to record once among its own lines (the
+    owner's decision on #288: code inside a job never calls `post_log`). Nothing reaches the
+    lineup channel."""
     _portraits_spied(monkeypatch)
-    notices = [
-        RenderNotice(image_type="lineup", notice_kind="ASSET_FALLBACK_USED",
-                     detail="a fallback flag stood in for Zara's"),
-        RenderNotice(image_type="lineup", notice_kind="ASSET_FALLBACK_USED",
-                     detail="a fallback portrait stood in for Zara's"),
-    ]
     guild, channel, _ = _guild()
     drawing, _, post_log, _ = _drawing(
-        db_path, outcome=NS(problem=None, notices=notices, png_paths=[])
+        db_path, outcome=NS(problem=None, notices=_two_lineup_notices(), png_paths=[])
     )
 
     more = {"include_uncommitted": True} if draw == "draw_review_lineup" else {}
-    await getattr(drawing, draw)(guild, DIVISION_ID, **more)
+    picture = await getattr(drawing, draw)(guild, DIVISION_ID, **more)
 
-    [call] = post_log.await_args_list
-    assert call.args[0].startswith("Image render notices — lineup — Pro:\n"), call.args[0]
-    assert "a fallback flag stood in for Zara's" in call.args[0]
-    assert "a fallback portrait stood in for Zara's" in call.args[0]
+    post_log.assert_not_awaited()
+    assert "a fallback flag stood in for Zara's" in picture.notices
+    assert "a fallback portrait stood in for Zara's" in picture.notices
     channel.send.assert_not_awaited()
 
 
