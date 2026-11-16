@@ -60,7 +60,8 @@ from leaguebot.core.services.rounds.round_add_changes import (
 )
 from leaguebot.core.services.rounds.round_amend_change import NOTHING_AMENDED
 from leaguebot.core.services.seasons.season_service import SeasonService, renumber_rounds_on
-from leaguebot.core.utils.formatting import discord_ts, format_round_list
+from leaguebot.core.utils.formatting import format_round_list
+from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 

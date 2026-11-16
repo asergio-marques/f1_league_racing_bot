@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.queue.setting_change import After, Saved, Setting
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.utils.messages import discord_ts
 from leaguebot.signup.services.signup_settings import NOT_ENABLED
 from leaguebot.signup.services.window_close import (
     CLOSE_TIMER,

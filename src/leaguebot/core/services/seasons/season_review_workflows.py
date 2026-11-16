@@ -61,7 +61,7 @@ from leaguebot.core.services.seasons.season_fingerprint_service import take_fing
 from leaguebot.core.services.seasons.season_review_changes import take_review_down_before
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.interaction_errors import report_failure
 from leaguebot.core.utils.league_bot import bot_of

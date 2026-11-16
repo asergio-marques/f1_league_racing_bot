@@ -42,7 +42,7 @@ import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.utils.messages import discord_ts
 from tests.support.setup_rounds import (
     acknowledged,
     ask_duplicate,

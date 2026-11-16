@@ -233,7 +233,7 @@ def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.services.seasons import approval_checks
-    from leaguebot.core.utils.formatting import discord_ts
+    from leaguebot.utils.messages import discord_ts
 
     at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
     later = at + timedelta(days=7)

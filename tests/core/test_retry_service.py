@@ -24,7 +24,7 @@ from leaguebot.core.services.posting.retry_service import (
     mark_delivered,
     mark_failed,
 )
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.utils.messages import discord_ts
 
 #: The time handed in, well before the host's clock, so that a stamp read from the host shows.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)

@@ -57,7 +57,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import renumber_rounds_on
-from leaguebot.core.utils.formatting import discord_ts, format_round_list
+from leaguebot.core.utils.formatting import format_round_list
+from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.round_import import ParsedDivisionRounds, format_import_errors
 

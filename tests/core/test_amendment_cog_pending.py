@@ -19,7 +19,7 @@ import pytest
 
 from leaguebot.core.cogs.round_cog import RoundCog
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.utils.messages import discord_ts
 from tests.support.setup_rounds import (
     NAMED,
     NOW,
