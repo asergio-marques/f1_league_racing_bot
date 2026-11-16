@@ -27,10 +27,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     import discord
+
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing as CoreImageDrawing
 
     from leaguebot.image.models.forecast_values import ForecastValues
     from leaguebot.image.services.aspects.image_attendance_service import AttendanceDrawing
@@ -1452,3 +1454,14 @@ class ImageDrawing:
             return None
         config = await self._config.get_config()
         return portrait_configuration_fault(config)
+
+
+def as_image_drawing(handed: CoreImageDrawing) -> ImageDrawing:
+    """The image module's drawing, as image's own class, which the modules that ask image to draw
+    are handed: the jobs that post a picture and the checks that a channel can take one.
+
+    `LeagueBot` declares `image_drawing` as core's protocol, which holds only what core asks of
+    it; the entry point attaches image's `ImageDrawing`, which answers what the other modules ask
+    besides. A cast, true by construction, made here once so that no caller repeats it.
+    """
+    return cast("ImageDrawing", handed)

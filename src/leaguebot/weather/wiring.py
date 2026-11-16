@@ -13,25 +13,15 @@ entry point.
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
+
+from leaguebot.image.services.render.image_drawing import as_image_drawing
 
 if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
-    from leaguebot.image.services.render.image_drawing import ImageDrawing
-
-
-def _drawing_of(bot: "LeagueBot") -> "ImageDrawing":
-    """The image module's drawing, as image's own class, which the forecast's post job asks for
-    its picture.
-
-    `LeagueBot` declares `image_drawing` as core's protocol, which holds only what core asks of
-    it; the entry point attaches image's
-    `ImageDrawing`, which answers what weather asks besides. A cast, true by construction.
-    """
-    return cast("ImageDrawing", bot.image_drawing)
 
 
 def register_switch(modules: "ModuleService") -> None:
@@ -147,7 +137,7 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
 
     bot.amendment_steps.subscribe(partial(
         forecast_changes.amendment_steps,
-        now=lambda: bot.change_queue.now(), drawing=_drawing_of(bot), seasons=bot.season_service,
+        now=lambda: bot.change_queue.now(), drawing=as_image_drawing(bot.image_drawing), seasons=bot.season_service,
         modules=bot.module_service,
     ))
 
@@ -253,7 +243,7 @@ def sign_up_to_season_end_steps(bot: "LeagueBot") -> None:
 
     bot.season_end_steps.subscribe(partial(
         forecast_changes.season_end_steps, now=lambda: bot.change_queue.now(),
-        drawing=_drawing_of(bot),
+        drawing=as_image_drawing(bot.image_drawing),
     ))
 
 
@@ -275,10 +265,10 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
 
     bot.change_queue.register(
-        forecast_change(now=lambda: bot.change_queue.now(), drawing=_drawing_of(bot))
+        forecast_change(now=lambda: bot.change_queue.now(), drawing=as_image_drawing(bot.image_drawing))
     )
     bot.change_queue.register(
-        forecast_clean_up_change(now=lambda: bot.change_queue.now(), drawing=_drawing_of(bot))
+        forecast_clean_up_change(now=lambda: bot.change_queue.now(), drawing=as_image_drawing(bot.image_drawing))
     )
     bot.change_queue.register(
         setting_change(deadline_setting(modules=bot.module_service, seasons=bot.season_service))

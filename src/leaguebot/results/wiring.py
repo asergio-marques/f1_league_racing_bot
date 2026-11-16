@@ -14,27 +14,17 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from functools import partial
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import aiosqlite
+
+from leaguebot.image.services.render.image_drawing import as_image_drawing
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.core.utils.league_bot import LeagueBot
-    from leaguebot.image.services.render.image_drawing import ImageDrawing
-
-
-def _drawing_of(bot: "LeagueBot") -> "ImageDrawing":
-    """The image module's drawing, as image's own class, which results' jobs ask for the pictures
-    they post: a round's verdicts and the heading over them, its results and the standings.
-
-    `LeagueBot` declares `image_drawing` as core's protocol, which holds only what core asks of
-    it; the entry point attaches image's `ImageDrawing`, which answers what results asks besides.
-    A cast, true by construction.
-    """
-    return cast("ImageDrawing", bot.image_drawing)
 
 
 def register_switch(modules: "ModuleService") -> None:
@@ -275,7 +265,7 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
     bot.placements_confirmed.subscribe(season_standings_posts.placements_confirmed_on)
     bot.placements_confirmed_steps.subscribe(
         partial(
-            season_standings_posts.opening_steps, bot.module_service, _drawing_of(bot),
+            season_standings_posts.opening_steps, bot.module_service, as_image_drawing(bot.image_drawing),
             bot.driver_names_read,
         )
     )
@@ -289,7 +279,7 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
     bot.season_completed.subscribe(season_standings_posts.season_completed_on)
     bot.season_completed_steps.subscribe(
         partial(
-            season_standings_posts.final_steps, bot.module_service, _drawing_of(bot),
+            season_standings_posts.final_steps, bot.module_service, as_image_drawing(bot.image_drawing),
             bot.driver_names_read,
         )
     )
@@ -386,7 +376,7 @@ def register_change_types(
     bot.change_queue.register(
         submission_all_cancelled_change(
             seasons=bot.season_service,
-            drawing=_drawing_of(bot),
+            drawing=as_image_drawing(bot.image_drawing),
             driver_names_read=bot.driver_names_read,
             attendance=attendance,
             cancellation_notices=bot.cancellation_notices,
@@ -485,7 +475,7 @@ def register_change_types(
     bot.change_queue.register(
         review_open_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            router=bot.output_router, attendance=attendance, drawing=_drawing_of(bot),
+            router=bot.output_router, attendance=attendance, drawing=as_image_drawing(bot.image_drawing),
             driver_names_read=bot.driver_names_read,
         )
     )
@@ -518,19 +508,19 @@ def register_change_types(
     # run, as the getters above are, and reach attendance through the hook alone.
     bot.change_queue.register(
         report_approval_change(
-            attendance=attendance, drawing=_drawing_of(bot), now=lambda: bot.change_queue.now(),
+            attendance=attendance, drawing=as_image_drawing(bot.image_drawing), now=lambda: bot.change_queue.now(),
             driver_names_read=bot.driver_names_read,
         )
     )
     bot.change_queue.register(
         appeals_approval_change(
-            attendance=attendance, drawing=_drawing_of(bot), now=lambda: bot.change_queue.now(),
+            attendance=attendance, drawing=as_image_drawing(bot.image_drawing), now=lambda: bot.change_queue.now(),
             driver_names_read=bot.driver_names_read,
         )
     )
     for stage in amendment_stage_changes(
         attendance=attendance,
-        drawing=_drawing_of(bot),
+        drawing=as_image_drawing(bot.image_drawing),
         driver_names_read=bot.driver_names_read,
         now=lambda: bot.change_queue.now(),
         queue=bot.change_queue,
@@ -542,7 +532,7 @@ def register_change_types(
     bot.change_queue.register(
         points_amendment_change(
             attendance=attendance,
-            drawing=_drawing_of(bot),
+            drawing=as_image_drawing(bot.image_drawing),
             now=lambda: bot.change_queue.now(),
             module_service=bot.module_service,
             driver_names_read=bot.driver_names_read,
@@ -550,12 +540,12 @@ def register_change_types(
     )
     bot.change_queue.register(
         rounds_sync_change(
-            bot.season_service, bot.module_service, _drawing_of(bot), bot.driver_names_read
+            bot.season_service, bot.module_service, as_image_drawing(bot.image_drawing), bot.driver_names_read
         )
     )
     bot.change_queue.register(
         standings_sync_change(
-            bot.season_service, bot.module_service, _drawing_of(bot), bot.driver_names_read
+            bot.season_service, bot.module_service, as_image_drawing(bot.image_drawing), bot.driver_names_read
         )
     )
     bot.change_queue.register(
