@@ -23,8 +23,8 @@ Answers to `architecture.md`, "The database".
 ### Signup's tables
 
 Signup owns seven tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`. Every one of them is written, as the bot runs, on
-a connection the change queue or a core hook hands in.
+declared in `framework/db/migrations/001_baseline.sql`. Every one of them is written, as the bot
+runs, on a connection the change queue or a core hook hands in.
 
 | Table | One row is | Held to it by |
 |---|---|---|
@@ -356,13 +356,13 @@ Three of the shape's consequences:
 ### Settings are `Setting` changes
 
 The five settings, the channel and the switch-on are each a `Setting`
-(`core/services/queue/setting_change.py`); the close-time group's three are too, under kinds that do
-not carry `.setting.`, since a close time repairs nothing and is not among the settings that overtake
-a stopped lane (`close_time_settings`' docstring). The refusals are the check's, in the command's
-order and words, made at the ask and again as the change starts. `open_to_change` holds the two
-the five settings and the channel share (the module on, the configuration not fixed by a confirmed
-season); the close-time group's check reads the switch itself and judges no fixed configuration,
-and the switch-on refuses where the module is already on. **A slot is removed by its
+(`framework/services/queue/setting_change.py`); the close-time group's three are too, under kinds
+that do not carry `.setting.`, since a close time repairs nothing and is not among the settings that
+overtake a stopped lane (`close_time_settings`' docstring). The refusals are the check's, in the
+command's order and words, made at the ask and again as the change starts. `open_to_change` holds
+the two the five settings and the channel share (the module on, the configuration not fixed by a
+confirmed season); the close-time group's check reads the switch itself and judges no fixed
+configuration, and the switch-on refuses where the module is already on. **A slot is removed by its
 identity, not its rank**, the command resolving the rank to a day and time at the ask
 (`test_removing_slot_n_twice_removes_one_slot`).
 

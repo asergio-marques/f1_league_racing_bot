@@ -21,8 +21,8 @@ Answers to `architecture.md`, "The database".
 ### Attendance's tables
 
 Attendance owns five tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`. Every one of them is written, as the bot runs, on
-a connection the change queue or a core hook hands in.
+declared in `framework/db/migrations/001_baseline.sql`. Every one of them is written, as the bot
+runs, on a connection the change queue or a core hook hands in.
 
 | Table | One row is | Held to it by |
 |---|---|---|
@@ -266,9 +266,9 @@ reading of its record before a cancellation, and attendance's own notice of the 
 ### Settings are `Setting` changes
 
 Each of the eight settings, the two channels and the switch is a `Setting`
-(`core/services/queue/setting_change.py`): its check, its save on a connection, its reply and the
-tables it writes. The value, its audit entry and its log line are one save, stamped by the queue's
-clock; a value already held writes nothing and says so. The refusals are the check's, in the
+(`framework/services/queue/setting_change.py`): its check, its save on a connection, its reply and
+the tables it writes. The value, its audit entry and its log line are one save, stamped by the
+queue's clock; a value already held writes nothing and says so. The refusals are the check's, in the
 command's order and words, made at the ask and again as the change starts, since a change ahead of
 it may have moved the season or another setting on.
 
@@ -589,14 +589,14 @@ Answers to `architecture.md`, "Errors and failures".
 
 **A recovery that fails on one round stops none of the others.** `check_in_recovery` goes through
 every round, catching and noting the failure of each, and raises `RecoveryFailed` once at the end,
-naming each round and its error, which the start-up sweep reports to the log channel in one line. The
-error carries `rounds_called`, each failed round named as core names it (`RoundsFailed`,
-`core/models/recovery.py`); `architecture.md`, "The sweep is core's own steps, then each enabled
-module's turn", says what the sweep does with it. A
-call whose buttons cannot be armed again is noted in the host's log alone. A database it cannot read
-is raised as it is, for the sweep to report: nothing is caught up, and nothing says so but that
-line. Pinned by `test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`
-and `test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`.
+naming each round and its error, which the start-up sweep reports to the log channel in one line.
+The error carries `rounds_called`, each failed round named as core names it (`RoundsFailed`,
+`framework/models/recovery.py`); `architecture.md`, "The sweep is core's own steps, then each
+enabled module's turn", says what the sweep does with it. A call whose buttons cannot be armed again
+is noted in the host's log alone. A database it cannot read is raised as it is, for the sweep to
+report: nothing is caught up, and nothing says so but that line. Pinned by
+`test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is` and
+`test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is`.
 
 **What a stop leaves** is `architecture.md`'s ("Errors and failures"). The sync's roles are the one
 exception: they end on a fault, the sanction stands, and the fault goes to the host's log (the

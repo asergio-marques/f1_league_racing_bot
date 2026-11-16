@@ -20,7 +20,7 @@ Answers to `architecture.md`, "The database".
 ### Weather's tables
 
 Weather owns three tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`.
+declared in `framework/db/migrations/001_baseline.sql`.
 
 | Table | One row is | Held to it by |
 |---|---|---|
@@ -337,7 +337,7 @@ sweep reports to the log channel in one line, as the core specification's "When 
 requires. Weather owns its `RecoveryFailed`, as each module does its own (`architecture.md`, "The
 sweep is core's own steps, then each enabled module's turn"). The error carries `rounds_called`,
 each failed round named as core names it ("round 3 in **Pro**", or "a round no longer there" where
-its rows are gone; `RoundsFailed`, `core/models/recovery.py`); `architecture.md`, "The sweep is
+its rows are gone; `RoundsFailed`, `framework/models/recovery.py`); `architecture.md`, "The sweep is
 core's own steps, then each enabled module's turn", says what the sweep does with it, and the host's
 log reads the same names in the message with the faults. A start time that cannot be read is that
 round's failure, found by each step in its own way: the missed phases from the ids

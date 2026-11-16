@@ -158,11 +158,11 @@ error code and no library is skipped, and tests refuse each. Where the check can
 the code knows, say it in the code — a narrowing with its reason, or one of the helpers that
 raises by name — rather than switching the check off.
 
-**The bot is typed as `LeagueBot`** (`src/leaguebot/core/utils/league_bot.py`). Declare an attribute
-there before the entry point, `src/leaguebot/__main__.py`, attaches it, annotate a `bot` parameter
-as it, and reach an interaction's bot through `bot_of(interaction)`. A library that ships no types
-is described in `stubs/`; using more of one means extending its stub, which `stubtest` then holds to
-the installed version.
+**The bot is typed as `LeagueBot`** (`src/leaguebot/framework/utils/league_bot.py`). Declare an
+attribute there before the entry point, `src/leaguebot/__main__.py`, attaches it, annotate a `bot`
+parameter as it, and reach an interaction's bot through `bot_of(interaction)`. A library that ships
+no types is described in `stubs/`; using more of one means extending its stub, which `stubtest` then
+holds to the installed version.
 
 ## Pull requests
 
@@ -221,7 +221,7 @@ whenever it packages the code, and a clone asks git instead. **Never write a val
 
 **Go-live is `v1.0.0`.** Every release before it is marked a pre-release. From `v1.0.0` on the
 migration baseline is frozen, and every schema change is a new migration (see `run_migrations`
-in `src/leaguebot/core/db/database.py`).
+in `src/leaguebot/framework/db/database.py`).
 
 **To cut one:**
 

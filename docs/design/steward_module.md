@@ -406,11 +406,11 @@ fetches that message and reads its attachments.
 ## 8. The schema change
 
 The bot is not live, so every table and column above is added to
-`src/leaguebot/core/db/migrations/001_baseline.sql` rather than to a new migration, as issue #254
-settled. Each is added by the issue that first needs it, not in one block up front: S01 the licence
-and sanction tables, S02 the config row, S03 the channels and `steward_messages`, S04 the team, S06
-the outcomes, S08 the auto-rules, S10 the tickets, S11 the ballots and verdicts, S12 the cycles, S16
-the close record, S36 the downtime record.
+`src/leaguebot/framework/db/migrations/001_baseline.sql` rather than to a new migration, as issue
+#254 settled. Each is added by the issue that first needs it, not in one block up front: S01 the
+licence and sanction tables, S02 the config row, S03 the channels and `steward_messages`, S04 the
+team, S06 the outcomes, S08 the auto-rules, S10 the tickets, S11 the ballots and verdicts, S12 the
+cycles, S16 the close record, S36 the downtime record.
 
 The cost is that a developer's existing database has to be recreated at each such issue —
 `run_migrations` will not re-apply a baseline it has already recorded, and refuses a database

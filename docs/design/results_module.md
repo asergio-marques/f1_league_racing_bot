@@ -21,8 +21,8 @@ Answers to `architecture.md`, "The database".
 ### Results' tables
 
 Results owns twenty-seven tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`),
-all declared in `core/db/migrations/001_baseline.sql`. Every one of them is written on a connection
-the change queue or a core hook hands in: nothing in `results/` commits.
+all declared in `framework/db/migrations/001_baseline.sql`. Every one of them is written on a
+connection the change queue or a core hook hands in: nothing in `results/` commits.
 
 **The submission and amendment conversations**
 
@@ -471,7 +471,7 @@ docstring).
 
 **A failed recovery reports once.** A round that cannot be recovered stops none of the others; once
 every round is gone through, the step raises one `RecoveryFailed` naming each and carrying
-`rounds_called`, each as core names it (`RoundsFailed`, `core/models/recovery.py`);
+`rounds_called`, each as core names it (`RoundsFailed`, `framework/models/recovery.py`);
 `architecture.md`, "The sweep is core's own steps, then each enabled module's turn", says what the
 sweep does with it (`test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are`).
 

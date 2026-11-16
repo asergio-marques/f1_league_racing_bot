@@ -21,7 +21,7 @@ Answers to `architecture.md`, "The database".
 ### Image's tables
 
 Image owns four tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`.
+declared in `framework/db/migrations/001_baseline.sql`.
 
 | Table | One row is | Held to it by |
 |---|---|---|

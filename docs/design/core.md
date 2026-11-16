@@ -21,7 +21,7 @@ Answers to `architecture.md`, "The database".
 ### Core's tables
 
 Core owns twenty tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`. `schema_migrations` is the migrations' own
+declared in `framework/db/migrations/001_baseline.sql`. `schema_migrations` is the migrations' own
 record, written by `run_migrations` alone.
 
 | Table | One row is | Held to it by |
@@ -147,12 +147,16 @@ against it; `test_a_merge_leaves_nothing_naming_the_driver_absorbed` does the sa
 ## How the code is laid out
 
 Answers to `architecture.md`, "How the code is laid out". Core's code sits in `core/cogs/`,
-`core/services/`, `core/models/`, `core/utils/` and `core/db/`.
+`core/services/`, `core/models/` and `core/utils/`. The machinery it runs on, the database code, the
+change queue, posting, the module switches, the bot's type and the failure paths, is the
+framework's (`framework/`); the rows of the table below marked as the framework's are described
+here for what core asks of them.
 
 ### Services, and what each owns
 
-Each service but the scheduler's sits in a topic folder of `core/services/` (`architecture.md`, "How
-the code is laid out"). The table names a service by its file, not its folder.
+Each of core's services but the scheduler's sits in a topic folder of `core/services/`
+(`architecture.md`, "How the code is laid out"). The table names a service by its file, not its
+folder.
 
 | Area | Services | Owns |
 |---|---|---|
@@ -160,12 +164,12 @@ the code is laid out"). The table names a service by its file, not its folder.
 | Seasons, divisions, rounds | `season_service` (`SeasonService`), `season_lifecycle_service`, `season_end_service`, `round_moments`, `track_service`, `round_context` (`round_context`, `division_context`, `division_rounds`) | seasons, divisions, rounds, sessions; reads `tracks`; `round_context` answers a round's, and a division's, season, tier and grand prix for the module that heads a picture with them (image's pictures), and `division_rounds` a division's rounds in order, for a picture that lists them |
 | Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`), `division_seating` (`division_seating`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing, reads a team's role through the team-role service it is handed, joins `team_role_configs` in its own queries for the roles a driver's placements carry, reads the driver role from the settings row, and gives and takes roles only through that service's helpers); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`); the seats and who sits in them, read as the lineup of record shows them, for every module that lists who races in a division (`division_seating`: the text lineup, image's lineup, standings and previews, each handing in its own filter on the state of the driver who sits); the portrait roster reads `active_season_driver_ids` beside it, which takes no filter: every driver assigned in the active season, a placement not yet confirmed included, test drivers left out |
 | Drivers | `driver_service` (`DriverService`), `driver_names` | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on`; nothing for `driver_names`, which reads a driver's name, username and nationality, and whether the league collects a nationality, from the profile, the accounts, the test-mode fields and signup's hook |
-| The change queue | `change_queue` (`ChangeQueue`), `change_types`, `queue_records`, `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
+| The change queue (the framework's) | `change_queue` (`ChangeQueue`), `change_types`, `queue_records`, `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
 | Timed work | `scheduler_service` (`SchedulerService`), `start_up` | the job store, a file of its own |
-| Posting | `output_router` (`OutputRouter`), `notice_handler`, `standing_post_handler`, `owned_channel_handler`, `standing_posts`, `retry_service` | `pending_messages` |
-| The record | `audit_service` | `audit_entries` |
+| Posting (the framework's) | `output_router` (`OutputRouter`), `notice_handler`, `standing_post_handler`, `owned_channel_handler`, `standing_posts`, `retry_service` | `pending_messages` |
+| The record (the framework's) | `audit_service` | `audit_entries` |
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook |
-| Module switches | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
+| Module switches (the framework's) | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
@@ -191,22 +195,24 @@ through the `configuration_faults_read` hook, so that core reaches the module on
 architecture.md's "How modules and core fit together" has it and holds no rule of signup's.
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
-status and stage, a division's and a round's status, the driver's state, the change queue's
-vocabulary (`change.py`), the dependency table (`module_dependencies.py`) and `Refused`
-(`refusal.py`).
+status and stage, a division's and a round's status, the driver's state and the dependency table
+(`module_dependencies.py`). The change queue's vocabulary (`change.py`) and `Refused`
+(`refusal.py`) are the framework's models.
 
-**Core's helpers** (`core/utils/`) are the bot's type (`league_bot.py`), the one-league claim and
-the base classes for the command tree, buttons and forms (`league_server.py`), the hook types
-(`hooks.py`), the failure path for interactions (`interaction_errors.py`), the refusal and the
-standard log lines (`log_lines.py`), `bounded_autocomplete` (`autocomplete.py`), the posting guard
-(`in_a_job.py`), and core's own listings (`formatting.py`) and readers of what a league types
-(`input_validator.py`, `round_import.py`, `roster_import.py`). The helpers that know nothing of the
-bot, reading a typed time, the time zones, the version and the fitting of text to Discord's limits,
-are not core's but the `utils` layer's (`architecture.md`, "How the code is laid out"), and the
-rendering of a date for a graphic is the image module's.
+**Core's helpers** (`core/utils/`) are the tier guards (`channel_guard.py`), the season-stage gate
+(`season_gate.py`), the team choices a command's autocomplete offers (`team_autocomplete.py`),
+core's own listings (`formatting.py`), readers of what a league types (`input_validator.py`,
+`round_import.py`, `roster_import.py`), the asset slug (`asset_slug.py`) and the nationalities a
+driver may give (`nationality_data.py`). The bot's type, the one-league claim and the base classes,
+the hook types, the failure paths, the standard log lines, `bounded_autocomplete` and the posting
+guard are the framework's helpers (`framework/utils/`). The helpers that know nothing of the bot,
+reading a typed time, the time zones, the version and the fitting of text to Discord's limits, are
+the `utils` layer's (`architecture.md`, "How the code is laid out"), and the rendering of a date for
+a graphic is the image module's.
 
-**The database code** is `core/db/database.py`: `get_connection`, which lends idle connections
-again, `close_connections`, `run_migrations`, and the helpers `sole_row` and `inserted_id`.
+**The database code** is the framework's, `framework/db/database.py`: `get_connection`, which lends
+idle connections again, `close_connections`, `run_migrations`, and the helpers `sole_row` and
+`inserted_id`.
 
 ### The entry point
 
@@ -221,11 +227,11 @@ signs the start-up steps up to the starting hook (`_sign_up_to_starting`), all b
 connects; `main()` then holds the change queue (`ChangeQueue.hold`), so that a request made before
 the sweep has asked its own waits for it. Beside core's own part, the builder keeps what joins
 modules: every service, every hook and the order of its subscribers, a hand-in from one module to
-another, the cogs and views, and the order of the modules' start-up turns. Core has no
-wiring of its own. `test_build_returns_every_service_complete` and
+another, the cogs and views, and the order of the modules' start-up turns. Core has no wiring of its
+own. `test_build_returns_every_service_complete` and
 `test_every_kind_is_registered_before_the_scheduler_starts` pin that. `LeagueBot`
-(`core/utils/league_bot.py`) declares every attribute the builder attaches, each hook among them,
-and `test_every_attribute_bot_py_attaches_is_declared` holds the two equal.
+(`framework/utils/league_bot.py`) declares every attribute the builder attaches, each hook among
+them, and `test_every_attribute_bot_py_attaches_is_declared` holds the two equal.
 
 ### Command groups
 
@@ -254,27 +260,28 @@ specification's section of the same name holds what a league is told.
 
 ### The queue's code
 
-The queue is `ChangeQueue` (`core/services/queue/change_queue.py`), and it is one class: asking, the
-dispatcher, a change's start and end, a step's run, the stop and its notice, Retry and Discard, the
-audit and the held reply are one state machine around one lock order (`_working[lane]`, then
-`_asking`, then `_writing`) and the attributes they share. *Rejected:* mixins, which would split the
-file and leave one state machine whose lock order no single class states; and collaborator objects,
-which would reach into the queue's private state or be handed all of it (`ChangeQueue`'s docstring).
-What reads none of that state is out of the file. `core/services/queue/change_types.py` holds the
-types a change is made of, `Step` and `ChangeType` with the contexts a check, a step, an outcome and
-the refusal and discard hooks are handed, and the decisions that govern them (a post's id saved with
-its mark, a step's four kinds, a job that ends on a fault); `core/services/queue/queue_records.py`
-holds the bookkeeping over the queue's tables, what is in hand, what was ever asked, the job
-numbering and the emptying of a restored database, which a check, a recovery, a restore and a
-factory reset call without a queue. The queue file keeps the constants the class reads:
-`RETRY_AFTER`, the bot's own tries; `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply
-may be updated; `WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and
-`QUEUE_TABLES`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`,
-`EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The
-engineering decisions that govern the queue are in its module docstring, and those that govern a
-step's kinds, its record and a fault's ending in `change_types`', each pinned by a test in
-`tests/framework/test_change_queue.py`, `test_change_queue_lanes.py` or `test_change_queue_controls.py`.
-Among them:
+The queue is `ChangeQueue` (`framework/services/queue/change_queue.py`), and it is one class:
+asking, the dispatcher, a change's start and end, a step's run, the stop and its notice, Retry and
+Discard, the audit and the held reply are one state machine around one lock order (`_working[lane]`,
+then `_asking`, then `_writing`) and the attributes they share. *Rejected:* mixins, which would
+split the file and leave one state machine whose lock order no single class states; and collaborator
+objects, which would reach into the queue's private state or be handed all of it (`ChangeQueue`'s
+docstring). What reads none of that state is out of the file.
+`framework/services/queue/change_types.py` holds the types a change is made of, `Step` and
+`ChangeType` with the contexts a check, a step, an outcome and the refusal and discard hooks are
+handed, and the decisions that govern them (a post's id saved with its mark, a step's four kinds, a
+job that ends on a fault); `framework/services/queue/queue_records.py` holds the bookkeeping over
+the queue's tables, what is in hand, what was ever asked, the job numbering and the emptying of a
+restored database, which a check, a recovery, a restore and a factory reset call without a queue.
+The queue file keeps the constants the class reads: `RETRY_AFTER`, the bot's own tries;
+`CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated;
+`WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and `QUEUE_TABLES`. The plain
+data is in `framework/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`, `EDIT`), `Verdict`,
+`StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The engineering
+decisions that govern the queue are in its module docstring, and those that govern a step's kinds,
+its record and a fault's ending in `change_types`', each pinned by a test in
+`tests/framework/test_change_queue.py`, `test_change_queue_lanes.py` or
+`test_change_queue_controls.py`. Among them:
 
 - **One save at a time across lanes**, under an in-process lock (`ChangeQueue._writing`) held for
   the save alone, with a fixed lock order. *Rejected:* one worker for every lane, which holds a
@@ -286,14 +293,18 @@ Among them:
   on its state in the statement, so a change ended while its check ran does not start
   (`test_a_change_discarded_while_its_check_runs_does_not_start`).
 - **The queue is held from the entry point's `hold()` until the start-up sweep has asked its own**
-  (`sweeping()`, whose leaving, or `release()`, lets the asks go ahead; releasing twice is harmless).
-  Every `ask` and `ask_after` made outside the sweep waits before its check, so nothing a member
-  does or Discord reports lands on a lane ahead of a recovery asked a moment later. An interaction
-  not yet answered is deferred, privately, before the ask waits, for Discord's three seconds. A kind
-  that declares a `turn_channel` puts it in `_held_turns` while its ask waits, which
+  (`sweeping()`, whose leaving, or `release()`, lets the asks go ahead; releasing twice is
+  harmless). Every `ask` and `ask_after` made outside the sweep waits before its check, so nothing a
+  member does or Discord reports lands on a lane ahead of a recovery asked a moment later. An
+  interaction not yet answered is deferred, privately, before the ask waits, for Discord's three
+  seconds. A kind that declares a `turn_channel` puts it in `_held_turns` while its ask waits, which
   `held_turn_channels()` returns, so `turn_waiting` counts a typed answer held there as waiting and
   a second message typed meanwhile is turned away. *Rejected:* the held channels in `_held`, which
-  holds the kept replies. A queue never held asks at once, as every test queue does. A command answered off the queue waits through `wait_out_the_hold` by the `after_the_catch_up` decorator (`core/utils/catch_up_gate.py`), worn below the tier guard, which hands the command a response that follows up in the place of the one the deferral used; each cog gives it the way to its own queue, a helper never reading the queue off the bot.
+  holds the kept replies. A queue never held asks at once, as every test queue does. A command
+  answered off the queue waits through `wait_out_the_hold` by the `after_the_catch_up` decorator
+  (`framework/utils/catch_up_gate.py`), worn below the tier guard, which hands the command a
+  response that follows up in the place of the one the deferral used; each cog gives it the way to
+  its own queue, a helper never reading the queue off the bot.
 - **A kept reply is the same entry held in memory**, let go once it can no longer be updated.
   *Rejected:* a second table of replies (`ChangeQueue.keep_reply`'s docstring;
   `test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated`).
@@ -367,8 +378,8 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.clean` | `/clean-bot` | `close`, last: a save writing the line | before it: `choose`, then one `delete_message` for each message chosen |
 
 Each module's switch is a change of the module's own, of kind `module.on:<name>` or
-`module.off:<name>` (`module_on` and `module_off` in `core/models/change.py`), which `ModuleCog`
-asks for by that kind.
+`module.off:<name>` (`module_on` and `module_off` in `framework/models/change.py`), which
+`ModuleCog` asks for by that kind.
 
 Each file's docstring holds its change's check, its steps and the reason for each. Three shapes
 recur:
@@ -466,12 +477,12 @@ sweep of everything that came due while the bot was stopped:
 - **Each step, each switch read, each module's list of steps and the queue's start is contained**:
   one that raises is logged with its traceback and reported to the log channel by one line
   (`start_up_failure_line`), and the rest carry on, the module's later steps included. Where the
-  error carries `rounds_called` (the protocol `RoundsFailed`, `core/models/recovery.py`: each round
-  a step failed for, named as core names it), the line names them, and never asks for a module's own
-  error type, so each module's `RecoveryFailed` is its own; an error carrying none is a step that
-  failed as a whole, and its line names no round. A module whose
-  switch or list cannot be read is passed over; a switch not signed up is a fault in the assembly and
-  is reported, never read as off.
+  error carries `rounds_called` (the protocol `RoundsFailed`, `framework/models/recovery.py`: each
+  round a step failed for, named as core names it), the line names them, and never asks for a
+  module's own error type, so each module's `RecoveryFailed` is its own; an error carrying none is a
+  step that failed as a whole, and its line names no round. A module whose switch or list cannot be
+  read is passed over; a switch not signed up is a fault in the assembly and is reported, never read
+  as off.
 - **The hold is released when the sweep has asked its own**, on leaving `sweeping()`, and again in an
   outer `finally`, so a scheduler that cannot start does not leave every request waiting for the rest
   of the run.
@@ -577,13 +588,13 @@ Answers to `architecture.md`, "How modules and core fit together".
 
 ### The hook types
 
-`core/utils/hooks.py` declares `Hook`, whose subscribers are plain functions, and `AwaitedHook`,
-whose subscribers are awaited one after another; each `call` returns what each subscriber handed
-back, in the order they signed up. A subscriber that raises is not caught: the caller's own failure
-path has it (the module docstring;
-`test_a_hook_calls_its_subscribers_in_order_on_the_handed_connection`).
-The builder makes every hook, signs the modules up and attaches it to the bot; a cog reads it off
-the bot and hands it on, and a change type is handed it by the builder.
+`framework/utils/hooks.py` declares `Hook`, whose subscribers are plain functions, and
+`AwaitedHook`, whose subscribers are awaited one after another; each `call` returns what each
+subscriber handed back, in the order they signed up. A subscriber that raises is not caught: the
+caller's own failure path has it (the module docstring;
+`test_a_hook_calls_its_subscribers_in_order_on_the_handed_connection`). The builder makes every
+hook, signs the modules up and attaches it to the bot; a cog reads it off the bot and hands it on,
+and a change type is handed it by the builder.
 
 `StartingHook` is of another shape: it holds core's own steps, signed up by name, and each module's,
 signed up as one function bound to the bot, under the module's switch key. The hook calls nothing:
@@ -704,10 +715,10 @@ stated exception, core's among them; each docstring there named carries its reas
 
 | Starting point | Core's code |
 |---|---|
-| A command, button or form | `LeagueCommandTree.on_error`, `LeagueView.on_error`, `LeagueModal.on_error` (`core/utils/league_server.py`), each calling `report_failure` (`core/utils/interaction_errors.py`) |
+| A command, button or form | `LeagueCommandTree.on_error`, `LeagueView.on_error`, `LeagueModal.on_error` (`framework/utils/league_server.py`), each calling `report_failure` (`framework/utils/interaction_errors.py`) |
 | The slash-command sync at start-up | `on_ready`, which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
-| A Discord event | `on_event_error` (`core/utils/league_server.py`), attached by the builder with `setattr` |
-| An autocomplete | `bounded_autocomplete` (`core/utils/autocomplete.py`) |
+| A Discord event | `on_event_error` (`framework/utils/league_server.py`), attached by the builder with `setattr` |
+| An autocomplete | `bounded_autocomplete` (`framework/utils/autocomplete.py`) |
 | A change | `ChangeQueue._start` and `_run_step`, leading to `_stop`, or to `on_fault` or `on_check_fault` where the type gives one |
 | A scheduled job | `_one_off_timer_job` (`core/services/scheduler_service.py`), which logs a handler's fault on the host |
 | A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each contained and reported to the log channel by `start_up_failure_line` |
@@ -728,13 +739,13 @@ being a query rather than a line posted (its docstring).
 
 | Type | Where | What it is |
 |---|---|---|
-| `Refused` | `core/models/refusal.py` | a refusal whose text the member reads; subclasses `ValueError` |
+| `Refused` | `framework/models/refusal.py` | a refusal whose text the member reads; subclasses `ValueError` |
 | `PackRefused` | `core/services/upkeep/pack_service.py` | `/bot pack`'s refusals, worded by the cog from its fields |
 | `InvalidDriverTransition` | `core/models/driver_profile.py` | a fault: a move past the transition table, caught by a caller that expects the race |
 | `InvalidStageTransition` | `core/models/season.py` | a season asked to move to a stage its lifecycle does not allow from where it is |
-| `SwitchNotSignedUp` | `core/services/modules/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
-| `StepFailedOnDiscord` | `core/models/change.py` | a step's failure on Discord, carrying what the job keeps and a clause for the stop notice |
-| `GuildUnavailable` | `core/models/change.py` | the league's server missing from the cache: a failure on Discord's side |
+| `SwitchNotSignedUp` | `framework/services/switches/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
+| `StepFailedOnDiscord` | `framework/models/change.py` | a step's failure on Discord, carrying what the job keeps and a clause for the stop notice |
+| `GuildUnavailable` | `framework/models/change.py` | the league's server missing from the cache: a failure on Discord's side |
 
 ---
 
@@ -744,7 +755,7 @@ Each is stated where it lives and pinned by the test named.
 
 | Constraint | Stated in | Pinned by |
 |---|---|---|
-| SQLite's busy timeout is five seconds, sized for the longest legitimate write; an autocomplete asks for a shorter one (`AUTOCOMPLETE_TIMEOUT_SECONDS`) | `core/db/database.py`, `_BUSY_TIMEOUT_SECONDS` | `test_connections_carry_an_explicit_busy_timeout` |
+| SQLite's busy timeout is five seconds, sized for the longest legitimate write; an autocomplete asks for a shorter one (`AUTOCOMPLETE_TIMEOUT_SECONDS`) | `framework/db/database.py`, `_BUSY_TIMEOUT_SECONDS` | `test_connections_carry_an_explicit_busy_timeout` |
 | The database runs in WAL with `synchronous` left at FULL, durability chosen over speed | `_enable_wal` | `test_migrations_leave_the_database_in_wal_mode`, `test_connections_keep_full_durability` |
 | Four idle connections are kept to be lent again | `_IDLE_CONNECTIONS_KEPT` | `test_no_more_than_four_idle_connections_are_kept` |
 | `server_configs` holds one row; the claim's condition is in its statement, so two servers cannot both win; releasing the claim keeps the row | `config_service`'s docstring, `ConfigService.claim_on` | `test_a_single_row_table_refuses_a_second_row`, `test_only_one_server_claims_a_released_row`, `test_releasing_the_claim_keeps_what_is_the_league_s` |

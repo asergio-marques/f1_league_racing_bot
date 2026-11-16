@@ -182,12 +182,12 @@ the tests and the settings files that pin them.
   `inserted_id`), a declared type; a `cast` only where true by construction, with a docstring saying
   why (`bot_of`, `as_text_channel`). A `None` that can really happen is a defect: fix it, with a
   test, rather than narrowing it away.
-- **The bot is `LeagueBot`** (`src/leaguebot/core/utils/league_bot.py`): every attribute the entry
-  point attaches is declared there first, a `bot` parameter is annotated as it, and an interaction's
-  bot is reached through `bot_of(interaction)`. A library that ships no types is described in
-  `stubs/` (fontTools, APScheduler 3) for the part the bot uses and no more; using more means
-  extending the stub, which `test_library_stubs.py` holds to the installed library. lxml uses the
-  pinned `types-lxml`.
+- **The bot is `LeagueBot`** (`src/leaguebot/framework/utils/league_bot.py`): every attribute the
+  entry point attaches is declared there first, a `bot` parameter is annotated as it, and an
+  interaction's bot is reached through `bot_of(interaction)`. A library that ships no types is
+  described in `stubs/` (fontTools, APScheduler 3) for the part the bot uses and no more; using more
+  means extending the stub, which `test_library_stubs.py` holds to the installed library. lxml uses
+  the pinned `types-lxml`.
 - **A test must not depend on what the host carries.** The suite runs on Windows, CI and the Pi,
   which differ in libraries, fonts and libxml2. Never assert on the first item an index yields:
   choose with `sorted()`, never dict or `rglob` order. Where the host's resources are the subject,
@@ -218,7 +218,7 @@ the tests and the settings files that pin them.
   on a file under `tmp_path`, not `:memory:`, seeded through `get_connection`, parents first. Never
   write a `CREATE TABLE` for a table the migrations declare; a table of the test's own is fine.
   `test_migration_steps.py` names the exceptions.
-- **The schema starts from one baseline,** `src/leaguebot/core/db/migrations/001_baseline.sql`.
+- **The schema starts from one baseline,** `src/leaguebot/framework/db/migrations/001_baseline.sql`.
   Until go-live (`v1.0.0`) a schema change edits it; from go-live on, every change is a new
   migration numbered after it, with a test of its own, and no applied file is edited.
   `run_migrations` refuses a database recording a migration the bot does not carry; its docstring
