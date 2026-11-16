@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
 from tests.support.saves import create_image_defaults, set_field
 
@@ -885,6 +886,7 @@ async def _post(db_path, division_id, round_id, captured, *, drawing=None, chann
             label="Final Results",
             drawing=drawing,
             **kwargs,
+            driver_names_read=AwaitedHook(),
         )
 
 
@@ -1135,6 +1137,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
             show_reserves=False,
             label="Final Results",
             drawing=_poster_drawing(_standings_drawn(tmp_path, drivers=False)),
+            driver_names_read=AwaitedHook(),
         )
 
     assert "deleted" not in order

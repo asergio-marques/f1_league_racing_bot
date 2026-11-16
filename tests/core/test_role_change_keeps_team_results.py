@@ -38,6 +38,7 @@ from leaguebot.results.services.standings.standings_service import (
     previous_standing_positions,
 )
 from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 
@@ -245,6 +246,7 @@ async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
         await produce_session_results(
             db_path, session, rows, {FERRARI_DRIVER: 25, RIVAL_DRIVER: 18}, channel, guild,
             1, "Spa", "Provisional Results", is_sprint=False,
+            driver_names_read=AwaitedHook(),
         )
 
     text = "\n".join(sent)

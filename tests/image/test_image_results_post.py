@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
 
 
@@ -154,6 +155,7 @@ async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
             round_number=5,
             track_name="Monaco",
             label="Provisional Results",
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(sent) == 1
@@ -179,6 +181,7 @@ async def test_the_module_being_disabled_leaves_the_text(tmp_path):
             track_name="Monaco",
             label="Provisional Results",
             drawing=_image_drawing(_bot(db_path, module=False)),
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(sent) == 1 and "file" not in sent[0][1]
@@ -202,6 +205,7 @@ async def test_the_aspect_being_off_leaves_the_text(tmp_path):
             track_name="Monaco",
             label="Provisional Results",
             drawing=_image_drawing(_bot(db_path, toggle=False)),
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(sent) == 1 and "file" not in sent[0][1]
@@ -226,6 +230,7 @@ async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
             track_name="Monaco",
             label="Provisional Results",
             drawing=_image_drawing(_bot(db_path, valid=False)),
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(sent) == 1
@@ -278,6 +283,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert posted.new == [4242]
@@ -330,6 +336,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     # The textual table went out in its place, handed back with the message it replaces, 111,
@@ -380,6 +387,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(bot),
+                driver_names_read=AwaitedHook(),
             )
 
     # The problem comes back as a line of the job that posts, headed by the toggle's name, and is
@@ -424,6 +432,7 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(bot),
+                driver_names_read=AwaitedHook(),
             )
 
     # The notices come back as a line of the job that posts, once, naming the session.
@@ -476,6 +485,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
                 track_name="Monaco",
                 label="Provisional Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert captured["result_status"] == status
@@ -519,6 +529,7 @@ async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert captured["division_name"] == "Main"
@@ -576,6 +587,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert attempts == ["image", "text"]
@@ -608,6 +620,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert len(sent) == 1
@@ -641,6 +654,7 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(bot),
+                driver_names_read=AwaitedHook(),
             )
 
     # The fault is on the table for the job to say why the text stands, not logged from here.
@@ -689,6 +703,7 @@ async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert not png.exists()
@@ -734,6 +749,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert not png.exists(), "a failed upload must not strand the picture"
@@ -786,6 +802,7 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
                 track_name="Monaco",
                 label="Final Results",
                 drawing=_image_drawing(_bot(db_path)),
+                driver_names_read=AwaitedHook(),
             )
 
     assert posted.drawn is True and posted.new == [4242]

@@ -768,6 +768,18 @@ async def _describe_session_post(ctx: StepContext) -> str:
     )
 
 
+def _names_hook(drawing: ImageDrawing | None, driver_names_read: AwaitedHook | None) -> AwaitedHook:
+    """The hook a producer is handed. A step that may draw a picture must be given the hook signup
+    answers, for a picture is drawn with the signup names and flags, so none raises here and the
+    job fails where it is built wrong rather than posting a picture without them; a step with no
+    drawing posts text only, which reads no names through it."""
+    if driver_names_read is not None:
+        return driver_names_read
+    if drawing is not None:
+        raise ValueError("a posting step that draws a picture needs the driver names hook")
+    return AwaitedHook()
+
+
 async def _post_session_results(
     drawing: ImageDrawing | None, driver_names_read: AwaitedHook | None, ctx: StepContext
 ) -> StepResult:
@@ -814,7 +826,7 @@ async def _post_session_results(
             rnd["round_number"], rnd["track_name"] or "Unknown", payload["label"], is_sprint,
             # The picture on the first try alone; a retry posts the text (XIV rule 8).
             drawing=drawing if ctx.tries == 0 else None,
-            driver_names_read=driver_names_read,
+            driver_names_read=_names_hook(drawing, driver_names_read),
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
@@ -915,7 +927,7 @@ async def _post_standings(
             ctx.db_path, division_id, round_id, rnd["round_number"], rnd["track_name"] or "Unknown",
             channel, driver_snaps, team_snaps, guild, show_reserves, payload["label"],
             drawing=drawing if ctx.tries == 0 else None,
-            driver_names_read=driver_names_read,
+            driver_names_read=_names_hook(drawing, driver_names_read),
             # A retry after a part-posted try posts afresh: the earlier try went down the
             # picture path, whose tables replace what stood rather than edit it, and what it
             # sent has just been removed.

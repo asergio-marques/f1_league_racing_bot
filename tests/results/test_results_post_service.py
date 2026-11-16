@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.results.services.publishing.results_post_service import _label_from_status
+from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
 
 
@@ -116,6 +117,7 @@ async def test_session_results_include_heading_and_label(tmp_path):
             round_number=5,
             track_name="Monaco",
             label="Provisional Results",
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(captured_content) == 1
@@ -209,6 +211,7 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
                 round_number=1,
                 track_name="Monza",
                 label=label,
+                driver_names_read=AwaitedHook(),
             )
 
         assert label in captured[0], f"Label '{label}' not found for status {status}"
@@ -281,6 +284,7 @@ async def test_produce_standings_includes_heading_and_label(tmp_path):
             guild=mock_guild,
             show_reserves=False,
             label="Final Results",
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(captured_content) == 1
@@ -1041,6 +1045,7 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
             return await produce_session_results(
                 db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
                 "Provisional Results", **kwargs,
+                driver_names_read=AwaitedHook(),
             )
 
     async def _standings(label: str = "Provisional Results", **kwargs) -> list[PostedTable]:
@@ -1048,6 +1053,7 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
             return await produce_standings(
                 db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
                 guild, True, label, **kwargs,
+                driver_names_read=AwaitedHook(),
             )
 
     # A session's results: posted afresh, the old posting handed back and left standing.

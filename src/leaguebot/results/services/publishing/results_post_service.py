@@ -597,7 +597,7 @@ async def produce_session_results(
     is_sprint: bool = True,
     *,
     drawing: ImageDrawing | None = None,
-    driver_names_read: AwaitedHook | None = None,
+    driver_names_read: AwaitedHook,
     result_status: str | None = None,
 ) -> PostedTable:
     """Format and send a single session result, saving and deleting nothing.
@@ -685,9 +685,7 @@ async def produce_session_results(
                 composed = await results_drawing_composer.build_drawing(
                     db_path,
                     guild,
-                    driver_names_read=(
-                        driver_names_read if driver_names_read is not None else AwaitedHook()
-                    ),
+                    driver_names_read=driver_names_read,
                     session_result=session_result,
                     driver_rows=driver_rows,
                     points_map=points_map,
@@ -847,7 +845,7 @@ async def produce_standings(
     label: str,
     *,
     drawing: ImageDrawing | None = None,
-    driver_names_read: AwaitedHook | None = None,
+    driver_names_read: AwaitedHook,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     fresh: bool = False,
 ) -> list[PostedTable]:
@@ -932,9 +930,7 @@ async def produce_standings(
             if any(wanted.values()):
                 composed = await standings_drawing_composer.build_drawings(
                     guild,
-                    driver_names_read=(
-                        driver_names_read if driver_names_read is not None else AwaitedHook()
-                    ),
+                    driver_names_read=driver_names_read,
                     db_path=db_path,
                     division_id=division_id,
                     round_id=round_id,

@@ -288,6 +288,7 @@ def _posting_type(
     *label*."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.results.services.review import review_posting
 
     async def plan(db: Any, ctx: Any) -> Any:
@@ -306,7 +307,7 @@ def _posting_type(
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep("plan"),),
-        steps={"plan": Step("plan", StepKind.SAVE, plan), **review_posting.posting_steps(drawing)},
+        steps={"plan": Step("plan", StepKind.SAVE, plan), **review_posting.posting_steps(drawing, AwaitedHook())},
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",
         doing=lambda _payload: "Republishing round 3",
