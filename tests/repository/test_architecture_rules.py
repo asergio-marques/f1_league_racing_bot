@@ -2606,7 +2606,11 @@ def test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s():
     """Each tuple a hand-read spliced read iterates (`SPLICED_SOURCES`) names tables, and every
     table it names is owned by the module of the file it is declared in: a module's table put back
     into one, as the factory reset's channels once were, fails here naming the table and the tuple,
-    though the count of spliced statements is unchanged."""
+    though the count of spliced statements is unchanged. A table listed as another owner's names a
+    tuple the check reads, so a line left behind when its tuple goes fails too."""
+    assert {(path, name) for path, name, _table in KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER} <= set(
+        SPLICED_SOURCES
+    ), "a line of KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER names a tuple the check no longer reads"
     trees = dict(_sources())
     for path, name in SPLICED_SOURCES:
         values = [
