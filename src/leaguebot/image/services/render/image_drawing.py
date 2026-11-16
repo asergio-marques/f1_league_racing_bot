@@ -25,7 +25,7 @@ for is the lineup a command draws, which runs in no job.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -57,6 +57,7 @@ from leaguebot.image.models.image_catalogues import (
     row_capacity_problem,
 )
 from leaguebot.image.models.results_drawing import ResultsDrawing
+from leaguebot.image.models.standings_drawing import StandingsDrawing
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
     ASSET_DIRECTORIES,
@@ -64,7 +65,6 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
     TEMPLATE_LABELS,
 )
-from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.services.aspects import image_attendance_post
 from leaguebot.image.services.aspects.image_attendance_post import (
     ATTENDANCE_ASPECT,
@@ -837,66 +837,33 @@ class ImageDrawing:
     # ── A round's two championships ──────────────────────────────────────────
 
     async def draw_standings(
-        self,
-        *,
-        guild: Any,
-        db_path: str,
-        division_id: int,
-        round_id: int,
-        round_number: Any,
-        driver_snapshots: Any,
-        team_snapshots: Any,
-        reserve_user_ids: set[int],
-        show_reserves: bool,
-        result_status: str | None,
-        division_name: str,
-        division_tier: Any = None,
-        season_number: Any = None,
-        race_name: str | None = None,
-        occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+        self, drawings: Mapping[str, StandingsDrawing], *, subject: str
     ) -> StandingsDrawn:
         """The pictures a round's two championships ride on, for the standings to post, and the
         lines saying what the drawing had to report.
 
-        Not applicable, and no line, where the league draws neither championship's picture
-        (`aspect_wanted`, asked for each template, so that a sound drivers template still draws
-        while a faulty constructors template falls back to text: the unit of failure is one
-        graphic, XIV.4). Otherwise each championship is drawn on its own: its render's notices
-        and the problem of a picture that was due and not drawn come back as lines headed by the
-        toggle's name, and a championship that did not draw has no file.
+        What is drawn is the *drawings* the results module composed, keyed by championship
+        ("drivers", "constructors"), after it asked `aspect_wanted` for each template (so that a
+        sound drivers template still draws while a faulty constructors template falls back to
+        text: the unit of failure is one graphic, XIV.4) and found a picture due: a championship
+        it did not hand in is not drawn. Each is drawn on its own: its render's notices and the
+        problem of a picture that was due and not drawn come back as lines headed by the toggle's
+        name and naming *subject*, what the standings are of, and a championship that did not
+        draw has no file.
 
-        A fault in resolving the data behind both, or the directories or the fill of one, is
-        raised, for the post to name as the reason the text stands, and the picture of the other
-        championship, if already drawn, is discarded first; a switch nobody signed up for
-        (`SwitchNotSignedUp`) is raised, as everywhere.
+        A fault in resolving the directories or the fill of one is raised, for the post to name
+        as the reason the text stands, and the picture of the other championship, if already
+        drawn, is discarded first; a switch nobody signed up for (`SwitchNotSignedUp`) is
+        raised, as everywhere.
         """
         import discord
 
-        wanted = {
-            name: await self.aspect_wanted(STANDINGS_ASPECT, key)
-            for name, key in STANDINGS_TEMPLATE_KEYS.items()
-        }
-        if not any(wanted.values()):
-            return StandingsDrawn()
-        subject = (
-            f"{division_name} round {round_number}"
-            if occasion.names_a_round
-            else f"{division_name} — {occasion.label()}"
-        )
-        drawings = await image_standings_post.build_drawings(
-            guild, driver_names_read=self._driver_names_read, db_path=db_path,
-            division_id=division_id, round_id=round_id,
-            round_number=round_number, driver_snapshots=driver_snapshots,
-            team_snapshots=team_snapshots, reserve_user_ids=reserve_user_ids,
-            show_reserves=show_reserves, result_status=result_status,
-            division_name=division_name, division_tier=division_tier,
-            season_number=season_number, race_name=race_name, occasion=occasion,
-        )
         lines: list[str] = []
         files: dict[str, discord.File] = {}
         try:
-            for championship, drawing in zip(STANDINGS_TEMPLATE_KEYS, drawings):
-                if not wanted[championship]:
+            for championship in STANDINGS_TEMPLATE_KEYS:
+                drawing = drawings.get(championship)
+                if drawing is None:
                     continue
                 what = f"{subject} — {championship} standings"
                 decision = await image_standings_post.render_png(

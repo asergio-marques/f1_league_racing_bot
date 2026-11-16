@@ -915,6 +915,7 @@ async def _post_standings(
             ctx.db_path, division_id, round_id, rnd["round_number"], rnd["track_name"] or "Unknown",
             channel, driver_snaps, team_snaps, guild, show_reserves, payload["label"],
             drawing=drawing if ctx.tries == 0 else None,
+            driver_names_read=driver_names_read,
             # A retry after a part-posted try posts afresh: the earlier try went down the
             # picture path, whose tables replace what stood rather than edit it, and what it
             # sent has just been removed.

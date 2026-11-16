@@ -22,6 +22,8 @@ from leaguebot.image.services.aspects.image_standings_service import (
     HIGHLIGHT_P3,
     HIGHLIGHT_POINTS,
     RoundHeading,
+)
+from leaguebot.results.services.publishing.standings_drawing_composer import (
     highlight_for,
     resolve_drawing,
 )

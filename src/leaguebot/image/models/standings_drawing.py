@@ -103,6 +103,17 @@ HIGHLIGHT_DATA: tuple[str, ...] = (
 
 
 
+#: The four cell fields a round of the grid may carry for one row or car, in the order the grid
+#: reads (FR-023): each is the suffix of ``<stem>_<suffix>``. Whoever composes the grid keys a
+#: session to its suffix; the projection walks them.
+CELL_SUFFIXES: tuple[str, ...] = (
+    "sprint_qualifying_result",
+    "sprint_race_result",
+    "feature_qualifying_result",
+    "feature_race_result",
+)
+
+
 @dataclass(frozen=True)
 class CellValue:
     """One cell of the season grid: what it says, and what it is worth calling out.

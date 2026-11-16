@@ -52,7 +52,7 @@ async def db_path(tmp_path):
 async def test_the_standings_headings_name_the_mystery_datum(db_path):
     from types import SimpleNamespace
 
-    from leaguebot.image.services.aspects.image_standings_post import _calendar
+    from leaguebot.results.services.publishing.standings_drawing_composer import _calendar
 
     headings, ordinals = await _calendar(db_path, 5)
 
@@ -68,7 +68,7 @@ async def test_the_mystery_heading_still_names_no_circuit(db_path):
     """The concealment is the point: only the flag is substituted, never the track."""
     from types import SimpleNamespace
 
-    from leaguebot.image.services.aspects.image_standings_post import _calendar
+    from leaguebot.results.services.publishing.standings_drawing_composer import _calendar
 
     headings, _ = await _calendar(db_path, 5)
     assert headings[1].track is None
@@ -112,7 +112,7 @@ async def test_a_mystery_round_keeps_its_flag_through_the_fill(db_path):
 
     from lxml import etree
 
-    from leaguebot.image.services.aspects.image_standings_post import _calendar
+    from leaguebot.results.services.publishing.standings_drawing_composer import _calendar
     from leaguebot.image.services.aspects.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         StandingsDrawing,

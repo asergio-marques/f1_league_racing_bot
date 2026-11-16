@@ -939,8 +939,8 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         DRIVERS_TEMPLATE_KEY,
         RoundHeading,
         build_fill_spec,
-        resolve_drawing,
     )
+    from leaguebot.results.services.publishing.standings_drawing_composer import resolve_drawing
 
     # One reserve driver is kept back so the preview exercises `driver_is_drawn`'s reserve
     # branch at all (#144) — `_racing_drivers` itself stays as the results preview needs it.

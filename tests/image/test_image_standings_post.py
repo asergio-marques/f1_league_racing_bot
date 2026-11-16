@@ -116,30 +116,28 @@ def _drawing(*, module=True, toggle=True, drivers_valid=True, constructors_valid
     )
 
 
-async def _draw(drawing, render, *, build=None, occasion=None):
-    """Round 5 of Main drawn by *drawing*'s `draw_standings`, the two championships' drawings
-    stubbed by *build* (by default, two plain ones) and each rendered by *render*, which is
-    called as ``render(config, renderer, drawing)``."""
+async def _draw(drawing, render, *, build=None):
+    """Round 5 of Main drawn as the results module draws it: the gate asked for each template, the
+    two championships composed (*build* stands in for the composer, by default giving two plain
+    drawings) where either is wanted, and those wanted handed to `draw_standings`, each rendered by
+    *render*, which is called as ``render(config, renderer, drawing)``. Not applicable, nothing
+    composed, where neither is wanted."""
     from leaguebot.image.services.aspects import image_standings_post as m
 
-    kwargs = dict(
-        guild=_guild(),
-        db_path="db",
-        division_id=7,
-        round_id=5,
-        round_number=5,
-        driver_snapshots=[],
-        team_snapshots=[],
-        reserve_user_ids=set(),
-        show_reserves=False,
-        result_status="AWAITING_REPORT_VERDICTS",
-        division_name="Main",
-    )
-    if occasion is not None:
-        kwargs["occasion"] = occasion
     build = build if build is not None else AsyncMock(return_value=_drawings())
-    with patch.object(m, "build_drawings", build), patch.object(m, "render_png", render):
-        return await drawing.draw_standings(**kwargs)
+    templates = {"drivers": DRIVERS, "constructors": CONSTRUCTORS}
+    wanted = {
+        championship: await drawing.aspect_wanted("standings", key)
+        for championship, key in templates.items()
+    }
+    if not any(wanted.values()):
+        return m.StandingsDrawn()
+    composed = await build()
+    with patch.object(m, "render_png", render):
+        return await drawing.draw_standings(
+            {name: each for name, each in zip(templates, composed) if wanted[name]},
+            subject="Main round 5",
+        )
 
 
 # ── The gate, asked for each template ─────────────────────────────────────
@@ -495,7 +493,7 @@ def _hook(db_path):
 
 
 async def test_build_drawings_resolves_both_championships_against_real_tables(tmp_path):
-    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -531,7 +529,7 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
 
 async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
     """The two graphics key their team names differently — by driver, and by role."""
-    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -566,7 +564,7 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
 
 
 async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_path):
-    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -613,7 +611,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         resolve_configured_directories,
         spec_builder_with_faults,
     )
-    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
     from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
@@ -680,7 +678,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
 
 
 async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(tmp_path):
-    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -793,16 +791,27 @@ def _standings_drawn(tmp_path, *, drivers=True, constructors=True, applicable=Tr
 
 
 def _poster_drawing(drawn=None, *, raises=None):
-    """The image drawing the standings are handed, its `draw_standings` stubbed to hand back
-    *drawn* (or raise *raises*), and its `discard_attachment` the real one."""
+    """The image drawing the standings are handed, its gate answering yes for both templates, its
+    `draw_standings` stubbed to hand back *drawn* (or raise *raises*), and its `discard_attachment`
+    the real one."""
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     drawing = ImageDrawing(
         MagicMock(), MagicMock(), MagicMock(), renderer=MagicMock(), post_log=AsyncMock(),
         db_path="db",
     )
+    drawing.aspect_wanted = AsyncMock(return_value=True)
     drawing.draw_standings = AsyncMock(return_value=drawn, side_effect=raises)
     return drawing
+
+
+def _composer_stood_in():
+    """The results module's composer of the two drawings stood in for: the gate is asked first and
+    the drawings composed before the drawing, whose `draw_standings` is stubbed, is handed them."""
+    return patch(
+        "leaguebot.results.services.publishing.standings_drawing_composer.build_drawings",
+        new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+    )
 
 
 def _standings_channel(captured, pictures=None, *, order=None, refuse_uploads=False):
@@ -861,7 +870,7 @@ async def _post(db_path, division_id, round_id, captured, *, drawing=None, chann
     guild.get_role.return_value = None
 
     kwargs = {} if occasion is None else {"occasion": occasion}
-    with in_a_job():
+    with in_a_job(), _composer_stood_in():
         return await produce_standings(
             db_path=db_path,
             division_id=division_id,
@@ -1112,7 +1121,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
         first_finish_rounds={},
     )
 
-    with in_a_job():
+    with in_a_job(), _composer_stood_in():
         tables = await produce_standings(
             db_path=db_path,
             division_id=division_id,
@@ -1209,7 +1218,7 @@ async def _highlighted_svg(tmp_path):
     from leaguebot.image.models.image_constants import packaged_directory_for
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import resolve_configured_directories
-    from leaguebot.image.services.aspects.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
     from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
     from leaguebot.image.utils.svg_document import load_svg
     from leaguebot.image.utils.svg_fill import fill

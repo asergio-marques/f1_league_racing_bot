@@ -1221,8 +1221,8 @@ def build_standings_drawing(root, template_key: str, teams):
     from leaguebot.image.services.aspects.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         StandingsDataError,
-        resolve_drawing,
     )
+    from leaguebot.results.services.publishing.standings_drawing_composer import resolve_drawing
     from leaguebot.results.services.standings.standings_service import derive_gaps, derive_movement
 
     configurable = [t for t in teams or [] if not getattr(t, "is_reserve", False)]

@@ -64,6 +64,7 @@ from tests.support.season_league import (
     reply,
     round_id,
     season_league,
+    standings_pictures_are_due,
 )
 from tests.support.mentions import NOBODY, notified
 from tests.support.undecorate import undecorate
@@ -1180,6 +1181,8 @@ async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     league.channel(cid).send_fails = http_error(status=503, text="Service Unavailable")
     await _pressed(league)
     draw = AsyncMock(return_value=returned)
+    if post == "the opening standings":
+        standings_pictures_are_due(monkeypatch)
     target = importlib.import_module(module) if isinstance(module, str) else module(league)
     # The drawing gains the lineup with the build, so its part is set where it is not there yet.
     monkeypatch.setattr(target, name, draw, raising=isinstance(module, str))
@@ -1213,6 +1216,7 @@ async def test_a_failed_opening_standings_post_leaves_one_copy_once_retried(
 
     league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
     monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
         return_value=StandingsDrawn(applicable=True)
     ))
@@ -1239,6 +1243,7 @@ async def _opening_standings_posted_in_part(league: Any, monkeypatch: Any) -> li
     from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
     monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
         return_value=StandingsDrawn(applicable=True)
     ))

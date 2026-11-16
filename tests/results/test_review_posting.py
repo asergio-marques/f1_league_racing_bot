@@ -694,7 +694,13 @@ def _each_championship_as_text() -> Any:
     as a text table of its own."""
     from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
-    return patch("leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings", new=AsyncMock(return_value=StandingsDrawn(applicable=True)))
+    stack = contextlib.ExitStack()
+    stack.enter_context(_pictures_are_due("standings"))
+    stack.enter_context(patch(
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
+        new=AsyncMock(return_value=StandingsDrawn(applicable=True)),
+    ))
+    return stack
 
 
 async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first_before_its_next_try(
@@ -1193,22 +1199,31 @@ async def _seed_classification(
 
 
 @contextlib.contextmanager
-def _results_picture_is_due():
-    """The results picture asked for and its drawing handed over, for a test that stubs the image
-    drawing's `draw_results` itself.
+def _pictures_are_due(*aspects: str):
+    """The pictures of *aspects* ("results", "standings") asked for and their drawings handed
+    over, for a test that stubs the image drawing's `draw_results` or `draw_standings` itself.
 
-    The results module asks the gate (`aspect_wanted`) and composes the session's drawing before it
-    hands the drawing over, so the stub is reached only where both answer: the gate yes for the
-    results picture, and the composed drawing a stand-in, as the stubbed `draw_results` ignores it.
+    The results module asks the gate (`aspect_wanted`) and composes the drawing before it hands
+    it over, so a stub is reached only where both answer: the gate yes for the aspect, and the
+    composed drawing a stand-in, as the stubbed draw ignores it. Yields the results composer's
+    stand-in.
     """
     with patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.aspect_wanted",
-        new=AsyncMock(side_effect=lambda aspect, template_key=None: aspect == "results"),
+        new=AsyncMock(side_effect=lambda aspect, template_key=None: aspect in aspects),
     ), patch(
         "leaguebot.results.services.publishing.results_drawing_composer.build_drawing",
         new=AsyncMock(return_value=MagicMock()),
-    ) as composed:
+    ) as composed, patch(
+        "leaguebot.results.services.publishing.standings_drawing_composer.build_drawings",
+        new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+    ):
         yield composed
+
+
+def _results_picture_is_due():
+    """The results picture asked for and its drawing handed over (`_pictures_are_due`)."""
+    return _pictures_are_due("results")
 
 
 async def _republish_with_the_picture_declined(league: _League) -> Any:
@@ -1765,7 +1780,7 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
 
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    with _results_picture_is_due(), patch(
+    with _pictures_are_due("results", "standings"), patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
@@ -1793,7 +1808,7 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     standings went out as text."""
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    with _results_picture_is_due(), patch(
+    with _pictures_are_due("results", "standings"), patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(return_value=(None, ())),
     ), patch(
@@ -1826,7 +1841,7 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
                          (SEASON_ID,))
         await db.commit()
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    with _results_picture_is_due(), patch(
+    with _pictures_are_due("results", "standings"), patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
@@ -2019,7 +2034,7 @@ async def test_a_picture_whose_images_switch_nobody_signed_up_for_stops_its_job(
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     other = "draw_standings" if draw == "draw_results" else "draw_results"
-    with _results_picture_is_due(), patch(
+    with _pictures_are_due("results", "standings"), patch(
         f"leaguebot.image.services.render.image_drawing.ImageDrawing.{draw}",
         new=AsyncMock(side_effect=SwitchNotSignedUp("images")),
     ), patch(
@@ -2049,7 +2064,7 @@ async def test_a_picture_that_cannot_be_drawn_keeps_its_line_when_its_text_is_re
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
     failing = AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT))
-    with _results_picture_is_due(), patch(
+    with _pictures_are_due("results", "standings"), patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=failing if picture == "results" else AsyncMock(return_value=(None, ())),
     ), patch(

@@ -572,7 +572,7 @@ class TestStandingsSubstitution:
         is in the points.
         """
         from leaguebot.image.services.preview.image_preview_data import fabricate_standings_round_results
-        from leaguebot.image.services.aspects.image_standings_service import highlight_for
+        from leaguebot.results.services.publishing.standings_drawing_composer import highlight_for
 
         for team_count in range(3, 12):
             layout = [(f"Team {n}", 2) for n in range(team_count)] + [("Reserve", 1)]

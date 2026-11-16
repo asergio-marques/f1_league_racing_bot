@@ -1,29 +1,26 @@
-"""Resolve and project a standings graphic — one championship of one division.
+"""Project a standings graphic onto its template — one championship of one division.
 
 Two templates draw one aspect: the driver championship and the constructor championship. They
 share every field but the columns of their rows, and each is its own catalogue entry
 (Constitution XIV.10).
 
-**What this module does not do.** It performs no arithmetic over points or positions. The gap
-to the leader, the previous position and the position change are derived in
-``leaguebot.results.services.standings.standings_service.derive_movement`` and arrive here finished — XIV.7 as amended at
-v4.5.0 admits them as a derived *presentation* on the condition that the derivation lives with
-the data, so the textual path can adopt the columns by calling it rather than growing a second
-implementation. A subtraction appearing in this file would break that contract silently.
-
-Nor does it compose the classification by a rule of its own: who is in the driver championship
-is ``results_formatter.driver_is_drawn``, the same predicate the textual standings compose by.
+**What this module does not do.** It resolves nothing and composes nothing: the classification,
+its season grid and its movements are composed by the results module, which owns them
+(``standings_drawing_composer``), into the plain :class:`StandingsDrawing` image declares, and
+arrive here finished. It performs no arithmetic over points or positions: the gap to the leader,
+the previous position and the position change are derived in
+``leaguebot.results.services.standings.standings_service.derive_movement``, XIV.7 as amended at
+v4.5.0 admitting them as a derived *presentation* on the condition that the derivation lives with
+the data. A subtraction appearing in this file would break that contract silently.
 
 See specs/040-standings-image-generation/contracts/ — standings-catalogue.md for the fields and
 derived-columns.md for what may be derived and where.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
@@ -33,9 +30,9 @@ from leaguebot.image.models.image_catalogues import (
     column_crop_fields,
     row_crop_fields,
 )
-from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.utils import results_formatter
 from leaguebot.image.models.standings_drawing import (  # noqa: F401 — the models are image's, kept importable here
+    CELL_SUFFIXES,
     CONSTRUCTORS_TEMPLATE_KEY,
     CellValue,
     DRIVERS_TEMPLATE_KEY,
@@ -63,318 +60,6 @@ from leaguebot.image.utils.country_data import country_for_nationality
 
 _ROW_PREFIX = "row"
 _ROUND_PREFIX = "round"
-
-#: The lifecycle labels, shared with the textual standings path (XIV.7).
-_STATUS_LABELS = {
-    "AWAITING_REPORT_VERDICTS": "Provisional Results",
-    "AWAITING_APPEAL_VERDICTS": "Post-Race Penalty Results",
-    "FINAL": "Final Results",
-}
-
-#: The podium places, by finishing position.
-_PODIUM = {1: HIGHLIGHT_P1, 2: HIGHLIGHT_P2, 3: HIGHLIGHT_P3}
-
-
-
-def highlight_for(row) -> tuple[str | None, bool]:
-    """The background kind and the fastest-lap layer one session result confers.
-
-    Three rules, and each is a fact about the data rather than about the template — which
-    paint answers a kind is settled later, against the template's own stylesheet.
-
-    **A podium place is a podium place only where the driver was classified.** A driver
-    disqualified from first place is drawn by ``format_grid_cell`` as the outcome literal
-    ``DSQ``, and painting that gold would state something the results module does not.
-
-    ``points_awarded`` and ``fastest_lap_bonus`` are read rather than recomputed, and they
-    answer the question exactly. Per ``standings_service.compute_points_for_session``,
-    ``points_awarded > 0`` means *classified, and in a points-paying position under the
-    points configuration that session actually used*; ``fastest_lap_bonus > 0`` means *held
-    the fastest lap, fastest-lap points were available for that race, and this driver was
-    eligible under the configured position limit*. Both conditions the specification asks
-    for are therefore already settled upstream, and asking the configuration a second time
-    here could only introduce a way for the graphic and the points to disagree (XIV.7).
-
-    The ``getattr`` on the bonus is required rather than defensive: a
-    ``QualifyingSessionResult`` carries no such field, which is also why a qualifying cell
-    can never hold the overlay.
-    """
-    from leaguebot.results.models.session_result import OutcomeModifier
-
-    classified = getattr(row, "outcome", None) is OutcomeModifier.CLASSIFIED
-
-    highlight: str | None = None
-    if classified:
-        highlight = _PODIUM.get(getattr(row, "finishing_position", 0))
-        if highlight is None and (getattr(row, "points_awarded", 0) or 0) > 0:
-            highlight = HIGHLIGHT_POINTS
-
-    fastest_lap = (getattr(row, "fastest_lap_bonus", 0) or 0) > 0
-    return highlight, fastest_lap
-
-
-
-
-# ── 1. Resolution ─────────────────────────────────────────────────────────
-
-
-def status_label(result_status: str | None) -> str:
-    """The lifecycle label for a round's ``result_status``."""
-    return _STATUS_LABELS.get(result_status or "", "Results")
-
-
-def _entry_key(snapshot, *, drivers: bool) -> int:
-    return snapshot.driver_user_id if drivers else snapshot.team_instance_id
-
-
-def resolve_drawing(
-    *,
-    template_key: str,
-    division_name: str,
-    result_status: str | None,
-    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
-    round_number: str | int | None = None,
-    snapshots: Sequence,
-    display_names: Mapping[int, str],
-    team_names: Mapping[int, str],
-    movements: Mapping[int, PositionMovement | None],
-    gaps: Mapping[int, int] | None = None,
-    nationalities: Mapping[int, str | None] | None = None,
-    reserve_user_ids: set[int] | None = None,
-    show_reserves: bool = False,
-    division_tier: str | int | None = None,
-    season_number: str | int | None = None,
-    race_name: str | None = None,
-    nationality_collected: bool = True,
-    rounds: Sequence[RoundHeading] = (),
-    round_session_results: Mapping[int, Mapping[str, Sequence]] | None = None,
-    team_seat_assignments: Mapping[int, Mapping[int, int]] | None = None,
-    team_seat_counts: Mapping[int, int] | None = None,
-    driver_display_names: Mapping[int, str] | None = None,
-    team_keys: Mapping[int, str] | None = None,
-) -> StandingsDrawing:
-    """Resolve every value a standings graphic draws.
-
-    *snapshots* are the persisted ``DriverStandingsSnapshot`` or ``TeamStandingsSnapshot``
-    rows of the round being drawn. Their ``standing_position`` is the order — already
-    separated by the countback — and is read, never re-established (XIV.12).
-
-    *movements* comes from ``standings_service.derive_movement`` and is carried through
-    untouched. Nothing here subtracts points or compares positions.
-
-    *rounds* is the division's calendar, headed for the grid. *round_session_results*
-    maps a round's ordinal to its session results, keyed by :class:`SessionType` value — a
-    round **absent** from the mapping is not yet run or was cancelled, and every cell of it
-    is emptied (FR-022); a session type present in the outer mapping's value but absent from
-    an entry means that round holds no session of that type. *team_seat_assignments* and
-    *team_seat_counts* (keyed by ``team_instance_id``, matching *team_names*) are
-    constructors-only: the first feeds the car allocation of FR-026, the second the trim a
-    team's own seat count applies over the template's declared room. *driver_display_names*
-    names the drivers a constructors car draws — keyed by ``driver_user_id``, unlike
-    *display_names* itself, which on the constructors graphic names its rows (the teams) and
-    cannot also name the drivers inside their cars.
-
-    *team_keys* holds each row's team shorthand, keyed as *team_names* is, which the team's
-    artwork is found by apart from the full name drawn (#381). A row absent from it is found by
-    the name drawn.
-    """
-    drivers = template_key == DRIVERS_TEMPLATE_KEY
-    reserves = reserve_user_ids or set()
-    nationality_map = nationalities or {}
-    gap_map = gaps or {}
-    seat_assignments = team_seat_assignments or {}
-
-    ordered = sorted(snapshots, key=lambda s: s.standing_position)
-
-    entries: list[StandingsEntry] = []
-    for snapshot in ordered:
-        # Composition is the textual standings' own rule, called and not restated (XIV.7).
-        if drivers and not results_formatter.driver_is_drawn(
-            snapshot, reserves, show_reserves
-        ):
-            continue
-
-        key = _entry_key(snapshot, drivers=drivers)
-        cells = (
-            _driver_round_cells(key, rounds, round_session_results)
-            if drivers
-            else _constructor_round_cells(
-                key,
-                rounds,
-                round_session_results,
-                seat_assignments.get(key, {}),
-                driver_display_names or {},
-            )
-        )
-        entries.append(
-            StandingsEntry(
-                ordinal=len(entries) + 1,
-                position=str(snapshot.standing_position),
-                team_name=team_names.get(key, ""),
-                points=str(snapshot.total_points),
-                driver_name=display_names.get(key) if drivers else None,
-                nationality=nationality_map.get(key) if drivers else None,
-                gap_to_leader=gap_map.get(key),
-                movement=movements.get(key),
-                cells=cells,
-                team_key=(team_keys or {}).get(key),
-            )
-        )
-
-    # Named by team, since that is what a row carries — the drawing addresses a row by its
-    # ordinal, never by the team id resolve_drawing itself took the classification's keys from.
-    seat_counts_by_name = {
-        team_names[team_id]: count
-        for team_id, count in (team_seat_counts or {}).items()
-        if team_id in team_names
-    }
-
-    return StandingsDrawing(
-        template_key=template_key,
-        division_name=division_name,
-        classification_label=occasion.label(round_number),
-        # The phase of the results this classification is computed from. The final sheet
-        # has one — it *is* the last round's classification, and that round's results are
-        # settled — so it names it, mildly redundant beside `Final Classification` but
-        # true. The opening sheet rests on no results at all, so the field is emptied
-        # rather than made to say something (XIV.3, a value the data determined to be
-        # nothing). This is not `names_a_round`: the question is whether results exist,
-        # not whether a round is the subject, and the two part company at the final sheet.
-        result_status_label=(
-            ""
-            if occasion is ClassificationOccasion.SEASON_OPENING
-            else status_label(result_status)
-        ),
-        names_a_race=occasion.names_a_round,
-        division_tier=None if division_tier is None else str(division_tier),
-        season_number=None if season_number is None else str(season_number),
-        race_name=race_name,
-        nationality_collected=nationality_collected,
-        entries=entries,
-        rounds=list(rounds),
-        team_seat_counts=seat_counts_by_name,
-    )
-
-
-# ── 1a. The round grid ────────────────────────────────────────────────────
-
-#: Session type -> the suffix of the four cell fields the grid may carry (FR-023).
-_CELL_SUFFIX_BY_SESSION = {
-    SessionType.SPRINT_QUALIFYING: "sprint_qualifying_result",
-    SessionType.SPRINT_RACE: "sprint_race_result",
-    SessionType.FEATURE_QUALIFYING: "feature_qualifying_result",
-    SessionType.FEATURE_RACE: "feature_race_result",
-}
-
-
-def _session_cells(
-    driver_key: int, session_map: Mapping[str, Sequence] | None
-) -> dict[str, CellValue]:
-    """One driver's four session cells for one round (FR-023, FR-024).
-
-    Emptied — never dashed — in every case the data determines to be nothing: the round
-    holds no session of that type, or this driver holds no record in a session it does hold
-    (took no part). A cell with nothing in it earns no highlight either.
-
-    The **single funnel** for both championships: the drivers grid calls it once per row and
-    the constructors grid once per car, so a highlight decided here cannot reach one graphic
-    and miss the other. The preview reaches it by the same path and needs no code of its own.
-    """
-    cells: dict[str, CellValue] = {}
-    for session_type, suffix in _CELL_SUFFIX_BY_SESSION.items():
-        rows = None if session_map is None else session_map.get(session_type.value)
-        if not rows:
-            cells[suffix] = CellValue()
-            continue
-        row = next((r for r in rows if r.driver_user_id == driver_key), None)
-        if row is None:
-            cells[suffix] = CellValue()
-            continue
-        highlight, fastest_lap = highlight_for(row)
-        cells[suffix] = CellValue(
-            text=results_formatter.format_grid_cell(row),
-            highlight=highlight,
-            fastest_lap=fastest_lap,
-        )
-    return cells
-
-
-def _driver_round_cells(
-    driver_key: int,
-    rounds: Sequence[RoundHeading],
-    round_session_results: Mapping[int, Mapping[str, Sequence]] | None,
-) -> dict[int, RoundCells]:
-    """Every round's cells for one driver's row."""
-    results = round_session_results or {}
-    return {
-        heading.ordinal: RoundCells(sessions=_session_cells(driver_key, results.get(heading.ordinal)))
-        for heading in rounds
-    }
-
-
-def _drivers_for_team(team_instance_id: int, session_map: Mapping[str, Sequence] | None) -> list[int]:
-    """The distinct drivers a team's session results record for one round, id-ascending."""
-    if not session_map:
-        return []
-    found: set[int] = set()
-    for rows in session_map.values():
-        for row in rows:
-            if row.team_instance_id == team_instance_id:
-                found.add(row.driver_user_id)
-    return sorted(found)
-
-
-def _allocate_cars(drivers_who_drove: Sequence[int], seat_map: Mapping[int, int]) -> dict[int, int]:
-    """Car ordinal -> driver, per FR-026.
-
-    A seated driver takes their own seat's ordinal. A driver who drove but holds no seat on
-    the team — a non-seated substitute — takes the lowest ordinal no seated driver occupies,
-    in driver-id order where more than one substitute needs placing (the rule does not fix
-    an order between them; ascending id keeps the result deterministic).
-    """
-    cars: dict[int, int] = {}
-    unseated: list[int] = []
-    for driver_key in drivers_who_drove:
-        seat = seat_map.get(driver_key)
-        if seat is not None:
-            cars[seat] = driver_key
-        else:
-            unseated.append(driver_key)
-
-    next_ordinal = 1
-    for driver_key in unseated:
-        while next_ordinal in cars:
-            next_ordinal += 1
-        cars[next_ordinal] = driver_key
-        next_ordinal += 1
-
-    return cars
-
-
-def _constructor_round_cells(
-    team_instance_id: int,
-    rounds: Sequence[RoundHeading],
-    round_session_results: Mapping[int, Mapping[str, Sequence]] | None,
-    seat_map: Mapping[int, int],
-    driver_display_names: Mapping[int, str],
-) -> dict[int, RoundCells]:
-    """Every round's cells for one constructor's row — a car per driver who drove (FR-026)."""
-    results = round_session_results or {}
-    out: dict[int, RoundCells] = {}
-    for heading in rounds:
-        session_map = results.get(heading.ordinal)
-        drivers_who_drove = _drivers_for_team(team_instance_id, session_map)
-        allocation = _allocate_cars(drivers_who_drove, seat_map)
-        out[heading.ordinal] = RoundCells(
-            cars={
-                ordinal: (
-                    driver_display_names.get(driver_key),
-                    _session_cells(driver_key, session_map),
-                )
-                for ordinal, driver_key in allocation.items()
-            }
-        )
-    return out
 
 
 # ── 2. Projection ─────────────────────────────────────────────────────────
@@ -546,7 +231,7 @@ def _project_cells(
     Called by both grids — a drivers row's round, and a constructors car — so the cells of
     the two championships cannot drift apart.
     """
-    for suffix in _CELL_SUFFIX_BY_SESSION.values():
+    for suffix in CELL_SUFFIXES:
         field_id = f"{cell_stem}_{suffix}"
         if field_id not in declared:
             continue

@@ -36,8 +36,16 @@ from leaguebot.core.services.seasons.season_service import (
     season_divisions_on,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.image.models.standings_drawing import (
+    CONSTRUCTORS_TEMPLATE_KEY,
+    DRIVERS_TEMPLATE_KEY,
+)
 from leaguebot.image.services.aspects.image_results_post import RESULTS_ASPECT
-from leaguebot.results.services.publishing import results_drawing_composer
+from leaguebot.image.services.aspects.image_standings_post import STANDINGS_ASPECT
+from leaguebot.results.services.publishing import (
+    results_drawing_composer,
+    standings_drawing_composer,
+)
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
@@ -788,6 +796,12 @@ async def produce_cancelled_session_line(
 STANDINGS_DRIVERS = "drivers"
 STANDINGS_CONSTRUCTORS = "constructors"
 
+#: Championship -> the image template that draws it, in the order the two are posted.
+_STANDINGS_TEMPLATES = {
+    STANDINGS_DRIVERS: DRIVERS_TEMPLATE_KEY,
+    STANDINGS_CONSTRUCTORS: CONSTRUCTORS_TEMPLATE_KEY,
+}
+
 _STANDINGS_SUBHEADINGS = {
     STANDINGS_DRIVERS: "**Driver Standings**",
     STANDINGS_CONSTRUCTORS: "**Team Standings**",
@@ -833,6 +847,7 @@ async def produce_standings(
     label: str,
     *,
     drawing: ImageDrawing | None = None,
+    driver_names_read: AwaitedHook | None = None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     fresh: bool = False,
 ) -> list[PostedTable]:
@@ -847,8 +862,10 @@ async def produce_standings(
     The caller saves the ids and takes the old messages down once the new ones stand.
 
     **The image path is a guard clause in front of an untouched body** (040). Where the
-    images module is enabled, the `standings` aspect is on and a template is valid,
-    *drawing* (the image module's, which the posting jobs are handed) draws the two PNGs, which
+    images module is enabled, the `standings` aspect is on and a template is valid, the two
+    championships are composed into drawings (`standings_drawing_composer`, its names read through
+    core's readers and *driver_names_read*, the hook signup answers) and *drawing* (the image
+    module's, which the posting jobs are handed) draws the PNGs of those wanted, which
     this posts each under the heading and the lifecycle label and names the messages each
     replaces. A picture that Discord refuses goes out as its text section in the same try, with
     the refusal on the table for the job to say so. The textual message below is then composed of
@@ -905,23 +922,46 @@ async def produce_standings(
     if drawing is not None and not cancelled:
         drawn = None
         try:
-            drawn = await drawing.draw_standings(
-                guild=guild,
-                db_path=db_path,
-                division_id=division_id,
-                round_id=round_id,
-                round_number=round_number,
-                driver_snapshots=driver_snapshots,
-                team_snapshots=team_snapshots,
-                reserve_user_ids=reserve_user_ids,
-                show_reserves=show_reserves,
-                result_status=await _get_result_status(db_path, round_id),
-                division_name=division_name,
-                division_tier=await _get_division_tier(db_path, division_id),
-                season_number=season_number,
-                race_name=track_name,
-                occasion=occasion,
-            )
+            # The gate first, for each template, so that nothing is read for a picture that is not
+            # due; then both championships are composed here, which owns them, from one pass over
+            # the shared data, and image draws those that are wanted.
+            wanted = {
+                championship: await drawing.aspect_wanted(STANDINGS_ASPECT, key)
+                for championship, key in _STANDINGS_TEMPLATES.items()
+            }
+            if any(wanted.values()):
+                composed = await standings_drawing_composer.build_drawings(
+                    guild,
+                    driver_names_read=(
+                        driver_names_read if driver_names_read is not None else AwaitedHook()
+                    ),
+                    db_path=db_path,
+                    division_id=division_id,
+                    round_id=round_id,
+                    round_number=round_number,
+                    driver_snapshots=driver_snapshots,
+                    team_snapshots=team_snapshots,
+                    reserve_user_ids=reserve_user_ids,
+                    show_reserves=show_reserves,
+                    result_status=await _get_result_status(db_path, round_id),
+                    division_name=division_name,
+                    division_tier=await _get_division_tier(db_path, division_id),
+                    season_number=season_number,
+                    race_name=track_name,
+                    occasion=occasion,
+                )
+                drawn = await drawing.draw_standings(
+                    {
+                        championship: composed_drawing
+                        for championship, composed_drawing in zip(_STANDINGS_TEMPLATES, composed)
+                        if wanted[championship]
+                    },
+                    subject=(
+                        f"{division_name} round {round_number}"
+                        if occasion.names_a_round
+                        else f"{division_name} — {occasion.label()}"
+                    ),
+                )
         except SwitchNotSignedUp:
             raise
         except Exception as exc:  # noqa: BLE001 — a graphic never gates the standings (XIV.4)

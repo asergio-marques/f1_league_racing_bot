@@ -82,6 +82,7 @@ from tests.support.season_league import (
     window_open,
     wizard_state,
     wizards_recovered,
+    standings_pictures_are_due,
 )
 
 
@@ -452,6 +453,7 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
         from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
         league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+        standings_pictures_are_due(monkeypatch)
         monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
             return_value=StandingsDrawn(applicable=True)
         ))

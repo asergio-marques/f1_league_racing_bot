@@ -1547,6 +1547,31 @@ async def seed_season_end(db_path: str, kind: str, *, season_id: int = SEASON_ID
     return job
 
 
+def standings_pictures_are_due(monkeypatch: Any) -> None:
+    """The standings pictures asked for and their drawings handed over, for a test that stubs the
+    image drawing's `draw_standings` itself.
+
+    The results module asks the gate (`aspect_wanted`, for the standings aspect, the other aspects
+    answering as they did) and composes both championships' drawings before it hands them over, so
+    the stub is reached only where both answer: the gate yes, and the composed drawings stand-ins,
+    as the stubbed draw ignores them."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+    from leaguebot.results.services.publishing import standings_drawing_composer
+
+    asked = ImageDrawing.aspect_wanted
+
+    async def wanted(self: Any, aspect: str, template_key: str | None = None) -> bool:
+        return True if aspect == "standings" else await asked(self, aspect, template_key)
+
+    monkeypatch.setattr(ImageDrawing, "aspect_wanted", wanted)
+    monkeypatch.setattr(
+        standings_drawing_composer, "build_drawings",
+        AsyncMock(return_value=(MagicMock(), MagicMock())),
+    )
+
+
 def draw_standings_pictures(monkeypatch: Any, tmp_path: Any) -> AsyncMock:
     """Have every standings picture draw, both championships, without a rasteriser: the image
     module's drawing of the standings is stood in for, a PNG handed back for each, so that the
@@ -1567,6 +1592,7 @@ def draw_standings_pictures(monkeypatch: Any, tmp_path: Any) -> AsyncMock:
         return StandingsDrawn(applicable=True, drivers=files[0], constructors=files[1])
 
     draw = AsyncMock(side_effect=_draw)
+    standings_pictures_are_due(monkeypatch)
     monkeypatch.setattr(ImageDrawing, "draw_standings", draw)
     return draw
 
