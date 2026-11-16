@@ -1224,7 +1224,7 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     weather's, each handed which review is gathered, the season and the divisions it shows."""
     import importlib
 
-    from leaguebot.core.services.modules.review_sections import Review
+    from leaguebot.core.services.seasons.review_sections import Review
 
     called: list[tuple] = []
     for module_name, name, part in _REVIEW_SECTION_PARTS:

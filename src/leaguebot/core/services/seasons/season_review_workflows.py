@@ -38,7 +38,7 @@ from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.seasons.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
-from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.seasons.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,

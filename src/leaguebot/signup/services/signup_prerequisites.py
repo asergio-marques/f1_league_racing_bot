@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from leaguebot.core.services.modules.confirmation_refusals import Confirmation, Refusal
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
 from leaguebot.core.utils.channel_guard import league_role_faults
 
 if TYPE_CHECKING:

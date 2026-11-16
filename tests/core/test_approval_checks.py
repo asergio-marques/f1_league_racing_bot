@@ -270,7 +270,7 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
     hook a season's confirmation is refused through, as signup's wiring signs them up: a season's
     approval is refused only while signup is on and its channel unset, in today's words, word for
     word; and signup refuses neither the review nor the configuration's confirmation."""
-    from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+    from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
     from tests.support.review_workflows import (
         sign_up_confirmation_refused,
         sign_up_signup_refusals,
