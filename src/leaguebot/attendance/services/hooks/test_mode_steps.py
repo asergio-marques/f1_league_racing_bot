@@ -37,7 +37,7 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.framework.db.database import get_connection, tuple_rows_in
-from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (
     PHASE_KINDS,
     ActiveRound,

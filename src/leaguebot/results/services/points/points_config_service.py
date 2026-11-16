@@ -9,7 +9,7 @@ import aiosqlite
 from leaguebot.framework.db.database import get_connection, sole_row
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.core.services.seasons.season_service import live_season_on
 from leaguebot.results.models.points_config import (
     PointsConfigEntry,

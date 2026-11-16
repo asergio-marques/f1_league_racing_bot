@@ -250,7 +250,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
     from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
 
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
     from leaguebot.signup.services.module_switch_settings import module_on_signup
     from leaguebot.signup.services.channel_setting import channel_setting
     from leaguebot.signup.services.close_time_settings import close_time_settings

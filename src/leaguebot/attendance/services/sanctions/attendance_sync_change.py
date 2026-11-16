@@ -55,8 +55,8 @@ from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.drivers.role_moves import role_move_step
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

@@ -29,7 +29,7 @@ import discord
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord
-from leaguebot.core.services.posting.standing_post_handler import delete_standing, post_standing
+from leaguebot.framework.services.posting.standing_post_handler import delete_standing, post_standing
 from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.utils.messages import chunk_message

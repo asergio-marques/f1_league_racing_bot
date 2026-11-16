@@ -30,10 +30,10 @@ import discord
 
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.upkeep import backup_service
-from leaguebot.core.services.queue.change_queue import (
+from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     carry_job_numbering,
     highest_job_number,
 )

@@ -23,7 +23,7 @@ import aiosqlite
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

@@ -45,8 +45,8 @@ from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.seasons.season_end_changes import test_mode_on
 from leaguebot.core.services.seasons.season_service import (

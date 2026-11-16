@@ -20,7 +20,7 @@ from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
+from leaguebot.framework.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.framework.utils.league_bot import LeagueBot
@@ -33,8 +33,8 @@ from leaguebot.results.services.submission.result_submission_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.review.review_state import PenaltyReviewState, ReadServerConfig
 
@@ -764,7 +764,7 @@ async def stage_in_hand(db_path: str, round_id: int, *, before: int | None = Non
     With *before*, only what was asked ahead of the change of that id counts: a Cancel asked
     before the last paste handed stage one over comes up first and ends the amendment, so stage one
     queued behind it is no stage "in hand" ahead of it."""
-    from leaguebot.core.services.queue.queue_records import unfinished
+    from leaguebot.framework.services.queue.queue_records import unfinished
     from leaguebot.results.services.round_amendment.amend_turn_change import STAGE_ONE_KIND
     from leaguebot.results.services.round_amendment.amendment_stage_changes import (
         APPEALS_KIND,

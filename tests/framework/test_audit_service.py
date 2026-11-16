@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
-from leaguebot.core.services.queue.audit_service import record_change_on
+from leaguebot.framework.services.queue.audit_service import record_change_on
 
 
 # ── Recording on a connection already open (#442) ─────────────────────────────

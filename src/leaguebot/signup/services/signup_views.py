@@ -39,8 +39,8 @@ from leaguebot.framework.utils.member_names import interaction_member
 if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)

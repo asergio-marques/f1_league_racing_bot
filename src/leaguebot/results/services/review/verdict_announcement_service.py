@@ -17,7 +17,7 @@ import aiosqlite
 import discord
 
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.notice_handler import send_notice
+from leaguebot.framework.services.posting.notice_handler import send_notice
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.framework.db.database import get_connection

@@ -32,9 +32,9 @@ import discord
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.framework.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
+from leaguebot.framework.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.utils.tyre_compound import tyre_compound_list

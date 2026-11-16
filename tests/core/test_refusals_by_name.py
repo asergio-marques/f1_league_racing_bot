@@ -59,7 +59,7 @@ def _placement_check(factory: str, **handed: Any) -> Callable[..., Awaitable[Non
 
     async def run(tmp_path, monkeypatch) -> None:
         from leaguebot.framework.models.change import ChangeOrigin
-        from leaguebot.core.services.queue.change_types import CheckContext
+        from leaguebot.framework.services.queue.change_types import CheckContext
         from leaguebot.core.services.drivers import driver_changes
 
         for refusal in ("ongoing_refusal", "placing_refusal", "division_refusal",
@@ -159,7 +159,7 @@ def _team_check(factory: str, payload: dict) -> Callable[..., Awaitable[None]]:
 
     async def run(tmp_path, monkeypatch) -> None:
         from leaguebot.framework.models.change import ChangeOrigin
-        from leaguebot.core.services.queue.change_types import CheckContext
+        from leaguebot.framework.services.queue.change_types import CheckContext
 
         db_path = str(tmp_path / "check.db")
         await run_migrations(db_path)
@@ -177,7 +177,7 @@ def _team_save(factory: str, payload: dict) -> Callable[..., Awaitable[None]]:
 
     async def run(tmp_path, monkeypatch) -> None:
         from leaguebot.framework.db.database import get_connection
-        from leaguebot.core.services.queue.change_types import StepContext
+        from leaguebot.framework.services.queue.change_types import StepContext
         from leaguebot.core.services.drivers.team_changes import SAVE
 
         db_path = str(tmp_path / "save.db")
@@ -228,7 +228,7 @@ def _reassign_change(driver, profiles_merged=None):
 async def _reassign_checked(tmp_path, monkeypatch) -> None:
     """`/driver reassign` of 6501 to 6502 checked, the service's judge raising."""
     from leaguebot.framework.models.change import ChangeOrigin
-    from leaguebot.core.services.queue.change_types import CheckContext
+    from leaguebot.framework.services.queue.change_types import CheckContext
 
     db_path = str(tmp_path / "check.db")
     await run_migrations(db_path)
@@ -245,7 +245,7 @@ async def _reassign_merge_hook_faulted(tmp_path, monkeypatch) -> None:
     season and who share no division, so the two are merged: a module's part of the merge, called
     through `profiles_merged`, raises."""
     from leaguebot.framework.db.database import get_connection
-    from leaguebot.core.services.queue.change_types import StepContext
+    from leaguebot.framework.services.queue.change_types import StepContext
     from leaguebot.core.services.drivers.driver_changes import SAVE
     from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.framework.utils.hooks import AwaitedHook

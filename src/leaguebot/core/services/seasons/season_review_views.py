@@ -24,7 +24,7 @@ from datetime import datetime
 import discord
 
 from leaguebot.core.services.seasons import season_fingerprint_service, season_review_workflows
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.seasons.configuration_confirm_change import (
     ALREADY_BEING_CONFIRMED as ALREADY_CONFIGURATION_BEING_CONFIRMED,
@@ -38,7 +38,7 @@ from leaguebot.core.services.seasons.mid_season_confirm_change import (
     confirmation_in_hand,
 )
 from leaguebot.core.services.modules.module_service import ModuleService
-from leaguebot.core.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.posting.output_router import OutputRouter
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.seasons.season_approval_change import (
     ALREADY_BEING_APPROVED,

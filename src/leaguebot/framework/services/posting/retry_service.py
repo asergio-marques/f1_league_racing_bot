@@ -43,7 +43,7 @@ from leaguebot.framework.models.pending_message import PendingMessage
 from leaguebot.utils.messages import discord_ts
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -213,7 +213,7 @@ async def attempt_delivery(
     """
     import discord
 
-    from leaguebot.core.services.posting.output_router import send_log_text
+    from leaguebot.framework.services.posting.output_router import send_log_text
 
     db_path: str = bot.db_path
     async with delivery_lock():

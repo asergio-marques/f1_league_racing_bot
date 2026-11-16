@@ -36,7 +36,7 @@ from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from discord import app_commands
 
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
 from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import MEMBER_ID, run_queue
 from tests.support.settings_league import (
@@ -341,7 +341,7 @@ async def test_a_signup_setting_saves_its_value_and_audit_in_one_save(
     faulted = await _ask(league, command, *args)
     if command.startswith("time_slot_"):
         assert said(faulted)[0].startswith("⏳ ")
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert last_said(faulted) == failure_reply(
@@ -367,7 +367,7 @@ async def test_a_fault_after_a_slot_is_saved_is_not_read_as_a_duplicate(tmp_path
     league = await _league(tmp_path)
 
     asked = await _ask(league, "time_slot_add", _MONDAY, "20:00")
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on",
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on",
                   ValueError("a fault after the slot's insert")):
         await run_queue(league.bot)
 
@@ -548,7 +548,7 @@ async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
     from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
     from leaguebot.core.cogs import bot_cog
     from leaguebot.core.cogs.test_mode_cog import TestModeCog
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from tests.support.change_queue import member_interaction, response_in_its_slot
 
     bot = MagicMock()

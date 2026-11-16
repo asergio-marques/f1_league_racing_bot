@@ -63,10 +63,10 @@ from leaguebot.framework.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.queue.change_queue import (
+from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -74,9 +74,9 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.settings.config_service import ConfigService
-from leaguebot.core.services.queue.setting_change import After
-from leaguebot.core.services.posting.standing_post_handler import edit_standing, post_standing
-from leaguebot.core.services.posting.standing_posts import delete_replaced_step, remove_kept
+from leaguebot.framework.services.queue.setting_change import After
+from leaguebot.framework.services.posting.standing_post_handler import edit_standing, post_standing
+from leaguebot.framework.services.posting.standing_posts import delete_replaced_step, remove_kept
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
 from leaguebot.framework.utils.league_server import CallbackButton, LeagueView, league_guild

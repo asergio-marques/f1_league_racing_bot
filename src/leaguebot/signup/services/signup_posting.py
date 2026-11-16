@@ -15,11 +15,11 @@ from __future__ import annotations
 import discord
 
 from leaguebot.framework.models.change import StepFailedOnDiscord
-from leaguebot.core.services.posting.owned_channel_handler import (
+from leaguebot.framework.services.posting.owned_channel_handler import (
     delete_owned_channel,
     post_in_owned_channel,
 )
-from leaguebot.core.services.posting.standing_post_handler import post_standing
+from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 
 __all__ = ["delete_channel", "post", "post_standing_message"]

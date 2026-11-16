@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons.season_review_changes import forget_presses
 from leaguebot.framework.utils.hooks import Hook
 

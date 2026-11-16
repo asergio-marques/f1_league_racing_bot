@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 import discord
 import pytest
 
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.framework.utils import catch_up_gate
 from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import (

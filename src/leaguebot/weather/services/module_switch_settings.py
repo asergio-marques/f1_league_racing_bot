@@ -1,7 +1,7 @@
 """Weather's own switch, on and off, as two settings on the change queue.
 
 `/module enable weather` and `/module disable weather` each ask one change built from a
-`Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
+`Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("weather")` and
 `module_off("weather")` (`framework/models/change.py`), so core's cog names the change without
 importing weather. Each save writes only `server_configs.weather_module_enabled`, weather's own
@@ -40,14 +40,14 @@ from leaguebot.framework.models.change import (
     module_off,
     module_on,
 )
-from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
 )
-from leaguebot.core.services.queue.setting_change import After, Saved, Setting
+from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite

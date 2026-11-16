@@ -50,16 +50,16 @@ from leaguebot.framework.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting.notice_handler import send_notice
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting.notice_handler import send_notice
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.framework.utils.channels import as_text_channel
 
 log = logging.getLogger(__name__)

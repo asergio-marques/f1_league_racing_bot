@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from leaguebot.framework.models.change import StepKind, StepResult
 from leaguebot.core.services.upkeep import backup_service
-from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.framework.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     close_signup_steps,

@@ -71,10 +71,10 @@ from leaguebot.framework.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.posting.notice_handler import send_notice
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.posting.notice_handler import send_notice
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -85,7 +85,7 @@ from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.channels import as_text_channel
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)

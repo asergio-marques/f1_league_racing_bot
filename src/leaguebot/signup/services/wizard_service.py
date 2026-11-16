@@ -24,7 +24,7 @@ from leaguebot.core.utils.input_validator import parse_nationality, parse_time, 
 from leaguebot.signup.services.closing_steps import recover_correction_timeouts
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.framework.utils.league_bot import LeagueBot
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService

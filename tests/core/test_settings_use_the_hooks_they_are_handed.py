@@ -16,7 +16,7 @@ import pytest
 
 from leaguebot.framework.db.database import run_migrations
 from leaguebot.framework.models.change import ChangeOrigin, VerdictKind
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.settings.bot_settings import (
     BASE_ROLE_CHANGED,
     base_role_setting,

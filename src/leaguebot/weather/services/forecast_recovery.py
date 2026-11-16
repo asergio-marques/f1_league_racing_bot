@@ -35,7 +35,7 @@ from leaguebot.framework.db.database import get_connection
 from leaguebot.weather.models.forecast_kinds import forecasts_named
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundFormat, RoundStatus, WeatherWindows
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.seasons.season_service import (
     round_facts_on,

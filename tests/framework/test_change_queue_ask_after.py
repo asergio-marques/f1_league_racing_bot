@@ -14,8 +14,8 @@ import pytest
 from leaguebot.framework.db.database import run_migrations
 from leaguebot.framework.models import change
 from leaguebot.framework.models.change import ChangeOrigin
-from leaguebot.core.services.queue import change_queue, change_types
-from leaguebot.core.services.queue.change_types import Ahead
+from leaguebot.framework.services.queue import change_queue, change_types
+from leaguebot.framework.services.queue.change_types import Ahead
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,

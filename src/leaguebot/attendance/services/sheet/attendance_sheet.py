@@ -30,7 +30,7 @@ from leaguebot.core.services.seasons.season_service import (
     round_facts_on,
 )
 from leaguebot.framework.utils.channels import as_text_channel
-from leaguebot.core.services.posting.standing_post_handler import post_standing
+from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_bot import LeagueBot
 

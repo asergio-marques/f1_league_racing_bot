@@ -484,7 +484,7 @@ async def test_a_lapse_run_again_after_a_stop_tells_the_log_channel_once(tmp_pat
     `record_lapse` job: after the job has done its work, before its mark is saved. When the bot
     starts again the queue runs that job again. The log channel is told once that the amendment
     lapsed and the round was put back, counting the lines posted and those still waiting to be."""
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
 
     league = await _amend_league(tmp_path)
     saving = ChangeQueue._save_result

@@ -65,10 +65,10 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

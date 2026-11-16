@@ -598,7 +598,7 @@ def register_change_types(bot: LeagueBot) -> None:
         interaction_role_setting,
         log_channel_setting,
     )
-    from leaguebot.core.services.posting.channel_tell_change import channel_tell_change
+    from leaguebot.framework.services.posting.channel_tell_change import channel_tell_change
     from leaguebot.core.services.settings.division_settings import division_channel_settings
     from leaguebot.core.services.test_mode.test_mode_settings import test_mode_nationality_setting
     from leaguebot.core.services.test_mode.test_mode_former_driver_change import (
@@ -635,7 +635,7 @@ def register_change_types(bot: LeagueBot) -> None:
         wind_down_change,
     )
     from leaguebot.image.services.render.image_render_service import discard_render
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(
         bot.change_queue, bot.config_service, hub_options=bot.hub_options
@@ -1022,7 +1022,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
 
     bot = create_bot()
     bot.db_path = settings.db_path
@@ -1057,7 +1057,7 @@ async def build(settings: Settings) -> LeagueBot:
         now=lambda: bot.change_queue.now(),
     )
     # The queue is handed the router, and is started by start-up, after the recoveries.
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
 
     bot.change_queue = ChangeQueue(
         settings.db_path, bot, bot.output_router, bot.league_settings, tiers=bot.config_service

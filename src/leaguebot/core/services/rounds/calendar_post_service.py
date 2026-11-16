@@ -41,8 +41,8 @@ from leaguebot.framework.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.change_types import (
     CheckContext,
     ChangeType,
     OutcomeContext,
@@ -52,7 +52,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.modules.image_drawing import CalendarPicture, ImageDrawing
 from leaguebot.core.services.seasons.season_end_changes import SEASON_CANCEL
-from leaguebot.core.services.posting.standing_post_handler import post_standing
+from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import league_guild

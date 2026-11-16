@@ -61,8 +61,8 @@ import discord
 from leaguebot.framework.db.database import sole_row
 from leaguebot.framework.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
-from leaguebot.core.services.posting.notice_handler import delete_notice
-from leaguebot.core.services.posting.standing_post_handler import delete_standing
+from leaguebot.framework.services.posting.notice_handler import delete_notice
+from leaguebot.framework.services.posting.standing_post_handler import delete_standing
 from leaguebot.core.services.seasons.season_service import active_season_rounds_on
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.config_service import league_server_id_on

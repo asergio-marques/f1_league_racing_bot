@@ -17,8 +17,8 @@ from typing import Any
 import discord
 
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.framework.utils.log_lines import refuse

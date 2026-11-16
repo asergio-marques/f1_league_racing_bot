@@ -2,7 +2,7 @@
 
 Each `/results config …` command that changes the league's points configurations asks one
 `results.setting.…` change, built from a `Setting` below by `setting_change`
-(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
+(`framework/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault). The check of each is the command's, in today's order and words,
 run at the ask and again as the change starts, so a configuration removed, a module turned off or
 a season taken up by a change ahead of it on the queue is taken into account. Every check refuses
@@ -33,9 +33,9 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.framework.models.change import Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
 from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     import aiosqlite
     import discord
 
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 

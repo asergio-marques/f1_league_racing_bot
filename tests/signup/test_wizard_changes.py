@@ -1510,7 +1510,7 @@ def _stuck_turn(league: SeasonLeague) -> list[str]:
         StepResult,
         Verdict,
     )
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import register
 
     tries: list[str] = []

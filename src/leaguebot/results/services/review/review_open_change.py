@@ -105,13 +105,13 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -121,7 +121,7 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.seasons.season_service import set_round_status_on
-from leaguebot.core.services.queue import typed_turns
+from leaguebot.framework.services.queue import typed_turns
 from leaguebot.framework.utils.log_lines import abandoned_line
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review import review_posting, review_verdicts

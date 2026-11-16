@@ -15,7 +15,7 @@ import logging
 import discord
 
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import (
+from leaguebot.framework.services.posting.owned_channel_handler import (
     edit_in_owned_channel,
     post_in_owned_channel,
 )
@@ -23,7 +23,7 @@ from leaguebot.framework.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import (

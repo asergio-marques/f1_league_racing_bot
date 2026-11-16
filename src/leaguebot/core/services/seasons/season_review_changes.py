@@ -80,11 +80,11 @@ from leaguebot.framework.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     Ahead,
     ChangeType,
     CheckContext,
@@ -93,7 +93,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.utils.channels import as_text_channel
-from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
+from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member

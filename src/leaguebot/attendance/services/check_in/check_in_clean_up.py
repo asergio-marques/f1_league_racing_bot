@@ -49,10 +49,10 @@ from leaguebot.framework.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.posting.notice_handler import delete_notice
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.posting.notice_handler import delete_notice
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -65,7 +65,7 @@ from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
 

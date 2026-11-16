@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from discord.ext import commands, tasks
 
-from leaguebot.core.services.posting.retry_service import attempt_delivery, get_all_pending
+from leaguebot.framework.services.posting.retry_service import attempt_delivery, get_all_pending
 
 if TYPE_CHECKING:
     from leaguebot.framework.utils.league_bot import LeagueBot

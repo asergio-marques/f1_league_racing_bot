@@ -60,14 +60,14 @@ from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services.drivers import lineup_posting
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.queue.setting_change import SAVE
+from leaguebot.framework.services.queue.setting_change import SAVE
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.interaction_errors import failure_line
 from leaguebot.framework.utils.league_server import league_guild

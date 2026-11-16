@@ -201,8 +201,8 @@ from leaguebot.framework.models.change import (
     Verdict,
     VerdictKind,
 )
-from leaguebot.core.services.queue.audit_service import record_change_on
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.audit_service import record_change_on
+from leaguebot.framework.services.queue.change_types import (
     Ahead,
     ChangeRefused,
     ChangeType,
@@ -214,7 +214,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.queue.queue_stop_view import QueueStopView
+from leaguebot.framework.services.queue.queue_stop_view import QueueStopView
 from leaguebot.framework.utils.in_a_job import running_job
 from leaguebot.framework.utils.interaction_errors import describe_fault, failure_line
 from leaguebot.framework.utils.log_lines import (
@@ -236,7 +236,7 @@ from leaguebot.framework.utils.member_names import interaction_member, member_na
 from leaguebot.utils.messages import chunk_message
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.framework.services.posting.league_settings import LeagueSettings
     from leaguebot.framework.services.queue.authority import AuthorityTiers

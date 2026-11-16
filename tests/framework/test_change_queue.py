@@ -84,7 +84,7 @@ def _acknowledges(text: str) -> bool:
 
 def _api() -> SimpleNamespace:
     from leaguebot.framework.models import change
-    from leaguebot.core.services.queue import change_types
+    from leaguebot.framework.services.queue import change_types
 
     return SimpleNamespace(
         ChangeOrigin=change.ChangeOrigin,
@@ -763,7 +763,7 @@ async def test_a_queued_line_refused_once_the_reply_has_lapsed_goes_to_the_host_
 
 async def test_a_queued_log_line_is_delivered_once_with_the_retry_loop_beside_the_worker(env):
     """The retry loop finds the line while the worker is delivering it, and leaves it."""
-    from leaguebot.core.services.posting.retry_service import attempt_delivery, get_all_pending
+    from leaguebot.framework.services.posting.retry_service import attempt_delivery, get_all_pending
 
     channel = env.bot.log_channel
     send = channel.send.side_effect
@@ -1230,7 +1230,7 @@ async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it
 async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monkeypatch):
     """A fault outside any change, such as the database locked while the worker chooses, ends
     neither the worker nor the queue: a change asked for afterwards is carried out."""
-    from leaguebot.core.services.queue import change_queue
+    from leaguebot.framework.services.queue import change_queue
 
     monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
     ran: list[str] = []
@@ -1272,7 +1272,7 @@ async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monke
 async def test_the_worker_looks_again_after_a_fault_with_no_signal_to_wake_it(env, monkeypatch):
     """A change saved before a fault outside any change is not left QUEUED until the next ask, wake
     or restart: once it has paused, the worker looks at the queue again of its own accord."""
-    from leaguebot.core.services.queue import change_queue
+    from leaguebot.framework.services.queue import change_queue
 
     monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
     ran: list[str] = []
@@ -1711,7 +1711,7 @@ async def test_a_fault_while_recording_a_stop_is_logged_and_the_job_is_tried_aga
                                                                                    monkeypatch):
     """Where the stop's own save raises, the worker's catch-all logs it to the host and looks again
     after its pause: the job, not marked stopped, runs again, and its failure is recorded then."""
-    from leaguebot.core.services.queue import change_queue
+    from leaguebot.framework.services.queue import change_queue
 
     caplog.set_level(logging.INFO)
     monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
@@ -2141,7 +2141,7 @@ async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     """`unfinished` gives the payloads of the changes of the kinds asked that are queued or
     running (a running one asking about its own kind finds itself), a stopped one included, and not those done, refused, dropped or discarded, nor
     those of other kinds; the change named in `excluding` is left out."""
-    from leaguebot.core.services.queue.queue_records import unfinished
+    from leaguebot.framework.services.queue.queue_records import unfinished
 
     api = _api()
     armed = {"on": False}
@@ -2205,7 +2205,7 @@ async def test_in_hand_leaves_out_the_change_named_in_excluding(env):
     """`in_hand` leaves out the change whose id is *excluding*, as `unfinished` does, so a check
     reading the queue for its own kind does not find itself; with none named it gives every
     change in hand, each with the number of the job it waits on."""
-    from leaguebot.core.services.queue.queue_records import in_hand
+    from leaguebot.framework.services.queue.queue_records import in_hand
 
     api = _api()
 
@@ -2235,7 +2235,7 @@ async def test_ever_asked_finds_the_changes_of_a_kind_in_any_state(env):
     """`ever_asked` gives the payloads of every change of the kinds asked that the queue saved,
     oldest first, whether done, dropped at its check, discarded or still queued, and none of
     another kind. A request its check refuses as it is asked is not saved, so is not given."""
-    from leaguebot.core.services.queue.queue_records import ever_asked
+    from leaguebot.framework.services.queue.queue_records import ever_asked
 
     api = _api()
     armed = {"on": False}
@@ -2286,7 +2286,7 @@ async def test_done_step_results_before_gives_each_earlier_change_s_done_step_ne
     done too; change 4's redraw fails, so is not done; change 5 waits behind it. Asked before
     change 5, changes 2 and 1 come back; before change 2, change 1 alone; the "post" step each
     "watched" change also did is never mistaken for the redraw."""
-    from leaguebot.core.services.queue.queue_records import done_step_results_before
+    from leaguebot.framework.services.queue.queue_records import done_step_results_before
 
     api = _api()
 
@@ -2336,7 +2336,7 @@ async def test_done_step_results_before_gives_only_the_changes_whose_payload_mat
     round 1 of division 8, and round 1 of division 7 again; a fifth waits. Asked before the fifth
     for round 1 of division 7, the fourth and the first come back; for round 2 of division 7, the
     second alone; for round 3, nothing."""
-    from leaguebot.core.services.queue.queue_records import done_step_results_before
+    from leaguebot.framework.services.queue.queue_records import done_step_results_before
 
     api = _api()
 
@@ -3209,7 +3209,7 @@ async def test_a_save_that_ends_on_a_fault_has_its_writes_rolled_back(env, monke
     """A `SAVE` step with `on_fault` that faults, in its own run or in the queue's write of its
     audit entry, keeps none of its writes, its audit entry or its own line: only its mark and
     `on_fault`'s line are saved."""
-    from leaguebot.core.services.queue import change_queue
+    from leaguebot.framework.services.queue import change_queue
 
     api = _api()
 
@@ -3364,7 +3364,7 @@ async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_ow
     and its call returns its id."""
     import contextvars
 
-    from leaguebot.core.services.queue.change_types import Ahead
+    from leaguebot.framework.services.queue.change_types import Ahead
 
     queue = _queue(
         env, _type(steps=[_act("a", [])]), _type("dummy.ahead", steps=[_act("b", [])]),

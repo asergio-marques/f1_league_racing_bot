@@ -1,7 +1,7 @@
 """Images' own switch, on and off, as two settings on the change queue.
 
 `/module enable images` and `/module disable images` each ask one change built from a
-`Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
+`Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("images")` and
 `module_off("images")` (`framework/models/change.py`), so core's cog names the change without
 importing image. `docs/design/architecture.md`, "How modules and core fit together", designs the
@@ -39,14 +39,14 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.framework.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
 )
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 from leaguebot.image.services.config.image_config_service import create_defaults_on, read_config_on
 from leaguebot.image.services.config.image_settings import (
     ARM_DAILY,

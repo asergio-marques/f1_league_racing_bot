@@ -27,7 +27,7 @@ import discord
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
 from leaguebot.framework.utils.interaction_errors import failure_reply
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.support.change_queue import (
@@ -283,7 +283,7 @@ async def test_a_fault_in_the_save_saves_no_channel_and_says_to_run_it_again(tmp
     edits = _discord(league, channel)
 
     asked = await _ask(league, channel)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert last_said(asked) == failure_reply(

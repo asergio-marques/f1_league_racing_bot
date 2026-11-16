@@ -2,7 +2,7 @@
 
 `/signup nationality`, `time-type`, `time-image`, `time-slot add` and `time-slot remove` each ask
 one change, `signup.setting.<name>` (underscores in place of the command's hyphens), built from
-the `Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what
+the `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what
 every settings change does with a fault). The value, its audit entry and its log line are one
 save, stamped by the queue's clock; the command holds no rule of its own.
 
@@ -32,8 +32,8 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.models.refusal import Refused
-from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
 from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.signup.models.signup_module import AvailabilitySlot

@@ -3,7 +3,7 @@
 Each of `/attendance config rsvp-notice`, `rsvp-last-notice`, `rsvp-deadline`, `no-rsvp-penalty`,
 `absent-penalty`, `no-show-penalty`, `autosack` and `autoreserve` asks one change, `attendance.setting.<name>`
 with the underscores of the command's name, built from the `Setting` below by `setting_change`
-(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
+(`framework/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault). The change carries ``{"value": N}``: a threshold of 0, which
 disables it, is carried as ``None``, as the column stores it. The value, its `ATTENDANCE_CONFIG_SET`
 audit entry and its log line are one save, stamped by the queue's clock.
@@ -33,8 +33,8 @@ from leaguebot.attendance.models.attendance import AttendanceConfig
 from leaguebot.attendance.services.check_in.attendance_config_service import validate_timing_invariant
 from leaguebot.attendance.services.settings.channel_settings import NOT_ENABLED
 from leaguebot.framework.models.change import AuditRecord, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite

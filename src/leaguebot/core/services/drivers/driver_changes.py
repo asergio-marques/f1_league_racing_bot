@@ -84,8 +84,8 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services.drivers import lineup_posting
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

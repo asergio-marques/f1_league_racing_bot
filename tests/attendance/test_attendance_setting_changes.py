@@ -366,7 +366,7 @@ async def test_a_fault_in_a_setting_s_save_saves_nothing_and_the_lane_goes_on(tm
     bot, db_path = await _league(tmp_path)
 
     asked = await _run(bot, "rsvp-notice", 7, run=False)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(bot, steps=1)
     behind = await _run(bot, "absent-penalty", 3)
 

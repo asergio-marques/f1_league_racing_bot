@@ -811,7 +811,7 @@ async def test_a_dropped_panel_whose_parts_discord_will_not_remove_still_clears(
     (architecture.md, "How a change is carried out": an undiscardable step completes once its
     work is no longer owed)."""
     from leaguebot.framework.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.posting import standing_posts
+    from leaguebot.framework.services.posting import standing_posts
 
     league = await _submitted_at_length(tmp_path)
     await run_queue(league.bot)

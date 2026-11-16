@@ -455,7 +455,7 @@ async def test_the_sweep_s_off_queue_commands_wait_for_the_catch_up():
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
     from tests.support.change_queue import member_interaction, response_in_its_slot
 

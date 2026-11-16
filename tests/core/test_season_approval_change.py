@@ -1658,7 +1658,7 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
     as done with nothing posted."""
     from leaguebot.__main__ import _sign_up_to_placements_confirmed
     from leaguebot.framework.models.change import GuildUnavailable
-    from leaguebot.core.services.queue.change_types import StepContext
+    from leaguebot.framework.services.queue.change_types import StepContext
 
     settings = SimpleNamespace(get_league_server_id=AsyncMock(return_value=1))
     bot = SimpleNamespace(

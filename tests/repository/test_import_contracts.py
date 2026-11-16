@@ -223,7 +223,7 @@ def test_every_file_sits_in_a_folder_the_contracts_name():
 
 #: Core's services that are plumbing every module uses: the change queue, posting to Discord, and
 #: what core asks of the modules through its hooks and protocols.
-CORE_PLUMBING_FOLDERS = frozenset({"queue", "posting", "modules"})
+CORE_PLUMBING_FOLDERS = frozenset({"modules"})
 #: Core's services that hold a league rule of core's own.
 CORE_LEAGUE_RULE_FOLDERS = frozenset(
     {"seasons", "cancellations", "rounds", "drivers", "settings", "test_mode", "upkeep"}

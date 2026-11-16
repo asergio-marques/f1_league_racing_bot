@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons.season_service import (
     round_in_division,
     rounds_called,

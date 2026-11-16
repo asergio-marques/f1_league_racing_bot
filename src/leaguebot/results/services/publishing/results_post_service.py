@@ -13,8 +13,8 @@ import discord
 from leaguebot.core.services.drivers.driver_names import read_driver_names
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import delete_owned_channel
-from leaguebot.core.services.posting.standing_post_handler import (
+from leaguebot.framework.services.posting.owned_channel_handler import delete_owned_channel
+from leaguebot.framework.services.posting.standing_post_handler import (
     delete_standing,
     edit_standing,
     post_standing,
@@ -49,7 +49,7 @@ from leaguebot.results.services.publishing import (
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.results.models.session_result import (
     DriverSessionResult,
     OutcomeModifier,

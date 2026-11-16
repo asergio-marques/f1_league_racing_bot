@@ -14,8 +14,8 @@ from datetime import datetime
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.seasons.season_end_changes import test_mode_on
 from leaguebot.core.services.seasons.season_service import round_in_division
 from leaguebot.results.services.submission.submission_changes import KIND, ask_submission_open

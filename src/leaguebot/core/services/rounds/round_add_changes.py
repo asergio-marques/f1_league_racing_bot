@@ -48,7 +48,7 @@ from leaguebot.framework.models.change import (
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at, utc_text
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

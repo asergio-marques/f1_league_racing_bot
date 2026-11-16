@@ -72,14 +72,14 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.posting.notice_handler import delete_notice
-from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting.notice_handler import delete_notice
+from leaguebot.framework.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

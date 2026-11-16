@@ -23,7 +23,7 @@ from leaguebot.signup.services.signup_posting import post_standing_message
 from leaguebot.signup.services.signup_views import SignupButtonView
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

@@ -250,7 +250,7 @@ def sign_up_to_season_end_steps(bot: "LeagueBot") -> None:
 def register_change_types(bot: "LeagueBot") -> None:
     """Make the queue known weather's kinds of change: the forecast and its clean-up, the module's
     switch and its two settings."""
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
     from leaguebot.weather.services.forecast_changes import (
         forecast_change,
         forecast_clean_up_change,

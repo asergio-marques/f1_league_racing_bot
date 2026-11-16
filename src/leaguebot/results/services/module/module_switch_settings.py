@@ -1,7 +1,7 @@
 """Results & Standings' own switch-on, as a setting on the change queue.
 
 `/module enable results` asks one change built from the `Setting` below by `setting_change`
-(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
+(`framework/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault): `module_on("results")` (`framework/models/change.py`), so core's cog
 names the change without importing results. `docs/design/architecture.md`, "How modules and core
 fit together", designs the gap this closes: weather's switch
@@ -36,10 +36,10 @@ from leaguebot.framework.models.change import (
     Verdict,
     module_on,
 )
-from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import PLACEMENTS_CONFIRMED_REFUSAL
-from leaguebot.core.services.queue.setting_change import After, Saved, Setting
+from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite

@@ -61,12 +61,12 @@ from leaguebot.core.services.rounds.round_moments import read_round_windows, res
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.drivers import lineup_posting
-from leaguebot.core.services.posting import standing_posts
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.rounds.calendar_post_service import POST_CALENDAR, calendar_steps
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -84,7 +84,7 @@ from leaguebot.core.services.seasons.season_service import (
     create_sessions_for_round_on,
     transition_to_active_on,
 )
-from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
+from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.seasons.season_lifecycle_service import kept_line
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import refusal_line, reply_reason

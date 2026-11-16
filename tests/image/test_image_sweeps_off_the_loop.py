@@ -30,7 +30,7 @@ import pytest
 from lxml import etree
 
 from leaguebot.framework.models.change import ChangeOrigin, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.image.services.portraits import driver_portrait_service
 from leaguebot.image.services.render import image_render_service
 from leaguebot.image.services.validity import image_validity_service as validity_module

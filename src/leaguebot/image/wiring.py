@@ -54,7 +54,7 @@ def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
 
 def register_change_types(bot: "LeagueBot") -> None:
     """Make the queue known image's kinds of change: the module's switch and its settings."""
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
     from leaguebot.image.services.config.image_settings import image_settings
     from leaguebot.image.services.config.module_switch_settings import (
         module_off_images,

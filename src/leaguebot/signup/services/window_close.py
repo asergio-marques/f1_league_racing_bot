@@ -21,9 +21,9 @@ from typing import TYPE_CHECKING
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.signup.services.signup_module_service import SignupModuleService, signup_enabled_on

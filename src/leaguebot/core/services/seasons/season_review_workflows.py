@@ -35,7 +35,7 @@ from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.seasons.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
@@ -49,7 +49,7 @@ from leaguebot.core.services.seasons.mid_season_confirm_change import (
     every_division_done_refusal,
 )
 from leaguebot.core.services.modules.module_service import ModuleService
-from leaguebot.core.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.posting.output_router import OutputRouter
 from leaguebot.core.services.rounds.round_moments import read_round_windows
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.seasons.season_approval_change import (

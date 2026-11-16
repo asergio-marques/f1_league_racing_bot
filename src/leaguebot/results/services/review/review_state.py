@@ -14,8 +14,8 @@ from typing import Any
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.core.models.round import RoundStatus
@@ -235,7 +235,7 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
             "❌ This amendment's reports are already approved, so neither they nor its pardons "
             "can be changed any more. Its appeals are reviewed below."
         )
-    from leaguebot.core.services.queue.queue_records import unfinished
+    from leaguebot.framework.services.queue.queue_records import unfinished
     from leaguebot.results.services.review.report_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):
@@ -297,7 +297,7 @@ async def _appeals_review_moved_on(state: PenaltyReviewState) -> str | None:
     """
     if state.is_amendment:
         return None
-    from leaguebot.core.services.queue.queue_records import unfinished
+    from leaguebot.framework.services.queue.queue_records import unfinished
     from leaguebot.results.services.review.appeals_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):

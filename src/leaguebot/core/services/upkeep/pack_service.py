@@ -49,7 +49,7 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
 from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID

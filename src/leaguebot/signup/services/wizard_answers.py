@@ -60,10 +60,10 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import state_of_account_on
-from leaguebot.core.services.posting import standing_posts
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.queue import typed_turns
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue import typed_turns
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -90,9 +90,9 @@ from leaguebot.signup.services.wizard_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService

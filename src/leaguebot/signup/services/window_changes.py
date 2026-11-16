@@ -55,9 +55,9 @@ from leaguebot.framework.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.drivers.driver_service import drivers_in_states, write_transition
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -98,7 +98,7 @@ from leaguebot.signup.services.information_post import stamp as _stamp
 from leaguebot.signup.services.window_close import CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService

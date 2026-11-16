@@ -23,7 +23,7 @@ import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.framework.db.database import get_connection, run_migrations
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
 from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import change_rows, member_interaction, run_queue, tier_member
 from tests.support.season_league import setup_league
@@ -487,7 +487,7 @@ async def test_a_close_time_faulted_in_its_save_stores_nothing(
     args = () if run is _cancel else (LATER,)
 
     asked = await _asked(league, run, *args)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     command = f"/signup close-time {name}"

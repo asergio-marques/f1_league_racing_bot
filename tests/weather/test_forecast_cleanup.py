@@ -466,7 +466,7 @@ class TestDiscordDelete:
 def _spy_on_post_standing(monkeypatch) -> list[tuple[tuple, dict]]:
     """Record every `post_standing` call, wherever the weather service takes it from, and let
     each through to the real handler."""
-    from leaguebot.core.services.posting import standing_post_handler
+    from leaguebot.framework.services.posting import standing_post_handler
     from leaguebot.weather.services import forecast_cleanup_service
 
     real = standing_post_handler.post_standing
@@ -513,7 +513,7 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
     999, letting role 1 notify. Each part `chunk_message` divides it into goes through the
     standing-post handler, in order, to that channel and with role 1's mentions; the ids of the
     messages sent come back in order."""
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
@@ -556,8 +556,8 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
     - channel-gone: the channel is not cached and Discord says it is not found: "the forecast
       channel <#999> is no longer on the server";
     - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel"."""
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
@@ -640,7 +640,7 @@ async def test_a_graphic_forecast_that_fails_stops_in_today_s_words(tmp_path, ca
     - refused: Discord refuses the upload: "Discord refused or failed a request from the bot", as
       today.
     The graphic is discarded in each."""
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))
@@ -687,7 +687,7 @@ async def test_a_forecast_whose_channel_discord_will_not_give_stops_as_discord_s
     rather than saying it is gone. The stop notice, read as the change queue shows it
     (`ChangeQueue._fault_kind`), says "Discord refused or failed a request from the bot", in both
     manners; nothing is posted."""
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))

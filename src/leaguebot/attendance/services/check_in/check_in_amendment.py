@@ -79,8 +79,8 @@ from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, CheckInJobs, Round
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.rounds.round_steps import judge_kept, named_now
 from leaguebot.core.services.seasons import season_service
@@ -93,7 +93,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)

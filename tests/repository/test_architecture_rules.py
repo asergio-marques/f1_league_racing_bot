@@ -518,7 +518,7 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/posting/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
+    ("framework/services/posting/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
 }
 
 
@@ -598,7 +598,7 @@ def test_no_job_is_armed_with_a_lateness_limit():
 
 @cache
 def _files_by_module_name() -> dict[str, str]:
-    """``"leaguebot.core.services.posting.retry_service"`` to ``"core/services/posting/retry_service.py"``, for
+    """``"leaguebot.framework.services.posting.retry_service"`` to ``"framework/services/posting/retry_service.py"``, for
     every file of the package."""
     names: dict[str, str] = {}
     for path, _tree in _sources():
@@ -872,7 +872,7 @@ def test_the_private_names_check_leaves_a_module_s_own_private_name_alone():
 
 #: Every file that may name the log channel, and why. Only the first posts to it.
 LOG_CHANNEL_NAMED_BY = {
-    "core/services/posting/output_router.py": "the one writer of the log channel",
+    "framework/services/posting/output_router.py": "the one writer of the log channel",
     "core/models/server_config.py": "the setting itself",
     "core/services/settings/config_service.py": "reads and stores the setting",
     "core/cogs/bot_cog.py": "the commands that set it",
@@ -912,21 +912,21 @@ def test_only_the_router_writes_the_log_channel():
 #: the notice handler, the standing-post handler and the bot-owned channel handler (architecture.md,
 #: "Posting to Discord").
 POSTING_ALLOWED = frozenset({
-    "core/services/posting/output_router.py",
-    "core/services/posting/notice_handler.py",
-    "core/services/posting/standing_post_handler.py",
-    "core/services/posting/owned_channel_handler.py",
+    "framework/services/posting/output_router.py",
+    "framework/services/posting/notice_handler.py",
+    "framework/services/posting/standing_post_handler.py",
+    "framework/services/posting/owned_channel_handler.py",
 })
 #: The one file the job check passes over: the router, whose log lines, stop notice and turn-away
 #: stay off the queue. Every other handler's functions carry `posts_in_a_job`.
-JOB_CHECK_ALLOWED = frozenset({"core/services/posting/output_router.py"})
+JOB_CHECK_ALLOWED = frozenset({"framework/services/posting/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
     ("__main__.py", "build.guild_sync"): (
         "the owner's own `!sync` command, which deletes the owner's message and posts a note "
         "that deletes itself: a prefix command's reply"
     ),
-    ("core/services/queue/change_queue.py", "ChangeQueue._update_reply"): (
+    ("framework/services/queue/change_queue.py", "ChangeQueue._update_reply"): (
         "edits the member's own ephemeral acknowledgement, a WebhookMessage the follow-up "
         "returned, which answers a member and posts in no channel"
     ),
@@ -1197,7 +1197,7 @@ def test_a_not_a_post_entry_is_not_counted_by_the_job_check():
     """The queue's edit of a member's own acknowledgement, named in `NOT_A_POST`, answers the
     member and posts in no channel: undecorated, it is not counted, while the same edit in another
     function of the file is."""
-    path = "core/services/queue/change_queue.py"
+    path = "framework/services/queue/change_queue.py"
     nodes = _sample(
         "class ChangeQueue:\n"
         "    async def _update_reply(self, reply):\n"
@@ -1700,8 +1700,8 @@ TABLE_OWNER: dict[str, str] = {
     "default_teams": "core", "team_role_configs": "core", "driver_profiles": "core",
     "driver_accounts": "core", "driver_history_entries": "core",
     "driver_season_assignments": "core", "driver_division_memberships": "core",
-    "audit_entries": "core", "pending_messages": "core", "season_review_prompts": "core",
-    "queued_changes": "core", "queued_change_steps": "core",
+    "audit_entries": "framework", "pending_messages": "framework", "season_review_prompts": "core",
+    "queued_changes": "framework", "queued_change_steps": "framework",
     # results
     "session_results": "results", "qualifying_session_results": "results",
     "race_session_results": "results", "driver_standings_snapshots": "results",
@@ -1933,7 +1933,21 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
     return +found
 
 
+#: Core's writes to the framework's audit log, until core writes it through the framework's audit
+#: writers.
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
+    ("core/services/drivers/driver_service.py", "_merge"): (1, "#544"),
+    ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, "#544"),
+    ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, "#544"),
+    ("core/services/rounds/round_amend_change.py", "_round_change.apply"): (1, "#544"),
+    ("core/services/seasons/season_lifecycle_service.py", "_turn_down_on"): (1, "#544"),
+    ("core/services/seasons/season_lifecycle_service.py", "run_driver_pass_on"): (1, "#544"),
+    ("core/services/seasons/season_service.py", "cancel_division_on"): (2, "#544"),
+    ("core/services/seasons/season_service.py", "cancel_round_on"): (1, "#544"),
+    ("core/services/seasons/season_service.py", "close_raced_rounds_on"): (1, "#544"),
+    ("core/services/seasons/season_service.py", "end_round_not_held_on"): (1, "#544"),
+    ("core/services/seasons/season_service.py", "end_rounds_awaiting_results_on"): (1, "#544"),
+    ("core/services/upkeep/pack_service.py", "pack"): (2, "#544"),
 }
 
 
@@ -2039,14 +2053,14 @@ _SAVING_CALLS = frozenset({"commit", "executescript"})
 SAVES_ALLOWED = {
     ("framework/db/database.py", "run_migrations"): "the migrations, which build the schema",
     ("framework/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
-    ("core/services/queue/change_queue.py", "*"): "the queue's own records of the changes it carries out",
-    ("core/services/queue/queue_records.py", "empty_queue_in"):
+    ("framework/services/queue/change_queue.py", "*"): "the queue's own records of the changes it carries out",
+    ("framework/services/queue/queue_records.py", "empty_queue_in"):
         "the queue's own records, emptied in a restored database before it is put in place",
-    ("core/services/queue/queue_records.py", "carry_job_numbering"):
+    ("framework/services/queue/queue_records.py", "carry_job_numbering"):
         "the queue's own records, numbering a database put in place after the jobs already named",
-    ("core/services/posting/retry_service.py", "enqueue"): "the retry queue for log lines",
-    ("core/services/posting/retry_service.py", "mark_delivered"): "the retry queue for log lines",
-    ("core/services/posting/retry_service.py", "mark_failed"): "the retry queue for log lines",
+    ("framework/services/posting/retry_service.py", "enqueue"): "the retry queue for log lines",
+    ("framework/services/posting/retry_service.py", "mark_delivered"): "the retry queue for log lines",
+    ("framework/services/posting/retry_service.py", "mark_failed"): "the retry queue for log lines",
     ("core/services/upkeep/backup_service.py", "_write_empty_database"):
         "writes the scheduler's empty file, not the league's",
     ("core/services/upkeep/pack_service.py", "pack"):
@@ -2127,9 +2141,9 @@ def test_the_write_check_counts_commits_and_scripts_but_not_a_handed_connection(
         ("core/services/sample_service.py", "build"): 1,
         ("core/services/sample_service.py", "enqueue"): 1,
     })
-    assert _saves_among(nodes("core/services/posting/retry_service.py")) == Counter({
-        ("core/services/posting/retry_service.py", "save"): 1,
-        ("core/services/posting/retry_service.py", "build"): 1,
+    assert _saves_among(nodes("framework/services/posting/retry_service.py")) == Counter({
+        ("framework/services/posting/retry_service.py", "save"): 1,
+        ("framework/services/posting/retry_service.py", "build"): 1,
     })
 
 
@@ -2397,7 +2411,11 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: Today's reads of a table outside its owner, under the design pass that removes each: a module's
 #: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
+#: Core's reads of the framework's queue tables, until core asks the framework for them.
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
+    ("core/services/seasons/season_end_changes.py", "_any_in_hand_on"): (1, "#544"),
+    ("core/services/seasons/season_review_changes.py", "season_review_post_change.arm_expiry"): (1, "#544"),
+    ("core/services/upkeep/pack_service.py", "pending_job"): (2, "#544"),
 }
 
 
@@ -2577,6 +2595,13 @@ SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
 )
 
 
+#: The tables of another owner a spliced read's tuple names, until its owner is asked for them:
+#: the factory reset's undelivered log lines, which are the framework's.
+KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER: dict[tuple[str, str, str], str] = {
+    ("core/services/upkeep/factory_reset_service.py", "_OTHER_SOURCES", "pending_messages"): "#544",
+}
+
+
 def test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s():
     """Each tuple a hand-read spliced read iterates (`SPLICED_SOURCES`) names tables, and every
     table it names is owned by the module of the file it is declared in: a module's table put back
@@ -2599,7 +2624,10 @@ def test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s():
         }
         assert tables, f"{name} in {path} names no table"
         module = _module_of(path)
-        assert {table: TABLE_OWNER[table] for table in tables if TABLE_OWNER[table] != module} == {}, (
+        foreign = {table for table in tables if TABLE_OWNER[table] != module}
+        listed = {table for (p, n, table) in KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER if (p, n) == (path, name)}
+        assert listed <= foreign, f"{name} in {path} no longer names {sorted(listed - foreign)}: delete the line"
+        assert {table: TABLE_OWNER[table] for table in foreign - listed} == {}, (
             f"{name} in {path} names another module's table"
         )
 
@@ -2741,17 +2769,6 @@ def _core_attributes_of_the_bot() -> frozenset[str]:
     )
 
 
-#: The framework's helpers that read the log writer on the bot while it is still typed from core,
-#: until the posting services move into the framework.
-KNOWN_CORE_LOOKUPS_IN_THE_FRAMEWORK: dict[tuple[str, str], tuple[int, str]] = {
-    ("framework/utils/interaction_errors.py", "report_failure"): (1, "#544"),
-    ("framework/utils/league_server.py", "on_event_error"): (1, "#544"),
-    ("framework/utils/log_lines.py", "record_abandoned"): (1, "#544"),
-    ("framework/utils/log_lines.py", "record_refusal"): (1, "#544"),
-    ("framework/utils/log_lines.py", "refuse"): (1, "#544"),
-}
-
-
 def test_the_framework_reads_no_service_of_core_s_on_the_bot():
     """The framework asks and core answers (architecture.md, "How the code is laid out"): what the
     machinery needs of the league it learns through a protocol of its own, which core's settings
@@ -2761,7 +2778,7 @@ def test_the_framework_reads_no_service_of_core_s_on_the_bot():
     _check(
         "the framework reads no service of core's on the bot",
         _module_lookups_in_core_among(_nodes(), _core_attributes_of_the_bot(), BELOW_CORE),
-        KNOWN_CORE_LOOKUPS_IN_THE_FRAMEWORK,
+        {},
     )
 
 
@@ -2849,7 +2866,7 @@ _SQL_CLOCK = re.compile(
 
 #: The functions allowed for good to read the wall clock in a service, and why.
 WALL_CLOCK_ALLOWED = {
-    ("core/services/queue/change_queue.py", "ChangeQueue.__init__"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue.__init__"):
         "the change queue's own default clock, `ChangeQueue.now`, which hands every service its time",
 }
 
@@ -2972,11 +2989,11 @@ def test_the_wall_clock_check_sees_each_read_in_a_services_file_but_not_elsewher
 
     assert _wall_clock_reads_among(_sample(source, path)) == Counter({(path, "handler"): 1})
     assert _wall_clock_reads_among(_sample(source, "weather/cogs/sample_cog.py")) == Counter()
-    assert _wall_clock_reads_among(_sample(source, "core/services/queue/change_queue.py")) == Counter(
-        {("core/services/queue/change_queue.py", "handler"): 1}
+    assert _wall_clock_reads_among(_sample(source, "framework/services/queue/change_queue.py")) == Counter(
+        {("framework/services/queue/change_queue.py", "handler"): 1}
     )
     named = f"class ChangeQueue:\n    def __init__(self):\n        {line}\n"
-    assert _wall_clock_reads_among(_sample(named, "core/services/queue/change_queue.py")) == Counter()
+    assert _wall_clock_reads_among(_sample(named, "framework/services/queue/change_queue.py")) == Counter()
 
 
 def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
@@ -3001,50 +3018,50 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
 #: catch-all error handler"). A handler that re-raises, that calls `report_failure`, or that sits
 #: directly in the body of a loop needs no entry.
 CATCH_ALLS_ALLOWED = {
-    ("core/services/queue/change_queue.py", "ChangeQueue._work_lane"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._work_lane"):
         "the lane's worker, a failure path: the error goes to the host's log and the worker pauses",
-    ("core/services/queue/change_queue.py", "ChangeQueue._work"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._work"):
         "the dispatcher, a failure path: a fault in starting the lanes goes to the host's log",
-    ("core/services/queue/change_queue.py", "ChangeQueue._run_step"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._run_step"):
         "the queue's catch of a step that raises, a failure path: it stops the lane or ends the job",
-    ("core/services/queue/change_queue.py", "ChangeQueue._start"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._start"):
         "the queue's catch of a check that raises, a failure path: it stops the lane or ends the "
         "change",
     ("framework/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
         "the autocompletes' failure path: no choices, and the error to the host's log",
-    ("core/services/queue/change_queue.py", "ChangeQueue._acknowledge"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._acknowledge"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._acknowledge_saved"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._acknowledge_saved"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._finish"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._finish"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._name_job"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._name_job"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._post_notice"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._post_notice"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._tell"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._tell"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._tell_origin"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._tell_origin"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._update_reply"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._update_reply"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._end_on_check_fault"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._end_on_check_fault"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._refuse"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._refuse"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._step_failed"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._step_failed"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._discard_follow_ons"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._discard_follow_ons"):
         "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._undiscardable_refusal"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._undiscardable_refusal"):
         "a stated exception: the Discard is refused all the same, whatever the reader does",
     ("results/services/round_amendment/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
@@ -3059,12 +3076,12 @@ CATCH_ALLS_ALLOWED = {
         "place 3, around telling the member of a refusal, which is still recorded",
     ("framework/utils/log_lines.py", "record_abandoned"):
         "place 3, around recording that a confirmation ended",
-    ("core/services/posting/output_router.py", "OutputRouter._tell"):
+    ("framework/services/posting/output_router.py", "OutputRouter._tell"):
         "place 3, around telling the member that the log channel failed, the router's own containment",
-    ("core/services/posting/output_router.py", "OutputRouter._enqueue_if_configured"):
+    ("framework/services/posting/output_router.py", "OutputRouter._enqueue_if_configured"):
         "place 3, around keeping for retry a log line that could not be posted, the router's own "
         "containment",
-    ("core/services/posting/output_router.py", "OutputRouter.strip_view"):
+    ("framework/services/posting/output_router.py", "OutputRouter.strip_view"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
     ("framework/utils/log_lines.py", "record_refusal"):
@@ -3233,8 +3250,8 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
-    ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
+    ("framework/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
+    ("framework/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
 }

@@ -86,7 +86,7 @@ async def env(tmp_path):
 
 def _api() -> SimpleNamespace:
     from leaguebot.framework.models import change
-    from leaguebot.core.services.queue import change_types, typed_turns
+    from leaguebot.framework.services.queue import change_types, typed_turns
 
     return SimpleNamespace(
         StepKind=change.StepKind, Verdict=change.Verdict, PlannedStep=change.PlannedStep,
@@ -155,7 +155,7 @@ def _typed(env, content: str = "Max Verstappen", *, channel: Any = None) -> Any:
 
 
 async def _waiting(env, channel_id: int = CHANNEL) -> bool:
-    from leaguebot.core.services.queue.typed_turns import turn_waiting
+    from leaguebot.framework.services.queue.typed_turns import turn_waiting
 
     return await turn_waiting(env.db_path, env.types, channel_id)
 
@@ -450,7 +450,7 @@ async def test_a_second_message_typed_while_the_first_is_held_is_turned_away(env
     channel is no longer waiting."""
     import asyncio
 
-    from leaguebot.core.services.queue import typed_turns
+    from leaguebot.framework.services.queue import typed_turns
 
     _queue(env, _turn())
     queue = env.bot.change_queue

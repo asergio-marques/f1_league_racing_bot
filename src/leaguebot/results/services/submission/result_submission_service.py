@@ -27,10 +27,10 @@ from leaguebot.core.models.cancellation import (
     CancellationRound,
 )
 from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import (
+from leaguebot.framework.services.posting.owned_channel_handler import (
     edit_in_owned_channel,
     post_in_owned_channel,
 )

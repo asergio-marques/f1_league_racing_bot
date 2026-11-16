@@ -1,7 +1,7 @@
 """A division's results, standings and verdicts channels, as settings on the change queue.
 
 `/results channel results`, `standings` and `verdicts` each ask one change built from a `Setting`
-below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every settings
+below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every settings
 change does with a value already held and with a fault), `{"division_id", "division_name",
 "value", "channel_name"}`, for the division by its id: the command finds it from the name a manager
 typed and carries that name for the reply and the line, so a division renamed while the change
@@ -32,7 +32,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.framework.models.change import AuditRecord, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
@@ -40,7 +40,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 from leaguebot.results.services.module.division_channels import (
     set_division_penalty_channel,
     set_division_results_channel,

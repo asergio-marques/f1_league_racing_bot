@@ -333,7 +333,7 @@ def _renumbering_fails() -> ExitStack:
 def _blind_to_the_queue() -> ExitStack:
     """Every check reading the queue for a change in hand finds none, as two asks in the same
     instant leave each other unseen."""
-    from leaguebot.core.services.queue import queue_records
+    from leaguebot.framework.services.queue import queue_records
 
     real = queue_records.in_hand
 
@@ -911,7 +911,7 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
     from leaguebot.framework.db.database import get_connection
     from leaguebot.core.models.amendment import RoundArming
     from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
-    from leaguebot.core.services.queue.change_types import Step
+    from leaguebot.framework.services.queue.change_types import Step
     from tests.support.change_queue import restart_queue
 
     further = "a_further_module_s_post"
@@ -3012,7 +3012,7 @@ async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, s
     Pro, the thing left undone and what to do about it, word for word as today; a take-down whose
     repost is discarded too is named once, by the take-down."""
     from leaguebot.framework.db.database import run_migrations
-    from leaguebot.core.services.queue.change_types import OutcomeContext, StepView
+    from leaguebot.framework.services.queue.change_types import OutcomeContext, StepView
     from tests.support.change_queue import league_bot
 
     path = str(tmp_path / "words.db")

@@ -51,11 +51,11 @@ CLEARED = {
     # The interactions the change queue holds to update each change's reply: a factory reset
     # deletes the changes they belong to (#439), and a pack finds none, being refused while the
     # queue holds a job.
-    ("core/services/queue/change_queue.py", "_held"),
+    ("framework/services/queue/change_queue.py", "_held"),
     # What the queue remembers of its stopped jobs: when each stop notice was last tried, and
     # each Retry under way. `forget_held` clears them with the interactions above (#439).
-    ("core/services/queue/change_queue.py", "_notice_tried"),
-    ("core/services/queue/change_queue.py", "_retrying"),
+    ("framework/services/queue/change_queue.py", "_notice_tried"),
+    ("framework/services/queue/change_queue.py", "_retrying"),
     # The penalty review a staging is handed on to its change, by (round, appeals): dropped by
     # results' subscriber to the bot's hook for the clear, so a pack's or a reset's gone round
     # holds no review (#439, 6b, C54; #283 S8a).
@@ -99,13 +99,13 @@ MOVING = {
 ARRIVING_EXEMPT = {
     # One lock per lane, each lane's worker holding its own while it drains its lane: the
     # queue's wiring, not the league's data (6b L4).
-    ("core/services/queue/change_queue.py", "_working"): "#439 6b L4",
+    ("framework/services/queue/change_queue.py", "_working"): "#439 6b L4",
     # The job each lane's worker is trying, keyed by lane, set only while a job runs: a pack is
     # refused while any lane holds a job, and a factory reset empties every lane (6b L5).
-    ("core/services/queue/change_queue.py", "_trying"): "#439 6b L5",
+    ("framework/services/queue/change_queue.py", "_trying"): "#439 6b L5",
     # Each running lane's worker task, keyed by lane: the queue's own tasks, cancelled by
     # `stop()`, never the league's data (6b L10).
-    ("core/services/queue/change_queue.py", "_workers"): "#439 6b L10",
+    ("framework/services/queue/change_queue.py", "_workers"): "#439 6b L10",
     # Each round job kind's `/test-mode advance` step, held by the advance steps the builder makes
     # and signs up beside each kind's timer handler: the bot's wiring, not the league's data
     # (#283 S21f2).
@@ -120,7 +120,7 @@ ARRIVING_EXEMPT = {
     # The turn channels of the asks waiting out the catch-up after a restart, each dropped once its
     # ask is saved or refused: it dies with the waiting ask, as `_trying`'s entries do with their
     # job, and holds no league state (#440, C4).
-    ("core/services/queue/change_queue.py", "_held_turns"): "#440 C4",
+    ("framework/services/queue/change_queue.py", "_held_turns"): "#440 C4",
 }
 
 #: Stores that hold no league state, and why.
@@ -147,13 +147,13 @@ EXEMPT = {
     ("image/utils/svg_document.py", "_by_class"),
     # The change types the builder registers at start-up: the bot's wiring, not the league's
     # data (#439).
-    ("core/services/queue/change_queue.py", "_types"),
+    ("framework/services/queue/change_queue.py", "_types"),
     # The log-channel warnings being sent to members, each task dropping itself when done
     # (#439).
-    ("core/services/posting/output_router.py", "_tasks"),
+    ("framework/services/posting/output_router.py", "_tasks"),
     # The interactions whose member has been warned that the log channel failed, by id; each
     # lapses with its interaction's 14 minutes (#439).
-    ("core/services/posting/output_router.py", "_warned"),
+    ("framework/services/posting/output_router.py", "_warned"),
     # The connections kept idle to be lent again: the bot's wiring, not league data. Each is
     # re-checked against the database file's identity before it is lent, so a factory reset or a
     # restore that replaces the file leaves none serving the old one (#540).
@@ -276,7 +276,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
     """
     from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
     from leaguebot.framework.utils.hooks import Hook
 
     db_path = str(tmp_path / "queue.db")

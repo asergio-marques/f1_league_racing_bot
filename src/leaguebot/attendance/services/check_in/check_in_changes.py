@@ -30,7 +30,7 @@ from leaguebot.core.models.round import (
     AttendanceWindows,
     read_scheduled_at,
 )
-from leaguebot.core.services.queue.change_types import CheckContext, StepContext
+from leaguebot.framework.services.queue.change_types import CheckContext, StepContext
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.rounds.round_moments import round_event_moments
 from leaguebot.core.services.seasons import season_service

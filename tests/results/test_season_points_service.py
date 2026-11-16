@@ -66,7 +66,7 @@ async def _attach_verdict(tmp_path, *, status: str, name: str):
     the `config_attach` setting's check asked, as a member asks it, to attach *name*.
     Returns the league, the season's id and the check's verdict."""
     from leaguebot.framework.models.change import ChangeOrigin
-    from leaguebot.core.services.queue.change_types import CheckContext
+    from leaguebot.framework.services.queue.change_types import CheckContext
     from leaguebot.results.services.points.points_settings import points_settings
 
     league = await settings_league(tmp_path, modules=("results",))

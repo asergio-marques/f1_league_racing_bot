@@ -55,11 +55,11 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     DiscardedContext,
@@ -69,7 +69,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.posting.channel_tell_change import KIND as CHANNEL_TELL
+from leaguebot.framework.services.posting.channel_tell_change import KIND as CHANNEL_TELL
 from leaguebot.core.services.seasons.season_approval_change import (
     GRANT_ROLES,
     driver_roles_step,

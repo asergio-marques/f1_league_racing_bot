@@ -68,8 +68,8 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.core.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.framework.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
 from leaguebot.framework.utils.interaction_errors import failure_reply
 from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
