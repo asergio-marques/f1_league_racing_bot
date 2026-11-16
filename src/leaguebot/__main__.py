@@ -1088,7 +1088,7 @@ async def build(settings: Settings) -> LeagueBot:
     image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
-        db_path=settings.db_path, bot=bot,
+        db_path=settings.db_path,
     )
     bot.image_drawing = image_drawing
 

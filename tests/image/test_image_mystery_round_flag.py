@@ -54,7 +54,7 @@ async def test_the_standings_headings_name_the_mystery_datum(db_path):
 
     from leaguebot.image.services.aspects.image_standings_post import _calendar
 
-    headings, ordinals = await _calendar(SimpleNamespace(db_path=db_path), 5)
+    headings, ordinals = await _calendar(db_path, 5)
 
     assert [h.country for h in headings] == [
         "United Kingdom",
@@ -70,7 +70,7 @@ async def test_the_mystery_heading_still_names_no_circuit(db_path):
 
     from leaguebot.image.services.aspects.image_standings_post import _calendar
 
-    headings, _ = await _calendar(SimpleNamespace(db_path=db_path), 5)
+    headings, _ = await _calendar(db_path, 5)
     assert headings[1].track is None
 
 
@@ -119,7 +119,7 @@ async def test_a_mystery_round_keeps_its_flag_through_the_fill(db_path):
         build_fill_spec,
     )
 
-    headings, _ = await _calendar(SimpleNamespace(db_path=db_path), 5)
+    headings, _ = await _calendar(db_path, 5)
     root = etree.parse(
         str(
             __import__("pathlib").Path(__file__).resolve().parents[2]

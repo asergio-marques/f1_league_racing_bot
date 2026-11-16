@@ -32,7 +32,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import discord
 
-    from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.image.models.forecast_values import ForecastValues
     from leaguebot.image.services.aspects.image_attendance_service import AttendanceDrawing
     from leaguebot.image.services.aspects.image_verdict_banner_service import VerdictBannerDrawing
@@ -190,23 +189,18 @@ class ImageDrawing:
         renderer: ImageRenderService,
         post_log: Callable[[str], Awaitable[object]],
         db_path: str,
-        bot: LeagueBot | None = None,
     ) -> None:
         self._modules = modules
         self._config = config
         self._validity = validity
         self._renderer = renderer
         self._post_log = post_log
-        #: The database the lineup's drawing reads: the division, its committed seats, and
-        #: whether nationality is collected. Required like `renderer` and `post_log`, even
-        #: though the calendar and the capacity questions read none of it, so that a drawing
-        #: is never built unable to do what `draw_lineup` needs.
+        #: The database the lineup's, the verdict's, the results' and the standings' drawings
+        #: read: the division, its committed seats, the names and whether nationality is
+        #: collected. Required like `renderer` and `post_log`, even though the calendar and the
+        #: capacity questions read none of it, so that a drawing is never built unable to do
+        #: what it is asked.
         self._db_path = db_path
-        #: The bot, which the verdict's, the results' and the standings' resolving still read
-        #: the services of others through, until they are handed what they read instead.
-        #: Optional so that a drawing built for the other answers (the capacity questions, the
-        #: calendar, either lineup) needs none.
-        self._bot = bot
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
         """The template's path where the module and *aspect* are both drawn and the template
@@ -740,10 +734,8 @@ class ImageDrawing:
             image_verdict_post.VERDICTS_ASPECT, image_verdict_post.VERDICTS_TEMPLATE_KEY
         ):
             return None, ()
-        if self._bot is None:
-            raise RuntimeError("this drawing was built without the bot, so it cannot draw a verdict")
         drawing = await image_verdict_post.build_drawing(
-            self._bot, guild=guild, db_path=db_path, round_id=round_id, kind=kind,
+            guild=guild, db_path=db_path, round_id=round_id, kind=kind,
             season_number=season_number, division_name=division_name,
             round_number=round_number, session_label=session_label, driver_name=driver_name,
             driver_discord_id=driver_discord_id, penalty_description=penalty_description,
@@ -839,10 +831,8 @@ class ImageDrawing:
         template_key = template_key_for(session_result.session_type)
         if not await self.aspect_wanted(image_results_post.RESULTS_ASPECT, template_key):
             return None, ()
-        if self._bot is None:
-            raise RuntimeError("this drawing was built without the bot, so it cannot draw results")
         drawing = await image_results_post.build_drawing(
-            self._bot, guild, session_result=session_result, driver_rows=driver_rows,
+            self._db_path, self._config, guild, session_result=session_result, driver_rows=driver_rows,
             points_map=points_map, round_number=round_number, race_name=race_name,
             is_sprint=is_sprint, result_status=result_status, division_name=division_name,
             division_tier=division_tier, season_number=season_number,
@@ -900,15 +890,13 @@ class ImageDrawing:
         }
         if not any(wanted.values()):
             return StandingsDrawn()
-        if self._bot is None:
-            raise RuntimeError("this drawing was built without the bot, so it cannot draw standings")
         subject = (
             f"{division_name} round {round_number}"
             if occasion.names_a_round
             else f"{division_name} — {occasion.label()}"
         )
         drawings = await image_standings_post.build_drawings(
-            self._bot, guild, db_path=db_path, division_id=division_id, round_id=round_id,
+            guild, db_path=db_path, division_id=division_id, round_id=round_id,
             round_number=round_number, driver_snapshots=driver_snapshots,
             team_snapshots=team_snapshots, reserve_user_ids=reserve_user_ids,
             show_reserves=show_reserves, result_status=result_status,

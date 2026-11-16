@@ -334,7 +334,7 @@ def _drawing_of(league: _League) -> Any:
         return bot.image_drawing
     return ImageDrawing(
         bot.module_service, MagicMock(), MagicMock(), renderer=MagicMock(), post_log=AsyncMock(),
-        db_path=league.db_path, bot=bot,
+        db_path=league.db_path,
     )
 
 

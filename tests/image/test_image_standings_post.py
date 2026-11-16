@@ -112,7 +112,7 @@ def _drawing(*, module=True, toggle=True, drivers_valid=True, constructors_valid
     })
     return ImageDrawing(
         modules, config, validity, renderer=MagicMock(),
-        post_log=post_log if post_log is not None else AsyncMock(), db_path="db", bot=MagicMock(),
+        post_log=post_log if post_log is not None else AsyncMock(), db_path="db",
     )
 
 
@@ -493,7 +493,6 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     drivers, constructors = await build_drawings(
-        bot,
         _guild(),
         db_path=db_path,
         division_id=division_id,
@@ -529,7 +528,6 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     drivers, constructors = await build_drawings(
-        bot,
         _guild(),
         db_path=db_path,
         division_id=division_id,
@@ -564,7 +562,6 @@ async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     drivers, _constructors = await build_drawings(
-        bot,
         _guild(),
         db_path=db_path,
         division_id=division_id,
@@ -625,7 +622,6 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
     )
 
     drawings = await build_drawings(
-        bot,
         _guild(),
         db_path=db_path,
         division_id=division_id,
@@ -678,7 +674,6 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     _drivers, constructors = await build_drawings(
-        bot,
         _guild(),
         db_path=db_path,
         division_id=division_id,
@@ -1235,7 +1230,6 @@ async def _highlighted_svg(tmp_path):
     bot.image_config_service = config_service
 
     drawings = await build_drawings(
-        bot,
         _guild(),
         db_path=db_path,
         division_id=division_id,

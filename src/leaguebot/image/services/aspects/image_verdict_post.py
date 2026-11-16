@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING
 from leaguebot.core.db.database import get_connection
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing, VerdictKind
-from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.image.services.config.image_config_service import ImageConfigService
@@ -141,7 +140,7 @@ async def _driver_nationality(
 
 
 async def team_name_for_entry(
-    bot: LeagueBot, guild, *, division_id: int, team_id: int | None
+    db_path: str, guild, *, division_id: int, team_id: int | None
 ) -> str | None:
     """The team whose car the driver drove, resolved as the results graphic resolves it.
 
@@ -157,21 +156,21 @@ async def team_name_for_entry(
     try:
         from leaguebot.image.services.aspects.image_results_post import _team_names
 
-        names = await _team_names(bot, guild, division_id, [int(team_id)])
+        names = await _team_names(db_path, guild, division_id, [int(team_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
         log.warning("verdicts: team name unreadable for team %s: %s", team_id, exc, exc_info=True)
         return None
     return names.get(int(team_id))
 
 
-async def team_key_for_entry(bot: LeagueBot, *, team_id: int | None) -> str | None:
+async def team_key_for_entry(db_path: str, *, team_id: int | None) -> str | None:
     """The shorthand of the team whose car the driver drove, which its badge is found by."""
     if team_id is None:
         return None
     try:
         from leaguebot.image.services.aspects.image_results_post import _team_keys
 
-        keys = await _team_keys(bot, [int(team_id)])
+        keys = await _team_keys(db_path, [int(team_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
         log.warning("verdicts: team shorthand unreadable for team %s: %s", team_id, exc, exc_info=True)
         return None
@@ -179,7 +178,7 @@ async def team_key_for_entry(bot: LeagueBot, *, team_id: int | None) -> str | No
 
 
 async def _mention_names(
-    bot: LeagueBot, guild, *, driver_discord_id: int, driver_name: str, texts
+    db_path: str, guild, *, driver_discord_id: int, driver_name: str, texts
 ) -> dict[str, str]:
     """The name each mention in *texts* is drawn as, keyed by the id it addresses (#142).
 
@@ -216,7 +215,7 @@ async def _mention_names(
     try:
         from leaguebot.image.services.aspects.image_results_post import _driver_names
 
-        resolved = await _driver_names(bot, guild, [int(user_id) for user_id in wanted])
+        resolved = await _driver_names(db_path, guild, [int(user_id) for user_id in wanted])
     except Exception as exc:  # noqa: BLE001 — a name is not worth a failed render
         log.warning("verdicts: mention names unreadable: %s", exc, exc_info=True)
         return names
@@ -229,7 +228,6 @@ async def _mention_names(
 
 
 async def build_drawing(
-    bot: LeagueBot,
     *,
     guild,
     db_path: str,
@@ -274,7 +272,7 @@ async def build_drawing(
     # the driver that mention names, and not the driver being sanctioned (#142). The graphic
     # mentions nobody (XIV.16, v4.8.0).
     names = await _mention_names(
-        bot,
+        db_path,
         guild,
         driver_discord_id=driver_discord_id,
         driver_name=driver_name,

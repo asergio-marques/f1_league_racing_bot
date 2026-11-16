@@ -120,7 +120,7 @@ class TestSignupRecordsJoin:
 
         await seed(db_path, nationality=nationality)
 
-        assert await _nationalities(bot, [user_id]) == {user_id: nationality}
+        assert await _nationalities(db_path, [user_id]) == {user_id: nationality}
 
     async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
         """The fourth site, which joined the phantom column until this was written."""
@@ -143,7 +143,7 @@ class TestSignupRecordsJoin:
 
         await _seed_driver(db_path, name="Ada Lovelace")
 
-        names = await _driver_names(bot, None, [USER_ID])
+        names = await _driver_names(db_path, None, [USER_ID])
 
         assert names.get(USER_ID) == "Ada Lovelace"
 

@@ -30,11 +30,6 @@ class _Channel:
         self.allowed_mentions.append(allowed_mentions)
 
 
-class _Bot:
-    def __init__(self) -> None:
-        self.db_path = ":memory:"
-
-
 def _drawing():
     """The image drawing a verdict is posted with, over services that are never asked: the
     fixture below stands in for its gate, its resolution and its render."""
@@ -44,7 +39,7 @@ def _drawing():
 
     return ImageDrawing(
         MagicMock(), MagicMock(), MagicMock(), renderer=MagicMock(), post_log=AsyncMock(),
-        db_path=":memory:", bot=_Bot(),
+        db_path=":memory:",
     )
 
 
@@ -71,7 +66,7 @@ def stub_image_path(monkeypatch, tmp_path):
     async def _wanted(_self, _aspect, _template_key=None):
         return state["enabled"]
 
-    async def _build(_bot, **kwargs):
+    async def _build(**kwargs):
         """Stands in for `build_drawing` wholesale; it is not a model of it.
 
         The resolver below names every mention after the penalised driver, which the real

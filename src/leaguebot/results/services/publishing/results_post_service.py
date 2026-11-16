@@ -388,7 +388,7 @@ async def driver_standings_for_display(
     from leaguebot.image.services.aspects.image_results_post import _driver_names
 
     names = await _driver_names(
-        bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
+        db_path, guild, [s.driver_user_id for s in snaps], division_id=division_id
     )
     return await standings_service.compute_driver_standings(
         db_path, division_id, round_id, names
@@ -426,7 +426,7 @@ async def standings_display_names(
     from leaguebot.image.services.aspects.image_results_post import _driver_names
 
     return await _driver_names(
-        bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
+        db_path, guild, [s.driver_user_id for s in snaps], division_id=division_id
     )
 
 

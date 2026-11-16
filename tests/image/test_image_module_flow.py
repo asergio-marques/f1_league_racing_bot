@@ -2471,7 +2471,7 @@ def _drawing_over(bot):
 
     return ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
-        renderer=bot.image_render_service, post_log=AsyncMock(), db_path=bot.db_path, bot=bot,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path=bot.db_path,
     )
 
 

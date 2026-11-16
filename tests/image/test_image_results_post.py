@@ -127,7 +127,7 @@ def _image_drawing(bot):
     return ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
-        db_path=bot.db_path, bot=bot,
+        db_path=bot.db_path,
     )
 
 
@@ -449,7 +449,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
     captured: dict = {}
 
-    async def capture(bot, guild, **kwargs):
+    async def capture(db_path, config, guild, **kwargs):
         captured.update(kwargs)
         return _drawing()
 
@@ -488,7 +488,7 @@ async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     png.write_bytes(b"\x89PNG")
     captured: dict = {}
 
-    async def capture(bot, guild, **kwargs):
+    async def capture(db_path, config, guild, **kwargs):
         captured.update(kwargs)
         return _drawing()
 

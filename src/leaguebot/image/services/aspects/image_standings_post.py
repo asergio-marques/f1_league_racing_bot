@@ -39,7 +39,6 @@ from leaguebot.image.services.aspects.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -96,7 +95,7 @@ def lines_of(what: str, decision) -> tuple[str, ...]:
 # ── The data behind the two drawings ──────────────────────────────────────
 
 
-async def _calendar(bot: LeagueBot, division_id: int):
+async def _calendar(db_path: str, division_id: int):
     """The division's whole calendar as ``RoundHeading``s, and the ordinal of each round id.
 
     Every round the division holds is headed, run or not: the grid is the season's shape,
@@ -107,9 +106,9 @@ async def _calendar(bot: LeagueBot, division_id: int):
     from leaguebot.core.services.rounds.round_context import division_rounds
     from leaguebot.image.services.aspects.image_standings_service import RoundHeading
 
-    tracks = await tracks_by_name(bot.db_path)
+    tracks = await tracks_by_name(db_path)
 
-    rows = await division_rounds(bot.db_path, division_id)
+    rows = await division_rounds(db_path, division_id)
 
     headings = []
     ordinal_of_round: dict[int, int] = {}
@@ -137,7 +136,7 @@ async def _calendar(bot: LeagueBot, division_id: int):
     return headings, ordinal_of_round
 
 
-async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int]):
+async def _round_session_results(db_path: str, ordinal_of_round: dict[int, int]):
     """Round ordinal -> session type value -> the rows of that session.
 
     A round with no active session result is **absent** from the mapping, which is how the
@@ -150,7 +149,7 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
         return {}
 
     placeholders = ",".join("?" * len(ordinal_of_round))
-    async with get_connection(bot.db_path) as db:
+    async with get_connection(db_path) as db:
         rows = await (
             await db.execute(
                 f"SELECT id, round_id, session_type FROM session_results "
@@ -171,13 +170,13 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
                 row["session_type"],
             )
             continue
-        driver_rows = await load_driver_rows(bot.db_path, row["id"], session_type)
+        driver_rows = await load_driver_rows(db_path, row["id"], session_type)
         results.setdefault(ordinal, {})[session_type.value] = driver_rows
 
     return results
 
 
-async def _seats(bot: LeagueBot, division_id: int):
+async def _seats(db_path: str, division_id: int):
     """The division's seating, in the three shapes the two drawings need.
 
     Returns ``(assignments, counts, driver_team_names, driver_team_keys)`` — the first two
@@ -198,7 +197,7 @@ async def _seats(bot: LeagueBot, division_id: int):
     # seating leaves it out, whatever state its driver is in.
     from leaguebot.core.services.drivers.division_seating import division_seating
 
-    for team in await division_seating(bot.db_path, division_id):
+    for team in await division_seating(db_path, division_id):
         counts[team.team_instance_id] = team.max_seats
 
         for seat in team.seats:
@@ -217,7 +216,6 @@ async def _seats(bot: LeagueBot, division_id: int):
 
 
 async def build_drawings(
-    bot: LeagueBot,
     guild,
     *,
     db_path: str,
@@ -254,19 +252,19 @@ async def build_drawings(
     driver_keys = [s.driver_user_id for s in driver_snapshots]
     team_keys = [s.team_instance_id for s in team_snapshots]
 
-    names = await _driver_names(bot, guild, driver_keys, division_id=division_id)
-    nationalities = await _nationalities(bot, driver_keys, division_id=division_id)
+    names = await _driver_names(db_path, guild, driver_keys, division_id=division_id)
+    nationalities = await _nationalities(db_path, driver_keys, division_id=division_id)
     collected = await _nationality_collected(db_path)
 
     # A constructors row *is* a team, so that graphic's names are keyed by the team. A
     # drivers row names the team its own driver sits in, so that graphic's are keyed by driver.
-    team_names_by_team = await _team_names(bot, guild, division_id, team_keys)
-    artwork_keys_by_team = await _team_keys(bot, team_keys)
+    team_names_by_team = await _team_names(db_path, guild, division_id, team_keys)
+    artwork_keys_by_team = await _team_keys(db_path, team_keys)
 
-    headings, ordinal_of_round = await _calendar(bot, division_id)
-    session_results = await _round_session_results(bot, ordinal_of_round)
+    headings, ordinal_of_round = await _calendar(db_path, division_id)
+    session_results = await _round_session_results(db_path, ordinal_of_round)
     seat_assignments, seat_counts, driver_team_names, driver_team_keys = await _seats(
-        bot, division_id
+        db_path, division_id
     )
 
     driver_current = [

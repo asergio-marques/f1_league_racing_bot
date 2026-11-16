@@ -1495,7 +1495,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/preview/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"): (1, PASS["image"]),
-    ("image/services/aspects/image_results_post.py", "build_drawing"): (1, PASS["image"]),
     ("image/services/validity/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
 }
 

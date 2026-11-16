@@ -260,7 +260,7 @@ async def test_results_graphic_names_a_team_after_its_role_is_replaced(tmp_path)
     guild = MagicMock()
     guild.get_role.return_value = None
 
-    names = await _team_names(_bot(db_path), guild, DIVISION_ID, [teams["Ferrari"]])
+    names = await _team_names(db_path, guild, DIVISION_ID, [teams["Ferrari"]])
 
     assert names == {teams["Ferrari"]: "Ferrari"}
 

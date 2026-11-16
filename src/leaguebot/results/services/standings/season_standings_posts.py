@@ -292,7 +292,7 @@ async def post_opening_standings(
         # ordered. The first pass is read only for who is in it; the second is the one that counts.
         roster = await standings_service.opening_driver_standings(db_path, division_id)
         names = await _driver_names(
-            bot, guild, [snapshot.driver_user_id for snapshot in roster], division_id=division_id
+            db_path, guild, [snapshot.driver_user_id for snapshot in roster], division_id=division_id
         )
         driver_snaps = await standings_service.opening_driver_standings(db_path, division_id, names)
         team_snaps = await standings_service.opening_team_standings(db_path, division_id)

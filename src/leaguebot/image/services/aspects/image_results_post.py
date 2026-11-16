@@ -24,7 +24,6 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.aspects.image_lineup_service import resolve_driver_name
-from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.image.services.config.image_config_service import ImageConfigService
@@ -111,7 +110,7 @@ async def season_of_division(db_path: str, division_id: int | None) -> int | Non
 
 
 async def _driver_names(
-    bot: LeagueBot, guild, user_ids: list[int], *, division_id: int | None = None
+    db_path: str, guild, user_ids: list[int], *, division_id: int | None = None
 ) -> dict[int, str]:
     """The name each driver is drawn under (XIV.16, and the wip-spec's person-name rule).
 
@@ -124,9 +123,9 @@ async def _driver_names(
 
     recorded: dict[int, tuple] = {}
     if user_ids:
-        season_id = await season_of_division(bot.db_path, division_id)
+        season_id = await season_of_division(db_path, division_id)
         placeholders = ",".join("?" * len(user_ids))
-        async with get_connection(bot.db_path) as db:
+        async with get_connection(db_path) as db:
             rows = await (
                 await db.execute(
                     f"SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name, "
@@ -168,7 +167,7 @@ async def _driver_names(
 
 
 async def _nationalities(
-    bot: LeagueBot, user_ids: list[int], *, division_id: int | None = None
+    db_path: str, user_ids: list[int], *, division_id: int | None = None
 ) -> dict[int, str | None]:
     """Each driver's recorded nationality, or None where they stated none.
 
@@ -178,9 +177,9 @@ async def _nationalities(
     """
     if not user_ids:
         return {}
-    season_id = await season_of_division(bot.db_path, division_id)
+    season_id = await season_of_division(db_path, division_id)
     placeholders = ",".join("?" * len(user_ids))
-    async with get_connection(bot.db_path) as db:
+    async with get_connection(db_path) as db:
         rows = await (
             await db.execute(
                 f"SELECT dp.discord_user_id, "
@@ -195,7 +194,7 @@ async def _nationalities(
     return {int(row["discord_user_id"]): (row["nationality"] or None) for row in rows}
 
 
-async def _team_names(bot: LeagueBot, guild, division_id: int, team_ids: list[int]) -> dict[int, str]:
+async def _team_names(db_path: str, guild, division_id: int, team_ids: list[int]) -> dict[int, str]:
     """The name of each division team a session records, keyed by the team's id.
 
     A session records the division's **team** an entry drove for, never its Discord role
@@ -206,10 +205,10 @@ async def _team_names(bot: LeagueBot, guild, division_id: int, team_ids: list[in
     """
     from leaguebot.core.services.drivers.team_service import team_names_for_instances
 
-    return await team_names_for_instances(bot.db_path, team_ids)
+    return await team_names_for_instances(db_path, team_ids)
 
 
-async def _team_keys(bot: LeagueBot, team_ids: list[int]) -> dict[int, str]:
+async def _team_keys(db_path: str, team_ids: list[int]) -> dict[int, str]:
     """The shorthand of each division team a session records, which its artwork is found by.
 
     Apart from the name drawn (#381): a team is drawn by its full name, and its badge file is
@@ -217,11 +216,12 @@ async def _team_keys(bot: LeagueBot, team_ids: list[int]) -> dict[int, str]:
     """
     from leaguebot.core.services.drivers.team_service import team_artwork_keys_for_instances
 
-    return await team_artwork_keys_for_instances(bot.db_path, team_ids)
+    return await team_artwork_keys_for_instances(db_path, team_ids)
 
 
 async def build_drawing(
-    bot: LeagueBot,
+    db_path: str,
+    config_service: ImageConfigService,
     guild,
     *,
     session_result,
@@ -242,7 +242,7 @@ async def build_drawing(
     user_ids = [row.driver_user_id for row in driver_rows]
     team_ids = [row.team_instance_id for row in driver_rows]
 
-    config = await bot.image_config_service.get_config()
+    config = await config_service.get_config()
 
     return resolve_drawing(
         session_type=session_result.session_type,
@@ -256,18 +256,18 @@ async def build_drawing(
         driver_rows=driver_rows,
         points_map=points_map,
         driver_names=await _driver_names(
-            bot, guild, user_ids, division_id=session_result.division_id
+            db_path, guild, user_ids, division_id=session_result.division_id
         ),
         team_names=await _team_names(
-            bot, guild, session_result.division_id, team_ids
+            db_path, guild, session_result.division_id, team_ids
         ),
-        team_keys=await _team_keys(bot, team_ids),
+        team_keys=await _team_keys(db_path, team_ids),
         nationalities=await _nationalities(
-            bot, user_ids, division_id=session_result.division_id
+            db_path, user_ids, division_id=session_result.division_id
         ),
         dsq_phase_map=dsq_phase_map or {},
         fastest_lap_colour=getattr(config, "fastest_lap_colour", None),
-        nationality_collected=await _nationality_collected(bot.db_path),
+        nationality_collected=await _nationality_collected(db_path),
     )
 
 

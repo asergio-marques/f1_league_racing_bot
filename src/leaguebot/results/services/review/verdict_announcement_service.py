@@ -129,7 +129,7 @@ async def _graphic_name(
     try:
         from leaguebot.image.services.aspects.image_results_post import _driver_names
 
-        names = await _driver_names(bot, guild, [int(discord_user_id)])
+        names = await _driver_names(bot.db_path, guild, [int(discord_user_id)])
     except sqlite3.Error as exc:
         log.warning("verdicts: driver name unreadable for %s: %s", discord_user_id, exc, exc_info=True)
     else:
@@ -734,11 +734,11 @@ async def announce_verdict(
             description_text=record.get("description") or NOT_PROVIDED,
             justification_text=record.get("justification") or NOT_PROVIDED,
             team_name=await image_verdict_post.team_name_for_entry(
-                bot, guild, division_id=result_ctx["division_id"],
+                db_path, guild, division_id=result_ctx["division_id"],
                 team_id=record.get("team_instance_id"),
             ),
             team_key=await image_verdict_post.team_key_for_entry(
-                bot, team_id=record.get("team_instance_id")
+                db_path, team_id=record.get("team_instance_id")
             ),
             as_text=as_text,
         )

@@ -61,11 +61,6 @@ class _Guild:
         )
 
 
-class _Bot:
-    def __init__(self, db_path: str) -> None:
-        self.db_path = db_path
-
-
 # ── Seeding ───────────────────────────────────────────────────────────────
 
 
@@ -112,7 +107,6 @@ async def _draw(
     from leaguebot.image.services.aspects.image_verdict_post import build_drawing
 
     return await build_drawing(
-        _Bot(db_path),
         guild=guild,
         db_path=db_path,
         round_id=ROUND_ID,
@@ -399,7 +393,6 @@ async def test_the_badge_is_found_by_the_shorthand_while_the_full_name_is_drawn(
     await _seed(db_path, [(ALICE, "Alice Smith", None)])
 
     drawing = await build_drawing(
-        _Bot(db_path),
         guild=_Guild(),
         db_path=db_path,
         round_id=ROUND_ID,

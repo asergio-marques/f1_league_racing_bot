@@ -146,7 +146,7 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
     async def _wanted(self: Any, aspect: str, template_key: str | None = None) -> bool:
         return True if aspect == "verdicts" else await real_wanted(self, aspect, template_key)
 
-    async def _build(_bot: Any, **kwargs: Any) -> Any:
+    async def _build(**kwargs: Any) -> Any:
         built.append(kwargs)
         return VerdictDrawing(
             kind=kwargs["kind"], season_number=kwargs["season_number"],
