@@ -37,7 +37,7 @@ from leaguebot.core.services.seasons.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
     confirmation_in_hand,
 )
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.framework.services.posting.output_router import OutputRouter
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.seasons.season_approval_change import (

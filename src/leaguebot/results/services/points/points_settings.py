@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     import discord
 
     from leaguebot.framework.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 CONFIG_ADD = "results.setting.config_add"

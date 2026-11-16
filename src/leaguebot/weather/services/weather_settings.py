@@ -48,7 +48,7 @@ from leaguebot.weather.services.weather_config_service import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.framework.utils.hooks import AwaitedHook
 

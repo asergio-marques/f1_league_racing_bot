@@ -203,7 +203,7 @@ async def test_a_check_in_call_whose_images_switch_nobody_signed_up_for_stops_it
     module's switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own
     wiring. The fault reaches the call's job, which stops; the call is not posted as text with a
     "the graphic could not be drawn" line, as a picture that merely would not draw is."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     league = await _league(tmp_path)
     _draw_with(league, tmp_path, "notice")

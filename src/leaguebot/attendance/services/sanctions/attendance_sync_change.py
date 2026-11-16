@@ -82,7 +82,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview

@@ -703,7 +703,7 @@ async def _season_db(
 def _daily_bot(db_path, directory, **config_overrides):
     """A bot whose image configuration asks for portraits refreshed daily at 03:00 UTC, the
     stored default, reading the image module's switch from *db_path* as the bot does."""
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.config.module_switch_settings import images_enabled_on
 
     values = {"use_pfp": True, "pfp_daily": True, "pfp_daily_time": "03:00",

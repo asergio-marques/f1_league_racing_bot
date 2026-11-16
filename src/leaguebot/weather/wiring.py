@@ -19,7 +19,7 @@ from leaguebot.image.services.render.image_drawing import as_image_drawing
 
 if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.utils.hooks import StartUpStep
     from leaguebot.framework.utils.league_bot import LeagueBot
 

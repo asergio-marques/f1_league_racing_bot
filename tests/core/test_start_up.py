@@ -386,7 +386,7 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
     read passed over; the queue starts unless its start was what failed, and the scheduler is
     resumed, last. The line is pinned word for word, its ❌ mark included: the shape of a Discord
     event's failure line, naming the step that failed."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     module = _fresh_start_up()
     record = _Recorder()

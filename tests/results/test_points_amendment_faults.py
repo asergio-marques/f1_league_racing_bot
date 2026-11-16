@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from tests.support.points_league import BETA_ATTENDANCE, SEASON_ID, points_league
 
 

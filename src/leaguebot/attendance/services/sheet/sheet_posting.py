@@ -41,7 +41,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.services.posting import standing_posts
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
 from leaguebot.core.services.seasons.season_service import division_first_round
 from leaguebot.framework.utils.league_server import league_guild

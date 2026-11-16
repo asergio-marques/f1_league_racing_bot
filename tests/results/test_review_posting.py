@@ -2030,7 +2030,7 @@ async def test_a_picture_whose_images_switch_nobody_signed_up_for_stops_its_job(
     images module's switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's
     own wiring, raised as the *draw* picture is asked for. The fault reaches that post's job,
     which stops; its table is not posted as text in the picture's place."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)

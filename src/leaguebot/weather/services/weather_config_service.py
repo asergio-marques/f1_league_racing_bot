@@ -22,7 +22,7 @@ from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 _DEFAULTS = WeatherPipelineConfig()  # default field values only
 

@@ -55,7 +55,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import renumber_rounds_on
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.utils.messages import discord_ts

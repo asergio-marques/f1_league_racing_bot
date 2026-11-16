@@ -432,7 +432,7 @@ async def test_a_guard_whose_switch_nobody_signed_up_for_raises(tmp_path):
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a guard that cannot run, so the placement raises it rather than
     letting the driver through unchecked."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({name: SwitchNotSignedUp("images") for name in GUARDS})

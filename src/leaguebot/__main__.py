@@ -35,7 +35,7 @@ from leaguebot.signup import wiring as signup_wiring
 from leaguebot.weather import wiring as weather_wiring
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_review_changes import DrawnPicture
     from leaguebot.core.services.modules.hub_service import HubOptions
 
@@ -1070,7 +1070,7 @@ async def build(settings: Settings) -> LeagueBot:
     bot.team_service = TeamService(settings.db_path)
 
     from leaguebot.core.services.modules.hub_service import HubOptions
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 

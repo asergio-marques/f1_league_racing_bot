@@ -148,7 +148,7 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     """
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.__main__ import register_module_switches
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
     bot = league_double(db_path)
     bot.user.id = 77

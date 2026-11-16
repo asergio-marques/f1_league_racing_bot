@@ -59,7 +59,7 @@ from leaguebot.image.services.config.image_settings import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.seasons.season_service import SeasonService
 

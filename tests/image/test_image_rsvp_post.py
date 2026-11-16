@@ -85,7 +85,7 @@ async def test_a_call_whose_switch_nobody_signed_up_for_raises():
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and Division
     1's round 1 check-in call at Silverstone is drawn: that is a fault in the bot's assembly, not a
     gate that cannot be read, so it is raised rather than answered as a call without a picture."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot = MagicMock()

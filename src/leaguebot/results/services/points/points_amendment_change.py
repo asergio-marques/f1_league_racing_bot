@@ -62,7 +62,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.framework.services.queue.queue_records import (
     in_hand,
 )

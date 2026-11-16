@@ -92,7 +92,7 @@ from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.seasons.season_service import SeasonService
 

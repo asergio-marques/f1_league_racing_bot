@@ -698,7 +698,7 @@ async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers.lineup_posting import lineup_step
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
     from tests.support.change_queue import in_a_job
 
     league = await ongoing_league(tmp_path)

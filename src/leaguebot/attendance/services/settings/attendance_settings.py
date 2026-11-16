@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 KIND_PREFIX = "attendance.setting."

@@ -19,7 +19,7 @@ from leaguebot.results.services.module.module_switch_settings import results_ena
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 

@@ -476,7 +476,7 @@ async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tm
     switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own wiring.
     Alex runs `/attendance sync` for Pro from round 1: the fault reaches the sheet's job, which
     stops; the sheet is not posted as text with a line saying its picture could not be drawn."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     league = await _scored_league(tmp_path, images=True)
     league.bot.module_service.is_images_enabled = AsyncMock(

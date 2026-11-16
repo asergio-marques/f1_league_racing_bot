@@ -216,7 +216,7 @@ async def test_a_forecast_whose_switch_nobody_signed_up_for_raises(monkeypatch):
     phase 2 forecast in Division 1 is drawn: that is a fault in the bot's assembly, not a switch
     that cannot be read, so it is raised rather than handed back as the forecast's fault line."""
     import leaguebot.image.services.aspects.image_weather_post as post
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     bot = _bot()
     bot.module_service.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))

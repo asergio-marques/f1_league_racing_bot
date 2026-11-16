@@ -26,7 +26,7 @@ from leaguebot.core.services.drivers.driver_service import (
     current_account_map_for_division,
     driver_test_names_on,
 )
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_lifecycle_service import season_stage_on
 from leaguebot.core.services.seasons.season_service import (

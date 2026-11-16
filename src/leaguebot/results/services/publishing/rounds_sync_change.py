@@ -38,7 +38,7 @@ from leaguebot.results.services.round_amendment.amendment_writes import sync_hel
 from leaguebot.results.services.publishing.results_post_service import division_repost_status
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 

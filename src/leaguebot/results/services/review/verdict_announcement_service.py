@@ -19,7 +19,7 @@ import discord
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.services.posting.notice_handler import send_notice
 from leaguebot.framework.models.change import StepFailedOnDiscord
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import (
     current_account_map_for_division,

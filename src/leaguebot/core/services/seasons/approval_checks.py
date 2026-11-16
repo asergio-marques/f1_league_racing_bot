@@ -27,7 +27,7 @@ from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
-from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise

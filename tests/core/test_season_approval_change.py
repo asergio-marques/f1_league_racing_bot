@@ -28,7 +28,7 @@ import pytest
 
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (

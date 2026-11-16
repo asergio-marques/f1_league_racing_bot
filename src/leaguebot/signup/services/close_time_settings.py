@@ -40,7 +40,7 @@ from leaguebot.signup.services.window_close import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

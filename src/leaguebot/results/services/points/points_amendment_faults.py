@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import season_exists
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import league_guild

@@ -47,7 +47,7 @@ from leaguebot.core.services.modules.image_drawing import (
     Held,
     LineupPicture,
 )
-from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (

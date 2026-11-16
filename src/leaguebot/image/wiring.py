@@ -15,7 +15,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.utils.hooks import StartUpStep
     from leaguebot.framework.utils.league_bot import LeagueBot
 

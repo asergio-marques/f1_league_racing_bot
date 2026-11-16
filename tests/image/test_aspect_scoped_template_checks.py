@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.image.models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.image.services.render.image_drawing import ImageDrawing
 from leaguebot.image.services.validity.image_validity_service import (
     blocking_template_problems,

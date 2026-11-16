@@ -19,7 +19,7 @@ from leaguebot.core.services.seasons.review_sections import Review, ReviewSectio
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 
 async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:

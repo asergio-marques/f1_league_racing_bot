@@ -64,7 +64,7 @@ from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.services.posting.output_router import OutputRouter
 
 log = logging.getLogger(__name__)

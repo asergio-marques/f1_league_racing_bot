@@ -110,7 +110,7 @@ from leaguebot.weather.utils.message_builder import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 

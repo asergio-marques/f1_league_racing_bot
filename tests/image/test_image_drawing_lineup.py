@@ -133,7 +133,7 @@ async def test_a_lineup_gate_whose_switch_nobody_signed_up_for_raises():
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a gate that cannot be read, so it is raised rather than answered as
     text."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     drawing, _, _, modules = _drawing()
     modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
@@ -152,7 +152,7 @@ async def test_every_aspect_gate_lets_a_switch_nobody_signed_up_for_through(aspe
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and the image
     drawing is asked whether *aspect* is drawn: the fault is raised, not answered as text, whichever
     of the nine pictures asks."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     drawing, _, _, modules = _drawing()
     modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))

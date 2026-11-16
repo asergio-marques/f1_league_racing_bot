@@ -66,7 +66,7 @@ from leaguebot.signup.services.signup_settings import open_to_change
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.framework.utils.hooks import AwaitedHook

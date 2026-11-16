@@ -210,7 +210,7 @@ async def test_a_switch_nobody_signed_up_for_is_raised_not_read_as_text():
     the bot's assembly, not a gate that cannot be read, so it is raised rather than answered as
     text."""
     drawing, _, _, modules = _drawing()
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
 

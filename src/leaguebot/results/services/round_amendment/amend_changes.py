@@ -62,7 +62,7 @@ from leaguebot.results.services.submission.submission_steps import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.settings.config_service import ConfigService
 
 KIND = "results.amend.open"

@@ -92,7 +92,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 

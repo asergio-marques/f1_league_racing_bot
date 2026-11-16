@@ -48,7 +48,7 @@ from leaguebot.results.services.points.season_points_service import get_attached
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 AMEND_MODE = "results.setting.amend_mode"

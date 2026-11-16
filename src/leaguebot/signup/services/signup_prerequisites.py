@@ -22,7 +22,7 @@ from leaguebot.core.utils.channel_guard import league_role_faults
 if TYPE_CHECKING:
     import discord
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

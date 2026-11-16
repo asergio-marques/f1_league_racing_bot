@@ -24,7 +24,7 @@ from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKin
 from leaguebot.framework.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.framework.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.signup.services.signup_module_service import SignupModuleService, signup_enabled_on
 

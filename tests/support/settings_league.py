@@ -65,7 +65,7 @@ def scheduler_double(*, fails: bool = False) -> MagicMock:
 async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
                           now: datetime = NOW) -> SettingsLeague:
     """The league of the module docstring, with *modules* on."""
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.render.image_render_service import ImageRenderService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService

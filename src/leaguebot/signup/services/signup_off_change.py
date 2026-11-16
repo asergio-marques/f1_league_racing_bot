@@ -88,7 +88,7 @@ from leaguebot.signup.services.window_changes import (
 
 if TYPE_CHECKING:
     from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)

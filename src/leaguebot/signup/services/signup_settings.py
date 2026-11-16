@@ -42,7 +42,7 @@ from leaguebot.signup.services.signup_module_service import settings_on, slots_o
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 KIND_PREFIX = "signup.setting."

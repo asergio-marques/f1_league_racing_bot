@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from leaguebot.image.services.preview.preview_sources import PreviewSources
     from leaguebot.image.services.render.image_render_service import ImageRenderService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
