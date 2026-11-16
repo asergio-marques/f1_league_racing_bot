@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
+    from leaguebot.framework.services.posting.league_settings import LeagueSettings
 
 
 class LeagueBot(commands.Bot):
@@ -74,6 +75,10 @@ class LeagueBot(commands.Bot):
     came_up_at: datetime
 
     config_service: ConfigService
+    #: The league's settings as the framework asks them (`LeagueSettings`): the builder hands it
+    #: the configuration service, which is the one that answers. The server lookup reads this, not
+    #: `config_service`, so that what moves to the framework never reads a core service.
+    league_settings: LeagueSettings
     season_service: SeasonService
     scheduler_service: SchedulerService
     output_router: OutputRouter

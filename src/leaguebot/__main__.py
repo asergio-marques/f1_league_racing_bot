@@ -1047,6 +1047,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.services.drivers.team_service import TeamService
 
     bot.config_service = ConfigService(settings.db_path)
+    bot.league_settings = bot.config_service
     bot.season_service = SeasonService(settings.db_path)
     bot.scheduler_service = SchedulerService(
         settings.db_path, settings.jobstore_path

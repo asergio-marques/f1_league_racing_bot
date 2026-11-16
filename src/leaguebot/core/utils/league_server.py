@@ -77,7 +77,7 @@ async def is_foreign_guild(bot: LeagueBot, guild_id: int | None) -> bool:
     """
     if guild_id is None:
         return False
-    league = await bot.config_service.get_league_server_id()
+    league = await bot.league_settings.get_league_server_id()
     return league is not None and guild_id != league
 
 
@@ -120,7 +120,7 @@ async def league_guild(bot: LeagueBot) -> discord.Guild | None:
     The one route from a scheduled job or a restart to the guild: the id lives in
     `server_configs` and nowhere else, so nothing reads it off a data row.
     """
-    league = await bot.config_service.get_league_server_id()
+    league = await bot.league_settings.get_league_server_id()
     return None if league is None else bot.get_guild(league)
 
 
@@ -140,7 +140,7 @@ async def admits(
     this task answers: discord.py runs the check and the body in one task, so every log line
     the body writes can find its member there if the log channel cannot take it.
     """
-    league = await client.config_service.get_league_server_id()
+    league = await client.league_settings.get_league_server_id()
     if league is None:
         # A direct message is refused too, where a view asks: a press in one acts on the
         # league's data as surely as a press in a server does.

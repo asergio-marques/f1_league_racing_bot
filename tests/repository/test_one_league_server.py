@@ -131,7 +131,6 @@ async def test_only_another_server_is_foreign():
     assert await is_foreign_guild(_bot(None), ELSEWHERE) is False
 
 
-@pytest.mark.xfail(strict=True, reason="#544: league_guild reads core's config_service, not the bot's league_settings")
 async def test_the_league_s_guild_is_found_through_its_configuration():
     """The framework's settings protocol is all the lookup asks of the bot: a bot carrying only
     `league_settings` finds the league's guild, with no service of core's on it."""
