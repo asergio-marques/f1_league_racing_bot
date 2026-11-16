@@ -574,7 +574,6 @@ async def _state(league, user_id):
     return row["current_state"]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the sack's audit values are not written with sorted keys")
 async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_roles_and_lineups(
     tmp_path,
 ):

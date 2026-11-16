@@ -1937,8 +1937,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 #: writers.
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/drivers/driver_service.py", "_merge"): (1, "#544"),
-    ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, "#544"),
-    ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, "#544"),
     ("core/services/rounds/round_amend_change.py", "_round_change.apply"): (1, "#544"),
     ("core/services/seasons/season_lifecycle_service.py", "_turn_down_on"): (1, "#544"),
     ("core/services/seasons/season_lifecycle_service.py", "run_driver_pass_on"): (1, "#544"),
