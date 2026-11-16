@@ -574,6 +574,7 @@ async def _state(league, user_id):
     return row["current_state"]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the sack's audit values are not written with sorted keys")
 async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_roles_and_lineups(
     tmp_path,
 ):
@@ -584,10 +585,10 @@ async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_role
     role touched and no lineup posted until the queue runs the change, of kind `core.driver_sack`.
     Once it has, Lewis holds no seat and is at Not Signed Up, every other driver where they sat;
     one audit entry, `DRIVER_SACK`, by Admin, stamped with the queue's clock, records him Assigned
-    in Pro before and Not Signed Up after; the log channel holds today's success line once; Lewis
-    has Pro's role, Ferrari's and the driver role taken; Pro's lineup is posted once in its lineup
-    channel and Am's not at all; and the acknowledgement is updated to today's reply, word for
-    word."""
+    in Pro before and Not Signed Up after, each value JSON with its keys sorted; the log channel
+    holds today's success line once; Lewis has Pro's role, Ferrari's and the driver role taken;
+    Pro's lineup is posted once in its lineup channel and Am's not at all; and the
+    acknowledgement is updated to today's reply, word for word."""
     from tests.core.test_driver_move import _STANDING, _seated
     from tests.support.change_queue import change_rows, run_queue, step_rows
     from tests.support.season_league import (
@@ -615,6 +616,13 @@ async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_role
     assert (entry["change_type"], entry["actor_id"]) == ("DRIVER_SACK", 77)
     assert entry["old_value"] == {"state": "ASSIGNED", "divisions": [PRO]}
     assert entry["new_value"]["new_state"] == DriverState.NOT_SIGNED_UP.value
+    [written] = await league.rows(
+        "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'DRIVER_SACK'"
+    )
+    assert (written["old_value"], written["new_value"]) == (
+        json.dumps(entry["old_value"], sort_keys=True),
+        json.dumps(entry["new_value"], sort_keys=True),
+    )
     assert entry["timestamp"] == league.clock.now.isoformat()
     assert _sack_lines(await log_lines(league)) == [_sack_line("Lewis", LEWIS)]
     assert sorted(league.revoked[LEWIS]) == [PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE]
