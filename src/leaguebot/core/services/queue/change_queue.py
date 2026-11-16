@@ -237,9 +237,9 @@ from leaguebot.core.utils.member_names import interaction_member, member_named
 from leaguebot.utils.messages import chunk_message
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.posting.league_settings import LeagueSettings
 
 log = logging.getLogger(__name__)
 
@@ -356,7 +356,7 @@ class ChangeQueue:
         db_path: str,
         bot: "LeagueBot",
         output_router: "OutputRouter",
-        config_service: "ConfigService",
+        config_service: "LeagueSettings",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:

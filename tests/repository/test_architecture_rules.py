@@ -898,7 +898,6 @@ def _files_naming_the_log_channel() -> set[str]:
     return found
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the framework's settings row does not exist yet")
 def test_only_the_router_writes_the_log_channel():
     """Every log line goes through `OutputRouter` (architecture.md, "Posting to Discord"), which
     keeps the rules for log lines in one place: no one is mentioned, a long record is split, and

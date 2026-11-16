@@ -46,9 +46,9 @@ from leaguebot.utils.messages import chunk_message
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
-    from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.models.league_settings import SettingsRow
+    from leaguebot.framework.services.posting.league_settings import LeagueSettings
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class OutputRouter:
     def __init__(
         self,
         bot: "LeagueBot",
-        config_service: "ConfigService",
+        config_service: "LeagueSettings",
         retry_db_path: "Optional[str]" = None,
         *,
         now: Callable[[], datetime],
@@ -117,7 +117,7 @@ class OutputRouter:
         config = await self._config.get_server_config()
         return None if config is None else config.log_channel_id
 
-    async def _read_config(self, caller: str) -> "Optional[ServerConfig]":
+    async def _read_config(self, caller: str) -> "Optional[SettingsRow]":
         """The server configuration for a line to post, or ``None`` where it cannot be had.
 
         ``None`` is a bot not yet set up, or a database that refuses the read. The log writer
@@ -368,11 +368,8 @@ class OutputRouter:
         packed row exists with ``log_channel_id`` NULL, which would otherwise be inserted into
         ``pending_messages.channel_id`` (NOT NULL) and fail there instead of here.
         """
-        cursor = await db.execute(
-            "SELECT log_channel_id FROM server_configs WHERE server_id IS NOT NULL"
-        )
-        row = await cursor.fetchone()
-        if row is None:
+        config = await self._config.get_server_config_on(db)
+        if config is None:
             log.error("queue_log_on: the bot is not set up, so there is no log channel")
             return None
         cursor = await db.execute(
@@ -380,7 +377,7 @@ class OutputRouter:
             "(channel_id, content, failure_reason, enqueued_at, retry_count, last_attempted_at) "
             "VALUES (?, ?, '', ?, 0, NULL)",
             (
-                row["log_channel_id"],
+                config.log_channel_id,
                 self._as_log_line(content),
                 self._now().isoformat(),
             ),

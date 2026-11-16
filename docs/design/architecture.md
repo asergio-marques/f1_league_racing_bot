@@ -1680,7 +1680,7 @@ later on its own.
   background tasks nobody keeps, code reaching past the framework's scheduler, the entry point
   subscribing a module to a hook only that module joins (that module's wiring signs it up), jobs
   armed with a lateness limit, private names used across modules, a new place naming the log
-  channel (the check lists the six allowed, with their reasons), posting outside the handlers (the
+  channel (the check lists the nine allowed, with their reasons), posting outside the handlers (the
   four handler files are passed over, `POSTING_ALLOWED`, as is a function named in
   `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated nor
   named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
@@ -1710,7 +1710,7 @@ later on its own.
   reporting and writing a log line, the fourth place's hand-off across a thread, and the fifth and
   sixth places' handlers), and a save outside a queued change. The job check and the check of
   cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
-  channel's check holds its six places for good; every other check lists today's breaches, each
+  channel's check holds its nine places for good; every other check lists today's breaches, each
   under the work that removes it. The check of a save outside a queued change counts each
   function's `.commit()` and `.executescript()` calls, and a function writing on a handed
   connection commits nothing and is not counted. It
