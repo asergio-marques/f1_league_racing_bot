@@ -384,9 +384,10 @@ reading none of weather's tables. Where `attach_forecast` returns no file, the f
 text. It hands back, with the file or without, the lines saying why a picture that was due was not
 drawn; which reasons those are, and when no picture is due, the specification's "Image generation"
 says. The two switches are asked first, so that nothing is read for a picture not due. The graphic
-has the catch-alls `architecture.md` allows it ("Errors and failures"): one around its drawing, the
-place for a graphic that rides on a post, and one around reading the round to name the line of a
-switch that could not be read, the place for naming something in a line, which leaves the line
+has the catch-alls `architecture.md` allows it ("Errors and failures"): one around its drawing, and
+one around reading its switch (`ImageDrawing._weather_gate`, whose reason becomes the line's), both
+of the place for a graphic that rides on a post, and one around reading the round to name the line
+of a switch that could not be read, the place for naming something in a line, which leaves the line
 naming the phase, or the notice, alone. A line names the round, and its phase or the notice, as the
 image specification's "Weather image generation", "Generation and posting" has it, through
 `describe`. Weather hands the notice's picture as phase 0, so its line names the notice without the
