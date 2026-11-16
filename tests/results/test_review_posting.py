@@ -1872,6 +1872,57 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     assert REPOST_COMMAND[picture] in put_right and "template" not in put_right, line
 
 
+#: Why a picture whose upload is cut off by a connection error is not yet posted as text.
+CUT_OFF_STOPS_THE_QUEUE = (
+    "#288: a results or standings picture whose upload fails with a connection error stops the "
+    "queue, rather than going out as text in the same try as at the base"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=CUT_OFF_STOPS_THE_QUEUE)
+@pytest.mark.parametrize("picture", ["results", "standings"])
+async def test_a_picture_whose_upload_is_cut_off_is_posted_as_text_in_the_same_try(
+    tmp_path, picture,
+):
+    """Round 3's results and standings in Pro are posted again with *picture* drawn, its render
+    coming back with one notice, a flag falling back; the picture's upload, the first send to its
+    channel, is cut off by a connection error, not refused by Discord. The table goes out as text
+    in the same try and the queue runs to the end, as at the base; the notice reaches the log
+    channel once, and a line there names round 3 and the *picture* picture gone out as text."""
+    import aiohttp
+
+    league = await _built_league(tmp_path)
+    if picture == "results":
+        target = RESULTS_CHANNEL
+        drawn = await _drawn(league, tmp_path, "results", notice=NOTICE_DETAIL)
+    else:
+        target = STANDINGS_CHANNEL
+        drawn = await _drawn(league, tmp_path, "standings", championships=("drivers",),
+                             notice=NOTICE_DETAIL)
+    channel = league.channel(target)
+    send, sends = channel.send.side_effect, itertools.count(1)
+
+    async def _cut_off_first(*args: Any, **kwargs: Any) -> Any:
+        if next(sends) == 1:
+            raise aiohttp.ClientOSError(104, "Connection reset by peer")
+        return await send(*args, **kwargs)
+
+    channel.send.side_effect = _cut_off_first
+    with drawn:
+        await _ask(league)
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    texts = [channel.messages[mid].content for kind, ch, mid in league.events
+             if ch == target and kind in ("send", "edit") and mid in channel.messages]
+    assert texts and all("Round 3" in text for text in texts)
+    log = "\n".join(league.bot.log_channel.sent)
+    assert log.count(NOTICE_DETAIL) == 1, log
+    assert any(picture in message.lower() and "text" in message.lower()
+               and "round 3" in message.lower()
+               for message in league.bot.log_channel.sent), log
+
+
 # ---------------------------------------------------------------------------
 # A drawn picture's render notices reach the log channel once, under what was drawn
 # ---------------------------------------------------------------------------
