@@ -10,6 +10,7 @@ Covers:
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -246,6 +247,38 @@ async def test_clear_pending_on_deletes_every_undelivered_line_and_counts_them(t
 
     async with get_connection(db_path) as db:
         assert await clear_pending_on(db) == 0
+
+
+@pytest.mark.xfail(strict=True, reason="#544: the retry queue has no pending_channel_ids_on")
+async def test_pending_channel_ids_on_gives_each_bound_channel_and_skips_a_value_not_an_id(
+    tmp_path, caplog
+):
+    """`pending_channel_ids_on` gives, on the caller's connection, every channel a log line still
+    waiting for delivery is bound for, each once. With no line waiting it gives none. Three lines
+    then wait, two for channel 100 and one for channel 200, and a fourth row holds ``not-an-id``
+    where its channel should be: it gives 100 and 200, and logs the bad value instead of failing,
+    so that one bad row never stops a clean-up reaching the rest."""
+    from leaguebot.framework.services.posting.retry_service import pending_channel_ids_on
+
+    db_path = await _make_db(str(tmp_path))
+    async with get_connection(db_path) as db:
+        assert set(await pending_channel_ids_on(db)) == set()
+
+    await enqueue(db_path, 100, "msg A", "err", now=NOW)
+    await enqueue(db_path, 100, "msg B", "err", now=NOW)
+    await enqueue(db_path, 200, "msg C", "err", now=NOW)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO pending_messages (channel_id, content, failure_reason, enqueued_at) "
+            "VALUES ('not-an-id', 'msg D', 'err', ?)",
+            (NOW.isoformat(),),
+        )
+        await db.commit()
+
+    caplog.set_level(logging.WARNING)
+    async with get_connection(db_path) as db:
+        assert await pending_channel_ids_on(db) == {100, 200}
+    assert any("not-an-id" in record.getMessage() for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------
