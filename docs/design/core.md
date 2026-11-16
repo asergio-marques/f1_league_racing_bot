@@ -48,6 +48,14 @@ record, written by `run_migrations` alone.
 | `queued_change_steps` (the framework's) | one job: a step of a change | `UNIQUE (change_id, position)` |
 | `season_review_prompts` | one standing season-review question | keyed by its message id |
 
+**Core writes the audit log and reads the queue through the framework.** The four tables marked as
+the framework's are not written or read by core's own SQL. A change's audit entry is written by the
+framework's writers (`record_change_on`, `record_system_change_on`), each handed the raw old and new
+values, which the writer encodes as JSON with sorted keys, so no core site chooses an encoding of its
+own; the queue's records (`pending_job_on`, `in_hand_on`, `step_done_at_on`) and the retry queue
+(`clear_pending_on`, `pending_channel_ids_on`) answer what core asks of the queue, on the connection
+it is handed. The repository's checks of a table's owner hold none of this as a listed breach.
+
 **A season keeps two states.** `status` is the coarse one, `stage` the lifecycle's, and the
 database keeps them in step: the `seasons_stage_*` triggers fill `stage` from `status`, carry it
 with a write of `status` alone, and refuse a pair that does not match. `core/models/season.py`
