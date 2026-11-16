@@ -2834,14 +2834,26 @@ async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_i
 # ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
 
 
-@pytest.mark.parametrize("refused", ["the picture", "everything"])
+#: Why a refused final standings picture's log line is not yet pinned as written.
+REFUSED_PICTURE_UNLOGGED = (
+    "#288: a refused final standings picture goes out as text with no line in the log channel "
+    "saying Discord refused it, or why"
+)
+
+
+@pytest.mark.parametrize("refused", [
+    pytest.param("the picture",
+                 marks=pytest.mark.xfail(strict=True, reason=REFUSED_PICTURE_UNLOGGED)),
+    "everything",
+])
 async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_try(
     tmp_path, monkeypatch, refused,
 ):
     """Images on, both championships drawn. Pro's standings channel refuses (the picture) every
     send carrying a picture: the final standings go out as text in the same try, the job is
     done without stopping the queue and the season is completed, as a refused round's
-    standings picture is ("No, same try everywhere"); nothing is recorded of them, as before.
+    standings picture is ("No, same try everywhere"); nothing is recorded of them, as before, and
+    the log channel says the picture was refused, with Discord's reason, and went out as text.
     Where it refuses (everything) the text too, the queue stops at the job and the season is
     not completed."""
     from tests.support.season_league import draw_standings_pictures, refuses_pictures
@@ -2869,5 +2881,12 @@ async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_t
     assert any("**Driver Standings**" in text for text in texts), texts
     assert any("**Team Standings**" in text for text in texts), texts
     assert all(not files for files in standings.files), "a picture was posted"
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    refusals = [line for line in lines
+                if "refused" in line.lower() and "missing access" in line.lower()]
+    assert refusals, lines
+    assert all("standings" in line.lower() and "text" in line.lower() for line in refusals), \
+        refusals
+    assert len(refusals) == len(set(refusals)), refusals
     assert await _status(league) == "COMPLETED"
 

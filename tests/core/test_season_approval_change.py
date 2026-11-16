@@ -2288,7 +2288,18 @@ async def test_an_opening_sheet_replaces_a_sheet_already_standing_by_a_job(tmp_p
 # ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
 
 
-@pytest.mark.parametrize("refused", ["the picture", "everything"])
+#: Why a refused opening standings picture's log line is not yet pinned as written.
+REFUSED_PICTURE_UNLOGGED = (
+    "#288: a refused opening standings picture goes out as text with no line in the log channel "
+    "saying Discord refused it, or why"
+)
+
+
+@pytest.mark.parametrize("refused", [
+    pytest.param("the picture",
+                 marks=pytest.mark.xfail(strict=True, reason=REFUSED_PICTURE_UNLOGGED)),
+    "everything",
+])
 async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same_try(
     tmp_path, monkeypatch, refused,
 ):
@@ -2296,8 +2307,10 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     standings channel refuses (the picture) every send carrying a picture: the opening
     standings go out as text in the same try, and the job is done without stopping the queue,
     as a refused round's standings, lineup or results table picture is ("No, same try
-    everywhere"); nothing is recorded of them, as before. Where it refuses (everything) the
+    everywhere"); nothing is recorded of them, as before, and the log channel says the picture
+    was refused, with Discord's reason, and went out as text. Where it refuses (everything) the
     text too, the queue stops at the job, as a refused post does."""
+    from tests.support.change_queue import queued_log_lines
     from tests.support.season_league import draw_standings_pictures, refuses_pictures
 
     league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
@@ -2323,6 +2336,13 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     assert any("**Driver Standings**" in text for text in texts), texts
     assert any("**Team Standings**" in text for text in texts), texts
     assert all(not files for files in standings.files), "a picture was posted"
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    refusals = [line for line in lines
+                if "refused" in line.lower() and "missing access" in line.lower()]
+    assert refusals, lines
+    assert all("standings" in line.lower() and "text" in line.lower() for line in refusals), \
+        refusals
+    assert len(refusals) == len(set(refusals)), refusals
     jobs = [job for job in await _jobs(league) if job["name"] == "opening_standings"]
     assert jobs and all(job["done_at"] and job["tries"] == 0 for job in jobs), jobs
 
