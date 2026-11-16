@@ -39,7 +39,7 @@ from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, Ste
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
 from leaguebot.core.utils.paths import resolve_within_project_root
-from leaguebot.core.utils.timezones import is_known_zone
+from leaguebot.utils.timezones import is_known_zone
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
     ASSET_DIRECTORIES,

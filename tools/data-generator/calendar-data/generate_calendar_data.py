@@ -148,7 +148,7 @@ def load_zone_validator(src_dir=SRC_DIR):
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
     try:
-        from leaguebot.core.utils.timezones import is_known_zone
+        from leaguebot.utils.timezones import is_known_zone
     except ImportError as error:
         raise ValueError(
             f"Could not import the bot's time-zone list from {src_dir} ({error}). "

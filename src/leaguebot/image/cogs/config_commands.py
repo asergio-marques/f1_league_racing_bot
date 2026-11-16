@@ -27,7 +27,7 @@ from leaguebot.core.utils.paths import (
     relative_to_root,
     resolve_within_project_root,
 )
-from leaguebot.core.utils.timezones import clear_zone_cache, zone_names
+from leaguebot.utils.timezones import clear_zone_cache, zone_names
 from leaguebot.image.cogs.image_group import CONFIG_GROUP, ImageSubgroup
 from leaguebot.image.services.config.image_config_service import tier_name_refusal
 from leaguebot.image.services.config.image_settings import (
@@ -47,7 +47,7 @@ from leaguebot.image.services.preview.configuration_report import (
 
 log = logging.getLogger(__name__)
 
-#: The memoised zone list, which now lives in `core/utils/timezones.py` so that the round
+#: The memoised zone list, which now lives in `utils/timezones.py` so that the round
 #: importer can validate a zone without importing this cog — and Discord with it. Kept
 #: under its old name here because the autocomplete below and its tests both reach for it,
 #: and the move is not a change to either. `clear_zone_cache` is re-exported above for the
