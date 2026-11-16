@@ -169,6 +169,7 @@ def _daily(monkeypatch, tmp_path, config: Any) -> Any:
     bot = MagicMock()
     bot.image_config_service.get_config = AsyncMock(return_value=config)
     monkeypatch.setattr(league_server, "league_guild", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(driver_portrait_service, "images_are_on", AsyncMock(return_value=True))
     monkeypatch.setattr(
         image_render_service, "resolve_configured_directories",
         lambda *_args, **_kwargs: ({"driver": tmp_path}, []),

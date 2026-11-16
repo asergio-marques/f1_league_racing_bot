@@ -50,7 +50,7 @@ import base64
 import logging
 import os
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import discord
@@ -360,6 +360,31 @@ async def assigned_driver_ids(db_path: str) -> list[str]:
     return sorted(str(row["uid"]) for row in rows)
 
 
+#: How long after its time of day a daily refresh is still made. A run that fires later than this
+#: was missed, the bot being down at its time, and is skipped rather than made late.
+MISSED_AFTER = timedelta(minutes=5)
+
+
+async def images_are_on(db_path: str) -> bool:
+    """Whether the image module is switched on, read through the reader the builder signs up with
+    the module service (`images_enabled_on`) on a connection of its own."""
+    from leaguebot.image.services.config.module_switch_settings import images_enabled_on
+
+    async with get_connection(db_path) as db:
+        return await images_enabled_on(db)
+
+
+def _fired_late(now: datetime, time_of_day: str) -> bool:
+    """Whether *now* is later than `MISSED_AFTER` past the latest moment *time_of_day* (``HH:MM``,
+    UTC) came round: the refresh's own due moment, the job carrying no lateness limit to say."""
+    hour, _, minute = time_of_day.partition(":")
+    now = now.astimezone(timezone.utc)
+    due = now.replace(hour=int(hour), minute=int(minute), second=0, microsecond=0)
+    if due > now:
+        due -= timedelta(days=1)
+    return now - due > MISSED_AFTER
+
+
 async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> int:
     """The daily portrait refresh for the league. Returns how many were written.
 
@@ -367,14 +392,25 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
     driver seated in the active season. It also passes no wall-clock budget: nothing is
     waiting on it, and a roster that takes a minute at 03:00 costs nobody anything.
 
+    It reads the image module's switch as it fires and does nothing while the module is off. It
+    is handed *now* by the builder's callback and judges a run missed from it against the time of
+    day it is due at (`MISSED_AFTER`), skipping it, since the job is armed with no lateness limit
+    of its own; where it is handed none, as in a test of the refresh itself, it judges nothing.
+
     Never raises. It is an APScheduler job, and an exception here would be logged into a void
     the league never reads.
     """
     try:
+        if not await images_are_on(bot.db_path):
+            return 0
         config = await bot.image_config_service.get_config()
         if config is None or not getattr(config, "use_pfp", False):
             return 0
         if not getattr(config, "pfp_daily", False):
+            return 0
+        time_of_day = getattr(config, "pfp_daily_time", None)
+        if now is not None and time_of_day and _fired_late(now, str(time_of_day)):
+            log.info("driver portraits: the daily refresh fired late and is skipped")
             return 0
 
         from leaguebot.core.utils.league_server import league_guild

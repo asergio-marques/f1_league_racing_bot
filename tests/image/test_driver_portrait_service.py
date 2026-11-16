@@ -759,14 +759,7 @@ async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatc
     [
         ({"pfp_daily": False}, True),
         ({"use_pfp": False}, True),
-        pytest.param(
-            {}, False,
-            id="image-module-off",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#288: the daily refresh does not read the image module's switch",
-            ),
-        ),
+        pytest.param({}, False, id="image-module-off"),
     ],
 )
 async def test_the_daily_refresh_stands_aside_when_not_asked_for(
@@ -787,9 +780,6 @@ async def test_the_daily_refresh_stands_aside_when_not_asked_for(
         bot.get_guild.return_value.get_member(user_id).display_avatar.read.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#288: the daily refresh runs however late it fires"
-)
 async def test_a_daily_refresh_that_fires_hours_after_its_time_is_skipped(
     tmp_path, monkeypatch
 ):

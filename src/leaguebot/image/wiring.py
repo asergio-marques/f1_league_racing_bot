@@ -88,12 +88,12 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     """Sign up the handler of the daily driver-portrait refresh through `register_timer`.
 
     The trigger is recurring, so recovery re-adds it at its stored time rather than working out
-    whether it was missed: a cron job that did not fire while the bot was down simply fires at
-    its next due time. It reads the bot when it fires."""
+    whether it was missed: the job has no lateness limit, and the refresh, handed the queue's
+    moment, skips a run that fires late. It reads the bot when it fires."""
 
     async def _portrait_refresh_cb() -> None:
         from leaguebot.image.services.portraits.driver_portrait_service import run_daily_refresh
-        await run_daily_refresh(bot)
+        await run_daily_refresh(bot, now=bot.change_queue.now())
 
     bot.scheduler_service.register_timer("portrait_refresh", _portrait_refresh_cb)
 
