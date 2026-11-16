@@ -1,6 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-11-16 — v14.15.0 → v14.15.1: PATCH — Principle X, rule 3: a disable whose job cannot be removed is recorded as done, the failure beside it (issue #288)]
+  Version change    : 14.15.0 → 14.15.1
+  Bump rationale    : PATCH: the wording of the last amendment is corrected to what was built,
+                      narrowing nothing a league relies on. The disable takes effect, so it is
+                      recorded as done; the failure to remove the job is recorded beside it, as
+                      the image module's portrait toggles record a stored setting whose job
+                      could not be removed. Rule 2's contrast stands: an enable whose job cannot
+                      be armed records no success, the job the league asked for not running.
+
+  Modified sections :
+    - Principle X, rule 3 (Disable atomicity) — the exception's last condition, "and no success
+      is recorded", becomes "the disable recorded as done and the failure to remove the job
+      recorded beside it".
+
+  Added sections    : none.
+  Removed sections  : none.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Deferred / TODO   : none.
+
 [2026-11-16 — v14.14.0 → v14.15.0: MINOR — Principle X: the image module's kept configuration listed in full, and a scheduled job a module arms again later may fail to arm or to be removed without undoing its switch (issue #288)]
   Version change    : 14.14.0 → 14.15.0
   Bump rationale    : MINOR: guidance within one principle is materially expanded, without
@@ -6077,7 +6096,7 @@ The following rules MUST hold for every optional module:
    artifacts are removed. A scheduled job whose handler checks the module-enabled flag, and does
    nothing while the module is disabled, MAY be left armed where its removal fails, provided the
    league is told that the disable stands and that the job does nothing while the module is
-   disabled, and no success is recorded.
+   disabled, the disable recorded as done and the failure to remove the job recorded beside it.
 4. **Scheduling guard**: Scheduled jobs (e.g., weather phase timers) MUST only be created or
    re-armed when the relevant module is enabled. On bot restart, the bot MUST check module
    state before re-arming any job.
@@ -9055,4 +9074,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.15.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-16
+**Version**: 14.15.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-16
