@@ -375,6 +375,70 @@ async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try
     assert produce.await_count == 2
 
 
+async def test_the_earlier_try_s_picture_lines_stay_on_what_a_removal_returns(db_path):
+    """The earlier try left message 9201 posted in part and kept the line of a picture Discord
+    refused. Taking 9201 down, `remove_earlier_try` returns what the job keeps, naming nothing
+    left standing and still carrying the line, since a stop's result replaces what the job kept and
+    the retry that posts the text must hand it back once. Where 9201 will not delete, the stop it
+    raises names it as left and carries the line too."""
+    from leaguebot.core.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.results.services.standings import season_standings_posts as service
+
+    line = "⚠️ Standings image — Pro round 2 — drivers standings: refused (Missing Access)"
+    kept = {"new": [9201], "channel_id": 900, DRAWN_LINES: [line]}
+    channel = MagicMock()
+    guild = guild_double()
+    guild.get_channel.side_effect = lambda channel_id: channel if channel_id == 900 else None
+    removals = "leaguebot.results.services.publishing.results_post_service.remove_part_posted_messages"
+
+    with patch(removals, AsyncMock(return_value=([], []))):
+        removed = await service.remove_earlier_try(guild, kept)
+    assert removed == {"new": [], "channel_id": 900, DRAWN_LINES: [line]}
+
+    with patch(removals, AsyncMock(return_value=([9201], [RuntimeError("Missing Permissions")]))):
+        with pytest.raises(StepFailedOnDiscord) as stopped:
+            await service.remove_earlier_try(guild, kept)
+    assert stopped.value.result["new"] == [9201]
+    assert drawn_lines_kept(stopped.value.result) == (line,)
+
+
+async def test_the_final_standings_keep_the_earlier_try_s_picture_lines_when_this_try_fails(
+    db_path,
+):
+    """Div A's final standings were part-posted and a picture refused on the first try, its line
+    kept with the table standing. On the retry the table is taken down, then reading the
+    standings fails on a fault in the bot, not Discord's: the stop that results names nothing
+    left standing and keeps the picture's line."""
+    from leaguebot.core.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.results.services.standings import season_standings_posts as service
+
+    _season_id, division_ids = await seed_season(db_path)
+    division_id = division_ids[0]
+    round_id = await second_round_with_results(db_path, division_id)
+    channel = MagicMock()
+    guild = guild_double()
+    guild.get_channel.side_effect = lambda channel_id: channel if channel_id == 900 else None
+    line = "⚠️ Standings image — Pro — drivers standings: refused (Missing Access)"
+    kept = {"new": [9201], "channel_id": 900, DRAWN_LINES: [line]}
+    remove = AsyncMock(return_value=([], []))
+
+    inputs = _final_inputs(round_id, division_id)
+    with inputs[0], inputs[1], patch(
+        "leaguebot.results.services.publishing.results_post_service.produce_standings",
+        AsyncMock(side_effect=RuntimeError("the teams could not be read")),
+    ), patch(
+        "leaguebot.results.services.publishing.results_post_service.remove_part_posted_messages", remove
+    ):
+        with pytest.raises(StepFailedOnDiscord) as stopped:
+            await service.post_final_standings(
+                _hook(db_path), guild, db_path, division_id, round_id, as_text=True, kept=kept,
+            )
+
+    remove.assert_awaited_once_with(channel, [9201])
+    assert stopped.value.result["new"] == []
+    assert drawn_lines_kept(stopped.value.result) == (line,)
+
+
 async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
     """Div A was never given a standings channel: its final standings post nothing and raise
     nothing."""
