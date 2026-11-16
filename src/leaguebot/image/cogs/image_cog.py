@@ -2038,8 +2038,13 @@ class ImageCog(commands.Cog):
             # preview, which is the thing actually asked for.
             from leaguebot.image.services.render.image_render_service import grouped_notice_lines
 
+            # Headed by what was drawn, as every posting path's block is: a log of many
+            # previews says nothing of which one a notice came from otherwise.
+            subject = f"{title} — {context.division_name}"
+            if context.round is not None:
+                subject += f", round {context.round.round_number}"
             logged = await ImageRenderService.report_notices(
-                self.bot, all_notices
+                self.bot, all_notices, subject=subject
             )
 
             heading = "⚠️ **Notices** — the render survived these:"

@@ -654,8 +654,6 @@ class TestTheNoticeBlock:
 
         assert "http://discord/x/1" in reply
 
-    @pytest.mark.xfail(strict=True, reason="#288: a preview's render notices are logged under "
-                       "a heading that names nothing drawn")
     async def test_the_notices_are_logged_as_well_as_shown(self, cog):
         """`/images test standings` for Division 1 draws with one flag falling back. The notice
         is logged once, in a block whose heading names what was drawn: the standings, of
