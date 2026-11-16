@@ -295,11 +295,11 @@ recalculation; why it does not ask template validity is its docstring's, pinned 
 
 A render that fails is resolved against who asked for the posting (Principle XIV.7). The seven
 aspects drawn through an `image_<aspect>_post` resolve it in
-`ImageRenderService.render_for_posting`, which hands back a `PostingDecision` the caller reads and does exactly one thing with: post the
-picture, fall back to text, or reject the command. Its `posting_origin` is required, and anything
-but a `PostingOrigin` raises. The calendar and the lineup make the same split in their own drawing
-methods (`draw_lineup`, `draw_lineup_for_command`, `draw_review_lineup`) and in core's
-`render_for_command`.
+`ImageRenderService.render_for_posting`, which hands back a `PostingDecision` the caller reads and
+does exactly one thing with: post the picture, fall back to text, or reject the command. Its
+`posting_origin` is required, and anything but a `PostingOrigin` raises. The calendar and the lineup
+make the same split in their own drawing methods (`draw_lineup`, `draw_lineup_for_command`,
+`draw_review_lineup`) and in core's `render_for_command`.
 
 *Rejected:* inferring the origin from whether an interaction is in scope, which is wrong for a
 command that schedules later work and for a retry re-posting what a command originated
