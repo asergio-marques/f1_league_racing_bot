@@ -250,7 +250,10 @@ Because the services stay on the bot, the bot's type (`LeagueBot`) names every s
 every hook core and the modules declare. It does so for the type checker only, under
 `TYPE_CHECKING`, and nothing runs because of it. That is the one place below the modules that names
 what core and the modules hold, and the price of keeping them on the bot. `.importlinter` lists it
-as a stated exception rather than a breach.
+as a stated exception rather than a breach. The one thing the bot carries for the framework is
+`league_settings`, typed as the framework's own settings protocol, which the builder sets to core's
+configuration service, so that the framework reads the league's settings through the protocol and
+never through `config_service`.
 
 ---
 
