@@ -170,7 +170,7 @@ topic. The table names a service by its file.
 | `sanctions/` | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
 | `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id) |
 | `settings/` | `attendance_settings` (the eight), `penalty_recalculation` (a penalty changed while a season is ongoing), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config`; through the sync's save, the recalculation's and the sanctions' tables |
-| `hooks/` | `attendance_hooks` (the deletes, the round's window, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
+| `hooks/` | `attendance_hooks` (the deletes, the round's window, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `preview_sources` (`AttendancePreviewSources`, the check-in deadline the image module's previews draw), `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
 
 **The check-in is four changes, each in a file of its own,** with the file that holds the steps an
 amendment plans over them and the file they share:
@@ -195,7 +195,7 @@ needs when the builder registers it. The jobs and the hooks are handed the servi
 bot, and a function that needs Discord is handed the bot for that.
 
 `derive_checkin_deadline`, the moment a round's check-in closes, stays in
-`attendance_config_service`, where attendance works the deadline out and hands it to the drawing.
+`attendance_config_service`, where attendance works the deadline out and hands it to the drawing and to the previews.
 
 ### The cog
 
@@ -564,10 +564,12 @@ with no placement row there is refused as not a member
 Attendance needs results (`NEEDS`, `core.md`, "The dependency table"): the sanctions and the
 recalculation both stand on a round's results. It may ask the image module to draw its posts, and
 uses no other module (the `attendance-uses-no-other-module-but-results-and-image` contract). The
-image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet (`ImageDrawing.attendance_wanted` and
-`draw_attendance_sheet`), both on the drawing the wiring hands the post jobs, from what attendance
-hands it, the call's deadline included: attendance works it out (`derive_checkin_deadline`) and
-hands it in.
+image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet
+(`ImageDrawing.attendance_wanted` and `draw_attendance_sheet`), both on the drawing the wiring
+hands the post jobs, from what attendance hands it, the call's deadline included: attendance
+works it out (`derive_checkin_deadline`) and hands it in. It also implements the image module's
+`PreviewSources`, which hands the previews that deadline, and the builder hands the
+implementation in as `bot.preview_sources`.
 
 ---
 

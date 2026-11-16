@@ -366,8 +366,8 @@ third is the image module's portrait register (`driver_portraits`, written by `_
 `_disown`): a portrait is fetched from Discord and its file written in a refresh the render budget
 or a stop may cut off, and in a queued job that draws a lineup, so the register is written around
 the file, the row claimed before it and the key recorded after, and each write commits on its own
-connection, apart from any change, including where a queued job draws a lineup or discards a
-portrait; a queued job would make the file's write wait on a record of it.
+connection, apart from any change, including where a queued job discards a portrait; a queued job
+would make the file's write wait on a record of it.
 
 - **The queue is kept in the database,** so a change waiting on it survives a stop.
 - **What whoever asked is told,** and when, is for the core specification, which gains it with the
@@ -996,6 +996,14 @@ from the modules' switches, the clean-up's delay being the one shared delay, so 
 where work is not yet due while other work is in hand and must be looked at again later, as
 results' sweep that undoes an abandoned amendment is. Its module arms it at start-up, replacing
 itself, and it is armed with no lateness limit.
+
+**A standing job at a time of day is a cron job its module arms and disarms with its switch.** It
+is the shape of a refresh that is not tied to any round, as the image module's daily portrait
+refresh is: armed at start-up where its module is on and at the moment the module is switched
+on, and removed when the module is switched off. It is armed with no lateness limit, so the
+scheduler never skips or runs it on its own account, and its handler judges a run missed for
+itself, against the moment the job was due and the `now` it is handed, and skips it, as the core
+specification's "When the bot stops" has it.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
