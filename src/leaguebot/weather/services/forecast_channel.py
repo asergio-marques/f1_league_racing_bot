@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, sole_row, tuple_rows_in
+from leaguebot.framework.db.database import get_connection, sole_row, tuple_rows_in
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse, DiscordTargets
 

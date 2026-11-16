@@ -234,7 +234,7 @@ async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_non
     Once the sync's sheet job is done, and before the deletion after it runs, the division
     records the new sheet as its live one. A sheet that takes no live slot, as the final sheet of
     a season, is saved nowhere: its record leaves the live sheet as it was."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     league = await _scored_league(tmp_path)
     await _old_sheet_standing(league)

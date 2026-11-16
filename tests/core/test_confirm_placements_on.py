@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
     db_path,  # noqa: F401 — the fixture

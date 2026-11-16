@@ -35,7 +35,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     acknowledgement,

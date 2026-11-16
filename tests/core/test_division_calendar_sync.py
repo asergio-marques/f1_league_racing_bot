@@ -37,7 +37,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus
 from leaguebot.core.services.rounds.calendar_post_service import CalendarPosting
 from tests.support.change_queue import (

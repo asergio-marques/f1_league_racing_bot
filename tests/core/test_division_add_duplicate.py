@@ -41,7 +41,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.utils.messages import discord_ts
 from tests.support.setup_rounds import (
     acknowledged,

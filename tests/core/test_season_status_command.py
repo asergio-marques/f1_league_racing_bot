@@ -11,7 +11,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from leaguebot.core.cogs.season_cog import SeasonCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.utils.messages import discord_ts
 from tests.support.change_queue import league_bot
 from tests.support.undecorate import undecorate

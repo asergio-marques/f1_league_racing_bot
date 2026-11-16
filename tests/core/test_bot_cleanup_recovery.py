@@ -37,7 +37,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.start_up_sweep import round_failures, run_weather_start_up_step
 
 SEASON_ID = 1

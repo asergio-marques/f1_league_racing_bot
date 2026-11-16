@@ -14,7 +14,7 @@ import logging
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.framework.models.league_settings import SettingsRow

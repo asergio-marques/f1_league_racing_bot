@@ -50,7 +50,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.cogs.config_commands import XmlImportModal
 from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support import saves

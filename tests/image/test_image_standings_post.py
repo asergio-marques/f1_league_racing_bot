@@ -371,7 +371,7 @@ async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
 
 async def _seed_league(tmp_path):
     """A season, a division, two teams with seats, two drivers, a run round and a next one."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "league.db")
     await run_migrations(db_path)
@@ -723,7 +723,7 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
 
 async def _seed(tmp_path, *, cancelled=False):
     """A database holding one season, division and round, ready to post standings for."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "standings.db")
     await run_migrations(db_path)
@@ -762,7 +762,7 @@ async def _seed(tmp_path, *, cancelled=False):
 
 async def _seed_previous(db_path, division_id, round_id, **ids):
     """Record the message each championship's standings stand as, e.g. ``drivers=4321``."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.publishing.results_post_service import (
         set_standings_message_id_on,
     )
@@ -1061,7 +1061,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
     reported with 4321 as the message it replaces, which is left standing and its id left
     recorded, for the change queue's own jobs to save the new id and delete the old once the new
     one stands (FR-048)."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
     from leaguebot.results.services.publishing.results_post_service import (
         PostedTable,
@@ -1223,7 +1223,7 @@ async def _highlighted_svg(tmp_path):
     explicitly invites, turned the marked test below red with a plate colour of its own. The
     `rasteriser` marker keeps that test out of CI, so nothing else would ever have caught it.
     """
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.image.models.image_constants import packaged_directory_for
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import resolve_configured_directories

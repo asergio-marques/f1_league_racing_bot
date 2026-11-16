@@ -23,7 +23,7 @@ import discord
 import pytest
 from discord import app_commands
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.framework.utils.interaction_errors import failure_reply
 from leaguebot.core.utils.season_gate import stage_refusal

@@ -12,7 +12,7 @@ import sqlite3
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import (
     ALLOWED_STAGE_TRANSITIONS,
     STAGES_OF_STATUS,

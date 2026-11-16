@@ -46,7 +46,7 @@ def _template_file(tmp_path, *, rows: int):
 async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
     """A division of *drivers* drivers on ordinary teams and *reserves* in the reserve team, and
     driver 9999 waiting to be placed."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "sheet_capacity.db")
     await run_migrations(db_path)

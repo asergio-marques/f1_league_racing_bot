@@ -27,7 +27,7 @@ from datetime import datetime
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.setup_rounds import (
     FORMS,
     NAMED,

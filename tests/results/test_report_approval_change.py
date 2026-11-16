@@ -28,7 +28,7 @@ import pytest
 
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (

@@ -101,7 +101,7 @@ from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTrans
 from leaguebot.core.services.drivers.driver_service import state_of_account_on
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )

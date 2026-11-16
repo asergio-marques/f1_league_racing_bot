@@ -41,7 +41,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (

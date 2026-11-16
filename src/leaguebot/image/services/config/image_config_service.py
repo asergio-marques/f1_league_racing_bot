@@ -16,7 +16,7 @@ import logging
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS

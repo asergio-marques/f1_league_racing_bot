@@ -18,7 +18,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from leaguebot.framework.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.cancellations.cancellation_changes import (

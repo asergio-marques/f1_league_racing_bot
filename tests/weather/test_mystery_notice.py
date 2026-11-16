@@ -286,7 +286,7 @@ class TestScheduleAttendanceRoundMystery:
 # ---------------------------------------------------------------------------
 
 async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO server_configs "
@@ -408,7 +408,7 @@ async def test_the_notice_s_record_writes_only_on_the_connection_it_is_handed(tm
     """The notice marks itself given (`mystery_notice_given`) on the save handed, leaving the
     round's Phase 1 undone, no forecast having been drawn, and committing nothing of its own: its flag stands or falls with the job, and the notice is posted by a job after it, so
     a notice Discord refuses no longer leaves the flag set and nothing posted (#439)."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.weather.services.mystery_notice_service import record_mystery_notice_on
 
     db_path = str(tmp_path / "notice_record.db")

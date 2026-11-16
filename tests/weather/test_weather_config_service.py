@@ -33,7 +33,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 from leaguebot.weather.services.weather_config_service import (
     describe_deadlines,

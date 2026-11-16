@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.services.publishing.results_post_service import get_standings_message_id
 from tests.support.change_queue import discard_job, in_a_job, retry_job, run_queue, stopped_job

@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.driver_service import DriverService
 from tests.support.driver_transitions import reassigned
 

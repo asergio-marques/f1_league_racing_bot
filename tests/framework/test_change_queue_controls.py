@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.framework.test_change_queue import (  # noqa: F401 — `env` is the fixture
     NOW,
     STOPPED_AT,

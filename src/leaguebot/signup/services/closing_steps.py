@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import drivers_in_states
 from leaguebot.framework.models.change import (

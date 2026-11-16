@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 #: Noon on 12 October 2026: the moment each step is judged at; round 1 raced an hour before.
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)

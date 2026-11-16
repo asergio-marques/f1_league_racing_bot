@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.upkeep import backup_service, factory_reset_service
 from leaguebot.core.services.upkeep.factory_reset_service import take_backup
 from leaguebot.framework.utils.hooks import AwaitedHook

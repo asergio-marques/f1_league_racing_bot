@@ -10,7 +10,7 @@ types another character and gets a fresh interaction. This decorator makes that 
 mode, and logs the slow calls so a latency regression is visible before it starts failing.
 
 It is the outer net only. The fix for the underlying contention is WAL and the job store
-split; see `core/db/database.py` and `core/services/scheduler_service.py`.
+split; see `framework/db/database.py` and `core/services/scheduler_service.py`.
 """
 
 from __future__ import annotations

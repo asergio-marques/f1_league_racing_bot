@@ -43,7 +43,7 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     deadline_of,
     round_not_owed,
 )
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,

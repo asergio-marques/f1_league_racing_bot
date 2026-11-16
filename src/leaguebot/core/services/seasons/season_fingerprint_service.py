@@ -38,7 +38,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.db.database import get_connection, tuple_rows
+from leaguebot.framework.db.database import get_connection, tuple_rows
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 

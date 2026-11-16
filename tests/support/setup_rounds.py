@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 #: "Now", as the change queue's clock gives it.
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)

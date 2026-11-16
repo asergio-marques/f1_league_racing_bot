@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.core.utils.input_validator import parse_nationality, parse_time, render_lap_time

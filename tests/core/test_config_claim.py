@@ -13,7 +13,7 @@ import sqlite3
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL, ConfigService
 

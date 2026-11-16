@@ -75,7 +75,7 @@ from leaguebot.attendance.services.check_in.check_in_amendment_rules import judg
 from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_steps, take_down_steps
 from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_steps
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, CheckInJobs, Round

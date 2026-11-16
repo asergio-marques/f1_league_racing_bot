@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from tests.support import saves
 from tests.support.change_queue import run_queue

@@ -51,7 +51,7 @@ import pytest
 
 from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
     http_error,

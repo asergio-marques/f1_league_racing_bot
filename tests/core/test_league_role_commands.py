@@ -58,7 +58,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.bot_cog import BotCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 27601

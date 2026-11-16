@@ -277,7 +277,7 @@ async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_ca
     CANCELLED and marked as not held, and one `round.status` audit records it moving from
     AWAITING_REPORT_VERDICTS to CANCELLED; the resubmission closes channel 702 rather than
     asking the review again (core :232-234)."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.results.test_resubmission_changes import (
         REVIEW_OPEN,
         ROUND_ID as REVIEWED_ROUND,
@@ -826,7 +826,7 @@ async def _resubmitting(tmp_path: Any, monkeypatch: Any) -> Any:
 async def _seed_later_round(league: Any) -> None:
     """Round 4 of Pro at Spa, final, won by Max alone for 25 points; its standings post
     `LATER_STANDINGS` stands, Max first on 43 points (18 + 25) and Lewis second on 25."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.publishing.results_post_service import set_standings_message_id_on
     from tests.results.test_review_open_change import DIVISION_ID, STANDINGS_CHANNEL
     from tests.support.review_league import LEWIS, MAX, MAX_PROFILE
@@ -860,7 +860,7 @@ async def _seed_later_round(league: Any) -> None:
 
 async def _snapshot_rounds(league: Any, round_id: int) -> tuple[int, int]:
     """How many driver and team standings rows *round_id* holds."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         counts = []
@@ -983,7 +983,7 @@ async def test_the_next_round_s_movement_is_measured_against_the_round_before(
     final. Round 4's movement is measured against round 3. Alex resubmits round 3 and types
     CANCELLED for both its sessions. When the queue runs, round 4's movement is measured against
     round 2 instead, round 3 holding no standings any more (owner, check 1)."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.standings.standings_service import reference_round_id
     from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _type
     from tests.results.test_review_open_change import DIVISION_ID

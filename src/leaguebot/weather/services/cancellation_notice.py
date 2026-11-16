@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services.cancellations.cancellation_notice_service import (

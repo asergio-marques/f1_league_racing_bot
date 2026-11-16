@@ -59,7 +59,7 @@ def _template_file(tmp_path, *, reserve_slots: int, blocks: int = 2, seats: int 
 
 async def _seed(tmp_path, *, reserves: int):
     """A division carrying *reserves* reserve drivers, and two ordinary teams with empty seats."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "reserve_capacity.db")
     await run_migrations(db_path)

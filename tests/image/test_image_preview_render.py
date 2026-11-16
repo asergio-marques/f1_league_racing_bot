@@ -18,7 +18,7 @@ import pytest
 
 from leaguebot.__main__ import LeaguePreviewSources
 from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.render.image_render_service import ImageRenderService
 from leaguebot.image.services.preview.image_preview_service import (

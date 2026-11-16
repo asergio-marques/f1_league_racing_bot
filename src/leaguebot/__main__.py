@@ -1347,7 +1347,7 @@ async def main() -> None:
     # code, and discord.py logs it as an ERROR with a full traceback. Downgrade just that one.
     install_late_autocomplete_filter()
 
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     # A staged restore is swapped in **here**, before a single service is constructed and
     # before the scheduler opens its job store. Every service captures its path and holds
@@ -1398,7 +1398,7 @@ async def main() -> None:
 
     log.info("Starting bot...")
 
-    from leaguebot.core.db.database import close_connections
+    from leaguebot.framework.db.database import close_connections
 
     try:
         async with bot:

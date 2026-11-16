@@ -908,7 +908,7 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
     handed back, then the reply's round list. Once the queue has run, round 3 is round 4."""
     from collections.abc import Mapping
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.models.amendment import RoundArming
     from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
     from leaguebot.core.services.queue.change_types import Step
@@ -3011,7 +3011,7 @@ async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, s
     outcome reads "Round amended successfully", then, under "Not done", one line per job naming
     Pro, the thing left undone and what to do about it, word for word as today; a take-down whose
     repost is discarded too is named once, by the take-down."""
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
     from leaguebot.core.services.queue.change_types import OutcomeContext, StepView
     from tests.support.change_queue import league_bot
 

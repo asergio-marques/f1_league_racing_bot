@@ -5,7 +5,7 @@ named a driver in a message: the name each profile carries, keyed by account.
 """
 from __future__ import annotations
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.driver_service import driver_test_names_on
 
 

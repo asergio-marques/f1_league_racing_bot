@@ -33,7 +33,7 @@ from dataclasses import dataclass
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)

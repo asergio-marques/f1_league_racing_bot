@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.attendance.services.check_in import check_in_answer_changes as answers
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.attendance.test_seat_join_equivalence import AM, PRO, _seed
 
 

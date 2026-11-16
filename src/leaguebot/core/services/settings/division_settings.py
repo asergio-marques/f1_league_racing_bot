@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import sole_row
+from leaguebot.framework.db.database import sole_row
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.settings.channel_registry_service import (

@@ -46,7 +46,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.review_workflows import (
     run_workflow,
     sign_up_confirmation_refused,

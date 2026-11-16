@@ -29,7 +29,7 @@ import aiosqlite
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from tests.support.change_queue import (
@@ -496,7 +496,7 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
     # Every connection is opened afresh and closed on return for the count: one lent again would
     # be in use without being opened, and so missed. The count is taken where aiosqlite starts a
     # connection's thread and where it closes it, however the connection is opened and closed.
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     await database.close_connections()
     open_now: set[int] = set()

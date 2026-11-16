@@ -43,7 +43,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import http_error, league_bot, league_queue, run_queue, stopped_job
 from tests.support.review_league import channel as recording_channel
 

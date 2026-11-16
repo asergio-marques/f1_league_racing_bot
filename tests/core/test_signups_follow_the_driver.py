@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 

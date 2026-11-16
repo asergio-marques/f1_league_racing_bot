@@ -30,7 +30,7 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP
 from leaguebot.core.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (

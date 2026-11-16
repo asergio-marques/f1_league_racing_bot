@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.setup_rounds import ask_duplicate, round_moments, setup_league
 
 #: Pro's rounds: a normal round at Silverstone on 1 March and a sprint round at Monza on 8 March

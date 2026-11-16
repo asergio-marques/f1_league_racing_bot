@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.points.amendment_mode_service import get_amendment_state
 from tests.support.change_queue import run_queue, stopped_job
 from tests.support.saves import (

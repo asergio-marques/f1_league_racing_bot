@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 
 #: The fault each case raises, as `int()` words one.
 BUG = "invalid literal for int() with base 10: 'x'"
@@ -82,7 +82,7 @@ def _placement_check(factory: str, **handed: Any) -> Callable[..., Awaitable[Non
 
 async def _test_driver_added(tmp_path, monkeypatch) -> None:
     """`/test-mode driver add` of a driver to Team 1 in Alpha, the capacity guard raising."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
     from tests.core.test_test_roster_capacity_guards import TEAMS, _seed
 
@@ -96,7 +96,7 @@ async def _test_driver_added(tmp_path, monkeypatch) -> None:
 
 async def _test_roster_imported(tmp_path, monkeypatch) -> None:
     """A test roster of one driver for Team 1 in Alpha imported, the capacity guard raising."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
     from tests.core.test_test_roster_capacity_guards import TEAMS, _roster, _seed
 
@@ -176,7 +176,7 @@ def _team_save(factory: str, payload: dict) -> Callable[..., Awaitable[None]]:
     live, run with a team service that raises a bug's `ValueError`."""
 
     async def run(tmp_path, monkeypatch) -> None:
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         from leaguebot.core.services.queue.change_types import StepContext
         from leaguebot.core.services.drivers.team_changes import SAVE
 
@@ -244,7 +244,7 @@ async def _reassign_merge_hook_faulted(tmp_path, monkeypatch) -> None:
     """`/driver reassign` of 6501 to 6502 saved, two drivers neither of whom holds the live
     season and who share no division, so the two are merged: a module's part of the merge, called
     through `profiles_merged`, raises."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.queue.change_types import StepContext
     from leaguebot.core.services.drivers.driver_changes import SAVE
     from leaguebot.core.services.drivers.driver_service import DriverService
@@ -268,7 +268,7 @@ async def _reassign_merge_hook_faulted(tmp_path, monkeypatch) -> None:
 
 async def _tiers_checked(tmp_path, monkeypatch) -> None:
     """✅ Approve pressed on season 11's placements review, the tier check raising."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.core.test_do_approve_gates import (
         SEASON_ID, SERVER_ID, _cog, _interaction, _run,
     )

@@ -21,7 +21,7 @@ import pytest
 
 # Imported as a module: pytest tries to collect a bare `TestModeCog` name as a test class.
 from leaguebot.core.cogs import test_mode_cog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     Clock,
     change_rows,

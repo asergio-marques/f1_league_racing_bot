@@ -54,7 +54,7 @@ from leaguebot.attendance.services.sanctions import attendance_sync_change as sy
 from leaguebot.attendance.services.scoring import attendance_recompute
 from leaguebot.attendance.services.sheet import sheet_posting
 from leaguebot.framework.utils.hooks import AwaitedHook
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict, VerdictKind
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus

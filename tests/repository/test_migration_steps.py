@@ -44,7 +44,7 @@ _MAY_DECLARE_A_PRODUCTION_TABLE = {
 def _production_tables() -> set[str]:
     """Every table the migrations declare, and the one `run_migrations` creates for itself."""
     tables = {"schema_migrations"}
-    for sql in sorted((REPO_ROOT / "src" / "leaguebot" / "core" / "db" / "migrations").glob("*.sql")):
+    for sql in sorted((REPO_ROOT / "src" / "leaguebot" / "framework" / "db" / "migrations").glob("*.sql")):
         tables |= {
             match.group(1).lower()
             for match in _DECLARES_A_TABLE.finditer(sql.read_text(encoding="utf-8"))

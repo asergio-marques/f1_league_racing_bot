@@ -81,7 +81,7 @@ async def _league(tmp_path: Any, state: str, *, tracks: tuple[str, ...] = (),
     Alpha and Beta offered, saved in a save of the test's own; his signup channel standing.
     Today's wizard handlers off the queue are stand-ins that do nothing, so that only what the
     answer asks of the queue shows."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.signup.models.signup_module import (
         AvailabilitySlot,
         ConfigSnapshot,

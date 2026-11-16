@@ -47,7 +47,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.review_workflows import (

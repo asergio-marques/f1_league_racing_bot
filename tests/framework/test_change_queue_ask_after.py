@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from leaguebot.framework.models import change
 from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.services.queue import change_queue, change_types

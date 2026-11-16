@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     LOG_CHANNEL_WARNING,
     MEMBER_ID,
@@ -1462,7 +1462,7 @@ async def test_a_job_after_a_restored_state_is_numbered_above_every_job_before_i
     The connections kept idle to be lent again are closed before the restore is applied, as they
     are when the bot stops: the restore is applied at the next start, before any is opened, and
     Windows refuses to replace a file one still holds open."""
-    from leaguebot.core.db.database import close_connections
+    from leaguebot.framework.db.database import close_connections
     from leaguebot.core.services.upkeep import backup_service
 
     _queue(env, _type(steps=[_act("a", [])]))

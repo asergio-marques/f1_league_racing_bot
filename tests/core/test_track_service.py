@@ -13,7 +13,7 @@ import pytest
 async def db(tmp_path):
     """A connection to a migrated database, whose registry is the one every league starts
     with: 1 is Albert Park Circuit, 5 Jeddah Corniche Circuit, 13 Spa-Francorchamps."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     path = str(tmp_path / "tracks.db")
     await run_migrations(path)
@@ -140,7 +140,7 @@ class TestResolveTrackName:
 @pytest.fixture
 async def db_file(tmp_path) -> str:
     """A migrated database's path, its registry the one every league starts with."""
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     path = str(tmp_path / "tracks.db")
     await run_migrations(path)
@@ -150,7 +150,7 @@ async def db_file(tmp_path) -> str:
 class TestReadByPath:
     async def test_every_track_is_listed_in_id_order(self, db_file) -> None:
         """What `/track list` and the circuit autocomplete show: every track, by id."""
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         from leaguebot.core.services.rounds.track_service import get_all_tracks, list_tracks
 
         async with get_connection(db_file) as db:

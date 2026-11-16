@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.cogs.use_pfp_commands import PortraitTimeConfirm, PortraitTimeModal
 from tests.support.change_queue import run_queue

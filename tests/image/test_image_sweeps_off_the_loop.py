@@ -35,7 +35,7 @@ from leaguebot.image.services.portraits import driver_portrait_service
 from leaguebot.image.services.render import image_render_service
 from leaguebot.image.services.validity import image_validity_service as validity_module
 from leaguebot.image.services.config.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from leaguebot.image.models.image_catalogues import CapacityError
 from leaguebot.image.models.image_module import PROBLEM_UNRESOLVED_VALUE
 from leaguebot.image.services.config.image_config_service import ImageConfigService

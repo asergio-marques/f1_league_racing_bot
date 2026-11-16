@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 
 @dataclass(frozen=True)

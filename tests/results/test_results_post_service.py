@@ -44,7 +44,7 @@ class TestLabelFromStatus:
 @pytest.mark.asyncio
 async def test_session_results_include_heading_and_label(tmp_path):
     """produce_session_results must prepend 'heading\\nlabel\\n' to the table."""
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
     from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
@@ -137,7 +137,7 @@ async def test_session_results_include_heading_and_label(tmp_path):
 @pytest.mark.asyncio
 async def test_session_results_label_appears_for_all_status_values(tmp_path):
     """Each of the three lifecycle label values must appear in the post content."""
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
     from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
@@ -224,7 +224,7 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
 @pytest.mark.asyncio
 async def test_produce_standings_includes_heading_and_label(tmp_path):
     """produce_standings must include the heading and label in the posted standings message."""
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
     from leaguebot.results.services.publishing.results_post_service import produce_standings
 
     db_path = str(tmp_path / "test.db")
@@ -400,7 +400,7 @@ async def _seed_season_for_faults(tmp_path, divisions):
 
     Returns ``(db_path, season_id)``.
     """
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "faults.db")
     await run_migrations(db_path)
@@ -693,7 +693,7 @@ async def test_repost_channel_faults_names_a_cancelled_division_s_deleted_channe
     """A points approval reposts the raced rounds of a division since cancelled, so a results
     channel that division configured and the server has lost is named as a live division's is,
     and refuses the approval until it is set again."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
@@ -719,7 +719,7 @@ async def _seed_two_tied_drivers(tmp_path, server_id: int = 300):
     Returns ``(db_path, division_id, round_id)``. Nobody has raced, so nothing but the final
     tiebreak can separate them.
     """
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "tied.db")
     await run_migrations(db_path)
@@ -836,7 +836,7 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
 
     The names are resolved first and the cascade handed them, as a points approval's `names`
     job and its save do (#439)."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import (
         driver_standings_for_display,
@@ -873,7 +873,7 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
 async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
     """The one path that genuinely holds no guild still recomputes, ordered by id: no names
     are resolved, and the cascade is handed none."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import standings_display_names
 
@@ -939,7 +939,7 @@ async def test_merge_faults_keeps_the_order_it_was_given():
 async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
     """Both sync commands are refused there, so the hint names the one command that reposts,
     by the name a manager now types (#462)."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.results.services.publishing.results_post_service import results_sync_hint
 
     db_path = str(tmp_path / "sync_hint.db")
@@ -976,7 +976,7 @@ async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
 
 @pytest.mark.asyncio
 async def test_the_producers_post_without_saving_or_deleting(tmp_path):
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.models.session_result import SessionResult
     from leaguebot.results.services.publishing.results_post_service import (
         PostedTable,
@@ -1119,7 +1119,7 @@ async def test_the_public_reserves_reader_defaults_to_shown(tmp_path):
     no results configuration as showing its reserves, and one whose reserves are hidden as not."""
     import os
 
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.results.services.publishing.results_post_service import reserves_in_standings
 
     db_path = os.path.join(str(tmp_path), "reserves.db")

@@ -29,7 +29,7 @@ from collections.abc import Awaitable, Callable
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.queue.change_types import Step, StepContext

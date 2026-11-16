@@ -37,7 +37,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.module_cog import ModuleCog
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import MEMBER_ID
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.

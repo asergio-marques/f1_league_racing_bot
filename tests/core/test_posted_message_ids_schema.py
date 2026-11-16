@@ -25,7 +25,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 #: table -> the columns this change added to it.
 _ADDED: dict[str, tuple[str, ...]] = {

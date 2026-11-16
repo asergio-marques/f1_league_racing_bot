@@ -57,7 +57,7 @@ async def _reshape(league: SeasonLeague, *, team_names: list[str] | None = None,
                    draft: dict[str, Any] | None = None) -> None:
     """Give Kimi's wizard *team_names* to offer, and *draft* added to its answers, saved as
     `_team_step` saves it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     signups = SignupModuleService(league.db_path)

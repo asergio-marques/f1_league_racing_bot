@@ -26,7 +26,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 
 def empty_queue_in(path: str | os.PathLike[str]) -> None:

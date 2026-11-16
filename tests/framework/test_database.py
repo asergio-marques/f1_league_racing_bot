@@ -13,7 +13,7 @@ import sqlite3
 import aiosqlite
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations, sole_row
+from leaguebot.framework.db.database import get_connection, run_migrations, sole_row
 
 
 def _stub_database(db_path: str) -> None:
@@ -89,7 +89,7 @@ async def test_a_database_from_before_the_baseline_is_refused_untouched(tmp_path
     """#254. A database the 61-file chain built records `001_initial.sql` and the rest;
     applying the baseline over it would fail part-way. It is refused before anything is
     written, the journal mode included, and names what it found."""
-    from leaguebot.core.db.database import DatabasePredatesBaselineError
+    from leaguebot.framework.db.database import DatabasePredatesBaselineError
 
     db_path = str(tmp_path / "old.db")
     db = sqlite3.connect(db_path)
@@ -119,7 +119,7 @@ async def test_a_database_from_before_the_baseline_is_refused_untouched(tmp_path
 def test_the_baseline_is_the_only_migration() -> None:
     """#254 squashed the chain into one file, and until go-live a schema change edits it. What
     this test becomes at go-live is listed under "At go-live" in `run_migrations`' docstring."""
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     files = sorted(
         f for f in os.listdir(database._MIGRATIONS_DIR)
@@ -137,7 +137,7 @@ async def _migrated_with(tmp_path, monkeypatch, files: dict[str, str]) -> str:
     The target holds the baseline already, so `tests/conftest.py`'s substitute hands it to the
     real runner rather than copying its template over it.
     """
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
@@ -212,7 +212,7 @@ async def test_a_migration_leaving_a_dangling_key_is_refused(tmp_path, monkeypat
     naming the table, and leaves nothing of itself applied or recorded. A file runs with the keys
     off, so the database itself takes the dangling insert; the runner's check before the commit
     is what refuses it."""
-    from leaguebot.core.db.database import MigrationBreaksForeignKeys
+    from leaguebot.framework.db.database import MigrationBreaksForeignKeys
 
     db_path = await _migrated_with(tmp_path, monkeypatch, {"002_s4.sql": """
         CREATE TABLE s4_parent (id INTEGER PRIMARY KEY);
@@ -341,7 +341,7 @@ async def test_migrations_survive_a_database_that_cannot_take_wal(caplog) -> Non
     An in-memory database reports `memory` and can never be WAL. That is not a reason to
     fail startup — the bot works without the contention relief, just more slowly.
     """
-    with caplog.at_level(logging.WARNING, logger="leaguebot.core.db.database"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.framework.db.database"):
         await run_migrations(":memory:")  # must not raise
 
     assert any(
@@ -432,7 +432,7 @@ async def test_the_suite_s_connections_skip_the_flush_to_disk(tmp_path) -> None:
 
     assert level == 0, "expected OFF (0) on the suite's own connections"
     assert mode.lower() == "wal", "the suite must still test the bot's journal mode"
-    assert "leaguebot.core.db.database" in kinds, "the suite must keep the bot's connection"
+    assert "leaguebot.framework.db.database" in kinds, "the suite must keep the bot's connection"
 
 
 @pytest.mark.asyncio
@@ -578,7 +578,7 @@ async def test_a_connection_left_by_an_exception_is_closed_not_lent(tmp_path, le
 async def test_a_confined_connection_is_never_lent_again(tmp_path, lending) -> None:
     """A connection that a conversation's save confined to its own tables is closed when the
     save returns it, so its refusal can never reach the next caller's writes."""
-    from leaguebot.core.db.database import never_lend
+    from leaguebot.framework.db.database import never_lend
 
     db_path = await _a_database(tmp_path)
 
@@ -619,7 +619,7 @@ async def test_an_autocomplete_connection_is_never_lent_with_the_longer_timeout(
     """An autocomplete's connection, which gives up on a lock after one second, is lent only to
     another autocomplete; an ordinary caller never gets it, nor an autocomplete the ordinary
     caller's five seconds."""
-    from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+    from leaguebot.framework.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 
     db_path = await _a_database(tmp_path)
 
@@ -712,7 +712,7 @@ async def test_a_replaced_database_file_is_not_served_by_an_old_connection(
 async def test_no_more_than_four_idle_connections_are_kept(tmp_path) -> None:
     """Six connections in use at once, all given back cleanly, leave four idle: six asked for
     again get those four and two new ones, and the other two were closed."""
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     db_path = await _a_database(tmp_path)
     try:
@@ -732,7 +732,7 @@ async def test_no_more_than_four_idle_connections_are_kept(tmp_path) -> None:
 async def test_closing_the_connections_ends_every_idle_thread(tmp_path, lending) -> None:
     """Closing the connections, as the bot does when it stops, ends the thread of every idle
     one, so none keeps the process alive; the next caller gets a fresh connection."""
-    from leaguebot.core.db.database import close_connections
+    from leaguebot.framework.db.database import close_connections
 
     db_path = await _a_database(tmp_path)
     async with get_connection(db_path) as one:
@@ -760,7 +760,7 @@ async def test_a_connection_given_back_while_the_connections_close_is_closed_too
     One caller holds a connection while another is given back and left idle. The connections are
     then closed, and the idle one's close is held until the first caller has given its own back,
     so that the return certainly falls while the closing is under way."""
-    from leaguebot.core.db.database import close_connections
+    from leaguebot.framework.db.database import close_connections
 
     db_path = await _a_database(tmp_path)
     taken = asyncio.Event()
@@ -804,7 +804,7 @@ async def test_a_connection_whose_return_is_cancelled_is_closed(
 
     The check that a returned connection holds nothing pending is made to wait, and the task is
     cancelled while it waits."""
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     db_path = await _a_database(tmp_path)
     checking = asyncio.Event()
@@ -852,7 +852,7 @@ async def test_a_cancelled_close_of_the_idle_connections_still_closes_the_rest(
     The first close is made to wait, and the task closing them is cancelled while it waits. The
     file's replacement is faked as in the replaced-file test, by `os.stat` reporting another
     inode."""
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     db_path = await _a_database(tmp_path)
     async with get_connection(db_path) as one:

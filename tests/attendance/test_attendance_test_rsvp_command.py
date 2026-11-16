@@ -33,7 +33,7 @@ import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 12409

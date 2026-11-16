@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import (
     SERVER_ID,
     acknowledgement,
@@ -684,7 +684,7 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
     Kimi among them: on that connection Kimi's signup has already ended and the season is not yet
     archived or deleted, while another connection still reads Kimi as signing up. What it writes on
     its connection is unseen elsewhere while `end` stands open, and is saved with that save."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.support.season_league import (
         abort_season,
         cancel_season,

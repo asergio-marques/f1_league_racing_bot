@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.services.drivers.driver_service import DriverService, ReassignOutcome
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks

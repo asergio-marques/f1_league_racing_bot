@@ -151,7 +151,7 @@ def _cog(bot: MagicMock) -> SeasonCog:
 
 async def _migrated(tmp_path) -> str:
     """A database built by the migrations, empty, for a press to read."""
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     db_path = str(tmp_path / "league.db")
     await run_migrations(db_path)
@@ -268,7 +268,7 @@ async def test_team_names_of_the_server_list_are_checked():
 
 
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
@@ -365,7 +365,7 @@ async def _team_list_since_the_review(env, monkeypatch, now: str = "as reviewed"
     list "as reviewed"; the season as it stands now has the team list as *now*."""
     import json
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async with get_connection(env.db_path) as db:
@@ -426,7 +426,7 @@ def _lines(env, mark: str) -> list[str]:
 
 
 async def _prompt_rows(env) -> int:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(env.db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
@@ -509,7 +509,7 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
     once; the log holds one refusal line for the press and no lapse line."""
     from datetime import datetime, timezone
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.support.change_queue import acknowledgement, post_in, run_queue
     from tests.support.review_prompts import store_review_prompt
 
@@ -664,7 +664,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     A test season with results on and no points configuration attached: the review asked of the
     queue says none is attached, promises nothing, refuses for want of one, and asks no question.
     """
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
@@ -807,7 +807,7 @@ async def test_the_builder_s_faults_read_signup_s_settings_as_they_stand(tmp_pat
     channel is unset. The configuration's faults the builder put on the bot name the missing
     signup channel and `/signup channel`: signup's settings are read as they stand when asked,
     not as they stood when the bot was built."""
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
     from tests.support.change_queue import league_bot
 
     db_path = str(tmp_path / "config_faults.db")

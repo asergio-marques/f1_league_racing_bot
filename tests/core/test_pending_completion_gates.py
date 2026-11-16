@@ -37,7 +37,7 @@ from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.cogs.team_cog import TeamCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from leaguebot.weather.cogs.weather_cog import WeatherCog
 from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue

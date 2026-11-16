@@ -7,7 +7,7 @@ database").
 """
 from __future__ import annotations
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.seasons.season_service import division_round_states_on
 
 PRO, AM = 4, 5

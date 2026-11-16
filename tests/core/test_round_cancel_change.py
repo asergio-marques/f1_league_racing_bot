@@ -851,7 +851,7 @@ async def _renumbered(league: Any) -> None:
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        (league.clock.now + timedelta(days=200)).astimezone(timezone.utc).isoformat(),
                        round_id(PRO, 2))
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons.season_service import renumber_rounds_on
 
     async with get_connection(league.db_path) as db:

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.framework.db.database import get_connection, inserted_id
 from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.team import DefaultTeam, PlacedDriver, SeatedDriver, SeatHolder, TeamInstance
 from leaguebot.core.utils.asset_slug import normalise

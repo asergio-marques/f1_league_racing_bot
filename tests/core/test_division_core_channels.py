@@ -45,7 +45,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     Clock,
     PAST_THE_STOP,

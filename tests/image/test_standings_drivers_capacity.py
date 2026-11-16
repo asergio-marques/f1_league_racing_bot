@@ -71,7 +71,7 @@ def _drawing(template, *, toggle: bool = True, images: bool = True):
 async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
     """A season's division holding *drivers* race drivers in one full team and *reserves* in the
     reserve team, with `Team 1`'s two seats free and driver 9999 waiting to be placed."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "standings_capacity.db")
     await run_migrations(db_path)

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_csv
 
 

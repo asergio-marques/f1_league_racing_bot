@@ -70,7 +70,7 @@ async def _league(tmp_path: Any) -> ReviewLeague:
 
 
 async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         await db.execute(sql, args)
@@ -80,7 +80,7 @@ async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
 async def _round_4_posted(league: ReviewLeague) -> None:
     """Round 4 at Spa holds a Feature Race too, Lewis winning it, its standings standing as
     message 8811 in the standings channel and recorded on its snapshot."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         session = await db.execute(

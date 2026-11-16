@@ -13,7 +13,7 @@ from types import SimpleNamespace as NS
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.cancellation import SCOPE_ROUND
 from tests.support.change_queue import in_a_job
 

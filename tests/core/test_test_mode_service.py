@@ -9,7 +9,7 @@ import pytest
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import read_scheduled_at
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.seasons.season_service import SeasonService

@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers import driver_service
 from tests.support.teams import seed_team_instances
 from tests.support.driver_transitions import reassign_hooks, reassigned

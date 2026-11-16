@@ -671,7 +671,7 @@ async def _jobs(league: Any) -> list[dict[str, Any]]:
 async def _saved(league: Any) -> dict[str, Any]:
     """What the approval's save writes besides the points: every session's points and every
     standings snapshot."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         async def rows(sql: str) -> list[tuple[Any, ...]]:

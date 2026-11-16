@@ -16,7 +16,7 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, tuple_rows_in
+from leaguebot.framework.db.database import get_connection, tuple_rows_in
 from leaguebot.core.models.round import Round, RoundFormat, WeatherWindows
 from leaguebot.core.services.rounds.round_moments import round_event_moments
 

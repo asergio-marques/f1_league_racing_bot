@@ -45,7 +45,7 @@ from typing import Any, Awaitable, Callable
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     AuditRecord,
     FollowOn,

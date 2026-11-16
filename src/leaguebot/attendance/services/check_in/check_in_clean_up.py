@@ -39,7 +39,7 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     call_row,
 )
 from leaguebot.attendance.services.check_in.check_in_record import checkin_record
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
 from leaguebot.framework.models.change import (
     ChangeOrigin,

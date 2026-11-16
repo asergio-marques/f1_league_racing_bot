@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue

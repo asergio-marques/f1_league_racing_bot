@@ -788,7 +788,7 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
     it, with attendance and weather each on or off. Read through the hook the builder makes,
     `(attendance, weather)` is what each caller has always received: attendance's window only
     where attendance is on; weather's only where weather is on."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.rounds.round_moments import read_round_windows
     from tests.support.change_queue import seed_server
@@ -936,7 +936,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     from contextlib import asynccontextmanager
 
     import leaguebot.core.services.upkeep.start_up as start_up_module
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.core.services.modules import hub_service
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -1079,7 +1079,7 @@ async def _run_main(tmp_path, monkeypatch, calls: list[str], tree: _Tree):
     from unittest.mock import AsyncMock
 
     import leaguebot.__main__ as bot_module
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
     from leaguebot.core.services.upkeep import backup_service
 
     settings = bot_module.Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),

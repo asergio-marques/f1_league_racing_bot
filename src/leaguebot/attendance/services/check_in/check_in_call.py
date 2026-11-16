@@ -60,7 +60,7 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     standing_call_row,
 )
 from leaguebot.attendance.services.check_in.check_in_clean_up import earlier_messages, forget_vanished_call
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,

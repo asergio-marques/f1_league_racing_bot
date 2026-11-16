@@ -10,7 +10,7 @@ import datetime
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty, apply_penalties_on
 from leaguebot.results.services.review.review_prompts import (

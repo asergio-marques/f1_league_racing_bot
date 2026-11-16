@@ -31,7 +31,7 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.weather.models.forecast_kinds import forecasts_named
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundFormat, RoundStatus, WeatherWindows

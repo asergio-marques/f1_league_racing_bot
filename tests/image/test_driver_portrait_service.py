@@ -18,7 +18,7 @@ import aiosqlite
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.image.services.portraits.driver_portrait_service import (
     has_own_avatar,
     portrait_path,

@@ -116,7 +116,7 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
     league.guild.create_text_channel = AsyncMock(side_effect=_create)
     category.create_text_channel = league.guild.create_text_channel
     # The league's default teams, which the wizard's team buttons offer (the Reserve team apart).
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.drivers.team_service import TeamService
 
     league.bot.team_service = TeamService(league.db_path)

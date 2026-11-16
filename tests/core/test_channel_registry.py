@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.channel_registry_service import (
     SETTING_LABELS,
     ChannelUse,

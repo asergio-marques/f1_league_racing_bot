@@ -44,7 +44,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.drivers.placement_service import PlacementService
 from tests.support.change_queue import in_a_job

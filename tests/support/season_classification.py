@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 
 def bot_on(path: str) -> Any:

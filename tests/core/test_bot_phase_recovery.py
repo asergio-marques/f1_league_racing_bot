@@ -53,7 +53,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows
 from tests.support.season_league import PRO, ongoing_league, round_id
 from tests.support.start_up_sweep import round_failures, run_weather_start_up_step

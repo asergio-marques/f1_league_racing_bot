@@ -33,7 +33,7 @@ def seeded_track_countries() -> set[str]:
     import sqlite3
     import tempfile
 
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     with tempfile.TemporaryDirectory() as scratch:
         path = str(Path(scratch) / "seed.db")

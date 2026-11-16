@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import aiosqlite
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.scoring.attendance_scoring import (
     record_attendance_from_results_on,
     record_attendance_from_results_full_recompute,
@@ -771,7 +771,7 @@ async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_a_shared_connection_is_not_committed_by_the_callee(tmp_path):
     """A function handed a connection is one step of somebody else's transaction."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 

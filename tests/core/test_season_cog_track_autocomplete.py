@@ -14,7 +14,7 @@ import time
 import pytest
 
 from leaguebot.core.cogs.round_cog import RoundCog
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations
+from leaguebot.framework.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations
 
 
 class _Interaction:

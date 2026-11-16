@@ -70,7 +70,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     GuildUnavailable,

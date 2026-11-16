@@ -187,7 +187,7 @@ def test_database_code_lives_only_in_services():
 _WRITE = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE)\b", re.IGNORECASE)
 #: What may be awaited on a cursor while a write is open: reading its rows, or closing it.
 _CURSOR_CALLS = frozenset({"fetchone", "fetchall", "fetchmany", "close"})
-#: `leaguebot.core.db.database`'s helper that reads a cursor's one row, which is a cursor call by another name.
+#: `leaguebot.framework.db.database`'s helper that reads a cursor's one row, which is a cursor call by another name.
 _CURSOR_HELPERS = frozenset({"sole_row"})
 
 
@@ -2037,8 +2037,8 @@ _SAVING_CALLS = frozenset({"commit", "executescript"})
 #: Where a save outside a queued change is allowed for good, and why. A function of ``"*"``
 #: allows the whole file.
 SAVES_ALLOWED = {
-    ("core/db/database.py", "run_migrations"): "the migrations, which build the schema",
-    ("core/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
+    ("framework/db/database.py", "run_migrations"): "the migrations, which build the schema",
+    ("framework/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
     ("core/services/queue/change_queue.py", "*"): "the queue's own records of the changes it carries out",
     ("core/services/queue/queue_records.py", "empty_queue_in"):
         "the queue's own records, emptied in a restored database before it is put in place",
@@ -2240,7 +2240,7 @@ def test_the_connection_state_check_sees_each_setting(line):
     assert _connection_settings_among(_sample(source)) == Counter(
         {("core/services/sample_service.py", "handler"): 1}
     )
-    assert _connection_settings_among(_sample(source, "core/db/database.py")) == Counter()
+    assert _connection_settings_among(_sample(source, "framework/db/database.py")) == Counter()
 
 
 def test_every_function_setting_up_a_connection_of_its_own_opens_one():

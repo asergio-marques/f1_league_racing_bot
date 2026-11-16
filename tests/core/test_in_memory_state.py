@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 from tests.support.change_queue import (
     acknowledgement,
@@ -157,7 +157,7 @@ EXEMPT = {
     # The connections kept idle to be lent again: the bot's wiring, not league data. Each is
     # re-checked against the database file's identity before it is lent, so a factory reset or a
     # restore that replaces the file leaves none serving the old one (#540).
-    ("core/db/database.py", "_idle"),
+    ("framework/db/database.py", "_idle"),
 }
 
 

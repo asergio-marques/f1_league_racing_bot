@@ -46,7 +46,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.connections import close_lent_connections
 
@@ -130,7 +130,7 @@ async def built_bot(tmp_path: Any, *, now: datetime | Clock) -> Any:
     gives it a fresh queue as it does any other bot. A test needing one service keeps its
     hand-made double."""
     from leaguebot.__main__ import Settings, build
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     settings = Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
                         jobstore_path=str(tmp_path / "jobs.db"))

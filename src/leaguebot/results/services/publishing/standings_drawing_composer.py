@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.drivers.driver_names import (
     read_driver_names,

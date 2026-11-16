@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.framework.db.database import get_connection, inserted_id
 from leaguebot.framework.models.change import PlannedStep
 from leaguebot.core.models.driver_names import SignupName, SignupNames
 from leaguebot.core.models.driver_profile import DriverState

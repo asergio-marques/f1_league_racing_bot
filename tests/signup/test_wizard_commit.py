@@ -88,7 +88,7 @@ async def _league(tmp_path: Any, *, state: str = "COLLECTING_NOTES",
     holding *draft* (`FULL_DRAFT` unless given), one track to time, saved in a save of the
     test's own; his signup channel standing. Today's wizard handlers off the queue are stand-ins
     that do nothing, so that only what the answer asks of the queue shows."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.signup.models.signup_module import (
         ConfigSnapshot,
         SignupWizardRecord,

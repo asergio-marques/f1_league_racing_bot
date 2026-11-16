@@ -45,7 +45,7 @@ import pytest
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.results.cogs.results_cog import ResultsCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
 from tests.support.settings_league import interaction as member_asks
 from tests.support.settings_league import log_lines, said, settings_league

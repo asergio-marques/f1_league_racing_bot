@@ -13,7 +13,7 @@ from typing import Any
 
 from leaguebot.attendance.services.scoring import attendance_scoring
 from leaguebot.attendance.services.sheet import attendance_sheet
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import driver_test_names_on
 from leaguebot.core.services.drivers.team_service import TeamService, division_team_references
 from leaguebot.core.services.seasons.season_service import division_on

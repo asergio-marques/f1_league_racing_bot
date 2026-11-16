@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)

@@ -230,7 +230,7 @@ async def produce_stranding(
 async def standings_channel_of(db_path: str, division_id: int) -> int | None:
     """The standings channel *division_id* was given in `division_results_config`, or None where
     it never was."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         config = await (

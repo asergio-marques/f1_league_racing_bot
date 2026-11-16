@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection

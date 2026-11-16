@@ -33,4 +33,4 @@ where = ["src"]
 include = ["leaguebot*"]
 
 [tool.setuptools.package-data]
-"leaguebot.core.db.migrations" = ["*.sql"]
+"leaguebot.framework.db.migrations" = ["*.sql"]

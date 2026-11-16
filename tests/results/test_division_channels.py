@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.module.division_channels import (
     set_division_penalty_channel,
     set_division_results_channel,

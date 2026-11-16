@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.season_league import PRO, SEASON_ID, ongoing_league, open_submission, round_id
 
 R3 = round_id(PRO, 3)

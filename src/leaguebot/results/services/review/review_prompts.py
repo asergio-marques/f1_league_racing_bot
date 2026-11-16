@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.in_a_job import posts_in_a_job

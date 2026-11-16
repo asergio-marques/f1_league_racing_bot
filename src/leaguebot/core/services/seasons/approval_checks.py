@@ -21,7 +21,7 @@ from typing import Any, TypeVar
 
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults

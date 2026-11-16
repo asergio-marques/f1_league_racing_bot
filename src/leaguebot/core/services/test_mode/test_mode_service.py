@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.round import ROUND_JOB_PHASES, read_scheduled_at
 from leaguebot.framework.utils.hooks import AwaitedHook
 

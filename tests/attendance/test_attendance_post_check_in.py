@@ -49,7 +49,7 @@ import pytest
 import discord
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
 from tests.support.change_queue import (

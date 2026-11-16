@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.round import WeatherWindows
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection

@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import (
     http_error,
     retry_job,

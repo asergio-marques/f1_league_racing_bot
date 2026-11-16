@@ -77,7 +77,7 @@ async def _standing(tmp_path, review: str):
     `bot.log_channel.sent`."""
     from types import SimpleNamespace
 
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from tests.support.change_queue import (
         INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID, SERVER_ID, Clock, history_channel, http_error,
         league_bot, league_queue, post_in, seed_server, set_user,
@@ -205,7 +205,7 @@ async def _season_since_the_review(env, monkeypatch, now: str = "as reviewed") -
     reviewed"; the season as it stands now has Pro's rounds as *now*."""
     import json
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async with get_connection(env.db_path) as db:

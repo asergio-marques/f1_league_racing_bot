@@ -9,7 +9,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.framework.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import (
     DriverProfile, DriverState, InvalidDriverTransition,
 )

@@ -27,7 +27,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.seasons.season_fingerprint_service import (
     AREA_LABELS,
     SeasonFingerprint,

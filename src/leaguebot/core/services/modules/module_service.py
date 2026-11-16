@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 log = logging.getLogger(__name__)
 

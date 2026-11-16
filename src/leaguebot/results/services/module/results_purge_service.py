@@ -58,7 +58,7 @@ from typing import Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import sole_row
+from leaguebot.framework.db.database import sole_row
 from leaguebot.framework.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.posting.notice_handler import delete_notice

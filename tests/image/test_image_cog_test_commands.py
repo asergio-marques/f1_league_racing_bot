@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from leaguebot.image.cogs.image_cog import ImageCog
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from leaguebot.framework.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
 

@@ -539,7 +539,7 @@ async def test_a_review_prompt_recovery_that_cannot_read_the_database_fails_its_
     import sqlite3
     from datetime import datetime, timezone
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.support.change_queue import built_bot
 
     bot = await built_bot(tmp_path, now=datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc))

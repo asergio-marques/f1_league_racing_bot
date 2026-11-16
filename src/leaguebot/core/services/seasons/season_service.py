@@ -10,7 +10,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.framework.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.models.cancellation import SCOPE_ROUND, CancellationNotices
 from leaguebot.core.models.division import Division, DivisionStatus
 from leaguebot.framework.models.refusal import Refused

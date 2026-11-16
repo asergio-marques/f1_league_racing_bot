@@ -18,7 +18,7 @@ from typing import Any
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     ADMIN_ROLE_ID,
     Clock,
@@ -771,7 +771,7 @@ async def test_a_turn_s_save_waits_for_a_long_league_save_rather_than_failing(en
     """SQLite's wait for a lock is cut to a fifth of a second. A league change's save is held three
     times as long; a turn in channel 7 asked meanwhile waits for it rather than failing on a
     locked database, and is saved on its lane once the league's save has ended."""
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     monkeypatch.setattr(database, "_BUSY_TIMEOUT_SECONDS", 0.2)
     gate = _gate(fail=False)

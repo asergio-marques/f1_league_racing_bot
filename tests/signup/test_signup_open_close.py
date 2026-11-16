@@ -48,7 +48,7 @@ import discord
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import ConfirmCloseView, SignupCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,

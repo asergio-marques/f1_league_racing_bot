@@ -18,7 +18,7 @@ import aiosqlite
 import discord
 
 from leaguebot.framework.utils.hooks import AwaitedHook
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import RoundStatus

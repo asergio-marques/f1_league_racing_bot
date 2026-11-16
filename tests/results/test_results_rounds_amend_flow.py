@@ -44,7 +44,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.services.submission import result_submission_service, paste_reading
 from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from tests.results.test_amend_changes import (

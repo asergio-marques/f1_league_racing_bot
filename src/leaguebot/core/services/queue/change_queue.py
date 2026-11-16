@@ -186,7 +186,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection, inserted_id, never_lend
+from leaguebot.framework.db.database import get_connection, inserted_id, never_lend
 from leaguebot.framework.models.change import (
     ALWAYS_RUN_LANES,
     AuditRecord,

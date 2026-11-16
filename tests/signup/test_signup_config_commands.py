@@ -31,7 +31,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from discord import app_commands

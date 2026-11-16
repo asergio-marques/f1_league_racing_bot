@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Mapping
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import SeasonStatus

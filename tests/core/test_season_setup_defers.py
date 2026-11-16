@@ -188,7 +188,7 @@ async def _seed_season(db_path: str, *, status: str, number: int, stage: str | N
                        edition: int = 24) -> None:
     """A season numbered *number*, for F1 *edition*, in *status* and *stage*, started on
     1 March 2025."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -201,7 +201,7 @@ async def _seed_season(db_path: str, *, status: str, number: int, stage: str | N
 
 async def _setup_rows(db_path: str) -> list[dict]:
     """Every season being set up, as the database holds it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

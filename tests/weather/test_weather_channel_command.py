@@ -41,7 +41,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.weather.cogs.weather_cog import WeatherCog
 from tests.support.change_queue import (
     Clock,

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.driver_names import SignupName
 from leaguebot.core.services.rounds.round_context import division_context
 from leaguebot.framework.utils.hooks import AwaitedHook

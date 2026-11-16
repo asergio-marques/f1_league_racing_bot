@@ -41,7 +41,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.cogs.config_commands import _ConfirmRemoveConfigView
 from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support import saves

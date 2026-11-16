@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.session import SESSIONS_BY_FORMAT
 

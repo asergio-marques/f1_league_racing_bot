@@ -32,7 +32,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,

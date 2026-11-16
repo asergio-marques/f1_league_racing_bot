@@ -45,7 +45,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.review.review_state import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
 

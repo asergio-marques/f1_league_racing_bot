@@ -41,7 +41,7 @@ from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_i
 from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.attendance.services.hooks.test_mode_steps import check_ins_cleared
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from tests.repository.test_architecture_rules import (
     KNOWN_CLOCK_DEFAULTS,
     OWN_COLUMNS,

@@ -64,7 +64,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.attendance.cogs.check_in_buttons import handle_rsvp_button
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,

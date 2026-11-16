@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from tests.support.change_queue import (
     Clock,
     attach_queue,

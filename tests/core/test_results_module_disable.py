@@ -46,7 +46,7 @@ from leaguebot.core.cogs.module_cog import (
     _ConfirmDisableResultsView,
     _results_disable_warning,
 )
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.publishing.results_post_service import (
     STANDINGS_CONSTRUCTORS,
     set_standings_message_id_on,

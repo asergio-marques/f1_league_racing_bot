@@ -46,7 +46,7 @@ from leaguebot.attendance.services.check_in.attendance_config_service import (
     rsvp_lock,
 )
 from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,

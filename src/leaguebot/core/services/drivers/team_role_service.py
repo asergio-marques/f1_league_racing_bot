@@ -19,7 +19,7 @@ from datetime import datetime
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.framework.models.refusal import Refused

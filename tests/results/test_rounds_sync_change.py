@@ -72,7 +72,7 @@ async def _league(tmp_path: Any) -> ReviewLeague:
 
 
 async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         await db.execute(sql, args)
@@ -82,7 +82,7 @@ async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
 async def _round_4_posted(league: ReviewLeague) -> None:
     """Round 4 at Spa holds a Feature Race too, Lewis winning it, its results standing as
     message 8810 in the results channel."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         session = await db.execute(
@@ -137,7 +137,7 @@ def _outcome(interaction: Any) -> str:
 
 
 async def _session_ids(league: ReviewLeague, round_id: int = ROUND_ID) -> Any:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         row = await (await db.execute(
@@ -362,7 +362,7 @@ async def test_a_rounds_sync_replaces_a_session_cancelled_line(tmp_path):
     message 8820, recorded as the qualifying's. `/results rounds sync` for Pro posts a new line in
     the qualifying's place, before round 3's race table, records it as the qualifying's, and
     deletes 8820 after it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     league = await _league(tmp_path)
     await _write(

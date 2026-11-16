@@ -97,7 +97,7 @@ def _install_template_migrations() -> None:
     module, because the tests bind `run_migrations` by name at *their* import time and a
     later patch would not reach them.
     """
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     global _TEMPLATE_SCRATCH
 
@@ -137,7 +137,7 @@ _install_template_migrations()
 def _install_unsynced_connections() -> None:
     """Open every aiosqlite connection in the suite at `synchronous = OFF` (#256).
 
-    The bot runs its database at FULL, deliberately (see `_enable_wal` in `leaguebot.core.db.database`).
+    The bot runs its database at FULL, deliberately (see `_enable_wal` in `leaguebot.framework.db.database`).
     Under WAL that flushes the log on every commit, and the log and the database again when
     the last connection closes and checkpoints — five flushes for a connection that writes.
     Across the suite that came to some seven flushes a test (counted 2026-09-24). Linux
@@ -162,7 +162,7 @@ def _install_unsynced_connections() -> None:
     on its own thread and with no round trip of its own, and it reaches the fixtures that
     seed through aiosqlite directly as well as everything that goes through
     `get_connection`. **The bot's own factory is kept, made unsynced:** `get_connection` hands
-    aiosqlite a `sqlite3.Connection` subclass of `leaguebot.core.db.database`'s, which records
+    aiosqlite a `sqlite3.Connection` subclass of `leaguebot.framework.db.database`'s, which records
     the cursors it must close before lending the connection again, so it is swapped for a
     subclass of itself that also turns the flush off. Swapping it for `UnsyncedConnection`
     would lose that, and keeping it as it is would keep FULL. Any other factory a caller
@@ -203,7 +203,7 @@ def _install_unsynced_connections() -> None:
         factory = kwargs.get("factory")
         if factory is None:
             kwargs["factory"] = UnsyncedConnection
-        elif factory.__module__ == "leaguebot.core.db.database":
+        elif factory.__module__ == "leaguebot.framework.db.database":
             kwargs["factory"] = unsynced_bot_factory(factory)
         return real(database, **kwargs)
 
@@ -397,7 +397,7 @@ def pytest_sessionfinish(session, exitstatus):
 async def lending(monkeypatch):
     """Switch on the lending of connections for this test: up to four are kept idle once given
     back cleanly, whatever the bot's own cap is set to, and closed as the test ends (#540)."""
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     monkeypatch.setattr(database, "_IDLE_CONNECTIONS_KEPT", 4)
     yield

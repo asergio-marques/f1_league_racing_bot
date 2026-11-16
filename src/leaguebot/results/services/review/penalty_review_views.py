@@ -19,7 +19,7 @@ from leaguebot.core.services.posting.owned_channel_handler import (
     edit_in_owned_channel,
     post_in_owned_channel,
 )
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.season import SeasonStatus
@@ -536,7 +536,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             )
             return
 
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         from leaguebot.core.services.drivers.driver_service import current_account_of, resolve_driver_profile_id
 
         async with get_connection(self.state.db_path) as db:
@@ -1357,7 +1357,7 @@ class ApprovalView(LeagueView):
             return
         # Immutability guard: reject finalize on archived season
         from leaguebot.core.services.seasons.season_service import SeasonImmutableError
-        from leaguebot.core.db.database import get_connection as _gc
+        from leaguebot.framework.db.database import get_connection as _gc
         try:
             async with _gc(self.state.db_path) as _db:
                 facts = await season_service.round_facts_on(_db, self.state.round_id)

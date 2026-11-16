@@ -82,7 +82,7 @@ async def _team_step(tmp_path: Any, *, picks: list[str] | None = None,
     The wizard row is saved through `save_wizard_on` in a save of the test's own, as a signup
     job's record saves it, and through today's committing `save_wizard` until that form exists,
     so the refusals the view makes at the press hold on either side of the change."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.signup.models.signup_module import (
         ConfigSnapshot,
         SignupWizardRecord,

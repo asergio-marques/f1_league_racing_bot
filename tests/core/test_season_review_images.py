@@ -374,7 +374,7 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     from types import SimpleNamespace
 
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.core.models.round import Round, RoundFormat
     from leaguebot.core.models.season import SeasonStage
     from leaguebot.core.models.server_config import ServerConfig
@@ -500,7 +500,7 @@ def _asked(cog, kind: str) -> list[dict]:
 
 
 async def _prompt_rows(cog) -> int:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(cog.bot.db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
@@ -574,7 +574,7 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     holder = {}
 

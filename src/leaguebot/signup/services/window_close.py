@@ -19,7 +19,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
 from leaguebot.core.models.driver_profile import DriverState

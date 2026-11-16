@@ -46,7 +46,7 @@ import pytest
 # Aliased on import: pytest tries to collect any module-level name starting with `Test`
 # as a test class, and warns that it cannot because the cog has an `__init__`.
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.round import Round, RoundFormat
 from tests.support.undecorate import undecorate

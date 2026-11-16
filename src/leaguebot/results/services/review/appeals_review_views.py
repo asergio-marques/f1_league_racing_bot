@@ -13,7 +13,7 @@ import discord
 
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.owned_channel_handler import edit_in_owned_channel
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.framework.utils.channels import as_text_channel

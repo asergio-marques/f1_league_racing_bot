@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep.pack_service import KEPT_JOBS, PackRefused, pack
 from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID

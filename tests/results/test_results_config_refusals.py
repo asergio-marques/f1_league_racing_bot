@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 from discord import app_commands
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.cogs.config_commands import _ConfirmRemoveConfigView
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType

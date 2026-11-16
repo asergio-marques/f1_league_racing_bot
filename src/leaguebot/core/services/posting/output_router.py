@@ -36,7 +36,7 @@ import aiohttp
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import inserted_id
+from leaguebot.framework.db.database import inserted_id
 from leaguebot.framework.utils.answering import answering_now
 from leaguebot.utils.messages import ROLE_MENTION, USER_MENTION, chunk_message
 

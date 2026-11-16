@@ -15,7 +15,7 @@ from abc import abstractmethod
 import discord
 from discord import app_commands
 
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from leaguebot.framework.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.image.services.config.image_config_service import ImageConfigService

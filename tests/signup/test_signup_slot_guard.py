@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import run_queue
 from tests.support.settings_league import audit_rows, interaction, last_said, settings_league
 from tests.support.undecorate import undecorate

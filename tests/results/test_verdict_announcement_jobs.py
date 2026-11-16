@@ -27,7 +27,7 @@ import discord
 import pytest
 
 from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.verdict_announcement_service import (

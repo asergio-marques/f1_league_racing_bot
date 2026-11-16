@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import driver_identities_on
 from leaguebot.core.services.drivers.team_service import TeamService
 from tests.attendance.test_seat_join_equivalence import AM, PRO, _seed

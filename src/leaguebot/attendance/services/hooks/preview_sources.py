@@ -17,7 +17,7 @@ from leaguebot.attendance.services.check_in.attendance_config_service import (
     derive_checkin_deadline,
     windows_on,
 )
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 
 class AttendancePreviewSources:

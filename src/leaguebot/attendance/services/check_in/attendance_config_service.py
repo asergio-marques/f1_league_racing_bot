@@ -26,7 +26,7 @@ from leaguebot.attendance.models.attendance import (
     RsvpEmbedMessage,
 )
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.round import AttendanceWindows
 from leaguebot.core.services.drivers.driver_service import profile_id_of_current_account
 from leaguebot.core.services.seasons.season_service import division_rounds_in_order_on

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.rounds.round_context import (
     division_context,
     division_rounds,

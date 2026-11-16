@@ -45,7 +45,7 @@ import pytest
 import leaguebot.results.services.review.penalty_review_views as penalty_review_views
 import leaguebot.results.services.review.penalty_wizard as pw
 import leaguebot.results.services.review.review_state as review_state
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import SessionType
@@ -740,7 +740,7 @@ def _archived(monkeypatch):
     async def _connection(_path):
         yield None
 
-    monkeypatch.setattr("leaguebot.core.db.database.get_connection", _connection)
+    monkeypatch.setattr("leaguebot.framework.db.database.get_connection", _connection)
     monkeypatch.setattr(
         season_service, "round_facts_on",
         AsyncMock(return_value=SimpleNamespace(season_status=SeasonStatus.COMPLETED)),

@@ -223,7 +223,7 @@ async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redir
 
 
 async def _league(tmp_path, *, configured: bool = True):
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
     from tests.support.change_queue import league_double, seed_server
 
     db_path = str(tmp_path / "league.db")
@@ -234,7 +234,7 @@ async def _league(tmp_path, *, configured: bool = True):
 
 
 async def _pending(db_path: str) -> list[dict]:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT * FROM pending_messages ORDER BY id")
@@ -242,7 +242,7 @@ async def _pending(db_path: str) -> list[dict]:
 
 
 async def test_a_line_queued_in_a_save_is_written_for_the_log_channel_and_not_committed(tmp_path):
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.support.change_queue import LOG_CHANNEL_ID
 
     db_path, bot = await _league(tmp_path)
@@ -264,7 +264,7 @@ async def test_a_line_queued_in_a_save_is_written_for_the_log_channel_and_not_co
 
 
 async def test_a_line_queued_before_the_bot_is_set_up_is_not_written(tmp_path):
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     db_path, bot = await _league(tmp_path, configured=False)
 
@@ -478,7 +478,7 @@ async def test_an_interaction_the_league_s_check_admits_is_the_one_its_lines_ans
 
 
 async def _retry_db(tmp_path) -> str:
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     db_path = str(tmp_path / "retry.db")
     await run_migrations(db_path)
@@ -486,7 +486,7 @@ async def _retry_db(tmp_path) -> str:
 
 
 async def _queued(db_path: str) -> list[tuple[int, str]]:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT channel_id, content FROM pending_messages")

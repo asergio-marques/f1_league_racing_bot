@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from tests.support.change_queue import (
     SERVER_ID,
     http_error,

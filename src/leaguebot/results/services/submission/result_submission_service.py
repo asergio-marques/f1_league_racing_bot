@@ -18,7 +18,7 @@ from typing import Any, Iterable, NamedTuple
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import (
     SCOPE_DIVISION,
     SCOPE_ROUND,

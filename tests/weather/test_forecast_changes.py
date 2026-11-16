@@ -1120,7 +1120,7 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
 
 async def _remove_round(league: Any, round_: int = ROUND) -> None:
     """Round *round_* is no longer in the database, its sessions with it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         await db.execute("PRAGMA foreign_keys = OFF")
@@ -1448,7 +1448,7 @@ async def test_a_delete_naming_no_division_finds_the_round_s_and_its_record_forg
 ):
     """A delete job of round 3's Phase 3 forecast (9303) that names no division nor message: it
     finds Pro by the round, deletes the forecast, and its record drops Pro's row."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.weather.services.forecast_changes import DELETE_FORECAST
 
     league = await _league(tmp_path)
@@ -1472,7 +1472,7 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
 ):
     """The same delete job for round 999, not in the database: it finds nothing to delete, and its
     record, finding no division, forgets nothing; round 3's forecast stands."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.weather.services.forecast_changes import DELETE_FORECAST
 
     league = await _league(tmp_path)

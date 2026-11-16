@@ -40,7 +40,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.publishing.results_post_service import (
     STANDINGS_CONSTRUCTORS,
     set_standings_message_id_on,

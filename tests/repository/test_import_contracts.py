@@ -166,7 +166,7 @@ def _placed(parts: tuple[str, ...]) -> bool:
         return parts[1] == "__init__.py" or (
             parts[1] == WIRING and parts[0] not in {"core"} | LAYERS
         )
-    return parts[1] in KINDS or parts[:2] in {("core", "db"), ("framework", "db")}
+    return parts[1] in KINDS or parts[:2] == ("framework", "db")
 
 
 @pytest.mark.parametrize(

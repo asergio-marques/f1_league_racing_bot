@@ -238,7 +238,7 @@ async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     does not."""
     from datetime import datetime, timedelta, timezone
 
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
     from leaguebot.core.services import scheduler_service
 
     db_path = str(tmp_path / "bot.db")

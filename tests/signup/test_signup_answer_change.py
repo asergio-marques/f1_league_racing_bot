@@ -84,7 +84,7 @@ async def _league(tmp_path: Any, *, state: str = "COLLECTING_NATIONALITY",
         SignupWizardRecord,
         WizardState,
     )
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     os.makedirs(str(tmp_path), exist_ok=True)

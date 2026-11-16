@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.support.change_queue import run_queue
 from tests.support.settings_league import (

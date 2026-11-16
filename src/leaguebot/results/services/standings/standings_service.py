@@ -9,7 +9,7 @@ from typing import Any, Collection, Iterable, Mapping
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.team_service import TeamService, division_team_references
 from leaguebot.core.services.seasons import season_service

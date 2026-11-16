@@ -106,7 +106,7 @@ async def test_the_images_module_off_answers_nothing(declare):
 async def _seed(tmp_path):
     """A season's division with three race drivers seated, `Team 1`'s two seats free, and driver
     9999 waiting to be placed."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "declared_capacity.db")
     await run_migrations(db_path)

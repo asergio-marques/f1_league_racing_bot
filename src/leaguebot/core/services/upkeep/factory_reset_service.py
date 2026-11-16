@@ -28,7 +28,7 @@ from pathlib import Path
 
 import discord
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,

@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.session import SESSIONS_BY_FORMAT, Session, SessionType
 from leaguebot.core.services.seasons.season_service import SeasonService
