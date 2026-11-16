@@ -20,7 +20,8 @@ from leaguebot.core.services.drivers.team_changes import (
     season_done_reply,
 )
 from leaguebot.core.services.drivers.team_service import FULL_NAME_MAX, SHORTHAND_MAX
-from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.core.utils.team_autocomplete import team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe, describe_form
 from leaguebot.core.utils.league_bot import LeagueBot

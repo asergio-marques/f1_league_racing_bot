@@ -20,7 +20,8 @@ from leaguebot.core.services.drivers.driver_changes import (
     NOT_UNASSIGNED_REFUSAL,
     PAST_ACCOUNT_REFUSAL,
 )
-from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.core.utils.team_autocomplete import team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe

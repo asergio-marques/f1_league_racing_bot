@@ -51,7 +51,8 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
-from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.core.utils.team_autocomplete import team_autocomplete
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id

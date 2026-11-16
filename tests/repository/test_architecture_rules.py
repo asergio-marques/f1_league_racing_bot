@@ -1409,7 +1409,7 @@ def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
 #: interaction to the league's server, and the bot's handler of an event's error, which the builder
 #: attaches to the bot as its `on_error`. The lookup check does not count them.
 COG_FACING_HELPERS = frozenset({
-    ("core/utils/autocomplete.py", "team_autocomplete"),
+    ("core/utils/team_autocomplete.py", "team_autocomplete"),
     ("core/utils/channel_guard.py", "_tier_guard"),
     ("core/utils/channel_guard.py", "bot_setup_only"),
     ("core/utils/channel_guard.py", "server_owner_only"),
