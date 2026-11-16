@@ -21,7 +21,6 @@ downstream of every state change it depicts and is never a precondition of one.
 """
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -33,8 +32,6 @@ if TYPE_CHECKING:
     from leaguebot.image.services.aspects.image_weather_service import WeatherDrawing
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import ImageRenderService
-
-log = logging.getLogger(__name__)
 
 WEATHER_ASPECT = "weather"
 
@@ -110,38 +107,39 @@ async def render_forecast(
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> ForecastRender:
-    """Render *drawing* to a PNG, or report why the textual forecast should stand instead."""
+    """Render *drawing* to a PNG, or report why the textual forecast should stand instead.
+
+    A fault in resolving the drawing's directories or in the render itself is raised, to the
+    caller's catch-all around the drawing of the forecast (`ImageDrawing.attach_forecast`), which
+    hands it back as a line.
+    """
     from leaguebot.image.services.aspects.image_weather_service import build_fill_spec
     from leaguebot.image.services.render.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
 
-    try:
-        config = await config_service.get_config()
-        directories, directory_faults = resolve_configured_directories(
-            config,
-            (
-                ("flag", "flag_directory"),
-                ("weather", "weather_icon_directory"),
-            ),
-            image_type=drawing.template_key,
-        )
+    config = await config_service.get_config()
+    directories, directory_faults = resolve_configured_directories(
+        config,
+        (
+            ("flag", "flag_directory"),
+            ("weather", "weather_icon_directory"),
+        ),
+        image_type=drawing.template_key,
+    )
 
-        from leaguebot.image.utils.image_naming import stem_for_drawing
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
-        decision = await renderer.render_for_posting(
-            drawing.template_key,
-            spec_builder_with_faults(
-                build_fill_spec, drawing, directories, directory_faults
-            ),
-            posting_origin=origin,
-            division_name=drawing.division_name,
-            filename_stem=stem_for_drawing(drawing),
-        )
-    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("weather: render failed: %s", exc, exc_info=True)
-        return ForecastRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
+    decision = await renderer.render_for_posting(
+        drawing.template_key,
+        spec_builder_with_faults(
+            build_fill_spec, drawing, directories, directory_faults
+        ),
+        posting_origin=origin,
+        division_name=drawing.division_name,
+        filename_stem=stem_for_drawing(drawing),
+    )
 
     if decision.rejects:
         return ForecastRender(

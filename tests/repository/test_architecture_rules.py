@@ -3180,7 +3180,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/aspects/image_verdict_post.py", "_round_context"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "team_key_for_entry"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "team_name_for_entry"): (1, PASS["image"]),
-    ("image/services/aspects/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
 }
 
 
