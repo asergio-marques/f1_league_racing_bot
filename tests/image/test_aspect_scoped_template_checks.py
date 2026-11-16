@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -69,14 +70,16 @@ def config_missing_verdicts(tmp_path, monkeypatch):
     """A real configuration whose folder holds every template but the verdicts one.
 
     Built under the project root, because the directory check refuses a path outside it
-    and would report fifteen faults rather than the one under test.
+    and would report fifteen faults rather than the one under test. The folder is named afresh
+    for each use, so that parallel workers running the tests that use it do not build, fill and
+    remove one folder together.
     """
     from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates  # noqa: F401
 
     root = os.path.join(os.path.dirname(__file__), "..", "..")
-    folder = os.path.join(root, "resources", "_test_templates_missing_verdicts")
-    shutil.rmtree(folder, ignore_errors=True)
-    os.makedirs(folder)
+    folder = tempfile.mkdtemp(
+        prefix="_test_templates_missing_verdicts_", dir=os.path.join(root, "resources")
+    )
     for name in os.listdir(DEFAULT_TEMPLATES):
         if "verdicts" in name:
             continue
@@ -87,7 +90,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
 
     fields = {f.name for f in dataclasses.fields(ImageConfig)}
     values = {name: None for name in fields}
-    values.update(template_directory="resources/_test_templates_missing_verdicts")
+    values.update(template_directory=f"resources/{os.path.basename(folder)}")
     for column, default in TEMPLATE_COLUMNS.items():
         if column in fields:
             values[column] = default
