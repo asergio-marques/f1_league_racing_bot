@@ -483,6 +483,17 @@ def _snapshots(round_id, division_id):
     return drivers, teams
 
 
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from types import SimpleNamespace
+
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
+
+
 async def test_build_drawings_resolves_both_championships_against_real_tables(tmp_path):
     from leaguebot.image.services.aspects.image_standings_post import build_drawings
 
@@ -494,6 +505,7 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
 
     drivers, constructors = await build_drawings(
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -529,6 +541,7 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
 
     drivers, constructors = await build_drawings(
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -563,6 +576,7 @@ async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_
 
     drivers, _constructors = await build_drawings(
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -623,6 +637,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
 
     drawings = await build_drawings(
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -675,6 +690,7 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
 
     _drivers, constructors = await build_drawings(
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -1231,6 +1247,7 @@ async def _highlighted_svg(tmp_path):
 
     drawings = await build_drawings(
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],

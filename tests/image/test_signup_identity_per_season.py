@@ -11,11 +11,20 @@ from types import SimpleNamespace
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.aspects.image_results_post import _driver_names, _nationalities
+from leaguebot.core.services.drivers.driver_names import read_driver_names, read_driver_nationalities
 from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 
 SERVER_ID = 22060
 USER = 5150
+
+
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
 
 
 @pytest.fixture
@@ -57,17 +66,17 @@ async def db_path(tmp_path):
 
 
 async def test_a_graphic_of_the_earlier_season_draws_that_seasons_signup(db_path):
-    assert (await _driver_names(db_path, None, [USER], division_id=11))[USER] == "Old Name"
-    assert (await _nationalities(db_path, [USER], division_id=11))[USER] == "French"
+    assert (await read_driver_names(db_path, _hook(db_path), None, [USER], division_id=11))[USER] == "Old Name"
+    assert (await read_driver_nationalities(db_path, _hook(db_path), [USER], division_id=11))[USER] == "French"
 
 
 async def test_a_graphic_of_the_later_season_draws_its_own_signup(db_path):
-    assert (await _driver_names(db_path, None, [USER], division_id=21))[USER] == "New Name"
-    assert (await _nationalities(db_path, [USER], division_id=21))[USER] == "British"
+    assert (await read_driver_names(db_path, _hook(db_path), None, [USER], division_id=21))[USER] == "New Name"
+    assert (await read_driver_nationalities(db_path, _hook(db_path), [USER], division_id=21))[USER] == "British"
 
 
 async def test_with_no_season_named_the_latest_signup_is_read(db_path):
-    assert (await _driver_names(db_path, None, [USER]))[USER] == "New Name"
+    assert (await read_driver_names(db_path, _hook(db_path), None, [USER]))[USER] == "New Name"
 
 
 async def test_a_season_holding_no_signup_falls_back_to_the_latest(db_path):
@@ -75,12 +84,12 @@ async def test_a_season_holding_no_signup_falls_back_to_the_latest(db_path):
         await db.execute("DELETE FROM signup_records WHERE season_id = 1")
         await db.commit()
 
-    assert (await _nationalities(db_path, [USER], division_id=11))[USER] == "British"
+    assert (await read_driver_nationalities(db_path, _hook(db_path), [USER], division_id=11))[USER] == "British"
 
 
 async def test_a_verdict_reads_the_nationality_of_its_rounds_season(db_path):
-    assert await _driver_nationality(db_path, USER, 111) == "French"
-    assert await _driver_nationality(db_path, USER) == "British"
+    assert await _driver_nationality(db_path, _hook(db_path), USER, 1) == "French"
+    assert await _driver_nationality(db_path, _hook(db_path), USER) == "British"
 
 
 async def test_a_server_display_name_is_cleaned_before_it_is_drawn(db_path):
@@ -90,7 +99,7 @@ async def test_a_server_display_name_is_cleaned_before_it_is_drawn(db_path):
     guild = MagicMock()
     guild.get_member = lambda _uid: SimpleNamespace(display_name="Max \U0001F3CE\uFE0F Racer")
 
-    names = await _driver_names(db_path, guild, [USER])
+    names = await read_driver_names(db_path, _hook(db_path), guild, [USER])
 
     assert names[USER] == "Max Racer"
 

@@ -782,20 +782,30 @@ def _guild_naming(names: dict[int, str]):
     return guild
 
 
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from types import SimpleNamespace
+
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
+
+
 @pytest.mark.asyncio
 async def test_the_posted_standings_are_ordered_on_the_resolved_names(tmp_path):
     """The order inverts with the names, so it cannot be the user id deciding it."""
     from leaguebot.results.services.publishing.results_post_service import driver_standings_for_display
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path)
-    bot = MagicMock()
-    bot.db_path = db_path
+    names_read = _hook(db_path)
 
     forwards = await driver_standings_for_display(
-        db_path, division_id, round_id, _guild_naming({1: "zulu", 2: "alpha"}), bot
+        db_path, division_id, round_id, _guild_naming({1: "zulu", 2: "alpha"}), names_read
     )
     backwards = await driver_standings_for_display(
-        db_path, division_id, round_id, _guild_naming({1: "alpha", 2: "zulu"}), bot
+        db_path, division_id, round_id, _guild_naming({1: "alpha", 2: "zulu"}), names_read
     )
 
     assert [s.driver_user_id for s in forwards] == [2, 1]
@@ -830,15 +840,16 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
     )
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=302)
-    bot = MagicMock()
-    bot.db_path = db_path
+    names_read = _hook(db_path)
     guild = _guild_naming({1: "zulu", 2: "alpha"})
 
-    names = await standings_display_names(db_path, division_id, guild, bot)
+    names = await standings_display_names(db_path, division_id, guild, names_read)
     async with get_connection(db_path) as db:
         await standings_service.cascade_recompute_from_round_on(db, division_id, round_id, names)
         await db.commit()
-    drawn = await driver_standings_for_display(db_path, division_id, round_id, guild, bot)
+    drawn = await driver_standings_for_display(
+        db_path, division_id, round_id, guild, names_read
+    )
 
     async with get_connection(db_path) as db:
         rows = await (

@@ -27,11 +27,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.drivers.driver_names import (
+    read_driver_names,
+    read_driver_records,
+    read_nationality_collected,
+)
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing, VerdictKind
 
 if TYPE_CHECKING:
+    from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
@@ -83,60 +88,37 @@ async def _round_context(db_path: str, round_id: int) -> dict:
         "division_tier": context.division.tier,
         "round_format": context.format,
         "race_name": context.gp_name,
+        "season_id": context.division.season_id,
     }
 
 
 async def _driver_nationality(
-    db_path: str, discord_user_id: int, round_id: int | None = None
+    db_path: str,
+    driver_names_read: AwaitedHook,
+    discord_user_id: int,
+    season_id: int | None = None,
 ) -> str | None:
     """The nationality recorded for the driver — the datum a flag is resolved from.
 
-    ``signup_records`` is keyed by the Discord account and carries no
-    driver_profile_id. This joined that phantom column, so the query raised on every
-    verdict and the ``except`` returned None: no verdict graphic had ever drawn a driver
-    flag. It now joins as the other posting paths join.
-
-    A mock driver has no signup record to hold a nationality and carries its own, read by
-    the same branch on is_test_driver the name is. A real driver's is read from their signup
-    to the season of *round_id*, where one is named (issue #220).
+    Read through core's reader of a driver's record: a mock driver has no signup to hold a
+    nationality and carries its own, and a real driver's is read from their signup to
+    *season_id*, where one is named (issue #220).
 
     The driver is found by any account they have held, as a verdict names the account the
     result was recorded under, which may be one they have since left (issue #243).
     """
-    from leaguebot.image.services.aspects.image_results_post import SIGNUP_FOR_SEASON_SQL
-
     try:
-        async with get_connection(db_path) as db:
-            season_row = None
-            if round_id is not None:
-                season_row = await (
-                    await db.execute(
-                        "SELECT d.season_id FROM rounds r "
-                        "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-                        (round_id,),
-                    )
-                ).fetchone()
-            season_id = season_row["season_id"] if season_row is not None else None
-            cursor = await db.execute(
-                """
-                SELECT CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality
-                            ELSE sr.nationality END AS nationality
-                FROM driver_profiles dp
-                LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL}
-                WHERE dp.id = (
-                    SELECT driver_profile_id FROM driver_accounts WHERE discord_user_id = ?
-                )
-                """.format(SIGNUP_FOR_SEASON_SQL=SIGNUP_FOR_SEASON_SQL),
-                (season_id, str(discord_user_id)),
-            )
-            row = await cursor.fetchone()
+        records = await read_driver_records(
+            db_path, driver_names_read, [discord_user_id], season_id=season_id, any_account=True
+        )
     except Exception:  # noqa: BLE001 — the verdict is drawn without the driver's flag
         log.warning(
             "verdict image: the nationality of %s could not be read", discord_user_id,
             exc_info=True,
         )
         return None
-    return (row["nationality"] or None) if row else None
+    record = records.get(str(discord_user_id))
+    return record.nationality if record is not None else None
 
 
 async def team_name_for_entry(
@@ -178,7 +160,7 @@ async def team_key_for_entry(db_path: str, *, team_id: int | None) -> str | None
 
 
 async def _mention_names(
-    db_path: str, guild, *, driver_discord_id: int, driver_name: str, texts
+    db_path: str, driver_names_read: AwaitedHook, guild, *, driver_discord_id: int, driver_name: str, texts
 ) -> dict[str, str]:
     """The name each mention in *texts* is drawn as, keyed by the id it addresses (#142).
 
@@ -213,9 +195,9 @@ async def _mention_names(
         return names
 
     try:
-        from leaguebot.image.services.aspects.image_results_post import _driver_names
-
-        resolved = await _driver_names(db_path, guild, [int(user_id) for user_id in wanted])
+        resolved = await read_driver_names(
+            db_path, driver_names_read, guild, [int(user_id) for user_id in wanted]
+        )
     except Exception as exc:  # noqa: BLE001 — a name is not worth a failed render
         log.warning("verdicts: mention names unreadable: %s", exc, exc_info=True)
         return names
@@ -231,6 +213,7 @@ async def build_drawing(
     *,
     guild,
     db_path: str,
+    driver_names_read: AwaitedHook,
     round_id: int,
     kind: VerdictKind,
     season_number,
@@ -259,20 +242,21 @@ async def build_drawing(
     from leaguebot.image.services.aspects.image_verdict_service import resolve_mentions
 
     context = await _round_context(db_path, round_id)
-    nationality = await _driver_nationality(db_path, driver_discord_id, round_id)
+    nationality = await _driver_nationality(
+        db_path, driver_names_read, driver_discord_id, context.get("season_id")
+    )
 
     # Whether the league collects nationality at all. A league that switched it off draws no
     # flag and is told nothing (XIV.4's configured absence); one that collects it and holds
     # none for this driver has an ordinary emptied optional field, and is told.
-    from leaguebot.image.services.aspects.image_results_post import _nationality_collected
-
-    collected = await _nationality_collected(db_path)
+    collected = await read_nationality_collected(db_path, driver_names_read)
 
     # A mention a person wrote into free text is resolved in place to the name it addresses —
     # the driver that mention names, and not the driver being sanctioned (#142). The graphic
     # mentions nobody (XIV.16, v4.8.0).
     names = await _mention_names(
         db_path,
+        driver_names_read,
         guild,
         driver_discord_id=driver_discord_id,
         driver_name=driver_name,

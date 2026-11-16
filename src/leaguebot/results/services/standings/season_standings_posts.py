@@ -51,7 +51,7 @@ from leaguebot.core.services.seasons.season_service import (
     division_rounds_on,
     round_by_id,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -240,7 +240,7 @@ async def standings_channel_of(db_path: str, division_id: int) -> int | None:
 
 
 async def post_opening_standings(
-    bot: LeagueBot,
+    driver_names_read: AwaitedHook,
     guild,
     db_path: str,
     division_id: int,
@@ -266,7 +266,7 @@ async def post_opening_standings(
     rule 8).
     """
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.image.services.aspects.image_results_post import _driver_names
+    from leaguebot.core.services.drivers.driver_names import read_driver_names
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import (
         produce_standings,
@@ -291,8 +291,9 @@ async def post_opening_standings(
         # names are resolved from Discord by user id, so the roster has to be known before it can be
         # ordered. The first pass is read only for who is in it; the second is the one that counts.
         roster = await standings_service.opening_driver_standings(db_path, division_id)
-        names = await _driver_names(
-            db_path, guild, [snapshot.driver_user_id for snapshot in roster], division_id=division_id
+        names = await read_driver_names(
+            db_path, driver_names_read, guild, [snapshot.driver_user_id for snapshot in roster],
+            division_id=division_id,
         )
         driver_snaps = await standings_service.opening_driver_standings(db_path, division_id, names)
         team_snaps = await standings_service.opening_team_standings(db_path, division_id)
@@ -384,7 +385,7 @@ async def _final_round(db_path: str, division_id: int, round_id: int):
 
 
 async def post_final_standings(
-    bot: LeagueBot,
+    driver_names_read: AwaitedHook,
     guild,
     db_path: str,
     division_id: int,
@@ -434,7 +435,7 @@ async def post_final_standings(
             )
 
         driver_snaps = await driver_standings_for_display(
-            db_path, division_id, round_id, guild, bot
+            db_path, division_id, round_id, guild, driver_names_read
         )
         team_snaps = await standings_service.compute_team_standings(
             db_path, division_id, round_id
@@ -534,7 +535,9 @@ async def season_completed_on(
     )
 
 
-def opening_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, Step]:
+def opening_steps(
+    modules: ModuleService, drawing: "ImageDrawing", driver_names_read: AwaitedHook
+) -> dict[str, Step]:
     """Results' step definition for the opening standings, signed up to
     *placements_confirmed_steps* beside :func:`placements_confirmed_on`. The builder hands in
     *modules*, as it hands cancellation's steps theirs, so that `still_due` reads results'
@@ -547,8 +550,8 @@ def opening_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, 
         channel_id = await standings_channel_of(ctx.db_path, division_id)
         try:
             tables = await post_opening_standings(
-                ctx.bot, guild, ctx.db_path, division_id, drawing=drawing, as_text=ctx.tries > 0,
-                kept=ctx.kept,
+                driver_names_read, guild, ctx.db_path, division_id, drawing=drawing,
+                as_text=ctx.tries > 0, kept=ctx.kept,
             )
         except (StepFailedOnDiscord, discord.HTTPException) as failure:
             _raise_keeping_refused_pictures(ctx, failure, subject="opening standings")
@@ -593,7 +596,9 @@ def opening_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, 
     }
 
 
-def final_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, Step]:
+def final_steps(
+    modules: ModuleService, drawing: "ImageDrawing", driver_names_read: AwaitedHook
+) -> dict[str, Step]:
     """Results' step definition for the final standings, signed up to
     *season_completed_steps* beside :func:`season_completed_on`. The builder hands in *modules*,
     as it hands the opening standings' theirs, so that `still_due` reads results' switch
@@ -607,8 +612,8 @@ def final_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, St
         channel_id = await standings_channel_of(ctx.db_path, division_id)
         try:
             tables = await post_final_standings(
-                ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]), drawing=drawing,
-                as_text=ctx.tries > 0, kept=ctx.kept,
+                driver_names_read, guild, ctx.db_path, division_id, int(each["round_id"]),
+                drawing=drawing, as_text=ctx.tries > 0, kept=ctx.kept,
             )
         except (StepFailedOnDiscord, discord.HTTPException) as failure:
             _raise_keeping_refused_pictures(ctx, failure, subject="final classification")

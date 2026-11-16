@@ -95,6 +95,15 @@ async def _seed(db_path: str, drivers) -> None:
         await db.commit()
 
 
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
+
+
 async def _draw(
     db_path,
     guild,
@@ -109,6 +118,7 @@ async def _draw(
     return await build_drawing(
         guild=guild,
         db_path=db_path,
+        driver_names_read=_hook(db_path),
         round_id=ROUND_ID,
         kind=VerdictKind.PENALTY,
         season_number=1,
@@ -288,12 +298,12 @@ async def test_an_unreadable_name_read_leaves_the_raw_id_and_still_draws(
     db_path = str(tmp_path / "test.db")
     await _seed(db_path, [(ALICE, "Alice Smith", None), (BOB, "Bob Jones", None)])
 
-    from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("the database went away")
 
-    monkeypatch.setattr(image_results_post, "_driver_names", _boom)
+    monkeypatch.setattr(image_verdict_post, "read_driver_names", _boom)
 
     drawing = await _draw(
         db_path,
@@ -335,16 +345,16 @@ async def test_every_mention_is_resolved_in_one_read(tmp_path, monkeypatch):
         [(ALICE, "Alice Smith", None), (BOB, "Bob Jones", None), (CAROL, "Carol King", None)],
     )
 
-    from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     calls = []
-    real = image_results_post._driver_names
+    real = image_verdict_post.read_driver_names
 
-    async def _counting(bot, guild, user_ids):
+    async def _counting(db_path, hook, guild, user_ids):
         calls.append(list(user_ids))
-        return await real(bot, guild, user_ids)
+        return await real(db_path, hook, guild, user_ids)
 
-    monkeypatch.setattr(image_results_post, "_driver_names", _counting)
+    monkeypatch.setattr(image_verdict_post, "read_driver_names", _counting)
 
     drawing = await _draw(
         db_path,
@@ -365,15 +375,15 @@ async def test_text_mentioning_nobody_reads_no_names_at_all(tmp_path, monkeypatc
     db_path = str(tmp_path / "test.db")
     await _seed(db_path, [(ALICE, "Alice Smith", None)])
 
-    from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     calls = []
 
-    async def _counting(_bot, _guild, user_ids):
+    async def _counting(_db_path, _hook, _guild, user_ids):
         calls.append(list(user_ids))
         return {}
 
-    monkeypatch.setattr(image_results_post, "_driver_names", _counting)
+    monkeypatch.setattr(image_verdict_post, "read_driver_names", _counting)
 
     await _draw(db_path, _Guild(), justification="Video evidence reviewed.")
 
@@ -395,6 +405,7 @@ async def test_the_badge_is_found_by_the_shorthand_while_the_full_name_is_drawn(
     drawing = await build_drawing(
         guild=_Guild(),
         db_path=db_path,
+        driver_names_read=_hook(db_path),
         round_id=ROUND_ID,
         kind=VerdictKind.PENALTY,
         season_number=1,

@@ -74,6 +74,7 @@ from typing import TYPE_CHECKING, Any
 
 import discord
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     GuildUnavailable,
@@ -127,12 +128,18 @@ _OVER_SANCTIONS = "sanctions"
 
 
 def verdict_steps(
-    now: Callable[[], datetime], attendance: AttendanceAfterReview, drawing: ImageDrawing
+    now: Callable[[], datetime],
+    attendance: AttendanceAfterReview,
+    drawing: ImageDrawing,
+    driver_names_read: AwaitedHook | None = None,
 ) -> dict[str, Step]:
     """The jobs of this module, keyed by their names, for a change type's `steps`. *now* is the
     queue's clock, which stamps the heading's record, the lineup's audit and a sanction's;
     *attendance* the hook the builder handed the change type, which the jobs use and never look
-    up on the bot, and *drawing* the image module's, which draws the verdicts' pictures."""
+    up on the bot, and *drawing* the image module's, which draws the verdicts' pictures. *driver_names_read*
+    is the hook signup answers how a driver is named, which a picture names its driver through."""
+
+    names = driver_names_read if driver_names_read is not None else AwaitedHook()
 
     def bound(fn: Any) -> Any:
         async def run(ctx: StepContext) -> Any:
@@ -144,6 +151,12 @@ def verdict_steps(
     def with_drawing(fn: Any) -> Any:
         async def run(ctx: StepContext) -> Any:
             return await fn(ctx, drawing)
+
+        return run
+
+    def with_drawing_and_names(fn: Any) -> Any:
+        async def run(ctx: StepContext) -> Any:
+            return await fn(ctx, drawing, names)
 
         return run
 
@@ -191,7 +204,7 @@ def verdict_steps(
             record=record_heading,
         ),
         ANNOUNCE_VERDICT: Step(
-            ANNOUNCE_VERDICT, StepKind.ACT, with_drawing(_announce_verdict),
+            ANNOUNCE_VERDICT, StepKind.ACT, with_drawing_and_names(_announce_verdict),
             describe=_describe_verdict,
             record=record_verdict,
         ),
@@ -636,7 +649,9 @@ def _carrying_verdict_lines(
     return stop.carrying(earlier + (() if fallback is None else fallback(ctx.named, ctx.what)))
 
 
-async def _announce_verdict(ctx: StepContext, drawing: ImageDrawing) -> StepResult:
+async def _announce_verdict(
+    ctx: StepContext, drawing: ImageDrawing, driver_names_read: AwaitedHook
+) -> StepResult:
     payload = ctx.step_payload
     round_id = int(payload["round_id"])
     channel, _context = await _channel_of(ctx, round_id)
@@ -646,8 +661,8 @@ async def _announce_verdict(ctx: StepContext, drawing: ImageDrawing) -> StepResu
     try:
         await _take_down_kept(channel, ctx)
         announced = await vas.announce_verdict(
-            ctx.bot, ctx.db_path, round_id, payload["table"], payload["record"],
-            drawing=drawing, as_text=ctx.tries > 0,
+            ctx.bot, driver_names_read, ctx.db_path, round_id, payload["table"],
+            payload["record"], drawing=drawing, as_text=ctx.tries > 0,
         )
     except StepFailedOnDiscord as stop:
         raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__

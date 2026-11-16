@@ -1543,6 +1543,7 @@ class ImageCog(commands.Cog):
                 guild=interaction.guild,
                 round_number=round_number,
                 kind=kind,
+                driver_names_read=self.bot.driver_names_read,
             )
         except PreviewRefused as refusal:
             await interaction.followup.send(refusal.message, ephemeral=True)

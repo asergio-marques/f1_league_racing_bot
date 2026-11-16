@@ -40,6 +40,8 @@ from leaguebot.core.utils.input_validator import (
     is_no_further_action,
     parse_penalty_seconds,
 )
+from leaguebot.core.services.drivers.driver_names import read_driver_names, resolve_driver_name
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -102,7 +104,8 @@ def _driver_label(driver_discord_id) -> str:
 
 
 async def _graphic_name(
-    bot: LeagueBot,
+    db_path: str,
+    driver_names_read: AwaitedHook,
     guild,
     discord_user_id: int,
     *,
@@ -124,12 +127,8 @@ async def _graphic_name(
     error): a name is not worth a lost announcement, so an unreadable one leaves the behaviour
     exactly as it was before. Any other fault is a defect and is raised.
     """
-    from leaguebot.image.services.aspects.image_lineup_service import resolve_driver_name
-
     try:
-        from leaguebot.image.services.aspects.image_results_post import _driver_names
-
-        names = await _driver_names(bot.db_path, guild, [int(discord_user_id)])
+        names = await read_driver_names(db_path, driver_names_read, guild, [int(discord_user_id)])
     except sqlite3.Error as exc:
         log.warning("verdicts: driver name unreadable for %s: %s", discord_user_id, exc, exc_info=True)
     else:
@@ -573,6 +572,7 @@ async def _send_verdict(
 
 async def announce_sanction(
     bot: LeagueBot,
+    driver_names_read: AwaitedHook,
     db_path: str,
     round_id: int,
     driver_discord_id: int,
@@ -631,7 +631,8 @@ async def announce_sanction(
             driver_discord_id=driver_discord_id,
             driver_display_name=driver_display_name,
             driver_name=await _graphic_name(
-                bot,
+                db_path,
+                driver_names_read,
                 getattr(channel, "guild", None),
                 driver_discord_id,
                 fallback_display_name=driver_display_name,
@@ -656,6 +657,7 @@ async def announce_sanction(
 
 async def announce_verdict(
     bot: LeagueBot,
+    driver_names_read: AwaitedHook,
     db_path: str,
     round_id: int,
     table: str,
@@ -726,7 +728,8 @@ async def announce_verdict(
             driver_discord_id=driver_discord_id,
             driver_display_name=test_display_name,
             driver_name=await _graphic_name(
-                bot, guild, driver_discord_id, fallback_display_name=test_display_name
+                db_path, driver_names_read, guild, driver_discord_id,
+                fallback_display_name=test_display_name
             ),
             penalty_description=describe_penalty(
                 record.get("penalty_type"), record.get("time_seconds")

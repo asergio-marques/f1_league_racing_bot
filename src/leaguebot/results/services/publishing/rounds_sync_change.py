@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_types import (
@@ -53,7 +54,8 @@ def _discarded(view: StepView) -> bool:
 
 
 def rounds_sync_change(
-    seasons: "SeasonService", modules: "ModuleService", drawing: "ImageDrawing | None" = None
+    seasons: "SeasonService", modules: "ModuleService", drawing: "ImageDrawing | None" = None,
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """`results.rounds.sync`: a member's change, repeatable, that posts a division's results of
     every round again. The payload is `{"division_id", "division_name"}`."""
@@ -125,7 +127,7 @@ def rounds_sync_change(
         return f"✅ Results for all rounds in **{name}** synced to the results channel."
 
     steps: dict[str, Step] = {
-        **review_posting.posting_steps(drawing),
+        **review_posting.posting_steps(drawing, driver_names_read),
         PLAN_REPOST: Step(PLAN_REPOST, StepKind.ACT, plan_repost, describe=describe_plan),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }

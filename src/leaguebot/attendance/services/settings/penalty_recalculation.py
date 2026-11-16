@@ -53,6 +53,7 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sanctions import attendance_sync_change as sync
 from leaguebot.attendance.services.scoring import attendance_recompute
 from leaguebot.attendance.services.sheet import sheet_posting
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict, VerdictKind
 from leaguebot.core.models.division import DivisionStatus
@@ -174,6 +175,7 @@ def penalty_change(
     modules: "ModuleService",
     drawing: "ImageDrawing",
     now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """*change*, the setting of the penalty in *column* as `setting_change` builds it, made to
     recalculate the ongoing season; see the module. *placement* applies the sanctions the new
@@ -304,7 +306,7 @@ def penalty_change(
                              describe=describe_capacity, on_fault=capacity_unread),
         **sync.posting_steps(
             roles=roles, lineups=lineups, attendance=attendance, modules=modules,
-            drawing=drawing, now=now,
+            drawing=drawing, now=now, driver_names_read=driver_names_read,
         ),
     }
     return dataclasses.replace(

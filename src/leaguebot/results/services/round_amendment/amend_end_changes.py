@@ -61,6 +61,7 @@ from typing import Any
 
 import aiosqlite
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.change import ChangeOrigin
@@ -127,12 +128,12 @@ __all__ = [
 ]
 
 
-def _names_step() -> Step:
+def _names_step(driver_names_read: AwaitedHook | None = None) -> Step:
     """The shared `names` job, tolerant of a fault: the names a full tie is settled by, which the
     revert's standings are recomputed under, being the lesser fault to lose. Where they cannot be
     had the job completes with none, and the standings are put back ordered by user id rather than
     not put back at all (decided 2026-09-15: the round is back whatever the order of a tie)."""
-    shared = posting_steps()[NAMES]
+    shared = posting_steps(driver_names_read=driver_names_read)[NAMES]
 
     async def run(ctx: StepContext) -> StepResult:
         try:
@@ -146,7 +147,8 @@ def _names_step() -> Step:
 
 
 def amend_cancel_change(
-    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+    *, attendance: AttendanceAfterReview, now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """The `results.amend.cancel` change type, for the builder to register.
 
@@ -236,7 +238,7 @@ def amend_cancel_change(
         opening=(),
         plan=plan,
         steps={
-            NAMES: _names_step(),
+            NAMES: _names_step(driver_names_read),
             REVERT: Step(REVERT, StepKind.SAVE, revert, describe=describe_revert),
             DELETE_CHANNEL: dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=None),
         },
@@ -374,7 +376,8 @@ def _sessions_of(row: Any) -> list[str]:
 
 
 def amend_lapse_change(
-    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+    *, attendance: AttendanceAfterReview, now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """The `results.amend.lapse` change type, for the builder to register.
 
@@ -559,7 +562,7 @@ def amend_lapse_change(
         opening=(),
         plan=plan,
         steps={
-            NAMES: _names_step(),
+            NAMES: _names_step(driver_names_read),
             REVERT: Step(REVERT, StepKind.SAVE, revert, describe=describe_revert),
             DELETE_CHANNEL: dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=None),
             RECORD_LAPSE: Step(RECORD_LAPSE, StepKind.ACT, record_lapse, describe=describe_record),

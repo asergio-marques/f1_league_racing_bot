@@ -792,8 +792,13 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
 
     from leaguebot.core.utils.interaction_errors import describe
 
+    from leaguebot.core.utils.hooks import AwaitedHook
+
     cog = ImageCog(
-        SimpleNamespace(module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)))
+        SimpleNamespace(
+            module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)),
+            driver_names_read=AwaitedHook(),
+        )
     )
     interaction = _Interaction()
     interaction.command = SimpleNamespace(qualified_name="images test lineup")

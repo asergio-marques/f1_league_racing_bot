@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     FollowOn,
@@ -280,6 +281,7 @@ def amendment_stage_changes(
     config: ConfigService,
     server_config: ReadServerConfig,
     router: OutputRouter,
+    driver_names_read: AwaitedHook | None = None,
 ) -> tuple[ChangeType, ChangeType, ChangeType]:
     """The change types of an amendment's stages, the report stage's, the appeals stage's and the
     amendment's lane's prompt (`results.amend.prompt`); see the module. *attendance* is the hook
@@ -654,8 +656,8 @@ def amendment_stage_changes(
         await _forget_banners_on(db, [int(ctx.step_payload["message_id"])])
 
     steps: dict[str, Step] = {
-        **posting_steps(drawing),
-        **review_verdicts.verdict_steps(now, attendance, drawing),
+        **posting_steps(drawing, driver_names_read),
+        **review_verdicts.verdict_steps(now, attendance, drawing, driver_names_read),
         TAKE_DOWN_VERDICT: Step(
             TAKE_DOWN_VERDICT, StepKind.DELETE, take_down_verdict, still_due=replacements_posted,
             describe=describe_take_down,

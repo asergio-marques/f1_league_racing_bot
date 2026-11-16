@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import aiosqlite
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     AuditRecord,
@@ -263,6 +264,7 @@ def points_amendment_change(
     drawing: ImageDrawing,
     now: Callable[[], datetime],
     module_service: ModuleService,
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """The change that approves a season's staged points; see the module. *attendance* is the
     hook the builder hands every change type that reaches attendance, *drawing* the image module's, which draws the verdicts' pictures, *now* the queue's clock,
@@ -445,7 +447,7 @@ def points_amendment_change(
         return "\n".join([APPROVED_BUT_INCOMPLETE, *left]) if left else SUCCESS
 
     steps: dict[str, Step] = {
-        **posting_steps(drawing),
+        **posting_steps(drawing, driver_names_read),
         **review_verdicts.verdict_steps(now, attendance, drawing),
         _PLAN_NAMES: Step(_PLAN_NAMES, StepKind.ACT, plan_names, describe=describe_plan_names),
         _APPLY: Step(

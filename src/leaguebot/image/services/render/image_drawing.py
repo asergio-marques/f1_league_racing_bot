@@ -46,6 +46,7 @@ from leaguebot.core.services.modules.image_drawing import (
     LineupPicture,
 )
 from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
     catalogue_for,
@@ -189,6 +190,7 @@ class ImageDrawing:
         renderer: ImageRenderService,
         post_log: Callable[[str], Awaitable[object]],
         db_path: str,
+        driver_names_read: AwaitedHook | None = None,
     ) -> None:
         self._modules = modules
         self._config = config
@@ -201,6 +203,13 @@ class ImageDrawing:
         #: capacity questions read none of it, so that a drawing is never built unable to do
         #: what it is asked.
         self._db_path = db_path
+        #: The hook signup answers how each driver is named and whether nationality is collected
+        #: (core's `driver_names_read`), which the verdict, results, standings and lineup pictures
+        #: read their drivers through. Optional, as the capacity and calendar questions use none:
+        #: an empty one names every driver by their account alone, with flags.
+        self._driver_names_read = (
+            driver_names_read if driver_names_read is not None else AwaitedHook()
+        )
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
         """The template's path where the module and *aspect* are both drawn and the template
@@ -735,7 +744,8 @@ class ImageDrawing:
         ):
             return None, ()
         drawing = await image_verdict_post.build_drawing(
-            guild=guild, db_path=db_path, round_id=round_id, kind=kind,
+            guild=guild, db_path=db_path, driver_names_read=self._driver_names_read,
+            round_id=round_id, kind=kind,
             season_number=season_number, division_name=division_name,
             round_number=round_number, session_label=session_label, driver_name=driver_name,
             driver_discord_id=driver_discord_id, penalty_description=penalty_description,
@@ -832,7 +842,8 @@ class ImageDrawing:
         if not await self.aspect_wanted(image_results_post.RESULTS_ASPECT, template_key):
             return None, ()
         drawing = await image_results_post.build_drawing(
-            self._db_path, self._config, guild, session_result=session_result, driver_rows=driver_rows,
+            self._db_path, self._config, guild, driver_names_read=self._driver_names_read,
+            session_result=session_result, driver_rows=driver_rows,
             points_map=points_map, round_number=round_number, race_name=race_name,
             is_sprint=is_sprint, result_status=result_status, division_name=division_name,
             division_tier=division_tier, season_number=season_number,
@@ -896,7 +907,8 @@ class ImageDrawing:
             else f"{division_name} — {occasion.label()}"
         )
         drawings = await image_standings_post.build_drawings(
-            guild, db_path=db_path, division_id=division_id, round_id=round_id,
+            guild, driver_names_read=self._driver_names_read, db_path=db_path,
+            division_id=division_id, round_id=round_id,
             round_number=round_number, driver_snapshots=driver_snapshots,
             team_snapshots=team_snapshots, reserve_user_ids=reserve_user_ids,
             show_reserves=show_reserves, result_status=result_status,
@@ -1084,7 +1096,8 @@ class ImageDrawing:
         )
 
         _division, drawing, members = await build_drawing(
-            self._db_path, guild, division_id, include_uncommitted=include_uncommitted
+            self._db_path, self._driver_names_read, guild, division_id,
+            include_uncommitted=include_uncommitted,
         )
 
         config = await self._config.get_config()

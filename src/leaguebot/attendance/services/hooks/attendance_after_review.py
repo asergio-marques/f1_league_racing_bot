@@ -43,6 +43,7 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.check_in import check_in_record
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, PlannedStep, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
@@ -102,9 +103,15 @@ class AttendanceAfterReview:
         roles: TeamRoleService | None = None,
         lineups: LineupPoster | None = None,
         drawing: ImageDrawing | None = None,
+        driver_names_read: AwaitedHook | None = None,
     ) -> None:
         self._bot = bot
         self._drawing = drawing
+        #: The hook signup answers how a driver is named, which a sanction's card names its
+        #: driver through; none names them by their account alone.
+        self._driver_names_read = (
+            driver_names_read if driver_names_read is not None else AwaitedHook()
+        )
         self._placement = placement
         self._roles = roles
         self._lineups = lineups
@@ -209,7 +216,8 @@ class AttendanceAfterReview:
         posted = await attendance_sheet.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
-            as_text=as_text, drawing=self._drawing, earlier_lines=earlier_lines,
+            as_text=as_text, drawing=self._drawing, driver_names_read=self._driver_names_read,
+            earlier_lines=earlier_lines,
         )
         return attendance_sheet.sheet_result(posted)
 
@@ -298,8 +306,8 @@ class AttendanceAfterReview:
             sanction, driver_ref, (autosack if sanction == "AUTOSACK" else autoreserve) or 0
         )
         return await vas.announce_sanction(
-            self._bot, self._db_path, round_id, driver_discord_id, display_name,
-            label, description, justification, drawing=self._drawing, as_text=as_text,
+            self._bot, self._driver_names_read, self._db_path, round_id, driver_discord_id,
+            display_name, label, description, justification, drawing=self._drawing, as_text=as_text,
         )
 
     async def refresh_lineup(

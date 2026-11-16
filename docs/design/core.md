@@ -614,7 +614,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `review_sections_read` | A | signup, attendance, results, weather | `review_sections` |
 | `division_lines_read` | A | results, attendance, weather | `review_sections` |
 | `division_channel_faults_read` | A | weather, results, attendance | `approval_checks` |
-| `driver_names_read` | A | signup | `approval_checks` (the unsettled signups, named by their latest signup) |
+| `driver_names_read` | A | signup | `approval_checks` (the unsettled signups, named by their latest signup) and `driver_names`, core's reader of how a driver is named and of whether a nationality is collected, which the builder hands to image, results and attendance for every picture and ordering that names a driver |
 | `fingerprint_areas_read` | A | weather, results, attendance, signup, image | `season_fingerprint_service` |
 | `channel_uses_read` | A | weather, results, attendance, signup | `channel_registry_service.find_channel_use` |
 | `setting_channels_read` | A | weather, results, attendance, signup | `factory_reset_service.gather_targets` |

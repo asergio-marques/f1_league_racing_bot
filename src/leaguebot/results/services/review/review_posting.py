@@ -80,6 +80,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.standing_post_handler import delete_standing
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
@@ -144,26 +145,33 @@ def delete_message_step(
     )
 
 
-def posting_steps(drawing: ImageDrawing | None = None) -> dict[str, Step]:
+def posting_steps(
+    drawing: ImageDrawing | None = None, driver_names_read: AwaitedHook | None = None
+) -> dict[str, Step]:
     """The posting jobs, keyed by their names, for a change type's `steps`.
 
     *drawing* is the image module's, which the session's results post draws its picture with, handed
     by the builder to each change type that posts results; a change type that takes only the
     deletions and the names hands none, and its results post, never run, would post the text.
+
+    *driver_names_read* is the hook signup answers how a driver is named, which the names a full tie
+    is ordered by are resolved through; none leaves the tie ordered by user id.
     """
     return {
-        NAMES: Step(NAMES, StepKind.ACT, _resolve_names, describe=_describe_names),
+        NAMES: Step(
+            NAMES, StepKind.ACT, partial(_resolve_names, driver_names_read), describe=_describe_names
+        ),
         POST_SESSION_RESULTS: Step(
             POST_SESSION_RESULTS, StepKind.ACT, partial(_post_session_results, drawing),
             still_due=_session_still_due, describe=_describe_session_post,
             record=_record_session_post,
         ),
         POST_STANDINGS: Step(
-            POST_STANDINGS, StepKind.ACT, partial(_post_standings, drawing),
+            POST_STANDINGS, StepKind.ACT, partial(_post_standings, drawing, driver_names_read),
             describe=_describe_standings_post, record=_record_standings_post,
         ),
         POST_STANDINGS_AFRESH: Step(
-            POST_STANDINGS_AFRESH, StepKind.ACT, partial(_post_standings_afresh, drawing),
+            POST_STANDINGS_AFRESH, StepKind.ACT, partial(_post_standings_afresh, drawing, driver_names_read),
             describe=_describe_standings_post, record=_record_standings_post,
         ),
         DELETE_MESSAGE: delete_message_step(),
@@ -569,7 +577,9 @@ async def _describe_names(ctx: StepContext) -> str:
     return "looking up the drivers' display names for the standings"
 
 
-async def _resolve_names(ctx: StepContext) -> StepResult:
+async def _resolve_names(
+    driver_names_read: AwaitedHook | None, ctx: StepContext
+) -> StepResult:
     """Resolve, from Discord, the names the division's standings are drawn under.
 
     A job of its own before the save that recomputes the snapshots, so that the save awaits
@@ -586,7 +596,9 @@ async def _resolve_names(ctx: StepContext) -> StepResult:
     division_id = ctx.step_payload.get("division_id")
     if division_id is None:
         division_id = (await _round_row(ctx.db_path, int(ctx.payload["round_id"])))["division_id"]
-    names = await standings_display_names(ctx.db_path, int(division_id), guild, ctx.bot)
+    names = await standings_display_names(
+        ctx.db_path, int(division_id), guild, driver_names_read
+    )
     return StepResult(result={"names": names})
 
 
@@ -862,7 +874,11 @@ async def _describe_standings_post(ctx: StepContext) -> str:
 
 
 async def _post_standings(
-    drawing: ImageDrawing | None, ctx: StepContext, *, recompute: bool = False
+    drawing: ImageDrawing | None,
+    driver_names_read: AwaitedHook | None,
+    ctx: StepContext,
+    *,
+    recompute: bool = False,
 ) -> StepResult:
     """Post one round's standings, drawing the snapshots the round stores, or with *recompute*
     the standings worked out again from the results as they stand when the job runs."""
@@ -879,14 +895,14 @@ async def _post_standings(
 
     if recompute:
         driver_snaps = await driver_standings_for_display(
-            ctx.db_path, division_id, round_id, guild, ctx.bot
+            ctx.db_path, division_id, round_id, guild, driver_names_read
         )
         team_snaps = await standings_service.compute_team_standings(
             ctx.db_path, division_id, round_id
         )
     else:
         driver_snaps, team_snaps = await _stored_standings(
-            ctx.db_path, division_id, round_id, guild, ctx.bot
+            ctx.db_path, division_id, round_id, guild, driver_names_read
         )
     show_reserves = (
         bool(rnd["reserves_in_standings"]) if rnd["reserves_in_standings"] is not None else True
@@ -952,13 +968,19 @@ def _left_posted(kept: dict[str, Any] | None) -> bool:
     return any(key != DRAWN_LINES for key in kept or {})
 
 
-async def _post_standings_afresh(drawing: ImageDrawing | None, ctx: StepContext) -> StepResult:
+async def _post_standings_afresh(
+    drawing: ImageDrawing | None, driver_names_read: AwaitedHook | None, ctx: StepContext
+) -> StepResult:
     """`/results standings sync`'s job: a round's standings recomputed, then posted anew."""
-    return await _post_standings(drawing, ctx, recompute=True)
+    return await _post_standings(drawing, driver_names_read, ctx, recompute=True)
 
 
 async def _stored_standings(
-    db_path: str, division_id: int, round_id: int, guild: discord.Guild, bot: LeagueBot
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    guild: discord.Guild,
+    driver_names_read: AwaitedHook | None,
 ) -> tuple[list[DriverStandingsSnapshot], list[TeamStandingsSnapshot]]:
     """The standings the round's snapshots hold, which a posting draws.
 
@@ -1010,7 +1032,7 @@ async def _stored_standings(
         ]
     else:
         driver_snaps = await driver_standings_for_display(
-            db_path, division_id, round_id, guild, bot
+            db_path, division_id, round_id, guild, driver_names_read
         )
     if teams:
         team_snaps = [

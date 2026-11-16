@@ -27,7 +27,6 @@ from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.services.publishing.results_post_service import get_standings_message_id
 from tests.support.change_queue import discard_job, in_a_job, retry_job, run_queue, stopped_job
 from tests.support.season_classification import (
-    bot_on,
     classification_posts,
     first_round_id,
     guild_double,
@@ -44,6 +43,17 @@ from tests.support.season_league import (
     reply,
     season_league,
 )
+
+
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from types import SimpleNamespace
+
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
 
 
 
@@ -67,7 +77,7 @@ async def test_the_opening_standings_are_posted_for_every_division(db_path):
     with first, second:
         for division_id in division_ids:
             await service.post_opening_standings(
-                bot_on(db_path), guild_double(), db_path, division_id, as_text=False
+                _hook(db_path), guild_double(), db_path, division_id, as_text=False
             )
 
     assert standings.await_count == 2
@@ -95,7 +105,7 @@ async def test_the_opening_standings_are_drawn_against_the_division_s_first_roun
     first, second = classification_posts(standings)
     with first, second:
         await service.post_opening_standings(
-            bot_on(db_path), guild_double(), db_path, division_ids[0], as_text=False
+            _hook(db_path), guild_double(), db_path, division_ids[0], as_text=False
         )
 
     assert standings.await_args.args[2] == opener
@@ -114,7 +124,7 @@ async def test_a_division_with_no_rounds_posts_no_opening_standings(db_path):
     first, second = classification_posts(standings)
     with first, second:
         await service.post_opening_standings(
-            bot_on(db_path), guild_double(), db_path, division_ids[0], as_text=False
+            _hook(db_path), guild_double(), db_path, division_ids[0], as_text=False
         )
 
     assert standings.await_count == 0
@@ -136,7 +146,7 @@ async def test_the_opening_standings_post_reads_the_division_s_standings_channel
     first, second = classification_posts(standings)
     with first, second:
         await service.post_opening_standings(
-            bot_on(db_path), guild, db_path, division_ids[0], as_text=False
+            _hook(db_path), guild, db_path, division_ids[0], as_text=False
         )
 
     standings.assert_awaited_once()
@@ -162,7 +172,7 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     first, second = classification_posts(standings)
     with first, second, pytest.raises(StepFailedOnDiscord):
         await service.post_opening_standings(
-            bot_on(db_path), guild, db_path, division_ids[0], as_text=False
+            _hook(db_path), guild, db_path, division_ids[0], as_text=False
         )
 
     standings.assert_not_awaited()
@@ -183,7 +193,7 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
     for division in (PRO, AM):
         with in_a_job():
             await season_standings_posts.post_opening_standings(
-                league.bot, league.guild, league.db_path, division, as_text=False,
+                _hook(league.db_path), league.guild, league.db_path, division, as_text=False,
             )
 
     assert league.texts(DIVISIONS[PRO][3].standings)
@@ -235,7 +245,7 @@ async def test_the_final_standings_are_drawn_against_the_last_round_with_results
     inputs = _final_inputs(second, division_ids[0])
     with first, last, inputs[0], inputs[1]:
         await service.post_final_standings(
-            bot_on(db_path), guild_double(), db_path, division_ids[0], second, as_text=False
+            _hook(db_path), guild_double(), db_path, division_ids[0], second, as_text=False
         )
 
     assert standings.await_args.args[2] == second
@@ -266,7 +276,7 @@ async def test_the_final_standings_stand_beside_the_last_round_s_and_replace_not
     with first, second:
         with in_a_job():
             await service.post_final_standings(
-                bot_on(db_path), guild, db_path, division_id, round_id, as_text=True
+                _hook(db_path), guild, db_path, division_id, round_id, as_text=True
             )
 
     channel.send.assert_awaited()
@@ -292,7 +302,7 @@ async def test_final_standings_whose_channel_was_deleted_raise(db_path):
     inputs = _final_inputs(round_id, division_ids[0])
     with first, second, inputs[0], inputs[1], pytest.raises(StepFailedOnDiscord):
         await service.post_final_standings(
-            bot_on(db_path), guild, db_path, division_ids[0], round_id, as_text=False
+            _hook(db_path), guild, db_path, division_ids[0], round_id, as_text=False
         )
 
     standings.assert_not_awaited()
@@ -315,7 +325,7 @@ async def test_the_final_standings_record_no_message_id(db_path):
         "leaguebot.results.services.publishing.results_post_service.produce_standings", produce
     ):
         await service.post_final_standings(
-            bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=False
+            _hook(db_path), guild_double(), db_path, division_id, round_id, as_text=False
         )
 
     produce.assert_awaited_once()
@@ -351,13 +361,13 @@ async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try
     ):
         with pytest.raises(StepFailedOnDiscord) as failed:
             await service.post_final_standings(
-                bot_on(db_path), guild, db_path, division_id, round_id, as_text=False
+                _hook(db_path), guild, db_path, division_id, round_id, as_text=False
             )
         assert failed.value.result == {"new": [9201], "channel_id": 900}
         remove.assert_not_awaited()
 
         await service.post_final_standings(
-            bot_on(db_path), guild, db_path, division_id, round_id,
+            _hook(db_path), guild, db_path, division_id, round_id,
             as_text=True, kept=failed.value.result,
         )
 
@@ -386,7 +396,7 @@ async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
     inputs = _final_inputs(round_id, division_id)
     with first, second, inputs[0], inputs[1]:
         await service.post_final_standings(
-            bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=False
+            _hook(db_path), guild_double(), db_path, division_id, round_id, as_text=False
         )
 
     standings.assert_not_awaited()

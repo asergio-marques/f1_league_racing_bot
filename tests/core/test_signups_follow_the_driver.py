@@ -9,6 +9,7 @@ that was not (decided 2026-09-18).
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,6 +22,15 @@ async def _mark_approved(svc, db_path, discord_user_id):
     async with get_connection(db_path) as db:
         await svc.mark_approved_on(db, discord_user_id)
         await db.commit()
+
+
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
 
 
 SERVER_ID = 2433
@@ -69,8 +79,8 @@ async def test_placement_still_finds_a_signup_made_on_a_past_account(tmp_path):
 async def test_the_nationality_is_found_from_either_account(tmp_path):
     db_path, _ = await _make_db(tmp_path)
 
-    assert await _driver_nationality(db_path, int(A)) == "PT"
-    assert await _driver_nationality(db_path, int(B)) == "PT"
+    assert await _driver_nationality(db_path, _hook(db_path), int(A)) == "PT"
+    assert await _driver_nationality(db_path, _hook(db_path), int(B)) == "PT"
 
 
 async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
@@ -87,7 +97,7 @@ async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
     drivers = await SignupModuleService(db_path).get_unassigned_drivers_seeded()
 
     assert drivers[0]["server_display_name"] == "Racer Now"
-    assert await _driver_nationality(db_path, int(A)) == "BR"
+    assert await _driver_nationality(db_path, _hook(db_path), int(A)) == "BR"
 
 
 async def _newer_rejected_signup_on_b(db_path: str) -> None:
@@ -109,7 +119,7 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     drivers = await SignupModuleService(db_path).get_unassigned_drivers_seeded()
 
     assert drivers[0]["server_display_name"] == "Racer"
-    assert await _driver_nationality(db_path, int(B)) == "PT"
+    assert await _driver_nationality(db_path, _hook(db_path), int(B)) == "PT"
 
 
 async def _in_two_seasons(db_path: str) -> None:
@@ -190,7 +200,7 @@ async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
         await driver_turned_down_on(db, profile_id)
         await db.commit()
 
-    assert await _driver_nationality(db_path, int(A)) == "BR"
+    assert await _driver_nationality(db_path, _hook(db_path), int(A)) == "BR"
     assert await _approvals(db_path) == 0
 
 

@@ -38,6 +38,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.services.publishing.results_post_service import set_standings_message_id_on
@@ -1167,7 +1168,8 @@ async def test_an_amendment_that_sanctions_keeps_the_banner_its_card_stands_unde
         headed_by.append(round_id)
         await recorded(round_id, division_id, owed, as_text=as_text)
         await verdict_announcement_service.announce_sanction(
-            league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
+            league.bot, AwaitedHook(), league.db_path, round_id, owed["driver_user_id"],
+            "Max",
             *sanction_card_texts(
                 owed["sanction"], f"<@{owed['driver_user_id']}> (Max)", 10
             ), drawing=league.bot.image_drawing, as_text=as_text,

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
@@ -52,6 +53,7 @@ async def post_attendance_sheet(
     *,
     as_text: bool = False,
     drawing: ImageDrawing | None = None,
+    driver_names_read: AwaitedHook | None = None,
     earlier_lines: tuple[str, ...] = (),
 ) -> PostedSheet | None:
     """Post a new sheet to the division's attendance channel, which replaces the prior one.
@@ -224,6 +226,7 @@ async def post_attendance_sheet(
             guild,
             db_path,
             drawing=drawing,
+            driver_names_read=driver_names_read,
             lines=drawn_lines,
             round_id=round_id,
             division_id=division_id,
@@ -439,6 +442,7 @@ async def _sheet_attachment(
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     faults: list[str] | None = None,
     drawing: ImageDrawing | None = None,
+    driver_names_read: AwaitedHook | None = None,
     lines: list[str] | None = None,
 ):
     """The sheet graphic to attach, or None to post the textual sheet alone.
@@ -462,7 +466,9 @@ async def _sheet_attachment(
     drawing hands back, the render's notices and the fault of a picture that was due and not
     drawn, is added to *lines*, if given, already worded, for the job to write beside them.
 
-    *drawing* is the image module's: none draws no picture.
+    *drawing* is the image module's: none draws no picture. *driver_names_read* is the hook signup
+    answers how a driver is named, which the names and flags are read through; none names each
+    driver by their account alone.
     """
     if bot is None or guild is None or drawing is None:
         return None
@@ -475,11 +481,13 @@ async def _sheet_attachment(
     try:
         from leaguebot.image.services.aspects.image_attendance_service import DriverRecord, resolve_drawing
 
-        from leaguebot.image.services.aspects.image_results_post import (
-            _driver_names,
-            _nationalities,
-            _nationality_collected,
+        from leaguebot.core.services.drivers.driver_names import (
+            read_driver_names,
+            read_driver_nationalities,
+            read_nationality_collected,
         )
+
+        names_read = driver_names_read if driver_names_read is not None else AwaitedHook()
 
         records: list[DriverRecord] = []
         user_ids = [int(row["discord_user_id"]) for row in sorted_drivers]
@@ -496,9 +504,13 @@ async def _sheet_attachment(
 
         # The name each driver is drawn under, and their flag — both through the conventions
         # every graphic shares, called rather than restated (wip-spec § "The name of a person").
-        display_names = await _driver_names(db_path, guild, user_ids, division_id=division_id)
-        nationalities = await _nationalities(db_path, user_ids, division_id=division_id)
-        collected = await _nationality_collected(db_path)
+        display_names = await read_driver_names(
+            db_path, names_read, guild, user_ids, division_id=division_id
+        )
+        nationalities = await read_driver_nationalities(
+            db_path, names_read, user_ids, division_id=division_id
+        )
+        collected = await read_nationality_collected(db_path, names_read)
 
         # The team of a row is the team of the division seating the driver **at the moment of
         # generation** — the reserve team for a reserve — and never the team whose car they

@@ -601,7 +601,7 @@ one question of core's `is_league_manager` ("Errors and failures", below).
 
 Signup needs no other module (`NEEDS`, `core.md`, "The dependency table") and uses none: the
 `signup-uses-no-other-module-but-image` contract allows the image module, and signup imports
-nothing of it. Core names a driver from their signup through the `driver_names_read` hook above.
+nothing of it. Core names a driver from their signup through the `driver_names_read` hook above: its reader (`driver_names`) merges the answer with the profile and test-mode fields it holds, and is handed to image, results and attendance, so that none reads a signup record.
 
 ---
 

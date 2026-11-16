@@ -1058,6 +1058,9 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
+    # The hooks are made first: the image drawing and attendance's hook below are handed the one
+    # that names a driver, before any module's wiring signs up on it.
+    _make_hooks(bot)
     bot.module_service = ModuleService(settings.db_path)
     register_module_switches(bot.module_service)
     bot.hub_options = HubOptions()
@@ -1088,7 +1091,7 @@ async def build(settings: Settings) -> LeagueBot:
     image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
-        db_path=settings.db_path,
+        db_path=settings.db_path, driver_names_read=bot.driver_names_read,
     )
     bot.image_drawing = image_drawing
 
@@ -1135,9 +1138,8 @@ async def build(settings: Settings) -> LeagueBot:
     # attendance through it alone.
     bot.attendance_after_review = AttendanceAfterReview(
         bot, bot.placement_service, roles=bot.team_role_service, lineups=bot.lineup_poster,
-        drawing=image_drawing,
+        drawing=image_drawing, driver_names_read=bot.driver_names_read,
     )
-    _make_hooks(bot)
     _sign_up_to_confirmation_refused(bot)
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)

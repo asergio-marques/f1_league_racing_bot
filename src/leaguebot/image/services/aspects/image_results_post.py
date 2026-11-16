@@ -11,21 +11,23 @@ raised for the job to say why the text stands.
 existing body runs exactly as it did before this feature. The graphic is an alternative output
 beside the text, never a replacement for it (Constitution XIV.7).
 
-The readers of a driver's name, nationality and team here are the ones the other pictures share;
-they stay until the name chain is read through core.
+A driver's name and nationality are read through core's readers (`driver_names`), handed the hook
+signup answers; the readers of a team's name and shorthand here are the ones the other pictures share.
 """
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
 
-import discord
-
-from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.drivers.driver_names import (
+    read_driver_names,
+    read_driver_nationalities,
+    read_nationality_collected,
+)
 from leaguebot.image.models.image_module import PostingOrigin
-from leaguebot.image.services.aspects.image_lineup_service import resolve_driver_name
 
 if TYPE_CHECKING:
+    from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
@@ -35,163 +37,6 @@ RESULTS_ASPECT = "results"
 
 #: What the toggle draws, which heads a fault's line: the aspect `/images config toggle` offers.
 RESULTS_TOGGLE_NAME = "Results image"
-
-
-async def _nationality_collected(db_path: str) -> bool:
-    """Whether the league collects a driver's nationality at all.
-
-    Where it does not, a graphic with no flags is exactly what was configured and raises
-    nothing (XIV.4's configured absence). Where it does, a driver who stated none is an
-    ordinary emptied optional field and reports as one.
-
-    While test mode is active the test-mode switch stands in for the signup one, so a
-    maintainer may see the graphics of a server under test both with flags and without
-    them without disturbing the setting real signups run on.
-
-    This is the module's single reader of the switch. The lineup and the preview call it
-    rather than each carrying a copy: it read the wrong table in two of the three copies
-    until 2026-08-18, and one place to be wrong is enough.
-    """
-    try:
-        async with get_connection(db_path) as db:
-            config = await (
-                await db.execute(
-                    "SELECT test_mode_active, test_mode_nationality_required "
-                    "FROM server_configs",
-                )
-            ).fetchone()
-            if config is not None and config["test_mode_active"]:
-                return bool(config["test_mode_nationality_required"])
-
-            row = await (
-                await db.execute(
-                    "SELECT nationality_required FROM signup_module_settings "
-                    "",
-                )
-            ).fetchone()
-    except Exception:  # noqa: BLE001 — an unreadable switch is not a reason to fail a render
-        log.warning(
-            "results image: the nationality switch could not be read, so flags are drawn",
-            exc_info=True,
-        )
-        return True
-    if row is None:
-        return True
-    return bool(row["nationality_required"])
-
-
-#: The signup a graphic reads a driver's name and nationality from: their latest signup to
-#: the season being drawn (issue #220), falling back to their latest signup of all where that
-#: season holds none. A signup is kept, never overwritten, so a driver who has signed up in
-#: several seasons is drawn under what they gave for the season on the graphic.
-#:
-#: A signup made from any of the driver's accounts is theirs (issue #243): one made before
-#: they changed account is still what they gave for that season. Within the season an
-#: approved signup outranks a later one that was not — see `SIGNUP_PRECEDENCE_SQL`.
-#:
-#: Takes one parameter: the season's id (None to read the latest of all).
-SIGNUP_FOR_SEASON_SQL = (
-    "(SELECT id FROM signup_records "
-    " WHERE discord_user_id IN "
-    "       (SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = dp.id) "
-    " ORDER BY COALESCE(season_id = ?, 0) DESC, season_id DESC, approved DESC, id DESC "
-    " LIMIT 1)"
-)
-
-
-async def season_of_division(db_path: str, division_id: int | None) -> int | None:
-    """The season *division_id* belongs to, or None."""
-    if division_id is None:
-        return None
-    from leaguebot.core.services.rounds.round_context import division_context
-
-    division = await division_context(db_path, division_id)
-    return division.season_id if division is not None else None
-
-
-async def _driver_names(
-    db_path: str, guild, user_ids: list[int], *, division_id: int | None = None
-) -> dict[int, str]:
-    """The name each driver is drawn under (XIV.16, and the wip-spec's person-name rule).
-
-    The display name of their Discord account on the server at the moment of generation,
-    falling through the names the league recorded for them — in their signup to the season of
-    *division_id*, where one is named — and ending at the user id. A graphic carries no
-    mention, so this is what stands in its place.
-    """
-    names: dict[int, str] = {}
-
-    recorded: dict[int, tuple] = {}
-    if user_ids:
-        season_id = await season_of_division(db_path, division_id)
-        placeholders = ",".join("?" * len(user_ids))
-        async with get_connection(db_path) as db:
-            rows = await (
-                await db.execute(
-                    f"SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name, "
-                    f"       sr.server_display_name, sr.discord_username "
-                    f"FROM driver_profiles dp "
-                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
-                    f"WHERE dp.discord_user_id IN ({placeholders})",
-                    [season_id, *[str(uid) for uid in user_ids]],
-                )
-            ).fetchall()
-        for row in rows:
-            recorded[int(row["discord_user_id"])] = (
-                row["server_display_name"],
-                row["discord_username"],
-                row["test_display_name"] if row["is_test_driver"] else None,
-            )
-
-    for user_id in user_ids:
-        member = guild.get_member(user_id) if guild is not None else None
-        if member is None and guild is not None:
-            try:
-                member = await guild.fetch_member(user_id)
-            except (discord.NotFound, discord.HTTPException):
-                member = None
-
-        signup_display_name, signup_username, test_display_name = recorded.get(
-            user_id, (None, None, None)
-        )
-        # One chain, the lineup's, rather than a copy of it: what a name is cleaned of before it
-        # is drawn is decided there, once, for every graphic.
-        names[user_id] = resolve_driver_name(
-            discord_user_id=user_id,
-            display_name=member.display_name if member is not None else None,
-            signup_display_name=signup_display_name,
-            signup_username=signup_username,
-            test_display_name=test_display_name,
-        )
-    return names
-
-
-async def _nationalities(
-    db_path: str, user_ids: list[int], *, division_id: int | None = None
-) -> dict[int, str | None]:
-    """Each driver's recorded nationality, or None where they stated none.
-
-    Read from their signup to the season of *division_id*, where one is named. A mock driver
-    has no signup record to hold one, and carries its own instead — the same branch on
-    is_test_driver the name is resolved by.
-    """
-    if not user_ids:
-        return {}
-    season_id = await season_of_division(db_path, division_id)
-    placeholders = ",".join("?" * len(user_ids))
-    async with get_connection(db_path) as db:
-        rows = await (
-            await db.execute(
-                f"SELECT dp.discord_user_id, "
-                f"       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
-                f"            ELSE sr.nationality END AS nationality "
-                f"FROM driver_profiles dp "
-                f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
-                f"WHERE dp.discord_user_id IN ({placeholders})",
-                [season_id, *[str(uid) for uid in user_ids]],
-            )
-        ).fetchall()
-    return {int(row["discord_user_id"]): (row["nationality"] or None) for row in rows}
 
 
 async def _team_names(db_path: str, guild, division_id: int, team_ids: list[int]) -> dict[int, str]:
@@ -224,6 +69,7 @@ async def build_drawing(
     config_service: ImageConfigService,
     guild,
     *,
+    driver_names_read: AwaitedHook,
     session_result,
     driver_rows,
     points_map,
@@ -255,19 +101,19 @@ async def build_drawing(
         race_name=race_name,
         driver_rows=driver_rows,
         points_map=points_map,
-        driver_names=await _driver_names(
-            db_path, guild, user_ids, division_id=session_result.division_id
+        driver_names=await read_driver_names(
+            db_path, driver_names_read, guild, user_ids, division_id=session_result.division_id
         ),
         team_names=await _team_names(
             db_path, guild, session_result.division_id, team_ids
         ),
         team_keys=await _team_keys(db_path, team_ids),
-        nationalities=await _nationalities(
-            db_path, user_ids, division_id=session_result.division_id
+        nationalities=await read_driver_nationalities(
+            db_path, driver_names_read, user_ids, division_id=session_result.division_id
         ),
         dsq_phase_map=dsq_phase_map or {},
         fastest_lap_colour=getattr(config, "fastest_lap_colour", None),
-        nationality_collected=await _nationality_collected(db_path),
+        nationality_collected=await read_nationality_collected(db_path, driver_names_read),
     )
 
 

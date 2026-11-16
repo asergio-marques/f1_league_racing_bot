@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from leaguebot.core.services.drivers.driver_names import resolve_driver_name
 from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
@@ -31,7 +32,6 @@ from leaguebot.image.models.image_catalogues import (
 )
 from leaguebot.image.utils.asset_resolver import normalise
 from leaguebot.image.utils.country_data import country_for_nationality
-from leaguebot.core.utils.input_validator import DRAWN_NAME
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 
@@ -117,39 +117,6 @@ class LineupDrawing:
 
 
 # ── 1. Resolution ─────────────────────────────────────────────────────────
-
-
-def resolve_driver_name(
-    *,
-    discord_user_id: str | int | None,
-    display_name: str | None = None,
-    signup_display_name: str | None = None,
-    signup_username: str | None = None,
-    test_display_name: str | None = None,
-) -> str:
-    """The first of the five links that yields a non-empty value (FR-005).
-
-    An image cannot carry a Discord mention as the textual lineup does, so the chain ends
-    at the user id rather than at nothing: every driver is named, always.
-
-    **Each link is cleaned before it is judged** (#362). A Discord name is the one text a
-    graphic draws that the league cannot control, so it is stripped of group mentions, emoji
-    and markup rather than refused — the rules a name the league types is refused by. A link
-    left empty by the cleaning, a name made only of emoji, falls through to the next.
-    """
-    for candidate in (
-        display_name,
-        signup_display_name,
-        signup_username,
-        test_display_name,
-        None if discord_user_id is None else str(discord_user_id),
-    ):
-        if candidate is None:
-            continue
-        cleaned = DRAWN_NAME.check("name", str(candidate)).text
-        if cleaned:
-            return cleaned
-    return ""
 
 
 def _seat_of(

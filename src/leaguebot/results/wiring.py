@@ -274,7 +274,10 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
 
     bot.placements_confirmed.subscribe(season_standings_posts.placements_confirmed_on)
     bot.placements_confirmed_steps.subscribe(
-        partial(season_standings_posts.opening_steps, bot.module_service, _drawing_of(bot))
+        partial(
+            season_standings_posts.opening_steps, bot.module_service, _drawing_of(bot),
+            bot.driver_names_read,
+        )
     )
 
 
@@ -285,7 +288,10 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 
     bot.season_completed.subscribe(season_standings_posts.season_completed_on)
     bot.season_completed_steps.subscribe(
-        partial(season_standings_posts.final_steps, bot.module_service, _drawing_of(bot))
+        partial(
+            season_standings_posts.final_steps, bot.module_service, _drawing_of(bot),
+            bot.driver_names_read,
+        )
     )
 
 
@@ -381,6 +387,7 @@ def register_change_types(
         submission_all_cancelled_change(
             seasons=bot.season_service,
             drawing=_drawing_of(bot),
+            driver_names_read=bot.driver_names_read,
             attendance=attendance,
             cancellation_notices=bot.cancellation_notices,
             cancellation_steps=steps_of_the_modules(bot.cancellation_steps),
@@ -436,10 +443,16 @@ def register_change_types(
         )
     )
     bot.change_queue.register(
-        amend_cancel_change(attendance=attendance, now=lambda: bot.change_queue.now())
+        amend_cancel_change(
+            attendance=attendance, now=lambda: bot.change_queue.now(),
+            driver_names_read=bot.driver_names_read,
+        )
     )
     bot.change_queue.register(
-        amend_lapse_change(attendance=attendance, now=lambda: bot.change_queue.now())
+        amend_lapse_change(
+            attendance=attendance, now=lambda: bot.change_queue.now(),
+            driver_names_read=bot.driver_names_read,
+        )
     )
 
     # The timer asks the queue when it fires, by the helper's getter, as above.
@@ -465,6 +478,7 @@ def register_change_types(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
             teams=bot.team_service, router=bot.output_router, attendance=attendance,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+            driver_names_read=bot.driver_names_read,
         )
     )
     bot.change_queue.register(amend_close_change())
@@ -472,6 +486,7 @@ def register_change_types(
         review_open_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
             router=bot.output_router, attendance=attendance, drawing=_drawing_of(bot),
+            driver_names_read=bot.driver_names_read,
         )
     )
     bot.change_queue.register(
@@ -495,7 +510,7 @@ def register_change_types(
     bot.change_queue.register(
         appeals_open_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            router=bot.output_router, attendance=attendance,
+            router=bot.output_router, attendance=attendance, driver_names_read=bot.driver_names_read,
         )
     )
     bot.change_queue.register(close_stale_change())
@@ -503,17 +518,20 @@ def register_change_types(
     # run, as the getters above are, and reach attendance through the hook alone.
     bot.change_queue.register(
         report_approval_change(
-            attendance=attendance, drawing=_drawing_of(bot), now=lambda: bot.change_queue.now()
+            attendance=attendance, drawing=_drawing_of(bot), now=lambda: bot.change_queue.now(),
+            driver_names_read=bot.driver_names_read,
         )
     )
     bot.change_queue.register(
         appeals_approval_change(
-            attendance=attendance, drawing=_drawing_of(bot), now=lambda: bot.change_queue.now()
+            attendance=attendance, drawing=_drawing_of(bot), now=lambda: bot.change_queue.now(),
+            driver_names_read=bot.driver_names_read,
         )
     )
     for stage in amendment_stage_changes(
         attendance=attendance,
         drawing=_drawing_of(bot),
+        driver_names_read=bot.driver_names_read,
         now=lambda: bot.change_queue.now(),
         queue=bot.change_queue,
         config=bot.config_service,
@@ -527,13 +545,18 @@ def register_change_types(
             drawing=_drawing_of(bot),
             now=lambda: bot.change_queue.now(),
             module_service=bot.module_service,
+            driver_names_read=bot.driver_names_read,
         )
     )
     bot.change_queue.register(
-        rounds_sync_change(bot.season_service, bot.module_service, _drawing_of(bot))
+        rounds_sync_change(
+            bot.season_service, bot.module_service, _drawing_of(bot), bot.driver_names_read
+        )
     )
     bot.change_queue.register(
-        standings_sync_change(bot.season_service, bot.module_service, _drawing_of(bot))
+        standings_sync_change(
+            bot.season_service, bot.module_service, _drawing_of(bot), bot.driver_names_read
+        )
     )
     bot.change_queue.register(
         setting_change(

@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.models.change import (
     FollowOn,
     PlannedStep,
@@ -119,7 +120,8 @@ def _plural(count: int, one: str, many: str) -> str:
 
 
 def appeals_approval_change(
-    *, attendance: AttendanceAfterReview, drawing: ImageDrawing, now: Callable[[], datetime]
+    *, attendance: AttendanceAfterReview, drawing: ImageDrawing, now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """The change that approves a round's appeals; see the module. *attendance* is the hook the
     builder hands every change type of the review (the verdict jobs share the sanction jobs it
@@ -321,8 +323,8 @@ def appeals_approval_change(
         return "\n".join([reply, *left])
 
     steps: dict[str, Step] = {
-        **posting_steps(drawing),
-        **review_verdicts.verdict_steps(now, attendance, drawing),
+        **posting_steps(drawing, driver_names_read),
+        **review_verdicts.verdict_steps(now, attendance, drawing, driver_names_read),
         _APPLY: Step(
             _APPLY, StepKind.SAVE, apply, still_due=names_not_discarded, describe=describe_apply,
         ),

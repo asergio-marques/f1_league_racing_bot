@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.attendance.services.sheet import attendance_sheet
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.models.change import (
     GuildUnavailable,
     PlannedStep,
@@ -53,7 +54,9 @@ OPENING_SHEET = "opening_sheet"
 FINAL_SHEET = "final_sheet"
 
 
-def sheet_step(modules: ModuleService, drawing: ImageDrawing) -> Step:
+def sheet_step(
+    modules: ModuleService, drawing: ImageDrawing, driver_names_read: AwaitedHook | None = None
+) -> Step:
     """The job that posts a division's attendance sheet for a round.
 
     The payload is `{"division_id", "division_name", "round_id", "sanctioned"}`, `sanctioned`
@@ -80,7 +83,7 @@ def sheet_step(modules: ModuleService, drawing: ImageDrawing) -> Step:
         posted = await attendance_sheet.post_attendance_sheet(
             ctx.bot, guild, ctx.db_path, int(payload["round_id"]), int(payload["division_id"]),
             sanctioned_profile_ids=sanctioned or None, as_text=ctx.tries > 0,
-            drawing=drawing, earlier_lines=earlier,
+            drawing=drawing, driver_names_read=driver_names_read, earlier_lines=earlier,
         )
         result = attendance_sheet.sheet_result(posted)
         then: tuple[PlannedStep, ...] = ()
@@ -123,7 +126,8 @@ async def _opening_round(db_path: str, division_id: int):
 
 async def post_opening_sheet(
     bot: Any, guild: Any, db_path: str, division_id: int, *, as_text: bool = False,
-    drawing: ImageDrawing | None = None, earlier_lines: tuple[str, ...] = (),
+    drawing: ImageDrawing | None = None, driver_names_read: AwaitedHook | None = None,
+    earlier_lines: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Post one division's opening attendance sheet, raising where it cannot be posted, and
     give the job its result (`attendance_sheet.sheet_result`).
@@ -147,6 +151,7 @@ async def post_opening_sheet(
         occasion=ClassificationOccasion.SEASON_OPENING,
         as_text=as_text,
         drawing=drawing,
+        driver_names_read=driver_names_read,
         earlier_lines=earlier_lines,
     ))
 
@@ -162,7 +167,9 @@ async def placements_confirmed_on(
     )
 
 
-def opening_steps(modules: ModuleService, drawing: ImageDrawing) -> dict[str, Step]:
+def opening_steps(
+    modules: ModuleService, drawing: ImageDrawing, driver_names_read: AwaitedHook | None = None
+) -> dict[str, Step]:
     """Attendance's step definition for the opening sheet, signed up to
     *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps`. The
     builder hands in *modules*, as it hands cancellation's steps theirs, so that `still_due`
@@ -179,7 +186,8 @@ def opening_steps(modules: ModuleService, drawing: ImageDrawing) -> dict[str, St
         guild = await require_guild(ctx.bot)
         result = await post_opening_sheet(
             ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0, drawing=drawing, earlier_lines=earlier,
+            as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
+            earlier_lines=earlier,
         )
         then: tuple[PlannedStep, ...] = ()
         if result.get("takes_slot"):
@@ -217,7 +225,8 @@ def opening_steps(modules: ModuleService, drawing: ImageDrawing) -> dict[str, St
 
 async def post_final_sheet(
     bot: Any, guild: Any, db_path: str, division_id: int, round_id: int, *, as_text: bool = False,
-    drawing: ImageDrawing | None = None, earlier_lines: tuple[str, ...] = (),
+    drawing: ImageDrawing | None = None, driver_names_read: AwaitedHook | None = None,
+    earlier_lines: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Post one division's final attendance sheet, drawn against *round_id*, raising where it
     cannot be posted, and give the job its result (`attendance_sheet.sheet_result`).
@@ -238,6 +247,7 @@ async def post_final_sheet(
         occasion=ClassificationOccasion.SEASON_FINAL,
         as_text=as_text,
         drawing=drawing,
+        driver_names_read=driver_names_read,
         earlier_lines=earlier_lines,
     ))
 
@@ -256,7 +266,9 @@ async def season_completed_on(
     )
 
 
-def final_steps(modules: ModuleService, drawing: ImageDrawing) -> dict[str, Step]:
+def final_steps(
+    modules: ModuleService, drawing: ImageDrawing, driver_names_read: AwaitedHook | None = None
+) -> dict[str, Step]:
     """Attendance's step definition for the final sheet, signed up to *season_completed_steps*
     beside results' `season_standings_posts.final_steps`. The builder hands in *modules*, as it
     hands the opening sheet's theirs, so that `still_due` reads attendance's switch without
@@ -268,7 +280,8 @@ def final_steps(modules: ModuleService, drawing: ImageDrawing) -> dict[str, Step
         each = ctx.step_payload
         result = await post_final_sheet(
             ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
-            as_text=ctx.tries > 0, drawing=drawing, earlier_lines=earlier,
+            as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
+            earlier_lines=earlier,
         )
         # The final sheet stands beside the last round's: nothing is saved for it and nothing
         # deleted, so it plans no deletion and carries no record.

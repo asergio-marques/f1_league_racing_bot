@@ -36,6 +36,7 @@ from typing import Any
 import aiosqlite
 import discord
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.drivers.team_service import TeamService
@@ -633,6 +634,7 @@ def amend_stage_one_change(
     attendance: AttendanceAfterReview,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """The `results.amend.stage_one` change type, for the builder to register, on the league lane:
     the amendment's pastes, all in, recorded. *attendance* is attendance's share of a round's
@@ -753,7 +755,7 @@ def amend_stage_one_change(
         plan=plan,
         steps={
             **steps,
-            NAMES: posting_steps()[NAMES],
+            NAMES: posting_steps(driver_names_read=driver_names_read)[NAMES],
             RECORD_STAGE_ONE: Step(
                 RECORD_STAGE_ONE, StepKind.SAVE, record, describe=describe_record
             ),

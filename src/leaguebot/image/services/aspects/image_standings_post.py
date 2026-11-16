@@ -218,6 +218,7 @@ async def _seats(db_path: str, division_id: int):
 async def build_drawings(
     guild,
     *,
+    driver_names_read,
     db_path: str,
     division_id: int,
     round_id: int,
@@ -240,21 +241,24 @@ async def build_drawings(
     only in what a row stands for.
     """
     from leaguebot.results.services.standings import standings_service
-    from leaguebot.image.services.aspects.image_results_post import (
-        _driver_names,
-        _nationality_collected,
-        _nationalities,
-        _team_keys,
-        _team_names,
+    from leaguebot.core.services.drivers.driver_names import (
+        read_driver_names,
+        read_driver_nationalities,
+        read_nationality_collected,
     )
+    from leaguebot.image.services.aspects.image_results_post import _team_keys, _team_names
     from leaguebot.image.services.aspects.image_standings_service import resolve_drawing
 
     driver_keys = [s.driver_user_id for s in driver_snapshots]
     team_keys = [s.team_instance_id for s in team_snapshots]
 
-    names = await _driver_names(db_path, guild, driver_keys, division_id=division_id)
-    nationalities = await _nationalities(db_path, driver_keys, division_id=division_id)
-    collected = await _nationality_collected(db_path)
+    names = await read_driver_names(
+        db_path, driver_names_read, guild, driver_keys, division_id=division_id
+    )
+    nationalities = await read_driver_nationalities(
+        db_path, driver_names_read, driver_keys, division_id=division_id
+    )
+    collected = await read_nationality_collected(db_path, driver_names_read)
 
     # A constructors row *is* a team, so that graphic's names are keyed by the team. A
     # drivers row names the team its own driver sits in, so that graphic's are keyed by driver.

@@ -48,6 +48,7 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import sheet_posting
 from leaguebot.attendance.services.settings.channel_settings import NOT_ENABLED
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.refusal import Refused
@@ -418,17 +419,18 @@ def posting_steps(
     modules: "ModuleService",
     drawing: "ImageDrawing",
     now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> dict[str, Step]:
     """The jobs a recalculation plans after its save, by name: a sanctioned driver's roles, the
     cards and their heading, the lineups, the sheets and the deletion of a post replaced. The
     sync's and a penalty's change both run them."""
-    announce = verdict_steps(now, attendance, drawing)
+    announce = verdict_steps(now, attendance, drawing, driver_names_read)
     return {
         SYNC_ROLES: _noted_in_the_host_log(role_move_step(roles, SYNC_ROLES, reason=ROLES_REASON)),
         ANNOUNCE_HEADING: announce[ANNOUNCE_HEADING],
         ANNOUNCE_SANCTION: announce[ANNOUNCE_SANCTION],
         lineup_posting.POST_LINEUP: lineup_posting.lineup_step(lineups, now=now),
-        sheet_posting.POST_SHEET: sheet_posting.sheet_step(modules, drawing),
+        sheet_posting.POST_SHEET: sheet_posting.sheet_step(modules, drawing, driver_names_read),
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
     }
 
@@ -442,6 +444,7 @@ def attendance_sync_change(
     modules: "ModuleService",
     drawing: "ImageDrawing",
     now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """`attendance.sync`, see the module. *placement* applies the sanctions on the save, *roles*
     gives and takes a sanctioned driver's roles, *lineups* posts the lineups, *attendance* is the
@@ -522,7 +525,7 @@ def attendance_sync_change(
         SYNC_SAVE: Step(SYNC_SAVE, StepKind.SAVE, save),
         **posting_steps(
             roles=roles, lineups=lineups, attendance=attendance, modules=modules,
-            drawing=drawing, now=now,
+            drawing=drawing, now=now, driver_names_read=driver_names_read,
         ),
         SYNC_CLOSE: Step(SYNC_CLOSE, StepKind.SAVE, close, describe=describe_close),
     }

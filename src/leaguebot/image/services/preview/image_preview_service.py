@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 from leaguebot.image.models.image_constants import ASSET_CLASS_TO_COLUMN, PREVIEW_KINDS
 from leaguebot.core.models.round import Round
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -225,8 +226,13 @@ async def resolve_context(
     require_mystery: bool | None = None,
     rng=None,
     now=None,
+    driver_names_read: AwaitedHook | None = None,
 ) -> PreviewContext:
     """Resolve a league's own data for one preview, or refuse and say why.
+
+    *driver_names_read* is the hook signup answers how each driver is named and whether the league
+    collects a nationality (core's `driver_names_read`), handed by the command; none draws every
+    driver by their account alone, with flags.
 
     The refusals are evaluated in the order the command contract fixes, so that a mistyped
     division is never reported as a missing round and a wrong round number is never
@@ -332,7 +338,9 @@ async def resolve_context(
 
     # The team read serves the drivers of every kind that draws them, and is two small
     # queries, so it is not worth conditioning on the kind.
-    await _load_teams_and_drivers(bot, context, guild=guild)
+    await _load_teams_and_drivers(
+        bot, context, driver_names_read if driver_names_read is not None else AwaitedHook(), guild=guild
+    )
 
     if require_teams and not [
         t for t in context.teams if not getattr(t, "is_reserve", False)
@@ -370,22 +378,29 @@ def _format_of(round_obj) -> str:
     return str(getattr(raw, "value", raw) or "NORMAL").upper()
 
 
-async def _load_teams_and_drivers(bot: LeagueBot, context: PreviewContext, *, guild=None) -> None:
+async def _load_teams_and_drivers(
+    bot: LeagueBot, context: PreviewContext, driver_names_read: AwaitedHook, *, guild=None
+) -> None:
     """Read the division's teams and seats, and fill the drivers the preview will draw.
 
     The team shape mirrors what ``image_lineup_post.build_drawing`` passes to the lineup's
     ``resolve_drawing``, so the preview and the posting path hand the same thing to the
     same function.
     """
-    from leaguebot.image.services.aspects.image_results_post import season_of_division
+    from leaguebot.core.services.drivers.driver_names import (
+        read_nationality_collected,
+        season_of_division,
+    )
 
     season_id = await season_of_division(bot.db_path, context.division_id)
     from leaguebot.image.services.aspects.image_lineup_post import seated_teams
 
-    teams = await seated_teams(bot.db_path, context.division_id, season_id)
+    teams = await seated_teams(bot.db_path, driver_names_read, context.division_id, season_id)
 
     context.teams = teams
-    context.nationality_collected = await _nationality_collected(bot)
+    context.nationality_collected = await read_nationality_collected(
+        bot.db_path, driver_names_read
+    )
 
     # The first link of the name chain is the account's display name on the server at the
     # moment of generation, which only the guild can answer. Read through the same helper the
@@ -485,20 +500,6 @@ def _drivers_from_teams(
             seat.nationality = driver.nationality
             index += 1
     return fabricated, bool(fabricated)
-
-
-async def _nationality_collected(bot: LeagueBot) -> bool:
-    """True where the league collects a driver's nationality at all.
-
-    A preview reads the switch the posting paths read, and now through the very function
-    they read it with: the reader lives in ``image_results_post``, and this is the shim
-    that spares its callers here from holding a ``db_path``. Three copies of it once
-    existed and two read a ``signup_config`` table no migration creates, so the switch
-    reached no graphic at all until 2026-08-18.
-    """
-    from leaguebot.image.services.aspects.image_results_post import _nationality_collected as read_switch
-
-    return await read_switch(bot.db_path)
 
 
 # ── Asset directories ─────────────────────────────────────────────────────

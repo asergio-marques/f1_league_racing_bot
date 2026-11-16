@@ -58,6 +58,17 @@ async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
 # ── Lineups ────────────────────────────────────────────────────────────────────────
 
 
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from types import SimpleNamespace
+
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
+
+
 async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
     from leaguebot.image.services.aspects.image_lineup_post import build_drawing
     from unittest.mock import patch
@@ -69,7 +80,7 @@ async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
         return "drawing"
 
     with patch("leaguebot.image.services.aspects.image_lineup_service.resolve_drawing", side_effect=_resolve):
-        await build_drawing(db_path, None, DIVISION_ID)
+        await build_drawing(db_path, _hook(db_path), None, DIVISION_ID)
 
     seated = [
         seat.discord_user_id
@@ -94,7 +105,7 @@ async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
         return "drawing"
 
     with patch("leaguebot.image.services.aspects.image_lineup_service.resolve_drawing", side_effect=_resolve):
-        await build_drawing(db_path, None, DIVISION_ID, include_uncommitted=True)
+        await build_drawing(db_path, _hook(db_path), None, DIVISION_ID, include_uncommitted=True)
 
     seated = [
         seat.discord_user_id

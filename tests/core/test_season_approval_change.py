@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_service import SeasonService
@@ -1659,6 +1660,7 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
         config_service=SimpleNamespace(get_league_server_id=AsyncMock(return_value=1)),
         get_guild=lambda _server_id: None,
         image_drawing=MagicMock(),
+        driver_names_read=AwaitedHook(),
     )
     _sign_up_to_placements_confirmed(bot)
     steps = {name: step for defined in bot.placements_confirmed_steps.call()

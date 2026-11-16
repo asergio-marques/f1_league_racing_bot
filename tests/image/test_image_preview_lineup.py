@@ -16,10 +16,22 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.preview.image_preview_service import (
     build_lineup_preview,
-    resolve_context,
+    resolve_context as _resolve_context,
 )
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.saves import create_image_defaults, set_field
+
+
+async def resolve_context(bot, *args, **kwargs):
+    """`image_preview_service.resolve_context`, handed the hook signup answers how a driver is
+    named, as the command hands it from the bot, so that the names and flags a preview draws are
+    signup's."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=bot.db_path)
+    sign_up_driver_names_read(holder)
+    kwargs.setdefault("driver_names_read", holder.driver_names_read)
+    return await _resolve_context(bot, *args, **kwargs)
 
 SERVER_ID = 7272
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)

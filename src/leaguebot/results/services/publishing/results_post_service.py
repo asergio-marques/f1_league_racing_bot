@@ -10,6 +10,8 @@ import aiohttp
 import aiosqlite
 import discord
 
+from leaguebot.core.services.drivers.driver_names import read_driver_names
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.owned_channel_handler import delete_owned_channel
 from leaguebot.core.services.posting.standing_post_handler import (
@@ -359,7 +361,7 @@ async def driver_standings_for_display(
     division_id: int,
     round_id: int,
     guild: discord.Guild | None,
-    bot: LeagueBot | None = None,
+    driver_names_read: AwaitedHook | None = None,
 ) -> list[DriverStandingsSnapshot]:
     """The driver standings, ordered on the names they will be posted under.
 
@@ -369,7 +371,7 @@ async def driver_standings_for_display(
     be ordered. The first pass is read only for who is in it; the second is the one that
     counts.
 
-    Where no bot or guild is in scope there is nothing to resolve a name from, and the single
+    Where no hook or guild is in scope there is nothing to resolve a name from, and the single
     pass falls back to ordering a full tie by user id.
 
     The recomputation that persists a snapshot resolves the same names, through
@@ -382,13 +384,12 @@ async def driver_standings_for_display(
     preserving it would mean the standings reading a name nobody is called any more.
     """
     snaps = await standings_service.compute_driver_standings(db_path, division_id, round_id)
-    if bot is None or guild is None or not snaps:
+    if driver_names_read is None or guild is None or not snaps:
         return snaps
 
-    from leaguebot.image.services.aspects.image_results_post import _driver_names
-
-    names = await _driver_names(
-        db_path, guild, [s.driver_user_id for s in snaps], division_id=division_id
+    names = await read_driver_names(
+        db_path, driver_names_read, guild, [s.driver_user_id for s in snaps],
+        division_id=division_id,
     )
     return await standings_service.compute_driver_standings(
         db_path, division_id, round_id, names
@@ -399,7 +400,7 @@ async def standings_display_names(
     db_path: str,
     division_id: int,
     guild: discord.Guild | None,
-    bot: LeagueBot | None = None,
+    driver_names_read: AwaitedHook | None = None,
 ) -> dict[int, str] | None:
     """The names every driver the division's standings can mention would be drawn under.
 
@@ -410,7 +411,7 @@ async def standings_display_names(
     ``None`` where there is nothing to resolve a name from, which leaves the caller ordering
     a full tie by user id.
     """
-    if bot is None or guild is None:
+    if driver_names_read is None or guild is None:
         return None
 
     async with get_connection(db_path) as db:
@@ -423,10 +424,9 @@ async def standings_display_names(
     if not snaps:
         return None
 
-    from leaguebot.image.services.aspects.image_results_post import _driver_names
-
-    return await _driver_names(
-        db_path, guild, [s.driver_user_id for s in snaps], division_id=division_id
+    return await read_driver_names(
+        db_path, driver_names_read, guild, [s.driver_user_id for s in snaps],
+        division_id=division_id,
     )
 
 

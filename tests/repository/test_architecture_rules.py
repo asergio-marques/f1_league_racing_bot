@@ -775,12 +775,6 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.aspects.image_results_post._driver_names"): (1, PASS["image"]),
-    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.aspects.image_results_post._nationalities"): (1, PASS["image"]),
-    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.aspects.image_results_post._nationality_collected"): (1, PASS["image"]),
-    ("results/services/publishing/results_post_service.py", "leaguebot.image.services.aspects.image_results_post._driver_names"): (2, PASS["image"]),
-    ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.aspects.image_results_post._driver_names"): (1, PASS["image"]),
-    ("results/services/standings/season_standings_posts.py", "leaguebot.image.services.aspects.image_results_post._driver_names"): (1, PASS["image"]),
 }
 
 
@@ -2404,13 +2398,7 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/aspects/image_lineup_post.py", "seated_teams"): (2, PASS["image"]),
-    ("image/services/aspects/image_results_post.py", "<module>"): (2, PASS["image"]),
-    ("image/services/aspects/image_results_post.py", "_driver_names"): (2, PASS["image"]),
-    ("image/services/aspects/image_results_post.py", "_nationalities"): (2, PASS["image"]),
-    ("image/services/aspects/image_results_post.py", "_nationality_collected"): (2, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "_round_session_results"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
 }
 
 
@@ -3156,7 +3144,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
         (1, PASS["image"]),
-    ("image/services/aspects/image_results_post.py", "_nationality_collected"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_driver_nationality"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_mention_names"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_round_context"): (1, PASS["image"]),
