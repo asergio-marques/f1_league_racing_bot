@@ -1053,7 +1053,7 @@ async def build(settings: Settings) -> LeagueBot:
         settings.db_path, settings.jobstore_path
     )
     bot.output_router = OutputRouter(
-        bot, bot.config_service, retry_db_path=settings.db_path,
+        bot, bot.league_settings, retry_db_path=settings.db_path,
         now=lambda: bot.change_queue.now(),
     )
     # The queue is handed the router, and is started by start-up, after the recoveries.
