@@ -911,7 +911,6 @@ class ImageRenderService:
         spec_builder,
         *,
         posting_origin: PostingOrigin,
-        bot: LeagueBot | None = None,
         output_dir: Path | None = None,
         filename_stem: str | None = None,
         division_name: str | None = None,
@@ -932,6 +931,9 @@ class ImageRenderService:
           it next fires unattended.
         * **SCHEDULED** — fall back to the traditional text output. There is nobody to
           tell, and the league still needs its information.
+
+        The render's notices ride on the decision and are written by nobody here: the job that
+        posts the picture writes them as its own lines.
         """
         if not isinstance(posting_origin, PostingOrigin):
             raise TypeError(
@@ -946,9 +948,6 @@ class ImageRenderService:
             filename_stem=filename_stem,
             division_name=division_name,
         )
-
-        if bot is not None and outcome.notices:
-            await self.report_notices(bot, outcome.notices)
 
         if outcome.ok:
             return PostingDecision(
