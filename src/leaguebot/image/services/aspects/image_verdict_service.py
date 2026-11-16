@@ -27,7 +27,7 @@ from leaguebot.image.models.image_catalogues import (
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 from leaguebot.image.utils.country_data import country_for_nationality
-from leaguebot.core.utils.input_validator import USER_MENTION
+from leaguebot.core.utils.input_validator import USER_MENTION, describe_penalty
 
 TEMPLATE_KEY = "verdicts_template"
 
@@ -59,13 +59,11 @@ def stage_label(kind: VerdictKind) -> str:
 def sanction_text(penalty_type: str | None, time_seconds: int | None) -> str:
     """The descriptive rendering of a sanction, as the textual announcement carries it.
 
-    Delegates to the announcement service and restates nothing. XIV.7's one rendering: a
+    Delegates to the one wording the announcement carries (core's `describe_penalty`) and restates nothing. XIV.7's one rendering: a
     change to how the message renders a sanction is a change to the graphic by the same
     stroke, and the compact rendering a results graphic places in a sanction column is a
     different presentation of the same datum and is never substituted here.
     """
-    from leaguebot.results.services.review.verdict_announcement_service import describe_penalty
-
     return describe_penalty(penalty_type, time_seconds)
 
 

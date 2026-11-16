@@ -182,7 +182,6 @@ ignore_imports =
     leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.models.session_result
     leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.services.standings.standings_service
     leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.utils.results_formatter
-    leaguebot.image.services.aspects.image_verdict_service -> leaguebot.results.services.review.verdict_announcement_service
 
 [importlinter:contract:nothing-imports-the-entry-point]
 name = Nothing imports the entry point
