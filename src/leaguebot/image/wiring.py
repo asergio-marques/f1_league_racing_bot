@@ -6,9 +6,8 @@ It is under the entry point's rules, not a service's (architecture.md, "How the 
 it reads the bot as the builder does, so each function below is handed the bot and reads a service
 off it when it signs up or, where a lambda reads it, when it runs, which the tests that replace a
 service on the bot after registering rely on. It holds no rule of image's and no database code of
-its own: the recovery that still reads a table here is listed under image's pass in
-`test_architecture_rules.py`, to become a handler of the start-up sweep. Nothing imports it but the
-entry point.
+its own: its start-up step re-arms the daily portrait refresh through image's services, and the
+start-up sweep reports a step that fails. Nothing imports it but the entry point.
 """
 from __future__ import annotations
 
