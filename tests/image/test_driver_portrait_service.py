@@ -748,7 +748,9 @@ async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatc
     path = await _season_db(tmp_path)
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
 
-    written = await m.run_daily_refresh(_daily_bot(path, directory), now=NOW)
+    bot = _daily_bot(path, directory)
+
+    written = await m.run_daily_refresh(bot, bot.image_config_service, now=NOW)
 
     assert written == 2
     assert sorted(p.name for p in directory.iterdir()) == ["11.svg", "22.svg"]
@@ -773,7 +775,7 @@ async def test_the_daily_refresh_stands_aside_when_not_asked_for(
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
     bot = _daily_bot(path, directory, **config_overrides)
 
-    assert await m.run_daily_refresh(bot, now=NOW) == 0
+    assert await m.run_daily_refresh(bot, bot.image_config_service, now=NOW) == 0
     assert list(directory.iterdir()) == []
     assert await _rows(path) == {}
     for user_id in (11, 22):
@@ -795,7 +797,9 @@ async def test_a_daily_refresh_that_fires_hours_after_its_time_is_skipped(
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
     six_hours_late = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
 
-    assert await m.run_daily_refresh(_daily_bot(path, directory), now=six_hours_late) == 0
+    bot = _daily_bot(path, directory)
+
+    assert await m.run_daily_refresh(bot, bot.image_config_service, now=six_hours_late) == 0
     assert list(directory.iterdir()) == []
     assert await _rows(path) == {}
 
@@ -808,7 +812,7 @@ async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("boom"))
 
     # An APScheduler job that raises is logged into a void the league never reads.
-    assert await m.run_daily_refresh(bot, now=NOW) == 0
+    assert await m.run_daily_refresh(bot, bot.image_config_service, now=NOW) == 0
 
 
 async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp_path, monkeypatch):
@@ -821,7 +825,7 @@ async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp
     bot = _daily_bot(path, directory)
     bot.get_guild.return_value = None
 
-    assert await m.run_daily_refresh(bot, now=NOW) == 0
+    assert await m.run_daily_refresh(bot, bot.image_config_service, now=NOW) == 0
 
 
 # ── Reading the shape off the league's own lineup template ───────────────

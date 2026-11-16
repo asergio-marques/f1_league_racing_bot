@@ -56,6 +56,7 @@ from pathlib import Path
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.drivers.division_seating import (
     active_season_driver_ids as assigned_driver_ids,
 )
@@ -353,6 +354,27 @@ async def images_are_on(db_path: str) -> bool:
         return await images_enabled_on(db)
 
 
+async def rearm_daily_refresh(db_path: str, scheduler: SchedulerService) -> None:
+    """Re-arm the daily refresh at start-up, at the time the league stored, where it has the
+    refresh asked for (portraits on, daily on).
+
+    A stored time that is not ``HH:MM`` is the one fault expected of the arming, and it is
+    logged and left, so that the refresh not armed stops no other step of the start. Any other
+    fault is a defect in the bot and goes up to the start-up sweep, which reports it.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT pfp_daily_time FROM image_config WHERE use_pfp = 1 AND pfp_daily = 1"
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return
+    try:
+        scheduler.schedule_portrait_refresh(row["pfp_daily_time"])
+    except ValueError:
+        log.warning("driver portraits: the daily refresh could not be re-armed", exc_info=True)
+
+
 def _fired_late(now: datetime, time_of_day: str) -> bool:
     """Whether *now* is later than `MISSED_AFTER` past the latest moment *time_of_day* (``HH:MM``,
     UTC) came round: the refresh's own due moment, the job carrying no lateness limit to say."""
@@ -364,15 +386,18 @@ def _fired_late(now: datetime, time_of_day: str) -> bool:
     return now - due > MISSED_AFTER
 
 
-async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> int:
+async def run_daily_refresh(
+    bot: LeagueBot, images: ImageConfigService, *, now: datetime | None = None
+) -> int:
     """The daily portrait refresh for the league. Returns how many were written.
 
     Unlike the pre-render trigger this has no graphic to scope it, so it works through every
     driver seated in the active season. It also passes no wall-clock budget: nothing is
     waiting on it, and a roster that takes a minute at 03:00 costs nobody anything.
 
-    It reads the image module's switch as it fires and does nothing while the module is off. It
-    is handed *now* by the builder's callback and judges a run missed from it against the time of
+    It reads the image module's switch as it fires and does nothing while the module is off, and
+    is handed the image configuration service (*images*) by the builder, not looking it up on the
+    bot. It is handed *now* by the builder's callback and judges a run missed from it against the time of
     day it is due at (`MISSED_AFTER`), skipping it, since the job is armed with no lateness limit
     of its own; where it is handed none, as in a test of the refresh itself, it judges nothing.
 
@@ -382,7 +407,7 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
     try:
         if not await images_are_on(bot.db_path):
             return 0
-        config = await bot.image_config_service.get_config()
+        config = await images.get_config()
         if config is None or not getattr(config, "use_pfp", False):
             return 0
         if not getattr(config, "pfp_daily", False):

@@ -165,9 +165,7 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
-}
+KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_database_code_lives_only_in_services():
@@ -1491,7 +1489,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_calendar_preview"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_results_preview"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
@@ -3150,7 +3147,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),

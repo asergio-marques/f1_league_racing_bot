@@ -12,7 +12,6 @@ entry point.
 """
 from __future__ import annotations
 
-import logging
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -20,8 +19,6 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
-
-log = logging.getLogger(__name__)
 
 
 def register_switch(modules: "ModuleService") -> None:
@@ -99,7 +96,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     async def _portrait_refresh_cb() -> None:
         from leaguebot.image.services.portraits.driver_portrait_service import run_daily_refresh
-        await run_daily_refresh(bot, now=bot.change_queue.now())
+        await run_daily_refresh(bot, bot.image_config_service, now=bot.change_queue.now())
 
     bot.scheduler_service.register_timer("portrait_refresh", _portrait_refresh_cb)
 
@@ -113,18 +110,6 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
 
 async def recover_portrait_refresh_job(bot: "LeagueBot") -> None:
     """Re-arm the daily driver-portrait refresh, where the league has it switched on."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.image.services.portraits.driver_portrait_service import rearm_daily_refresh
 
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT pfp_daily_time FROM image_config "
-            "WHERE use_pfp = 1 AND pfp_daily = 1"
-        )
-        row = await cursor.fetchone()
-    if row is not None:
-        try:
-            bot.scheduler_service.schedule_portrait_refresh(
-                row["pfp_daily_time"]
-            )
-        except Exception:
-            log.warning("Failed to re-arm the daily portrait refresh", exc_info=True)
+    await rearm_daily_refresh(bot.db_path, bot.scheduler_service)

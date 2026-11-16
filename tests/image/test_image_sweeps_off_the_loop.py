@@ -187,7 +187,9 @@ async def test_the_daily_portrait_refresh_reads_the_shape_off_the_loop(monkeypat
     config = SimpleNamespace(use_pfp=True, pfp_daily=True)
     bot = _daily(monkeypatch, tmp_path, config)
 
-    written = await answered_while(held, lambda: driver_portrait_service.run_daily_refresh(bot))
+    written = await answered_while(
+        held, lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service)
+    )
 
     assert written == 3
     assert held.calls == [(config,)]
@@ -258,7 +260,7 @@ def _render_refresh_fails(monkeypatch, held, tmp_path):
 def _daily_refresh_fails(monkeypatch, held, tmp_path):
     monkeypatch.setattr(driver_portrait_service, "portrait_aspect", held)
     bot = _daily(monkeypatch, tmp_path, SimpleNamespace(use_pfp=True, pfp_daily=True))
-    return lambda: driver_portrait_service.run_daily_refresh(bot)
+    return lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service)
 
 
 #: Each entry point, how its evaluation is made to fail, and what it then answers: the fault
