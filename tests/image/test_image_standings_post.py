@@ -118,26 +118,19 @@ def _drawing(*, module=True, toggle=True, drivers_valid=True, constructors_valid
 
 
 async def _draw(drawing, render, *, build=None):
-    """Round 5 of Main drawn as the results module draws it: the gate asked for each template, the
+    """Round 5 of Main drawn as the results module draws it once both templates are wanted: the
     two championships composed (*build* stands in for the composer, by default giving two plain
-    drawings) where either is wanted, and those wanted handed to `draw_standings`, each rendered by
-    *render*, which is called as ``render(config, renderer, drawing)``. Not applicable, nothing
-    composed, where neither is wanted."""
+    drawings) and handed to `draw_standings`, each rendered by *render*, which is called as
+    ``render(config, renderer, drawing)``. The gate itself is `produce_standings`', and is pinned
+    through it in the section on the branch inside it below."""
     from leaguebot.image.services.aspects import image_standings_post as m
 
     build = build if build is not None else AsyncMock(return_value=_drawings())
-    templates = {"drivers": DRIVERS, "constructors": CONSTRUCTORS}
-    wanted = {
-        championship: await drawing.aspect_wanted("standings", key)
-        for championship, key in templates.items()
-    }
-    if not any(wanted.values()):
-        return m.StandingsDrawn()
+    templates = ("drivers", "constructors")
     composed = await build()
     with patch.object(m, "render_png", render):
         return await drawing.draw_standings(
-            {name: each for name, each in zip(templates, composed) if wanted[name]},
-            subject="Main round 5",
+            dict(zip(templates, composed)), subject="Main round 5",
         )
 
 
@@ -153,47 +146,44 @@ async def test_the_aspect_is_read_per_template_so_one_faulty_half_does_not_stop_
     assert await drawing.aspect_wanted("standings", CONSTRUCTORS) is False
 
 
-async def test_the_module_being_off_stands_the_whole_flow_aside():
-    """With the images module off, nothing of the standings is resolved or drawn: the drawing
-    hands back not applicable and no line, so the standings' own text runs untouched."""
-    build, render = AsyncMock(return_value=_drawings()), AsyncMock()
+async def _stood_aside(tmp_path, drawing):
+    """Round 3's standings put up by `produce_standings` over *drawing*, the composer of the two
+    drawings stood in for and `draw_standings` watched: handing back the composer and the
+    standings' text messages."""
+    db_path, division_id, round_id = await _seed(tmp_path)
+    captured: list[str] = []
+    composer = AsyncMock(return_value=_drawings())
+    drawing.draw_standings = AsyncMock(wraps=drawing.draw_standings)
 
-    drawn = await _draw(_drawing(module=False), render, build=build)
-
-    assert not drawn.applicable and drawn.lines == ()
-    assert build.await_count == 0 and render.await_count == 0
-
-
-async def test_the_toggle_being_off_stands_the_whole_flow_aside():
-    build, render = AsyncMock(return_value=_drawings()), AsyncMock()
-
-    drawn = await _draw(_drawing(toggle=False), render, build=build)
-
-    assert not drawn.applicable and drawn.lines == ()
-    assert build.await_count == 0 and render.await_count == 0
+    await _post(
+        db_path, division_id, round_id, captured, drawing=drawing,
+        composer=_composer_stood_in(composer),
+    )
+    return composer, captured
 
 
-async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting():
-    """A standings toggle that cannot be read answers text: not applicable, no line, nothing
-    drawn, and nothing raised to the posting."""
-    render = AsyncMock()
+@pytest.mark.parametrize(
+    "drawing_kwargs",
+    [
+        {"module": False},
+        {"toggle": False},
+        {"toggle": RuntimeError("boom")},
+        {"drivers_valid": False, "constructors_valid": False},
+    ],
+    ids=["module-off", "toggle-off", "reader-raises", "neither-template-wanted"],
+)
+async def test_the_whole_flow_stands_aside_and_the_text_posts(tmp_path, drawing_kwargs):
+    """With the images module off, the toggle off, a toggle that cannot be read, or neither
+    template valid, `produce_standings` composes nothing and draws nothing, nothing is raised to
+    the posting, and the standings' own text runs untouched: one message of both tables."""
+    drawing = _drawing(**drawing_kwargs)
 
-    drawn = await _draw(_drawing(toggle=RuntimeError("boom")), render)
+    composer, captured = await _stood_aside(tmp_path, drawing)
 
-    assert not drawn.applicable and drawn.lines == ()
-    assert render.await_count == 0
-
-
-async def test_the_whole_flow_stands_aside_when_neither_template_is_wanted():
-    """Both templates invalid: the drawing stands aside wholesale, so the caller's untouched
-    textual body runs, and nothing is rendered."""
-    render = AsyncMock()
-
-    drawn = await _draw(_drawing(drivers_valid=False, constructors_valid=False), render)
-
-    assert not drawn.applicable, "the caller's untouched textual body must run"
-    assert drawn.lines == ()
-    assert render.await_count == 0
+    assert composer.await_count == 0, "nothing is read for a picture that is not due"
+    assert drawing.draw_standings.await_count == 0
+    assert len(captured) == 1
+    assert "Driver Standings" in captured[0] and "Team Standings" in captured[0]
 
 
 # ── The failure matrix ────────────────────────────────────────────────────
@@ -260,18 +250,31 @@ async def test_both_failing_falls_back_to_both_sections_so_each_is_read_exactly_
 
 
 async def test_an_invalid_template_falls_that_championship_back_without_rendering(tmp_path):
-    """The constructors template is invalid: only the drivers' drawing is rendered, and the
-    constructors have no picture and no line."""
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
+    """The constructors template is invalid: `produce_standings` hands `draw_standings` only the
+    drivers' drawing, so only it is rendered and posted as a picture, and the constructors go out
+    as text with no line."""
+    from leaguebot.image.services.aspects import image_standings_post as m
+
+    db_path, division_id, round_id = await _seed(tmp_path)
+    captured: list[str] = []
+    pictures: list = []
+    png = _drawn(tmp_path, "drivers")
     render = AsyncMock(return_value=_decision(png=png))
+    drawing = _drawing(constructors_valid=False)
+    drawing.draw_standings = AsyncMock(wraps=drawing.draw_standings)
 
-    drawn = await _draw(_drawing(constructors_valid=False), render)
+    with patch.object(m, "render_png", render):
+        await _post(
+            db_path, division_id, round_id, captured, drawing=drawing, pictures=pictures,
+            composer=_composer_stood_in(AsyncMock(return_value=_drawings())),
+        )
 
-    assert drawn.drivers is not None and drawn.constructors is None
-    assert drawn.lines == ()
+    assert list(drawing.draw_standings.await_args.args[0]) == ["drivers"]
     assert render.await_count == 1, "the faulty template is never handed to the renderer"
     assert render.await_args.args[2].template_key == DRIVERS
+    assert len(pictures) == 1
+    assert len(captured) == 1
+    assert "Team Standings" in captured[0] and "Driver Standings" not in captured[0]
 
 
 async def test_a_resolution_fault_reports_once_and_falls_both_back():
@@ -806,12 +809,13 @@ def _poster_drawing(drawn=None, *, raises=None):
     return drawing
 
 
-def _composer_stood_in():
-    """The results module's composer of the two drawings stood in for: the gate is asked first and
-    the drawings composed before the drawing, whose `draw_standings` is stubbed, is handed them."""
+def _composer_stood_in(build=None):
+    """The results module's composer of the two drawings stood in for (by *build*, else an
+    `AsyncMock` giving two plain drawings): the gate is asked first and the drawings composed
+    before the drawing is handed them."""
     return patch(
         "leaguebot.results.services.publishing.standings_drawing_composer.build_drawings",
-        new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        new=build if build is not None else AsyncMock(return_value=(MagicMock(), MagicMock())),
     )
 
 
@@ -856,7 +860,7 @@ def _standings_channel(captured, pictures=None, *, order=None, refuse_uploads=Fa
 
 
 async def _post(db_path, division_id, round_id, captured, *, drawing=None, channel=None,
-                pictures=None, occasion=None):
+                pictures=None, occasion=None, composer=None):
     """Round 3's standings put up by `produce_standings` with *drawing* in scope, in *channel*
     or one recording each text in *captured* and each picture in *pictures*, giving the tables
     it reports."""
@@ -871,7 +875,7 @@ async def _post(db_path, division_id, round_id, captured, *, drawing=None, chann
     guild.get_role.return_value = None
 
     kwargs = {} if occasion is None else {"occasion": occasion}
-    with in_a_job(), _composer_stood_in():
+    with in_a_job(), composer or _composer_stood_in():
         return await produce_standings(
             db_path=db_path,
             division_id=division_id,
