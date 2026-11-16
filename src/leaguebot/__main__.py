@@ -447,8 +447,11 @@ async def _draw_review_picture(
     A lineup is the image module's, drawn obtaining each seated driver's missing portrait first,
     so a review is not judged on a placeholder the league will not see, and, mid-season, with its
     uncommitted drivers in it. A calendar is core's, of the division's rounds as they stand when it
-    is drawn. A picture the renderer will not draw raises, with the renderer's message.
+    is drawn. A picture the renderer will not draw raises `PictureNotDrawn`, with the renderer's
+    message and the notices it was drawn with.
     """
+    from leaguebot.core.services.seasons.season_review_changes import PictureNotDrawn
+
     kind, division_id = str(picture["kind"]), int(picture["division_id"])
     if kind == "lineup":
         lineup = await bot.image_drawing.draw_review_lineup(
@@ -458,7 +461,8 @@ async def _draw_review_picture(
         if notices is not None:
             notices.extend(lineup.notices)
         if lineup.path is None:
-            raise RuntimeError(lineup.problem or "the lineup could not be drawn")
+            raise PictureNotDrawn(
+                lineup.problem or "the lineup could not be drawn", tuple(lineup.notices))
         return lineup.path
     from leaguebot.core.services.rounds import calendar_post_service
 
@@ -471,7 +475,8 @@ async def _draw_review_picture(
     if notices is not None:
         notices.extend(outcome.notices)
     if outcome.png_path is None:
-        raise RuntimeError(outcome.message or f"the {kind} could not be drawn")
+        raise PictureNotDrawn(
+            outcome.message or f"the {kind} could not be drawn", tuple(outcome.notices))
     return outcome.png_path
 
 

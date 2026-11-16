@@ -130,6 +130,16 @@ class DrawnPicture(NamedTuple):
     notices: tuple[str, ...] = ()
 
 
+class PictureNotDrawn(RuntimeError):
+    """A review's picture the renderer would not draw, with the render notices it was drawn with
+    before it failed, which the job that posts the picture records among its own lines beside the
+    fault: what a drawing noticed is not lost with the picture."""
+
+    def __init__(self, fault: str, notices: tuple[str, ...] = ()) -> None:
+        super().__init__(fault)
+        self.notices = notices
+
+
 #: Draws a review's picture to a file, raising where it will not draw: the file alone, or the file
 #: with the notices it was drawn with. It is synchronous and the change runs it in a worker
 #: thread; the builder makes it.
@@ -486,6 +496,8 @@ def season_review_post_change(
         except Exception as exc:  # noqa: BLE001 — a render fault is no stop, it withholds Approve
             log.error("season review: %s did not draw: %s", picture["name"], exc, exc_info=True)
             fault = str(exc) or type(exc).__name__
+            if isinstance(exc, PictureNotDrawn):
+                notices = exc.notices
         message: discord.Message | None = None
         if drawn is not None:
             attachment = discord.File(str(drawn), filename=drawn.name)
