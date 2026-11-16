@@ -13,10 +13,12 @@
 # `allow_indirect_imports` limits a rule to direct imports, so one listed breach is not
 # reported again through every chain that passes through it.
 #
-# The code is one package with a folder for core and one for each module, and inside each a
-# folder per kind of code (architecture.md, "How the code is laid out"). A `*` stands for any
-# one of those folders, so `leaguebot.*.services` is every module's services and core's. A `**`
-# also takes the topic folders below core's services (`leaguebot.core.services.queue.x`).
+# The code is one package in three layers (architecture.md, "How the code is laid out"): `utils`,
+# which imports nothing of the bot; the framework, which imports nothing of core or of any module;
+# and core and the modules, each with a folder of its own. The framework, core and each module
+# hold a folder per kind of code. A `*` stands for any one of those three kinds of folder, so
+# `leaguebot.*.services` is every module's services, core's and the framework's. A `**` also takes
+# the topic folders below the services (`leaguebot.core.services.queue.x`).
 
 [importlinter]
 root_packages =
@@ -73,6 +75,37 @@ ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
     # (under TYPE_CHECKING). Services stay typed attributes on the bot (architecture.md).
     leaguebot.core.utils.league_bot -> leaguebot.*.services.**
+
+[importlinter:contract:utils-imports-nothing-of-the-bot]
+name = Utils imports nothing of the bot
+type = forbidden
+source_modules =
+    leaguebot.utils
+forbidden_modules =
+    leaguebot.framework
+    leaguebot.core
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+    leaguebot.image
+    leaguebot.__main__
+allow_indirect_imports = True
+
+[importlinter:contract:the-framework-uses-no-league-rule]
+name = The framework uses no league rule
+type = forbidden
+source_modules =
+    leaguebot.framework
+forbidden_modules =
+    leaguebot.core
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+    leaguebot.image
+    leaguebot.__main__
+allow_indirect_imports = True
 
 [importlinter:contract:core-uses-no-module]
 name = Core uses no module
@@ -173,6 +206,8 @@ allow_indirect_imports = True
 name = Nothing imports the entry point
 type = forbidden
 source_modules =
+    leaguebot.utils
+    leaguebot.framework
     leaguebot.core
     leaguebot.results
     leaguebot.attendance

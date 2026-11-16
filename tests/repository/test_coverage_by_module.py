@@ -368,14 +368,18 @@ def test_main_survives_a_report_with_no_production_code(tmp_path, capsys):
 
 
 def test_every_file_of_the_bot_is_in_a_module_that_exists():
-    """The five modules plus core, as `core_specification.md` names them, and nothing else:
-    a file in a folder of the package that is none of them has been put in the wrong place."""
+    """The five modules plus core, as `core_specification.md` names them, and the two layers below
+    them, `utils` and the framework (architecture.md, "How the code is laid out"), each measured
+    against the floor as a unit of its own, and nothing else: a file in a folder of the package that
+    is none of them has been put in the wrong place."""
     modules = {
         cbm.classify(path.relative_to(ROOT).as_posix())
         for path in sorted((ROOT / "src").rglob("*.py"))
     }
 
-    assert modules == {"weather", "image", "attendance", "results", "signup", "core"}
+    assert modules == {
+        "weather", "image", "attendance", "results", "signup", "core", "utils", "framework"
+    }
 
 
 # ---------------------------------------------------------------------------
