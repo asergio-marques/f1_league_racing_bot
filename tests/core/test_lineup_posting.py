@@ -318,7 +318,10 @@ async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
     PNG; Pro's lineup channel refuses every send carrying a picture and takes the text. The
     lineup asked for is posted as text in the same try: the post job is done at its first try,
     the queue does not stop, no picture stands in the channel, the old lineup is deleted by the
-    job after it, nothing records the refusal in the log channel, and the PNG is released."""
+    job after it, and the PNG is released. The log channel holds the posting job's own "Lineup
+    posted as text" line once, naming Pro, Discord's reason for the refusal, and what puts it
+    right: not the template, which is not at fault, but the next change to the division's drivers,
+    which posts the picture again (the owner's decision on #288)."""
     from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
     from tests.support.season_league import refuses_pictures
 
@@ -342,7 +345,14 @@ async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
     assert await _lineup_id(league) == new
     post = [job for job in await _lineup_jobs(league) if job["name"] == "post_lineup"]
     assert [(bool(job["done_at"]), job["tries"]) for job in post] == [(True, 0)]
-    assert "Lineup posted as text" not in await _said(league)
+    said = await _said(league)
+    assert said.count("Lineup posted as text") == 1, said
+    assert (
+        "Lineup posted as text\n"
+        "  division: Pro\n"
+        "  problem: Discord refused the picture (403 Missing Access (error code: 0): Missing Access)\n"
+        "  to put it right: the picture is posted with the next change to the division's drivers"
+    ) in said, said
     assert drawing.discarded == [png]
 
 
@@ -532,6 +542,8 @@ async def test_a_refused_lineup_s_notices_reach_the_log_once_when_it_is_retried(
     assert len(named) == 1, logged
     [line] = named
     assert notices[1] in line and "lineup" in line.lower() and "Pro" in line, line
+    refused = [line for line in logged if "Discord refused the picture" in line]
+    assert len(refused) == 1 and "Lineup posted as text" in refused[0], logged
 
 
 @pytest.mark.parametrize(("start", "member", "change", "divisions"), [

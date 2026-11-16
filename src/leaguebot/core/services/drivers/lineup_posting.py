@@ -106,6 +106,9 @@ class LineupPosted:
     form: str
     problem: str | None = None
     notices: tuple[str, ...] = ()
+    #: Whether *problem* was Discord refusing the picture rather than the drawing failing: the
+    #: line then says the next change to the drivers posts it again, the template being sound.
+    refused: bool = False
 
 
 class LineupPoster:
@@ -172,8 +175,9 @@ class LineupPoster:
         Either way the lineup is posted before the message it replaces is deleted, by a job after
         it (Constitution XIV rule 8; image spec :706): this method deletes nothing and saves
         nothing, and a refusal raises `StepFailedOnDiscord` for the queue to stop on. A picture
-        Discord refuses stands aside, so the text is posted in the same try; only a refused text
-        post stops the lane.
+        Discord refuses stands aside, so the text is posted in the same try, carrying Discord's
+        reason as its problem for the job's line (image spec, "Lineup"); only a refused text post
+        stops the lane.
         """
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
@@ -217,6 +221,7 @@ class LineupPoster:
 
         image_path: Path | None = None
         problem: str | None = None
+        refused = False
         notices: tuple[str, ...] = ()
         drawing = self._drawing
         # Asked before the drawing's catch-all: the gate stands aside from its own faults, and a
@@ -248,9 +253,12 @@ class LineupPoster:
                     new_msg_id = await post_standing(
                         channel, mentions=discord.AllowedMentions.none(), file=attachment
                     )
-                except discord.HTTPException:
-                    # Discord refused the picture: fall to the text in the same try.
+                except discord.HTTPException as exc:
+                    # Discord refused the picture: fall to the text in the same try, its reason
+                    # the problem the job's line names.
                     send_as_image = False
+                    problem = f"Discord refused the picture ({str(exc) or type(exc).__name__})"
+                    refused = True
                 else:
                     return LineupPosted(
                         new_msg_id, lineup_channel_id, lineup_message_id, div_name, "image",
@@ -269,12 +277,13 @@ class LineupPoster:
                 failure = StepFailedOnDiscord(f"the lineup could not be posted: {exc}")
                 setattr(failure, LINEUP_DRAWN_ATTRIBUTE, {
                     "division_name": div_name, "notices": list(notices), "problem": problem,
+                    "refused": refused,
                 })
                 raise failure from exc
 
             return LineupPosted(
                 new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text",
-                problem=problem, notices=notices,
+                problem=problem, notices=notices, refused=refused,
             )
         finally:
             if drawing is not None:
@@ -333,7 +342,7 @@ def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "division_name": posted.division_name, "form": posted.form, "problem": posted.problem,
-        "notices": list(posted.notices),
+        "notices": list(posted.notices), "refused": posted.refused,
     }
 
 
@@ -345,13 +354,18 @@ _FIX_IT = (
     "drivers"
 )
 
+#: What puts right a lineup posted as text because Discord refused its picture: the template is
+#: not at fault, and the next change to the division's drivers posts the picture again.
+_POST_AGAIN = "the picture is posted with the next change to the division's drivers"
+
 
 def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tuple[str, ...]:
     """The lineup posting job's own lines, as the calendar's are: where the picture drawn came
     back with render notices, one line naming the lineup and the division, which is where they
     reach the log channel (the drawing writes none itself); and where it fell back to text, the
-    member and the change it ran for, the division, the problem, and what puts it right. Empty
-    where nothing went wrong."""
+    member and the change it ran for, the division, the problem, and what puts it right: the
+    template, or, where Discord refused the picture, nothing but the next change to the drivers.
+    Empty where nothing went wrong."""
     lines: tuple[str, ...] = ()
     if result.get("notices"):
         lines += (drawn_notices_line(
@@ -364,7 +378,7 @@ def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tup
         f"{ctx.named} | {ctx.what} | Lineup posted as text\n"
         f"  division: {result.get('division_name')}\n"
         f"  problem: {problem}\n"
-        f"  to put it right: {_FIX_IT}",
+        f"  to put it right: {_POST_AGAIN if result.get('refused') else _FIX_IT}",
     )
 
 
