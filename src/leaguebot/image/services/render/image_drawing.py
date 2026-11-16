@@ -203,9 +203,9 @@ class ImageDrawing:
         #: is never built unable to do what `draw_lineup` needs.
         self._db_path = db_path
         #: The bot, which the verdict's, the results' and the standings' resolving still read
-        #: the services of others through (steps 29 and 32 of image's design pass hand them
-        #: what they read instead). Optional so that a drawing built for the other answers (the
-        #: capacity questions, the calendar, either lineup) needs none.
+        #: the services of others through, until they are handed what they read instead.
+        #: Optional so that a drawing built for the other answers (the capacity questions, the
+        #: calendar, either lineup) needs none.
         self._bot = bot
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:

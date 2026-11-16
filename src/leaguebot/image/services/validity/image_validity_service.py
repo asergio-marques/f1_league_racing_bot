@@ -1265,8 +1265,8 @@ async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
     ``tests/image/test_image_module_flow.py`` holds with
     ``test_no_source_module_posting_path_imports_the_render_service`` and
     ``test_only_wired_aspects_read_their_toggle``. Asking the image module a question is the
-    shape those guards permit, and it is the shape ``standings_enabled`` is already called
-    in from ``placement_service``. Reading ``get_toggles`` from a posting file is not.
+    shape those guards permit. Reading ``get_toggles`` from a posting file is not. It still
+    reads the services off the bot it is handed, which is the lookup a ratchet entry names.
 
     Never raises: a reader that refused an amendment because it could not answer would be
     worse than one that under-reports, since the permission it guards is only ever an
