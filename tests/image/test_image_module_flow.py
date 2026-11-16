@@ -2472,7 +2472,6 @@ class _RecordingChannel:
         self.sent.append((content, file))
 
 
-@pytest.mark.rasteriser
 def _drawing_over(bot):
     """The image drawing a verdict is posted with, over the services of *bot*."""
     from unittest.mock import AsyncMock
@@ -2485,6 +2484,7 @@ def _drawing_over(bot):
     )
 
 
+@pytest.mark.rasteriser
 async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
