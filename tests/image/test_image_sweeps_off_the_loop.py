@@ -60,7 +60,7 @@ SHIPPED = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "temp
 def _validity(config: Any) -> ImageValidityService:
     service = MagicMock()
     service.get_config = AsyncMock(return_value=config)
-    return ImageValidityService(service, MagicMock())
+    return ImageValidityService(service, MagicMock(), MagicMock())
 
 
 def _setting(kind: str, config: Any, proposed: Any) -> Any:
@@ -606,7 +606,7 @@ async def test_the_contrast_measurement_parses_its_template_off_the_loop(monkeyp
         await config_service.get_config(), template_directory=str(SHIPPED)
     )
     config_service.get_config = AsyncMock(return_value=config)
-    validity = ImageValidityService(config_service, MagicMock())
+    validity = ImageValidityService(config_service, MagicMock(), MagicMock())
     threads = _parsed_where(monkeypatch)
 
     with recording_threads() as crossed:

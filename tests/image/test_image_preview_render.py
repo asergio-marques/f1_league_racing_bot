@@ -90,7 +90,7 @@ async def bot(db_path):
     config_service = ImageConfigService(db_path)
     await create_image_defaults(config_service)
     validity_service = ImageValidityService(
-        config_service, SimpleNamespace(is_images_enabled=_true)
+        config_service, SimpleNamespace(is_images_enabled=_true), SimpleNamespace()
     )
     return SimpleNamespace(
         db_path=db_path,

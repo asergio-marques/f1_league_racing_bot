@@ -128,44 +128,6 @@ class ImageConfigService:
             ).fetchall()
         return {row["slot"]: row["colour"] for row in rows}
 
-    async def season_division_names(self) -> list[str]:
-        """The divisions the per-tier colour check measures against, by tier.
-
-        The season a league is working on: ACTIVE if there is one, else SETUP — the same
-        choice `SeasonService.get_previewable_divisions` makes, so what `/season placements-review`
-        validates is what `/images test` would draw.
-
-        The fastest-lap contrast check reads the same list (#165), so the tiers it measures
-        the plate in are the tiers a colour is demanded of — "the season under way" means
-        one thing in the image module, not two.
-
-        It sits on **this** service, though it reads season data, because this is the
-        service that owns `image_tier_colour` and the one `ImageValidityService` already
-        holds. The alternative was a fourth constructor dependency on the validity service
-        for a single query, which buys nothing and costs every caller that builds one.
-
-        Empty where the server has no such season: a league with no divisions cannot be
-        short of a colour for one, and a check that said otherwise would block a
-        configuration nobody could complete.
-        """
-        async with get_connection(self._db_path) as db:
-            season = await (
-                await db.execute(
-                    "SELECT id FROM seasons "
-                    "WHERE status IN ('ACTIVE', 'SETUP') "
-                    "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                )
-            ).fetchone()
-            if season is None:
-                return []
-            rows = await (
-                await db.execute(
-                    "SELECT name FROM divisions WHERE season_id = ? ORDER BY tier",
-                    (season[0],),
-                )
-            ).fetchall()
-        return [row["name"] for row in rows]
-
     async def get_all_tier_colours(self) -> dict[str, dict[str, str]]:
         """Every tier's palette, keyed by division slug — for validation and the view.
 

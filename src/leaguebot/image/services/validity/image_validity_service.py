@@ -1335,9 +1335,13 @@ class ImageValidityService:
     """Async facade the cogs use. The evaluation itself is pure and synchronous, and is run in a
     worker thread, off the event loop."""
 
-    def __init__(self, config_service, module_service) -> None:
+    def __init__(self, config_service, module_service, season_service) -> None:
         self._config_service = config_service
         self._module_service = module_service
+        #: Core's season service, which names the divisions the per-tier colour check measures
+        #: against: the season a league is working on, ACTIVE if there is one, else SETUP, the
+        #: choice `/images test` makes, so what a review validates is what a preview draws.
+        self._season_service = season_service
 
     async def template_reports(self) -> dict[str, ValidityReport]:
         """Every template's report, the sweep run off the event loop.
@@ -1406,7 +1410,7 @@ class ImageValidityService:
         return colour_shortfall(
             reports,
             await self._config_service.get_all_tier_colours(),
-            await self._config_service.season_division_names(),
+            [division.name for division in await self._season_service.get_previewable_divisions()],
         )
 
     @staticmethod

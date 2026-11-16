@@ -613,7 +613,7 @@ async def test_season_review_and_config_view_agree(
         "leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False
     )
 
-    validity = ImageValidityService(config_service, module_service)
+    validity = ImageValidityService(config_service, module_service, SimpleNamespace())
 
     class _Bot:
         image_config_service = config_service
@@ -764,7 +764,7 @@ async def test_aspect_section_footer_names_only_pending_aspects(
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
     await _enable(module_service, config_service)
 
-    validity = ImageValidityService(config_service, module_service)
+    validity = ImageValidityService(config_service, module_service, SimpleNamespace())
 
     class _Bot:
         image_config_service = config_service
@@ -836,7 +836,7 @@ RICH_TEMPLATE = (
 def _validity_service(config_service, module_service):
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
-    return ImageValidityService(config_service, module_service)
+    return ImageValidityService(config_service, module_service, SimpleNamespace())
 
 
 def _render_service(config_service, module_service):
@@ -844,7 +844,7 @@ def _render_service(config_service, module_service):
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     return ImageRenderService(
-        config_service, ImageValidityService(config_service, module_service)
+        config_service, ImageValidityService(config_service, module_service, SimpleNamespace())
     )
 
 
@@ -1010,7 +1010,7 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_aspect(config_service, "calendar", True)
 
-    validity = ImageValidityService(config_service, module_service)
+    validity = ImageValidityService(config_service, module_service, SimpleNamespace())
     statuses = {s.aspect: s for s in await validity.aspect_statuses()}
 
     assert statuses["calendar"].state == STATE_ENABLED_INVALID
@@ -1138,7 +1138,7 @@ async def _measure(config_service, module_service, colour):
     from leaguebot.image.services.config.image_setting_advice import measure_fastest_lap_contrast
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
-    validity = ImageValidityService(config_service, module_service)
+    validity = ImageValidityService(config_service, module_service, SimpleNamespace())
     return await measure_fastest_lap_contrast(
         colour,
         config=config_service,
@@ -1914,7 +1914,7 @@ async def test_aspect_enabled_while_source_module_disabled(
     # The results module backs the standings aspect and is disabled on this server.
     assert await module_service.is_results_enabled() is False
 
-    validity = ImageValidityService(config_service, module_service)
+    validity = ImageValidityService(config_service, module_service, SimpleNamespace())
     statuses = {s.aspect: s for s in await validity.aspect_statuses()}
 
     standings = statuses["standings"]

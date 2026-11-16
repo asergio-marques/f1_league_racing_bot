@@ -1066,6 +1066,7 @@ async def build(settings: Settings) -> LeagueBot:
     bot.image_validity_service = ImageValidityService(
         bot.image_config_service,
         bot.module_service,
+        bot.season_service,
     )
 
     from leaguebot.image.services.render.image_render_service import ImageRenderService
