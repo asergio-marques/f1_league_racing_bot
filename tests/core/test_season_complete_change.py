@@ -1136,11 +1136,15 @@ async def test_every_audit_row_of_one_save_has_the_queues_time(tmp_path):
     queue's clock moved two days past the host's. Admin 77 completes it: the wind-down turns Max's
     placement down and the end save runs the driver pass. Every audit row the completion writes,
     the turn-down's and the driver pass's among them, carries the queue's time in ISO 8601 with
-    its UTC offset, never SQLite's clock."""
+    its UTC offset, never SQLite's clock. The turn-down's row, by the system, holds as JSON Max's
+    state by his profile id before, and the state he is turned down to after."""
     league = await pending_completion_league(tmp_path, stage="ONGOING_PLACEMENTS")
     await league.write(
         "UPDATE driver_season_assignments SET committed = 0 WHERE driver_profile_id IN "
         "(SELECT id FROM driver_profiles WHERE discord_user_id = ?)", str(MAX),
+    )
+    [max_profile] = await league.rows(
+        "SELECT id FROM driver_profiles WHERE discord_user_id = ?", str(MAX)
     )
     before = await league.rows("SELECT COALESCE(MAX(id), 0) AS last FROM audit_entries")
     league.clock.advance(days=2)
@@ -1155,6 +1159,13 @@ async def test_every_audit_row_of_one_save_has_the_queues_time(tmp_path):
     kinds = {row["change_type"] for row in written}
     assert {"PENDING_PLACEMENTS_TURNED_DOWN", "DRIVER_PASS"} <= kinds
     assert {row["timestamp"] for row in written} == {league.clock.now.isoformat()}
+    [turned_down] = await league.rows(
+        "SELECT actor_name, old_value, new_value FROM audit_entries "
+        "WHERE change_type = 'PENDING_PLACEMENTS_TURNED_DOWN'"
+    )
+    assert (turned_down["actor_name"], turned_down["old_value"], turned_down["new_value"]) == (
+        "system", json.dumps({str(max_profile["id"]): "ASSIGNED"}), '{"state": "NOT_SIGNED_UP"}'
+    )
 
 
 async def test_a_discarded_wind_down_completes_nothing(tmp_path):
