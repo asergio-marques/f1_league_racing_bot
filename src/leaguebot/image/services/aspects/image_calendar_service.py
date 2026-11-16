@@ -28,6 +28,7 @@ from leaguebot.image.models.image_catalogues import (
     catalogue_for,
 )
 from leaguebot.core.models.round import RoundStatus
+from leaguebot.image.models.image_constants import MYSTERY_DATUM
 from leaguebot.core.utils.date_formatting import format_date_and_time
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
@@ -43,7 +44,6 @@ TEMPLATE_KEY = "calendar_template"
 MYSTERY_COUNTRY = "Mystery"
 MYSTERY_RACE_NAME = "Mystery Grand Prix"
 MYSTERY_TRACK_NAME = "Mystery"
-MYSTERY_DATUM = "Mystery"
 
 #: Round format -> the label placed on ``round_<x>_format``. A normal round is emptied,
 #: so a template author decides by the chrome they draw whether it is marked at all.

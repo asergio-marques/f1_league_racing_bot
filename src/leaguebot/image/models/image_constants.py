@@ -458,6 +458,9 @@ def fallback_names_for(asset_class: str, slug: str) -> tuple[str, ...]:
 #: track image directory and the flag directory alike.
 MYSTERY_ASSET_NAME = "mystery.svg"
 
+#: The datum a mystery round's flag, and a mystery check-in round's track, resolve by.
+MYSTERY_DATUM = "Mystery"
+
 #: The reserved filename standing in for a driver who stated no nationality in particular
 #: (Constitution XIV.13). Reserved in the flag directory. `Other` is a *value* a driver
 #: chose, not an absence: a driver recording no nationality at all is drawn with no flag

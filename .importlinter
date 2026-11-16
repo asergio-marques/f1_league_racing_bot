@@ -180,7 +180,6 @@ ignore_imports =
     leaguebot.image.services.aspects.image_standings_post -> leaguebot.results.services.standings.standings_service
     leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.models.points_config
     leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.models.session_result
-    leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.services.standings.standings_service
     leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.utils.results_formatter
 
 [importlinter:contract:nothing-imports-the-entry-point]
