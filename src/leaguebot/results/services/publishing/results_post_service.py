@@ -24,6 +24,7 @@ from leaguebot.core.services.drivers.driver_service import (
     current_account_map_for_division,
     driver_test_names_on,
 )
+from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_lifecycle_service import season_stage_on
 from leaguebot.core.services.seasons.season_service import (
@@ -672,6 +673,8 @@ async def produce_session_results(
                 division_tier=await _get_division_tier(db_path, session_result.division_id),
                 dsq_phase_map=dsq_phase_map,
             )
+        except SwitchNotSignedUp:
+            raise
         except Exception as exc:  # noqa: BLE001 — a graphic never blocks a posting (XIV.4)
             # A fault in drawing the picture goes on the table for the job to say why the text
             # stands.
@@ -895,6 +898,8 @@ async def produce_standings(
                 race_name=track_name,
                 occasion=occasion,
             )
+        except SwitchNotSignedUp:
+            raise
         except Exception as exc:  # noqa: BLE001 — a graphic never gates the standings (XIV.4)
             log.exception(
                 "post_standings: the image path failed for round %s; "

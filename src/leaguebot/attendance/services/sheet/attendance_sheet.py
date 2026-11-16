@@ -449,7 +449,9 @@ async def _sheet_attachment(
     the aspect being off, the template being invalid and the render having failed are not
     distinguished, because the answer to all four is the same.
 
-    Nothing raised here escapes but the grid of rounds failing to be read (`_stop_on_unreadable_grid`): a
+    Nothing raised here escapes but the grid of rounds failing to be read (`_stop_on_unreadable_grid`)
+    and a switch nobody signed up for, which the gate raises (a fault in the bot's assembly,
+    architecture.md, "A catch-all error handler"): a
     graphic must never prevent, delay or condition the posting it rides on, still less the
     sanctions enforced beside it (XIV.7), but a sheet drawn with an empty grid would replace the
     standing one with a wrong one.
@@ -466,11 +468,13 @@ async def _sheet_attachment(
     if bot is None or guild is None or drawing is None:
         return None
 
+    # Asked outside the catch-all: the gate stands aside from its own faults, and a switch nobody
+    # signed up for is a fault in the bot's assembly, not a picture that could not be drawn.
+    if not await drawing.attendance_wanted():
+        return None
+
     try:
         from leaguebot.image.services.aspects.image_attendance_service import DriverRecord, resolve_drawing
-
-        if not await drawing.attendance_wanted():
-            return None
 
         from leaguebot.image.services.aspects.image_results_post import (
             _driver_names,
