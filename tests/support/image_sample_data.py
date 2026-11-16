@@ -260,8 +260,8 @@ def build_results_drawing(root, template_key: str, teams):
     from leaguebot.image.services.aspects.image_results_service import (
         QUALIFYING_TEMPLATE_KEY,
         ResultsDataError,
-        resolve_drawing,
     )
+    from leaguebot.results.services.publishing.results_drawing_composer import resolve_drawing
 
     configurable = [t for t in teams or [] if not getattr(t, "is_reserve", False)]
     if not configurable:

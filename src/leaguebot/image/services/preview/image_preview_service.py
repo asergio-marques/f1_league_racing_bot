@@ -829,7 +829,8 @@ async def build_results_preview(bot: LeagueBot, context: PreviewContext):
         fabricate_qualifying_rows,
         fabricate_race_rows,
     )
-    from leaguebot.image.services.aspects.image_results_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.aspects.image_results_service import build_fill_spec
+    from leaguebot.results.services.publishing.results_drawing_composer import resolve_drawing
     from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 
     config = await bot.image_config_service.get_config()

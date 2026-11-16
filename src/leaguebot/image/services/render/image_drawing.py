@@ -56,6 +56,7 @@ from leaguebot.image.models.image_catalogues import (
     reserve_capacity_problem,
     row_capacity_problem,
 )
+from leaguebot.image.models.results_drawing import ResultsDrawing
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
     ASSET_DIRECTORIES,
@@ -807,52 +808,26 @@ class ImageDrawing:
     # ── A session's results ──────────────────────────────────────────────────
 
     async def draw_results(
-        self,
-        *,
-        guild: Any,
-        session_result: Any,
-        driver_rows: Any,
-        points_map: Any,
-        round_number: Any,
-        race_name: str,
-        is_sprint: bool,
-        result_status: str,
-        division_name: str,
-        division_tier: Any = None,
-        season_number: Any = None,
-        dsq_phase_map: Any = None,
+        self, drawing: ResultsDrawing
     ) -> tuple[discord.File | None, tuple[str, ...]]:
-        """The ``discord.File`` one session's results ride on, or None to post the text, and the
-        lines saying what the drawing had to report.
+        """The ``discord.File`` one session's results ride on, and the lines saying what the
+        drawing had to report, for the job that posts the results to write.
 
-        None, and no line, where the league draws no results picture for this session
-        (`aspect_wanted`: the module, the `results` aspect and a valid template for the session's
+        What is drawn is the *drawing* the results module composed, after it asked
+        `aspect_wanted` (the module, the `results` aspect and a valid template for the session's
         own template, so that a sound qualifying template still draws while a faulty race
-        template falls back to text). Otherwise the session is resolved and drawn, and its
+        template falls back to text) and found the picture due. The drawing is rendered, and its
         render's notices and the problem of a picture that was due and not drawn are handed back
-        as lines headed by the toggle's name, for the job that posts the results to write.
+        as lines headed by the toggle's name. None for the file where the render posts no image.
 
-        A fault in resolving the session or the directories is raised, for the post to name as the
-        reason the text stands; a switch nobody signed up for (`SwitchNotSignedUp`) is raised, as
-        everywhere.
+        A fault in resolving the directories or building the fill is raised, for the post to name
+        as the reason the text stands; a switch nobody signed up for (`SwitchNotSignedUp`) is
+        raised, as everywhere.
         """
         import discord
 
-        from leaguebot.image.services.aspects.image_results_service import template_key_for
-
-        template_key = template_key_for(session_result.session_type)
-        if not await self.aspect_wanted(image_results_post.RESULTS_ASPECT, template_key):
-            return None, ()
-        drawing = await image_results_post.build_drawing(
-            self._db_path, self._config, guild, driver_names_read=self._driver_names_read,
-            session_result=session_result, driver_rows=driver_rows,
-            points_map=points_map, round_number=round_number, race_name=race_name,
-            is_sprint=is_sprint, result_status=result_status, division_name=division_name,
-            division_tier=division_tier, season_number=season_number,
-            dsq_phase_map=dsq_phase_map,
-        )
         decision = await image_results_post.render_png(self._config, self._renderer, drawing)
-        what = f"{division_name} round {round_number} — {drawing.session_name}"
+        what = f"{drawing.division_name} round {drawing.round_number} — {drawing.session_name}"
         lines = image_results_post.lines_of(what, decision)
         if not decision.posts_image:
             return None, lines

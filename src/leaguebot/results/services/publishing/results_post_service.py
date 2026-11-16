@@ -36,6 +36,8 @@ from leaguebot.core.services.seasons.season_service import (
     season_divisions_on,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.image.services.aspects.image_results_post import RESULTS_ASPECT
+from leaguebot.results.services.publishing import results_drawing_composer
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
@@ -587,6 +589,7 @@ async def produce_session_results(
     is_sprint: bool = True,
     *,
     drawing: ImageDrawing | None = None,
+    driver_names_read: AwaitedHook | None = None,
     result_status: str | None = None,
 ) -> PostedTable:
     """Format and send a single session result, saving and deleting nothing.
@@ -597,7 +600,9 @@ async def produce_session_results(
 
     **The image path is a guard clause in front of an untouched body** (039). Where the
     images module is enabled, the `results` aspect is on and this session's template is
-    valid, *drawing* (the image module's, which the posting jobs are handed) draws the PNG, which
+    valid, the session is composed into a drawing (`results_drawing_composer`, its names read through
+    core's readers and *driver_names_read*, the hook signup answers) and *drawing* (the image
+    module's, which the posting jobs are handed) draws the PNG, which
     this posts under the heading and the lifecycle label, replaces the previous message and
     returns its id. A picture that Discord refuses, or whose drawing raises, goes out as the text
     in the same try, with the fault on the table for the job to say why.
@@ -664,21 +669,31 @@ async def produce_session_results(
     if drawing is not None:
         file: discord.File | None = None
         try:
-            file, lines = await drawing.draw_results(
-                guild=guild,
-                session_result=session_result,
-                driver_rows=driver_rows,
-                points_map=points_map,
-                round_number=round_number,
-                race_name=track_name,
-                is_sprint=is_sprint,
-                result_status=result_status
-                or await _get_result_status(db_path, session_result.round_id),
-                division_name=division_name,
-                season_number=season_number,
-                division_tier=await _get_division_tier(db_path, session_result.division_id),
-                dsq_phase_map=dsq_phase_map,
-            )
+            # The gate first, so that nothing is read for a picture that is not due; then the
+            # classification is composed here, which owns it, and image draws what it is handed.
+            if await drawing.aspect_wanted(
+                RESULTS_ASPECT, results_drawing_composer.template_key_for(session_type)
+            ):
+                composed = await results_drawing_composer.build_drawing(
+                    db_path,
+                    guild,
+                    driver_names_read=(
+                        driver_names_read if driver_names_read is not None else AwaitedHook()
+                    ),
+                    session_result=session_result,
+                    driver_rows=driver_rows,
+                    points_map=points_map,
+                    round_number=round_number,
+                    race_name=track_name,
+                    is_sprint=is_sprint,
+                    result_status=result_status
+                    or await _get_result_status(db_path, session_result.round_id),
+                    division_name=division_name,
+                    season_number=season_number,
+                    division_tier=await _get_division_tier(db_path, session_result.division_id),
+                    dsq_phase_map=dsq_phase_map,
+                )
+                file, lines = await drawing.draw_results(composed)
         except SwitchNotSignedUp:
             raise
         except Exception as exc:  # noqa: BLE001 — a graphic never blocks a posting (XIV.4)

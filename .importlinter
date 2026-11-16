@@ -173,8 +173,7 @@ ignore_imports =
     leaguebot.image.services.preview.image_preview_data -> leaguebot.results.models.session_result
     leaguebot.image.services.preview.image_preview_service -> leaguebot.results.services.submission.result_submission_service
     leaguebot.image.services.preview.image_preview_service -> leaguebot.results.services.standings.standings_service
-    leaguebot.image.services.aspects.image_results_service -> leaguebot.results.models.points_config
-    leaguebot.image.services.aspects.image_results_service -> leaguebot.results.utils.results_formatter
+    leaguebot.image.services.preview.image_preview_service -> leaguebot.results.services.publishing.results_drawing_composer
     leaguebot.image.services.aspects.image_standings_post -> leaguebot.results.services.publishing.results_post_service
     leaguebot.image.services.aspects.image_standings_post -> leaguebot.results.models.session_result
     leaguebot.image.services.aspects.image_standings_post -> leaguebot.results.services.standings.standings_service

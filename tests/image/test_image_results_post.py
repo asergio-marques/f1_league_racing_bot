@@ -116,7 +116,10 @@ def _decision(*, posts=True, rejects=False, png=None, notices=(), problem=None):
 
 
 def _drawing():
-    return MagicMock(template_key="results_race_template", session_name="Race")
+    return MagicMock(
+        template_key="results_race_template", session_name="Race",
+        division_name="Main", round_number="5",
+    )
 
 
 def _image_drawing(bot):
@@ -238,6 +241,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
     message after it."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
@@ -256,7 +260,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
     channel = _channel(sent, order=order, previous=previous)
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post,
         "render_png",
@@ -301,13 +305,14 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
     """The league keeps the results it had rather than losing them to a failed rebuild."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     sent: list = []
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post,
         "render_png",
@@ -347,6 +352,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
 
 async def test_a_problem_is_reported_naming_the_session(tmp_path):
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -354,7 +360,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
     bot = _bot(db_path)
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post,
         "render_png",
@@ -389,6 +395,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
 
 async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -399,7 +406,7 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     notice = MagicMock(field_id="row_1_driver_flag", notice_kind="OPTIONAL_FIELD_EMPTIED")
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post,
         "render_png",
@@ -440,6 +447,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 ):
     """The stage is read from the round, so the label drawn and the phase rule agree."""
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, result_status=status)
@@ -449,11 +457,11 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
     captured: dict = {}
 
-    async def capture(db_path, config, guild, **kwargs):
+    async def capture(db_path, guild, **kwargs):
         captured.update(kwargs)
         return _drawing()
 
-    with patch.object(image_results_post, "build_drawing", capture), patch.object(
+    with patch.object(results_drawing_composer, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
         with in_a_job():
@@ -472,7 +480,10 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
     assert captured["result_status"] == status
 
-    from leaguebot.image.services.aspects.image_results_service import _PENALTY_CLOSED_AT, _APPEAL_CLOSED_AT
+    from leaguebot.results.services.publishing.results_drawing_composer import (
+        _APPEAL_CLOSED_AT,
+        _PENALTY_CLOSED_AT,
+    )
 
     assert (captured["result_status"] in _PENALTY_CLOSED_AT) is penalty_closed
     assert (captured["result_status"] in _APPEAL_CLOSED_AT) is appeal_closed
@@ -480,6 +491,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
 async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -488,11 +500,11 @@ async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     png.write_bytes(b"\x89PNG")
     captured: dict = {}
 
-    async def capture(db_path, config, guild, **kwargs):
+    async def capture(db_path, guild, **kwargs):
         captured.update(kwargs)
         return _drawing()
 
-    with patch.object(image_results_post, "build_drawing", capture), patch.object(
+    with patch.object(results_drawing_composer, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
         with in_a_job():
@@ -524,6 +536,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     import discord
 
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -547,7 +560,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     channel.send = send
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
@@ -572,6 +585,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
 async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tmp_path):
     """The unit of failure is one graphic (XIV.4): the league still gets its results."""
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -603,6 +617,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
 
 async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path):
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -610,7 +625,7 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
     bot = _bot(db_path)
 
     with patch.object(
-        image_results_post,
+        results_drawing_composer,
         "build_drawing",
         AsyncMock(side_effect=RuntimeError("no name could be resolved")),
     ):
@@ -651,13 +666,14 @@ def _render_artifact(tmp_path, name="results_race_template.png"):
 
 async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = _render_artifact(tmp_path)
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
@@ -684,6 +700,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     import discord
 
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
@@ -701,7 +718,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     channel.send = send
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
@@ -735,6 +752,7 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
     delete."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services.aspects import image_results_post
+    from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
@@ -752,7 +770,7 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
     channel.get_partial_message = MagicMock(side_effect=AssertionError("a message was reached"))
 
     with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+        results_drawing_composer, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):

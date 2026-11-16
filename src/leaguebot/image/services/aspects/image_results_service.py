@@ -1,24 +1,20 @@
-"""Resolve one session's classification and project it onto a template (039).
+"""Project one session's results drawing onto a template (039).
 
-Two steps, deliberately separate, as 037's calendar service is:
+The drawing is composed by the results module, which owns the classification: every value in it is
+decided and nothing is drawn (``leaguebot.results.services.publishing.results_drawing_composer``).
+:func:`build_fill_spec` projects it onto a parsed template, deciding which rows leave, which
+column groups leave, and which single row is recoloured.
 
-1. :func:`resolve_drawing` turns a session's persisted classification into a
-   :class:`ResultsDrawing` — every value decided, nothing drawn. It takes already-resolved
-   display names, so it needs no Discord and no database and is testable on its own.
-2. :func:`build_fill_spec` projects that drawing onto a parsed template, deciding which rows
-   leave, which column groups leave, and which single row is recoloured.
-
-**This module renders nothing.** Every value the graphic and the textual table both draw is
-produced by ``leaguebot.results.utils.results_formatter``'s row builders and merely *placed* here — that is
-Constitution XIV.7 as amended at v4.4.0, and it is why no lap time, gap, interval, lap count
-or penalty is formatted anywhere below. See
+**This module renders nothing and works nothing out.** Every value the graphic and the textual
+table both draw arrives already formatted, which is Constitution XIV.7 as amended at v4.4.0, and
+why no lap time, gap, interval, lap count or penalty is formatted below. See
 specs/039-results-image-generation/contracts/shared-rendering.md.
 """
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping
 
 from leaguebot.image.models.results_drawing import (  # noqa: F401 — the models are image's, kept importable here
     QUALIFYING_TEMPLATE_KEY,
@@ -35,15 +31,6 @@ from leaguebot.image.models.image_catalogues import (
     catalogue_for,
     row_crop_fields,
 )
-from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.utils.results_formatter import (
-    NOT_APPLICABLE,
-    UNKNOWN_TEAM,
-    build_qualifying_rows,
-    build_race_rows,
-    fastest_lap_holder,
-    format_session_label,
-)
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 from leaguebot.image.utils.country_data import country_for_nationality
@@ -51,200 +38,6 @@ from leaguebot.image.utils.country_data import country_for_nationality
 log = logging.getLogger(__name__)
 
 _ROW_PREFIX = "row"
-
-#: The stages at which each sanction phase has closed. Before it closes, the column carries
-#: no value the generation can reach and every cell of it is emptied.
-_PENALTY_CLOSED_AT = frozenset({"AWAITING_APPEAL_VERDICTS", "FINAL"})
-_APPEAL_CLOSED_AT = frozenset({"FINAL"})
-
-#: Round result_status -> the lifecycle label. The same mapping the message text carries, so
-#: the label drawn on the graphic and the label beside it cannot disagree.
-_STATUS_LABELS = {
-    "AWAITING_REPORT_VERDICTS": "Provisional Results",
-    "AWAITING_APPEAL_VERDICTS": "Post-Race Penalty Results",
-    "FINAL": "Final Results",
-}
-
-
-# ── 1. Resolution ─────────────────────────────────────────────────────────
-
-
-def template_key_for(session_type: SessionType) -> str:
-    """Which of the two templates draws *session_type*.
-
-    One aspect, two image types: a sprint and a feature session of the same kind share a
-    template and are told apart by the session name alone.
-    """
-    return (
-        QUALIFYING_TEMPLATE_KEY
-        if SessionType(session_type).is_qualifying
-        else RACE_TEMPLATE_KEY
-    )
-
-
-def status_label(result_status: str | None) -> str:
-    """The lifecycle label for a round's ``result_status``."""
-    return _STATUS_LABELS.get(result_status or "", "Results")
-
-
-def _sanction(value: str | None, *, phase_closed: bool) -> str | None:
-    """The three states of a sanction cell.
-
-    Where the phase has not closed the field is emptied; where it has closed and applied
-    nothing the field carries a dash; where it applied something the field carries it.
-    This is the one value the graphic carries that the textual table does not, which is why
-    it is decided here and not in the shared row builder.
-    """
-    if not phase_closed:
-        return None
-    return value or NOT_APPLICABLE
-
-
-def resolve_drawing(
-    *,
-    session_type: SessionType,
-    is_sprint: bool,
-    result_status: str | None,
-    division_name: str,
-    round_number: str | int,
-    race_name: str,
-    driver_rows: Sequence,
-    points_map: Mapping[int, int],
-    driver_names: Mapping[int, str],
-    team_names: Mapping[int, str],
-    nationalities: Mapping[int, str | None] | None = None,
-    dsq_phase_map: Mapping[int, str] | None = None,
-    team_keys: Mapping[int, str] | None = None,
-    division_tier: str | int | None = None,
-    season_number: str | int | None = None,
-    fastest_lap_colour: str | None = None,
-    nationality_collected: bool = True,
-) -> ResultsDrawing:
-    """Resolve every value a results graphic draws, or raise :class:`ResultsDataError`.
-
-    *driver_rows* are the persisted ``QualifyingSessionResult`` or ``RaceSessionResult``
-    rows of the session. *driver_names* and *team_names* are already resolved by the caller,
-    which is what keeps this function free of Discord: a graphic carries no mention, and the
-    name that stands in its place is settled before anything reaches here (XIV.16).
-
-    *team_keys* holds each team's shorthand, which its artwork is found by, apart from the
-    full name drawn (#381). A team absent from it is found by the name drawn.
-
-    The classification's order — including the renumbering that drops a disqualified driver
-    to the bottom — is the results module's and is persisted before this is called. Nothing
-    is reordered and no position is recomputed.
-    """
-    kind = SessionType(session_type)
-    template_key = template_key_for(kind)
-
-    if not driver_rows:
-        raise ResultsDataError(
-            f"the {format_session_label(kind, is_sprint=is_sprint)} of round "
-            f"{round_number} in `{division_name}` records no entry at all, so there is no "
-            f"classification to draw"
-        )
-
-    penalty_closed = (result_status or "") in _PENALTY_CLOSED_AT
-    appeal_closed = (result_status or "") in _APPEAL_CLOSED_AT
-
-    names = dict(driver_names)
-    teams = dict(team_names)
-    keys = dict(team_keys or {})
-    flags = dict(nationalities or {})
-
-    def named(user_id: int) -> str:
-        name = (names.get(user_id) or "").strip()
-        if not name:
-            # A mandatory field whose value cannot be determined is fatal (XIV.3). The
-            # resolution chain ends at the driver's user id, so reaching here means the
-            # caller supplied nothing at all for this driver.
-            raise ResultsDataError(
-                f"no name could be resolved for the driver with id {user_id}, which the "
-                f"classification of round {round_number} in `{division_name}` needs"
-            )
-        return name
-
-    entries: list[ResultsEntry] = []
-    block: FastestLapBlock | None = None
-
-    if kind.is_qualifying:
-        rows = build_qualifying_rows(
-            list(driver_rows), dict(points_map), dsq_phase_map=dict(dsq_phase_map or {})
-        )
-        for ordinal, row in enumerate(rows, start=1):
-            entries.append(
-                ResultsEntry(
-                    ordinal=ordinal,
-                    driver_name=named(row.driver_user_id),
-                    team_name=teams.get(row.team_instance_id) or UNKNOWN_TEAM,
-                    team_key=keys.get(row.team_instance_id),
-                    points=str(row.points),
-                    postrace_penalty=_sanction(
-                        row.postrace_penalty, phase_closed=penalty_closed
-                    ),
-                    appeal_penalty=_sanction(
-                        row.appeal_penalty, phase_closed=appeal_closed
-                    ),
-                    nationality=(flags.get(row.driver_user_id) or None),
-                    tyre=row.tyre,
-                    best_lap=row.best_lap,
-                    gap=row.gap,
-                )
-            )
-    else:
-        race_rows = build_race_rows(
-            list(driver_rows), dict(points_map), dsq_phase_map=dict(dsq_phase_map or {})
-        )
-        for ordinal, race_row in enumerate(race_rows, start=1):
-            entries.append(
-                ResultsEntry(
-                    ordinal=ordinal,
-                    driver_name=named(race_row.driver_user_id),
-                    team_name=teams.get(race_row.team_instance_id) or UNKNOWN_TEAM,
-                    team_key=keys.get(race_row.team_instance_id),
-                    points=str(race_row.points),
-                    postrace_penalty=_sanction(
-                        race_row.postrace_penalty, phase_closed=penalty_closed
-                    ),
-                    appeal_penalty=_sanction(
-                        race_row.appeal_penalty, phase_closed=appeal_closed
-                    ),
-                    nationality=(flags.get(race_row.driver_user_id) or None),
-                    time=race_row.time,
-                    fastest_lap=race_row.fastest_lap,
-                    # The in-game penalty belongs to no phase and is never left empty: a
-                    # dash where the game applied none.
-                    ingame_penalty=race_row.ingame_penalty or NOT_APPLICABLE,
-                    holds_fastest_lap=race_row.holds_fastest_lap,
-                )
-            )
-
-        holder = fastest_lap_holder(race_rows)
-        if holder is not None:
-            block = FastestLapBlock(
-                driver_name=named(holder.driver_user_id),
-                lap_time=holder.fastest_lap or NOT_APPLICABLE,
-            )
-
-    return ResultsDrawing(
-        template_key=template_key,
-        division_name=division_name,
-        round_number=str(round_number),
-        race_name=race_name,
-        session_name=format_session_label(kind, is_sprint=is_sprint),
-        result_status_label=status_label(result_status),
-        penalty_phase_closed=penalty_closed,
-        appeal_phase_closed=appeal_closed,
-        division_tier=None if division_tier is None else str(division_tier),
-        season_number=None if season_number is None else str(season_number),
-        fastest_lap=block,
-        fastest_lap_colour=fastest_lap_colour,
-        nationality_collected=nationality_collected,
-        entries=entries,
-    )
-
-
-# ── 2. Projection onto a template ─────────────────────────────────────────
 
 
 def _row_fields_declared(declared, ordinal: int) -> list[str]:

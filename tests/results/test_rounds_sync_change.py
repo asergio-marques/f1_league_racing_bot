@@ -169,7 +169,7 @@ def _results_drawn(league: ReviewLeague, tmp_path: Any) -> tuple[ExitStack, Asyn
     drawing = MagicMock(template_key="results_race_template", session_name="Race")
     render = AsyncMock(return_value=decision)
     stack = ExitStack()
-    stack.enter_context(patch("leaguebot.image.services.aspects.image_results_post.build_drawing",
+    stack.enter_context(patch("leaguebot.results.services.publishing.results_drawing_composer.build_drawing",
                               new=AsyncMock(return_value=drawing)))
     stack.enter_context(patch("leaguebot.image.services.aspects.image_results_post.render_png",
                               new=render))

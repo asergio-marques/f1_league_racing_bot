@@ -92,17 +92,22 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
 ):
     """``render_png`` referred to ``template_key``, a local of ``try_post``, not of itself."""
     from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.models.results_drawing import ResultsDrawing
     from leaguebot.image.services.aspects import image_results_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
-    drawing = SimpleNamespace(
+    drawing = ResultsDrawing(
         template_key="results_race_template",
         session_name="Feature Race",
         season_number="3",
         division_tier="1",
         division_name="Elite",
         round_number="4",
+        race_name="Monaco",
+        result_status_label="Final Results",
+        penalty_phase_closed=True,
+        appeal_phase_closed=True,
     )
 
     decision = await image_results_post.render_png(
@@ -130,17 +135,22 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
 ):
     """The label follows the drawing, so the two results templates cannot be confused."""
     from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.models.results_drawing import ResultsDrawing
     from leaguebot.image.services.aspects import image_results_post
 
     bot, _png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
-    drawing = SimpleNamespace(
+    drawing = ResultsDrawing(
         template_key="results_qualifying_template",
         session_name="Sprint Qualifying",
         season_number="3",
         division_tier="1",
         division_name="Elite",
         round_number="4",
+        race_name="Monaco",
+        result_status_label="Final Results",
+        penalty_phase_closed=True,
+        appeal_phase_closed=True,
     )
 
     await image_results_post.render_png(

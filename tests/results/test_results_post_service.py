@@ -1085,7 +1085,12 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     drawing.draw_results = AsyncMock(
         return_value=(discord.File(io.BytesIO(b"\x89PNG"), filename="results.png"), ())
     )
-    posted = await _results(drawing=drawing)
+    drawing.aspect_wanted = AsyncMock(return_value=True)
+    with patch(
+        "leaguebot.results.services.publishing.results_drawing_composer.build_drawing",
+        new=AsyncMock(return_value=MagicMock()),
+    ):
+        posted = await _results(drawing=drawing)
     picture = [mid for kind, cid, mid in events if kind == "send" and cid == RESULTS_CHANNEL][-1]
     assert posted == PostedTable([picture], [OLD_RESULTS], drawn=True)
     # The standings drawn as pictures save and delete nothing either; what they report is

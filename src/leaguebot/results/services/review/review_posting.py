@@ -162,7 +162,7 @@ def posting_steps(
             NAMES, StepKind.ACT, partial(_resolve_names, driver_names_read), describe=_describe_names
         ),
         POST_SESSION_RESULTS: Step(
-            POST_SESSION_RESULTS, StepKind.ACT, partial(_post_session_results, drawing),
+            POST_SESSION_RESULTS, StepKind.ACT, partial(_post_session_results, drawing, driver_names_read),
             still_due=_session_still_due, describe=_describe_session_post,
             record=_record_session_post,
         ),
@@ -769,7 +769,7 @@ async def _describe_session_post(ctx: StepContext) -> str:
 
 
 async def _post_session_results(
-    drawing: ImageDrawing | None, ctx: StepContext
+    drawing: ImageDrawing | None, driver_names_read: AwaitedHook | None, ctx: StepContext
 ) -> StepResult:
     payload = ctx.step_payload
     row = await _session_row(ctx.db_path, payload["session_id"])
@@ -814,6 +814,7 @@ async def _post_session_results(
             rnd["round_number"], rnd["track_name"] or "Unknown", payload["label"], is_sprint,
             # The picture on the first try alone; a retry posts the text (XIV rule 8).
             drawing=drawing if ctx.tries == 0 else None,
+            driver_names_read=driver_names_read,
         )
     except Exception as error:
         kept = _stranded(error, channel_id)

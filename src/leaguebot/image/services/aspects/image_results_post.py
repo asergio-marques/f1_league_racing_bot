@@ -1,8 +1,8 @@
 """What a session's results picture is drawn from, and the lines its drawing hands back (039).
 
 The picture is drawn by ``ImageDrawing.draw_results``, which the results module's posting jobs are
-handed: it asks the one gate every picture asks, resolves the session into a drawing
-(:func:`build_drawing`), renders it (:func:`render_png`) and hands back the file and the lines
+handed, and which they hand the drawing they composed after asking the one gate every picture asks
+(``aspect_wanted``): it renders it (:func:`render_png`) and hands back the file and the lines
 (:func:`lines_of`) the job writes. **This module posts nothing** and reports nothing itself: the
 results module posts the picture through core's standing-post handler, and a fault in drawing it is
 raised for the job to say why the text stands.
@@ -11,23 +11,18 @@ raised for the job to say why the text stands.
 existing body runs exactly as it did before this feature. The graphic is an alternative output
 beside the text, never a replacement for it (Constitution XIV.7).
 
-A driver's name and nationality are read through core's readers (`driver_names`), handed the hook
-signup answers; the readers of a team's name and shorthand here are the ones the other pictures share.
+The readers of a team's name and shorthand here are the ones the verdict and standings pictures
+share; the results' own are composed by the results module.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import TYPE_CHECKING
 
-from leaguebot.core.services.drivers.driver_names import (
-    read_driver_names,
-    read_driver_nationalities,
-    read_nationality_collected,
-)
 from leaguebot.image.models.image_module import PostingOrigin
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
@@ -64,59 +59,6 @@ async def _team_keys(db_path: str, team_ids: list[int]) -> dict[int, str]:
     return await team_artwork_keys_for_instances(db_path, team_ids)
 
 
-async def build_drawing(
-    db_path: str,
-    config_service: ImageConfigService,
-    guild,
-    *,
-    driver_names_read: AwaitedHook,
-    session_result,
-    driver_rows,
-    points_map,
-    round_number,
-    race_name: str,
-    is_sprint: bool,
-    result_status: str,
-    division_name: str,
-    division_tier=None,
-    season_number=None,
-    dsq_phase_map=None,
-):
-    """Resolve one session into a ResultsDrawing, or raise ResultsDataError."""
-    from leaguebot.image.services.aspects.image_results_service import resolve_drawing
-
-    user_ids = [row.driver_user_id for row in driver_rows]
-    team_ids = [row.team_instance_id for row in driver_rows]
-
-    config = await config_service.get_config()
-
-    return resolve_drawing(
-        session_type=session_result.session_type,
-        is_sprint=is_sprint,
-        result_status=result_status,
-        division_name=division_name,
-        division_tier=division_tier,
-        season_number=season_number,
-        round_number=round_number,
-        race_name=race_name,
-        driver_rows=driver_rows,
-        points_map=points_map,
-        driver_names=await read_driver_names(
-            db_path, driver_names_read, guild, user_ids, division_id=session_result.division_id
-        ),
-        team_names=await _team_names(
-            db_path, guild, session_result.division_id, team_ids
-        ),
-        team_keys=await _team_keys(db_path, team_ids),
-        nationalities=await read_driver_nationalities(
-            db_path, driver_names_read, user_ids, division_id=session_result.division_id
-        ),
-        dsq_phase_map=dsq_phase_map or {},
-        fastest_lap_colour=getattr(config, "fastest_lap_colour", None),
-        nationality_collected=await read_nationality_collected(db_path, driver_names_read),
-    )
-
-
 async def render_png(
     config_service: ImageConfigService,
     renderer: ImageRenderService,
@@ -124,6 +66,9 @@ async def render_png(
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ):
     """Render one session's results. Returns the render service's PostingDecision.
+
+    The colour of the fastest lap is the image configuration's, so it is applied to the drawing
+    here and not where the results module composed it.
 
     A fault in resolving the directories or building the fill is raised, for the results' own
     post to say why the text stands.
@@ -135,6 +80,9 @@ async def render_png(
     )
 
     config = await config_service.get_config()
+    drawing = dataclasses.replace(
+        drawing, fastest_lap_colour=getattr(config, "fastest_lap_colour", None)
+    )
     directories, directory_faults = resolve_configured_directories(
         config,
         (
