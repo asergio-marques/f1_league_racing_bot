@@ -292,8 +292,6 @@ async def test_a_resolution_fault_reports_once_and_falls_both_back():
     post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#288: draw_standings leaves the drivers' rendered PNG on "
-                                       "disk when the constructors' render raises")
 async def test_a_constructors_render_that_raises_discards_the_drivers_picture_already_drawn(
     tmp_path,
 ):

@@ -888,7 +888,8 @@ class ImageDrawing:
         toggle's name, and a championship that did not draw has no file.
 
         A fault in resolving the data behind both, or the directories or the fill of one, is
-        raised, for the post to name as the reason the text stands; a switch nobody signed up for
+        raised, for the post to name as the reason the text stands, and the picture of the other
+        championship, if already drawn, is discarded first; a switch nobody signed up for
         (`SwitchNotSignedUp`) is raised, as everywhere.
         """
         import discord
@@ -916,15 +917,22 @@ class ImageDrawing:
         )
         lines: list[str] = []
         files: dict[str, discord.File] = {}
-        for championship, drawing in zip(STANDINGS_TEMPLATE_KEYS, drawings):
-            if not wanted[championship]:
-                continue
-            what = f"{subject} — {championship} standings"
-            decision = await image_standings_post.render_png(self._config, self._renderer, drawing)
-            lines.extend(image_standings_post.lines_of(what, decision))
-            if decision.posts_image:
-                png = decision.png_paths[0]
-                files[championship] = discord.File(str(png), filename=png.name)
+        try:
+            for championship, drawing in zip(STANDINGS_TEMPLATE_KEYS, drawings):
+                if not wanted[championship]:
+                    continue
+                what = f"{subject} — {championship} standings"
+                decision = await image_standings_post.render_png(
+                    self._config, self._renderer, drawing
+                )
+                lines.extend(image_standings_post.lines_of(what, decision))
+                if decision.posts_image:
+                    png = decision.png_paths[0]
+                    files[championship] = discord.File(str(png), filename=png.name)
+        except BaseException:
+            # Nothing will post what was drawn before the fault: its file goes with it.
+            self.discard_attachment(*files.values())
+            raise
         return StandingsDrawn(
             applicable=True, drivers=files.get("drivers"),
             constructors=files.get("constructors"), lines=tuple(lines),
