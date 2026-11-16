@@ -383,9 +383,7 @@ def _fired_late(now: datetime, time_of_day: str) -> bool:
     return now - due > MISSED_AFTER
 
 
-async def run_daily_refresh(
-    bot: LeagueBot, images: ImageConfigService, *, now: datetime | None = None
-) -> int:
+async def run_daily_refresh(bot: LeagueBot, images: ImageConfigService, *, now: datetime) -> int:
     """The daily portrait refresh for the league. Returns how many were written.
 
     Unlike the pre-render trigger this has no graphic to scope it, so it works through every
@@ -394,9 +392,9 @@ async def run_daily_refresh(
 
     It reads the image module's switch as it fires and does nothing while the module is off, and
     is handed the image configuration service (*images*) by the builder, not looking it up on the
-    bot. It is handed *now* by the builder's callback and judges a run missed from it against the time of
-    day it is due at (`MISSED_AFTER`), skipping it, since the job is armed with no lateness limit
-    of its own; where it is handed none, as in a test of the refresh itself, it judges nothing.
+    bot. It is handed *now* by the builder's callback and judges a run missed from it against the
+    time of day it is due at (`MISSED_AFTER`), skipping it, since the job is armed with no
+    lateness limit of its own.
 
     Never raises. It is an APScheduler job, and an exception here would be logged into a void
     the league never reads.
@@ -410,7 +408,7 @@ async def run_daily_refresh(
         if not getattr(config, "pfp_daily", False):
             return 0
         time_of_day = getattr(config, "pfp_daily_time", None)
-        if now is not None and time_of_day and _fired_late(now, str(time_of_day)):
+        if time_of_day and _fired_late(now, str(time_of_day)):
             log.info("driver portraits: the daily refresh fired late and is skipped")
             return 0
 

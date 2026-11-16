@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -180,6 +181,9 @@ def _daily(monkeypatch, tmp_path, config: Any) -> Any:
     return bot
 
 
+DAILY_NOW = datetime(2026, 1, 5, 3, 0, tzinfo=timezone.utc)
+
+
 async def test_the_daily_portrait_refresh_reads_the_shape_off_the_loop(monkeypatch, tmp_path):
     """The daily refresh reads the lineup's portrait shape in a worker thread, and refreshes
     at the shape it read."""
@@ -188,7 +192,7 @@ async def test_the_daily_portrait_refresh_reads_the_shape_off_the_loop(monkeypat
     bot = _daily(monkeypatch, tmp_path, config)
 
     written = await answered_while(
-        held, lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service)
+        held, lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service, now=DAILY_NOW)
     )
 
     assert written == 3
@@ -260,7 +264,7 @@ def _render_refresh_fails(monkeypatch, held, tmp_path):
 def _daily_refresh_fails(monkeypatch, held, tmp_path):
     monkeypatch.setattr(driver_portrait_service, "portrait_aspect", held)
     bot = _daily(monkeypatch, tmp_path, SimpleNamespace(use_pfp=True, pfp_daily=True))
-    return lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service)
+    return lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service, now=DAILY_NOW)
 
 
 #: Each entry point, how its evaluation is made to fail, and what it then answers: the fault
