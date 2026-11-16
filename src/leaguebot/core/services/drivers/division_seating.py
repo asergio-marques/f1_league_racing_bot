@@ -2,7 +2,8 @@
 
 Core owns the teams, the seats and the drivers who sit in them, so every module that draws or
 lists who races in a division asks this reader and never joins those tables itself: core's text
-lineup, image's lineup picture, the standings' seats, the preview and the portrait roster.
+lineup, image's lineup picture, the standings' seats and the preview. The portrait roster asks
+`active_season_driver_ids`, below, which takes no filter.
 
 What the lineup of record shows is the one filter every caller shares. A placement made mid-season
 and not yet confirmed is left out (`include_uncommitted` draws it in, for the one caller that
