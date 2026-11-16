@@ -1226,7 +1226,7 @@ These hold for every image type of the module and are stated here rather than re
 - The cases listed above shall be drawn insofar as the driver count and the round count of the division named allow. None is fabricated into existence to reach one.
 - The sheet draws a driver's flag where the league collects a nationality and draws none where it does not, as a posted sheet does.
 - Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no sheet to be drawn.
-- The "images test rsvp" command shall generate one image, drawn for the division and round named, carrying that round's own format, track, schedule and deadline. It fabricates nothing: a server holding no season is rejected rather than drawn an invented one.
+- The "images test rsvp" command shall generate one image, drawn for the division and round named, carrying that round's own format, track, schedule and deadline, the deadline being the one the attendance module's stored setting gives that round, or its default where the module is disabled or holds none. It fabricates nothing: a server holding no season is rejected rather than drawn an invented one.
 
 ## Weather image generation
 - A weather graphic represents the forecast of one single phase of one single round of one division. One graphic shall be generated per phase and per division, and shall replace the textual forecast of that phase. The mention of the division role shall remain message text, the graphic itself carrying none; the heading of the textual forecast is carried over neither to the message nor to the graphic, the description of the phase standing in its place.
