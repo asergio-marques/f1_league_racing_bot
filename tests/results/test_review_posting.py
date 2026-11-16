@@ -1837,33 +1837,57 @@ REFUSAL = "Discord failed part-way"
 REPOST_COMMAND = {"results": "/results rounds sync", "standings": "/results standings sync"}
 
 
+@pytest.mark.parametrize("text_refused", [
+    False,
+    pytest.param(True, id="text-also-refused-then-retried", marks=pytest.mark.xfail(
+        strict=True, reason="#288: a refused picture's line is lost with the try whose text "
+        "Discord also refuses, so the retry that posts the text leaves no line saying why")),
+])
 @pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
-    tmp_path, picture,
+    tmp_path, picture, text_refused,
 ):
     """Round 3's results and standings in Pro are posted again with *picture* drawn, and Discord
     refuses the picture's upload, the first send to its channel. The table goes out as text in the
     same try and the queue runs to the end, as it does today; and the log channel gains one line
     naming round 3 of Pro, the *picture* picture, that Discord refused it, Discord's reason, and
     that the table went out as text. What it says puts it right is to post the picture again with
-    the sync command the league already uses, naming no template, which is not at fault."""
+    the sync command the league already uses, naming no template, which is not at fault.
+
+    Where *text_refused*, Discord refuses every send to the channel on the first try, the picture
+    and then its text, so the queue stops at that post; the channel is let accept and a Retry
+    posts the table as text. The picture's line is still in the log channel once, never lost with
+    the refused try."""
     league = await _built_league(tmp_path)
     if picture == "results":
         target, drawn = RESULTS_CHANNEL, await _drawn(league, tmp_path, "results")
     else:
         target, drawn = STANDINGS_CHANNEL, await _drawn(league, tmp_path, "standings",
                                                         championships=("drivers",))
-    league.channel(target).fail_send_at = 1
+    channel = league.channel(target)
+    if text_refused:
+        channel.send_fails = http_error(text=REFUSAL)
+    else:
+        channel.fail_send_at = 1
     with drawn:
         await _ask(league)
         await run_queue(league.bot)
+        if text_refused:
+            assert await stopped_job(league.db_path) is not None
+            channel.send_fails = None
+            await retry_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    channel = league.channel(target)
     texts = [channel.messages[mid].content for kind, ch, mid in league.events
              if ch == target and kind in ("send", "edit") and mid in channel.messages]
     assert texts and all("Round 3" in text for text in texts)
-    line = _fault_line(league)
+    lines = [line.lower() for line in league.bot.log_channel.sent
+             if REFUSAL.lower() in line.lower()]
+    assert len(lines) == 1, league.bot.log_channel.sent
+    [line] = lines
+    assert "pro" in line and "round 3" in line, line
+    if not text_refused:
+        assert line == _fault_line(league)
     assert picture in line and ("picture" in line or "image" in line), line
     assert "refused" in line and REFUSAL.lower() in line and "text" in line, line
     put_right = line.split("to put it right:", 1)[1]
