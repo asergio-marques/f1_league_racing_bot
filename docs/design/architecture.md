@@ -212,17 +212,17 @@ point, which would then hold every module's registrations and grow with each mod
   autocomplete), and `utils`, which uses no service at all. The framework learns what the league
   decides through protocols of its own: its helpers read the league's settings on the bot, declared
   there by the framework's own protocol type, never by core's service type, and a service that asks
-  another, as the change queue asks the authority tiers, is handed it by the builder directly.
-  Neither kind of helper imports a service, the framework imports nothing of core, and core uses no
-  module; the one exception to all three is the bot's type, which names every service and every hook
-  that core and the modules declare, for the type checker (below). Each handler for a kind of post
-  is a service in the framework, not a helper. Some helpers a service may call reach the bot, each
-  for one thing. `league_guild(bot)` (`league_server.py`, among the framework's helpers) is the one
-  route from a job or a service to the league's server, which it finds through the framework's
-  settings protocol. `report_failure`, `refuse` (through `record_refusal`) and `record_abandoned`
-  write a failure, a refusal, or a cancellation or a lapse, through the bot's log writer ("Errors
-  and failures"). Handing the settings or the router instead to every service that calls them would
-  add a parameter to each, for no rule gained.
+  another protocol of the league, as the change queue asks the authority tiers, is handed it by the
+  builder directly. Neither kind of helper imports a service, the framework imports nothing of core,
+  and core uses no module; the one exception to all three is the bot's type, which names every
+  service and every hook that core and the modules declare, for the type checker (below). Each
+  handler for a kind of post is a service in the framework, not a helper. Some helpers a service may
+  call reach the bot, each for one thing. `league_guild(bot)` (`league_server.py`, among the
+  framework's helpers) is the one route from a job or a service to the league's server, which it
+  finds through the framework's settings protocol. `report_failure`, `refuse` (through
+  `record_refusal`) and `record_abandoned` write a failure, a refusal, or a cancellation or a lapse,
+  through the bot's log writer ("Errors and failures"). Handing the settings or the router instead
+  to every service that calls them would add a parameter to each, for no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
 - **The database code in the framework** opens connections, lends them again, closes them and
