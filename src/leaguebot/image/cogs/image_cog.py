@@ -21,15 +21,16 @@ from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.image.models.image_constants import (
-    ASPECT_LABELS,
-    ASSET_LABELS,
-    PENDING_POSTING_ASPECTS,
     TEMPLATE_COLUMNS,
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
-from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.config.image_config_service import tier_name_refusal
+from leaguebot.image.services.preview.configuration_report import (
+    build_aspect_section,
+    build_configuration_report,
+)
+from leaguebot.image.services.preview.preview_runner import run_preview, send_preview
 from leaguebot.image.services.config.image_settings import (
     ASPECT,
     DAILY_PORTRAITS,
@@ -70,14 +71,6 @@ log = logging.getLogger(__name__)
 #: and the move is not a change to either. `clear_zone_cache` is re-exported above for the
 #: same reason.
 _zone_names = zone_names
-
-
-_STATE_ICONS = {
-    STATE_ENABLED: "✅",
-    STATE_DISABLED: "❌",
-}
-_INVALID_ICON = "⚠️"
-
 
 
 class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
@@ -1320,140 +1313,12 @@ class ImageCog(commands.Cog):
             await interaction.followup.send(chunk, ephemeral=True)
 
     async def build_configuration_report(self) -> str:
-        """Render the configuration and its validity.
-
-        `/season placements-review` renders the aspect section from the same `AspectStatus` list, so
-        the two surfaces cannot drift (FR-033).
-        """
-        from leaguebot.image.services.render.image_render_service import (
-            CONVERTER_NAME,
-            converter_absent_message,
-            converter_available,
-        )
-        from leaguebot.image.services.validity.image_validity_service import (
-            ImageValidityService,
-            plain_directory_reason,
-            plain_directory_remedy,
-            plain_reason,
-            plain_remedy,
-        )
-
-        config = await self._config_service.get_config()
-        if config is None:
-            return "❌ No image configuration exists for this server."
-
-        template_reports = await self._validity_service.template_reports()
-        directory_reports = await self._validity_service.directory_reports()
-
-        lines: list[str] = ["**Image module configuration**", ""]
-
-        if not converter_available():
-            lines += [converter_absent_message(), ""]
-        else:
-            lines += [f"Rasteriser: ✅ {CONVERTER_NAME} found", ""]
-
-        lines += [
-            "**Templates**",
-            f"  Directory: `{config.template_directory}`",
-        ]
-        for column in TEMPLATE_COLUMNS:
-            report = template_reports.get(column)
-            filename = getattr(config, column)
-            if report is not None and report.valid:
-                lines.append(f"  ✅ {TEMPLATE_LABELS[column]}: `{filename}`")
-            else:
-                if report is None:
-                    detail = "this has not been checked"
-                else:
-                    detail = f"{plain_reason(report)}. {plain_remedy(report)}"
-                lines.append(f"  ⚠️ {TEMPLATE_LABELS[column]}: `{filename}` — {detail}")
-
-        # Invariant 3: never overstate what was checked (FR-028b).
-        lines += ["", f"  _{ImageValidityService.depth_summary(template_reports)}_", ""]
-
-        lines.append("**Asset directories**")
-        for column, report in directory_reports.items():
-            value = getattr(config, column)
-            if report.valid:
-                lines.append(f"  ✅ {ASSET_LABELS[column]}: `{value}`")
-            else:
-                lines.append(
-                    f"  ⚠️ {ASSET_LABELS[column]}: `{value}` "
-                    f"— {plain_directory_reason(report)}. {plain_directory_remedy(report)}"
-                )
-
-        lines += [
-            "",
-            "**Presentation**",
-            f"  Time zone: `{config.time_zone}`",
-            f"  Clock: `{config.time_format}`",
-            f"  Date format: `{config.date_format}`",
-            f"  Fastest-lap colour: `{config.fastest_lap_colour}`",
-            "",
-        ]
-
-        lines += await self.build_tier_colour_section(config)
-
-        lines += await self.build_aspect_section()
-        return "\n".join(lines)
-
-    async def build_tier_colour_section(self, config) -> list[str]:
-        """The per-tier colours, listed here rather than behind a command of their own (051).
-
-        The `config` group holds nineteen of Discord's twenty-five subcommands and a third
-        per-tier command would spend one of the six left to say what this section already
-        says. What is *missing* is not repeated here: a shortfall is a reason against the
-        aspect it would stop, and the aspect section below prints it in the same words
-        `/season placements-review` uses.
-        """
-        palettes = await self._config_service.get_all_tier_colours()
-        state = "on" if config.per_tier_colour_enabled else "off"
-
-        lines = ["**Per-tier colours**", f"  Enabled: `{state}`"]
-
-        if not palettes:
-            lines += [
-                "  No tier has a colour set.",
-                "",
-            ]
-            return lines
-
-        for slug in sorted(palettes):
-            drawn = ", ".join(
-                f"`{slot}` = `{colour}`" for slot, colour in palettes[slug].items()
-            )
-            lines.append(f"  {slug}: {drawn}")
-
-        if not config.per_tier_colour_enabled:
-            lines.append(
-                "  _Stored, but not drawn while this is off._"
-            )
-        lines.append("")
-        return lines
+        """The configuration and its validity, as `preview/configuration_report.py` renders it."""
+        return await build_configuration_report(self._config_service, self._validity_service)
 
     async def build_aspect_section(self) -> list[str]:
-        """The nine aspects in their three states (FR-031, FR-032)."""
-        statuses = await self._validity_service.aspect_statuses()
-
-        lines = ["**Output aspects**"]
-        for status in statuses:
-            icon = _STATE_ICONS.get(status.state, _INVALID_ICON)
-            lines.append(f"  {icon} {ASPECT_LABELS[status.aspect]}")
-            for reason in status.reasons:
-                lines.append(f"      ↳ {reason}")
-
-        # Named individually rather than as a blanket claim over all nine, and gone
-        # entirely once every aspect posts.
-        if PENDING_POSTING_ASPECTS:
-            pending = ", ".join(
-                ASPECT_LABELS[aspect] for aspect in PENDING_POSTING_ASPECTS
-            )
-            lines += [
-                "",
-                f"_Recorded but not yet in effect: **{pending}** — posting for these is "
-                "wired in a later update. Use the matching `/images test` command to see what they produce._",
-            ]
-        return lines
+        """The nine aspects in their three states, as the report renders them."""
+        return await build_aspect_section(self._validity_service)
 
 
     # ── /images test ── the twelve previews ─────────────────────────
@@ -1508,80 +1373,25 @@ class ImageCog(commands.Cog):
         build,
         round_number: int | None = None,
     ) -> None:
-        """The body every preview command shares.
-
-        Guards, then resolves, then draws. The order matters: a fault of configuration is
-        reported as one and never as a failure to render (FR-015), and the rasteriser is
-        checked before anything is resolved because its absence defeats every kind alike.
-
-        *kind* names the preview, and the three conditions 045 passed as separate flags —
-        whether rounds are required, whether teams are, and what format the round must
-        carry — are read from `PREVIEW_KINDS` off it. One table, read in one place, rather
-        than three rules restated at twelve call sites.
-        """
-        from leaguebot.image.services.preview.image_preview_service import PreviewRefused, resolve_context
-        from leaguebot.image.services.render.image_render_service import (
-            converter_absent_message,
-            converter_available,
-        )
-
+        """The body every preview command shares: the module's gate, then the runner's."""
         if not await self._module_gate(interaction, record=False):
             return
 
-        # Defer first: several kinds draw more than one picture, and the rasteriser is a
-        # subprocess, so the three-second acknowledgement cannot be met otherwise.
-        await interaction.response.defer(ephemeral=True)
-
-        if not converter_available(use_cache=False):
-            await interaction.followup.send(converter_absent_message(), ephemeral=True)
-            return
-
-        try:
-            context = await resolve_context(
-                self.bot,
-                division,
-                guild=interaction.guild,
-                round_number=round_number,
-                kind=kind,
-                driver_names_read=self.bot.driver_names_read,
-            )
-        except PreviewRefused as refusal:
-            await interaction.followup.send(refusal.message, ephemeral=True)
-            return
-
-        # A preview whose data cannot be assembled is a fault in the bot, and goes to the
-        # command's failure path, which names `/images test …` to the member and the log
-        # channel alike. A preview changes nothing, so it records nothing else.
-        requests = await build(context)
-
-        # A preview is named exactly as a posting is, and for the same reason: a manager
-        # running several of them collects several files, and `standings_drivers.png`
-        # twice over says nothing about which division or round each drew.
-        from leaguebot.image.utils.image_naming import image_filename_stem, subject_for_template
-
-        round_number = (
-            getattr(context.round, "round_number", None) if context.round else None
+        await run_preview(
+            interaction,
+            bot=self.bot,
+            render=self._render,
+            driver_names_read=self.bot.driver_names_read,
+            title=title,
+            kind=kind,
+            division=division,
+            build=build,
+            round_number=round_number,
         )
 
-        outcomes = []
-        for label, template_key, spec_builder in requests:
-            outcome = await self.bot.image_render_service.render(
-                template_key,
-                spec_builder,
-                filename_stem=image_filename_stem(
-                    subject_for_template(template_key),
-                    season_number=context.season_number,
-                    division_tier=context.division_tier,
-                    division_name=context.division_name,
-                    round_number=round_number,
-                ),
-                # A preview must show the tier's own colours, or it is not a preview of
-                # what the league will post (051).
-                division_name=context.division_name,
-            )
-            outcomes.append((label, template_key, outcome))
-
-        await self._send_preview(interaction, title=title, context=context, outcomes=outcomes)
+    async def _render(self, *args, **kwargs):
+        """Draw through the render service, which is looked up when a preview draws."""
+        return await self.bot.image_render_service.render(*args, **kwargs)
 
     # ── The two kinds that fabricate no outcome ──────────────────────
 
@@ -1954,123 +1764,10 @@ class ImageCog(commands.Cog):
     async def _send_preview(
         self, interaction: discord.Interaction, *, title: str, context, outcomes
     ) -> None:
-        """Return the pictures, and say plainly what the render had to make do with.
-
-        Three things a manager needs and the withdrawn command gave none of: which
-        pictures were produced, which assets fell back to a placeholder and why, and
-        whether the drivers drawn were their own or invented.
-        """
-        from leaguebot.image.services.render.image_render_service import ImageRenderService
-
-        files: list[discord.File] = []
-        header = f"**Preview — {title}** for `{context.division_name}`"
-        if context.round is not None:
-            header += f", round {context.round.round_number}"
-        # The season number is always named, so a manager can tell at a glance which
-        # season was drawn rather than inferring it from the picture (FR-004).
-        header += f" — season {context.season_number}"
-        lines: list[str] = [header]
-
-        if getattr(context, "season_pending_approval", False):
-            lines.append(
-                "_This season's placements are yet to be confirmed. It is drawn exactly as it will "
-                "be once its placements are confirmed._"
-            )
-
-        all_notices = []
-        for label, template_key, outcome in outcomes:
-            if outcome.problem:
-                # A problem means no image at all: never a partial one (XIV.4).
-                lines.append(f"❌ {label}: {outcome.problem}")
-            else:
-                lines.append(f"✅ {label}")
-                for index, path in enumerate(outcome.png_paths):
-                    # The render service already wrote the name; the ordinal suffix only
-                    # keeps a kind that draws more than one picture from colliding.
-                    suffix = f"_{index}" if index else ""
-                    files.append(
-                        discord.File(
-                            str(path), filename=f"{path.stem}{suffix}{path.suffix}"
-                        )
-                    )
-            all_notices.extend(outcome.notices)
-
-        # The drivers drawn are invented, and a manager must never mistake them for their
-        # own roster (FR-018). This is a real division of a real season whose seats happen
-        # to be empty — not the wholly invented league that used to be drawn for a
-        # season-less server, which is withdrawn.
-        if getattr(context, "fabricated_drivers", False):
-            lines.append("")
-            lines.append(
-                "ℹ️ This division has no seated driver, so the names and nationalities "
-                "drawn are invented. Seat your drivers to preview your own."
-            )
-
-        # Flags absent because the drivers record no nationality, not because the artwork
-        # is missing (FR-028). Said plainly, so a maintainer previewing a test-mode roster
-        # does not go looking for a fault in their flag directory.
-        missing_nationality = getattr(context, "drivers_without_nationality", 0)
-        if missing_nationality:
-            subject = (
-                "1 seated driver records"
-                if missing_nationality == 1
-                else f"{missing_nationality} seated drivers record"
-            )
-            lines.append("")
-            lines.append(
-                f"ℹ️ {subject} no nationality, so they are drawn without a flag — as a "
-                f"real posting would draw them. A test-mode driver records one only where "
-                f"`/test-mode roster add` was given one."
-            )
-
-        # A directory the league configured that could not be resolved, distinguished from
-        # a class it never configured (FR-037, FR-038).
-        if getattr(context, "directory_faults", None):
-            lines.append("")
-            lines.append("⚠️ **Asset directories** — these did not resolve as configured:")
-            for fault in context.directory_faults:
-                lines.append(
-                    f"  ↳ `{fault.asset_class}`: `{fault.configured_value}` — {fault.reason}"
-                )
-
-        if all_notices:
-            # Logged first, so the reply can point at what was written. A log-channel
-            # failure returns None and simply costs the link — it must never cost the
-            # preview, which is the thing actually asked for.
-            from leaguebot.image.services.render.image_render_service import grouped_notice_lines
-
-            # Headed by what was drawn, as every posting path's block is: a log of many
-            # previews says nothing of which one a notice came from otherwise.
-            subject = f"{title} — {context.division_name}"
-            if context.round is not None:
-                subject += f", round {context.round.round_number}"
-            logged = await ImageRenderService.report_notices(
-                self.bot, all_notices, subject=subject
-            )
-
-            heading = "⚠️ **Notices** — the render survived these:"
-            jump_url = getattr(logged, "jump_url", None)
-            if jump_url:
-                heading += f" ([see them in the log]({jump_url}))"
-
-            lines.append("")
-            lines.append(heading)
-            lines += grouped_notice_lines(all_notices)
-
-        # A preview puts nothing in a league's channel, but it renders through the same
-        # pipeline and leaves the same files behind. An evening of template-checking would
-        # otherwise litter the host exactly as a season of posting does.
-        from leaguebot.image.services.render.image_render_service import discard_attachment
-
-        try:
-            # The whole reply goes, in parts: cut short it would stop partway through a list
-            # with no sign. The picture rides with the first part only, so it arrives once.
-            for number, part in enumerate(chunk_message("\n".join(lines))):
-                await interaction.followup.send(
-                    part, files=files if number == 0 else [], ephemeral=True
-                )
-        finally:
-            discard_attachment(*files)
+        """Reply with the pictures and what the render made do with, as the runner words it."""
+        await send_preview(
+            interaction, bot=self.bot, title=title, context=context, outcomes=outcomes
+        )
 
 
 def _verify_template_command_coverage() -> None:

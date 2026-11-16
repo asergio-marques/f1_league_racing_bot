@@ -888,20 +888,16 @@ class ImageRenderService:
         The log always, in **one** message. A command's own output additionally, which is
         the caller's job — it holds the interaction. Never a channel drivers read (FR-032).
 
-        Returns the posted ``discord.Message``, or None where nothing was posted or the
-        write failed, so a caller can link a reader to what was just logged. A log-channel
-        failure must never break the render that produced these, which is why it is
-        swallowed here and reported as None rather than raised.
+        Returns the posted ``discord.Message``, or None where there was nothing to post, so a
+        caller can link a reader to what was just logged. A write the log channel refuses is
+        raised: the caller whose work must stand decides that, as a preview does
+        (`preview_runner._log_notices`).
         """
         if not notices:
             return None
-        try:
-            return await bot.output_router.post_log(
-                ImageRenderService.format_notices(notices, subject=subject)
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("report_notices: log write failed: %s", exc, exc_info=True)
-            return None
+        return await bot.output_router.post_log(
+            ImageRenderService.format_notices(notices, subject=subject)
+        )
 
     # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────
 

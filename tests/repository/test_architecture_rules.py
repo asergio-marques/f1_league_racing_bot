@@ -2976,6 +2976,9 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: the Discard is refused all the same, whatever the reader does",
     ("results/services/round_amendment/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
+    ("image/services/preview/preview_runner.py", "_log_notices"):
+        "place 3, around writing a line to the log channel, where that itself might fail: the "
+        "preview stands, and its reply loses only the link to the block",
     ("image/utils/svg_document.py", "_contained"):
         "place 4, around work run in a worker thread: the error is handed back as plain text and "
         "raised again on the loop, so that nothing parsed leaves the thread with it",
@@ -3165,8 +3168,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
-    ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
-        (1, PASS["image"]),
 }
 
 

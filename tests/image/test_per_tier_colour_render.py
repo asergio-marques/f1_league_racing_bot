@@ -40,7 +40,7 @@ CALL_SITES = {
     "image/services/aspects/image_verdict_post.py": "drawing.division_name",
     "image/services/aspects/image_verdict_banner_post.py": "drawing.division_name",
     "image/services/aspects/image_weather_post.py": "drawing.division_name",
-    "image/cogs/image_cog.py": "context.division_name",
+    "image/services/preview/preview_runner.py": "context.division_name",
 }
 
 
