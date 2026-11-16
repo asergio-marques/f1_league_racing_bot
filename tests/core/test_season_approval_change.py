@@ -2419,9 +2419,6 @@ async def test_a_refused_opening_standings_picture_s_line_survives_a_retry_that_
     assert len(refusals) == len(set(refusals)), refusals
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a retry that removes the earlier try's part-posted "
-                   "opening standings and then fails on a fault not Discord's drops the refused "
-                   "pictures' lines the job kept")
 async def test_a_refused_opening_standings_picture_s_line_survives_a_retry_that_fails_after_removing_the_part_posted_text(
     tmp_path, monkeypatch,
 ):

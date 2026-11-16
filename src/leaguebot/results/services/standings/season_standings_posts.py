@@ -146,9 +146,10 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     since have left: a channel the guild no longer holds holds none of them. A message that will not
     delete raises, with what is still to remove. Once the copies are down, what is returned names
     none left, so that a failure of this try names what it left, even nothing, and the job no longer
-    keeps the copies removed.
+    keeps the copies removed. The earlier try's picture lines stay in it, as a stop's result
+    replaces what the job kept and a failure that is not Discord's carries none of its own.
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.core.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.publishing.results_post_service import remove_part_posted_messages
 
     earlier = [int(each) for each in (kept or {}).get("new") or []]
@@ -165,7 +166,8 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
                 f"{len(left)} message(s) of the earlier try could not be removed",
                 result={"new": left, "channel_id": posted_in},
             ).carrying(drawn_lines_kept(kept)) from (failures[0] if failures else None)
-    return {"new": [], "channel_id": posted_in}
+    lines = drawn_lines_kept(kept)
+    return {"new": [], "channel_id": posted_in, **({DRAWN_LINES: list(lines)} if lines else {})}
 
 
 @asynccontextmanager
