@@ -209,12 +209,13 @@ point, which would then hold every module's registrations and grow with each mod
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
 - **Shared helpers** are of two kinds. The framework's (the base classes, the failure paths,
-  autocomplete) learn what the league decides through the framework's own protocols, which the
-  builder hands them on the bot, declared there by the framework's own protocol type, never by
-  core's service type; `utils` uses no service at all. Neither imports a service, the framework
-  imports nothing of core, and core uses no module; the one exception to all three is the bot's
-  type, which names every service and every hook that core and the modules declare, for the type
-  checker (below). Each handler for a kind of post is a service in the framework, not a helper. Some
+  autocomplete) learn what the league decides through the framework's own protocols: the league's
+  settings, which the builder hands them on the bot, declared there by the framework's own protocol
+  type, never by core's service type, and any other, such as the queue's authority tiers, which the
+  builder hands the service that asks it, directly; `utils` uses no service at all. Neither imports
+  a service, the framework imports nothing of core, and core uses no module; the one exception to
+  all three is the bot's type, which names every service and every hook that core and the modules
+  declare, for the type checker (below). Each handler for a kind of post is a service in the framework, not a helper. Some
   helpers a service may call reach the bot, each for one thing. `league_guild(bot)`
   (`league_server.py`, among the framework's helpers) is the one route from a job or a service to
   the league's server, which it finds through the framework's settings protocol. `report_failure`,
@@ -250,7 +251,7 @@ Because the services stay on the bot, the bot's type (`LeagueBot`) names every s
 every hook core and the modules declare. It does so for the type checker only, under
 `TYPE_CHECKING`, and nothing runs because of it. That is the one place below the modules that names
 what core and the modules hold, and the price of keeping them on the bot. `.importlinter` lists it
-as a stated exception rather than a breach. The one thing the bot carries for the framework is
+as a stated exception rather than a breach. The one thing of core's that the bot carries for the framework is
 `league_settings`, typed as the framework's own settings protocol, which the builder sets to core's
 configuration service, so that the framework reads the league's settings through the protocol and
 never through `config_service`.
