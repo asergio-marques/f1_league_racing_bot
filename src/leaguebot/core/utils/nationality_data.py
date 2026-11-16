@@ -1,12 +1,9 @@
-"""Nationality validation reference for the signup wizard.
+"""The nationalities a driver may give, read through `parse_nationality` in `input_validator`.
 
-Maps lowercase nationality adjectives AND lowercase country names to the canonical
-Title-Case nationality adjective stored in signup_records.nationality.
-"other" (any case) is the universal fallback → stored as "Other".
-
-Usage::
-    from leaguebot.core.utils.nationality_data import NATIONALITY_LOOKUP
-    canonical = NATIONALITY_LOOKUP.get(raw.strip().lower())  # None → invalid
+Maps lowercase nationality adjectives and lowercase country names to the canonical Title-Case
+adjective that is stored: a signup's nationality (`signup_records.nationality`) when the signup
+wizard reads it, and a test driver's (`driver_profiles.test_nationality`) when the test roster
+does. "other", in any case, is the universal fallback, stored as "Other".
 """
 
 from __future__ import annotations
