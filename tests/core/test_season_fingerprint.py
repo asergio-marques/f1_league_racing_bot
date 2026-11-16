@@ -549,6 +549,7 @@ _MODULE_EDITS = {
     ),
 }
 
+
 async def _handed(season) -> list:
     """What each module hands the fingerprint of the season, on a connection held open."""
     async with get_connection(season.path) as db:
