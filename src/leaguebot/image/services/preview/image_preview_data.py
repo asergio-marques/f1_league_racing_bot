@@ -65,13 +65,8 @@ VERDICT_TEXT_CASES: tuple[str, ...] = (
 # against a template than a shifting one.
 
 from leaguebot.core.models.session import MAX_SLOTS, SESSIONS_BY_FORMAT, SessionType  # noqa: E402
-from leaguebot.results.models.session_result import (  # noqa: E402
-    OutcomeModifier,
-    QualifyingSessionResult,
-    RaceSessionResult,
-)
 from leaguebot.image.models.forecast_values import ForecastSession, ForecastValues  # noqa: E402
-from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
+from leaguebot.image.services.preview.preview_sources import PreviewSources  # noqa: E402
 
 #: The three types a phase 2 forecast draws for a session.
 PHASE2_TYPES = ("sunny", "mixed", "rain")
@@ -108,7 +103,7 @@ def sessions_for(round_format) -> list[SessionType]:
 # ── Classifications (FR-023, FR-024) ──────────────────────────────────────
 
 
-def fabricate_qualifying_rows(drivers, team_keys, points_map):
+def fabricate_qualifying_rows(drivers, team_keys, points_map, *, sources: PreviewSources):
     """A believable qualifying classification over *drivers*.
 
     Every driver appears exactly once, positions run 1..n with no gap, and the best laps
@@ -126,6 +121,7 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
     """
     rows = []
     count = len(drivers)
+    compounds = sources.tyre_compounds()
     compounds_dealt = 0
     # A field of five or more ends DNS, DSQ; a field of four ends with the DNS alone.
     dsq_position = count if count >= 5 else None
@@ -134,31 +130,29 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
         seconds = 88.400 + (position - 1) * 0.400
         best_lap: str | None = f"1:{int(seconds - 60):02d}.{int(round((seconds % 1) * 1000)):03d}"
 
-        outcome = OutcomeModifier.CLASSIFIED
+        outcome = "CLASSIFIED"
         if position == dsq_position:
-            outcome = OutcomeModifier.DSQ
+            outcome = "DSQ"
             best_lap = None
         # A driver of a large enough field set no time, so that case is drawn too.
         elif position == dns_position:
-            outcome = OutcomeModifier.DNS
+            outcome = "DNS"
             best_lap = None
 
         # P2 records no tyre at all, so the absent-datum case is drawn beside the five.
         if position == 2:
             tyre = None
         else:
-            tyre = TYRE_COMPOUNDS[compounds_dealt % len(TYRE_COMPOUNDS)]
+            tyre = compounds[compounds_dealt % len(compounds)]
             compounds_dealt += 1
 
         rows.append(
-            QualifyingSessionResult(
-                id=position,
-                session_result_id=1,
+            sources.qualifying_row(
+                position=position,
                 driver_user_id=driver.key,
                 team_instance_id=team_keys.get(
                     getattr(driver, "team_key", "") or driver.team_name, 0
                 ),
-                finishing_position=position,
                 outcome=outcome,
                 tyre=tyre,
                 best_lap=best_lap,
@@ -168,7 +162,9 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
     return rows
 
 
-def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=2):
+def fabricate_race_rows(
+    drivers, team_keys, points_map, *, sources: PreviewSources, fastest_lap_position=2
+):
     """A believable race classification over *drivers*.
 
     The leader carries a total race time; everyone else an interval growing with position.
@@ -197,36 +193,32 @@ def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=
     non_finishers = (dsq_position is not None) + (dnf_position is not None)
     lapped_position = count - non_finishers if count >= 4 else None
     for position, driver in enumerate(drivers, start=1):
-        outcome = OutcomeModifier.CLASSIFIED
+        outcome = "CLASSIFIED"
         base_time_ms: int | None = 3_723_000 + (position - 1) * 1_800
         laps_behind = None
 
         if position == dsq_position:
-            outcome = OutcomeModifier.DSQ
+            outcome = "DSQ"
             base_time_ms = None
         elif position == dnf_position:
-            outcome = OutcomeModifier.DNF
+            outcome = "DNF"
             base_time_ms = None
         elif position == lapped_position:
             laps_behind = 1
             base_time_ms = None
 
         rows.append(
-            RaceSessionResult(
-                id=position,
-                session_result_id=1,
+            sources.race_row(
+                position=position,
                 driver_user_id=driver.key,
                 team_instance_id=team_keys.get(
                     getattr(driver, "team_key", "") or driver.team_name, 0
                 ),
-                finishing_position=position,
                 outcome=outcome,
                 base_time_ms=base_time_ms,
                 laps_behind=laps_behind,
                 # One entry carrying a penalty the game applied, and the rest none.
                 ingame_time_penalties_ms=5_000 if position == 3 else 0,
-                postrace_time_penalties_ms=0,
-                appeal_time_penalties_ms=0,
                 fastest_lap="1:29.145" if position == fastest_lap_position else None,
                 fastest_lap_bonus=1 if position == fastest_lap_position else 0,
                 points_awarded=points_map.get(position, 0),
@@ -347,7 +339,7 @@ def fabricate_standings_previous_positions(
 
 
 def fabricate_standings_round_results(
-    run_ordinals, round_formats, drivers, team_keys, *, reserve_driver=None
+    run_ordinals, round_formats, drivers, team_keys, *, sources: PreviewSources, reserve_driver=None
 ):
     """Session results for every round already run, over the division's own drivers.
 
@@ -358,7 +350,7 @@ def fabricate_standings_round_results(
     represented in the result, which the grid reads as "not yet run".
 
     The **results** module's own session vocabulary is used here (Sprint/Feature Qualifying
-    and Race), read through ``result_submission_service.get_sessions_for_format`` — not the
+    and Race), read through the preview sources' ``sample_sessions`` — not the
     schedule's Short/Long/Full vocabulary ``sessions_for`` reads for the weather previews,
     which answers a different question (how many weather slots a session carries).
 
@@ -386,8 +378,6 @@ def fabricate_standings_round_results(
     from types import SimpleNamespace
     from typing import Any
 
-    from leaguebot.core.models.round import RoundFormat
-    from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 
     def team_of(driver) -> str:
         return driver.team_key or driver.team_name
@@ -417,12 +407,10 @@ def fabricate_standings_round_results(
 
     out: dict[int, dict[str, list]] = {}
     for ordinal in run_ordinals:
-        try:
-            round_format = RoundFormat(round_formats.get(ordinal, "NORMAL"))
-        except ValueError:
-            round_format = RoundFormat.NORMAL
         session_map: dict[str, list] = {}
-        for index, session_type in enumerate(get_sessions_for_format(round_format)):
+        for index, session_type in enumerate(
+            sources.sample_sessions(round_formats.get(ordinal, "NORMAL"))
+        ):
             points_map = (
                 {1: 3, 2: 2, 3: 1}
                 if session_type.is_qualifying
@@ -452,12 +440,13 @@ def fabricate_standings_round_results(
                     d for d in field if team_of(d) == short_team
                 ]
             rows = (
-                fabricate_qualifying_rows(field, team_keys, points_map)
+                fabricate_qualifying_rows(field, team_keys, points_map, sources=sources)
                 if session_type.is_qualifying
                 else fabricate_race_rows(
                     field,
                     team_keys,
                     points_map,
+                    sources=sources,
                     fastest_lap_position=_FASTEST_LAP_PLACES[
                         ordinal % len(_FASTEST_LAP_PLACES)
                     ],

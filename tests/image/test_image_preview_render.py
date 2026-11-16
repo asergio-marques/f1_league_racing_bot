@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import aiosqlite
 import pytest
 
+from leaguebot.__main__ import LeaguePreviewSources
 from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.config.image_config_service import ImageConfigService
@@ -98,7 +99,7 @@ async def bot(db_path):
         image_config_service=config_service,
         image_validity_service=validity_service,
         image_render_service=ImageRenderService(config_service, validity_service),
-        preview_sources=AttendancePreviewSources(db_path),
+        preview_sources=LeaguePreviewSources(AttendancePreviewSources(db_path)),
     )
 
 
@@ -183,11 +184,11 @@ KINDS = {
     "lineup": (dict(require_teams=True), lambda b, c: build_lineup_preview(b, c)),
     "results": (
         dict(round_number=1, require_teams=True),
-        lambda b, c: build_results_preview(b, c),
+        lambda b, c: build_results_preview(b, c, b.preview_sources),
     ),
     "standings": (
         dict(round_number=1, require_teams=True),
-        lambda b, c: build_standings_preview(b, c),
+        lambda b, c: build_standings_preview(b, c, b.preview_sources),
     ),
     "attendance": (
         dict(round_number=1, require_teams=True),

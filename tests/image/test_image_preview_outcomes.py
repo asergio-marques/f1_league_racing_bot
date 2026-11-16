@@ -16,6 +16,7 @@ import aiosqlite
 import pytest
 from lxml import etree
 
+from leaguebot.__main__ import LeaguePreviewSources
 from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.config.image_config_service import ImageConfigService
@@ -80,7 +81,7 @@ async def bot(db_path):
         db_path=db_path,
         season_service=SeasonService(db_path),
         image_config_service=config_service,
-        preview_sources=AttendancePreviewSources(db_path),
+        preview_sources=LeaguePreviewSources(AttendancePreviewSources(db_path)),
     )
 
 
@@ -225,7 +226,7 @@ class TestResultsPreview:
         """A normal round and an endurance round run the same two feature sessions."""
         context = await _context(bot, round_number=round_number, require_teams=True)
 
-        requests = await build_results_preview(bot, context)
+        requests = await build_results_preview(bot, context, bot.preview_sources)
 
         assert len(requests) == 2
         assert {r[1] for r in requests} == {
@@ -237,7 +238,7 @@ class TestResultsPreview:
         """FR-023 — one per session the format runs, and a sprint runs four."""
         context = await _context(bot, round_number=2, require_teams=True)
 
-        requests = await build_results_preview(bot, context)
+        requests = await build_results_preview(bot, context, bot.preview_sources)
 
         assert len(requests) == 4
 
@@ -248,7 +249,7 @@ class TestResultsPreview:
         context = await _context(bot, round_number=1, require_teams=True)
         role_of = {team.name: i + 1 for i, team in enumerate(context.teams)}
 
-        rows = fabricate_race_rows(context.drivers, role_of, {})
+        rows = fabricate_race_rows(context.drivers, role_of, {}, sources=bot.preview_sources)
 
         assert {row.driver_user_id for row in rows} == {d.key for d in context.drivers}
 
@@ -261,7 +262,7 @@ class TestStandingsPreview:
         """FR-025 — the drivers' table and the constructors' table alike."""
         context = await _context(bot, round_number=2, require_teams=True)
 
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         assert [r[1] for r in requests] == [
             "standings_drivers_template",
@@ -289,7 +290,7 @@ class TestStandingsPreview:
             await db.commit()
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         constructors_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_constructors_template"
@@ -307,7 +308,7 @@ class TestStandingsPreview:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=1, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         drivers_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_drivers_template"
@@ -334,7 +335,7 @@ class TestStandingsPreview:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=3, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         drivers_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_drivers_template"
@@ -367,7 +368,7 @@ class TestStandingsPreview:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         drivers_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_drivers_template"
@@ -393,7 +394,7 @@ class TestStandingsPreview:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         constructors_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_constructors_template"
@@ -414,7 +415,7 @@ class TestStandingsPreview:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         drivers_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_drivers_template"
@@ -443,7 +444,7 @@ class TestStandingsPreview:
             await db.commit()
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         constructors_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_constructors_template"
@@ -466,7 +467,7 @@ class TestStandingsPreview:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 
@@ -497,7 +498,7 @@ class TestStandingsPreview:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         drivers_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_drivers_template"
@@ -530,7 +531,7 @@ class TestStandingsPreview:
             await db.commit()
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         constructors_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_constructors_template"
@@ -591,7 +592,7 @@ class TestStandingsPreview:
             await db.commit()
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         drivers_spec_builder = next(
             spec for label, key, spec in requests if key == "standings_drivers_template"
@@ -664,7 +665,7 @@ class TestStandingsPreview:
             await db.commit()
 
         context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
 
         root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 
@@ -778,7 +779,7 @@ class TestStandingsPreviewCountback:
         from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=round_number, require_teams=True)
-        requests = await build_standings_preview(bot, context)
+        requests = await build_standings_preview(bot, context, bot.preview_sources)
         spec_builder = next(spec for label, k, spec in requests if k == key)
         root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
         return spec_builder(load_svg(root_dir / f"{key}.svg"))

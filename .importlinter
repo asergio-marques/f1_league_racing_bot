@@ -169,12 +169,6 @@ allow_indirect_imports = True
 ignore_imports =
     # #288: the image module fetches what it draws from the modules, where it is to draw what
     # a module hands it.
-    leaguebot.image.services.preview.image_preview_data -> leaguebot.results.services.submission.result_submission_service
-    leaguebot.image.services.preview.image_preview_data -> leaguebot.results.models.session_result
-    leaguebot.image.services.preview.image_preview_service -> leaguebot.results.services.submission.result_submission_service
-    leaguebot.image.services.preview.image_preview_service -> leaguebot.results.services.standings.standings_service
-    leaguebot.image.services.preview.image_preview_service -> leaguebot.results.services.publishing.results_drawing_composer
-    leaguebot.image.services.preview.image_preview_service -> leaguebot.results.services.publishing.standings_drawing_composer
     leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.utils.results_formatter
 
 [importlinter:contract:nothing-imports-the-entry-point]

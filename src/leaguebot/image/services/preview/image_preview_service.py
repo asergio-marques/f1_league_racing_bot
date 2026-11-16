@@ -24,6 +24,7 @@ from leaguebot.image.models.image_constants import ASSET_CLASS_TO_COLUMN, PREVIE
 from leaguebot.core.models.round import Round
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.image.services.preview.preview_sources import PreviewSources
 
 log = logging.getLogger(__name__)
 
@@ -818,20 +819,20 @@ async def _country_of(bot: LeagueBot, round_obj) -> str | None:
 # ── Session results ───────────────────────────────────────────────────────
 
 
-async def build_results_preview(bot: LeagueBot, context: PreviewContext):
+async def build_results_preview(
+    bot: LeagueBot, context: PreviewContext, sources: PreviewSources
+):
     """One picture per session the named round is run over (FR-023).
 
     The drivers are the division's own; the classification over them is fabricated, because
-    a round not yet run has none.
+    a round not yet run has none. The sessions and the rows come from the results module,
+    through *sources*.
     """
-    from leaguebot.core.models.round import RoundFormat
     from leaguebot.image.services.preview.image_preview_data import (
         fabricate_qualifying_rows,
         fabricate_race_rows,
     )
     from leaguebot.image.services.aspects.image_results_service import build_fill_spec
-    from leaguebot.results.services.publishing.results_drawing_composer import resolve_drawing
-    from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 
     config = await bot.image_config_service.get_config()
     drivers = _racing_drivers(context)
@@ -839,15 +840,11 @@ async def build_results_preview(bot: LeagueBot, context: PreviewContext):
     round_obj = context.required_round()
 
     # The results module works in its own session vocabulary — Sprint/Feature Qualifying
-    # and Race — which is not the schedule's (Short/Long/Full). `get_sessions_for_format`
-    # is the authority on which sessions a round runs *for results*, and is called rather
-    # than restated. The weather previews take the schedule's vocabulary instead, because
-    # that is the one their slot ceilings are keyed by.
-    try:
-        round_format = RoundFormat(_format_of(round_obj))
-    except ValueError:
-        round_format = RoundFormat.NORMAL
-    sessions = get_sessions_for_format(round_format)
+    # and Race — which is not the schedule's (Short/Long/Full). The module says which sessions
+    # a round runs *for results*, and it is asked rather than restated. The weather previews
+    # take the schedule's vocabulary instead, because that is the one their slot ceilings are
+    # keyed by.
+    sessions = sources.sample_sessions(_format_of(round_obj))
 
     requests = []
     for session in sessions:
@@ -860,13 +857,13 @@ async def build_results_preview(bot: LeagueBot, context: PreviewContext):
             else {n: max(0, 26 - 2 * (n - 1)) for n in range(1, 14)}
         )
         rows = (
-            fabricate_qualifying_rows(drivers, team_key_of, points_map)
+            fabricate_qualifying_rows(drivers, team_key_of, points_map, sources=sources)
             if is_qualifying
-            else fabricate_race_rows(drivers, team_key_of, points_map)
+            else fabricate_race_rows(drivers, team_key_of, points_map, sources=sources)
         )
 
-        drawing = resolve_drawing(
-            session_type=session,
+        drawing = sources.results_drawing(
+            session=session,
             is_sprint=_format_of(round_obj) == "SPRINT",
             result_status="FINAL",
             division_name=context.division_name,
@@ -900,7 +897,9 @@ async def build_results_preview(bot: LeagueBot, context: PreviewContext):
 # ── Standings ─────────────────────────────────────────────────────────────
 
 
-async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
+async def build_standings_preview(
+    bot: LeagueBot, context: PreviewContext, sources: PreviewSources
+):
     """Both championships, as they would stand after the named round (FR-025, FR-026).
 
     The grid holds the division's own calendar, so its width is the width a league would
@@ -926,9 +925,6 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     left a manager judging their template's ``PTS · GAP`` column, and the three movement
     markers, seeing less than a posting would ever show them.
     """
-    from types import SimpleNamespace
-
-    from leaguebot.results.services.standings import standings_service
     from leaguebot.image.services.preview.image_preview_data import (
         fabricate_standings_previous_positions,
         fabricate_standings_round_results,
@@ -940,7 +936,6 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         RoundHeading,
         build_fill_spec,
     )
-    from leaguebot.results.services.publishing.standings_drawing_composer import resolve_drawing
 
     # One reserve driver is kept back so the preview exercises `driver_is_drawn`'s reserve
     # branch at all (#144) — `_racing_drivers` itself stays as the results preview needs it.
@@ -979,177 +974,52 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         if int(heading.number) <= int(round_obj.round_number)
     ]
     round_session_results = fabricate_standings_round_results(
-        run_ordinals, round_formats, drivers, team_key_of, reserve_driver=reserve_driver
+        run_ordinals, round_formats, drivers, team_key_of, reserve_driver=reserve_driver,
+        sources=sources,
     )
 
-    team_seat_assignments = {
-        team_key_of[team.name]: {
-            d.key: d.seat_number for d in drivers if (d.team_key or d.team_name) == team.name
-        }
-        for team in racing_teams
-        if team.name in team_key_of
-    }
-    team_seat_counts = {
-        team_key_of[team.name]: int(getattr(team, "max_seats", 0) or 0)
-        for team in racing_teams
-        if team.name in team_key_of
-    }
-
-    # The countback's raw material, read off the grid this preview draws — so the pair the
-    # totals leave level is separated by what a reader can see beneath them (#144).
-    number_of = {heading.ordinal: int(heading.number) for heading in headings}
-    session_rows = [
-        (row, session, number_of[ordinal])
-        for ordinal, sessions in round_session_results.items()
-        for session, rows in sessions.items()
-        for row in rows
-    ]
-    driver_counts, driver_firsts = standings_service.tally_feature_finishes(
-        (row.driver_user_id, session, row.outcome, row.finishing_position, number)
-        for row, session, number in session_rows
-    )
-    team_counts, team_firsts = standings_service.tally_feature_finishes(
-        (row.team_instance_id, session, row.outcome, row.finishing_position, number)
-        for row, session, number in session_rows
-    )
-    participants = {row.driver_user_id for row, _, _ in session_rows}
-
-    # The totals are invented; the order is not. It is the standings service's own, taken
-    # over the invented totals and the grid, exactly as a posting orders what it draws.
-    reserve_team_names = {
-        team.name for team in context.teams if getattr(team, "is_reserve", False)
-    }
+    # The totals are invented; the order is not. The results module orders them over the grid,
+    # exactly as a posting orders what it draws, and works the gaps and movements out.
+    racing_teams_with_keys = [team for team in racing_teams if team.name in team_key_of]
     driver_points = dict(
         zip(
             (d.key for d in drivers),
             fabricate_standings_totals(len(drivers), leader=120),
         )
     )
-    ordered_drivers = standings_service.order_drivers(
-        driver_points,
-        points=driver_points,
-        finish_counts=driver_counts,
-        first_finish_rounds=driver_firsts,
-        participants=participants,
-        seats={
-            d.key: (1 if (d.team_key or d.team_name) in reserve_team_names else 0, d.team_name)
-            for d in drivers
-        },
-        names=names,
-    )
-    driver_snapshots = [
-        SimpleNamespace(
-            driver_user_id=key,
-            standing_position=position,
-            total_points=driver_points[key],
-            finish_counts=dict(driver_counts.get(key, {})),
-            first_finish_rounds=dict(driver_firsts.get(key, {})),
-            race_participant=key in participants,
-        )
-        for position, key in enumerate(ordered_drivers, start=1)
-    ]
-
-    racing_teams_with_keys = [team for team in racing_teams if team.name in team_key_of]
     team_points = dict(
         zip(
             (team_key_of[team.name] for team in racing_teams_with_keys),
             fabricate_standings_totals(len(racing_teams_with_keys), leader=200),
         )
     )
-    ordered_teams = standings_service.order_teams(
-        team_points,
-        points=team_points,
-        finish_counts=team_counts,
-        first_finish_rounds=team_firsts,
-        team_meta={
-            team_key_of[team.name]: (0, getattr(team, "full_name", "") or team.name)
-            for team in racing_teams_with_keys
-        },
-    )
-    team_snapshots = [
-        SimpleNamespace(
-            team_instance_id=key,
-            standing_position=position,
-            total_points=team_points[key],
-            finish_counts=dict(team_counts.get(key, {})),
-            first_finish_rounds=dict(team_firsts.get(key, {})),
-        )
-        for position, key in enumerate(ordered_teams, start=1)
-    ]
-
-    # The gap needs no reference round, so a preview draws it in full where it draws no
-    # movement at all (see `standings_service.Movement`). Derived by the same call the
-    # posting path makes, never by a subtraction written a second time here.
-    driver_gaps = standings_service.derive_gaps(
-        [(x.driver_user_id, x.standing_position, x.total_points) for x in driver_snapshots]
-    )
-    team_gaps = standings_service.derive_gaps(
-        [(x.team_instance_id, x.standing_position, x.total_points) for x in team_snapshots]
-    )
-
     # A preview stands against no real reference round, so a fabricated one stands in — no
     # different from the current round it already invents. See `fabricate_standings_previous_
     # positions`.
-    driver_movements = standings_service.derive_movement(
-        [(x.driver_user_id, x.standing_position, x.total_points) for x in driver_snapshots],
-        fabricate_standings_previous_positions(
-            [x.driver_user_id for x in driver_snapshots],
-            # The reserve joined the classification this round, as a reserve does.
-            newcomers=frozenset({reserve_driver.key}) if reserve_driver else frozenset(),
-        ),
-    )
-    team_movements = standings_service.derive_movement(
-        [(x.team_instance_id, x.standing_position, x.total_points) for x in team_snapshots],
-        fabricate_standings_previous_positions(
-            [x.team_instance_id for x in team_snapshots]
-        ),
-    )
-
-    shared = dict(
-        division_name=context.division_name,
-        round_number=round_obj.round_number,
-        result_status="FINAL",
-        division_tier=context.division_tier,
-        season_number=context.season_number,
-        race_name=await _race_name(bot, context),
-        nationality_collected=context.nationality_collected,
-        rounds=headings,
+    drivers_drawing, constructors_drawing = sources.standings_drawings(
+        drivers=drivers,
+        racing_teams=racing_teams,
+        reserve_team_names={
+            team.name for team in context.teams if getattr(team, "is_reserve", False)
+        },
+        names=names,
+        flags=flags,
+        team_key_of=team_key_of,
+        reserve_driver=reserve_driver,
+        driver_points=driver_points,
+        team_points=team_points,
         round_session_results=round_session_results,
-    )
-
-    drivers_drawing = resolve_drawing(
-        template_key=DRIVERS_TEMPLATE_KEY,
-        snapshots=driver_snapshots,
-        display_names=names,
-        team_names={d.key: d.team_name for d in drivers},
-        team_keys={d.key: (d.team_key or d.team_name) for d in drivers},
-        movements=driver_movements,
-        gaps=driver_gaps,
-        nationalities=flags,
-        reserve_user_ids={reserve_driver.key} if reserve_driver else set(),
-        show_reserves=reserve_driver is not None,
-        **shared,
-    )
-    constructors_drawing = resolve_drawing(
-        template_key=CONSTRUCTORS_TEMPLATE_KEY,
-        snapshots=team_snapshots,
-        display_names={
-            team_key_of[t.name]: (getattr(t, "full_name", "") or t.name)
-            for t in racing_teams
-            if t.name in team_key_of
-        },
-        team_names={
-            team_key_of[t.name]: (getattr(t, "full_name", "") or t.name)
-            for t in racing_teams
-            if t.name in team_key_of
-        },
-        team_keys={team_key_of[t.name]: t.name for t in racing_teams if t.name in team_key_of},
-        movements=team_movements,
-        gaps=team_gaps,
-        team_seat_assignments=team_seat_assignments,
-        team_seat_counts=team_seat_counts,
-        driver_display_names=names,
-        **shared,
+        rounds=headings,
+        previous_positions=fabricate_standings_previous_positions,
+        shared=dict(
+            division_name=context.division_name,
+            round_number=round_obj.round_number,
+            result_status="FINAL",
+            division_tier=context.division_tier,
+            season_number=context.season_number,
+            race_name=await _race_name(bot, context),
+            nationality_collected=context.nationality_collected,
+        ),
     )
 
     return [

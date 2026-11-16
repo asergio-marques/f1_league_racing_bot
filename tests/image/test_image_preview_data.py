@@ -7,6 +7,11 @@ an impression the picture gives.
 """
 from __future__ import annotations
 
+from leaguebot.results.services.publishing.preview_sources import ResultsPreviewSources
+
+#: What the previews are handed for the sessions, rows and compounds of results: the module's own.
+_SOURCES = ResultsPreviewSources()
+
 
 # ---------------------------------------------------------------------------
 # The prose constants rescued from the withdrawn sample-data module (T002)
@@ -143,8 +148,7 @@ class TestStandingsScatter:
             list(range(1, 13)),
             {ordinal: "NORMAL" for ordinal in range(1, 13)},
             drivers,
-            {"Team": 900},
-        )
+            {"Team": 900}, sources=_SOURCES)
         places = {
             next(
                 row.finishing_position
@@ -160,7 +164,7 @@ class TestStandingsScatter:
         """The results preview draws one race and needs no variation; it is untouched."""
         from leaguebot.image.services.preview.image_preview_data import fabricate_race_rows
 
-        rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
+        rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {}, sources=_SOURCES)
         holder = [row for row in rows if row.fastest_lap_bonus]
         assert [row.finishing_position for row in holder] == [2]
 
@@ -169,7 +173,7 @@ class TestStandingsScatter:
         from leaguebot.results.models.session_result import OutcomeModifier
         from leaguebot.image.services.preview.image_preview_data import fabricate_qualifying_rows
 
-        rows = fabricate_qualifying_rows(self._drivers(20), {"Team": 900}, {})
+        rows = fabricate_qualifying_rows(self._drivers(20), {"Team": 900}, {}, sources=_SOURCES)
         assert any(row.outcome is OutcomeModifier.DSQ for row in rows)
         # It sits beside the DNS, not on top of it.
         dsq = [row for row in rows if row.outcome is OutcomeModifier.DSQ]
@@ -182,7 +186,7 @@ class TestStandingsScatter:
         from leaguebot.results.models.session_result import OutcomeModifier
         from leaguebot.image.services.preview.image_preview_data import fabricate_race_rows
 
-        rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
+        rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {}, sources=_SOURCES)
         dsq = [row for row in rows if row.outcome is OutcomeModifier.DSQ]
         dnf = [row for row in rows if row.outcome is OutcomeModifier.DNF]
         assert dsq
@@ -219,11 +223,11 @@ class TestStandingsScatter:
         }
 
         for count in range(1, 25):
-            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {})
+            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {}, sources=_SOURCES)
             race_order = [race_category(row) for row in race]
             assert race_order == sorted(race_order), f"race of {count}: {race_order}"
 
-            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
+            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {}, sources=_SOURCES)
             qualifying_order = [qualifying_category[row.outcome] for row in qualifying]
             assert qualifying_order == sorted(qualifying_order), (
                 f"qualifying of {count}: {qualifying_order}"
@@ -235,8 +239,8 @@ class TestStandingsScatter:
         from leaguebot.image.services.preview.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
 
         for count in (2, 3, 4):
-            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
-            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {})
+            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {}, sources=_SOURCES)
+            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {}, sources=_SOURCES)
             assert all(row.outcome is not OutcomeModifier.DSQ for row in qualifying)
             assert all(row.outcome is not OutcomeModifier.DSQ for row in race)
 
@@ -431,8 +435,7 @@ class TestStandingsSubstitution:
         absent = regulars[-2]  # Bluewave 2
 
         results = fabricate_standings_round_results(
-            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
-        )
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve, sources=_SOURCES)
 
         keys_in_round = {
             row.driver_user_id for rows in results[1].values() for row in rows
@@ -450,8 +453,7 @@ class TestStandingsSubstitution:
         undriven = regulars[-1]  # Greenfield 1
 
         results = fabricate_standings_round_results(
-            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
-        )
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve, sources=_SOURCES)
 
         keys_in_round = {
             row.driver_user_id for rows in results[1].values() for row in rows
@@ -468,8 +470,7 @@ class TestStandingsSubstitution:
         absent = drivers[:-1][-2]  # Bluewave 2
 
         results = fabricate_standings_round_results(
-            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
-        )
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve, sources=_SOURCES)
 
         substitute_team_ids = {
             row.team_instance_id
@@ -493,8 +494,7 @@ class TestStandingsSubstitution:
 
         results = fabricate_standings_round_results(
             [1, 2], {1: "NORMAL", 2: "NORMAL"}, drivers,
-            self.TEAM_KEYS, reserve_driver=reserve,
-        )
+            self.TEAM_KEYS, reserve_driver=reserve, sources=_SOURCES)
 
         rows_in_round_2 = [row for rows in results[2].values() for row in rows]
         keys_in_round_2 = {row.driver_user_id for row in rows_in_round_2}
@@ -513,8 +513,7 @@ class TestStandingsSubstitution:
         drivers = self._drivers([("Redline", 2), ("Bluewave", 2)])
 
         results = fabricate_standings_round_results(
-            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Bluewave": 2}
-        )
+            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Bluewave": 2}, sources=_SOURCES)
 
         keys_in_round = {
             row.driver_user_id for rows in results[1].values() for row in rows
@@ -530,8 +529,7 @@ class TestStandingsSubstitution:
 
         results = fabricate_standings_round_results(
             [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Reserve": 2},
-            reserve_driver=reserve,
-        )
+            reserve_driver=reserve, sources=_SOURCES)
 
         keys_in_round = {
             row.driver_user_id for rows in results[1].values() for row in rows
@@ -553,8 +551,7 @@ class TestStandingsSubstitution:
         absent = regulars[-3]  # Bluewave 2, the last regular of another team
 
         results = fabricate_standings_round_results(
-            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
-        )
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve, sources=_SOURCES)
 
         rows = [row for session in results[1].values() for row in session]
         assert undriven.key not in {row.driver_user_id for row in rows}
@@ -583,8 +580,7 @@ class TestStandingsSubstitution:
 
             for round_format in ("NORMAL", "SPRINT"):
                 results = fabricate_standings_round_results(
-                    [1], {1: round_format}, drivers, team_keys, reserve_driver=reserve,
-                )
+                    [1], {1: round_format}, drivers, team_keys, reserve_driver=reserve, sources=_SOURCES)
                 rows = [
                     row
                     for session in results[1].values()
@@ -605,12 +601,10 @@ class TestStandingsSubstitution:
         )
         reserve = drivers[-1]
         plain = fabricate_standings_round_results(
-            [2], {2: "NORMAL"}, drivers, self.TEAM_KEYS
-        )
+            [2], {2: "NORMAL"}, drivers, self.TEAM_KEYS, sources=_SOURCES)
         substituted = fabricate_standings_round_results(
             [1, 2], {1: "NORMAL", 2: "NORMAL"}, drivers, self.TEAM_KEYS,
-            reserve_driver=reserve,
-        )
+            reserve_driver=reserve, sources=_SOURCES)
 
         def order(results):
             return {
@@ -629,8 +623,7 @@ class TestStandingsSubstitution:
 
         results = fabricate_standings_round_results(
             [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Reserve": 2},
-            reserve_driver=reserve,
-        )
+            reserve_driver=reserve, sources=_SOURCES)
 
         keys_in_round = {
             row.driver_user_id for rows in results[1].values() for row in rows
@@ -773,7 +766,7 @@ class TestFabricatedTyreCompounds:
     def _tyres(self, count: int):
         from leaguebot.image.services.preview.image_preview_data import fabricate_qualifying_rows
 
-        rows = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
+        rows = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {}, sources=_SOURCES)
         return [row.tyre for row in rows]
 
     def test_all_five_compounds_are_drawn_on_a_field_of_six(self):
