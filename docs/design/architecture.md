@@ -363,11 +363,11 @@ one transaction (`pack_service`'s docstring). The factory reset's wipe puts a fr
 database in place of the one the queue lives in (`wipe` in `factory_reset_service`); its clean-up of
 Discord is an exception of its own (see "Posting to Discord", and `clean_discord`'s docstring). The
 third is the image module's portrait register (`driver_portraits`, written by `_record` and
-`_disown`): a portrait is fetched from Discord and its file written outside any change, in a
-refresh the render budget or a stop may cut off, so the register is written around the file, the
-row claimed before it and the key recorded after, and each write commits on its own connection,
-apart from any change, including where a queued job draws a lineup or discards a portrait; a
-queued job would make the file's write wait on a record of it.
+`_disown`): a portrait is fetched from Discord and its file written in a refresh the render budget
+or a stop may cut off, and in a queued job that draws a lineup, so the register is written around
+the file, the row claimed before it and the key recorded after, and each write commits on its own
+connection, apart from any change, including where a queued job draws a lineup or discards a
+portrait; a queued job would make the file's write wait on a record of it.
 
 - **The queue is kept in the database,** so a change waiting on it survives a stop.
 - **What whoever asked is told,** and when, is for the core specification, which gains it with the
@@ -1400,11 +1400,15 @@ stated exceptions below them:
    shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
    posting it hands back, so that the fallback is recorded where the job's lines go, as the season
    review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does;
-6. around the drawing alone of a graphic that rides on a post, where the post then goes out
-   without it (Constitution XIV.7). It differs from the fifth place in holding no post: the catch
-   holds the drawing only, so that a graphic never prevents the post it rides on. The full error
-   goes to the host's log, and the fault is returned as a line of the job that posts, so that the
-   league is told its graphic could not be drawn.
+6. around the drawing alone of a graphic that rides on a post, or around reading that graphic's
+   switch, where the post then goes out without it (Constitution XIV.7). It differs from the fifth
+   place in holding no post: the catch holds the drawing, or the reading of its switch, only, so
+   that a graphic never prevents the post it rides on. The full error goes to the host's log, and
+   the fault is returned as a line of the job that posts, so that the league is told its graphic
+   could not be drawn. The weather forecast's gate (`ImageDrawing._weather_gate`) is of this place,
+   the only gate that says why no picture was drawn: a switch it cannot read (a switch nobody
+   signed up for aside) is handed back as the reason of a line of the forecast's job, because that
+   line already names why a picture that was due was not drawn.
 
 Beyond the six places, a stated exception has a catch-all of its own, each with its reason. The
 callback a change type may give for a Discard of a change before it started
@@ -1423,19 +1427,14 @@ full tie ordered by user id, because a tie so ordered is the lesser fault than a
 ask the image module (`TemplateCapacityService._ask_drawing`) is a stated exception too: its
 catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, and the
 guard lets the placement through as if no problem were found, because a capacity check that cannot
-run must not block a placement (its docstring says so); the image module's one gate
+run must not block a placement (its docstring says so); the image module's gate
 (`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the weather forecast's) is a
 stated exception likewise: its catch-all (a switch nobody signed up for aside) puts the error in
 the host's log in full, with no line to the log channel, and answers that the league does not draw
 the aspect, so the text goes out, because a gate that cannot be read must not lose a league its
-text (its docstring says so); the weather forecast's gate (`ImageDrawing._weather_gate`) is one
-more, the only gate that says why no picture was drawn: a switch it cannot read (a switch nobody
-signed up for aside) is recorded in full in the host's log, as the others are, and is handed back
-as the reason of a line of the forecast's job, the one place a gate's fault is a line, because the
-forecast's line already names why a picture that was due was not drawn (its docstring says so);
-the helper through which the season's own capacity checks count and ask the image module
-(`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
-review's calendar and attendance warnings) — is a stated exception beside
+text (its docstring says so); the helper through which the season's own capacity checks count and
+ask the image module (`approval_checks.ask_drawing`) — the review's and the approval's
+(`lineup_problems`, and the review's calendar and attendance warnings) — is a stated exception beside
 `TemplateCapacityService._ask_drawing`'s: its catch-all (a switch nobody signed up for aside) puts
 the error in the host's log in full and lets the season through as if no problem were found, because
 a capacity check that cannot run must not block a season (its docstring says so); the round guard

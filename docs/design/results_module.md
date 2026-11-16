@@ -487,7 +487,7 @@ results makes is a job of a change, and every function that posts carries `posts
 | A round's standings | standing post | the division's standings channel | as for a table | `round_standings_posts`, saved in the job's `record` (`set_standings_message_id_on`) | takes it down |
 | The opening and final classifications | standing post | the division's standings channel | as for a table | `classification_posts`, written in the record that marks the posting done; a part posted before a failure is kept on the job and removed by its next try | takes the opening one down; a final classification belongs to a completed season, which the switch-off never reads |
 | A verdict | notice | the division's verdicts channel | the driver it names, and no role (`_VERDICT_MENTIONS`) | `penalty_records` or `appeal_records`, announcement columns, saved in the job's `record` (`_record_announcement_on`) | takes it down |
-| The heading over a round's verdicts | notice, posted by the image module's `image_verdict_banner_post.try_post` | the verdicts channel | — | `verdict_banner_messages`, saved in the job's `record` | takes it down, but where it heads a sanction card |
+| The heading over a round's verdicts | notice, through `send_notice`, its picture drawn by `ImageDrawing.draw_banner` | the verdicts channel | — | `verdict_banner_messages`, saved in the job's `record` | takes it down, but where it heads a sanction card |
 | An attendance sanction card | notice | the verdicts channel | the driver it names | not kept; its banner is marked `heads_sanctions` | leaves it, as attendance's |
 | The called-off note | notice, silent, through core's `post_cancellation_message` | the division's results channel | nobody | `called_off_notes`, saved in the job's `record` (`record_note_on`) | takes it down |
 | The batch notice | notice | the submission or amendment channel | nobody | the job's result, read by `delete_batch_notice` | goes with the channel |
@@ -629,10 +629,13 @@ which is why results' switch-off offers the cascade above.
 
 Results imports no module but image (the `results-uses-no-other-module-but-image` contract). The
 image module draws results' pictures and posts none of them: the posting jobs are handed its
-drawing by the builder, ask it for the picture of a session's table, of the two standings and of a
-verdict, and post what it hands back themselves, through the standing-post handler. A picture
-Discord refuses goes out as its text in the same try, and what the drawing had to report comes back
-as lines of the job. A retry asks for no picture (above, "Pictures and their fallbacks").
+drawing by the builder, ask it for the picture of a session's table, of the two standings, of a
+verdict and of the heading over a round's verdicts, and post what it hands back themselves. A
+session's table and the two standings go through the standing-post handler, and a picture Discord
+refuses goes out as its text in the same try. A verdict and the heading go through the notice
+handler (`send_notice`), and a picture Discord refuses stops the queue, so that the retry posts the
+text. What the drawing had to report comes back as lines of the job, in every case. A retry asks for
+no picture (above, "Pictures and their fallbacks").
 
 ### The `/results` group
 

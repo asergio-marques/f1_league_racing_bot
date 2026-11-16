@@ -195,7 +195,7 @@ needs when the builder registers it. The jobs and the hooks are handed the servi
 bot, and a function that needs Discord is handed the bot for that.
 
 `derive_checkin_deadline`, the moment a round's check-in closes, stays in
-`attendance_config_service`, where the image module draws the deadline from it.
+`attendance_config_service`, where attendance works the deadline out and hands it to the drawing.
 
 ### The cog
 
@@ -564,9 +564,10 @@ with no placement row there is refused as not a member
 Attendance needs results (`NEEDS`, `core.md`, "The dependency table"): the sanctions and the
 recalculation both stand on a round's results. It may ask the image module to draw its posts, and
 uses no other module (the `attendance-uses-no-other-module-but-results-and-image` contract). The
-image module draws the call (`ImageDrawing.attach_check_in_call`, on the drawing the wiring
-hands the post job) and the sheet (`image_attendance_post`) from what attendance hands it, the
-call's deadline included: attendance works it out (`derive_checkin_deadline`) and hands it in.
+image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet (`ImageDrawing.attendance_wanted` and
+`draw_attendance_sheet`), both on the drawing the wiring hands the post jobs, from what attendance
+hands it, the call's deadline included: attendance works it out (`derive_checkin_deadline`) and
+hands it in.
 
 ---
 
