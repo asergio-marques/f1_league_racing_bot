@@ -105,10 +105,14 @@ class AttendanceAfterReview(Protocol):
         Does nothing while attendance is off."""
 
     async def post_sheet(
-        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
+        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool,
+        earlier_lines: tuple[str, ...] = (),
     ) -> dict[str, Any] | None:
         """Post the division's attendance sheet as at *round_id*, annotating *sanctioned*
         profiles. Raises where it could not post; *as_text* leaves the graphic out.
+        *earlier_lines* are the lines a try before this one kept on its stop, which the sheet
+        hands back with its own, so that what its picture said is not lost with a post Discord
+        refused.
 
         Saves and deletes nothing (#439). Gives the sheet posted and the one it replaces (`new`,
         `old`, `channel_id`, `takes_slot`) for the job to save and to plan the old one's

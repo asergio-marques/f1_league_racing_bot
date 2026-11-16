@@ -415,10 +415,6 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#288: a refused calendar post loses its drawing's notices, which the retried try does not "
-    "hand back"
-))
 async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retried(
     tmp_path, monkeypatch,
 ):

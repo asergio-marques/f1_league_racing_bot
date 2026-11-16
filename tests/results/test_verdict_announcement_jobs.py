@@ -677,15 +677,7 @@ ATTENDANCE_CHANNEL = 707
 #: The notice the review's attendance sheet is drawn with, a flag falling back.
 REVIEW_SHEET_NOTICE = "no `flag` image for “Lewis”"
 
-#: What the review's sheet does not yet do: hand back, on the try that posts it, the lines its
-#: picture was drawn with on a try Discord refused.
-REVIEW_SHEET_LOSES_ITS_LINE = (
-    "#288: the review's attendance sheet step hands the retried post none of the lines kept on "
-    "its stop, so the picture's notice is lost"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=REVIEW_SHEET_LOSES_ITS_LINE)
 async def test_a_review_s_refused_attendance_sheet_s_notice_reaches_the_log_once_when_retried(
     tmp_path, monkeypatch,
 ):

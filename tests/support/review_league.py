@@ -321,7 +321,8 @@ class AttendanceDouble:
             raise self.recalculate_fails
 
     async def post_sheet(self, round_id: int, division_id: int, *, sanctioned: Any,
-                         as_text: bool) -> dict[str, Any] | None:
+                         as_text: bool, earlier_lines: tuple[str, ...] = ()
+                         ) -> dict[str, Any] | None:
         if not self.league.attendance_on:
             return None
         self.calls.append(("post_sheet", division_id, as_text))

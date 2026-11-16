@@ -687,11 +687,17 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
     if payload.get("after_sanctions"):
         # Only a driver whose sanction applied is marked: one discarded or dropped is not.
         sanctioned &= {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
-    await standing_posts.remove_kept(ctx.bot, ctx.kept)
+    # What the sheet's picture said when it was drawn, on the first try, is kept with every stop
+    # that follows, so that the try which posts hands it back with its own.
+    earlier = drawn_lines_kept(ctx.kept)
+    try:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+    except StepFailedOnDiscord as stop:
+        raise stop.carrying(earlier) from stop.__cause__
     try:
         result = await hook.post_sheet(
             int(payload["round_id"]), int(payload["division_id"]),
-            sanctioned=sanctioned, as_text=ctx.tries > 0,
+            sanctioned=sanctioned, as_text=ctx.tries > 0, earlier_lines=earlier,
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
@@ -963,19 +969,24 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     message posted and the one it replaces, saves the new id with its mark and plans the
     review's own `delete_message` for the old one (`review_posting.not_done` names a discard).
     """
-    await standing_posts.remove_kept(ctx.bot, ctx.kept)
-    result = await hook.refresh_lineup(
-        int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
-    )
+    earlier = drawn_lines_kept(ctx.kept)
+    try:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        result = await hook.refresh_lineup(
+            int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
+        )
+    except StepFailedOnDiscord as stop:
+        raise lineup_posting.carry_lineup_lines(ctx, stop, earlier) from stop.__cause__
     if not result or result.get("new") is None:
-        return StepResult(result=result or {})
+        return StepResult(result=result or {}, lines=earlier)
     old = result.get("old")
     then = (
         _deletes(int(result["channel_id"]), [int(old)], "lineup")
         if old is not None and int(old) != int(result["new"]) else ()
     )
     return StepResult(
-        result=result, lines=lineup_posting.fallen_back_to_text_line(ctx, result), then=then,
+        result=result, lines=earlier + lineup_posting.fallen_back_to_text_line(ctx, result),
+        then=then,
     )
 
 

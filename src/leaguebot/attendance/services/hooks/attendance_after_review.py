@@ -201,14 +201,15 @@ class AttendanceAfterReview:
         )
 
     async def post_sheet(
-        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
+        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool,
+        earlier_lines: tuple[str, ...] = (),
     ) -> dict[str, Any] | None:
         if not await self.enabled():
             return None
         posted = await attendance_sheet.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
-            as_text=as_text, drawing=self._drawing,
+            as_text=as_text, drawing=self._drawing, earlier_lines=earlier_lines,
         )
         return attendance_sheet.sheet_result(posted)
 

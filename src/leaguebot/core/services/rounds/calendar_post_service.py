@@ -35,8 +35,10 @@ from leaguebot.core.models.change import (
     GuildUnavailable,
     PlannedStep,
     StepKind,
+    StepFailedOnDiscord,
     StepResult,
     Verdict,
+    drawn_lines_kept,
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.posting import standing_posts
@@ -114,6 +116,12 @@ def textual_calendar(division_name: str, rounds) -> str:
             line = f"~~{line}~~ — Cancelled"
         lines.append(line)
     return "\n".join(lines)
+
+
+#: The attribute under which a `StepFailedOnDiscord` the calendar's post raises holds the
+#: `CalendarPosting` the picture drawn before it came back with, for the job to keep its lines on
+#: its stop.
+POSTING_ATTRIBUTE = "calendar_posting"
 
 
 @dataclass
@@ -282,8 +290,6 @@ async def post_division_calendar(
     """
     import discord
 
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
     result = CalendarPosting(division_id=division.id)
 
     channel = guild.get_channel(division.calendar_channel_id) if guild else None
@@ -339,9 +345,11 @@ async def post_division_calendar(
                 channel, content=content, image_path=image_path
             )
         except discord.HTTPException as exc:
-            raise StepFailedOnDiscord(
+            failure = StepFailedOnDiscord(
                 f"the calendar of {division.name} could not be posted: {exc}"
-            ) from exc
+            )
+            setattr(failure, POSTING_ATTRIBUTE, result)
+            raise failure from exc
 
         result.message_id = message_id
         result.posted_as_image = image_path is not None
@@ -387,6 +395,22 @@ def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str
     )
 
 
+def _posting_lines(
+    ctx: StepContext, division_name: str, posting: CalendarPosting, *, text_stands: bool
+) -> tuple[str, ...]:
+    """The `post_calendar` job's lines for what the picture drawn came back with: the notices as
+    one line naming the calendar and its division, which is where they reach the log channel (the
+    drawing writes none itself), and where the text stands in its place, the line saying so."""
+    lines: tuple[str, ...] = ()
+    if posting.notices:
+        lines += (drawn_notices_line(
+            ctx.named, ctx.what, f"calendar — {division_name}", posting.notices
+        ),)
+    if text_stands and posting.problem is not None:
+        lines += (_fallen_back_to_text_line(ctx, division_name, str(posting.problem)),)
+    return lines
+
+
 def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str, Step]:
     """The jobs that post a division's calendar, for a change type's `steps`: `post_calendar`
     and the `delete_replaced` it plans (`standing_posts`).
@@ -424,7 +448,13 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
         return not value_of(ctx, "only_if_posted") or bool(division.calendar_message_id)
 
     async def post_calendar(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        # What the picture said when it was drawn, on the first try, is kept with every stop that
+        # follows, so that the try which posts hands it back, never lost with a refused post.
+        earlier = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(earlier) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
@@ -446,25 +476,26 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
                 if each.id in called_off else each
                 for each in rounds
             ]
-        posting = await post_division_calendar(
-            drawing,
-            guild,
-            division,
-            rounds,
-            await tracks_by_name(ctx.db_path),
-            season_number=season_number,
-            commanded=bool(value_of(ctx, "commanded")),
-            as_text=ctx.tries > 0,
+        try:
+            posting = await post_division_calendar(
+                drawing,
+                guild,
+                division,
+                rounds,
+                await tracks_by_name(ctx.db_path),
+                season_number=season_number,
+                commanded=bool(value_of(ctx, "commanded")),
+                as_text=ctx.tries > 0,
+            )
+        except StepFailedOnDiscord as stop:
+            refused = getattr(stop, POSTING_ATTRIBUTE, None)
+            raise stop.carrying(earlier + (
+                () if refused is None
+                else _posting_lines(ctx, division.name, refused, text_stands=True)
+            )) from stop.__cause__
+        lines = earlier + _posting_lines(
+            ctx, division.name, posting, text_stands=posting.fell_back
         )
-        lines: tuple[str, ...] = ()
-        if posting.notices:
-            # The drawing writes nothing to the log channel itself: the notices go there as a
-            # line of this job, once, naming the calendar and its division.
-            lines += (drawn_notices_line(
-                ctx.named, ctx.what, f"calendar — {division.name}", posting.notices
-            ),)
-        if posting.fell_back:
-            lines += (_fallen_back_to_text_line(ctx, division.name, str(posting.problem)),)
         return StepResult(
             result={
                 "division": division.name,

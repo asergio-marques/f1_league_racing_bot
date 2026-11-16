@@ -42,6 +42,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    drawn_lines_kept,
 )
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
@@ -65,6 +66,11 @@ from leaguebot.core.utils.log_lines import drawn_notices_line
 log = logging.getLogger(__name__)
 
 POST_LINEUP = "post_lineup"
+
+#: The attribute under which a `StepFailedOnDiscord` the lineup's text post raises holds what the
+#: picture drawn before it came back with (the division's name, its render notices and the problem
+#: that put the text in place of a picture), for the job to keep on its stop (`carry_lineup_lines`).
+LINEUP_DRAWN_ATTRIBUTE = "lineup_drawn"
 LINEUP_POST = "lineup.post"
 
 _LIVE = ("SETUP", "ACTIVE")
@@ -250,7 +256,11 @@ class LineupPoster:
                 )
             except discord.HTTPException as exc:
                 log.error("_refresh_lineup_post: failed to post embed: %s", exc)
-                raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
+                failure = StepFailedOnDiscord(f"the lineup could not be posted: {exc}")
+                setattr(failure, LINEUP_DRAWN_ATTRIBUTE, {
+                    "division_name": div_name, "notices": list(notices), "problem": problem,
+                })
+                raise failure from exc
 
             return LineupPosted(
                 new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text",
@@ -357,6 +367,17 @@ def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tup
     )
 
 
+def carry_lineup_lines(
+    ctx: StepContext, stop: StepFailedOnDiscord, earlier: tuple[str, ...]
+) -> StepFailedOnDiscord:
+    """*stop*, a refused lineup post, with the lines its picture was drawn with kept on it beside
+    *earlier*, those of the tries before (`drawn_lines_kept`): a picture is drawn on the first try
+    alone, so what it said must go with the stop for the try that posts to hand back, never lost
+    with a post Discord refused."""
+    drawn = getattr(stop, LINEUP_DRAWN_ATTRIBUTE, None)
+    return stop.carrying(earlier + (fallen_back_to_text_line(ctx, drawn) if drawn else ()))
+
+
 def _then(result: Mapping[str, Any] | None) -> tuple[PlannedStep, ...]:
     """The `delete_replaced` job for the lineup a post replaced, in `result`'s own words."""
     if not result or result.get("new") is None:
@@ -412,16 +433,24 @@ def lineup_step(
         return ctx.step_payload.get(key, ctx.payload.get(key, default))
 
     async def run(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        earlier = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(earlier) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
-        posted = await lineups.refresh_lineup(
-            guild, int(value_of(ctx, "division_id")), as_text=ctx.tries > 0
-        )
+        try:
+            posted = await lineups.refresh_lineup(
+                guild, int(value_of(ctx, "division_id")), as_text=ctx.tries > 0
+            )
+        except StepFailedOnDiscord as stop:
+            raise carry_lineup_lines(ctx, stop, earlier) from stop.__cause__
         result = posted_result(posted)
         return StepResult(
-            result=result, lines=fallen_back_to_text_line(ctx, result), then=_then(result),
+            result=result, lines=earlier + fallen_back_to_text_line(ctx, result),
+            then=_then(result),
         )
 
     async def describe(ctx: StepContext) -> str:

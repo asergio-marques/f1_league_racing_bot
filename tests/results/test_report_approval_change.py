@@ -1423,10 +1423,11 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
     recorded = league.attendance.post_sheet
 
     async def _post_sheet(round_id: int, division_id: int, *, sanctioned: Any,
-                          as_text: bool) -> None:
+                          as_text: bool, earlier_lines: tuple[str, ...] = ()) -> None:
         drawn.append((division_id, round_id))
         marked.append((division_id, set(sanctioned)))
-        await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text)
+        await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text,
+                       earlier_lines=earlier_lines)
 
     league.attendance.post_sheet = _post_sheet
     await _approve(league)
@@ -1477,9 +1478,10 @@ async def test_another_division_s_sheet_round_is_asked_of_attendance(tmp_path):
     recorded = league.attendance.post_sheet
 
     async def _post_sheet(round_id: int, division_id: int, *, sanctioned: Any,
-                          as_text: bool) -> None:
+                          as_text: bool, earlier_lines: tuple[str, ...] = ()) -> None:
         drawn.append((division_id, round_id, set(sanctioned)))
-        await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text)
+        await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text,
+                       earlier_lines=earlier_lines)
 
     league.attendance.post_sheet = _post_sheet
     await _approve(league)

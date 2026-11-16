@@ -500,10 +500,6 @@ async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
     assert sum(notices[1] in each for each in logged) == 1, logged
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#288: a refused lineup post loses its drawing's notices, which the retried try does not "
-    "hand back"
-))
 async def test_a_refused_lineup_s_notices_reach_the_log_once_when_it_is_retried(
     tmp_path, monkeypatch,
 ):
