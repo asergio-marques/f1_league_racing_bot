@@ -2373,10 +2373,10 @@ def test_every_image_cog_reply_is_ephemeral():
 
 
 def test_the_render_service_writes_only_to_the_log_channel():
-    """Its sole Discord sink is post_log; it holds no channel of its own (XIV.8)."""
+    """It holds no channel of its own and reaches for none (XIV.8): what it has to say goes back to
+    its caller as a line of the job."""
     source = (_SRC / "leaguebot" / "image" / "services" / "render" / "image_render_service.py").read_text(encoding="utf-8")
 
-    assert "post_log" in source
     for forbidden in ("post_forecast", "get_channel", "fetch_channel", "send_message"):
         assert forbidden not in source, f"render service reaches for {forbidden}"
 
