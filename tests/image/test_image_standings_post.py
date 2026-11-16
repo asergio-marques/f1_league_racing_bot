@@ -149,16 +149,17 @@ async def test_the_aspect_is_read_per_template_so_one_faulty_half_does_not_stop_
 async def _stood_aside(tmp_path, drawing):
     """Round 3's standings put up by `produce_standings` over *drawing*, the composer of the two
     drawings stood in for and `draw_standings` watched: handing back the composer and the
-    standings' text messages."""
+    standings' text messages, once it is checked that no table brought back a line or a fault."""
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
     composer = AsyncMock(return_value=_drawings())
     drawing.draw_standings = AsyncMock(wraps=drawing.draw_standings)
 
-    await _post(
+    tables = await _post(
         db_path, division_id, round_id, captured, drawing=drawing,
         composer=_composer_stood_in(composer),
     )
+    assert all(table.lines == () and table.fault is None for table in tables), tables
     return composer, captured
 
 
@@ -264,7 +265,7 @@ async def test_an_invalid_template_falls_that_championship_back_without_renderin
     drawing.draw_standings = AsyncMock(wraps=drawing.draw_standings)
 
     with patch.object(m, "render_png", render):
-        await _post(
+        tables = await _post(
             db_path, division_id, round_id, captured, drawing=drawing, pictures=pictures,
             composer=_composer_stood_in(AsyncMock(return_value=_drawings())),
         )
@@ -275,6 +276,7 @@ async def test_an_invalid_template_falls_that_championship_back_without_renderin
     assert len(pictures) == 1
     assert len(captured) == 1
     assert "Team Standings" in captured[0] and "Driver Standings" not in captured[0]
+    assert all(table.lines == () and table.fault is None for table in tables), tables
 
 
 async def test_a_resolution_fault_reports_once_and_falls_both_back():
