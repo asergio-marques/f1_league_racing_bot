@@ -2420,6 +2420,40 @@ async def test_pending_job_on_gives_the_stopped_job_first_else_the_next_not_done
         await db.rollback()
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the queue's records have no in_hand_on")
+@pytest.mark.parametrize(
+    ("kind", "state", "stopped", "expected"),
+    [
+        pytest.param("watched", "QUEUED", False, True, id="queued"),
+        pytest.param("watched", "RUNNING", False, True, id="running"),
+        pytest.param("watched", "RUNNING", True, True, id="stopped on a failure"),
+        pytest.param("watched", "DONE", False, False, id="done"),
+        pytest.param("watched", "REFUSED", False, False, id="refused"),
+        pytest.param("watched", "DROPPED", False, False, id="dropped"),
+        pytest.param("watched", "DISCARDED", False, False, id="discarded"),
+        pytest.param("other", "QUEUED", False, False, id="another kind queued"),
+    ],
+)
+async def test_in_hand_on_is_true_only_for_a_queued_or_running_change_of_the_kinds(
+    tmp_path, kind, state, stopped, expected
+):
+    """`in_hand_on` says, on the caller's connection, whether a change of the kinds asked is in
+    hand. One change is written in the caller's own transaction, not committed: of the kind
+    "watched" or "other", in the given state, and, where stopped, its one job failing since noon.
+    Asked about "watched" and "also", it is true for a "watched" change queued or running, a
+    stopped one included, and false for one done, refused, dropped or discarded, and for a change
+    of another kind."""
+    from leaguebot.framework.services.queue.queue_records import in_hand_on
+
+    db_path = str(tmp_path / "queue.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        await _seed_change(db, kind, state, stopped=stopped)
+        assert await in_hand_on(db, ("watched", "also")) is expected
+        await db.rollback()
+
+
 async def test_a_check_as_the_change_starts_knows_its_own_id(env):
     """A check asked when the change is asked for has no change id; the same check as the change
     starts is handed the change's id, so that it can leave itself out of `unfinished`."""
