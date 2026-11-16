@@ -203,42 +203,24 @@ async def _seats(bot: LeagueBot, division_id: int):
     driver_team_names: dict[int, str] = {}
     driver_team_keys: dict[int, str] = {}
 
-    # A driver whose placement is not yet confirmed is not in the standings (issue #220).
-    async with get_connection(bot.db_path) as db:
-        rows = await (
-            await db.execute(
-                "SELECT ti.id AS team_id, ti.full_name AS team_name, ti.name AS team_key, "
-                "       ti.max_seats AS max_seats, "
-                "       ts.seat_number AS seat_number, "
-                "       dp.discord_user_id AS discord_user_id "
-                "FROM team_instances ti "
-                "LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id "
-                "LEFT JOIN driver_season_assignments dsa "
-                "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ti.division_id "
-                "      AND (dsa.committed = 1 OR NOT EXISTS ("
-                "          SELECT 1 FROM seasons s WHERE s.id = dsa.season_id "
-                "          AND s.status = 'ACTIVE')) "
-                "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                "WHERE ti.division_id = ?",
-                (division_id,),
-            )
-        ).fetchall()
+    # A driver whose placement is not yet confirmed is not in the standings (issue #220): core's
+    # seating leaves it out, whatever state its driver is in.
+    from leaguebot.core.services.drivers.division_seating import division_seating
 
-    for row in rows:
-        team_id = int(row["team_id"])
-        counts[team_id] = int(row["max_seats"] or 0)
+    for team in await division_seating(bot.db_path, division_id):
+        counts[team.team_instance_id] = team.max_seats
 
-        if row["discord_user_id"] is None or row["seat_number"] is None:
-            continue
-        try:
-            driver_key = int(row["discord_user_id"])
-            seat_number = int(row["seat_number"])
-        except (TypeError, ValueError):
-            continue
+        for seat in team.seats:
+            if seat.occupant is None:
+                continue
+            try:
+                driver_key = int(seat.occupant.discord_user_id)
+            except (TypeError, ValueError):
+                continue
 
-        driver_team_names[driver_key] = row["team_name"]
-        driver_team_keys[driver_key] = row["team_key"]
-        assignments.setdefault(team_id, {})[driver_key] = seat_number
+            driver_team_names[driver_key] = team.full_name
+            driver_team_keys[driver_key] = team.name
+            assignments.setdefault(team.team_instance_id, {})[driver_key] = seat.seat_number
 
     return assignments, counts, driver_team_names, driver_team_keys
 

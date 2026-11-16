@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.image.models.image_constants import ASSET_CLASS_TO_COLUMN, PREVIEW_KINDS
 from leaguebot.core.models.round import Round
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -378,67 +377,12 @@ async def _load_teams_and_drivers(bot: LeagueBot, context: PreviewContext, *, gu
     ``resolve_drawing``, so the preview and the posting path hand the same thing to the
     same function.
     """
-    from leaguebot.image.services.aspects.image_results_post import SIGNUP_FOR_SEASON_SQL, season_of_division
+    from leaguebot.image.services.aspects.image_results_post import season_of_division
 
     season_id = await season_of_division(bot.db_path, context.division_id)
-    async with get_connection(bot.db_path) as db:
-        instances = await (
-            await db.execute(
-                "SELECT id, name, full_name, max_seats, is_reserve FROM team_instances "
-                "WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
-                (context.division_id,),
-            )
-        ).fetchall()
+    from leaguebot.image.services.aspects.image_lineup_post import seated_teams
 
-        teams = []
-        for instance in instances:
-            seats = await (
-                await db.execute(
-                    # `signup_records` is keyed by the Discord account and
-                    # carries no driver_profile_id, so this is the join the table admits.
-                    # The posting paths joined a phantom column until 2026-08-18 and could
-                    # not render at all; they now join as this does.
-                    #
-                    # A mock driver has no signup record to hold a nationality and carries
-                    # its own, read by the same branch on is_test_driver the name is.
-                    "SELECT ts.seat_number, dp.id AS profile_id, dp.discord_user_id, "
-                    "       dp.is_test_driver, dp.test_display_name, "
-                    "       sr.server_display_name, sr.discord_username, "
-                    "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
-                    "            ELSE sr.nationality END AS nationality "
-                    "FROM team_seats ts "
-                    # A placement not yet confirmed mid-season is not drawn (issue #220).
-                    "LEFT JOIN driver_season_assignments dsa "
-                    "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
-                    "      AND (dsa.committed = 1 OR NOT EXISTS ("
-                    "          SELECT 1 FROM seasons s WHERE s.id = dsa.season_id "
-                    "          AND s.status = 'ACTIVE')) "
-                    "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
-                    "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (context.division_id, season_id, instance["id"]),
-                )
-            ).fetchall()
-            teams.append(
-                SimpleNamespace(
-                    name=instance["name"],
-                    full_name=instance["full_name"],
-                    is_reserve=bool(instance["is_reserve"]),
-                    max_seats=instance["max_seats"],
-                    seats=[
-                        SimpleNamespace(
-                            seat_number=row["seat_number"],
-                            discord_user_id=row["discord_user_id"],
-                            profile_id=row["profile_id"],
-                            server_display_name=row["server_display_name"],
-                            discord_username=row["discord_username"],
-                            test_display_name=row["test_display_name"],
-                            nationality=row["nationality"],
-                        )
-                        for row in seats
-                    ],
-                )
-            )
+    teams = await seated_teams(bot.db_path, context.division_id, season_id)
 
     context.teams = teams
     context.nationality_collected = await _nationality_collected(bot)

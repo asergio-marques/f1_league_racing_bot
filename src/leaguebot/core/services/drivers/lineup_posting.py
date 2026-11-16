@@ -44,6 +44,7 @@ from leaguebot.core.models.change import (
     Verdict,
     drawn_lines_kept,
 )
+from leaguebot.core.services.drivers.division_seating import SeatOccupant, division_seating
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -74,6 +75,15 @@ LINEUP_DRAWN_ATTRIBUTE = "lineup_drawn"
 LINEUP_POST = "lineup.post"
 
 _LIVE = ("SETUP", "ACTIVE")
+
+
+@dataclass(frozen=True)
+class SeatedDriver:
+    """One driver of the textual lineup: the team they race for and the seat's occupant."""
+
+    team_name: str
+    is_reserve: bool
+    occupant: SeatOccupant
 
 
 @dataclass
@@ -270,40 +280,31 @@ class LineupPoster:
             if drawing is not None:
                 drawing.discard_picture(drawn_path)
 
-    async def _lineup_rows(self, division_id: int) -> list[aiosqlite.Row]:
-        """The division's committed, assigned seats, for the textual lineup."""
-        async with get_connection(self._db_path) as db:
-            cur = await db.execute(
-                """
-                SELECT ti.full_name AS team_name, ti.is_reserve,
-                       dp.discord_user_id,
-                       dp.is_test_driver, dp.test_display_name
-                FROM driver_season_assignments dsa
-                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                JOIN team_instances ti ON ti.id = ts.team_instance_id
-                JOIN seasons s ON s.id = dsa.season_id
-                WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                  -- A placement not yet confirmed mid-season is not posted.
-                  AND (dsa.committed = 1 OR s.status != 'ACTIVE')
-                ORDER BY ti.is_reserve ASC, ti.full_name ASC
-                """,
-                (division_id,),
-            )
-            return list(await cur.fetchall())
+    async def _lineup_rows(self, division_id: int) -> list[SeatedDriver]:
+        """The division's committed, assigned drivers, for the textual lineup: regular teams
+        first, each group by team name."""
+        teams = await division_seating(
+            self._db_path, division_id, states=frozenset({"ASSIGNED"})
+        )
+        return [
+            SeatedDriver(team.full_name, team.is_reserve, seat.occupant)
+            for team in sorted(teams, key=lambda t: (t.is_reserve, t.full_name))
+            for seat in team.seats
+            if seat.occupant is not None
+        ]
 
     @staticmethod
-    def _lineup_embed(div_name: str, assign_rows: Any) -> discord.Embed:
+    def _lineup_embed(div_name: str, assign_rows: Sequence[SeatedDriver]) -> discord.Embed:
         """The textual lineup embed: regular teams, then reserves after a separator."""
         regular: dict[str, list[str]] = {}
         reserve: dict[str, list[str]] = {}
         for row in assign_rows:
-            uid = int(row["discord_user_id"])
+            uid = int(row.occupant.discord_user_id)
             mention = f"<@{uid}>"
-            if row["is_test_driver"] and row["test_display_name"]:
-                mention = f"<@{uid}> ({row['test_display_name']})"
-            target = reserve if row["is_reserve"] else regular
-            target.setdefault(row["team_name"], []).append(mention)
+            if row.occupant.is_test_driver and row.occupant.test_display_name:
+                mention = f"<@{uid}> ({row.occupant.test_display_name})"
+            target = reserve if row.is_reserve else regular
+            target.setdefault(row.team_name, []).append(mention)
 
         parts: list[str] = [
             f"**{t}**: {', '.join(labels)}" for t, labels in regular.items()

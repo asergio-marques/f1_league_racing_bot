@@ -10,6 +10,7 @@ the member behind each seat (`seated_members`).
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import discord
 
@@ -45,6 +46,74 @@ def seated_members(guild, teams) -> dict[str, discord.Member]:
     return members
 
 
+async def seated_teams(
+    db_path: str, division_id: int, season_id: int | None, *, include_uncommitted: bool = False
+) -> list[SimpleNamespace]:
+    """The division's teams with their seats, in the shape the lineup's `resolve_drawing` takes.
+
+    The seating is core's, as the lineup of record shows it (`division_seating`: every team, every
+    seat, whoever holds it in any state, a placement not yet confirmed mid-season left out unless
+    *include_uncommitted*). What a seat's driver is drawn under comes from the signup the league
+    holds for them to *season_id*, and a mock driver, which has no signup to hold a nationality,
+    carries its own: the same branch on `is_test_driver` the name is read by.
+    """
+    from leaguebot.core.services.drivers.division_seating import division_seating
+    from leaguebot.image.services.aspects.image_results_post import SIGNUP_FOR_SEASON_SQL
+
+    seating = await division_seating(
+        db_path, division_id, include_uncommitted=include_uncommitted
+    )
+    user_ids = sorted(
+        {seat.occupant.discord_user_id for team in seating for seat in team.seats if seat.occupant}
+    )
+    recorded: dict[str, Any] = {}
+    if user_ids:
+        async with get_connection(db_path) as db:
+            rows = await (
+                await db.execute(
+                    "SELECT dp.discord_user_id, sr.server_display_name, sr.discord_username, "
+                    "       sr.nationality "
+                    "FROM driver_profiles dp "
+                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
+                    f"WHERE dp.discord_user_id IN ({','.join('?' * len(user_ids))})",
+                    [season_id, *user_ids],
+                )
+            ).fetchall()
+        recorded = {str(row["discord_user_id"]): row for row in rows}
+
+    teams = []
+    for team in seating:
+        seats = []
+        for seat in team.seats:
+            occupant = seat.occupant
+            signup = recorded.get(occupant.discord_user_id) if occupant else None
+            seats.append(
+                SimpleNamespace(
+                    seat_number=seat.seat_number,
+                    discord_user_id=occupant.discord_user_id if occupant else None,
+                    profile_id=occupant.profile_id if occupant else None,
+                    server_display_name=signup["server_display_name"] if signup else None,
+                    discord_username=signup["discord_username"] if signup else None,
+                    test_display_name=occupant.test_display_name if occupant else None,
+                    nationality=(
+                        occupant.test_nationality
+                        if occupant and occupant.is_test_driver
+                        else signup["nationality"] if signup else None
+                    ),
+                )
+            )
+        teams.append(
+            SimpleNamespace(
+                name=team.name,
+                full_name=team.full_name,
+                is_reserve=team.is_reserve,
+                max_seats=team.max_seats,
+                seats=seats,
+            )
+        )
+    return teams
+
+
 async def build_drawing(db_path: str, guild, division_id: int, *, include_uncommitted: bool = False):
     """Resolve the division into a LineupDrawing, or raise LineupDataError.
 
@@ -57,7 +126,6 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
     confirming will post and withholds its button where that will not draw (#374).
     """
     from leaguebot.image.services.aspects.image_lineup_service import resolve_drawing
-    from leaguebot.image.services.aspects.image_results_post import SIGNUP_FOR_SEASON_SQL
 
     async with get_connection(db_path) as db:
         division = await (
@@ -73,58 +141,9 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
             raise LineupDataError(f"division {division_id} no longer exists")
         season_id = division["season_id"]
 
-        instances = await (
-            await db.execute(
-                "SELECT id, name, full_name, max_seats, is_reserve FROM team_instances "
-                "WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
-                (division_id,),
-            )
-        ).fetchall()
-
-        teams = []
-        for instance in instances:
-            seats = await (
-                await db.execute(
-                    # A mock driver has no signup record to hold a nationality and carries
-                    # its own, read by the same branch on is_test_driver the name is.
-                    "SELECT ts.seat_number, dp.discord_user_id, dp.is_test_driver, "
-                    "       dp.test_display_name, sr.server_display_name, "
-                    "       sr.discord_username, "
-                    "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
-                    "            ELSE sr.nationality END AS nationality "
-                    "FROM team_seats ts "
-                    # A placement not yet confirmed mid-season is not drawn (issue #220),
-                    # unless the caller asks for the lineup as it will stand (#374).
-                    "LEFT JOIN driver_season_assignments dsa "
-                    "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
-                    "      AND (dsa.committed = 1 OR ? OR NOT EXISTS ("
-                    "          SELECT 1 FROM seasons s WHERE s.id = dsa.season_id "
-                    "          AND s.status = 'ACTIVE')) "
-                    "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
-                    "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (division_id, int(include_uncommitted), season_id, instance["id"]),
-                )
-            ).fetchall()
-            teams.append(
-                SimpleNamespace(
-                    name=instance["name"],
-                    full_name=instance["full_name"],
-                    is_reserve=bool(instance["is_reserve"]),
-                    seats=[
-                        SimpleNamespace(
-                            seat_number=row["seat_number"],
-                            discord_user_id=row["discord_user_id"],
-                            server_display_name=row["server_display_name"],
-                            discord_username=row["discord_username"],
-                            test_display_name=row["test_display_name"],
-                            nationality=row["nationality"],
-                        )
-                        for row in seats
-                    ],
-                )
-            )
-
+    teams = await seated_teams(
+        db_path, division_id, season_id, include_uncommitted=include_uncommitted
+    )
 
     # The suppression switch (FR-009): a lineup with no flags at all is exactly what a
     # league that switched nationality collection off configured, and raises nothing. Read

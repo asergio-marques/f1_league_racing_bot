@@ -56,6 +56,9 @@ from pathlib import Path
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.drivers.division_seating import (
+    active_season_driver_ids as assigned_driver_ids,
+)
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.utils.asset_resolver import filename_for
 from leaguebot.image.utils.svg_document import off_the_loop
@@ -334,30 +337,6 @@ async def discard_portraits(
                 "driver portraits: could not discard the one of %s", user_id, exc_info=True
             )
     return removed
-
-
-async def assigned_driver_ids(db_path: str) -> list[str]:
-    """The Discord user IDs assigned to a seat in the active season.
-
-    Sorted, so the daily refresh works through a roster in a stable order rather than
-    whatever order SQLite happens to return -- which matters the moment a run is cut short.
-
-    Test drivers are excluded: their IDs are synthetic and resolve to no Discord account, so
-    fetching for them could only ever fail.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT DISTINCT dp.discord_user_id AS uid
-            FROM driver_season_assignments dsa
-            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-            JOIN seasons s ON s.id = dsa.season_id
-            WHERE s.status = 'ACTIVE'
-              AND dp.is_test_driver = 0
-            """,
-        )
-        rows = await cursor.fetchall()
-    return sorted(str(row["uid"]) for row in rows)
 
 
 #: How long after its time of day a daily refresh is still made. A run that fires later than this
