@@ -2361,7 +2361,9 @@ def _non_ephemeral_sends(path):
 
 def test_every_image_cog_reply_is_ephemeral():
     """The image module speaks to the caller, never to the room."""
-    assert _non_ephemeral_sends(_SRC / "leaguebot" / "image" / "cogs" / "image_cog.py") == []
+    cogs = sorted((_SRC / "leaguebot" / "image" / "cogs").glob("*.py"))
+    assert cogs
+    assert [offender for path in cogs for offender in _non_ephemeral_sends(path)] == []
 
 
 def test_the_render_service_writes_only_to_the_log_channel():

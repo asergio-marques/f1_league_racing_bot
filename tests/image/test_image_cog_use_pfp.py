@@ -25,7 +25,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.image.cogs.image_cog import ImageCog, PortraitTimeConfirm, PortraitTimeModal
+from leaguebot.image.cogs.image_cog import ImageCog
+from leaguebot.image.cogs.use_pfp_commands import PortraitTimeConfirm, PortraitTimeModal
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
     QUEUED_MEMBER as MEMBER,

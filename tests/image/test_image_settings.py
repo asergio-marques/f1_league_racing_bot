@@ -181,7 +181,8 @@ def _time_format() -> Ask:
 def _palette(division: str, text: str) -> Ask:
     """Submit the "Set one tier's colours" form for *division* with *text* pasted into it."""
     async def ask(league: Any) -> Any:
-        from leaguebot.image.cogs.image_cog import ImageCog, TierPaletteModal
+        from leaguebot.image.cogs.config_commands import TierPaletteModal
+        from leaguebot.image.cogs.image_cog import ImageCog
 
         modal = TierPaletteModal(ImageCog(league.bot), division)
         modal.block._value = text  # type: ignore[attr-defined]
@@ -203,7 +204,8 @@ def _import_file(xml: str) -> Ask:
 def _confirm(time_of_day: str) -> Ask:
     """Press ✅ Confirm on the daily portrait confirmation offered for *time_of_day* UTC."""
     async def ask(league: Any) -> Any:
-        from leaguebot.image.cogs.image_cog import ImageCog, PortraitTimeConfirm
+        from leaguebot.image.cogs.image_cog import ImageCog
+        from leaguebot.image.cogs.use_pfp_commands import PortraitTimeConfirm
 
         opened = interaction(league.bot, "images use-pfp daily-toggle")
         view = PortraitTimeConfirm(ImageCog(league.bot), time_of_day, opened)

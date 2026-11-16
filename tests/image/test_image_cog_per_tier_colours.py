@@ -21,12 +21,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.image.cogs.image_cog import (
+from leaguebot.image.cogs.config_commands import (
     MAX_PALETTE_IMPORT_BYTES,
-    ImageCog,
+    ConfigCommands,
     TierPaletteModal,
     TierPaletteXmlModal,
 )
+from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_module import ValidityReport
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from tests.support import saves
@@ -295,7 +296,7 @@ async def test_nothing_is_stored_for_a_colour_while_the_module_is_disabled(tmp_p
 # ── The command surface itself ────────────────────────────────────────────
 
 def test_both_commands_exist_and_the_group_stays_inside_the_ceiling():
-    source = inspect.getsource(ImageCog)
+    source = inspect.getsource(ConfigCommands)
     assert 'name="per-tier-colour-toggle"' in source
     assert 'name="per-tier-set-colour"' in source
     # Discord allows twenty-five subcommands to a group; see the note in `image_cog`.
@@ -303,7 +304,7 @@ def test_both_commands_exist_and_the_group_stays_inside_the_ceiling():
 
 
 def test_the_division_parameter_completes_like_every_other():
-    source = inspect.getsource(ImageCog)
+    source = inspect.getsource(ConfigCommands)
     assert (
         'config_per_tier_set_colour.autocomplete("division")(_division_autocomplete)'
         in source
@@ -501,7 +502,7 @@ async def test_the_modals_can_be_constructed():
 
 
 def test_both_new_commands_exist_and_the_group_still_fits():
-    source = inspect.getsource(ImageCog)
+    source = inspect.getsource(ConfigCommands)
     assert 'name="per-tier-bulk-colour"' in source
     assert 'name="colour-xml-import"' in source
     assert source.count("@config.command") <= 25

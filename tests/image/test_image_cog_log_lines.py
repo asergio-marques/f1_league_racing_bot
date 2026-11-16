@@ -24,7 +24,8 @@ from discord import app_commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.messages import chunk_message
-from leaguebot.image.cogs.image_cog import ImageCog, TierPaletteModal
+from leaguebot.image.cogs.config_commands import TierPaletteModal
+from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import (
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
@@ -404,11 +405,11 @@ async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path, mo
     the path raises a bug's `ValueError` rather than a refusal. It goes on as a fault, out of the
     command, and is not answered to the manager as a refusal: the log channel takes no "⛔" line
     and nothing is stored."""
-    from leaguebot.image.cogs import image_cog
+    from leaguebot.image.cogs import config_commands
 
     league = await _league(tmp_path)
     before = await _stored(league.db_path)
-    monkeypatch.setattr(image_cog, "resolve_within_project_root", MagicMock(
+    monkeypatch.setattr(config_commands, "resolve_within_project_root", MagicMock(
         side_effect=ValueError("invalid literal for int() with base 10: 'x'"),
     ))
 

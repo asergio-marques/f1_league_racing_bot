@@ -13,7 +13,8 @@ import pytest
 
 import leaguebot.image.cogs.image_cog as image_cog
 import leaguebot.core.utils.timezones as timezones
-from leaguebot.image.cogs.image_cog import ImageCog, clear_zone_cache
+from leaguebot.image.cogs.config_commands import clear_zone_cache
+from leaguebot.image.cogs.image_cog import ImageCog
 
 
 class _Interaction:

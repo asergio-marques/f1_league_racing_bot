@@ -23,6 +23,7 @@ from typing import Any
 import pytest
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.image.cogs.config_commands import ConfigCommands
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, ASSET_LABELS
 from tests.support.change_queue import run_queue
@@ -90,7 +91,7 @@ def test_every_asset_class_has_a_command_of_its_own():
     manager who cannot point the bot at their artwork."""
     import inspect
 
-    source = inspect.getsource(ImageCog)
+    source = inspect.getsource(ConfigCommands)
     for column, (command, _league, _packaged) in ASSET_DIRECTORIES.items():
         assert f'name="{command}"' in source, column
         assert column in source, column
@@ -109,7 +110,7 @@ def test_the_config_group_stays_inside_the_discord_ceiling():
     """
     import inspect
 
-    source = inspect.getsource(ImageCog)
+    source = inspect.getsource(ConfigCommands)
     assert source.count("@config.command") <= 25
 
 
