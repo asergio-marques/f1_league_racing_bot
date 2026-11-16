@@ -317,7 +317,7 @@ are ordered by what each may fail at:
    (`recompute="all"`), then the sanctions the latest of them owes are applied, through core's
    placement functions on the same connection, so a stop leaves both done or neither. Who is owed
    is read there, on the totals just written. A sanction that cannot apply is named and the next
-   driver taken (`SanctionNotApplicable`, or core's `Refused`), as the specification's
+   driver taken (`SanctionNotApplicable`, or the framework's `Refused`), as the specification's
    "Resynchronising attendance" has it.
 3. **The roles** of each driver sanctioned, ending on a fault rather than stopping the lane: the
    sanction stands, and the fault goes to the host's log.
@@ -440,7 +440,7 @@ whichever is asked second is dropped. Pinned by
 ## Posting to Discord
 
 Answers to `architecture.md`, "Posting to Discord". Every post, edit and delete attendance makes is
-a job of a change, and goes through core's handler for its kind of post.
+a job of a change, and goes through the framework's handler for its kind of post.
 
 | Post | Kind | Channel | Handler | Id kept |
 |---|---|---|---|---|

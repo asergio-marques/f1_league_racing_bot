@@ -512,10 +512,10 @@ docstring). Pinned by `test_a_close_time_missed_while_down_closes_on_start`,
 
 Answers to `architecture.md`, "Posting to Discord". Every message signup posts as a job, and every
 driver's channel it deletes, goes through `signup_posting.py`, the one place it does so, which hands
-it to core's handler for its kind and turns Discord's refusal into `StepFailedOnDiscord` with the
-reason its caller gives. A message taken down (the Sign Up button, the closed notice, a manager's
-reason) is taken down by core's `standing_posts.delete_replaced_step`; a driver's channel is created
-by `WizardService._create_wizard_channel`, in the `create_channel` job.
+it to the framework's handler for its kind and turns Discord's refusal into `StepFailedOnDiscord`
+with the reason its caller gives. A message taken down (the Sign Up button, the closed notice, a
+manager's reason) is taken down by the framework's `standing_posts.delete_replaced_step`; a driver's
+channel is created by `WizardService._create_wizard_channel`, in the `create_channel` job.
 
 | Post | Kind | Channel | Handler | Found again by |
 |---|---|---|---|---|
@@ -619,13 +619,13 @@ Answers to `architecture.md`, "Errors and failures".
 | A timed job | the scheduler's job runner: each callback asks its change |
 | A start-up step | the sweep's containment (`core.md`, "Start-up"); inside `recover_gone_channels` and `recover_correction_timeouts`, one driver's ask failing stops none of the others, while `recover_held_channels`' loop over the holds and `recover_wizards`' over the expiries catch nothing |
 
-**Refusals are raised and caught by name.** A setting's save raises core's `Refused` where what its
-check judged has gone (`NOT_CONFIGURED`, a slot no longer there); a driver's transition the state
-machine refuses is `InvalidDriverTransition`, caught by name and read as the driver having moved on
-(`test_the_state_machine_s_refusal_is_read_as_the_driver_having_moved_on`); a Discord refusal is
-caught as `discord.HTTPException` (or `discord.NotFound` where a channel already gone is nothing to
-do) and turned into `StepFailedOnDiscord` for the queue to stop on, or named where the job's rule
-says so.
+**Refusals are raised and caught by name.** A setting's save raises the framework's `Refused` where
+what its check judged has gone (`NOT_CONFIGURED`, a slot no longer there); a driver's transition the
+state machine refuses is `InvalidDriverTransition`, caught by name and read as the driver having
+moved on (`test_the_state_machine_s_refusal_is_read_as_the_driver_having_moved_on`); a Discord
+refusal is caught as `discord.HTTPException` (or `discord.NotFound` where a channel already gone is
+nothing to do) and turned into `StepFailedOnDiscord` for the queue to stop on, or named where the
+job's rule says so.
 
 **`_may_review_signup` has no catch-all.** The review panel stands in the driver's own channel, so
 the tier check is all that keeps a driver from approving themselves; a fault reading the

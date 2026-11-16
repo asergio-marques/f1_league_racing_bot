@@ -178,11 +178,12 @@ Answers to `architecture.md`, "How a change is carried out".
 ### The settings
 
 Each `/images` command that changes the configuration asks one `image.setting.…` change, built by
-core's `setting_change` from a `Setting` in `image_settings`: the check is the command's, run at the
-ask and again as the change starts; the save writes the value; and the advice a reply carries beside
-it (what a directory resolves to, the fastest-lap colour's contrast) is a step after the save,
-planned only where the save changed something, so that a fault in it leaves the value saved and the
-reply says it could not be checked. `image_settings`'s module docstring holds each part.
+the framework's `setting_change` from a `Setting` in `image_settings`: the check is the command's,
+run at the ask and again as the change starts; the save writes the value; and the advice a reply
+carries beside it (what a directory resolves to, the fastest-lap colour's contrast) is a step after
+the save, planned only where the save changed something, so that a fault in it leaves the value
+saved and the reply says it could not be checked. `image_settings`'s module docstring holds each
+part.
 
 ### The switch on and off
 
