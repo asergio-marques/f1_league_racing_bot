@@ -35,7 +35,6 @@ async def _audit_count(db_path: str) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the member writer does not yet sort a value's keys")
 async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
     """A change and its record land together: the row is written on the caller's connection,
     inside the caller's transaction, and is not committed by the record — so it goes if the
@@ -90,9 +89,6 @@ def test_record_change_on_is_always_handed_the_time():
     assert now.default is inspect.Parameter.empty
 
 
-_NOT_JSON_YET = "#544: the system writer writes its values as they are, not as JSON"
-
-
 @pytest.mark.parametrize(
     ("writer", "value", "written"),
     [
@@ -100,12 +96,10 @@ _NOT_JSON_YET = "#544: the system writer writes its values as they are, not as J
         pytest.param("member", 106, "106", id="member-id"),
         pytest.param(
             "system", "open", '"open"', id="system-word",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
         ),
         pytest.param(
             "system", {"state": "NOT_SIGNED_UP", "deleted": [3, 1]},
             '{"deleted": [3, 1], "state": "NOT_SIGNED_UP"}', id="system-dict",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
         ),
     ],
 )

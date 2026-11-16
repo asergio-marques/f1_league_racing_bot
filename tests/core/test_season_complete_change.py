@@ -1386,7 +1386,6 @@ async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(t
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the system writer writes plain words, not JSON")
 async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_pass(tmp_path):
     """The signup window open and the completion queued. Run as far as `post_closed`, whose
     record writes the window's close, the window is closed while the season is still active,
