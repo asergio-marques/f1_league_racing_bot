@@ -674,6 +674,82 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
 ATTENDANCE_CHANNEL = 707
 
 
+#: The notice the review's attendance sheet is drawn with, a flag falling back.
+REVIEW_SHEET_NOTICE = "no `flag` image for “Lewis”"
+
+#: What the review's sheet does not yet do: hand back, on the try that posts it, the lines its
+#: picture was drawn with on a try Discord refused.
+REVIEW_SHEET_LOSES_ITS_LINE = (
+    "#288: the review's attendance sheet step hands the retried post none of the lines kept on "
+    "its stop, so the picture's notice is lost"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=REVIEW_SHEET_LOSES_ITS_LINE)
+async def test_a_review_s_refused_attendance_sheet_s_notice_reaches_the_log_once_when_retried(
+    tmp_path, monkeypatch,
+):
+    """Attendance is on, with its real hook, and Pro has an attendance channel and Lewis seated in
+    it. The image module is asked to draw the sheet, and draws it with one notice, a flag falling
+    back. Pro's attendance channel refuses every send (Missing Access). Alex approves round 3's
+    reports and the queue stops at the attendance sheet; the channel is let accept and a Retry
+    posts the sheet as text. The queue runs to the end, and the log channel carries the notice
+    once, in a line naming the sheet drawn (Pro, attendance after the round), never lost with the
+    refused try."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    picture = tmp_path / "sheet.png"
+    picture.write_bytes(b"\x89PNG\r\n\x1a\n")
+    asked: list[str] = []
+
+    async def _wanted(_self: Any) -> bool:
+        return True
+
+    async def _draw(_self: Any, _sheet: Any, *, what: str) -> Any:
+        asked.append(what)
+        return (discord.File(str(picture), filename=picture.name),
+                (f"⚠️ {what} — {REVIEW_SHEET_NOTICE}",))
+
+    monkeypatch.setattr(ImageDrawing, "attendance_wanted", _wanted)
+    monkeypatch.setattr(ImageDrawing, "draw_attendance_sheet", _draw)
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
+    async with get_connection(league.db_path) as db:
+        seat = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (3001, 1, ?)",
+            (LEWIS_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id) VALUES (?, 1, ?, ?)",
+            (LEWIS_PROFILE, DIVISION_ID, seat.lastrowid),
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL)),
+        )
+        await db.commit()
+    league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
+    league.channel(ATTENDANCE_CHANNEL).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "attendance_sheet"
+    [what] = asked
+    assert what.startswith("Pro — attendance after round "), what
+    league.channel(ATTENDANCE_CHANNEL).send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.sent_to(ATTENDANCE_CHANNEL)
+    said = [line for line in league.bot.log_channel.sent if REVIEW_SHEET_NOTICE in line]
+    assert len(said) == 1 and said[0].count(REVIEW_SHEET_NOTICE) == 1, league.log()
+    assert what in said[0], said[0]
+
+
 async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
     """Attendance is on, with its real hook, the real placement service and the real lineup
     poster (roles granted and revoked by doubles on the real team-role service), and division 11
