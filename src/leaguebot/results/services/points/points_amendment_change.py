@@ -448,7 +448,7 @@ def points_amendment_change(
 
     steps: dict[str, Step] = {
         **posting_steps(drawing, driver_names_read),
-        **review_verdicts.verdict_steps(now, attendance, drawing),
+        **review_verdicts.verdict_steps(now, attendance, drawing, driver_names_read),
         _PLAN_NAMES: Step(_PLAN_NAMES, StepKind.ACT, plan_names, describe=describe_plan_names),
         _APPLY: Step(
             _APPLY, StepKind.SAVE, apply, still_due=names_resolved, describe=describe_apply,
