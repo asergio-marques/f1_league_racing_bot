@@ -13,7 +13,7 @@ import logging
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -236,6 +236,39 @@ async def test_discard_by_a_league_manager_is_refused(env):
 
     assert any("league admin" in text for text in _private(interaction))
     assert any(line.startswith("⛔") and MANAGER_NAMED in line for line in await _lines(env))
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert ran == ["post"]
+
+
+@pytest.mark.xfail(strict=True, reason="#544: the change queue takes no tiers, and reads channel_guard's own")
+async def test_retry_asks_the_tiers_the_queue_was_handed(env):
+    """The authority tiers are core's rule, handed to the queue by the builder rather than imported
+    by it: a queue handed tiers that refuse every member refuses a holder of the league manager's
+    role their Retry, having asked those tiers about that very member, and the job still stops
+    the queue."""
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+
+    tiers = MagicMock()
+    tiers.is_league_manager.return_value = False
+    tiers.is_league_admin.return_value = False
+    env.bot.change_queue = ChangeQueue(env.db_path, env.bot, env.bot.output_router,
+                                       env.bot.config_service, tiers=tiers, clock=env.clock)
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    env.bot.change_queue.register(
+        _type(steps=[_fails_while(holder, ran=ran, describe=_described("posting the dummy")),
+                     _act("after", ran)]))
+    await _ask(env)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the queue did not stop"
+    holder["fail"] = None
+    manager = _manager()
+
+    interaction = await retry_job(env.bot, user=manager)
+
+    assert manager in [call.args[1] for call in tiers.is_league_manager.call_args_list]
+    assert any("league manager" in text for text in _private(interaction))
     assert (await stopped_job(env.db_path))["id"] == job["id"]
     assert ran == ["post"]
 

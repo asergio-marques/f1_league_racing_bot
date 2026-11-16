@@ -28,6 +28,7 @@ from leaguebot.core.utils.channel_guard import (
 from tests.support.change_queue import member_interaction, response_in_its_slot
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the change queue takes no tiers yet")
 @pytest.mark.parametrize("held", [True, False], ids=["held for the catch-up", "not held"])
 async def test_a_command_held_for_the_catch_up_acts_and_answers_by_follow_up(held):
     """A league manager invokes a command that is answered off the queue and wears the wait for
@@ -36,7 +37,7 @@ async def test_a_command_held_for_the_catch_up_acts_and_answers_by_follow_up(hel
     then it runs once, its message goes as a follow-up, its own defer does nothing, and its
     response reads as answered. Not held: it runs at once, through the interaction's own response,
     with nothing deferred for it."""
-    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
+    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock(), tiers=MagicMock())
     if held:
         queue.hold()
     runs: list[bool] = []
@@ -75,11 +76,12 @@ async def test_a_command_held_for_the_catch_up_acts_and_answers_by_follow_up(hel
         assert press.followup.send.await_count == 0
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the change queue takes no tiers yet")
 def test_a_tier_guard_still_reads_through_the_wait_for_the_catch_up():
     """A tier guard worn above the wait for the catch-up still marks the command with its tier, and
     still reads a mark worn below the wait, the wrapper keeping the command's name. Nothing is
     invoked, so whether the queue is held does not matter."""
-    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
+    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock(), tiers=MagicMock())
 
     async def body(self: Any, interaction: Any) -> None:
         return None

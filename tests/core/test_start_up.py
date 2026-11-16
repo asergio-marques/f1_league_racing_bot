@@ -445,6 +445,7 @@ async def test_the_sweep_releases_held_requests_before_the_queue_starts(fails):
         "queue started")
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the change queue takes no tiers yet")
 async def test_the_sweep_s_off_queue_commands_wait_for_the_catch_up():
     """The bot has restarted and holds its real change queue, as `main` leaves it. Core's hub step
     is mid-way when a league admin invokes a command answered off the queue (as `/bot pack` is),
@@ -461,7 +462,7 @@ async def test_the_sweep_s_off_queue_commands_wait_for_the_catch_up():
 
     module = _fresh_start_up()
     record = _Recorder()
-    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
+    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock(), tiers=MagicMock())
 
     async def start() -> None:
         record.calls.append("queue started")

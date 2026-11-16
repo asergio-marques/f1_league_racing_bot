@@ -535,6 +535,7 @@ def _the_wait_of(callback):
     return None
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the change queue takes no tiers yet")
 async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
     """The bot has restarted and holds its change queue for the catch-up. Of every command the
     signup, attendance, bot and test-mode cogs carry, exactly the twenty-three listed in
@@ -552,7 +553,7 @@ async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
     from tests.support.change_queue import member_interaction, response_in_its_slot
 
     bot = MagicMock()
-    bot.change_queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
+    bot.change_queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock(), tiers=MagicMock())
     attendance, bot_commands, test_mode, signup = cogs = [
         AttendanceCog(bot), bot_cog.BotCog(bot), TestModeCog(bot), SignupCog(bot)
     ]
