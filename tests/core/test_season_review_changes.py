@@ -809,9 +809,9 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     assert str(raised.value) == fault
 
 
-@pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused-then-retried"])
+@pytest.mark.parametrize("outcome", ["posted", "refused-then-retried", "lineup-not-drawn"])
 async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
-        posting, monkeypatch, tmp_path, refused):
+        posting, monkeypatch, tmp_path, outcome):
     """The real change types are registered, as the builder registers them, and the drawing the
     bot carries draws Alex's review's two pictures of Pro as PNGs: Pro's calendar of season 1 with
     one notice (round 12 not fitting) and Pro's lineup with another (Zara's flag falling back).
@@ -820,10 +820,15 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     Pro), which the job that drew and posted it carries among its own lines (Constitution XIV.4;
     the owner's decision on #288: code inside a job never calls `post_log`).
 
-    Where *refused*, review channel 700 refuses the first picture and every message after it,
-    the text standing in for the picture too, so the queue stops at that picture's post; the
-    channel is let accept and a Retry carries the review on to its end. Each notice is still held
-    once, never lost with the failed post."""
+    Where the post is refused, review channel 700 refuses the first picture and every message
+    after it, the text standing in for the picture too, so the queue stops at that picture's post;
+    the channel is let accept and a Retry carries the review on to its end. Each notice is still
+    held once, never lost with the failed post.
+
+    Where the lineup is not drawn, the image module draws it with its notice and then will not
+    draw it (its template has no rows): the lineup's text goes out in its place and the queue does
+    not stop. Its notice is still held once, naming the lineup and Pro, beside the job's "Picture
+    not drawn" line for the lineup, never lost with the picture."""
     from leaguebot.core.services.modules.image_drawing import LineupPicture
     from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
     from tests.support.change_queue import queued_log_lines
@@ -837,8 +842,12 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     calendar_notice, lineup_notice = "round 12 did not fit", "a fallback flag stood in for Zara's"
     draw_calendars_with(posting.bot, monkeypatch,
                         CalendarDrawingStub(picture=drawn["calendar"], notices=(calendar_notice,)))
-    monkeypatch.setattr(posting.bot.image_drawing, "draw_review_lineup", AsyncMock(
-        return_value=LineupPicture(path=drawn["lineup"], problem=None, notices=(lineup_notice,))))
+    refused, not_drawn = outcome == "refused-then-retried", outcome == "lineup-not-drawn"
+    lineup = (LineupPicture(path=None, problem="the template has no rows", notices=(lineup_notice,))
+              if not_drawn else
+              LineupPicture(path=drawn["lineup"], problem=None, notices=(lineup_notice,)))
+    monkeypatch.setattr(posting.bot.image_drawing, "draw_review_lineup",
+                        AsyncMock(return_value=lineup))
     posting.bot.season_service.get_division = AsyncMock(
         return_value=SimpleNamespace(id=11, name="Pro", tier=1))
     posting.bot.season_service.get_division_rounds = AsyncMock(return_value=[])
@@ -873,12 +882,17 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
 
     assert await stopped_job(posting.db_path) is None
     if not refused:
-        assert len([m for m in _posts(posting.channel) if m.picture]) == 2
+        assert len([m for m in _posts(posting.channel) if m.picture]) == (1 if not_drawn else 2)
     logged = [*posting.bot.log_channel.sent, *await queued_log_lines(posting.db_path)]
     for notice, kind in ((calendar_notice, "calendar"), (lineup_notice, "lineup")):
         named = [line for line in logged if notice in line]
         assert len(named) == 1, logged
         assert kind in named[0].lower() and "Pro" in named[0], named[0]
+    if not_drawn:
+        not_drawn_lines = [line for line in logged if "Picture not drawn" in line]
+        assert len(not_drawn_lines) == 1, logged
+        assert "lineup" in not_drawn_lines[0].lower(), not_drawn_lines[0]
+        assert "the template has no rows" in not_drawn_lines[0], not_drawn_lines[0]
 
 
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
