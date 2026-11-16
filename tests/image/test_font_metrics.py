@@ -145,9 +145,10 @@ def test_a_face_whose_metrics_cannot_be_read_is_a_fault_not_an_estimate(tmp_path
     assert not caplog.records
 
 
-def _a_font(path, family: str, *, weight: int | None) -> None:
-    """A minimal TrueType font of *family* at *path*: OS/2 weight class *weight*, or no OS/2
-    table at all where *weight* is None."""
+def _a_font(path, family: str, *, weight: int | None, os2: str = "absent") -> None:
+    """A minimal TrueType font of *family* at *path*: OS/2 weight class *weight*; where *weight*
+    is None, no OS/2 table at all (*os2* "absent") or one too short to read (*os2*
+    "unreadable")."""
     from fontTools.fontBuilder import FontBuilder  # noqa: PLC0415
     from fontTools.pens.ttGlyphPen import TTGlyphPen  # noqa: PLC0415
 
@@ -163,20 +164,38 @@ def _a_font(path, family: str, *, weight: int | None) -> None:
     builder.setupPost()
     if weight is None:
         del builder.font["OS/2"]
+        if os2 == "unreadable":
+            from fontTools.ttLib.tables.DefaultTable import DefaultTable  # noqa: PLC0415
+
+            corrupt = DefaultTable("OS/2")
+            corrupt.data = b"\x00\x01"
+            builder.font["OS/2"] = corrupt
     builder.save(str(path))
 
 
+#: Why a regular face whose OS/2 table is there but cannot be read is not yet indexed.
+OS2_UNREADABLE_SKIPPED = (
+    "#288: a face whose OS/2 table is present but cannot be read is skipped by the face index, "
+    "not indexed as regular, normal width and upright as at the base"
+)
+
+
+@pytest.mark.parametrize("os2", [
+    "absent",
+    pytest.param("unreadable", marks=pytest.mark.xfail(strict=True, reason=OS2_UNREADABLE_SKIPPED)),
+])
 def test_a_regular_face_whose_os2_table_cannot_be_read_is_still_measured_as_the_regular(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, os2,
 ):
     """The only fonts on the host are one family's two faces: its regular face carries no OS/2
-    table, its bold face one of weight 700. A regular request resolves to the regular face, which
-    the face index keeps as regular, normal width and upright, rather than to the bold face,
-    against which a regular line would be measured too wide."""
+    table, or one that is there but too short to read, and its bold face one of weight 700. A
+    regular request resolves to the regular face, which the face index keeps as regular, normal
+    width and upright, rather than to the bold face, against which a regular line would be
+    measured too wide."""
     from leaguebot.image.utils import font_metrics  # noqa: PLC0415
 
     regular, bold = tmp_path / "Probe-Regular.ttf", tmp_path / "Probe-Bold.ttf"
-    _a_font(regular, "Probe Sans", weight=None)
+    _a_font(regular, "Probe Sans", weight=None, os2=os2)
     _a_font(bold, "Probe Sans", weight=700)
     monkeypatch.setattr(font_metrics, "_FONT_DIRS_WINDOWS", (tmp_path,))
     monkeypatch.setattr(font_metrics, "_FONT_DIRS_POSIX", (tmp_path,))
