@@ -1,8 +1,9 @@
 # The bot's architecture
 
 This file says how the bot's code is laid out, and why. It covers what applies to core and to
-every module. Core's design file (`core.md`) and each module's (`results_module.md` and the rest)
-are to cover their own part only, and point back here rather than repeat it.
+every module. The framework's design file (`framework.md`), core's (`core.md`) and each module's
+(`results_module.md` and the rest) are to cover their own part only, and point back here rather than
+repeat it.
 
 It describes the shape the code is to have. Parts of the code do not have it yet: where a rule
 below is checked by a test, the check lists what does not match today (see "How the rules are
@@ -28,7 +29,8 @@ clash with an installed library of the same name.
 *Rejected:* keeping each folder as a top-level package of its own. *Rejected:* setting the path
 in the start command instead of installing.
 
-The code is in three layers, each depending only on the layers below it:
+The code is in three layers, each depending only on the layers below it, but for the bot's type
+(below); within the top one, the modules depend on core as "How modules and core fit together" says:
 
 ```
 leaguebot/
@@ -44,23 +46,30 @@ leaguebot/
     __main__.py   the entry point: builds everything and starts the bot
 ```
 
-- **`utils`** holds helpers that would serve any program: reading a time a person typed, the list
-  of time zones, the running version, fitting text to Discord's limits. It imports nothing of the
-  bot, though it may use a library, discord.py among them.
+- **`utils`** holds helpers that would serve any program: reading a time a person typed, the list of
+  time zones, the running version, fitting text to Discord's limits. It imports nothing of the bot,
+  though it may use a library.
 - **`framework`** holds what makes the bot run, whatever the league's rules: the bot object
   (`LeagueBot`), the base classes for the command tree, buttons and forms, the database connection
-  and the migrations, the change queue, the scheduler's timers and the start-up sweep, the hooks, the
-  failure paths (`report_failure`, the job runner, the bot's error handler for events,
-  `bounded_autocomplete`, the helper that starts background work), and the handlers for each kind of
-  post: the log writer, the notice handler, the standing-post handler and the bot-owned channel
-  handler. It may use `utils`, and imports nothing of core or of any module: where it needs a league
-  rule, such as who may act on a change, it is handed it by the builder or reaches it through a hook,
-  as it does a module's.
+  and the migrations, the change queue, the scheduler's timers and the start-up sweep, the hooks,
+  the modules' switches, the failure paths (`report_failure`, the job runner, the bot's error
+  handler for events, `bounded_autocomplete`, the helper that starts background work), and the
+  handlers for each kind of post: the log writer, the notice handler, the standing-post handler and
+  the bot-owned channel handler. It has no commands of its own: its cogs are the machinery's, such
+  as the loop that retries a late log line. It may use `utils`, and imports nothing of core or of
+  any module.
+- **The framework asks, and core answers.** Where the machinery needs to know something the league
+  decides (which server is the league's, which channel is the log, who holds which role, who may act
+  on a change), the framework declares what it asks as a protocol of its own, core's settings
+  service fulfils it, and the builder hands it over, as the image module answers core's drawing
+  protocol ("How modules and core fit together"). Where it has to let core or a module act at a
+  moment of its own (the bot starting, a timed event falling due), it calls a hook. It never reads a
+  service of core's on the bot, which the import checks could not see.
 - **Core and every module** hold league rules only: their commands, their services and their data.
   Each may use the framework and `utils`. Core is a part like a module, with no switch: what every
   module shares as machinery is the framework's, and what core holds besides is the league's own
-  rules (seasons, divisions, rounds, drivers, teams, the settings), which the modules use as before
-  ("How modules and core fit together").
+  rules (seasons, divisions, rounds, drivers, teams, the settings), which the modules use ("How
+  modules and core fit together").
 
 So a file's place says what it is: a helper anything could use, the bot's machinery, or a rule of
 the league. A layer's contract keeps it so: `utils` cannot come to depend on the bot, nor the
@@ -77,14 +86,16 @@ rules, side by side, where nothing says which may depend on which and a helper c
 rule unnoticed. *Rejected:* one shared package for the helpers and the machinery together, with no
 contract between them, which grows into a place for anything. *Rejected:* moving a module's own
 technical helpers into `utils` because they know nothing of the bot, which makes a shared package
-serve one caller.
+serve one caller. *Rejected:* the framework reading core's settings on the bot as it runs, a
+dependency on a league rule that no import check can see. *Rejected:* the settings moved into the
+framework, which would put league rules (the roles, test mode) in the layer meant to hold none.
 
-Core and each module are a **part**, with a folder of its own. Each part's folder holds that part's **cogs** (its commands, and the buttons and forms they post),
-its **services** (its rules and its database code) and its **models** (plain data). Which module
-owns a file is then plain from where it sits. The tests follow the same folders, one for core, one
-for each module and one for each layer under `tests/`, beside `tests/repository/` for the checks on
-the repository itself (these rules, its configuration and its tools) and `tests/support/` for the
-helpers the tests share.
+Core and each module are a **part**, with a folder of its own. Each part's folder holds that part's
+**cogs** (its commands, and the buttons and forms they post), its **services** (its rules and its
+database code) and its **models** (plain data). Which module owns a file is then plain from where it
+sits. The tests follow the same folders, one for core, one for each module and one for each layer
+under `tests/`, beside `tests/repository/` for the checks on the repository itself (these rules, its
+configuration and its tools) and `tests/support/` for the helpers the tests share.
 
 *Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which spreads
 one module over four folders. *Rejected:* grouping only the services by module. *Rejected:* staying
@@ -106,16 +117,18 @@ its name, and several files are named for neither.
 flat folder to be read. The framework's are `queue/` (the change queue, its types and records, the
 stop view, the typed turns, the setting change, the audit writers), `posting/` (the four handlers
 for each kind of post, the log writer among them, the retry queue, the standing posts, the channel
-notice), `modules/` (the module service, the hooks' readers, the hub) and `jobs/` (the scheduler's timers
-and the start-up sweep). Core's are `seasons/` (with the season's confirmation and review), `cancellations/`,
-`rounds/` (divisions, rounds and their amendments, tracks, the calendar post and the scheduling of a
-round's jobs), `drivers/` (drivers, teams, placements, the lineup and the changes to them),
-`settings/`, `test_mode/`, `upkeep/` (backup, pack, factory reset, the in-memory state and clean-up)
-and `modules/` (what core asks of the modules, such as the drawing protocol). A folder is not a kind:
-every check reads a file's kind from the first folder below its part or layer, so
+notice), `switches/` (the module service and the modules' switch readers) and `jobs/` (the
+scheduler's timers and the start-up sweep). Core's are `seasons/` (with the readers of a season's
+confirmation and review), `cancellations/`, `rounds/` (divisions, rounds and their amendments,
+tracks, the calendar post, and the arming of a round's timed work through the framework's
+scheduler), `drivers/` (drivers, teams, placements, the lineup and the changes to them), `settings/`
+(which answers the framework's questions of the league), `test_mode/`, `upkeep/` (backup, pack,
+factory reset, the in-memory state and clean-up) and `modules/` (the hub and its About option, and
+what core asks of the modules, such as the drawing protocol). A folder is not a kind: every check
+reads a file's kind from the first folder below its part or the framework, so
 `core/services/seasons/season_service.py` is a service of core. A module's own services stay in its
 `services/` folder unless its design file groups them. `tests/repository/test_import_contracts.py`
-holds it: no service of core's sits outside a topic folder.
+holds it: no service of the framework's or of core's sits outside a topic folder.
 
 *Rejected:* keeping the services flat, where unrelated topics lie side by side in one folder too
 long to read.
@@ -124,13 +137,13 @@ Beside its kind folders, a module's folder holds one file: its **wiring** (`<mod
 the module's part of the builder (below). Core and the framework have none: core's part is the
 builder's own, and the framework is wired by the builder.
 
-**The entry point** (`__main__.py`) sits above core, the modules and the layers below them, and is the one place that
-imports every module at run time. It holds the builder, which makes every service and every hook,
-loads every module's cogs and persistent views, signs up the hooks that several modules join, each
-module's function in the order its subscribers are called, calls each module's wiring, and orders
-the steps of the start-up, core's own and then each module's, in the order it names the modules, and
-holds the change queue, all before the bot connects. It then starts the bot. That is how core can
-offer hooks without importing a module.
+**The entry point** (`__main__.py`) sits above core, the modules and the layers below them, and is
+the one place that imports every module at run time. It holds the builder, which makes every service
+and every hook, loads every module's cogs and persistent views, signs up the hooks that several
+modules join, each module's function in the order its subscribers are called, calls each module's
+wiring, and orders the steps of the start-up, core's own and then each module's, in the order it
+names the modules, and holds the change queue, all before the bot connects. It then starts the bot.
+That is how core can offer hooks without importing a module.
 
 **A module's wiring** (`<module>/wiring.py`) is the module's part of the builder: its sign-ups to
 every hook it joins, its switch reader, its change types and settings, its timed jobs' handlers and
@@ -196,24 +209,25 @@ point, which would then hold every module's registrations and grow with each mod
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
 - **Shared helpers** are of two kinds. The framework's (the base classes, the failure paths,
-  autocomplete) reach services through the bot, as a cog does; `utils` uses no service at all.
-  Neither imports a service, the framework imports nothing of core, and core uses no module; the one
-  exception to all three is the bot's type, which names every service, core's and the modules'
-  among them, for the type checker (below). Each handler for a kind of post is a service in the
-  framework, not a helper. Some helpers a service may call
-  reach the bot, each for one thing. `league_guild(bot)` (`league_server.py`, among the framework's helpers) is the one
-  route from a job or a service to the league's server, which it finds through the configuration
-  service. `report_failure`, `refuse` (through `record_refusal`) and `record_abandoned` write a
-  failure, a refusal, or a cancellation or a lapse, through the bot's log writer ("Errors and
-  failures"). Handing the configuration service or the router instead to every service that calls
-  them would add a parameter to each, for no rule gained.
+  autocomplete) learn what the league decides through the framework's own protocols, which the
+  builder hands them on the bot; `utils` uses no service at all. Neither imports a service, the
+  framework imports nothing of core, and core uses no module; the one exception to all three is the
+  bot's type, which names every service and every hook that core and the modules declare, for the
+  type checker (below). Each handler for a kind of post is a service in the framework, not a helper.
+  Some helpers a service may call reach the bot, each for one thing. `league_guild(bot)`
+  (`league_server.py`, among the framework's helpers) is the one route from a job or a service to
+  the league's server, which it finds through the framework's settings protocol. `report_failure`,
+  `refuse` (through `record_refusal`) and `record_abandoned` write a failure, a refusal, or a
+  cancellation or a lapse, through the bot's log writer ("Errors and failures"). Handing the
+  settings or the router instead to every service that calls them would add a parameter to each, for
+  no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
-- **The database code in the framework** opens connections, lends them again, closes them and applies
-  migrations, and imports nothing else of the bot's.
+- **The database code in the framework** opens connections, lends them again, closes them and
+  applies migrations, and imports nothing else of the bot's.
 - **The entry point** builds the services, wires them together and starts the bot, and calls the
-  framework's database code to close the connections as the bot stops. It holds no rules and no database code
-  of its own, nor does a module's wiring, which is under the same rules.
+  framework's database code to close the connections as the bot stops. It holds no rules and no
+  database code of its own, nor does a module's wiring, which is under the same rules.
 
 **Services stay attached to the bot, and are built in one place.** The bot object keeps a typed
 attribute for each service object. Most services are plain functions and need none. The builder
@@ -231,9 +245,10 @@ bot itself for Discord, so it would add a second object without removing the fir
 *Rejected:* leaving the services as they were, where a hand-made fake bot has decided which code
 path ran and a service wired in two steps has failed between the steps.
 
-Because the services stay on the bot, the bot's type (`LeagueBot`) names every service object. It
-does so for the type checker only, under `TYPE_CHECKING`, and nothing runs because of it. That is
-the one place core names the modules' services, and the price of keeping them on the bot.
+Because the services stay on the bot, the bot's type (`LeagueBot`) names every service object, and
+every hook core and the modules declare. It does so for the type checker only, under
+`TYPE_CHECKING`, and nothing runs because of it. That is the one place the framework names what core
+and the modules hold, and core what the modules hold, and the price of keeping them on the bot.
 `.importlinter` lists it as a stated exception rather than a breach.
 
 ---
@@ -247,10 +262,14 @@ It starts with one entry, attendance needing results (the attendance module spec
 opening rules). Stewarding adds a second [STW-MOD-007].
 
 **Core reaches a module only through hooks, and the image module through a protocol it declares
-(below).** Where something in core has to let the modules act (the bot starting, a timed event
-falling due, a round's amendment judged, a round amended or its timed work armed again, a round's
-timing windows read, a round, a division or a season cancelled, a round's results made final,
-placements confirmed, a season's approval saved, a season's configuration confirmed, a review
+(below).** A hook, a list of subscribers or one keyed by kind, is the framework's machinery; a
+moment that concerns the league is core's, which declares its hook on that machinery, and one that
+concerns the machinery alone (the bot starting, a timed event falling due, a module's switch read)
+is the framework's. What this section says of core declaring and calling a hook holds for the
+framework's moments as well. Where something in core has to let the modules act (the bot starting, a
+timed event falling due, a round's amendment judged, a round amended or its timed work armed again,
+a round's timing windows read, a round, a division or a season cancelled, a round's results made
+final, placements confirmed, a season's approval saved, a season's configuration confirmed, a review
 gathering its lines, the placements review gathering each division's lines, a division's channel
 faults read, a channel's uses read as a command sets it, the factory reset gathering the channels
 each module holds, a round's drawn phases read, a driver's signup name, username and nationality
@@ -288,15 +307,15 @@ by the module's name, which the module's own work may also call; core asks for i
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
 image module, the module's own name for the rest. So a module added later adds its
-`is_<module>_enabled` to core's module service as well as signing up (the start-up sweep asks the
-same reader by the key, `ModuleService.is_enabled`, to pass a disabled module over); core knows its
-name for its switch and nothing more. A module that never signed up is a fault in the bot's
-assembly, and asking for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no
-reader that stands aside takes for an answer: each lets that type through by name and stands aside
-from any other fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named under "A
-catch-all error handler"). A link the dependency table allows between two modules is not one of
-core's hooks: there the module depended on may name what it asks of its dependant, as results does
-of attendance (below). Only core calls the subscribers of a hook it declares as a list. Where a
+`is_<module>_enabled` to the framework's module service as well as signing up (the start-up sweep
+asks the same reader by the key, `ModuleService.is_enabled`, to pass a disabled module over); core
+knows its name for its switch and nothing more. A module that never signed up is a fault in the
+bot's assembly, and asking for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which
+no reader that stands aside takes for an answer: each lets that type through by name and stands
+aside from any other fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named
+under "A catch-all error handler"). A link the dependency table allows between two modules is not
+one of core's hooks: there the module depended on may name what it asks of its dependant, as results
+does of attendance (below). Only core calls the subscribers of a hook it declares as a list. Where a
 module reaches such a moment, either the moment is its own and its dependants are reached through
 what the builder hands it, or a core function writes the change and calls the hook itself.
 
@@ -786,26 +805,27 @@ stop nobody yet holds the role to clear.
 
 ## The database
 
-**All database code is in services**, or in core's database code for connections and migrations.
+**All database code is in services**, or in the framework's database code for connections and
+migrations.
 A cog never opens a connection, and neither does the entry point.
 
 **Connections are lent again, not opened for every operation.** Opening one starts a thread and
 makes SQLite read the whole schema before its first statement, and a change opens a great many.
 `get_connection` therefore keeps a few connections idle and lends them to the next caller for the
-same database, and each block still has one connection to itself. Core's database code does this
-and nothing else does. Checking a connection out never waits: it takes an idle one or opens one,
-because some code opens a second connection while its first is still open (a service reading
+same database, and each block still has one connection to itself. The framework's database code does
+this and nothing else does. Checking a connection out never waits: it takes an idle one or opens
+one, because some code opens a second connection while its first is still open (a service reading
 through another service inside its own block), so two callers at once always have two. A connection
 is lent again only when it was given back clean and nothing on it differs from a new one; any other
 is closed, which rolls back what it held. A connection that a save confined to its tables is closed
 on return, never lent, and nothing outside the database code leaves anything on a connection (a SQL
 function, an authoriser, a `row_factory`, a PRAGMA, an ATTACH or a temporary table), because the
 next caller would inherit it. The migrations and a restore keep out of this: the migrations use a
-connection of their own, so nothing holds the database open when they finish and a factory reset
-can delete the fresh copy it migrated, and a restore runs before any connection has been lent. The
-entry point closes the idle connections as the bot stops, since each holds a thread that
-would keep the process alive. The cap, the closing of cursors on return and the reliance on the
-connection library's internals are in `get_connection`'s docstring, each pinned by a test.
+connection of their own, so nothing holds the database open when they finish and a factory reset can
+delete the fresh copy it migrated, and a restore runs before any connection has been lent. The entry
+point closes the idle connections as the bot stops, since each holds a thread that would keep the
+process alive. The cap, the closing of cursors on return and the reliance on the connection
+library's internals are in `get_connection`'s docstring, each pinned by a test.
 
 *Rejected:* one connection held for the bot's life, since a service reading through another
 service inside its own block needs a second connection while its first is open, and one connection
@@ -1001,11 +1021,11 @@ and a job caught up by the sweep and the same job fired late take that one judge
 needs no record is the change, or its step, found no longer due and dropped, as any change the bot
 asks is when its work is not due (the host's log says so).
 
-**Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
-round's job is named from the round and the event, so arming it again replaces the old one instead
+**Jobs are made only through the framework's scheduler.** Nothing else arms, finds or removes a job.
+A round's job is named from the round and the event, so arming it again replaces the old one instead
 of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
-work is armed by the scheduler service's own functions. Each reads when the round's events fall from
-`round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
+work is armed by core's round-arming functions, through the scheduler. Each reads when the round's
+events fall from `round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
 `clean_up_moment` gives, and `round_event_moments` places both clean-ups by it too. `schedule_round`
 arms a round's forecasts and, through `schedule_result_submission_jobs`, its results submission;
 that function arms only the submission, and a season's approval and an amendment also call it on its
@@ -1017,21 +1037,21 @@ three changes call them: a season's approval, the amendment of a round (`round_a
 the re-arming of a round whose timed work a refused cancellation took, a change of its own
 (`round_rearm_change`, `season.round.rearm`) built from the amendment's steps. The arming step those
 two share calls `run_result_submission_now` for a round still to be run whose moment has passed,
-save under test mode. Every path arms through these functions. A restart arms nothing, the job
-store keeping the jobs and the start-up sweep catching up those missed (above), and neither does
-test mode, whose advance brings forward work already armed or found due in the database. A round's
+save under test mode. Every path arms through these functions. A restart arms nothing, the job store
+keeping the jobs and the start-up sweep catching up those missed (above), and neither does test
+mode, whose advance brings forward work already armed or found due in the database. A round's
 next-day clean-ups, which its weather and its attendance arming both owe, are armed with them: the
 forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`. **In the amendment
-and the re-arming of a round still to be run, whether a module's work is armed, and with what, is that
-module's answer through `round_armed`**: each module hands back its steps and the jobs it owes, and
-the arming step makes the scheduler's calls with what each hands back, so that core holds no
-module's rule about which jobs a moved round still to be run owes. What a module keeps from its part of
-the amendment's judgement, its own windows included, core stores as it is given and hands the merged
-record back to every module, each reading only its own, reading it for none itself: core names no
-module's windows.
-`schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
-round raced, or ended cancelled because every session was entered as not held; core makes that call
-from the modules' switches, the clean-up's delay being the one shared delay, so no module's window is read.
+and the re-arming of a round still to be run, whether a module's work is armed, and with what, is
+that module's answer through `round_armed`**: each module hands back its steps and the jobs it owes,
+and the arming step makes the scheduler's calls with what each hands back, so that core holds no
+module's rule about which jobs a moved round still to be run owes. What a module keeps from its part
+of the amendment's judgement, its own windows included, core stores as it is given and hands the
+merged record back to every module, each reading only its own, reading it for none itself: core
+names no module's windows. `schedule_round_cleanups` arms either or both on their own, and the
+re-arming calls it alone for a round raced, or ended cancelled because every session was entered as
+not held; core makes that call from the modules' switches, the clean-up's delay being the one shared
+delay, so no module's window is read.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
@@ -1125,31 +1145,31 @@ no change.
 Tests can then run the whole start-up in order, instead of checking its order by searching the
 source code.
 
-**The sweep is core's own steps, then each enabled module's turn.** It runs the steps core signed up
-for the bot starting, one at a time, then turns to each module in the order the builder named them and
-reads its switch (`ModuleService.is_enabled`). A disabled module is passed over, with a line in the
-host's log, save for a step it marks `runs_while_off`, which runs all the same; an enabled module's
-turn runs its own start-up steps, one at a time, in the order its wiring gives. A timed event that
-was missed is caught up in its module's turn, by the handler its
-module provides for the kind of job, so a job run on time and one caught up take one path; a module's
-start-up work that is no missed event (a review posted again, an interrupted submission reopened, the
-hub's panel posted again, as the core specification's "When the bot stops" lists) is a step of the same
-turn. A change a step makes is asked of the queue, like any other. Each step is kept separate, as are
-each switch read, each module's list of steps and the queue's start: one that fails is logged with its
-traceback and reported to the log channel in one line, naming the rounds it failed for where the
-error carries them (`RoundsFailed`, `core/models/recovery.py`), so that core names no module's error
-type; the rest carry on. A step holds no module's
-rule: the step for putting a round's review back, which results' wiring offers, calls the results
-service that decides it, and that decision is asked of the queue as a change like any other.
+**The sweep, the framework's, is core's own steps, then each enabled module's turn.** It runs the
+steps core signed up for the bot starting, one at a time, then turns to each module in the order the
+builder named them and reads its switch (`ModuleService.is_enabled`). A disabled module is passed
+over, with a line in the host's log, save for a step it marks `runs_while_off`, which runs all the
+same; an enabled module's turn runs its own start-up steps, one at a time, in the order its wiring
+gives. A timed event that was missed is caught up in its module's turn, by the handler its module
+provides for the kind of job, so a job run on time and one caught up take one path; a module's
+start-up work that is no missed event (a review posted again, an interrupted submission reopened,
+the hub's panel posted again, as the core specification's "When the bot stops" lists) is a step of
+the same turn. A change a step makes is asked of the queue, like any other. Each step is kept
+separate, as are each switch read, each module's list of steps and the queue's start: one that fails
+is logged with its traceback and reported to the log channel in one line, naming the rounds it
+failed for where the error carries them (`RoundsFailed`, `core/models/recovery.py`), so that the
+framework names no module's error type; the rest carry on. A step holds no module's rule: the step
+for putting a round's review back, which results' wiring offers, calls the results service that
+decides it, and that decision is asked of the queue as a change like any other.
 
-**The sweep only delegates.** Core holds the order of the turns and nothing of what happens in one:
-it does not read a module's due moments, interleave one module's events with another's or decide what
-becomes of a missed one. Each module writes the handler for every kind of timed job it has, signed up
-by the builder, or the module's wiring it calls, with the kind as it registers the kind with the
-scheduler service, and its start-up steps, offered by its wiring. The handler holds its module's logic,
-what becomes of a missed event included; neither the entry point nor a module's wiring holds the
-module's rules in it. What an earlier step changed is seen by a later one's change when the queue
-runs it, not by the later step.
+**The sweep only delegates.** The framework holds the order of the turns and nothing of what happens
+in one: it does not read a module's due moments, interleave one module's events with another's or
+decide what becomes of a missed one. Each module writes the handler for every kind of timed job it
+has, signed up by the builder, or the module's wiring it calls, with the kind as it registers the
+kind with the scheduler service, and its start-up steps, offered by its wiring. The handler holds
+its module's logic, what becomes of a missed event included; neither the entry point nor a module's
+wiring holds the module's rules in it. What an earlier step changed is seen by a later one's change
+when the queue runs it, not by the later step.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
@@ -1208,7 +1228,7 @@ cannot be posted: the factory reset's closing line (below), and the retry worker
 that a row stuck while the channel is unreachable cannot queue a warning about itself on every try.
 The stop notice is posted again its own way (below). `send_log_text`, the retry's own send, raises
 what Discord raises to the retry worker, which counts it. Retrying is the change queue's, except for
-log lines. Each handler is a service in core, in a file of its own:
+log lines. Each handler is a service in the framework, in a file of its own:
 
 | Handler | File | Its functions |
 |---|---|---|
@@ -1648,15 +1668,14 @@ later on its own.
   framework imports nothing of core or of any module, that core uses no module, that a module uses
   another only where the dependency table allows, that results, attendance and weather reach neither
   the image module's render nor its configuration, that nothing imports the entry point, and that
-  nothing but the entry point imports a module's wiring. The same test checks that core's services
-  sit only in the named topic folders, each named as plumbing or as league rules, with the
-  scheduler's file alone loose until the framework takes the plumbing; that every file sits in a
-  folder the contracts name, `utils` holding its helpers directly and the framework its kind
-  folders as a part does; and that each layer's contract forbids exactly core and every module.
+  nothing but the entry point imports a module's wiring. The same test checks that the framework's
+  services and core's sit only in their named topic folders; that every file sits in a folder the
+  contracts name, `utils` holding its helpers directly and the framework its kind folders as a part
+  does; and that each layer's contract forbids exactly what lies above it, the entry point included.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside
   services, awaiting anything but the connection mid-save (in a function that opens it and in one
   handed it), cogs handling their own errors, catch-all handlers that lose the error details,
-  background tasks nobody keeps, code reaching past the scheduler service, the entry point
+  background tasks nobody keeps, code reaching past the framework's scheduler, the entry point
   subscribing a module to a hook only that module joins (that module's wiring signs it up), jobs
   armed with a lateness limit, private names used across modules, a new place naming the log
   channel (the check lists the six allowed, with their reasons), posting outside the handlers (the
