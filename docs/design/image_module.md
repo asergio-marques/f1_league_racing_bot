@@ -37,9 +37,9 @@ None of image's columns sits on core's tables, and none of its tables holds a li
 that would stop a delete: a tier's colours are keyed by the division's slug, and a portrait by the
 account, so a season's end or a division's deletion is never refused for them. A column a command
 may write is in the allow-lists of `image_config_service` (`SETTABLE_COLUMNS` for the text values,
-and the flags apart), which a write outside raises on (`UnknownConfigField`): the column's name is
-spliced into the statement, so the allow-list is what keeps a name the league did not choose from
-reaching it.
+and the flags apart), which a write outside raises on (`UnknownConfigField`), so that a caller
+cannot reach `module_enabled` or `id` through the generic setter (the comment above
+`SETTABLE_COLUMNS`).
 
 ### The switch, and what the switch-off keeps
 
@@ -134,8 +134,9 @@ The tyre compounds are not here: they are a results datum an image happens to dr
 
 ### The template model
 
-A template is checked and filled through one model of what it declares. A template is parsed once
-(`load_svg`) and its fields indexed by id (`FieldIndex`, `svg_document`). What an image type
+A template is checked and filled through one model of what it declares. Each check and each render
+parses it once (`load_svg`) and indexes its fields by id, and by layer label as the fallback
+(`FieldIndex`, `svg_document`). What an image type
 addresses is its catalogue (`image_catalogues`, Principle XIV.10): the fields it fills, by
 operation, each mandatory or optional. A collection's members are counted from the names a template
 declares, indexed once into `DeclaredNames` so that each count is a lookup. The validity check
@@ -145,8 +146,8 @@ out (Layer 3), stopping at the first that fails and stating the depth it reached
 works through the six operations the constitution allows and no others (`svg_fill`).
 
 `image_catalogues` is one file of every catalogue, one entry for each of the sixteen templates.
-Declaring an entry is the whole of what a new image type needs: no cog, command or report changes
-with it (its module docstring, and `image_validity_service`'s "stable surface").
+Declaring a type's catalogue entry is all that brings its catalogue-driven checks to life (its
+module docstring).
 
 ### The cog
 
@@ -206,7 +207,8 @@ The portrait toggles arm and disarm the same job through the same two steps (`ar
 
 Two things image writes are not changes on the queue: the portrait register (above), and the files a
 render writes, which are not records. A rendered picture is taken down through the drawing's
-`discard_attachment` (image specification, "The rendered file").
+`discard_attachment`, or `discard_picture` for a calendar or a lineup (image specification, "The
+rendered file").
 
 ---
 
@@ -215,9 +217,8 @@ render writes, which are not records. A rendered picture is taken down through t
 Answers to `architecture.md`, "Timed work and restarts".
 
 Image has one timed job, the daily portrait refresh, the standing job at a time of day that
-`architecture.md` allows ("Timed work and restarts"): a recurring trigger
-(`SchedulerService.schedule_portrait_refresh`, whose docstring says why) armed with no lateness
-limit, so that a run missed while the bot was down is the handler's to judge.
+`architecture.md` allows ("Timed work and restarts"), armed by
+`SchedulerService.schedule_portrait_refresh`.
 
 The handler, `run_daily_refresh` (`driver_portrait_service`), is signed up by the wiring and handed
 the queue's moment. It reads the module's switch as it fires and does nothing while the module is
@@ -226,6 +227,10 @@ from the moment it is handed, against `MISSED_AFTER`, whether the run was missed
 specification, "Configuration"; core specification, "When the bot stops"). It then works through
 every driver assigned in the active season, a placement not yet confirmed included
 (`active_season_driver_ids`), one task for each, with no time budget, since nothing waits on it.
+
+Image offers no step for `/test-mode advance`, and its process caches (the converter lookup in
+`image_render_service`, the `lru_cache`s of `font_metrics`) are joined to no clearing of the
+in-memory state.
 
 At start-up, image's one step (`portrait refresh job`) re-arms the job at the stored time where the
 league has portraits and daily updates on (`rearm_daily_refresh`). A scheduler that refuses it makes
@@ -256,12 +261,10 @@ Answers to `architecture.md`, "How modules and core fit together".
 ### Image is asked only to draw
 
 How image meets the other modules is `architecture.md`'s ("How modules and core fit together"); the
-contract that holds its side is `image-uses-no-other-module`. What a picture shows is decided by the
-module that owns it and handed in; image places it on a template and works none of it out. So the
-values a results or standings picture draws are composed in results (`results_drawing_composer`,
-`standings_drawing_composer`), from results' own formatter and tables, into the plain models image
-declares (`ResultsDrawing`, `StandingsDrawing`); a forecast's words are composed in weather into
-`ForecastValues`; and a check-in call's deadline is worked out by attendance and handed in.
+contract that holds its side is `image-uses-no-other-module`. On image's side, the models it
+declares are `ResultsDrawing` and `StandingsDrawing`, which results composes
+(`results_drawing_composer`, `standings_drawing_composer`), and `ForecastValues`, which weather
+composes; attendance hands in a check-in call's deadline.
 
 *Rejected:* image reading the results tables and formatter to compose those pictures itself. A rule
 of how a classification reads would then be held twice, and a picture could disagree with the text
@@ -279,24 +282,24 @@ object through the protocol it declares (`core/services/modules/image_drawing.py
 
 ### The gate
 
-Every picture but the weather forecast's asks one gate, `ImageDrawing.aspect_wanted`, before
-anything is read for it: the module's switch and the aspect's toggle and, where a template is named,
-that template's validity, each template being the unit of failure (Principle XIV.4). The forecast
-asks its own, `_weather_gate`, which hands back a line saying why no picture was drawn. Results asks
-it for each standings template before composing, and hands the drawing only the championships
-wanted.
+Every picture drawn for a post or for a command's output, but the weather forecast's, asks
+`ImageDrawing.aspect_wanted` (`architecture.md`, "Errors and failures"); the forecast asks
+`_weather_gate`. Results asks the gate for each standings template before composing, and hands the
+drawing only the championships wanted. The `/images test` previews ask the module's switch alone.
 
-A second question, `aspect_attaches_files`, asks whether an aspect could ever attach a file, for the
-checks of results' reposting and attendance's recalculation that a channel can take one; why it does
-not ask template validity is its docstring's, pinned by
+`aspect_attaches_files` answers the attachment checks of results' reposting and attendance's
+recalculation; why it does not ask template validity is its docstring's, pinned by
 `test_template_validity_is_deliberately_not_consulted`.
 
 ### Commanded and scheduled
 
-A render that fails is resolved against who asked for the posting (Principle XIV.7) in one place,
-`ImageRenderService.render_for_posting`, which hands back a `PostingDecision` the caller reads and
-does exactly one thing with: post the picture, fall back to text, or reject the command. Its
-`posting_origin` is required, and anything but a `PostingOrigin` raises.
+A render that fails is resolved against who asked for the posting (Principle XIV.7). The seven
+aspects drawn through an `image_<aspect>_post` resolve it in
+`ImageRenderService.render_for_posting`, which hands back a `PostingDecision` the caller reads and does exactly one thing with: post the
+picture, fall back to text, or reject the command. Its `posting_origin` is required, and anything
+but a `PostingOrigin` raises. The calendar and the lineup make the same split in their own drawing
+methods (`draw_lineup`, `draw_lineup_for_command`, `draw_review_lineup`) and in core's
+`render_for_command`.
 
 *Rejected:* inferring the origin from whether an interaction is in scope, which is wrong for a
 command that schedules later work and for a retry re-posting what a command originated
@@ -304,8 +307,7 @@ command that schedules later work and for a retry re-posting what a command orig
 
 ### The previews' sources
 
-A preview draws the league's own division, round, teams and drivers, and invents only the outcome a
-league cannot configure in advance (`image_preview_service`'s module docstring). What another module
+What a preview draws is the image specification's ("The test commands"). What another module
 owns is read through a protocol image declares, `PreviewSources` (`preview/preview_sources.py`):
 each module implements the part whose data it owns, results its sample sessions and
 classification rows, compounds, standings, results drawing and the sanction's wording
@@ -342,9 +344,8 @@ Answers to `architecture.md`, "Errors and failures", and its catch-all places.
 
 The places, and the stated exceptions with their reasons (the gates, the portraits, the verdict's
 optional fields, the artwork signature), are `architecture.md`'s, and are not repeated here. This
-section names what of image's code is not named there; it is not exhaustive, and every catch-all
-image holds is in the catch-all check's lists (`CATCH_ALLS_ALLOWED`,
-`KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES`).
+section is not exhaustive: every catch-all its shape does not place is in the catch-all check's
+lists (`CATCH_ALLS_ALLOWED`, `KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES`).
 
 **The render is place 5.** `ImageRenderService.render` and its worker `_draw` hold the render's
 fallback: a tier's colours that cannot be read or applied are drawn in the template's own, with a
@@ -353,22 +354,21 @@ from which the caller falls back to text (image specification, "Errors and the r
 A render's problem and its notices are distinct outcomes (`RenderOutcome`, Principle XIV.4).
 
 **A drawing that rides on a post is place 6.** Image's own are `ImageDrawing.attach_forecast`,
-`attach_check_in_call`, `draw_attendance_sheet` and `draw_banner`. Where another module posts the
-picture, the catch is the caller's: results' `produce_session_results`, `produce_standings` and
-`_send_verdict`, and core's `LineupPoster._refresh_lineup_post`. The calendar a command draws for
-the placements review rides on no post: core's `render_for_command` refuses on its fault, as a
-commanded render does.
+`attach_check_in_call`, `draw_attendance_sheet`, `draw_banner` and the forecast's `_weather_gate`.
+Where another module posts the picture, the catch is the caller's, of place 5, the post itself
+falling back to text: results' `produce_session_results`, `produce_standings` and `_send_verdict`,
+and core's `LineupPoster._refresh_lineup_post`. The calendar a command draws for the placements
+review rides on no post: core's `render_for_command` refuses on its fault, as a commanded render
+does.
 
-**Work off the event loop is place 4.** A template is parsed, painted, verified and filled in one
-call to `off_the_loop` (`svg_document`); its worker's catch is `_contained`, which raises the fault
-again on the loop rebuilt from plain text, so that nothing parsed leaves the thread.
+**Work off the event loop is place 4.** The worker's catch is `_contained`, which hands the fault
+back as plain text, and `off_the_loop` raises it afresh on the loop, so that nothing parsed leaves
+the thread.
 
-**The portrait fetch is place 2**, one task for each portrait, a few at a time
-(`refresh_portraits`); a Discord error stops the tasks not yet started, since the CDN fetch has no
+**A portrait fetch.** A Discord error stops the tasks not yet started, since the CDN fetch has no
 back-off (`driver_portrait_service`'s module docstring, pinned by
 `test_an_http_error_abandons_the_rest_of_the_batch`). The daily refresh, `run_daily_refresh`,
-catches a fault itself and logs it on the host's log, and the job stays armed for its next day; the
-catch-all check lists it among today's catch-alls outside the places.
+catches a fault itself and logs it on the host's log, and the job stays armed for its next day.
 
 **The rasteriser is a separate program.** The render hands the filled drawing to Inkscape, a binary
 no package declaration installs, one of the three dependencies the image specification's opening
