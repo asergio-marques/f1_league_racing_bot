@@ -223,23 +223,24 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 
 **Core reaches a module only through hooks, and the image module through a protocol it declares
 (below).** Where something in core has to let the modules act (the bot starting, a timed event
-falling due, a round's amendment judged, a round amended or its timed work armed again, a round's timing windows read, a round,
-a division or a season cancelled, a round's results made final, placements confirmed, a season's
-approval saved, a season's configuration confirmed, a review gathering its lines, the placements review gathering each
-division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
-factory reset gathering the channels each module holds, a round's drawn phases read, a driver's signup
-name, username and nationality read for a season, with whether a nationality is collected, which the
-modules that draw a driver ask through core's reader, the divisions a driver's accounts raced in read,
-a driver's standing in a division read for
-the season's history, a season's fingerprint taken, a season's pending test-mode steps read, the
-test-mode review's marks read, a season's confirmation judged, a division's final round read, a
-season ending, a season, division, round or driver deleted, a driver merged into another or turned
-down, a driver's account changed, a base role changed, the bot packed, test mode turned on, the
-bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read), core
-declares a hook. The builder, or the module's wiring it calls, signs each module up to it before the
-bot connects. Core calls whoever signed up, and never imports a module, the bot's type aside (see
-"How the code is laid out"). A module turned on or off is not a hook but a change of the module's
-own, which core asks for by its kind (see "Each module turns itself on and off").
+falling due, a round's amendment judged, a round amended or its timed work armed again, a round's
+timing windows read, a round, a division or a season cancelled, a round's results made final,
+placements confirmed, a season's approval saved, a season's configuration confirmed, a review
+gathering its lines, the placements review gathering each division's lines, a division's channel
+faults read, a channel's uses read as a command sets it, the factory reset gathering the channels
+each module holds, a round's drawn phases read, a driver's signup name, username and nationality
+read for a season, with whether a nationality is collected, which the modules that draw a driver ask
+through core's reader, the divisions a driver's accounts raced in read, a driver's standing in a
+division read for the season's history, a season's fingerprint taken, a season's pending test-mode
+steps read, the test-mode review's marks read, a season's confirmation judged, a division's final
+round read, a season ending, a season, division, round or driver deleted, a driver merged into
+another or turned down, a driver's account changed, a base role changed, the bot packed, test mode
+turned on, the bot's in-memory state cleared, the hub's panel gathering its options, a module's
+switch read), core declares a hook. The builder, or the module's wiring it calls, signs each module
+up to it before the bot connects. Core calls whoever signed up, and never imports a module, the
+bot's type aside (see "How the code is laid out"). A module turned on or off is not a hook but a
+change of the module's own, which core asks for by its kind (see "Each module turns itself on and
+off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
@@ -262,17 +263,17 @@ by the module's name, which the module's own work may also call; core asks for i
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
 image module, the module's own name for the rest. So a module added later adds its
-`is_<module>_enabled` to core's module service as well as signing up (the start-up sweep asks the same
-reader by the key, `ModuleService.is_enabled`, to pass a disabled module over); core knows its name for its
-switch and nothing more. A module that never signed up is a fault in the bot's assembly, and asking
-for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no reader that stands
-aside takes for an answer: each lets that type through by name and stands aside from any other
-fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named under "A catch-all error
-handler"). A link the dependency table allows between two modules is not one of core's hooks: there the
-module depended on may name what it asks of its dependant, as results does of attendance (below).
-Only core calls the subscribers of a hook it declares as a list. Where a module reaches such a
-moment, either the moment is its own and its dependants are reached through what the builder hands
-it, or a core function writes the change and calls the hook itself.
+`is_<module>_enabled` to core's module service as well as signing up (the start-up sweep asks the
+same reader by the key, `ModuleService.is_enabled`, to pass a disabled module over); core knows its
+name for its switch and nothing more. A module that never signed up is a fault in the bot's
+assembly, and asking for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no
+reader that stands aside takes for an answer: each lets that type through by name and stands aside
+from any other fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named under "A
+catch-all error handler"). A link the dependency table allows between two modules is not one of
+core's hooks: there the module depended on may name what it asks of its dependant, as results does
+of attendance (below). Only core calls the subscribers of a hook it declares as a list. Where a
+module reaches such a moment, either the moment is its own and its dependants are reached through
+what the builder hands it, or a core function writes the change and calls the hook itself.
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -287,27 +288,28 @@ knows the module's name, and nothing else.
 The image module is used by the others to draw their posts, and a module that finds it turned off
 posts text instead, as the image module specification's "Configuration" section (the
 `images config toggle` and its fallback) says. The image module is asked only to draw: it draws what
-a module hands it, imports no other module, and posts nothing itself. It hands back the picture, or
-none, and the lines saying what the drawing had to report, so the module that posts keeps the
+a module hands it, imports no other module, and posts nothing itself, but for the lineup a command
+draws, which runs in no job, so its drawing reports its notices itself. It hands back the picture,
+or none, and the lines saying what the drawing had to report, so the module that posts keeps the
 posting and chooses the kind of post (a standing post for a session's table and the standings, a
 notice for a verdict and the batch's heading), and the lines reach the log channel as lines of the
 job that posts. Every other module may call the image module without an entry in the table, but only
-through the one drawing the builder hands it, which carries each picture's gate, drawing and discard:
-image's render and its configuration are image's alone (the `.importlinter` contract that keeps
-results, attendance and weather out of them), so that the one gate and the fall back to text are
-the image module's to keep and no module reaches round them. What a preview draws is read through a
-protocol the image module declares (`PreviewSources`), which the module that owns the data
-implements and the builder hands in. Core reaches the image module through a protocol it declares,
-which the image module implements and the builder hands in, as results reaches attendance (below).
-Core's own graphics (the calendar, the lineup) are asked for through it, with the capacity guards,
-the artwork signature and the checks that a calendar or a lineup is wanted, and both season reviews'
-image section is asked for through it too, with the faults that refuse a confirmation or an approval
-(the rasteriser, the templates, the per-tier colours, the portrait settings), rather than drawn or
-read by importing the module. That is not the
-rejected object of named operations above: a hook is a moment several modules take part in, and
-this is a question one module answers. Where a module must let one that depends on it act (results
-after a round, for attendance), it does so through what the builder hands it, never by importing
-the dependant.
+through the one drawing the builder hands it, which carries each picture's gate, drawing and
+discard, and the models the image module declares for what it is handed to draw: image's render and
+its configuration are image's alone (the `.importlinter` contract that keeps results, attendance and
+weather out of them), so that the one gate and the fall back to text are the image module's to keep
+and no module reaches round them. What a preview draws is read through a protocol the image module
+declares (`PreviewSources`), which the module that owns the data implements and the builder hands
+in. Core reaches the image module through a protocol it declares, which the image module implements
+and the builder hands in, as results reaches attendance (below). Core's own graphics (the calendar,
+the lineup) are asked for through it, with the capacity guards, the artwork signature and the checks
+that a calendar or a lineup is wanted, and both season reviews' image section is asked for through
+it too, with the faults that refuse a confirmation or an approval (the rasteriser, the templates,
+the per-tier colours, the portrait settings), rather than drawn or read by importing the module.
+That is not the rejected object of named operations above: a hook is a moment several modules take
+part in, and this is a question one module answers. Where a module must let one that depends on it
+act (results after a round, for attendance), it does so through what the builder hands it, never by
+importing the dependant.
 
 **Results reaches attendance through a protocol, handed in by the builder.** What attendance does
 after a round's review (recording the round's attendance and its pardons, recalculating after an
@@ -1404,13 +1406,13 @@ stated exceptions below them:
    which writes no line, and a fault in its check while no server holds the league, when there is no
    log channel to record it in; the host's log holds either alone;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
-   the rest. Inside a queued change, each item is a job: one that fails stops its lane until
-   it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
-   work (above). A task of its own for each item, awaited together, is this place's too, each task
-   catching its own item's failure and the batch going on (`driver_portrait_service.refresh_portraits`,
-   one fetch for each member, a fault going to the host's log). Neither applies where an operation's
-   own rule is all or nothing, as a points amendment's save is (the results specification's "Changing
-   points system mid-season");
+   the rest. Inside a queued change, each item is a job: one that fails stops its lane until it is
+   cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the
+   failure goes to the failure path of whatever started the work (above). A task of its own for each
+   item, awaited together, is this place's too, each task catching its own item's failure and the
+   batch going on (`driver_portrait_service.refresh_portraits`, one fetch for each member, a fault
+   going to the host's log). Neither applies where an operation's own rule is all or nothing, as a
+   points amendment's save is (the results specification's "Changing points system mid-season");
 3. around reporting a failure or a refusal, or writing a line to the log channel, where that itself
    might fail:
    keeping a line for retry (`OutputRouter._enqueue_if_configured`), recording a refusal already
@@ -1465,9 +1467,10 @@ one that says otherwise below.
 - The season's team-name check (`approval_checks.team_name_problems`) finds nothing wrong, so each
   review and confirmation that checks the names carries on with them unchecked: the check only keeps
   a team name from becoming a bad artwork filename.
-- Results' readers that stand aside (`points_amendment_faults.approval_faults` and
-  `approval_checks.channel_on_server`) read an attendance switch as off or a channel as present,
-  because a reader that cannot answer must not refuse an amendment or a season.
+- Results' reader of an attendance switch (`points_amendment_faults.approval_faults`) and core's
+  reader of whether a channel is on the server (`approval_checks.channel_on_server`) stand aside,
+  reading the switch as off and the channel as present, because a reader that cannot answer must not
+  refuse an amendment or a season.
 - The image module's gate (`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the
   weather forecast's, whose own gate is of the sixth place) answers that the league does not draw the
   aspect, with no line to the log channel, so the text goes out, because a gate that cannot be read
@@ -1483,7 +1486,7 @@ one that says otherwise below.
   `_mention_names`, in `image_verdict_post.py`) leave the field out, so that the verdict is drawn
   without it: an optional field is not worth a failed picture. None of them reads a switch.
 
-**A portrait or an artwork that cannot be had is drawn without.** A portrait never fails the picture
+**A portrait or an artwork that cannot be had is done without.** A portrait never fails the picture
 or the command it serves: the pre-render refresh (`driver_portrait_service.refresh_before_render`)
 draws the picture with the portraits it has, a template whose shape cannot be read
 (`portrait_aspect`) is read as 1:1 and the render reports the template, and a portrait that cannot be
@@ -1494,10 +1497,12 @@ signs the rest all the same, because a fault that escaped it would empty the who
 the review would read as changed in every area.
 
 **A fingerprint that cannot be read.** A season's fingerprint that cannot be taken
-(`season_fingerprint_service.take_fingerprint`, a module's fault in handing over its areas
-included) is signed as an empty one, which differs from every fingerprint, another empty one
-included, and so refuses an approval whose review was read, because a fingerprint that could not be
-read must not wave one through.
+(`season_fingerprint_service.take_fingerprint`, a module's fault in handing over its areas included)
+is signed as an empty one, which differs from every fingerprint, another empty one included, and so
+refuses an approval whose review was read, because a fingerprint that could not be read must not
+wave one through. A switch nobody signed up for is let through by name, as it is by every reader
+that stands aside, for it is a fault in the bot's assembly and not a fingerprint that could not be
+read.
 
 **A telling or a clean-up that must not undo or hold what it follows.**
 
