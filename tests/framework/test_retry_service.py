@@ -220,6 +220,34 @@ class TestMarkFailed:
         assert await _row_count(db_path) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the retry queue has no clear_pending_on")
+async def test_clear_pending_on_deletes_every_undelivered_line_and_counts_them(tmp_path):
+    """`clear_pending_on` deletes, on the caller's connection, every log line still waiting for
+    delivery, and gives how many it deleted. Two lines wait, for channels 100 and 200. Cleared in
+    a transaction the caller then rolls back, it gives 2 and both lines are still there; cleared
+    again and committed, it gives 2 and none is left. Cleared once more, it gives 0."""
+    from leaguebot.framework.services.posting.retry_service import clear_pending_on
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 100, "msg A", "err", now=NOW)
+    await enqueue(db_path, 200, "msg B", "err", now=NOW)
+
+    async with get_connection(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        assert await clear_pending_on(db) == 2
+        await db.rollback()
+    assert await _row_count(db_path) == 2
+
+    async with get_connection(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        assert await clear_pending_on(db) == 2
+        await db.commit()
+    assert await _row_count(db_path) == 0
+
+    async with get_connection(db_path) as db:
+        assert await clear_pending_on(db) == 0
+
+
 # ---------------------------------------------------------------------------
 # A log line the change queue wrote and never tried (#439)
 # ---------------------------------------------------------------------------

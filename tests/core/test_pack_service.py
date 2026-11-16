@@ -407,6 +407,7 @@ async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
 # ── The record of the pack ────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the pack's audit values are not written with sorted keys")
 @pytest.mark.parametrize(
     ("signup_configured", "signup_channel", "wizards"),
     [(True, 80, 1), (False, None, 0)],
@@ -417,9 +418,10 @@ async def test_pack_is_audited_with_every_setting_and_role_it_cleared(
 ):
     """Issue #383. The log line goes to a server the league is leaving; the audit entry is
     what keeps who packed and what the settings held. Message ids are the bot's record of
-    its own posts, not configuration, and are not in it. A league whose signup holds no
-    configuration (never enabled, or disabled since) keeps the signup channel's key in the
-    entry, empty before and after, and packs no signup wizard (#283)."""
+    its own posts, not configuration, and are not in it. Each value is JSON with its keys sorted.
+    A league whose signup holds no configuration (never enabled, or disabled since) keeps the
+    signup channel's key in the entry, empty before and after, and packs no signup wizard
+    (#283)."""
     await _seed(db_path)
     if not signup_configured:
         async with get_connection(db_path) as db:
@@ -458,6 +460,10 @@ async def test_pack_is_audited_with_every_setting_and_role_it_cleared(
         "signup_channel_id": None,
         "team_roles": {},
     }
+    assert (row["old_value"], row["new_value"]) == (
+        json.dumps(json.loads(row["old_value"]), sort_keys=True),
+        json.dumps(json.loads(row["new_value"]), sort_keys=True),
+    )
 
 
 # ── The change queue (#439) ────────────────────────────────────────────────

@@ -2364,6 +2364,62 @@ async def test_done_step_results_before_gives_only_the_changes_whose_payload_mat
     assert await _asked(3, 7) == []
 
 
+async def _seed_change(
+    db, kind: str, state: str, *, lane: str = "league", done: int = 0, steps: int = 1,
+    stopped: bool = False,
+) -> list[int]:
+    """A change of *kind* in *state* on *lane*, written on *db* and not committed, with *steps*
+    jobs of which the first *done* are done, at 12:05 on 1 October 2026; *stopped* marks its first
+    job not done as failing since noon. Gives its jobs' numbers in order."""
+    cursor = await db.execute(
+        "INSERT INTO queued_changes (kind, dedup_key, origin, state, what, lane) "
+        "VALUES (?, ?, 'MEMBER', ?, '`/dummy`', ?)",
+        (kind, f"{kind}-{state}-{lane}", state, lane),
+    )
+    change_id = cursor.lastrowid
+    jobs = []
+    for position in range(steps):
+        failing = stopped and position == done
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, done_at, tries, "
+            "failing_since, last_failure) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (change_id, position, f"step{position}",
+             "2026-10-01T12:05:00+00:00" if position < done else None,
+             1 if failing else 0,
+             "2026-10-01T12:00:00+00:00" if failing else None,
+             "Forbidden" if failing else None),
+        )
+        jobs.append(int(cursor.lastrowid))
+    return jobs
+
+
+@pytest.mark.xfail(strict=True, reason="#544: the queue's records have no pending_job_on")
+async def test_pending_job_on_gives_the_stopped_job_first_else_the_next_not_done(tmp_path):
+    """`pending_job_on` reads, on the caller's connection, the job the queue holds as (number,
+    stopped, lane). With no change in hand, or only finished ones, it gives None. A league change
+    asked first has its first job done and its second waiting: that second job is the next not
+    done, not stopped, on the league's lane. Once a change asked after it on channel 8's lane is
+    stopped at its one job, that stopped job comes first, though it was asked later. Every row is
+    written in the caller's own transaction, not committed, and still read."""
+    from leaguebot.framework.services.queue.queue_records import pending_job_on
+
+    db_path = str(tmp_path / "queue.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        assert await pending_job_on(db) is None
+        for state in ("DONE", "REFUSED", "DROPPED", "DISCARDED"):
+            await _seed_change(db, "dummy", state)
+        assert await pending_job_on(db) is None
+
+        league_jobs = await _seed_change(db, "dummy", "RUNNING", done=1, steps=2)
+        assert await pending_job_on(db) == (league_jobs[1], False, "league")
+
+        [stopped] = await _seed_change(db, "dummy", "RUNNING", lane="channel:8", stopped=True)
+        assert await pending_job_on(db) == (stopped, True, "channel:8")
+        await db.rollback()
+
+
 async def test_a_check_as_the_change_starts_knows_its_own_id(env):
     """A check asked when the change is asked for has no change id; the same check as the change
     starts is handed the change's id, so that it can leave itself out of `unfinished`."""
