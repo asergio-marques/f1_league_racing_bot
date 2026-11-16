@@ -6,6 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, NamedTuple
 
+import aiohttp
 import aiosqlite
 import discord
 
@@ -96,6 +97,28 @@ class PostedTable(NamedTuple):
     championship: str | None = None
     fault: str | None = None
     lines: tuple[str, ...] = ()
+
+    @property
+    def at_discord(self) -> bool:
+        """Whether *fault* was Discord's end of the upload, not the drawing."""
+        return isinstance(self.fault, UploadFault)
+
+
+class UploadFault(str):
+    """What kept a picture from posting where the fault was at Discord's end of the upload, its
+    refusal or a fault on the connection, not in the drawing: the line the job writes then says
+    to post the picture again, not to fix a template (:attr:`PostedTable.at_discord`)."""
+
+    @classmethod
+    def of(cls, error: BaseException) -> "UploadFault":
+        if isinstance(error, discord.HTTPException):
+            return cls(f"Discord refused the picture ({fault_of(error)})")
+        return cls(f"the picture's upload failed ({fault_of(error)})")
+
+
+#: What an upload that fails at Discord's end raises: a refusal, or a fault on the connection (a
+#: timeout among them), which the post handles as a refusal.
+UPLOAD_FAULTS = (discord.HTTPException, aiohttp.ClientError, OSError)
 
 
 def picture_fallback_line(
@@ -660,11 +683,12 @@ async def produce_session_results(
                     results_channel, f"{heading}\n{label}",
                     mentions=discord.AllowedMentions.none(), file=file,
                 )
-            except discord.HTTPException as exc:
-                # Discord refused the upload: the text goes out in its place in this try, and the
-                # refusal and Discord's reason are on the table for the job to say so.
+            except UPLOAD_FAULTS as exc:
+                # Discord refused the upload, or the connection failed it: the text goes out in
+                # its place in this try, and the refusal and its reason are on the table for the
+                # job to say so.
                 log.error("results: could not post image for session %s: %s", session_result.id, exc)
-                fault = f"Discord refused the picture ({fault_of(exc)})"
+                fault = UploadFault.of(exc)
             else:
                 return PostedTable([message_id], previous, drawn=True, lines=lines)
             finally:
@@ -893,15 +917,15 @@ async def produce_standings(
                             f"{heading}\n{label}" if occasion.names_a_round else None,
                             mentions=discord.AllowedMentions.none(), file=file,
                         )
-                    except discord.HTTPException as exc:
-                        # Discord refused the upload: this championship's text goes out in its
-                        # place in this try, and the refusal and Discord's reason are on its
-                        # table for the job to say so.
+                    except UPLOAD_FAULTS as exc:
+                        # Discord refused the upload, or the connection failed it: this
+                        # championship's text goes out in its place in this try, and the refusal
+                        # and its reason are on its table for the job to say so.
                         log.error(
                             "post_standings: could not post the %s picture for round %s: %s",
                             name, round_id, exc,
                         )
-                        faults[name] = f"Discord refused the picture ({fault_of(exc)})"
+                        faults[name] = UploadFault.of(exc)
                         continue
                     pictures.append(PostedTable(
                         [message_id], await _standings_replaced(

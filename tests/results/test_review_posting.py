@@ -1837,8 +1837,6 @@ REFUSAL = "Discord failed part-way"
 REPOST_COMMAND = {"results": "/results rounds sync", "standings": "/results standings sync"}
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a refused picture's line still tells the league to "
-                                       "fix the template, which is not at fault (p6)")
 @pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     tmp_path, picture,
@@ -1872,14 +1870,6 @@ async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     assert REPOST_COMMAND[picture] in put_right and "template" not in put_right, line
 
 
-#: Why a picture whose upload is cut off by a connection error is not yet posted as text.
-CUT_OFF_STOPS_THE_QUEUE = (
-    "#288: a results or standings picture whose upload fails with a connection error stops the "
-    "queue, rather than going out as text in the same try as at the base"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=CUT_OFF_STOPS_THE_QUEUE)
 @pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_picture_whose_upload_is_cut_off_is_posted_as_text_in_the_same_try(
     tmp_path, picture,

@@ -308,10 +308,16 @@ async def _with_standings_posted(
     return {int(r["round_id"]) for r in await cursor.fetchall()}
 
 
-def _put_right(picture: str, remedy: str) -> str:
+def _put_right(picture: str, remedy: str, *, at_discord: bool = False) -> str:
     """What puts a *picture* that went out as text right, by the job's own *remedy*: the sync
     command while the season is being raced, the round's amendment once it is pending
-    completion and the sync commands are refused (results spec :587, :589)."""
+    completion and the sync commands are refused (results spec :587, :589). Where Discord
+    refused the upload, or the connection failed it, the template is not at fault: the picture
+    is posted again with the same command."""
+    if at_discord:
+        if remedy == _AMEND:
+            return f"post the {picture} picture again by amending the round with `{_AMEND}`"
+        return f"post the {picture} picture again with `{remedy}`"
     if remedy == _AMEND:
         return f"fix the {picture} template, then amend the round with `{_AMEND}`"
     return f"fix the {picture} template, then run `{remedy}`"
@@ -800,7 +806,7 @@ async def _post_session_results(
         lines += (picture_fallback_line(
             ctx.named, ctx.what, picture="results", division=rnd["division_name"],
             round_number=rnd["round_number"], fault=posted.fault,
-            put_right=_put_right("results", payload["remedy"]),
+            put_right=_put_right("results", payload["remedy"], at_discord=posted.at_discord),
         ),)
     return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
 
@@ -904,7 +910,8 @@ async def _post_standings(
         "new": new, "channel_id": channel_id,
         "division_id": division_id, "round_id": round_id,
     }
-    fault = next((t.fault for t in tables if t.fault is not None), None)
+    failed = next((t for t in tables if t.fault is not None), None)
+    fault = failed.fault if failed is not None else None
     # What the pictures said when they were drawn on an earlier try, kept on that try's stop, is
     # handed back with this one's.
     lines = drawn_lines_kept(ctx.kept) + tuple(line for t in tables for line in t.lines)
@@ -912,7 +919,9 @@ async def _post_standings(
         lines += (picture_fallback_line(
             ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
             round_number=rnd["round_number"], fault=fault,
-            put_right=_put_right("standings", payload["remedy"]),
+            put_right=_put_right(
+                "standings", payload["remedy"], at_discord=failed is not None and failed.at_discord,
+            ),
         ),)
     return StepResult(result=result, lines=lines, then=tuple(then))
 
