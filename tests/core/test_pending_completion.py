@@ -216,12 +216,14 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
     assert seats[0]["n"] == 0
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the system writer writes plain words, not JSON")
 async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
     """The season is in Ongoing signups with every division finished, and signups are open:
     winding it down closes the window as every division being done, and cancels the close
     timer. Driver 105, still filling in the wizard, is returned by the close. The "Signups are
     now closed" post's own job records the window closed and, in the same record, audits the
-    close once, by the system, and writes its one "🔒 Signups closed as every division is done"
+    close once, by the system, from "open" to "closed" as JSON, and writes its one "🔒 Signups
+    closed as every division is done"
     line, which names no member and states the one driver returned beneath it (signup :67)."""
     from tests.support.change_queue import queued_log_lines, step_rows
     from tests.support.season_league import signing_up, window_open
@@ -240,7 +242,7 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
         "WHERE change_type = 'SIGNUP_DIVISIONS_DONE_CLOSE'"
     )
     assert [(row["old_value"], row["new_value"], row["actor_name"]) for row in audits] == [
-        ("open", "closed", "system")
+        ('"open"', '"closed"', "system")
     ]
     lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
     [line] = [line for line in lines if "🔒 Signups closed as every division is done" in line]

@@ -15,7 +15,6 @@ the test pins the moment it records rather than reading the wall clock.
 from __future__ import annotations
 
 import inspect
-import json
 from datetime import datetime, timezone
 
 import pytest
@@ -36,12 +35,13 @@ async def _audit_count(db_path: str) -> int:
         return (await cursor.fetchone())[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the member writer does not yet sort a value's keys")
 async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
     """A change and its record land together: the row is written on the caller's connection,
     inside the caller's transaction, and is not committed by the record — so it goes if the
     caller rolls back, and stays once the caller commits. Once committed it is the row the
-    channel commands wrote: every column, the old and new values as JSON, the division it
-    belongs to, and the time as a UTC ISO timestamp."""
+    channel commands wrote: every column, the old and new values as JSON with their keys sorted,
+    the division it belongs to, and the time as a UTC ISO timestamp."""
     db_path = str(tmp_path / "audit_on.db")
     await run_migrations(db_path)
     change = dict(
@@ -76,8 +76,8 @@ async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
             "actor_name": "Manager#0001",
             "division_id": 11,
             "change_type": "POINTS_CONFIG_SESSION_SET",
-            "old_value": json.dumps({"position": 1, "points": 20}),
-            "new_value": json.dumps({"position": 1, "points": 25}),
+            "old_value": '{"points": 20, "position": 1}',
+            "new_value": '{"points": 25, "position": 1}',
             "timestamp": "2026-09-28T12:00:00+00:00",
         }
     ]
@@ -88,6 +88,52 @@ def test_record_change_on_is_always_handed_the_time():
     now = inspect.signature(record_change_on).parameters["now"]
     assert now.kind is inspect.Parameter.KEYWORD_ONLY
     assert now.default is inspect.Parameter.empty
+
+
+_NOT_JSON_YET = "#544: the system writer writes its values as they are, not as JSON"
+
+
+@pytest.mark.parametrize(
+    ("writer", "value", "written"),
+    [
+        pytest.param("member", "CANCELLED", '"CANCELLED"', id="member-status"),
+        pytest.param("member", 106, "106", id="member-id"),
+        pytest.param(
+            "system", "open", '"open"', id="system-word",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
+        ),
+        pytest.param(
+            "system", {"state": "NOT_SIGNED_UP", "deleted": [3, 1]},
+            '{"deleted": [3, 1], "state": "NOT_SIGNED_UP"}', id="system-dict",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
+        ),
+    ],
+)
+async def test_each_writer_encodes_any_value_as_json_with_sorted_keys(
+    tmp_path, writer, value, written
+):
+    """Every audit value is written as JSON, its keys sorted, whoever made the change. A member's
+    change or one nobody ran records a value as its old and as its new value: a status word, an
+    id, or a dict whose keys are out of order. Both columns hold its JSON: the word in quotes, the
+    id as a bare number, the dict with its keys in order."""
+    from leaguebot.framework.services.queue.audit_service import record_system_change_on
+
+    db_path = str(tmp_path / "audit_json.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        if writer == "member":
+            await record_change_on(
+                db, actor_id=77, actor_name="Manager#0001", change_type="round.status",
+                old_value=value, new_value=value, now=NOW,
+            )
+        else:
+            await record_system_change_on(
+                db, change_type="SIGNUP_AUTO_CLOSE", old_value=value, new_value=value, now=NOW,
+            )
+        await db.commit()
+        cursor = await db.execute("SELECT old_value, new_value FROM audit_entries")
+        rows = [tuple(r) for r in await cursor.fetchall()]
+    assert rows == [(written, written)]
 
 
 async def _writer_db(tmp_path) -> str:

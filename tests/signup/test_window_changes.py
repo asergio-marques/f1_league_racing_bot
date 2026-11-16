@@ -685,15 +685,17 @@ async def test_a_confirm_after_the_window_changed_is_refused_when_it_runs(tmp_pa
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the system writer writes plain words, not JSON")
 async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(tmp_path):
     """Two leagues, each with Kimi still filling in the wizard: in one the close timer fires, in
     the other the bot starts after the close time (`close_signups_unattended` with the cause
     "timer", then "restart"). Each asks `signup.close` as the bot's own change and posts nothing
     itself: the window stays open until the queue runs. When it runs, the window is closed, the
     closed notice posted and Kimi returned to Not Signed Up. The close is audited once, by the
-    system, as an automatic close, and one "🔒 Signups closed automatically at their set time"
-    line is written, its head showing the set time (and, for the restart, that it came at
-    start-up); it names no member and states beneath it the one driver returned (signup :67)."""
+    system, as an automatic close, from "open" to "closed" as JSON, and one "🔒 Signups closed
+    automatically at their set time" line is written, its head showing the set time (and, for
+    the restart, that it came at start-up); it names no member and states beneath it the one
+    driver returned (signup :67)."""
     from leaguebot.signup.services.window_close import close_signups_unattended
     from tests.support.change_queue import queued_log_lines
 
@@ -724,7 +726,7 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
             "WHERE change_type LIKE 'SIGNUP_%CLOSE'"
         )
         assert [(row["change_type"], row["old_value"], row["new_value"], row["actor_name"])
-                for row in audits] == [("SIGNUP_AUTO_CLOSE", "open", "closed", "system")], cause
+                for row in audits] == [("SIGNUP_AUTO_CLOSE", '"open"', '"closed"', "system")], cause
         lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
         [line] = [line for line in lines
                   if "🔒 Signups closed automatically at their set time" in line]

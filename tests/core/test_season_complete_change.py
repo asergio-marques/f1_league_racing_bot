@@ -1375,12 +1375,14 @@ async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(t
     assert len(_success_lines(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the system writer writes plain words, not JSON")
 async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_pass(tmp_path):
     """The signup window open and the completion queued. Run as far as `post_closed`, whose
     record writes the window's close, the window is closed while the season is still active,
     no history written and Max still assigned: the driver pass has not yet run. Driver 105,
     still filling in the wizard, is returned by the close. The window's close is audited once,
-    by the system, and its one "🔒 Signups closed as the season ended" line written in that
+    by the system, from "open" to "closed" as JSON, and its one "🔒 Signups closed as the season
+    ended" line written in that
     post's record: it names no member, and states the one driver returned beneath it (signup
     :67). Driver 106, awaiting a league manager's approval, is left as they are: the close
     returns only drivers still filling in the wizard (signup spec, "signup close"), so 106 is
@@ -1396,7 +1398,7 @@ async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_
     assert SIGNING_UP_TOO not in [user for user, _text in league.notices]
     assert SIGNING_UP_TOO not in league.locked
     assert await _window_close_audits(league) == [
-        ("SIGNUP_SEASON_END_CLOSE", "open", "closed", "system")
+        ("SIGNUP_SEASON_END_CLOSE", '"open"', '"closed"', "system")
     ]
     [line] = await _closed_lines(league)
     assert "<@" not in line, line
