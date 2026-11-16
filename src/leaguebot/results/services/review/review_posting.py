@@ -701,10 +701,12 @@ async def _remove_kept(guild: discord.Guild, kept: dict[str, Any] | None) -> Non
             delete=delete_standing, failures=failures,
         ))
     if left:
+        # The earlier try's picture lines go on the stop, as a stop's result replaces what the
+        # job kept: the retry that does remove the text must still hand them back.
         raise StepFailedOnDiscord(
             f"{len(left)} message(s) of the earlier try could not be removed",
             result={"new": left, "channel_id": int(channel_id)},
-        ) from (failures[0] if failures else None)
+        ).carrying(drawn_lines_kept(kept)) from (failures[0] if failures else None)
 
 
 def _stranded(error: Exception, channel_id: int) -> dict[str, Any] | None:

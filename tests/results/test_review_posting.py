@@ -2063,8 +2063,6 @@ class _SendsRefused:
     __hash__ = None
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a retry whose removal of the earlier try's "
-                   "part-posted text is refused replaces the kept picture line, so it is lost")
 async def test_a_refused_picture_s_line_survives_a_retry_that_cannot_remove_the_part_posted_text(
     tmp_path,
 ):

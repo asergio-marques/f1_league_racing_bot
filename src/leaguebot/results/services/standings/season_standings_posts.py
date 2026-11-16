@@ -148,7 +148,7 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     none left, so that a failure of this try names what it left, even nothing, and the job no longer
     keeps the copies removed.
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.models.change import StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.publishing.results_post_service import remove_part_posted_messages
 
     earlier = [int(each) for each in (kept or {}).get("new") or []]
@@ -159,10 +159,12 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     if earlier_channel is not None:
         left, failures = await remove_part_posted_messages(earlier_channel, earlier)
         if left:
+            # The earlier try's picture lines go on the stop, as a stop's result replaces what
+            # the job kept: the retry that does remove the tables must still hand them back.
             raise StepFailedOnDiscord(
                 f"{len(left)} message(s) of the earlier try could not be removed",
                 result={"new": left, "channel_id": posted_in},
-            ) from (failures[0] if failures else None)
+            ).carrying(drawn_lines_kept(kept)) from (failures[0] if failures else None)
     return {"new": [], "channel_id": posted_in}
 
 
