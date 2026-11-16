@@ -500,6 +500,44 @@ async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
     assert sum(notices[1] in each for each in logged) == 1, logged
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#288: a refused lineup post loses its drawing's notices, which the retried try does not "
+    "hand back"
+))
+async def test_a_refused_lineup_s_notices_reach_the_log_once_when_it_is_retried(
+    tmp_path, monkeypatch,
+):
+    """Pro's lineup asked of the queue, as a driver command asks it, and the drawing the builder
+    handed draws it as a PNG with two notices, Zara's flag and portrait each falling back. Pro's
+    lineup channel refuses every send, the picture and then the text, so the queue stops at the
+    posting job. The channel is let accept, and a Retry posts the lineup: the queue runs to the
+    end, and the log channel holds the two notices once, in one line naming the lineup and Pro,
+    never lost with the refused try."""
+    from tests.support.change_queue import queued_log_lines
+    from tests.support.lineup_drawing import LineupDrawingStub
+
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    notices = ("a fallback flag stood in for Zara's", "a fallback portrait stood in for Zara's")
+    league, _ = await _lineup_asked(
+        tmp_path, monkeypatch, LineupDrawingStub(picture=png, notices=notices)
+    )
+    channel = league.channel(LINEUP[PRO])
+    channel.fail_when = lambda _content, _kwargs: True
+
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    channel.fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
+    named = [line for line in logged if notices[0] in line]
+    assert len(named) == 1, logged
+    [line] = named
+    assert notices[1] in line and "lineup" in line.lower() and "Pro" in line, line
+
+
 @pytest.mark.parametrize(("start", "member", "change", "divisions"), [
     pytest.param(_lineup_asked, "the bot", "posting the lineup of **Pro**", ("Pro",),
                  id="a lineup asked"),
