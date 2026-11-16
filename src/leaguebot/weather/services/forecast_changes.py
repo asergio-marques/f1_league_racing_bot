@@ -55,7 +55,6 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
-from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP, forecasts_named
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
@@ -80,6 +79,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     test_mode_on,
 )
 from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
+from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP, forecasts_named
 from leaguebot.weather.services import (
     forecast_cleanup_service,
     mystery_notice_service,
