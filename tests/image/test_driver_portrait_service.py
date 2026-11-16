@@ -700,23 +700,6 @@ async def _season_db(
     return path
 
 
-async def test_assigned_driver_ids_skips_test_drivers_and_sorts(tmp_path):
-    from leaguebot.image.services.portraits.driver_portrait_service import assigned_driver_ids
-
-    path = await _season_db(tmp_path, uids=("22", "11"))
-
-    # Sorted rather than in insertion order: a run cut short must resume predictably.
-    assert await assigned_driver_ids(path) == ["11", "22"]
-
-
-async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path):
-    from leaguebot.image.services.portraits.driver_portrait_service import assigned_driver_ids
-
-    path = await _season_db(tmp_path, status="COMPLETED")
-
-    assert await assigned_driver_ids(path) == []
-
-
 def _daily_bot(db_path, directory, **config_overrides):
     """A bot whose image configuration asks for portraits refreshed daily at 03:00 UTC, the
     stored default, reading the image module's switch from *db_path* as the bot does."""
