@@ -210,11 +210,12 @@ point, which would then hold every module's registrations and grow with each mod
   the service when a service does. A service never reaches into a cog for a view.
 - **Shared helpers** are of two kinds. The framework's (the base classes, the failure paths,
   autocomplete) learn what the league decides through the framework's own protocols, which the
-  builder hands them on the bot; `utils` uses no service at all. Neither imports a service, the
-  framework imports nothing of core, and core uses no module; the one exception to all three is the
-  bot's type, which names every service and every hook that core and the modules declare, for the
-  type checker (below). Each handler for a kind of post is a service in the framework, not a helper.
-  Some helpers a service may call reach the bot, each for one thing. `league_guild(bot)`
+  builder hands them on the bot, declared there by the framework's own protocol type, never by
+  core's service type; `utils` uses no service at all. Neither imports a service, the framework
+  imports nothing of core, and core uses no module; the one exception to all three is the bot's
+  type, which names every service and every hook that core and the modules declare, for the type
+  checker (below). Each handler for a kind of post is a service in the framework, not a helper. Some
+  helpers a service may call reach the bot, each for one thing. `league_guild(bot)`
   (`league_server.py`, among the framework's helpers) is the one route from a job or a service to
   the league's server, which it finds through the framework's settings protocol. `report_failure`,
   `refuse` (through `record_refusal`) and `record_abandoned` write a failure, a refusal, or a
@@ -247,9 +248,9 @@ path ran and a service wired in two steps has failed between the steps.
 
 Because the services stay on the bot, the bot's type (`LeagueBot`) names every service object, and
 every hook core and the modules declare. It does so for the type checker only, under
-`TYPE_CHECKING`, and nothing runs because of it. That is the one place the framework names what core
-and the modules hold, and core what the modules hold, and the price of keeping them on the bot.
-`.importlinter` lists it as a stated exception rather than a breach.
+`TYPE_CHECKING`, and nothing runs because of it. That is the one place below the modules that names
+what core and the modules hold, and the price of keeping them on the bot. `.importlinter` lists it
+as a stated exception rather than a breach.
 
 ---
 
@@ -266,8 +267,8 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 moment that concerns the league is core's, which declares its hook on that machinery, and one that
 concerns the machinery alone (the bot starting, a timed event falling due, a module's switch read)
 is the framework's. What this section says of core declaring and calling a hook holds for the
-framework's moments as well. Where something in core has to let the modules act (the bot starting, a
-timed event falling due, a round's amendment judged, a round amended or its timed work armed again,
+framework's moments as well. Where something in core has to let the modules act (a round's
+amendment judged, a round amended or its timed work armed again,
 a round's timing windows read, a round, a division or a season cancelled, a round's results made
 final, placements confirmed, a season's approval saved, a season's configuration confirmed, a review
 gathering its lines, the placements review gathering each division's lines, a division's channel
@@ -306,10 +307,11 @@ by the module's name, which the module's own work may also call; core asks for i
 (`is_<module>_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
-image module, the module's own name for the rest. So a module added later adds its
-`is_<module>_enabled` to the framework's module service as well as signing up (the start-up sweep
-asks the same reader by the key, `ModuleService.is_enabled`, to pass a disabled module over); core
-knows its name for its switch and nothing more. A module that never signed up is a fault in the
+image module, the module's own name for the rest. The framework's module service holds the keyed
+hook and asks it by the key alone (`ModuleService.is_enabled`, as the start-up sweep does to pass a
+disabled module over), and names no module; the named readers (`is_<module>_enabled`) are core's,
+which names the modules, so a module added later adds its reader to core as well as signing up, and
+core knows its name for its switch and nothing more. A module that never signed up is a fault in the
 bot's assembly, and asking for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which
 no reader that stands aside takes for an answer: each lets that type through by name and stands
 aside from any other fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named
@@ -1024,7 +1026,7 @@ asks is when its work is not due (the host's log says so).
 **Jobs are made only through the framework's scheduler.** Nothing else arms, finds or removes a job.
 A round's job is named from the round and the event, so arming it again replaces the old one instead
 of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
-work is armed by core's round-arming functions, through the scheduler. Each reads when the round's
+work is armed by the round-arming functions, through the scheduler. Each reads when the round's
 events fall from `round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
 `clean_up_moment` gives, and `round_event_moments` places both clean-ups by it too. `schedule_round`
 arms a round's forecasts and, through `schedule_result_submission_jobs`, its results submission;
