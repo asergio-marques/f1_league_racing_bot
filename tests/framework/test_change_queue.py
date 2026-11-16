@@ -2454,6 +2454,31 @@ async def test_in_hand_on_is_true_only_for_a_queued_or_running_change_of_the_kin
         await db.rollback()
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the queue's records have no step_done_at_on")
+async def test_step_done_at_on_gives_the_step_s_time_or_none(tmp_path):
+    """`step_done_at_on` gives, on the caller's connection, when a change's step of that name was
+    done. A change has two jobs, "step0" done at 12:05 on 1 October 2026 and "step1" not yet done;
+    another change's "step0" is not done either. Asked for the first change's "step0", it gives
+    12:05 UTC that day; for its "step1", None; for a step it has no job of, None; and for the other
+    change's "step0", None. The rows are written in the caller's own transaction, not
+    committed."""
+    from leaguebot.framework.services.queue.queue_records import step_done_at_on
+
+    db_path = str(tmp_path / "queue.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        await _seed_change(db, "dummy", "RUNNING", done=1, steps=2)
+        await _seed_change(db, "dummy", "QUEUED", lane="channel:8")
+        assert await step_done_at_on(db, 1, "step0") == datetime(
+            2026, 10, 1, 12, 5, tzinfo=timezone.utc
+        )
+        assert await step_done_at_on(db, 1, "step1") is None
+        assert await step_done_at_on(db, 1, "absent") is None
+        assert await step_done_at_on(db, 2, "step0") is None
+        await db.rollback()
+
+
 async def test_a_check_as_the_change_starts_knows_its_own_id(env):
     """A check asked when the change is asked for has no change id; the same check as the change
     starts is handed the change's id, so that it can leave itself out of `unfinished`."""
