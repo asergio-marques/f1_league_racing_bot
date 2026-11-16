@@ -80,7 +80,10 @@ def _outcome(*, problem=None, png_paths=(), notices=()):
 
 @pytest.fixture
 def cog():
-    return ImageCog(SimpleNamespace())
+    async def post_log(content):
+        return None
+
+    return ImageCog(SimpleNamespace(output_router=SimpleNamespace(post_log=post_log)))
 
 
 # ── T011: the group ───────────────────────────────────────────────────────
@@ -627,7 +630,8 @@ class TestTheNoticeBlock:
 
         async def _post_log(content):
             if fail:
-                raise RuntimeError("no permission to write to the log channel")
+                # The router's writer contains its own failures and answers None.
+                return None
             posted.append(content)
             return SimpleNamespace(jump_url=jump_url)
 
@@ -798,6 +802,7 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
         SimpleNamespace(
             module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)),
             driver_names_read=AwaitedHook(),
+            output_router=SimpleNamespace(post_log=AsyncMock(return_value=None)),
         )
     )
     interaction = _Interaction()

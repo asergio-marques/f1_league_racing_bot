@@ -7,12 +7,11 @@ preview leaves a league's records exactly as it found them.
 
 What the runner needs of the bot it is handed, it is handed: it is not a cog and looks no service up
 (docs/design/architecture.md, "How the code is laid out"). The driver names reader is handed in, the
-render as a callable for the cog to resolve when it draws, and the bot only to be passed on to the
-resolution and to the log write that ask it.
+render and the log writer as callables for the cog to resolve when it draws, and the bot only to be
+passed on to the resolution that asks it.
 """
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
@@ -25,8 +24,6 @@ from leaguebot.image.services.preview import image_preview_service
 from leaguebot.image.services.render import image_render_service
 from leaguebot.image.utils.image_naming import image_filename_stem, subject_for_template
 
-log = logging.getLogger(__name__)
-
 #: What a preview asks the render service to draw: a label, the template it is drawn from and
 #: the builder of its spec.
 type Requests = Sequence[tuple[str, str, Any]]
@@ -38,6 +35,7 @@ async def run_preview(
     bot: LeagueBot,
     render: Callable[..., Awaitable[Any]],
     driver_names_read: AwaitedHook,
+    post_log: Callable[[str], Awaitable[Any]],
     title: str,
     kind: str,
     division: str | None,
@@ -102,28 +100,36 @@ async def run_preview(
         )
         outcomes.append((label, template_key, outcome))
 
-    await send_preview(interaction, bot=bot, title=title, context=context, outcomes=outcomes)
+    await send_preview(
+        interaction, post_log=post_log, title=title, context=context, outcomes=outcomes
+    )
 
 
-async def _log_notices(bot: LeagueBot, notices, *, subject: str):
-    """Write a preview's render notices to the log channel in one message, and return it.
+async def _log_notices(
+    post_log: Callable[[str], Awaitable[Any]], notices, *, subject: str | None = None
+):
+    """Write a preview's render notices to the log channel in one message, and return it, or None
+    where there were none to write or the write did not stand.
 
-    The write is of the third place of architecture.md's "A catch-all error handler": a log
-    channel that cannot be written to costs the reply its link to the block and nothing else,
-    because the preview is what was asked for. The full error goes to the host's log, and the
-    answer is None.
+    *post_log* is the router's log writer, handed in. It contains its own failures and answers
+    None, so a log channel that cannot be written to costs the reply its link to the block and
+    nothing else, as the preview is what was asked for: nothing here catches. The notices are
+    the command's own to report, as a preview runs in no job to hand them back as a line of.
     """
-    try:
-        return await image_render_service.ImageRenderService.report_notices(
-            bot, notices, subject=subject
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.error("a preview's render notices could not be logged: %s", exc, exc_info=True)
+    if not notices:
         return None
+    return await post_log(image_render_service.ImageRenderService.format_notices(
+        notices, subject=subject
+    ))
 
 
 async def send_preview(
-    interaction: discord.Interaction, *, bot: LeagueBot, title: str, context, outcomes
+    interaction: discord.Interaction,
+    *,
+    post_log: Callable[[str], Awaitable[Any]],
+    title: str,
+    context,
+    outcomes,
 ) -> None:
     """Return the pictures, and say plainly what the render had to make do with.
 
@@ -207,7 +213,7 @@ async def send_preview(
         subject = f"{title} — {context.division_name}"
         if context.round is not None:
             subject += f", round {context.round.round_number}"
-        logged = await _log_notices(bot, all_notices, subject=subject)
+        logged = await _log_notices(post_log, all_notices, subject=subject)
 
         heading = "⚠️ **Notices** — the render survived these:"
         jump_url = getattr(logged, "jump_url", None)

@@ -6,6 +6,10 @@ partial image or mistake a degraded render for a clean one.
 
 The rasteriser is an external binary (Inkscape) that no package declaration installs. Its
 absence is fatal to the module (FR-008) and is reported rather than raised.
+
+The render writes nothing to Discord and holds no log writer: its notices go back on the outcome,
+for a job to hand back as a line, or for the `/images test` preview to write through the router's
+`post_log`, which it is handed (`preview_runner`).
 """
 from __future__ import annotations
 
@@ -31,7 +35,6 @@ from leaguebot.image.models.image_module import (
     RenderNotice,
     RenderOutcome,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.image.utils.svg_document import off_the_loop
 
 #: What a caller should do with the result of ``render_for_posting``.
@@ -878,26 +881,6 @@ class ImageRenderService:
         if subject:
             heading = f"Image render notices — {subject}:"
         return "\n".join([heading, *grouped_notice_lines(notices)])
-
-    @staticmethod
-    async def report_notices(
-        bot: LeagueBot, notices: list[RenderNotice], *, subject: str | None = None
-    ):
-        """Surface notices to the calculation log channel (Principle V, FR-031).
-
-        The log always, in **one** message. A command's own output additionally, which is
-        the caller's job — it holds the interaction. Never a channel drivers read (FR-032).
-
-        Returns the posted ``discord.Message``, or None where there was nothing to post, so a
-        caller can link a reader to what was just logged. A write the log channel refuses is
-        raised: the caller whose work must stand decides that, as a preview does
-        (`preview_runner._log_notices`).
-        """
-        if not notices:
-            return None
-        return await bot.output_router.post_log(
-            ImageRenderService.format_notices(notices, subject=subject)
-        )
 
     # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────
 

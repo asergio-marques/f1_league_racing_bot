@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.image.models.image_module import RenderNotice
+from leaguebot.image.services.preview.preview_runner import _log_notices
 from leaguebot.image.services.render.image_render_service import (
     ImageRenderService,
     grouped_notice_lines,
@@ -138,7 +139,7 @@ async def test_twenty_notices_post_one_message_not_twenty():
         for i in range(20)
     ]
 
-    await ImageRenderService.report_notices(bot, notices)
+    await _log_notices(bot.output_router.post_log, notices)
 
     assert bot.output_router.post_log.await_count == 1
 
@@ -147,7 +148,7 @@ async def test_twenty_notices_post_one_message_not_twenty():
 async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
     bot = _bot()
 
-    message = await ImageRenderService.report_notices(bot, [_notice()])
+    message = await _log_notices(bot.output_router.post_log, [_notice()])
 
     assert message.jump_url == "http://j/1"
 
@@ -156,7 +157,7 @@ async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
 async def test_nothing_is_posted_and_none_returned_for_no_notices():
     bot = _bot()
 
-    assert await ImageRenderService.report_notices(bot, []) is None
+    assert await _log_notices(bot.output_router.post_log, []) is None
     bot.output_router.post_log.assert_not_awaited()
 
 

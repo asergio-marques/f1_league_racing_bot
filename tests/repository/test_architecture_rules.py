@@ -1488,7 +1488,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
-    ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"): (1, PASS["image"]),
 }
 
 
@@ -2976,9 +2975,6 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: the Discard is refused all the same, whatever the reader does",
     ("results/services/round_amendment/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
-    ("image/services/preview/preview_runner.py", "_log_notices"):
-        "place 3, around writing a line to the log channel, where that itself might fail: the "
-        "preview stands, and its reply loses only the link to the block",
     ("image/utils/svg_document.py", "_contained"):
         "place 4, around work run in a worker thread: the error is handed back as plain text and "
         "raised again on the loop, so that nothing parsed leaves the thread with it",

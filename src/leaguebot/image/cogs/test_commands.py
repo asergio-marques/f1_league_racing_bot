@@ -36,6 +36,7 @@ class TestCommands(ImageSubgroup):
             bot=self.bot,
             render=self._render,
             driver_names_read=self.bot.driver_names_read,
+            post_log=self.bot.output_router.post_log,
             title=title,
             kind=kind,
             division=division,
@@ -419,5 +420,9 @@ class TestCommands(ImageSubgroup):
     ) -> None:
         """Reply with the pictures and what the render made do with, as the runner words it."""
         await send_preview(
-            interaction, bot=self.bot, title=title, context=context, outcomes=outcomes
+            interaction,
+            post_log=self.bot.output_router.post_log,
+            title=title,
+            context=context,
+            outcomes=outcomes,
         )
