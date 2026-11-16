@@ -1,9 +1,9 @@
 """The record of what changed: one `audit_entries` row per change a member makes.
 
-`audit_entries` is core's table, and a module's command records its changes in it all the
-same — a module's channel command sets a channel only its own module reads, and the change is
-still one a league asks about afterwards. So the row is written here, by core's service, rather
-than by the module's cog: a cog holds no database code, and a module writes only the tables it
+`audit_entries` is the framework's table, and a module's command records its changes in it all
+the same — a module's channel command sets a channel only its own module reads, and the change is
+still one a league asks about afterwards. So the row is written here, by the framework's service,
+rather than by the module's cog: a cog holds no database code, and a module writes only the tables it
 owns (`docs/design/architecture.md`, "The database").
 
 **The row** has the same columns for every command, the old and new values as JSON, and the time

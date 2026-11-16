@@ -1,4 +1,4 @@
-"""The bot-owned channel handler: the one place core posts in a channel the bot made, edits or
+"""The bot-owned channel handler: the one place the bot posts in a channel it made, edits or
 deletes a message in it, and deletes that channel.
 
 A bot-owned channel is one the bot creates for a piece of work and deletes when the work is

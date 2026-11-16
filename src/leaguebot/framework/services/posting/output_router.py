@@ -12,7 +12,7 @@ Which channels exist, and what each may carry, is Constitution Principle VII and
 The router is one of four output handlers (`docs/design/architecture.md`, "Posting to Discord"):
 the log writer. The others are the notice handler (`notice_handler.py`), the standing-post
 handler (`standing_post_handler.py`) and the bot-owned channel handler
-(`owned_channel_handler.py`), each a service in core beside it. `send_log_text` is the log
+(`owned_channel_handler.py`), each a service of the framework's beside it. `send_log_text` is the log
 writer's send for a caller that holds the channel already, which the retry worker is: it divides
 a late line and sends it mentioning nobody, and raises what Discord raises.
 

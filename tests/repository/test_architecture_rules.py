@@ -2348,8 +2348,8 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (2, "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`"),
     ("core/services/upkeep/factory_reset_service.py", "gather_targets"): (
         1,
-        "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, and core's "
-        "`season_review_prompts` and `pending_messages`",
+        "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, core's "
+        "`season_review_prompts`, and the framework's `pending_messages`",
     ),
     ("results/services/points/amendment_mode_service.py", "_staged_rows_on"):
         (1, "results' own live and staged points tables"),

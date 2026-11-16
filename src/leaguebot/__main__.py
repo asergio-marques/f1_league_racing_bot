@@ -553,7 +553,7 @@ def register_change_types(bot: LeagueBot) -> None:
     """Make the queue known every kind of change the bot carries out.
 
     The builder is where modules meet: it hands each change type what it needs of another module,
-    so that core's queue and cogs import none of them. The tests' support module calls this to get
+    so that the framework's queue and core's cogs import none of them. The tests' support module calls this to get
     the real set.
     """
     from leaguebot.core.services.rounds.calendar_post_service import calendar_sync_change
