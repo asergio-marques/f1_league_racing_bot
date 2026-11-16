@@ -628,16 +628,16 @@ Results needs no module. Attendance needs results (`NEEDS`, `core.md`, "The depe
 which is why results' switch-off offers the cascade above.
 
 Results imports no module but image (the `results-uses-no-other-module-but-image` contract). The
-image module draws results' pictures and posts none of them: the posting jobs are handed its
-drawing by the builder, ask it for the picture of a session's table, of the two standings, of a
-verdict and of the heading over a round's verdicts, and post what it hands back themselves. A
-session's table and the two standings go through the standing-post handler, and a picture Discord
-refuses goes out as its text in the same try. A verdict and the heading go through the notice
-handler (`send_notice`), and a picture Discord refuses stops the queue, so that the retry posts the
-text. What the drawing had to report comes back as lines of the job, in every case. The repost's
-check that a channel can take a file asks the drawing whether the aspect attaches files
-(`ImageDrawing.aspect_attaches_files`). A retry asks for
-no picture (above, "Pictures and their fallbacks").
+image module draws results' pictures and posts none of them: the posting jobs are handed its drawing
+by the builder, ask it for the picture of a session's table, of the two standings, of a verdict and
+of the heading over a round's verdicts, and post what it hands back themselves. A session's table
+and the two standings go through the standing-post handler, and a picture Discord refuses goes out
+as its text in the same try. A verdict and the heading go through the notice handler
+(`send_notice`), and a picture Discord refuses stops the queue, so that the retry posts the text.
+What the drawing had to report comes back as lines of the job, in every case. The repost's check
+that a channel can take a file asks the drawing whether the aspect attaches files
+(`ImageDrawing.aspect_attaches_files`). A retry asks for no picture (above, "Pictures and their
+fallbacks").
 
 ### The `/results` group
 

@@ -600,11 +600,11 @@ one question of core's `is_league_manager` ("Errors and failures", below).
 ### The dependency table and the image module
 
 Signup needs no other module (`NEEDS`, `core.md`, "The dependency table") and uses none: the
-`signup-uses-no-other-module-but-image` contract allows the image module, and signup imports
-nothing of it. Core names a driver from their signup through the `driver_names_read` hook above. Core's own reader
-(`core/services/drivers/driver_names.py`, not signup's `driver_names` subscriber) merges the answer
-with the profile and test-mode fields it holds. The builder hands the hook to image, results and
-attendance, and each asks the reader with it, so that none reads a signup record.
+`signup-uses-no-other-module-but-image` contract allows the image module, and signup imports nothing
+of it. Core names a driver from their signup through the `driver_names_read` hook above. Core's own
+reader (`core/services/drivers/driver_names.py`, not signup's `driver_names` subscriber) merges the
+answer with the profile and test-mode fields it holds. The builder hands the hook to image, results
+and attendance, and each asks the reader with it, so that none reads a signup record.
 
 ---
 
