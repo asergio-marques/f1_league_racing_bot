@@ -1007,14 +1007,12 @@ class ImageDrawing:
 
         A switch that cannot be read answers False, as `aspect_wanted` does, so that a pre-flight
         is never refused for a fault reading it, the permission it guards being only an additional
-        requirement on top of the three a posting needs anyway. So does a switch nobody signed up
-        for (`SwitchNotSignedUp`), which this question is not the place to raise: the picture's own
-        gate raises it when the job draws, and stops the job.
+        requirement on top of the three a posting needs anyway. A switch nobody signed up for
+        (`SwitchNotSignedUp`) is not such a fault but one in the bot's assembly, which no reader
+        that stands aside takes for an answer: it is raised, and the pre-flight's command fails on
+        its failure path (`test_a_switch_nobody_signed_up_for_is_raised_not_read_as_no`).
         """
-        try:
-            return await self.aspect_wanted(aspect)
-        except SwitchNotSignedUp:
-            return False
+        return await self.aspect_wanted(aspect)
 
     async def calendar_wanted(self) -> bool:
         """Whether this league conveys its calendar as a picture: both the module and the

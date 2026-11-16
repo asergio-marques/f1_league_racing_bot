@@ -23,8 +23,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.image.models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS
+from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.image.services.render.image_drawing import ImageDrawing
 from leaguebot.image.services.validity.image_validity_service import (
-    aspect_attaches_files,
     blocking_template_problems,
     check_all_templates,
     templates_of_enabled_aspects,
@@ -145,64 +146,78 @@ def test_nothing_blocks_when_every_output_is_off(config_missing_verdicts):
 # tests below exist to keep it different — see `aspect_attaches_files`' docstring.
 
 
-def _bot(*, module_on=True, toggles=None, reports=None):
-    """A bot answering the two readers the predicate uses, and a third it must not."""
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module_on)
-    bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
+def _drawing(*, module_on=True, toggles=None, reports=None):
+    """The image drawing over stub services answering the two readers the question uses, and
+    a third it must not."""
+    toggles = toggles or {}
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=module_on)
+    config = MagicMock()
+    config.get_toggles = AsyncMock(return_value=toggles)
+    config.is_aspect_enabled = AsyncMock(side_effect=lambda aspect: toggles.get(aspect, False))
+    validity = MagicMock()
     # Every template broken. Nothing here may change the answer.
-    bot.image_validity_service.template_reports = AsyncMock(return_value=reports or {})
-    return bot
+    validity.template_reports = AsyncMock(return_value=reports or {})
+    return ImageDrawing(
+        modules, config, validity, renderer=MagicMock(), post_log=AsyncMock(), db_path=":unused:",
+    )
 
 
 async def test_an_aspect_that_is_off_could_not():
-    assert not await aspect_attaches_files(_bot(toggles={"standings": False}), "standings")
+    assert not await _drawing(toggles={"standings": False}).aspect_attaches_files("standings")
 
 
 async def test_an_aspect_absent_from_the_toggles_could_not():
     """A server with no configuration row attaches nothing, rather than raising."""
-    assert not await aspect_attaches_files(_bot(toggles={}), "standings")
+    assert not await _drawing(toggles={}).aspect_attaches_files("standings")
 
 
 async def test_the_module_being_off_settles_it_whatever_the_toggles_say():
     """A toggle set before the module was switched off still reads as off."""
-    bot = _bot(module_on=False, toggles={"standings": True})
+    drawing = _drawing(module_on=False, toggles={"standings": True})
 
-    assert not await aspect_attaches_files(bot, "standings")
-    bot.image_config_service.get_toggles.assert_not_awaited()
+    assert not await drawing.aspect_attaches_files("standings")
+    drawing._config.is_aspect_enabled.assert_not_awaited()
 
 
 async def test_each_aspect_is_asked_for_separately():
     """Standings being on says nothing about the results channel needing Attach Files."""
-    bot = _bot(toggles={"standings": True, "results": False})
+    drawing = _drawing(toggles={"standings": True, "results": False})
 
-    assert await aspect_attaches_files(bot, "standings")
-    assert not await aspect_attaches_files(bot, "results")
+    assert await drawing.aspect_attaches_files("standings")
+    assert not await drawing.aspect_attaches_files("results")
 
 
 async def test_template_validity_is_deliberately_not_consulted():
     """**The guard on the decision, not an incidental assertion.**
 
-    This predicate is one template check away from looking exactly like its three siblings
-    — ``results_enabled``, ``standings_enabled``, ``attendance_enabled`` — and a later
-    reader who notices the difference will be tempted to close it. They must not: template
-    validity moves whenever a league edits its own artwork, so a permission requirement
-    built on it would appear and vanish with the SVGs and refuse the same amendment on one
-    day and accept it the next for reasons having nothing to do with the permission.
+    This question is one template check away from looking exactly like the gate every
+    picture asks, ``aspect_wanted`` with a template, and a later reader who notices the
+    difference will be tempted to close it. They must not: template validity moves whenever a
+    league edits its own artwork, so a permission requirement built on it would appear and
+    vanish with the SVGs and refuse the same amendment on one day and accept it the next for
+    reasons having nothing to do with the permission.
 
     Asserting that ``template_reports`` is never awaited is what makes adding the check
     fail here rather than a year later in a league's server.
     """
-    bot = _bot(toggles={"standings": True}, reports={})
+    drawing = _drawing(toggles={"standings": True}, reports={})
 
-    assert await aspect_attaches_files(bot, "standings"), (
+    assert await drawing.aspect_attaches_files("standings"), (
         "a broken template must not stop the channel being asked for Attach Files"
     )
-    bot.image_validity_service.template_reports.assert_not_awaited()
+    drawing._validity.template_reports.assert_not_awaited()
 
 
-async def test_no_bot_in_scope_attaches_nothing():
-    assert not await aspect_attaches_files(None, "standings")
+async def test_a_switch_nobody_signed_up_for_is_raised_not_read_as_no():
+    """A module switch nobody signed up for is a fault in the bot's assembly, which no reader
+    that stands aside takes for an answer (architecture.md, "How modules and core fit
+    together"): the pre-flight asking it fails on its command's failure path."""
+    drawing = _drawing(toggles={"standings": True})
+    drawing._modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+
+    with pytest.raises(SwitchNotSignedUp):
+        await drawing.aspect_attaches_files("standings")
 
 
 async def test_a_reader_that_raises_answers_no_rather_than_raising():
@@ -212,7 +227,7 @@ async def test_a_reader_that_raises_answers_no_rather_than_raising():
     readable refusal, and Attach Files is only ever an extra requirement on top of the
     three a posting needs anyway — so under-reporting is the safe way to fail.
     """
-    bot = _bot(toggles={"standings": True})
-    bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("no config"))
+    drawing = _drawing(toggles={"standings": True})
+    drawing._config.is_aspect_enabled = AsyncMock(side_effect=RuntimeError("no config"))
 
-    assert not await aspect_attaches_files(bot, "standings")
+    assert not await drawing.aspect_attaches_files("standings")
