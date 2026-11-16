@@ -240,7 +240,6 @@ async def test_discard_by_a_league_manager_is_refused(env):
     assert ran == ["post"]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the change queue takes no tiers, and reads channel_guard's own")
 async def test_retry_asks_the_tiers_the_queue_was_handed(env):
     """The authority tiers are core's rule, handed to the queue by the builder rather than imported
     by it: a queue handed tiers that refuse every member refuses a holder of the league manager's

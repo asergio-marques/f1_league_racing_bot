@@ -1059,7 +1059,9 @@ async def build(settings: Settings) -> LeagueBot:
     # The queue is handed the router, and is started by start-up, after the recoveries.
     from leaguebot.core.services.queue.change_queue import ChangeQueue
 
-    bot.change_queue = ChangeQueue(settings.db_path, bot, bot.output_router, bot.config_service)
+    bot.change_queue = ChangeQueue(
+        settings.db_path, bot, bot.output_router, bot.league_settings, tiers=bot.config_service
+    )
     # The moment the bot came up, by the queue's clock, recorded here once. The wiring hands that
     # one value, as a callable, to a module's handler of a timed job and to its start-up catch-up,
     # so both tell a start missed while the bot was down from one met while it is up.

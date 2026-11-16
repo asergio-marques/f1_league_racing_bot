@@ -110,7 +110,10 @@ def attach_queue(bot: Any, db_path: str, *, now: datetime | Clock, router: Any =
 
     clock = now if isinstance(now, Clock) else Clock(now)
     chosen = router if router is not None else bot.output_router
-    queue = ChangeQueue(db_path, bot, chosen, bot.config_service, clock=clock)
+    # The tiers are the league's own rule, which a real configuration service answers: the bot's
+    # `config_service` is a double that would let every member through.
+    queue = ChangeQueue(db_path, bot, chosen, bot.config_service, tiers=ConfigService(db_path),
+                        clock=clock)
     bot.change_queue = queue
     setup = _Setup(db_path, clock, chosen, real_types=types is None, types=list(types or ()))
     setattr(bot, _SETUP, setup)
@@ -184,7 +187,8 @@ async def restart_queue(bot: Any) -> Any:
     old = bot.change_queue
     if getattr(old, "_task", None) is not None:
         await old.stop()
-    queue = ChangeQueue(setup.db_path, bot, setup.router, bot.config_service, clock=setup.clock)
+    queue = ChangeQueue(setup.db_path, bot, setup.router, bot.config_service,
+                        tiers=ConfigService(setup.db_path), clock=setup.clock)
     bot.change_queue = queue
     _register(bot, queue, setup)
     await maybe_await(queue.start())

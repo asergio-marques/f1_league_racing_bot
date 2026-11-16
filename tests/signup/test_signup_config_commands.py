@@ -535,7 +535,6 @@ def _the_wait_of(callback):
     return None
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the change queue takes no tiers yet")
 async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
     """The bot has restarted and holds its change queue for the catch-up. Of every command the
     signup, attendance, bot and test-mode cogs carry, exactly the twenty-three listed in

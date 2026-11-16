@@ -215,7 +215,6 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.queue.queue_stop_view import QueueStopView
-from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.core.utils.in_a_job import running_job
 from leaguebot.core.utils.interaction_errors import describe_fault, failure_line
 from leaguebot.core.utils.log_lines import (
@@ -240,6 +239,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.framework.services.posting.league_settings import LeagueSettings
+    from leaguebot.framework.services.queue.authority import AuthorityTiers
 
 log = logging.getLogger(__name__)
 
@@ -358,14 +358,17 @@ class ChangeQueue:
         output_router: "OutputRouter",
         config_service: "LeagueSettings",
         *,
+        tiers: "AuthorityTiers",
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db_path = db_path
         self._bot = bot
         self._router = output_router
-        # Handed in by the builder: Retry and Discard read the presser's tier from it, and the
-        # queue looks no service up on the bot.
+        # Handed in by the builder: the queue reads the league's settings from it, and looks no
+        # service up on the bot. Who holds which tier is the league's rule, so the tiers are handed
+        # too, and Retry and Discard ask them of the presser.
         self._config = config_service
+        self._tiers = tiers
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._types: dict[str, ChangeType] = {}
         self._held: dict[int, _Held] = {}
@@ -2214,7 +2217,8 @@ class ChangeQueue:
         what = "Retry of a stopped job" if found is None else f"Retry of job #{found[2]['id']}"
         config = await self._config.get_server_config()
         member = interaction.user
-        if not isinstance(member, discord.Member) or not is_league_manager(config, member):
+        tiers = self._tiers
+        if not isinstance(member, discord.Member) or not tiers.is_league_manager(config, member):
             await refuse(
                 interaction,
                 "⛔ Only a league manager or a league admin may retry a stopped job.",
@@ -2329,7 +2333,8 @@ class ChangeQueue:
         what = "Discard of a stopped job" if found is None else f"Discard of job #{found[2]['id']}"
         config = await self._config.get_server_config()
         member = interaction.user
-        if not isinstance(member, discord.Member) or not is_league_admin(config, member):
+        tiers = self._tiers
+        if not isinstance(member, discord.Member) or not tiers.is_league_admin(config, member):
             await refuse(
                 interaction, "⛔ Only a league admin may discard a stopped job.", what=what
             )
