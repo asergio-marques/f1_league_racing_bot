@@ -947,7 +947,6 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     names, teams, flags, team_key_of = _driver_maps(context, drivers)
     round_obj = context.required_round()
     racing_teams = _racing_teams(context)
-    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
 
     tracks = await _tracks(bot)
 
@@ -965,11 +964,8 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
                 ordinal=ordinal,
                 number=str(entry.round_number),
                 track=track_name,
-                country=(
-                    MYSTERY_DATUM
-                    if mystery
-                    else (getattr(record, "country", None) if record else None)
-                ),
+                country=getattr(record, "country", None) if record else None,
+                mystery=mystery,
             )
         )
         round_formats[ordinal] = entry_format
@@ -1188,7 +1184,6 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
         fabricate_attendance_limit,
         fabricate_attendance_records,
     )
-    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
 
     names, _teams, flags, _team_key_of = _driver_maps(context)
     round_obj = context.required_round()
@@ -1205,11 +1200,8 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
                 ordinal=ordinal,
                 number=str(entry.round_number),
                 track=track_name,
-                country=(
-                    MYSTERY_DATUM
-                    if mystery
-                    else (getattr(record, "country", None) if record else None)
-                ),
+                country=getattr(record, "country", None) if record else None,
+                mystery=mystery,
             )
         )
 

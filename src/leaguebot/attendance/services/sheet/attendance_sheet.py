@@ -595,7 +595,6 @@ async def _round_grid(
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.aspects.image_attendance_service import RoundHeading
-    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
 
     headings: list = []
     cells: dict[int, dict[int, int | None]] = {}
@@ -636,12 +635,9 @@ async def _round_grid(
                     RoundHeading(
                         ordinal=ordinal,
                         number=str(rnd.round_number),
-                        track=MYSTERY_DATUM if mystery else track_name,
-                        country=(
-                            MYSTERY_DATUM
-                            if mystery
-                            else (getattr(record, "country", None) if record else None)
-                        ),
+                        track=track_name,
+                        country=getattr(record, "country", None) if record else None,
+                        mystery=mystery,
                     )
                 )
 

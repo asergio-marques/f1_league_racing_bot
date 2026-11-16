@@ -39,6 +39,7 @@ from leaguebot.image.models.image_catalogues import (
     column_crop_fields,
     row_crop_fields,
 )
+from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 from leaguebot.image.utils.country_data import country_for_nationality
@@ -142,6 +143,16 @@ class RoundHeading:
     #: ``track`` is retained: it still names the round and decides the mystery case,
     #: it simply stopped being an asset datum when the heading moved to the flag class.
     country: str | None = None
+
+    #: Whether the round is a mystery round, which the builder says and never spells: the
+    #: heading names the module's own datum for it, in place of the track and the country, so
+    #: no builder holds the literal.
+    mystery: bool = False
+
+    def __post_init__(self) -> None:
+        if self.mystery:
+            object.__setattr__(self, "track", MYSTERY_DATUM)
+            object.__setattr__(self, "country", MYSTERY_DATUM)
 
 
 @dataclass(frozen=True)

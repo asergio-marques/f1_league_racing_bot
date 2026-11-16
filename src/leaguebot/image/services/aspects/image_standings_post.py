@@ -105,7 +105,6 @@ async def _calendar(bot: LeagueBot, division_id: int):
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.core.services.rounds.round_context import division_rounds
-    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
     from leaguebot.image.services.aspects.image_standings_service import RoundHeading
 
     tracks = await tracks_by_name(bot.db_path)
@@ -116,10 +115,11 @@ async def _calendar(bot: LeagueBot, division_id: int):
     ordinal_of_round: dict[int, int] = {}
     for ordinal, row in enumerate(rows, start=1):
         # A mystery round names no circuit until its format is changed, and its flag is the
-        # mystery asset rather than a country's (044, FR-012). The datum is the literal
-        # `Mystery`, which the closed-set rule resolves to the module's own `mystery.svg`
-        # even where a league's flag directory has none — so this is a *substitution*, not
-        # an absence, and `country=None` would delete the heading's flag instead.
+        # mystery asset rather than a country's (044, FR-012). The heading carries the
+        # flag, and names the datum `Mystery` itself, which the closed-set rule resolves to
+        # the module's own `mystery.svg` even where a league's flag directory has none — so
+        # this is a *substitution*, not an absence, and a heading with no country and no
+        # mystery flag would delete the flag instead.
         mystery = row.format == "MYSTERY"
         track_name = None if mystery else row.track_name
         record = tracks.get(track_name) if track_name else None
@@ -128,11 +128,8 @@ async def _calendar(bot: LeagueBot, division_id: int):
                 ordinal=ordinal,
                 number=str(row.round_number),
                 track=track_name,
-                country=(
-                    MYSTERY_DATUM
-                    if mystery
-                    else (getattr(record, "country", None) if record else None)
-                ),
+                country=getattr(record, "country", None) if record else None,
+                mystery=mystery,
             )
         )
         ordinal_of_round[row.round_id] = ordinal
