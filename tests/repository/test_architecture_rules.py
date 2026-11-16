@@ -2678,16 +2678,18 @@ def _module_attributes_of_the_bot() -> frozenset[str]:
     )
 
 
-def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[tuple[str, str]]:
+def _module_lookups_in_core_among(
+    nodes, attributes: frozenset[str], parts: frozenset[str] = BELOW_THE_MODULES
+) -> Counter[tuple[str, str]]:
     """The reads among *nodes*, each ``(file, function, node)``, of one of *attributes* on the bot
     from a file of core (its cogs, services and utils; the entry point builds the bot and is not
-    core) or of a layer below the modules, counted by file and function. The bot is reached as `_reaches_the_bot` reads it, or
+    core) or of a layer below the modules, or of *parts* where they are named, counted by file and function. The bot is reached as `_reaches_the_bot` reads it, or
     through a local name bound to it (`_locals_bound_to_the_bot`), as the lookup check follows it."""
     nodes = list(nodes)
     bound = _locals_bound_to_the_bot(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
-        if _module_of(path) not in BELOW_THE_MODULES:
+        if _module_of(path) not in parts:
             continue
         name = _attribute_read_on_the_bot(node)
         if name is None and isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
@@ -2719,6 +2721,51 @@ def test_core_reads_no_module_s_service_on_the_bot():
         _module_lookups_in_core_among(_nodes(), _module_attributes_of_the_bot()),
         KNOWN_MODULE_LOOKUPS_IN_CORE,
     )
+
+
+#: The two layers below core (architecture.md, "How the code is laid out").
+BELOW_CORE = frozenset({"framework", "utils"})
+
+
+@cache
+def _core_attributes_of_the_bot() -> frozenset[str]:
+    """The attributes `LeagueBot` declares with a type from core's package: core's services and
+    the hooks core declares, which the framework and `utils` never read on the bot."""
+    return frozenset(
+        name
+        for name, (dotted, _cls) in _bot_attributes(_sources(), _files_by_module_name()).items()
+        if dotted.split(".")[1] == "core"
+    )
+
+
+def test_the_framework_reads_no_service_of_core_s_on_the_bot():
+    """The framework asks and core answers (architecture.md, "How the code is laid out"): what the
+    machinery needs of the league it learns through a protocol of its own, which core's settings
+    service fulfils and the builder hands over, never by reading one of core's services on the bot,
+    which no import contract can see. Nor does `utils`, which knows nothing of the bot. Read as the
+    module check reads a lookup in core (`_module_lookups_in_core_among`)."""
+    _check(
+        "the framework reads no service of core's on the bot",
+        _module_lookups_in_core_among(_nodes(), _core_attributes_of_the_bot(), BELOW_CORE),
+        {},
+    )
+
+
+def test_a_framework_read_of_a_core_service_on_the_bot_is_counted():
+    """In a file of the framework or of `utils`, a read of one of core's services on the bot is
+    counted; in a file of core, it is core's own and is not; and the attributes held to it are
+    core's, a module's services aside."""
+    sample = "async def handler(bot):\n    bot.season_service.get()\n    bot.attendance_service\n"
+    attributes = frozenset({"season_service"})
+
+    for path in ("framework/services/queue/sample_service.py", "utils/sample_helper.py"):
+        assert _module_lookups_in_core_among(_sample(sample, path), attributes, BELOW_CORE) == Counter(
+            {(path, "handler"): 1}
+        )
+    path = "core/services/sample_service.py"
+    assert _module_lookups_in_core_among(_sample(sample, path), attributes, BELOW_CORE) == Counter()
+    assert "season_service" in _core_attributes_of_the_bot()
+    assert "attendance_service" not in _core_attributes_of_the_bot()
 
 
 def test_the_module_attributes_of_the_bot_are_the_ones_typed_from_a_module():
