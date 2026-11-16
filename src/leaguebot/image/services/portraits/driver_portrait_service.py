@@ -485,6 +485,12 @@ async def refresh_before_render(
     at all is never fetched for.
 
     Returns the number of portraits written, and never raises.
+
+    A stated exception (architecture.md, "A catch-all error handler"): a fault reading or
+    writing the portraits is logged in full on the host and answers nothing written, so that the
+    picture is drawn with the portraits it has, because a portrait never fails the picture or the
+    command it serves, and a refused drawing at the placements review would withhold the approve
+    button.
     """
     try:
         if config is None:

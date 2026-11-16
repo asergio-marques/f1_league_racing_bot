@@ -74,6 +74,11 @@ async def _round_context(db_path: str, round_id: int) -> dict:
 
     Read exactly as the weather graphic reads them, so the two cannot disagree about what a
     round is called.
+
+    A stated exception (architecture.md, "A catch-all error handler"): a round whose context
+    cannot be read answers nothing, and the verdict is drawn without the round's tier, format
+    and grand prix, because an optional field is not worth a failed picture. The full error goes
+    to the host's log. It reads no switch.
     """
     from leaguebot.core.services.rounds.round_context import round_context
 
@@ -106,6 +111,11 @@ async def _driver_nationality(
 
     The driver is found by any account they have held, as a verdict names the account the
     result was recorded under, which may be one they have since left (issue #243).
+
+    A stated exception (architecture.md, "A catch-all error handler"): a nationality that cannot
+    be read answers None, and the verdict is drawn without the driver's flag, because an optional
+    field is not worth a failed picture. The full error goes to the host's log. It reads no
+    switch.
     """
     try:
         records = await read_driver_records(
@@ -132,6 +142,10 @@ async def team_name_for_entry(
 
     For a reserve standing in for another driver this is the team whose car they drove and
     never the reserve team, because the team is the one the *result* records.
+
+    A stated exception (architecture.md, "A catch-all error handler"): a name that cannot be read
+    answers None, and the verdict is drawn without the team, because an optional field is not
+    worth a failed picture. The full error goes to the host's log. It reads no switch.
     """
     if team_id is None:
         return None
@@ -146,7 +160,13 @@ async def team_name_for_entry(
 
 
 async def team_key_for_entry(db_path: str, *, team_id: int | None) -> str | None:
-    """The shorthand of the team whose car the driver drove, which its badge is found by."""
+    """The shorthand of the team whose car the driver drove, which its badge is found by.
+
+    A stated exception (architecture.md, "A catch-all error handler"): a shorthand that cannot be
+    read answers None, and the verdict is drawn without the team's badge, because an optional
+    field is not worth a failed picture. The full error goes to the host's log. It reads no
+    switch.
+    """
     if team_id is None:
         return None
     try:
@@ -183,6 +203,10 @@ async def _mention_names(
     * **An unknown id draws as itself.** The chain ends at the user id anyway, and a number a
       reader can look up beats the wrong person's name. This is also what an unreadable lookup
       degrades to: a name is not worth a lost verdict, as `_graphic_name` already has it.
+
+    A stated exception (architecture.md, "A catch-all error handler"): names that cannot be read
+    leave the mentions drawn as the ids they address, because an optional field is not worth a
+    failed picture. The full error goes to the host's log. It reads no switch.
     """
     from leaguebot.image.services.aspects.image_verdict_service import mention_ids
 
