@@ -27,8 +27,8 @@ import pytest
 from discord import app_commands
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.interaction_errors import failure_reply
-from leaguebot.core.utils.paths import resolve_within_project_root
+from leaguebot.framework.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_constants import (
     ASSET_DIRECTORIES,
     ASSET_LABELS,

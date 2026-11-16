@@ -46,8 +46,8 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.utils.channels import as_text_channel
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 
 KIND = "core.clean"
 CHOOSE = "choose"

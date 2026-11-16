@@ -97,7 +97,7 @@ from leaguebot.weather.services.draw_guard import (
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 from leaguebot.weather.services.round_phases import phases_drawn_on, phases_due
 from leaguebot.weather.services.weather_config_service import windows_kept_or_read
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.image.models.forecast_values import ForecastSession, ForecastValues
 from leaguebot.weather.utils.message_builder import (
     PHASE_DESCRIPTIONS,
@@ -395,7 +395,7 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
         except discord.NotFound:
             pass
         except discord.HTTPException as exc:
-            from leaguebot.core.utils.league_server import league_guild
+            from leaguebot.framework.utils.league_server import league_guild
 
             kept: dict[str, Any] = {
                 "phase": phase, "channel_id": int(channel_id), "message_id": message_id,

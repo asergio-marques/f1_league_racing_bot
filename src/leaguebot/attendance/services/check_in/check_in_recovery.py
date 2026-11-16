@@ -54,7 +54,7 @@ from leaguebot.core.services.seasons.season_service import (
     rounds_of_ongoing_seasons,
     round_facts_on,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

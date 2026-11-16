@@ -16,7 +16,7 @@ from discord.ext import commands, tasks
 from leaguebot.core.services.posting.retry_service import attempt_delivery, get_all_pending
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

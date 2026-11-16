@@ -19,10 +19,10 @@ from leaguebot.attendance.services.check_in.check_in_answer_changes import ask_c
 from leaguebot.core.services.seasons.season_service import division_in_ongoing_season
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.input_validator import parse_user_id
-from leaguebot.core.utils.interaction_errors import describe, describe_form
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import LeagueModal
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe, describe_form
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import LeagueModal
+from leaguebot.framework.utils.log_lines import refuse
 
 
 class TestCommands(AttendanceSubgroup):

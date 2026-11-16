@@ -74,7 +74,7 @@ allow_indirect_imports = True
 ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
     # (under TYPE_CHECKING). Services stay typed attributes on the bot (architecture.md).
-    leaguebot.core.utils.league_bot -> leaguebot.*.services.**
+    leaguebot.framework.utils.league_bot -> leaguebot.*.services.**
 
 [importlinter:contract:utils-imports-nothing-of-the-bot]
 name = Utils imports nothing of the bot
@@ -106,6 +106,11 @@ forbidden_modules =
     leaguebot.image
     leaguebot.__main__
 allow_indirect_imports = True
+ignore_imports =
+    # Permanent: the bot's type names every service it carries, core's and the modules', for the
+    # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
+    # (architecture.md, "How the code is laid out").
+    leaguebot.framework.utils.league_bot -> leaguebot.*.services.**
 
 [importlinter:contract:core-uses-no-module]
 name = Core uses no module
@@ -119,11 +124,6 @@ forbidden_modules =
     leaguebot.weather
     leaguebot.image
 allow_indirect_imports = True
-ignore_imports =
-    # Permanent: the bot's type names every service it carries, the modules' among them, for the
-    # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
-    # (architecture.md, "How the code is laid out").
-    leaguebot.core.utils.league_bot -> leaguebot.*.services.**
 
 # The dependency table (architecture.md, "How modules and core fit together"): attendance needs
 # results, and every module may ask the image module to draw its posts. No other module uses

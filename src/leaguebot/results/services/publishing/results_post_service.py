@@ -11,8 +11,8 @@ import aiosqlite
 import discord
 
 from leaguebot.core.services.drivers.driver_names import read_driver_names
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.owned_channel_handler import delete_owned_channel
 from leaguebot.core.services.posting.standing_post_handler import (
     delete_standing,
@@ -67,7 +67,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 )
 from leaguebot.core.services.drivers.team_service import team_names_for_instances
 from leaguebot.results.utils import results_formatter
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing

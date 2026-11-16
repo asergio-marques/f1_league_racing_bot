@@ -25,7 +25,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
 
 if TYPE_CHECKING:
     import aiosqlite
-    from leaguebot.core.utils.hooks import AwaitedHook, Hook
+    from leaguebot.framework.utils.hooks import AwaitedHook, Hook
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from leaguebot.core.services.scheduler_service import SchedulerService
 

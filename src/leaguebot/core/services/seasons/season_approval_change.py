@@ -58,7 +58,7 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.rounds.round_moments import read_round_windows, results_left_to_advance
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
@@ -86,8 +86,8 @@ from leaguebot.core.services.seasons.season_service import (
 )
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.seasons.season_lifecycle_service import kept_line
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService

@@ -33,7 +33,7 @@ while no server is claimed; see `LeagueView`.
 
 **The same three classes are where a failure is answered.** A command, button or form that
 raises is reported to its member, the log channel and the host's log by
-`leaguebot.core.utils.interaction_errors.report_failure`, which each class's `on_error` calls.
+`leaguebot.framework.utils.interaction_errors.report_failure`, which each class's `on_error` calls.
 
 **A failed Discord event is answered by `on_event_error`**, which the builder attaches to the bot
 as its `on_error`. An event has no member to tell, so the full error goes to the host's log and
@@ -49,14 +49,14 @@ from collections.abc import Awaitable, Callable
 import discord
 from discord import app_commands
 
-from leaguebot.core.utils.answering import answer_for
-from leaguebot.core.utils.interaction_errors import (
+from leaguebot.framework.utils.answering import answer_for
+from leaguebot.framework.utils.interaction_errors import (
     describe,
     describe_form,
     event_failure_line,
     report_failure,
 )
-from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
 
 log = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ async def admits(
     A refused interaction is answered with `REFUSAL` or `UNCLAIMED_REFUSAL`, seen by its
     member alone — save an autocomplete, to which Discord accepts no message.
 
-    An admitted one is recorded, through `leaguebot.core.utils.answering`, as the interaction
+    An admitted one is recorded, through `leaguebot.framework.utils.answering`, as the interaction
     this task answers: discord.py runs the check and the body in one task, so every log line
     the body writes can find its member there if the log channel cannot take it.
     """

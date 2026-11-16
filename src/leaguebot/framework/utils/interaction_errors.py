@@ -15,7 +15,7 @@ and `LeagueModal` call instead. It does three things, each independent of the ot
 - **The log channel gets one line** naming the member, what failed and the exception's type,
   so the league holds something to report. The member is named as every line in the channel
   names them, by display name and mention (`interaction_member`, from
-  `core/utils/member_names.py`, a leaf module `log_lines` could not stand in for without a
+  `framework/utils/member_names.py`, a leaf module `log_lines` could not stand in for without a
   cycle), and by mention alone where they have no display name. No traceback: the channel is for people.
 
 **The handler never raises.** It runs where the failure already happened: the interaction's
@@ -33,7 +33,7 @@ That catch-all is a form of the first place `docs/design/architecture.md`'s "Err
 failures" allows one.
 
 Refusals are *not* failures, and they never reach this. A command that refuses answers the
-member itself, through `refuse` in `core/utils/log_lines.py`, rather than raising
+member itself, through `refuse` in `framework/utils/log_lines.py`, rather than raising
 `app_commands.CheckFailure`, so everything that arrives here is a real fault.
 
 `describe_fault` names the kind of fault in plain words, for the lines that may: the factory
@@ -41,7 +41,7 @@ reset's closing line naming what stopped its Discord clean-up, and the change qu
 notice and failed Retry line naming what stopped a job.
 
 Autocomplete does not reach this either. `CommandTree._call` logs an autocomplete failure
-and returns before any `on_error` runs; see `core/utils/log_filters.py`.
+and returns before any `on_error` runs; see `framework/utils/log_filters.py`.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ import discord
 from discord import app_commands
 
 from leaguebot.framework.models.recovery import RoundsFailed
-from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.framework.utils.member_names import interaction_member
 
 log = logging.getLogger(__name__)
 

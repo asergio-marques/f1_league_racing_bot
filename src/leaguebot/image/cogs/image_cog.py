@@ -26,9 +26,9 @@ from discord.ext import commands
 
 # The subgroups join `/images` in `image_group.py`, in the order a league sees them, so the order
 # of these imports does not matter.
-from leaguebot.core.utils.interaction_errors import describe as describe_command
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe as describe_command
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.utils.messages import chunk_message
 from leaguebot.image.cogs.config_commands import ConfigCommands
 from leaguebot.image.cogs.image_group import IMAGES_GROUP

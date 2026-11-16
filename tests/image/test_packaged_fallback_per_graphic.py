@@ -44,7 +44,7 @@ def configured(tmp_path):
 @pytest.fixture()
 def packaged(tmp_path, monkeypatch):
     """A packaged team directory carrying its `fallback.svg`, as the module ships one."""
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
 
     root = tmp_path / "project"
     directory = root / packaged_directory_for("team")

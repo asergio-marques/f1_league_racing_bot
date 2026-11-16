@@ -308,7 +308,7 @@ def _reassign_line(replaced: int, new: int, accounts: str) -> str:
 
 def _reassign_refusal(reply: str) -> str:
     from tests.core.test_driver_move import _ADMIN, _as_logged
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/driver reassign` refused for {_ADMIN} — {_as_logged(reply_reason(reply))}"
 

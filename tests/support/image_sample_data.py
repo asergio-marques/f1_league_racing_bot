@@ -943,7 +943,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
     """
     if template_key == "calendar_template":
         from leaguebot.image.services.aspects.image_calendar_service import build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         # The packaged track directory. `/images test` reads no live data (FR-036), and
         # a preview must still resolve its assets — without a directory every round image
@@ -961,7 +961,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
     if template_key == "lineup_template":
         from leaguebot.image.services.aspects.image_lineup_service import LineupDataError, build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         if teams is None:
             raise LineupDataError(
@@ -988,7 +988,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
     if template_key in ("results_qualifying_template", "results_race_template"):
         from leaguebot.image.services.aspects.image_results_service import ResultsDataError, build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         if teams is None:
             raise ResultsDataError(
@@ -1018,7 +1018,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         "standings_constructors_template",
     ):
         from leaguebot.image.services.aspects.image_standings_service import StandingsDataError, build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         if teams is None:
             raise StandingsDataError(
@@ -1048,7 +1048,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
     if template_key == "attendance_template":
         from leaguebot.image.services.aspects.image_attendance_service import build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         directories = {}
         for asset_class, relative in (
@@ -1069,7 +1069,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
     if template_key == "rsvp_template":
         from leaguebot.image.services.aspects.image_rsvp_service import build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         directories = {}
         try:
@@ -1085,7 +1085,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
     if template_key == "verdicts_template":
         from leaguebot.image.services.aspects.image_verdict_service import build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         directories = {}
         for asset_class, relative in (
@@ -1105,7 +1105,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
     if template_key.startswith("weather_"):
         from leaguebot.image.services.aspects.image_weather_service import build_fill_spec
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
 
         directories = {}
         for asset_class, relative in (

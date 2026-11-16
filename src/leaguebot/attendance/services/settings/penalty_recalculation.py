@@ -53,7 +53,7 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sanctions import attendance_sync_change as sync
 from leaguebot.attendance.services.scoring import attendance_recompute
 from leaguebot.attendance.services.sheet import sheet_posting
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict, VerdictKind
 from leaguebot.core.models.division import DivisionStatus
@@ -69,8 +69,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.queue.setting_change import SAVE
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.utils.interaction_errors import failure_line
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.interaction_errors import failure_line
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 
 if TYPE_CHECKING:

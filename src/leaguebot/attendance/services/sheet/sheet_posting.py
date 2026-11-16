@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.attendance.services.sheet import attendance_sheet
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.models.change import (
     GuildUnavailable,
     PlannedStep,
@@ -44,7 +44,7 @@ from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
 from leaguebot.core.services.seasons.season_service import division_first_round
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing

@@ -36,7 +36,7 @@ from leaguebot.framework.models.change import Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.publishing import results_post_service

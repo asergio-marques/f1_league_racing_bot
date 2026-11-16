@@ -119,7 +119,7 @@ async def ask_duplicate(league: Any, source: str = "Pro", new_name: str = "Am", 
 def refusal_line(what: str, reply: str) -> str:
     """The log channel's line for *what* (a command or a form, as the log names it) refused for
     Admin with *reply*."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ {what} refused for {NAMED} — {reply_reason(reply)}"
 

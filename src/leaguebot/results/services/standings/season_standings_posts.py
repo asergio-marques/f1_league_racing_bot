@@ -51,7 +51,7 @@ from leaguebot.core.services.seasons.season_service import (
     division_rounds_on,
     round_by_id,
 )
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
     import aiosqlite

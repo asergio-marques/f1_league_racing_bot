@@ -74,10 +74,10 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
-from leaguebot.core.utils.member_names import member_named
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import abandoned_line, name_of_member
+from leaguebot.framework.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,

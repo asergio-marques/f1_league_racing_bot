@@ -19,9 +19,9 @@ from discord.ext import commands
 
 from leaguebot.core.services.upkeep.clean_change import KIND, MAX_DELETIONS
 from leaguebot.core.utils.channel_guard import league_admin_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import refuse
 
 
 class CleanCog(commands.Cog):

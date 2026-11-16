@@ -20,7 +20,7 @@ from leaguebot.core.services.posting.owned_channel_handler import (
     post_in_owned_channel,
 )
 from leaguebot.core.services.posting.standing_post_handler import post_standing
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 
 __all__ = ["delete_channel", "post", "post_standing_message"]
 

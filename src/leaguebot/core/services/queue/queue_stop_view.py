@@ -20,7 +20,7 @@ from typing import Protocol
 
 import discord
 
-from leaguebot.core.utils.league_server import CallbackButton, LeagueView
+from leaguebot.framework.utils.league_server import CallbackButton, LeagueView
 
 __all__ = ["QueueStopView", "StopControls", "RETRY_ID", "DISCARD_ID"]
 

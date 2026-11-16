@@ -19,7 +19,7 @@ from typing import Any
 def divisions_raced_read() -> Any:
     """The `divisions_raced_read` hook, as the builder makes it and signs results up, to hand a
     reassign."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.results.wiring import sign_up_to_divisions_raced_read
 
     bot = SimpleNamespace(divisions_raced_read=AwaitedHook())
@@ -30,7 +30,7 @@ def divisions_raced_read() -> Any:
 def season_standing_read() -> Any:
     """The `season_standing_read` hook, as the builder makes it and signs results up, to hand the
     history's writer."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.results.wiring import sign_up_to_season_standing_read
 
     bot = SimpleNamespace(season_standing_read=AwaitedHook())

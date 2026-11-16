@@ -1812,7 +1812,7 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     no raw error in Discord, and a failure line in the log channel, whose configuration is still
     there to find it (#482)."""
     from leaguebot.core.services.upkeep import backup_service, factory_reset_service
-    from leaguebot.core.utils.interaction_errors import failure_reply
+    from leaguebot.framework.utils.interaction_errors import failure_reply
 
     def fail(*_args, **_kwargs):
         raise backup_service.BackupFault("the disk is full")

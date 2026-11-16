@@ -431,7 +431,7 @@ def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
 
 #: Where an `on_error` may be defined: the base classes that send every failure to
 #: `report_failure`.
-ON_ERROR_ALLOWED = frozenset({"core/utils/league_server.py"})
+ON_ERROR_ALLOWED = frozenset({"framework/utils/league_server.py"})
 
 
 def _own_error_handlers() -> Counter[tuple[str, str]]:
@@ -612,7 +612,7 @@ def _is_private(name: str) -> bool:
 
 
 #: The file declaring the bot's attributes, read for the class each one holds.
-LEAGUE_BOT = "core/utils/league_bot.py"
+LEAGUE_BOT = "framework/utils/league_bot.py"
 
 
 def _imported_names(tree: ast.Module, files: dict[str, str]) -> dict[str, str]:
@@ -1033,7 +1033,7 @@ def test_the_posting_check_does_not_count_a_review_poster_reply():
 # ── 10a. Every post is made in a job ────────────────────────────────────────────────────────
 
 #: The decorator that marks a function as posting, and refuses to run it outside a job
-#: (`core/utils/in_a_job.py`).
+#: (`framework/utils/in_a_job.py`).
 POSTS_IN_A_JOB = "posts_in_a_job"
 
 #: A post made off the change queue, and why (#439 slice 6b). Every other function that posts
@@ -1222,7 +1222,7 @@ def test_every_post_off_the_queue_names_its_reason():
 
 # ── 10b. No service reaches the change queue through the bot ────────────────────────────────
 
-#: The bot's attribute that holds the change queue (`core/utils/league_bot.py`).
+#: The bot's attribute that holds the change queue (`framework/utils/league_bot.py`).
 CHANGE_QUEUE = "change_queue"
 
 
@@ -1304,12 +1304,12 @@ def test_the_queue_check_sees_bot_of_an_interaction():
 
 # ── 10c. No service looks another service up on the bot ─────────────────────────────────────
 
-#: What `LeagueBot` (`core/utils/league_bot.py`) declares that is not a service or a hook the
+#: What `LeagueBot` (`framework/utils/league_bot.py`) declares that is not a service or a hook the
 #: lookup check counts: the bot's own state, and the change queue, which the queue check counts.
 _BOT_STATE_NOT_LOOKED_UP = frozenset({
     "db_path", "running_version", "running_version_date", CHANGE_QUEUE,
 })
-_LEAGUE_BOT = "core/utils/league_bot.py"
+_LEAGUE_BOT = "framework/utils/league_bot.py"
 
 
 @cache
@@ -1413,36 +1413,36 @@ COG_FACING_HELPERS = frozenset({
     ("core/utils/channel_guard.py", "_tier_guard"),
     ("core/utils/channel_guard.py", "bot_setup_only"),
     ("core/utils/channel_guard.py", "server_owner_only"),
-    ("core/utils/league_server.py", "admits"),
-    ("core/utils/league_server.py", "is_foreign_guild"),
-    ("core/utils/league_server.py", "on_event_error"),
+    ("framework/utils/league_server.py", "admits"),
+    ("framework/utils/league_server.py", "is_foreign_guild"),
+    ("framework/utils/league_server.py", "on_event_error"),
 })
 
 #: The helpers a service calls that may look a core service up on the bot, for good, with the reason.
 LOOKUPS_ALLOWED: dict[tuple[str, str], str] = {
-    ("core/utils/league_server.py", "league_guild"): (
+    ("framework/utils/league_server.py", "league_guild"): (
         "the one route from a job or a service to the league's server, which asks the "
         "framework's settings protocol, `league_settings`, to find it: handing the settings "
         "instead to every service that posts would add a parameter to each, for no rule gained "
         "(architecture.md, \"How the code is laid out\")"
     ),
-    ("core/utils/interaction_errors.py", "report_failure"): (
+    ("framework/utils/interaction_errors.py", "report_failure"): (
         "the one failure path, which a service's view or a change's step calls with the "
         "interaction and which writes the failure's line through the bot's log writer: handing "
         "the router to each caller would add a parameter to each, for no rule gained "
         "(architecture.md, \"Errors and failures\")"
     ),
-    ("core/utils/log_lines.py", "record_refusal"): (
+    ("framework/utils/log_lines.py", "record_refusal"): (
         "called only by `refuse`, whose reason it shares: it writes the one line of a refusal "
         "through the bot's log writer (architecture.md, \"Errors and failures\")"
     ),
-    ("core/utils/log_lines.py", "refuse"): (
+    ("framework/utils/log_lines.py", "refuse"): (
         "the one way a command, button or form refuses, which a service's view or a change's "
         "step calls and which writes the refusal's line through the bot's log writer: handing the "
         "router to each caller would add a parameter to each, for no rule gained "
         "(architecture.md, \"Errors and failures\")"
     ),
-    ("core/utils/log_lines.py", "record_abandoned"): (
+    ("framework/utils/log_lines.py", "record_abandoned"): (
         "records a confirmation cancelled or left to lapse through the bot's log writer, for a "
         "service's view or a scheduled lapse, which have no router to hand it (architecture.md, "
         "\"Errors and failures\")"
@@ -1585,7 +1585,7 @@ def test_the_lookup_check_does_not_count_a_cog_facing_helper_or_league_guild():
     service = "core/services/sample_service.py"
 
     for path, source in (
-        ("core/utils/channel_guard.py", guards), ("core/utils/league_server.py", server),
+        ("core/utils/channel_guard.py", guards), ("framework/utils/league_server.py", server),
     ):
         assert _service_lookups_among(_sample(source, path)) == Counter({(path, "elsewhere"): 1})
     assert _service_lookups_among(_sample(guards, service)) == Counter({
@@ -2741,6 +2741,17 @@ def _core_attributes_of_the_bot() -> frozenset[str]:
     )
 
 
+#: The framework's helpers that read the log writer on the bot while it is still typed from core,
+#: until the posting services move into the framework.
+KNOWN_CORE_LOOKUPS_IN_THE_FRAMEWORK: dict[tuple[str, str], tuple[int, str]] = {
+    ("framework/utils/interaction_errors.py", "report_failure"): (1, "#544"),
+    ("framework/utils/league_server.py", "on_event_error"): (1, "#544"),
+    ("framework/utils/log_lines.py", "record_abandoned"): (1, "#544"),
+    ("framework/utils/log_lines.py", "record_refusal"): (1, "#544"),
+    ("framework/utils/log_lines.py", "refuse"): (1, "#544"),
+}
+
+
 def test_the_framework_reads_no_service_of_core_s_on_the_bot():
     """The framework asks and core answers (architecture.md, "How the code is laid out"): what the
     machinery needs of the league it learns through a protocol of its own, which core's settings
@@ -2750,7 +2761,7 @@ def test_the_framework_reads_no_service_of_core_s_on_the_bot():
     _check(
         "the framework reads no service of core's on the bot",
         _module_lookups_in_core_among(_nodes(), _core_attributes_of_the_bot(), BELOW_CORE),
-        {},
+        KNOWN_CORE_LOOKUPS_IN_THE_FRAMEWORK,
     )
 
 
@@ -2999,7 +3010,7 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/queue/change_queue.py", "ChangeQueue._start"):
         "the queue's catch of a check that raises, a failure path: it stops the lane or ends the "
         "change",
-    ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
+    ("framework/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
         "the autocompletes' failure path: no choices, and the error to the host's log",
     ("core/services/queue/change_queue.py", "ChangeQueue._acknowledge"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
@@ -3040,13 +3051,13 @@ CATCH_ALLS_ALLOWED = {
     ("image/utils/svg_document.py", "_contained"):
         "place 4, around work run in a worker thread: the error is handed back as plain text and "
         "raised again on the loop, so that nothing parsed leaves the thread with it",
-    ("core/utils/interaction_errors.py", "report_failure"):
+    ("framework/utils/interaction_errors.py", "report_failure"):
         "place 3, around reporting a failure, where the report itself might fail",
-    ("core/utils/league_server.py", "on_event_error"):
+    ("framework/utils/league_server.py", "on_event_error"):
         "place 3, around reporting a Discord event's failure, where the report itself might fail",
-    ("core/utils/log_lines.py", "refuse"):
+    ("framework/utils/log_lines.py", "refuse"):
         "place 3, around telling the member of a refusal, which is still recorded",
-    ("core/utils/log_lines.py", "record_abandoned"):
+    ("framework/utils/log_lines.py", "record_abandoned"):
         "place 3, around recording that a confirmation ended",
     ("core/services/posting/output_router.py", "OutputRouter._tell"):
         "place 3, around telling the member that the log channel failed, the router's own containment",
@@ -3056,9 +3067,9 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/posting/output_router.py", "OutputRouter.strip_view"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/utils/log_lines.py", "record_refusal"):
+    ("framework/utils/log_lines.py", "record_refusal"):
         "place 3, around recording a refusal already answered",
-    ("core/utils/log_lines.py", "name_of_member"):
+    ("framework/utils/log_lines.py", "name_of_member"):
         "place 3, around naming a member in a line: one who cannot be looked up is named by mention "
         "alone",
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
@@ -3339,7 +3350,7 @@ def test_the_catch_all_check_passes_a_handler_in_each_of_the_places_its_shape_sh
 
 def test_the_catch_all_check_passes_a_function_named_for_good():
     """A function in `CATCH_ALLS_ALLOWED` may hold a catch-all that is in no place by its shape."""
-    path, function = "core/utils/interaction_errors.py", "report_failure"
+    path, function = "framework/utils/interaction_errors.py", "report_failure"
     source = f"async def {function}():\n    try:\n        pass\n    except Exception:\n        log.error('x')\n"
 
     assert _catch_alls_outside_the_places_among(_sample(source, path)) == Counter()

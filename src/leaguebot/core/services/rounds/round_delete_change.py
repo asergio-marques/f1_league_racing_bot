@@ -48,7 +48,7 @@ from leaguebot.core.services.rounds.round_add_changes import held_rounds, round_
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.rounds.setup_round_amend_change import round_fill, round_values
 from leaguebot.core.utils.formatting import format_round_list
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 ROUND_DELETE = "core.round_delete"
 

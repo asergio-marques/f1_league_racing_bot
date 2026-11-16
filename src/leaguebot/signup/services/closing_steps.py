@@ -55,12 +55,12 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.signup_posting import post, post_standing_message
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)
@@ -525,7 +525,7 @@ async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> se
 
     Gives the accounts it asked an ending of, which the rest of the recovery skips.
     """
-    from leaguebot.core.utils.log_lines import name_of_member
+    from leaguebot.framework.utils.log_lines import name_of_member
     from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
     from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
 

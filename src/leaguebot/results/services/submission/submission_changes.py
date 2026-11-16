@@ -90,8 +90,8 @@ from leaguebot.core.services.cancellations.cancellation_changes import not_notif
 from leaguebot.core.services.cancellations.cancellation_notice_service import failure_log_lines
 from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN, kept_line
 from leaguebot.core.services.seasons.season_service import set_round_status_on
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.services.review import review_posting
 from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 from leaguebot.results.services.review.review_posting import (

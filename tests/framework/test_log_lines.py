@@ -64,7 +64,7 @@ def _http_error() -> discord.HTTPException:
     ],
 )
 async def test_refuse_replies_to_the_member_and_logs_one_line(case):
-    from leaguebot.core.utils.log_lines import refuse
+    from leaguebot.framework.utils.log_lines import refuse
 
     interaction = _interaction(deferred=case == "deferred")
     reply = "❌ Signups are already open.\nClose them with `/signup close` first."
@@ -146,7 +146,7 @@ def _lines(bot) -> list[str]:
     ["cancelled", "lapsed", "member has left", "nobody recorded", "detail beneath", "post fails"],
 )
 async def test_record_abandoned_writes_each_standard_form_and_never_raises(case):
-    from leaguebot.core.utils.log_lines import record_abandoned
+    from leaguebot.framework.utils.log_lines import record_abandoned
 
     bot = _bot(None if case == "member has left" else "Alex")
     if case == "post fails":
@@ -187,7 +187,7 @@ def test_the_member_naming_helpers_import_from_member_names_and_log_lines_alike(
     """`interaction_errors` names the member too, and cannot import `log_lines` without a
     cycle, so the two helpers live in a leaf module of their own; `log_lines` keeps offering
     them to the callers that import them from it."""
-    from leaguebot.core.utils import log_lines, member_names
+    from leaguebot.framework.utils import log_lines, member_names
 
     assert log_lines.member_named is member_names.member_named
     assert log_lines.interaction_member is member_names.interaction_member
@@ -204,7 +204,7 @@ async def test_record_refusal_writes_the_standard_line_without_answering(case):
     """A typed wizard answer is refused by a public reply in the driver's channel, not by an
     interaction's, so `record_refusal` writes the refusal's line alone. It never raises. A member
     who cannot be looked up, the league's server unreadable, is named by mention alone."""
-    from leaguebot.core.utils.log_lines import record_refusal
+    from leaguebot.framework.utils.log_lines import record_refusal
 
     bot = _bot(None if case == "member has left" else "Alex")
     if case == "post fails":
@@ -250,7 +250,7 @@ async def test_record_refusal_writes_the_standard_line_without_answering(case):
 async def test_refuse_forms_its_line_through_record_refusal(monkeypatch):
     """`refuse` writes its line through `record_refusal`, so the refusal's line is formed in one
     place; the line itself is unchanged (`test_refuse_replies_to_the_member_and_logs_one_line`)."""
-    from leaguebot.core.utils import log_lines
+    from leaguebot.framework.utils import log_lines
 
     seen: list[dict] = []
 

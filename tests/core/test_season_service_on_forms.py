@@ -705,7 +705,7 @@ def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
     module's notice of its own. Returns the hook, the record, and that notice."""
     from leaguebot.core.models.cancellation import CancellationNotices
     from leaguebot.framework.models.change import PlannedStep
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     planned = CancellationNotices(steps=(PlannedStep("notify_test", {"round": 1}),))
     handed: list[tuple[Any, ...]] = []
@@ -786,7 +786,7 @@ async def test_end_round_not_held_on_commits_nothing(tmp_path):
     it ended from and no notices; a rollback leaves round 2 awaiting its verdicts and unmarked, no
     audit, Pro active and the season ongoing."""
     from leaguebot.core.services.seasons.season_service import end_round_not_held_on
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_REPORT_VERDICTS"))
     async with get_connection(db_path) as db:

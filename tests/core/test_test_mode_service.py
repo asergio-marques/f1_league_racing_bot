@@ -1522,7 +1522,7 @@ def _steps_hook(*modules, handed_to: list | None = None):
     passed over) pair of (round, phase, kind) lists it hands back; each records the rounds and the
     moment it was handed in *handed_to*, where given."""
     from leaguebot.core.services.test_mode.test_mode_service import ModuleSteps, PendingStep
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
     for pending, passed_over in modules:
@@ -1835,7 +1835,7 @@ def _marks_hook(*modules, handed_to: list | None = None):
     """A `review_marks_read` hook with one subscriber per *modules* entry, each the marks it hands
     back by round id, as (label, mark) pairs; each records the ids of the rounds, the moment and
     the scheduler's jobs it was handed in *handed_to*, where given."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
     for marks in modules:

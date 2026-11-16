@@ -43,7 +43,7 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.check_in import check_in_record
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.framework.models.change import GuildUnavailable, PlannedStep, StepFailedOnDiscord
 from leaguebot.framework.models.refusal import Refused
@@ -51,8 +51,8 @@ from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.drivers.lineup_posting import LineupPoster
 from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing

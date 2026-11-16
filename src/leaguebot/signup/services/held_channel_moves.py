@@ -28,8 +28,8 @@ import discord
 from leaguebot.framework.models.change import GuildUnavailable, StepKind, StepResult
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.framework.utils.channels import as_text_channel
-from leaguebot.core.utils.interaction_errors import describe_fault
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.interaction_errors import describe_fault
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import DELETE_TIMER, HOLD
 from leaguebot.signup.services.signup_module_service import (
     DELETE_REPLACED_CHANNEL,

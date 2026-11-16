@@ -18,12 +18,12 @@ from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
 
-from leaguebot.core.utils.hooks import runs_while_off
+from leaguebot.framework.utils.hooks import runs_while_off
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.hooks import StartUpStep
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.hooks import StartUpStep
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

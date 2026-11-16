@@ -75,7 +75,7 @@ from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import round_facts_on
-from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, refuse, reply_reason
 
 log = logging.getLogger(__name__)
 

@@ -555,7 +555,7 @@ def _sack_line(name: str, user_id: int) -> str:
 
 
 def _sack_refusal(reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
     from tests.core.test_driver_move import _ADMIN
 
     return f"⛔ `/driver sack` refused for {_ADMIN} — {reply_reason(reply)}"

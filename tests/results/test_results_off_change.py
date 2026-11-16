@@ -31,7 +31,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from tests.support.change_queue import (
     MEMBER_ID,
     SERVER_ID,

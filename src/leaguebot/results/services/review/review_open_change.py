@@ -93,7 +93,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import aiosqlite
 import discord
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
@@ -122,7 +122,7 @@ from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.core.services.queue import typed_turns
-from leaguebot.core.utils.log_lines import abandoned_line
+from leaguebot.framework.utils.log_lines import abandoned_line
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.submission.result_submission_service import send_cancelled_line, take_down_cancel_message

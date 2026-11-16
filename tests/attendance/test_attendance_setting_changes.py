@@ -32,8 +32,8 @@ import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.utils.interaction_errors import failure_reply
-from leaguebot.core.utils.log_lines import refusal_line
+from leaguebot.framework.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.log_lines import refusal_line
 from tests.support.change_queue import (
     Clock,
     acknowledgement,

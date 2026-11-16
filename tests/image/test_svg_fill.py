@@ -585,7 +585,7 @@ def test_image_fill_rewrites_href():
     silently absent from the picture while every check upstream reported success. See
     `_as_href`.
     """
-    import leaguebot.core.utils.paths as paths
+    import leaguebot.framework.utils.paths as paths
 
     root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
     result = fill(FillSpec(root=root, images={"track": "resources/defaults/tracks/fallback.svg"}))
@@ -627,7 +627,7 @@ def test_a_template_authored_relative_href_still_resolves(monkeypatch, tmp_path)
     Pinned rather than assumed: anchoring is only safe because the project root is the
     right base for a template-authored reference as well as a configured one.
     """
-    import leaguebot.core.utils.paths as paths
+    import leaguebot.framework.utils.paths as paths
 
     beside = tmp_path / "templates"
     beside.mkdir()
@@ -733,7 +733,7 @@ def test_absent_datum_removes_the_field_where_the_class_has_no_fallback(
     directory is put out of view here. With it in view the packaged tyre fallback answers,
     the field is drawn, and this branch is never reached.
     """
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
 
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path / "elsewhere", raising=False)
     root = _image_doc()
@@ -913,7 +913,7 @@ def test_wrapped_field_naming_a_missing_rectangle_is_a_problem():
 
 def test_the_fill_pipeline_passes_the_packaged_directory(tmp_path, monkeypatch):
     """One call site serves every graphic, so wiring it here wires it everywhere."""
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
     from leaguebot.image.utils.svg_fill import _packaged_directory
 
     packaged = tmp_path / "resources" / "defaults" / "flags"
@@ -930,7 +930,7 @@ def test_an_unknown_asset_class_has_no_packaged_directory():
 
 
 def test_a_packaged_directory_that_is_not_there_leaves_the_tier_empty(tmp_path, monkeypatch):
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
     from leaguebot.image.utils.svg_fill import _packaged_directory
 
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)

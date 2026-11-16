@@ -32,7 +32,7 @@ from __future__ import annotations
 import discord
 
 from leaguebot.core.models.season import STAGES_OF_STATUS, Season, SeasonStage, SeasonStatus
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.log_lines import refuse
 
 #: Every stage of a season the server still holds live — the four under SETUP and the four
 #: under ACTIVE. Completed and Cancelled are the archive and are in none of them.

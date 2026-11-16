@@ -70,7 +70,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     modules_frozen_for_completion,
 )
 from leaguebot.core.services.seasons.season_service import end_rounds_awaiting_results_on
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 from leaguebot.results.services.module.results_purge_service import (
     CHANNEL_KINDS,

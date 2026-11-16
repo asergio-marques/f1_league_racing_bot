@@ -11,14 +11,14 @@ from discord import app_commands
 from leaguebot.results.cogs.results_group import ROUNDS_GROUP, ResultsSubgroup
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_server import (
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_server import (
     CallbackButton,
     CallbackSelect,
     LeagueView,
     guild_of,
 )
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.season_gate import season_for_command
 
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 
 def _hook(*handed_back):

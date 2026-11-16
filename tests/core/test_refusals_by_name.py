@@ -215,7 +215,7 @@ def _reassign_change(driver, profiles_merged=None):
     merge calling *profiles_merged*, no module answering which divisions a side raced in, and
     every Discord job a double, the team-role service among them."""
     from leaguebot.core.services.drivers.driver_changes import driver_reassign_change
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     return driver_reassign_change(
         driver=driver, placement=MagicMock(), roles=MagicMock(), drawing=MagicMock(),
@@ -248,7 +248,7 @@ async def _reassign_merge_hook_faulted(tmp_path, monkeypatch) -> None:
     from leaguebot.core.services.queue.change_types import StepContext
     from leaguebot.core.services.drivers.driver_changes import SAVE
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from tests.core.test_driver_merge import A, B, _make_db, _profile
 
     db_path = await _make_db(tmp_path)

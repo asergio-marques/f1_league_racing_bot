@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from leaguebot.core.utils.paths import (
+from leaguebot.framework.utils.paths import (
     PathContainmentError,
     relative_to_root,
     resolve_within_project_root,

@@ -160,7 +160,7 @@ async def test_the_unsettled_signups_are_read_by_the_service(db_path):
     from types import SimpleNamespace
 
     from leaguebot.core.services.seasons.approval_checks import unsettled_signups
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.wiring import sign_up_to_driver_names_read
 

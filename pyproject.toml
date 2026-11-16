@@ -17,7 +17,7 @@
 # tools and never changes.
 #
 # The install is editable (`-e`): the package stays in `src/`, where `PROJECT_ROOT` in
-# `src/leaguebot/core/utils/paths.py` finds `resources/` and `VERSION` beside it.
+# `src/leaguebot/framework/utils/paths.py` finds `resources/` and `VERSION` beside it.
 
 [build-system]
 requires = ["setuptools>=64"]

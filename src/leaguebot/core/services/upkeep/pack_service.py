@@ -35,7 +35,7 @@ left, nor go on changing a server it has. The audit entry shares it too: every p
 effect is recorded, and a refused one records nothing.
 
 The Discord side is left as it is: the old server keeps the bot's messages and buttons, which
-refuse from then on (see `leaguebot.core.utils.league_server.LeagueView`). Pack touches only the database.
+refuse from then on (see `leaguebot.framework.utils.league_server.LeagueView`). Pack touches only the database.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
 from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService

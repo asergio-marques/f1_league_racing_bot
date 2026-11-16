@@ -10,12 +10,12 @@ import logging
 import discord
 
 from leaguebot.core.utils.channel_guard import league_manager_only
-from leaguebot.core.utils.interaction_errors import (
+from leaguebot.framework.utils.interaction_errors import (
     describe as describe_command,
     describe_form,
 )
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.image.cogs.image_group import USE_PFP_GROUP, ImageSubgroup
 from leaguebot.image.services.config.image_settings import (

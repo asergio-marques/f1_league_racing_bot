@@ -13,16 +13,16 @@ import discord
 from discord import app_commands
 
 from leaguebot.framework.models.refusal import Refused
-from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
-from leaguebot.core.utils.interaction_errors import (
+from leaguebot.framework.utils.interaction_errors import (
     describe as describe_command,
     describe_form,
 )
-from leaguebot.core.utils.league_server import LeagueModal
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.league_server import LeagueModal
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.utils.messages import chunk_message
-from leaguebot.core.utils.paths import (
+from leaguebot.framework.utils.paths import (
     PathContainmentError,
     relative_to_root,
     resolve_within_project_root,

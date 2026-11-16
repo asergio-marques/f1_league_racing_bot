@@ -18,16 +18,16 @@ from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.upkeep.start_up import start_up
-from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
-from leaguebot.core.utils.interaction_errors import start_up_failure_line
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import (
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook, StartingHook
+from leaguebot.framework.utils.interaction_errors import start_up_failure_line
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import (
     league_guild,
     LeagueCommandTree,
     on_event_error,
     warn_if_serving_several,
 )
-from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
+from leaguebot.framework.utils.log_filters import install_late_autocomplete_filter
 from leaguebot.image import wiring as image_wiring
 from leaguebot.results import wiring as results_wiring
 from leaguebot.results.services.publishing.preview_sources import ResultsPreviewSources
@@ -1029,7 +1029,7 @@ async def build(settings: Settings) -> LeagueBot:
 
     # The version is read once, here, and never when a command runs: it belongs to
     # the code this process loaded. See `utils/version.py`.
-    from leaguebot.core.utils.paths import PROJECT_ROOT
+    from leaguebot.framework.utils.paths import PROJECT_ROOT
     from leaguebot.utils.version import read_version, read_version_date
 
     version = read_version(PROJECT_ROOT)

@@ -56,7 +56,7 @@ from leaguebot.results.services.standings import standings_service
 from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 

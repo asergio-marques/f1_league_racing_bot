@@ -1,7 +1,7 @@
 """A job the scheduler runs answers no member's interaction, whoever scheduled it (#439).
 
 A log line the log channel cannot take is told to the member whose command, button or form it
-records, seen by them alone (`leaguebot.core.utils.answering`). A timed job records no member's
+records, seen by them alone (`leaguebot.framework.utils.answering`). A timed job records no member's
 request, even where a command scheduled it: by the time it runs, the command is long over. These
 tests use the real `SchedulerService`, on job-store files the test tears down, Windows included.
 """
@@ -44,8 +44,8 @@ async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_w
     channel refuses its line: the job finds no interaction it answers, the admin is sent nothing,
     and the host's log alone records the failure."""
     from leaguebot.core.services import scheduler_service
-    from leaguebot.core.utils.answering import answering_now
-    from leaguebot.core.utils.league_server import admits
+    from leaguebot.framework.utils.answering import answering_now
+    from leaguebot.framework.utils.league_server import admits
 
     caplog.set_level(logging.INFO)
     db_path = str(tmp_path / "bot.db")

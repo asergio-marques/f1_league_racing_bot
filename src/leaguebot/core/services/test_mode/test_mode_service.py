@@ -30,7 +30,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import ROUND_JOB_PHASES, read_scheduled_at
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService

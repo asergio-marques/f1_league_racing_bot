@@ -19,11 +19,11 @@ from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import OutcomeModifier
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.results.services.points.scoring import _apply_points_from_config_on
 from leaguebot.results.services.submission.result_submission_service import (
     CollectedSession,

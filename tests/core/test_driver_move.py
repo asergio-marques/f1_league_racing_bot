@@ -383,7 +383,7 @@ def _as_logged(text: str) -> str:
 
 
 def _refusal(reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ {_MOVE} refused for {_ADMIN} — {reply_reason(reply)}"
 

@@ -10,9 +10,9 @@ import discord
 from discord import app_commands
 
 from leaguebot.core.utils.channel_guard import league_manager_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_server import guild_of
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_server import guild_of
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import season_for_command
 from leaguebot.results.cogs.results_group import STANDINGS_GROUP, ResultsSubgroup
 

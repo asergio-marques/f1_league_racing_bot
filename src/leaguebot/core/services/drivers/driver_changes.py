@@ -99,9 +99,9 @@ from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.core.services.drivers.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.seasons.season_approval_change import unposted_lineup_line
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import PLACEMENT_STAGES
 
 if TYPE_CHECKING:

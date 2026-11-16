@@ -82,7 +82,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
     switch_test_mode_off_on,
 )
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService

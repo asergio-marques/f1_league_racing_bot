@@ -86,7 +86,7 @@ from leaguebot.core.services.modules.hub_service import HUB_REFRESH, apply_hub_p
 from leaguebot.core.services.queue.setting_change import After, RENAMED_OUTCOME, Saved, Setting
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 

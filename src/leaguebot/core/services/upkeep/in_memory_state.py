@@ -18,7 +18,7 @@ import logging
 
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons.season_review_changes import forget_presses
-from leaguebot.core.utils.hooks import Hook
+from leaguebot.framework.utils.hooks import Hook
 
 log = logging.getLogger(__name__)
 

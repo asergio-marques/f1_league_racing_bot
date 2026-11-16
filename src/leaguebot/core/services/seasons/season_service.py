@@ -33,7 +33,7 @@ from leaguebot.core.models.season import (
 )
 from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
 from leaguebot.core.services.modules.image_drawing import Held
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they

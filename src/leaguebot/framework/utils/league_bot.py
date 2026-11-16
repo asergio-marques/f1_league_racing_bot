@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
+    from leaguebot.framework.utils.hooks import AwaitedHook, Hook, StartingHook
     from leaguebot.framework.services.posting.league_settings import LeagueSettings
 
 

@@ -102,7 +102,7 @@ async def _team_audits(league):
 
 
 def _refusal(what: str, reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ {what} refused for {_ADMIN} — {_as_logged(reply_reason(reply))}"
 

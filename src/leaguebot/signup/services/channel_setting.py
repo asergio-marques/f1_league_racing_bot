@@ -57,8 +57,8 @@ from leaguebot.core.services.settings.channel_registry_service import (
     find_channel_use,
     refusal,
 )
-from leaguebot.core.utils.interaction_errors import describe_fault
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.interaction_errors import describe_fault
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.information_post import post_information
 from leaguebot.signup.services.signup_module_service import signup_channel_overwrites
 from leaguebot.signup.services.signup_settings import open_to_change
@@ -69,7 +69,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 KIND = "signup.setting.channel"

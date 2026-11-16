@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import aiosqlite
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.framework.models.change import (
     AuditRecord,
@@ -78,7 +78,7 @@ from leaguebot.core.services.seasons.season_service import (
     live_season,
     season_divisions_on,
 )
-from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.points.points_amendment_faults import approval_faults

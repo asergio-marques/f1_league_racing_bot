@@ -15,9 +15,9 @@ from abc import abstractmethod
 import discord
 from discord import app_commands
 
-from leaguebot.core.utils.catch_up_gate import after_the_catch_up
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import interaction_member
+from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import interaction_member
 
 ATTENDANCE_GROUP = app_commands.Group(
     name="attendance",
@@ -83,7 +83,7 @@ async def record(
     settings' lines are, by their change). The post is bare: a line reporting that nothing went
     wrong is no place for a catch-all, so a post that raises reaches the command's error
     handling. A refusal, a cancel, a lapse and a fault have lines of their own
-    (`core/utils/log_lines.py`, `report_failure`).
+    (`framework/utils/log_lines.py`, `report_failure`).
     """
     await bot.output_router.post_log(_line(interaction, what, outcome, details))
 

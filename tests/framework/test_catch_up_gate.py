@@ -1,6 +1,6 @@
 """A command answered off the change queue waits for the catch-up after a restart (#440).
 
-`after_the_catch_up` (`leaguebot.core.utils.catch_up_gate`) is worn below a command's tier guard by
+`after_the_catch_up` (`leaguebot.framework.utils.catch_up_gate`) is worn below a command's tier guard by
 each command that changes the league without asking the queue. Driven here on a real change queue,
 held as `main` leaves it before the bot connects or never held, and on a member's interaction that
 answers through its response slot as a real one does, so no Discord is needed.
@@ -16,8 +16,8 @@ import discord
 import pytest
 
 from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.utils import catch_up_gate
-from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+from leaguebot.framework.utils import catch_up_gate
+from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import (
     CHANGES_NOTHING_ATTRIBUTE,
     LEAGUE_MANAGER,

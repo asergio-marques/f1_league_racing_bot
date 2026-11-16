@@ -87,7 +87,7 @@ async def test_an_owned_channel_post_outside_a_job_is_refused_before_it_is_sent(
         delete_owned_channel,
         post_in_owned_channel,
     )
-    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+    from leaguebot.framework.utils.in_a_job import PostedOutsideAJob
 
     channel, _message = _channel()
     with pytest.raises(PostedOutsideAJob):
@@ -104,7 +104,7 @@ async def test_a_message_in_an_owned_channel_is_edited_in_place_notifying_only_w
     """The approval message in a submission channel is edited to its new text and buttons once,
     notifying only whom the caller names; outside a job the edit is refused before it is sent."""
     from leaguebot.core.services.posting.owned_channel_handler import edit_in_owned_channel
-    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+    from leaguebot.framework.utils.in_a_job import PostedOutsideAJob
 
     message = MagicMock(id=5150)
     message.edit = AsyncMock()
@@ -126,7 +126,7 @@ async def test_a_message_in_an_owned_channel_is_deleted():
     """A withdrawn approval message in a submission channel is deleted once, the channel left
     standing; outside a job the delete is refused before it is sent."""
     from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
-    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+    from leaguebot.framework.utils.in_a_job import PostedOutsideAJob
 
     channel, message = _channel()
     message.delete = AsyncMock()

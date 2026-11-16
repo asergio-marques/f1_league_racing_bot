@@ -60,7 +60,7 @@ async def test_build_returns_every_service_complete(tmp_path):
     """`build` on paths under `tmp_path` gives a `LeagueBot` with every service it declares set,
     on the settings' paths, and the wizard service holding the bot from its constructor, with no
     `set_bot` left to call."""
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
     bot = await built_bot(tmp_path, now=_NOW)
 
@@ -940,7 +940,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.core.services.modules import hub_service
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.utils.hooks import StartingHook
+    from leaguebot.framework.utils.hooks import StartingHook
     from tests.support.review_prompts import store_review_prompt
 
     ran: list[tuple] = []
@@ -1049,7 +1049,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     [re_armed] = [kwargs for function, _args, kwargs in ran
                   if function == "recover_rsvp_views_and_deadlines"]
     assert callable(re_armed.pop("view_of"))
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     assert not hasattr(LeagueBot, "check_in_view")
     assert "check_in_view" not in LeagueBot.__annotations__
     assert ran == [expected[step] for step in order]

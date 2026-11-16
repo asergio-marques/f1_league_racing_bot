@@ -64,7 +64,7 @@ from leaguebot.framework.models.change import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 
 @dataclass(frozen=True)

@@ -610,7 +610,7 @@ async def test_season_review_and_config_view_agree(
     await saves.set_aspect(config_service, "weather", True)
 
     monkeypatch.setattr(
-        "leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False
+        "leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False
     )
 
     validity = ImageValidityService(config_service, module_service, SimpleNamespace())
@@ -856,7 +856,7 @@ async def test_render_without_season(
     """Every kind renders on a server with no season configured at all."""
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -959,7 +959,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
     """SC-007: the reason is stated and nothing is rendered while the binary is missing."""
     import leaguebot.image.services.render.image_render_service as render_module
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1003,7 +1003,7 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
         ImageValidityService,
     )
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
 
     await _enable(module_service, config_service)
@@ -1033,7 +1033,7 @@ async def test_render_raises_notices_without_failing(
     scratch_slot,
 ):
     """A substituted font and a truncated field are notices, not problems (XIV.4)."""
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "verdicts_template.svg").write_bytes(RICH_TEMPLATE)
@@ -1066,7 +1066,7 @@ async def test_render_problem_yields_no_image(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
     """png_paths is empty whenever problem is set — never a partial image."""
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_field(config_service, "calendar_template", "absent.svg")
@@ -1095,7 +1095,7 @@ async def test_render_is_off_the_event_loop(
 
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "calendar_template.svg").write_bytes(RICH_TEMPLATE)
@@ -1181,7 +1181,7 @@ def _race_template(background_markup: str) -> bytes:
 async def test_contrast_is_measured_against_the_declared_background(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1199,7 +1199,7 @@ async def test_contrast_is_measured_against_the_declared_background(
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1222,7 +1222,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
 async def test_contrast_unmeasurable_when_template_is_invalid(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_field(config_service, "results_race_template", "gone.svg")
@@ -1236,7 +1236,7 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
 async def test_contrast_unmeasurable_when_background_element_is_absent(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1259,7 +1259,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
 async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1284,7 +1284,7 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     `computed_style` reads only simple selectors, so "none the bot can read" is not quite
     "none", and FR-027 forbids guessing.
     """
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1335,7 +1335,7 @@ def _slotted_plate(authored: str) -> bytes:
 
 async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, palettes):
     """Configure per-tier colours on, *markup* as the race template, and *palettes*."""
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "results_race_template.svg").write_bytes(markup)
     await saves.set_flag(config_service, "per_tier_colour_enabled", True)
@@ -1767,7 +1767,7 @@ def test_the_reply_says_why_nothing_was_measured():
 async def test_asset_directory_independence(module_service, config_service, tmp_path, monkeypatch):
     from leaguebot.image.services.validity.image_validity_service import evaluate_directories
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
 
     # Give every asset directory a real folder.
@@ -1800,7 +1800,7 @@ async def test_asset_directory_escaping_root_is_reported(
 ):
     from leaguebot.image.services.validity.image_validity_service import evaluate_directories
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "flag_directory", "../../elsewhere")
 
@@ -1880,7 +1880,7 @@ async def test_aspect_enabled_while_source_module_disabled(
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
 
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
@@ -2284,7 +2284,7 @@ async def test_a_clean_render_posts_the_image(
 ):
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -2468,7 +2468,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     from leaguebot.results.services.review import verdict_announcement_service as vas
     from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_aspect(config_service, "verdicts", True)
@@ -2545,7 +2545,7 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     from leaguebot.results.services.review import verdict_announcement_service as vas
     from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_aspect(config_service, "verdicts", False)
 

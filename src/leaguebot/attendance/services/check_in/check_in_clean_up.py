@@ -61,7 +61,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.channels import as_text_channel
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService

@@ -44,7 +44,7 @@ from leaguebot.utils.messages import discord_ts
 
 if TYPE_CHECKING:
     from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

@@ -37,7 +37,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import inserted_id
-from leaguebot.core.utils.answering import answering_now
+from leaguebot.framework.utils.answering import answering_now
 from leaguebot.utils.messages import ROLE_MENTION, USER_MENTION, chunk_message
 
 #: Every mention a log line can carry, wrapped whole as code so it names without notifying.
@@ -45,7 +45,7 @@ from leaguebot.utils.messages import ROLE_MENTION, USER_MENTION, chunk_message
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.framework.models.league_settings import SettingsRow
     from leaguebot.framework.services.posting.league_settings import LeagueSettings
 
@@ -283,7 +283,7 @@ class OutputRouter:
         *interaction* where the caller holds it (the change queue, which has judged it still
         answerable, and which is not the interaction's own task, so the warning is sent at
         once), otherwise the one the
-        current task answers (`leaguebot.core.utils.answering`). They are told **once**
+        current task answers (`leaguebot.framework.utils.answering`). They are told **once**
         however many of their lines fail. Where the interaction has not been answered yet,
         sending now would take the command's one response, so the warning follows when the
         command's task ends. Where there is no interaction (a scheduled job, the retry loop, a

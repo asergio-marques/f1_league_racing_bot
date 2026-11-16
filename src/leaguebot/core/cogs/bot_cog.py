@@ -42,7 +42,7 @@ from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
 from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
-from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import (
     DRIVER_ROLE_STANDS_FOR,
     bot_setup_only,
@@ -51,10 +51,10 @@ from leaguebot.core.utils.channel_guard import (
     role_grant_refusal,
     server_owner_only,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
-from leaguebot.core.utils.league_server import guild_of
-from leaguebot.core.utils.log_lines import lane_name, refuse
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.interaction_errors import describe, describe_fault, report_failure
+from leaguebot.framework.utils.league_server import guild_of
+from leaguebot.framework.utils.log_lines import lane_name, refuse
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)

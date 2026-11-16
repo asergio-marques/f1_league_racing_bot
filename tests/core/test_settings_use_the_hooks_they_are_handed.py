@@ -26,7 +26,7 @@ from leaguebot.core.services.settings.bot_settings import (
 )
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse
 from leaguebot.core.services.settings.division_settings import division_channel_settings
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 CHANNEL = 4040
 

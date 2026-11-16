@@ -25,8 +25,8 @@ from typing import TYPE_CHECKING
 
 from leaguebot.framework.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.services.queue.change_types import Step, StepContext
-from leaguebot.core.utils.interaction_errors import describe_fault
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.interaction_errors import describe_fault
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService

@@ -137,11 +137,11 @@ def real_packaged_project_root(monkeypatch):
     """Point the packaged-tier lookup at this repository's own `resources/`.
 
     `_packaged_directory` in `svg_fill.py` resolves `resources/defaults/<class>` against
-    `leaguebot.core.utils.paths.PROJECT_ROOT`. The repository's real root already carries every closed-set
+    `leaguebot.framework.utils.paths.PROJECT_ROOT`. The repository's real root already carries every closed-set
     file; pinning it here just keeps the test from depending on the directory a runner
     happens to be launched from.
     """
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
 
     project_root = Path(__file__).resolve().parents[2]
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", project_root, raising=False)

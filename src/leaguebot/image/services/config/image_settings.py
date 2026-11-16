@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
-from leaguebot.core.utils.paths import resolve_within_project_root
+from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.utils.timezones import is_known_zone
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
@@ -47,7 +47,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from leaguebot.image.services.config.image_config_service import (
     pfp_change_refusal,
     read_config_on,

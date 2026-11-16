@@ -75,8 +75,8 @@ from discord import Interaction
 # unused it looks. Pinned by `test_a_command_annotation_resolves_against_this_module`.
 from discord import app_commands  # noqa: F401
 
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 

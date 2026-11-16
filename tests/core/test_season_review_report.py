@@ -49,7 +49,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.placement_service import PlacementService
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.review_workflows import (
     record_review_views, run_workflow, sign_up_confirmation_refused, sign_up_division_lines_read,
 )

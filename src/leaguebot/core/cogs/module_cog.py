@@ -11,10 +11,10 @@ from discord.ext import commands
 from leaguebot.framework.models.change import module_off, module_on
 from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_server import LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_server import LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 
 
 _MODULE_CHOICES = [

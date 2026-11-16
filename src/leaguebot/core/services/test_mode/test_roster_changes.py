@@ -79,8 +79,8 @@ from leaguebot.core.services.test_mode.test_roster_service import (
     seat_bulk_on,
     seat_on,
 )
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.roster_import import (
     ParsedDriver,
     divisions_named,

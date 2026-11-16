@@ -68,7 +68,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     configuration_fixed,
     configuration_fixed_refusal,
 )
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import (
     DISARM_TIMERS,
     POST_CLOSED,

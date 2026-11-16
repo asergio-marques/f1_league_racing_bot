@@ -44,7 +44,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     channel_ids_in,
 )
 from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 log = logging.getLogger(__name__)
 

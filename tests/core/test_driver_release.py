@@ -79,7 +79,7 @@ def _release_line(name: str, user_id: int, division: str = "Am") -> str:
 
 
 def _release_refusal(reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/driver release` refused for {_ADMIN} — {reply_reason(reply)}"
 

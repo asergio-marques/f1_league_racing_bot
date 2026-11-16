@@ -65,9 +65,9 @@ from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.seasons.season_lifecycle_service import confirm_configuration_on
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 __all__ = [
     "ALREADY_BEING_CONFIRMED",

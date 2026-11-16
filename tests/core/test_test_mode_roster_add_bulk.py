@@ -430,7 +430,7 @@ async def test_the_same_roster_while_the_first_waits_is_refused_as_a_repeat(leag
     refusal as a line; only the one change is queued. The queue runs it: Mock Alpha and Mock Beta
     are the only fake drivers, with one audit entry each, and the log channel holds the refusal
     and then the one success line."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
     from tests.support.setup_rounds import repeated
 
     first, repeat = _asks(league), _asks(league)

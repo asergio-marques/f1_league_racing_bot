@@ -14,7 +14,7 @@ import logging
 
 import discord
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.owned_channel_handler import (
     edit_in_owned_channel,
     post_in_owned_channel,
@@ -31,9 +31,9 @@ from leaguebot.core.services.drivers.driver_service import (
 )
 from leaguebot.results.services.review.penalty_service import validate_penalty_input
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
-from leaguebot.core.utils.interaction_errors import describe_form
-from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.interaction_errors import describe_form
+from leaguebot.framework.utils.league_server import CallbackButton, LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.results.services.review.penalty_wizard import (
     _CID_ADD,
     _CID_APPROVE,

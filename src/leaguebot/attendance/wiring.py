@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.hooks import StartUpStep
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.hooks import StartUpStep
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 
 def register_switch(modules: "ModuleService") -> None:

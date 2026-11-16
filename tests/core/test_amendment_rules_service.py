@@ -321,7 +321,7 @@ def _judged_hook(*answers):
     """An `amendment_judged` hook whose subscribers answer *answers* in sign-up order, and the
     list each records what it was handed into: the connection, the round, the changes, and by
     name the amended moment, the clock and anything else core hands it."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
     handed: list[tuple] = []

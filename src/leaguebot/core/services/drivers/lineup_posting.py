@@ -60,9 +60,9 @@ from leaguebot.core.services.queue.audit_service import record_change_on
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.posting.standing_post_handler import post_standing
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import drawn_notices_line
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import drawn_notices_line
 
 log = logging.getLogger(__name__)
 

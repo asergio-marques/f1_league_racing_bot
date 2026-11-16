@@ -36,7 +36,7 @@ from leaguebot.core.services.modules.hub_service import (
     recover_hub,
     render_panel,
 )
-from leaguebot.core.utils.league_server import LeagueView
+from leaguebot.framework.utils.league_server import LeagueView
 from tests.support.change_queue import (
     SERVER_ID as LEAGUE_SERVER_ID,
     Clock,

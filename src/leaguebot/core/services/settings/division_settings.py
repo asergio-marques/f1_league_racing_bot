@@ -43,7 +43,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 NO_SEASON_REFUSAL = (

@@ -65,7 +65,7 @@ from leaguebot.core.models.round import (
     read_scheduled_at,
 )
 from leaguebot.core.services.rounds.round_moments import as_utc
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: The fields of a round a league may amend.
 AMENDABLE_FIELDS = frozenset({"track_name", "format", "scheduled_at"})

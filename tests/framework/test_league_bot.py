@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from leaguebot.__main__ import create_bot
-from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 

@@ -51,7 +51,7 @@ def league_logos(tmp_path):
 @pytest.fixture()
 def packaged(tmp_path, monkeypatch):
     """A packaged tier carrying the blank fallback for every class these tests touch."""
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
 
     root = tmp_path / "project"
     made = {}

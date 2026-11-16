@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_types import (
@@ -31,7 +31,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting
 from leaguebot.results.services.round_amendment.amendment_writes import sync_held_by_amendment

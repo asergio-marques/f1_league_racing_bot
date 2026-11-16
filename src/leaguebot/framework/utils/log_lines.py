@@ -3,7 +3,7 @@
 Every command, button and form that changes something, or tries to, records every outcome in
 the log channel — a success, a refusal or a failure, whoever used it (the core specification's
 "The record of what changed"). A failure is `report_failure`'s, in
-`core/utils/interaction_errors.py`. This module holds the other two, and the change queue's
+`framework/utils/interaction_errors.py`. This module holds the other two, and the change queue's
 lines, so that each standard line is formed in one place:
 
 - **`refuse`** answers the member, seen by them alone, and writes one line:
@@ -28,7 +28,7 @@ message; a reply too long for one is sent in parts through `chunk_message`, neve
 It lives apart from `interaction_errors` because it reaches the guild through `league_guild`,
 and `league_server`, which defines that, imports `interaction_errors`. The two helpers that name a
 member from what an interaction carries, `member_named` and `interaction_member`, live in
-`core/utils/member_names.py` so that `interaction_errors` can use them too; this module imports
+`framework/utils/member_names.py` so that `interaction_errors` can use them too; this module imports
 them and so still offers them to its callers.
 """
 
@@ -41,8 +41,8 @@ from typing import Any
 import discord
 
 from leaguebot.framework.models.change import LEAGUE_LANE
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.member_names import interaction_member, member_named  # noqa: F401
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.member_names import interaction_member, member_named  # noqa: F401
 from leaguebot.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)

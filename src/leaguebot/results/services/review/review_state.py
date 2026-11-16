@@ -22,7 +22,7 @@ from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.core.services.seasons import season_service
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 #: What reads the league's server configuration, handed to a review's views so that none looks the
 #: service up on the bot.

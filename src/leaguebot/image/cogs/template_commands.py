@@ -10,8 +10,8 @@ import discord
 from discord import app_commands
 
 from leaguebot.core.utils.channel_guard import league_manager_only
-from leaguebot.core.utils.interaction_errors import describe as describe_command
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe as describe_command
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.image.cogs.image_group import TEMPLATE_GROUP, ImageSubgroup
 from leaguebot.image.models.image_constants import TEMPLATE_LABELS
 from leaguebot.image.services.config.image_settings import TEMPLATE

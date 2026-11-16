@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 
 from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import season_exists
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.services.publishing import results_post_service
 
 if TYPE_CHECKING:

@@ -21,7 +21,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_names import SignupName
 from leaguebot.core.services.rounds.round_context import division_context
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import DRAWN_NAME
 
 log = logging.getLogger(__name__)

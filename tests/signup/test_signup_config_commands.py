@@ -37,7 +37,7 @@ from leaguebot.signup.services.signup_module_service import SignupModuleService
 from discord import app_commands
 
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import MEMBER_ID, run_queue
 from tests.support.settings_league import (
     fault_in,
@@ -522,7 +522,7 @@ _HELD_FOR_THE_CATCH_UP = {
 
 def _the_wait_of(callback):
     """The wait for the catch-up *callback* wears beneath its guard, or None where it wears none."""
-    from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+    from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 
     async def body(self, interaction):
         return None

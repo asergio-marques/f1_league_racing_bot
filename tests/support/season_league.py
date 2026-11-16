@@ -601,7 +601,7 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
     recorded in `league.backup_answers` with how many changes had been asked by then, and the
     time the question was given to stand in `league.backup_timeouts`.
     """
-    from leaguebot.core.utils.league_server import LeagueView
+    from leaguebot.framework.utils.league_server import LeagueView
 
     review = review or await post_review(league)
     press = member_interaction(league.bot, user=user or tier_member("admin", member_id=ADMIN_ID))

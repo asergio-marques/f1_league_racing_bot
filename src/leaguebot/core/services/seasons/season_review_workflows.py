@@ -62,12 +62,12 @@ from leaguebot.core.services.seasons.season_review_changes import take_review_do
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.utils.messages import discord_ts
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.interaction_errors import report_failure
-from leaguebot.core.utils.league_bot import bot_of
-from leaguebot.core.utils.league_server import LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.interaction_errors import report_failure
+from leaguebot.framework.utils.league_bot import bot_of
+from leaguebot.framework.utils.league_server import LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.member_names import interaction_member
 
 __all__ = [
     "BackupBeforeApprovalView",

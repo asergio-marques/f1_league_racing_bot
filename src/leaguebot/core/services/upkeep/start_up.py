@@ -42,8 +42,8 @@ from collections.abc import Awaitable, Callable
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.scheduler_service import SchedulerService
-from leaguebot.core.utils.hooks import StartingHook, runs_whatever_the_switch_says
-from leaguebot.core.utils.interaction_errors import start_up_failure_line
+from leaguebot.framework.utils.hooks import StartingHook, runs_whatever_the_switch_says
+from leaguebot.framework.utils.interaction_errors import start_up_failure_line
 
 log = logging.getLogger(__name__)
 

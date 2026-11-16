@@ -15,7 +15,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.seasons.season_service import division_round_states_on, season_divisions_on
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.results.services.module.division_channels import verdicts_channels_on
 
 if TYPE_CHECKING:

@@ -611,7 +611,7 @@ async def test_a_module_s_areas_not_read_leave_an_empty_fingerprint_logged(
     without the column it names, an `IndexError` as `sqlite3.Row` raises), or a bot whose modules
     hand no areas at all, gives an empty fingerprint, which differs from every other, so an
     approval is refused rather than waved through; the fault is logged on the host."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     if fault != "no module hands its areas":
         error = (

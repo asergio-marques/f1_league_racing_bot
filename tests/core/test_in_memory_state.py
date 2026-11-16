@@ -116,7 +116,7 @@ ARRIVING_EXEMPT = {
     ("core/services/modules/hub_service.py", "_options"): "#283 S22a",
     # A hook's subscribers, signed up by the builder before the bot connects: the bot's wiring,
     # not the league's data (#283 S8a).
-    ("core/utils/hooks.py", "_subscribers"): "#283 S8a",
+    ("framework/utils/hooks.py", "_subscribers"): "#283 S8a",
     # The turn channels of the asks waiting out the catch-up after a restart, each dropped once its
     # ask is saved or refused: it dies with the waiting ask, as `_trying`'s entries do with their
     # job, and holds no league state (#440, C4).
@@ -257,7 +257,7 @@ async def test_clearing_a_leagues_state_forgets_what_became_of_a_reviews_button(
     signed up to its hook, no review's mark is left, so a review of the same question id in the
     league that follows is untouched."""
     from leaguebot.core.services.seasons.season_review_changes import UNDER_WAY, _PRESSES, mark_press
-    from leaguebot.core.utils.hooks import Hook
+    from leaguebot.framework.utils.hooks import Hook
 
     mark_press(999, UNDER_WAY)
     assert _PRESSES == {999: UNDER_WAY}
@@ -277,7 +277,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     """
     from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
-    from leaguebot.core.utils.hooks import Hook
+    from leaguebot.framework.utils.hooks import Hook
 
     db_path = str(tmp_path / "queue.db")
     await run_migrations(db_path)

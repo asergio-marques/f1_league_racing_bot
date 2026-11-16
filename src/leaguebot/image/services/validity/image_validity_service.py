@@ -58,7 +58,7 @@ from leaguebot.image.models.image_module import (
     ValidityReport,
 )
 from leaguebot.framework.models.refusal import Refused
-from leaguebot.core.utils.paths import resolve_within_project_root
+from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.utils.svg_document import (
     FieldIndex,
     SvgNoCanvasError,

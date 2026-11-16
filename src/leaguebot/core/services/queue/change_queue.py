@@ -158,7 +158,7 @@ variable, so they pass the hold; a task started from outside it does not inherit
 that has an interaction not yet answered defers it, privately, before it waits, so that Discord's
 three seconds do not lapse, and its acknowledgement or refusal is then a follow-up, as for any
 deferred interaction. A command answered off the queue waits the same way through `wait_out_the_hold`
-(`leaguebot.core.utils.catch_up_gate`). A queue never held (every test's, bar those of the hold) asks at once. *Rejected:* refusing a request made during the
+(`leaguebot.framework.utils.catch_up_gate`). A queue never held (every test's, bar those of the hold) asks at once. *Rejected:* refusing a request made during the
 catch-up, which would turn away what a league manager asked for a moment after a restart, and
 queueing it unchecked, which would decide it against a league the catch-up has not finished
 changing. Pinned by `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`.
@@ -215,9 +215,9 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.queue.queue_stop_view import QueueStopView
-from leaguebot.core.utils.in_a_job import running_job
-from leaguebot.core.utils.interaction_errors import describe_fault, failure_line
-from leaguebot.core.utils.log_lines import (
+from leaguebot.framework.utils.in_a_job import running_job
+from leaguebot.framework.utils.interaction_errors import describe_fault, failure_line
+from leaguebot.framework.utils.log_lines import (
     cleared_line,
     conversation_ended_line,
     discarded_line,
@@ -232,12 +232,12 @@ from leaguebot.core.utils.log_lines import (
     stop_line,
     went_through_line,
 )
-from leaguebot.core.utils.member_names import interaction_member, member_named
+from leaguebot.framework.utils.member_names import interaction_member, member_named
 from leaguebot.utils.messages import chunk_message
 
 if TYPE_CHECKING:
     from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.framework.services.posting.league_settings import LeagueSettings
     from leaguebot.framework.services.queue.authority import AuthorityTiers
 

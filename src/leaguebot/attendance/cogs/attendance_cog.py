@@ -25,9 +25,9 @@ from leaguebot.attendance.cogs.config_commands import ConfigCommands
 from leaguebot.attendance.cogs.channel_commands import ChannelCommands
 from leaguebot.attendance.cogs.test_commands import TestCommands
 from leaguebot.attendance.cogs.group_commands import GroupCommands
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import refuse
 
 
 class AttendanceCog(

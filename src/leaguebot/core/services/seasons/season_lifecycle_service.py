@@ -46,9 +46,9 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.seasons.season_service import commit_placements_on
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService

@@ -268,7 +268,7 @@ def _success_line(number: int, edition: int) -> str:
 def _refusal_line(reply: str) -> str:
     """The log channel's line for `/season setup` refused with *reply*, its reason the reply without
     the mark it opens with."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/season setup` refused for {NAMED} — {reply_reason(reply)}"
 

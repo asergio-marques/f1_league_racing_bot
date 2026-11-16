@@ -32,7 +32,7 @@ from leaguebot.results.utils.points_ordering import ordering_message, ordering_v
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 

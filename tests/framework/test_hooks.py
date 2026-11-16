@@ -17,7 +17,7 @@ async def test_a_hook_calls_its_subscribers_in_order_on_the_handed_connection(aw
     called once, in that order, each handed the connection and the rows the call hands over, and
     what each hands back comes back in that order. A subscriber that raises stops the call: the
     error reaches the caller, and the subscriber after it is not called."""
-    from leaguebot.core.utils.hooks import AwaitedHook, Hook
+    from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
     connection = object()
     called: list[tuple] = []

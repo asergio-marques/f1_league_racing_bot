@@ -38,7 +38,7 @@ from leaguebot.results.services.standings.standings_service import (
     previous_standing_positions,
 )
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 

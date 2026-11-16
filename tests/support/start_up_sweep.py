@@ -40,7 +40,7 @@ async def _run_start_up_step(
     alone in *module*'s turn of the real start-up sweep, the module's switch reading *on* and
     core's queue and scheduler stood in for."""
     import leaguebot.core.services.upkeep.start_up as start_up_module
-    from leaguebot.core.utils.hooks import StartingHook
+    from leaguebot.framework.utils.hooks import StartingHook
 
     wiring = importlib.import_module(f"leaguebot.{module}.wiring")
     step = dict(wiring.start_up_steps(bot))[name]
@@ -114,7 +114,7 @@ async def _run_module_start_up(
     name where none is given), the switch reading *on* and core's queue and scheduler stood in
     for. Gives the lines the sweep posted to the log channel."""
     import leaguebot.core.services.upkeep.start_up as start_up_module
-    from leaguebot.core.utils.hooks import StartingHook
+    from leaguebot.framework.utils.hooks import StartingHook
 
     wiring = importlib.import_module(f"leaguebot.{module}.wiring")
     starting = StartingHook()

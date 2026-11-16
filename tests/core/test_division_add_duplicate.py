@@ -119,7 +119,7 @@ def _success_line(name: str, tier: int) -> str:
 
 def _refusal_line(reply: str) -> str:
     """The log channel's line for `/division add` refused with *reply*."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/division add` refused for {NAMED} — {reply_reason(reply)}"
 

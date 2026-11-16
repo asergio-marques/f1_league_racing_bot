@@ -1,7 +1,7 @@
 """How the log channel names a member: their display name and their mention.
 
 A leaf module, importing nothing of the bot's. `report_failure` in
-`core/utils/interaction_errors.py` and the standard lines in `core/utils/log_lines.py` both name
+`framework/utils/interaction_errors.py` and the standard lines in `framework/utils/log_lines.py` both name
 the member who used an interaction, and `log_lines` cannot be imported from `interaction_errors`
 without a cycle: it reaches the guild through `league_server`, which imports
 `interaction_errors`. The two helpers that need only what the interaction carries live here

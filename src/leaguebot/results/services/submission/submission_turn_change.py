@@ -68,8 +68,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.utils.channel_guard import is_league_manager
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
-from leaguebot.core.utils.member_names import member_named
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points import scoring
 from leaguebot.results.services.round_amendment import amendment_writes

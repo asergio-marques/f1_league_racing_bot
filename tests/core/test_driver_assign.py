@@ -96,7 +96,7 @@ def _assign_line(name: str = "Valtteri", user_id: int = 106) -> str:
 
 
 def _assign_refusal(reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/driver assign` refused for {_ADMIN} — {reply_reason(reply)}"
 

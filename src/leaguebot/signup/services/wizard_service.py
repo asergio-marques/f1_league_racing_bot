@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import discord
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
@@ -25,7 +25,7 @@ from leaguebot.signup.services.closing_steps import recover_correction_timeouts
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

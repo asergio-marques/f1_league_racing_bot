@@ -165,7 +165,7 @@ async def test_the_portrait_refresh_before_a_render_reads_the_shape_off_the_loop
 
 def _daily(monkeypatch, tmp_path, config: Any) -> Any:
     """A bot the daily refresh reaches its refresh with, the league holding *config*."""
-    from leaguebot.core.utils import league_server
+    from leaguebot.framework.utils import league_server
 
     bot = MagicMock()
     bot.image_config_service.get_config = AsyncMock(return_value=config)

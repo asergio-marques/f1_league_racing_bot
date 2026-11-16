@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_service import SeasonService

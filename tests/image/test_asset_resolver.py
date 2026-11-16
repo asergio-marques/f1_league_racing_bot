@@ -43,7 +43,7 @@ def no_packaged_tier(tmp_path, monkeypatch):
     *fatal* outcome must therefore put the packaged tier out of view, or it will quietly
     be testing the third path instead of the fourth.
     """
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
 
     empty = tmp_path / "no_project_root"
     empty.mkdir()
@@ -411,7 +411,7 @@ def test_a_relative_reference_is_anchored_to_the_project_root(monkeypatch, tmp_p
     is stored relative to it, and a template pointing at a file beside itself is pointing
     inside it, since that is where templates live.
     """
-    import leaguebot.core.utils.paths as paths
+    import leaguebot.framework.utils.paths as paths
 
     monkeypatch.setattr(paths, "PROJECT_ROOT", tmp_path)
 
@@ -558,7 +558,7 @@ def test_a_relative_href_draws_exactly_what_a_missing_one_draws(tmp_path):
 
     from leaguebot.image.models.image_constants import packaged_directory_for
     from leaguebot.image.services.render.image_render_service import find_converter
-    from leaguebot.core.utils.paths import PROJECT_ROOT
+    from leaguebot.framework.utils.paths import PROJECT_ROOT
 
     asset = PROJECT_ROOT / packaged_directory_for("flag") / "other.svg"
     relative = asset.relative_to(PROJECT_ROOT).as_posix()

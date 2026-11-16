@@ -25,7 +25,7 @@ from discord import app_commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from leaguebot.core.utils.season_gate import stage_refusal
 from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
 from tests.support.settings_league import (

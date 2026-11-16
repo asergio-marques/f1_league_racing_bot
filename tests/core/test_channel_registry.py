@@ -30,7 +30,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     find_channel_use,
     refusal,
 )
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.channel_uses import channel_uses_given
 
 SERVER_ID = 4242

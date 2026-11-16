@@ -63,7 +63,7 @@ from leaguebot.core.services.drivers.division_seating import (
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.utils.asset_resolver import filename_for
 from leaguebot.image.utils.svg_document import off_the_loop
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -169,7 +169,7 @@ def portrait_aspect(config) -> float:
     """
     try:
         from leaguebot.image.services.validity.image_validity_service import class_aspect_of
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
         from leaguebot.image.utils.svg_document import load_svg
 
         filename = getattr(config, "lineup_template", None)
@@ -412,7 +412,7 @@ async def run_daily_refresh(bot: LeagueBot, images: ImageConfigService, *, now: 
             log.info("driver portraits: the daily refresh fired late and is skipped")
             return 0
 
-        from leaguebot.core.utils.league_server import league_guild
+        from leaguebot.framework.utils.league_server import league_guild
 
         guild = await league_guild(bot)
         if guild is None:

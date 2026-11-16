@@ -14,7 +14,7 @@ from abc import abstractmethod
 import discord
 from discord import app_commands
 
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 RESULTS_GROUP = app_commands.Group(name="results", description="Results & Standings commands")
 CONFIG_GROUP = app_commands.Group(

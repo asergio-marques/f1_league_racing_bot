@@ -71,7 +71,7 @@ class _JobScheduler(AsyncIOScheduler):
 
     APScheduler arms its timer, and starts each job's task, through calls that copy the context
     of whoever last woke it. A job added from inside a member's command would therefore run
-    with that command's `core.utils.answering` record, and a line it writes that the log channel
+    with that command's `framework.utils.answering` record, and a line it writes that the log channel
     refuses would warn that member, long after, about a line that is not theirs. Waking the
     scheduler in an empty context cuts that: a job answers no interaction, and the host's log
     alone records its failure (`docs/wip-specs/core_specification.md`, "The record of what

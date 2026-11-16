@@ -24,7 +24,7 @@ import pytest
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import change_rows, member_interaction, run_queue, tier_member
 from tests.support.season_league import setup_league
 from tests.support.settings_league import fault_in, last_said, log_lines, record_followups, said

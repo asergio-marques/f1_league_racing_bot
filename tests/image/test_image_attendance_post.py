@@ -164,7 +164,7 @@ def _rendered_sheet(tmp_path):
 
     from leaguebot.image.services.aspects.image_attendance_service import build_fill_spec
     from leaguebot.image.services.render.image_render_service import rasterise
-    from leaguebot.core.utils.paths import PROJECT_ROOT
+    from leaguebot.framework.utils.paths import PROJECT_ROOT
     from leaguebot.image.utils.svg_document import canvas_of
     from leaguebot.image.utils.svg_fill import fill as fill_spec_onto
 

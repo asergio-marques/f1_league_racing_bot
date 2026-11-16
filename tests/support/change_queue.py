@@ -843,12 +843,12 @@ TEST_JOB = 1
 def in_a_job(job_id: int = TEST_JOB) -> Iterator[None]:
     """Run the body as job *job_id* runs, for a unit test calling a function that posts directly,
     with no queue to run it in a job. Where the bot keeps no running job's number yet
-    (`leaguebot.core.utils.in_a_job`, #439 6b), no function refuses a post outside a job, and the
+    (`leaguebot.framework.utils.in_a_job`, #439 6b), no function refuses a post outside a job, and the
     body runs as it is."""
     try:
-        from leaguebot.core.utils.in_a_job import running_job
+        from leaguebot.framework.utils.in_a_job import running_job
     except ModuleNotFoundError as missing:
-        if missing.name != "leaguebot.core.utils.in_a_job":
+        if missing.name != "leaguebot.framework.utils.in_a_job":
             raise
         yield
         return

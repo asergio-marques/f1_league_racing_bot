@@ -27,10 +27,10 @@ from leaguebot.results.cogs.reserves_commands import ReservesCommands
 from leaguebot.results.cogs.standings_commands import StandingsCommands
 from leaguebot.results.cogs.rounds_commands import RoundsCommands
 from leaguebot.results.cogs.channel_commands import ChannelCommands
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import is_foreign_guild
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import is_foreign_guild
+from leaguebot.framework.utils.log_lines import refuse
 
 
 class ResultsCog(

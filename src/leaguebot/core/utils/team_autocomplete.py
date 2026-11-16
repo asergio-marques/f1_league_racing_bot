@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 #: The most choices Discord shows for one autocomplete.
 _MAX_CHOICES = 25

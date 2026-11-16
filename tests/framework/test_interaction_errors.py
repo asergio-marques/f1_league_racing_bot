@@ -14,7 +14,7 @@ import discord
 import pytest
 from discord import app_commands
 
-from leaguebot.core.utils.interaction_errors import (
+from leaguebot.framework.utils.interaction_errors import (
     describe,
     describe_form,
     failure_reply,
@@ -131,7 +131,7 @@ async def test_a_failure_still_reaches_the_host_log_with_its_traceback(caplog):
     interaction = _interaction()
     error = KeyError("x")
 
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.utils.interaction_errors"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.framework.utils.interaction_errors"):
         await report_failure(interaction, _invoke_error(error), what="`/season approve`")
 
     records = [r for r in caplog.records if r.exc_info]
@@ -249,7 +249,7 @@ async def test_a_failure_before_any_command_was_found_is_still_answered():
 
 
 async def test_a_failed_button_tells_the_member_and_the_log_channel():
-    from leaguebot.core.utils.league_server import LeagueView
+    from leaguebot.framework.utils.league_server import LeagueView
 
     view = LeagueView()
     button = discord.ui.Button(label="Approve")
@@ -268,7 +268,7 @@ async def test_a_failed_button_tells_the_member_and_the_log_channel():
 
 
 async def test_a_failed_form_tells_the_member_and_the_log_channel():
-    from leaguebot.core.utils.league_server import LeagueModal
+    from leaguebot.framework.utils.league_server import LeagueModal
 
     class _Form(LeagueModal, title="Edit round"):
         pass
@@ -308,7 +308,7 @@ def _handler_records(caplog) -> list[logging.LogRecord]:
     return [
         record
         for record in caplog.records
-        if record.name == "leaguebot.core.utils.league_server" and record.exc_info
+        if record.name == "leaguebot.framework.utils.league_server" and record.exc_info
     ]
 
 
@@ -323,7 +323,7 @@ async def test_a_failed_event_goes_to_the_host_log_and_the_log_channel(caplog):
     bot.output_router = MagicMock(post_log=AsyncMock())
     error = KeyError("x")
 
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.utils.league_server"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.framework.utils.league_server"):
         await bot._run_event(_raising(error), "on_message", MagicMock())
 
     bot.output_router.post_log.assert_awaited_once_with(EVENT_LINE)
@@ -346,7 +346,7 @@ async def test_the_event_error_handler_never_raises(log_channel, caplog):
         )
     error = KeyError("x")
 
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.utils.league_server"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.framework.utils.league_server"):
         await bot._run_event(_raising(error), "on_member_remove", MagicMock())
 
     records = _handler_records(caplog)
@@ -394,6 +394,6 @@ async def test_report_failure_states_the_outcome_in_place_of_partly_done():
 )
 def test_describe_fault_names_the_kind_in_plain_words(error, kind):
     """Never the exception: a league manager is told what kind of fault it was, in words."""
-    from leaguebot.core.utils.interaction_errors import describe_fault
+    from leaguebot.framework.utils.interaction_errors import describe_fault
 
     assert describe_fault(error) == kind

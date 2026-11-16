@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
 from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
 #: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call

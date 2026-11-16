@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 
 
 async def test_a_fast_callback_returns_its_choices_unchanged():
@@ -68,7 +68,7 @@ async def test_a_raising_callback_returns_no_choices(caplog):
     async def broken(self, interaction, current):
         raise RuntimeError("database is away")
 
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.utils.autocomplete"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.framework.utils.autocomplete"):
         assert await broken(None, None, "") == []
 
     assert any("broken" in record.message for record in caplog.records)
@@ -80,7 +80,7 @@ async def test_a_slow_but_answered_callback_is_logged(caplog):
         await asyncio.sleep(0.05)
         return ["ok"]
 
-    with caplog.at_level(logging.WARNING, logger="leaguebot.core.utils.autocomplete"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.framework.utils.autocomplete"):
         assert await sluggish(None, None, "") == ["ok"]
 
     assert any(
@@ -94,7 +94,7 @@ async def test_an_overrun_is_logged(caplog):
         await asyncio.sleep(0.3)
         return []
 
-    with caplog.at_level(logging.WARNING, logger="leaguebot.core.utils.autocomplete"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.framework.utils.autocomplete"):
         await slow(None, None, "")
 
     assert any("exceeded" in record.message for record in caplog.records)

@@ -112,10 +112,10 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import name_of_member
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import name_of_member
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,

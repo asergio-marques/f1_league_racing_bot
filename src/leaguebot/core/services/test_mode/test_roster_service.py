@@ -38,7 +38,7 @@ from leaguebot.core.services.drivers.team_service import (
     division_team_references,
     resolve_team_reference,
 )
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME, parse_nationality
 
 log = logging.getLogger(__name__)

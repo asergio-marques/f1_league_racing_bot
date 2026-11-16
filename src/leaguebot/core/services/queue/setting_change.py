@@ -98,7 +98,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.utils.interaction_errors import failure_line, failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_line, failure_reply
 
 #: What a fault in a setting's save, or in its check as it comes up to run, says became of it.
 #: `{command}` is the command to run again.

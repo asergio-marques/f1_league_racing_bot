@@ -27,9 +27,9 @@ from leaguebot.core.services.rounds.division_edit_changes import DIVISION_AMEND,
 from leaguebot.core.services.seasons.season_end_changes import season_end_in_hand, season_end_refusal
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import refuse
 
 
 class DivisionCog(commands.Cog):

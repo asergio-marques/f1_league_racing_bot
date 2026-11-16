@@ -48,10 +48,10 @@ from leaguebot.core.utils.channel_guard import (
     league_manager_only,
     changes_nothing,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.utils.messages import chunk_message, discord_ts
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 

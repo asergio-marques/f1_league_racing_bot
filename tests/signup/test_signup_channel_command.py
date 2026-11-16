@@ -28,7 +28,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.support.change_queue import (
     ADMIN_ROLE_ID,

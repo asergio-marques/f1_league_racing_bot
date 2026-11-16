@@ -32,8 +32,8 @@ from leaguebot.core.services.cancellations.cancellation_notice_service import (
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 
 if TYPE_CHECKING:

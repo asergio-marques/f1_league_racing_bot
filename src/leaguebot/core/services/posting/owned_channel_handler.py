@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import discord
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 
 
 @posts_in_a_job

@@ -74,7 +74,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     live_season_stage,
 )
 from leaguebot.core.utils.channel_guard import league_role_faults
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
     BUTTON_KEPT,

@@ -51,16 +51,16 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
-from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.team_autocomplete import team_autocomplete
-from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
-from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.interaction_errors import describe, describe_form, report_failure
+from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.utils.messages import chunk_message, paginate_fenced
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
 from leaguebot.core.utils.roster_import import parse_roster_csv
 

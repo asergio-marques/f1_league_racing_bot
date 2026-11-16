@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import discord
 import pytest
 
-from leaguebot.core.utils.log_filters import (
+from leaguebot.framework.utils.log_filters import (
     TREE_LOGGER,
     UNKNOWN_INTERACTION,
     LateAutocompleteFilter,

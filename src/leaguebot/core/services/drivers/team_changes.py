@@ -58,8 +58,8 @@ from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.services.drivers.team_service import RESERVE_NAME, TeamService, resolve_team_reference
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import role_grant_refusal
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 TEAM_ADD = "core.team_add"
 TEAM_REMOVE = "core.team_remove"

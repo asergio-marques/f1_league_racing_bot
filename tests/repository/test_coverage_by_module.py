@@ -88,7 +88,7 @@ def test_known_files_are_classified(path, expected):
         ("src/leaguebot/core/cogs/team_cog.py", "core"),
         ("src/leaguebot/core/models/driver_profile.py", "core"),
         ("src/leaguebot/core/utils/roster_import.py", "core"),
-        ("src/leaguebot/core/utils/league_bot.py", "core"),
+        ("src/leaguebot/framework/utils/league_bot.py", "framework"),
         ("src/leaguebot/core/services/drivers/placement_service.py", "core"),
         # The signup review panel, the points amendment, and fetching a portrait.
         ("src/leaguebot/signup/cogs/admin_review_cog.py", "signup"),

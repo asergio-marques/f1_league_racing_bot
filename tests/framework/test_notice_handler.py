@@ -96,7 +96,7 @@ async def test_a_notice_handler_raises_what_discord_raises(error):
 
 async def test_a_notice_outside_a_job_is_refused_before_it_is_sent():
     from leaguebot.core.services.posting.notice_handler import delete_notice, edit_notice, send_notice
-    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+    from leaguebot.framework.utils.in_a_job import PostedOutsideAJob
 
     channel, message = _channel()
     mentions = discord.AllowedMentions.none()

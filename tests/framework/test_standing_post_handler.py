@@ -144,7 +144,7 @@ async def test_a_standing_post_outside_a_job_is_refused_before_it_is_sent():
         edit_standing,
         post_standing,
     )
-    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+    from leaguebot.framework.utils.in_a_job import PostedOutsideAJob
 
     channel, message = _channel()
     mentions = discord.AllowedMentions.none()

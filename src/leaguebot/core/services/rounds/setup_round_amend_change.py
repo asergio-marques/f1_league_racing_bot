@@ -63,7 +63,7 @@ from leaguebot.core.services.seasons.season_service import SeasonService, renumb
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 ROUND_AMEND_SETUP = "core.round_amend"
 

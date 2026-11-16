@@ -94,13 +94,13 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

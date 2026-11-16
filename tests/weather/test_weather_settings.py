@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import (
     MEMBER_ID,
     acknowledgement,

@@ -31,11 +31,11 @@ from leaguebot.results.services.points.points_amendment_change import (
 )
 from leaguebot.results.services.points.points_paste import bulk_refusal, parse_bulk_lines
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import bot_of
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import bot_of
+from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.member_names import interaction_member
 from leaguebot.core.utils.season_gate import season_for_command
 from leaguebot.image.services.render.image_drawing import as_image_drawing
 

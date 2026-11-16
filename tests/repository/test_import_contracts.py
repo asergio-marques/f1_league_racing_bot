@@ -273,7 +273,7 @@ def test_the_bot_s_type_names_the_services_for_the_type_checker_only():
     the modules' among them, because it does so under `TYPE_CHECKING` and nothing runs because of
     it (architecture.md, "How the code is laid out"). Imported at run time, core would load the
     modules' code the moment anything imports the bot's type."""
-    tree = ast.parse((PACKAGE / "core" / "utils" / "league_bot.py").read_text(encoding="utf-8"))
+    tree = ast.parse((PACKAGE / "framework" / "utils" / "league_bot.py").read_text(encoding="utf-8"))
     guarded = {
         id(inner)
         for node in ast.walk(tree)

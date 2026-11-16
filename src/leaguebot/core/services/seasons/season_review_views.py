@@ -60,9 +60,9 @@ from leaguebot.core.services.seasons.season_review_workflows import review_butto
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.utils.channel_guard import is_league_admin
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_server import LeagueView
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.league_server import LeagueView
+from leaguebot.framework.utils.log_lines import refuse
 
 __all__ = ["ApproveView", "ConfirmConfigurationView", "ConfirmMidSeasonPlacementsView"]
 

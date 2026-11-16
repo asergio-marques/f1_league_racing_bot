@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 
 RSVP_CHANNEL = "attendance.setting.rsvp_channel"

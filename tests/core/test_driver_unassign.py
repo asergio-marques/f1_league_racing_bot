@@ -81,7 +81,7 @@ def _unassign_line(name: str = "Charles", user_id: int = 103) -> str:
 
 
 def _unassign_refusal(reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/driver unassign` refused for {_ADMIN} — {reply_reason(reply)}"
 

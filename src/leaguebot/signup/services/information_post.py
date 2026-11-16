@@ -17,8 +17,8 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.signup_posting import post_standing_message
 from leaguebot.signup.services.signup_views import SignupButtonView
 

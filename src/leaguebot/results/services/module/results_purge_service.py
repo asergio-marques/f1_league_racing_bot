@@ -66,8 +66,8 @@ from leaguebot.core.services.posting.standing_post_handler import delete_standin
 from leaguebot.core.services.seasons.season_service import active_season_rounds_on
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.config_service import league_server_id_on
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 

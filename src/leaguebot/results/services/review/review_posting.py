@@ -76,12 +76,12 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.framework.utils.channels import as_text_channel
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.standing_post_handler import delete_standing
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
     DriverStandingsSnapshot,

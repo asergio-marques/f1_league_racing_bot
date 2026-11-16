@@ -22,8 +22,8 @@ from leaguebot.core.services.seasons.season_service import (
     rounds_called,
     rounds_still_to_run_by,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.models.recovery_failed import RecoveryFailed
 from leaguebot.results.services.submission.review_recovery import recover_review
 from leaguebot.results.services.submission.round_start import ask_round_start

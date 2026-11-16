@@ -14,7 +14,7 @@ from leaguebot.core.models.driver_profile import (
     DriverProfile, DriverState, InvalidDriverTransition,
 )
 from leaguebot.framework.models.refusal import Refused
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 

@@ -288,7 +288,7 @@ def _posting_type(
     *label*."""
     from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.results.services.review import review_posting
 
     async def plan(db: Any, ctx: Any) -> Any:

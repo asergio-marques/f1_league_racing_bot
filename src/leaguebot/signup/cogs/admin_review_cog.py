@@ -15,8 +15,8 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import is_foreign_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import is_foreign_guild
 from leaguebot.signup.services.signup_views import take_reason
 
 

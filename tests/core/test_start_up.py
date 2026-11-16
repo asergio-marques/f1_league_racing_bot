@@ -38,7 +38,7 @@ def _fresh_start_up() -> Any:
 
 def _starting() -> Any:
     """An empty `StartingHook`."""
-    from leaguebot.core.utils.hooks import StartingHook
+    from leaguebot.framework.utils.hooks import StartingHook
 
     return StartingHook()
 
@@ -225,7 +225,7 @@ async def test_a_step_a_module_marks_runs_while_the_module_is_off(on, ran):
     channels, unmarked. With results off, the sweep runs the held channels alone and passes over
     the two unmarked steps; with results on, it runs all three in results' own order. Nothing is
     posted to the log channel either way."""
-    from leaguebot.core.utils.hooks import runs_while_off
+    from leaguebot.framework.utils.hooks import runs_while_off
 
     module = _fresh_start_up()
     record = _Recorder({"results": on})
@@ -456,7 +456,7 @@ async def test_the_sweep_s_off_queue_commands_wait_for_the_catch_up():
     from unittest.mock import MagicMock
 
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+    from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
     from tests.support.change_queue import member_interaction, response_in_its_slot
 
     module = _fresh_start_up()

@@ -284,7 +284,7 @@ async def test_a_line_queued_before_the_bot_is_set_up_is_not_written(tmp_path):
 
 
 async def _admitted(bot, interaction) -> None:
-    from leaguebot.core.utils.league_server import admits
+    from leaguebot.framework.utils.league_server import admits
 
     bot.config_service.get_league_server_id = AsyncMock(return_value=interaction.guild_id)
     assert await admits(bot, interaction) is True

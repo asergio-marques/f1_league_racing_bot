@@ -88,8 +88,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons.season_service import renumber_rounds_on, round_called
 from leaguebot.core.utils.formatting import format_round_list
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService

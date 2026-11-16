@@ -794,9 +794,9 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
     it came from."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from leaguebot.core.utils.interaction_errors import describe
+    from leaguebot.framework.utils.interaction_errors import describe
 
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     cog = ImageCog(
         SimpleNamespace(

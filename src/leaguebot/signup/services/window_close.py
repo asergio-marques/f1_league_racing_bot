@@ -29,7 +29,7 @@ from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.signup.services.signup_module_service import SignupModuleService, signup_enabled_on
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 #: The kind of the one-off timer that closes signups at their set time, and its one key.
 CLOSE_TIMER = "signup.close_timer"

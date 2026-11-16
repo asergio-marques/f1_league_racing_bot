@@ -18,8 +18,8 @@ from leaguebot.attendance.services.settings.channel_settings import (
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.core.utils.channel_guard import league_manager_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import refuse
 
 #: The kind of change each `/attendance channel` command asks of the queue.
 _CHANNEL_KINDS = {"rsvp": RSVP_CHANNEL, "attendance": ATTENDANCE_CHANNEL}

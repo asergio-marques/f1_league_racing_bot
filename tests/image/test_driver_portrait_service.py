@@ -730,7 +730,7 @@ async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatc
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path)
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path)
 
     bot = _daily_bot(path, directory)
 
@@ -756,7 +756,7 @@ async def test_the_daily_refresh_stands_aside_when_not_asked_for(
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path, images_on=images_on)
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path)
     bot = _daily_bot(path, directory, **config_overrides)
 
     assert await m.run_daily_refresh(bot, bot.image_config_service, now=NOW) == 0
@@ -778,7 +778,7 @@ async def test_a_daily_refresh_that_fires_hours_after_its_time_is_skipped(
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path)
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path)
     six_hours_late = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
 
     bot = _daily_bot(path, directory)
@@ -809,7 +809,7 @@ async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path)
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path)
     bot = _daily_bot(path, directory)
     bot.get_guild.return_value = None
 
@@ -827,7 +827,7 @@ def _lineup(tmp_path, monkeypatch, *slots):
     this the helper would return 1.0 for every case by being refused, and each test below
     would pass without exercising anything.
     """
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
 
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
     directory = tmp_path / "templates"
@@ -884,7 +884,7 @@ def test_an_unreadable_lineup_assumes_a_square_portrait(config):
 
 
 def test_a_lineup_that_will_not_parse_assumes_a_square_portrait(tmp_path, monkeypatch):
-    import leaguebot.core.utils.paths as paths_module
+    import leaguebot.framework.utils.paths as paths_module
 
     from leaguebot.image.services.portraits.driver_portrait_service import portrait_aspect
 

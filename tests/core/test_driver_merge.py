@@ -293,7 +293,7 @@ async def test_with_no_module_answering_only_a_shared_seat_is_refused(tmp_path, 
     driver's; a shared seat, which core records itself, is still refused in today's words,
     changing nothing."""
     from leaguebot.framework.models.refusal import Refused
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 
     db_path = await _make_db(tmp_path)
