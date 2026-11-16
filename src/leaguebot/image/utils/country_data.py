@@ -22,6 +22,8 @@ Usage::
 
 A missing entry is a defect of this module and is caught by the totality test in
 ``tests/image/test_country_data.py``, never by a fallback drawn at generation.
+
+Pure: no database, no Discord, no filesystem.
 """
 
 from __future__ import annotations
