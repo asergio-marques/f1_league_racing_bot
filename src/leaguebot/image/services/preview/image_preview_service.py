@@ -19,14 +19,33 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from leaguebot.image.models.image_constants import ASSET_CLASS_TO_COLUMN, PREVIEW_KINDS
 from leaguebot.core.models.round import Round
 from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.image.services.preview.preview_sources import PreviewSources
 
+if TYPE_CHECKING:
+    from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PreviewServices:
+    """The services the previews draw through, handed in by the command that asks for one.
+
+    The previews are services and look nothing up on the bot (architecture.md, "How modules
+    and core fit together"), so the cog that asks for a preview names what it needs here, once,
+    and hands the builders this rather than the bot.
+    """
+
+    db_path: str
+    season_service: SeasonService
+    image_config_service: ImageConfigService
+    preview_sources: PreviewSources
 
 
 # ── Refusal ───────────────────────────────────────────────────────────────
@@ -216,7 +235,7 @@ def _fabricated_driver(
 
 
 async def resolve_context(
-    bot: LeagueBot,
+    services: PreviewServices,
     division_name: str | None = None,
     *,
     guild=None,
@@ -260,7 +279,7 @@ async def resolve_context(
     # (FR-001). A season pending approval holds its divisions, rounds, teams, seats and
     # driver assignments in the same tables and the same shape as an approved one, so
     # widening the lookup is the whole of what drawing it takes.
-    season = await bot.season_service.get_previewable_season()
+    season = await services.season_service.get_previewable_season()
 
     if season is None:
         # Refused rather than invented (decided 2026-09-06). A preview used to fabricate a
@@ -293,7 +312,7 @@ async def resolve_context(
             "draw it from. Supply the `round` option.",
         )
 
-    divisions = await bot.season_service.get_divisions(season.id)
+    divisions = await services.season_service.get_divisions(season.id)
     wanted = (division_name or "").strip().casefold()
     division = next(
         (d for d in divisions if d.name.strip().casefold() == wanted), None
@@ -314,7 +333,7 @@ async def resolve_context(
         season_pending_approval=pending_approval,
     )
 
-    rounds = await bot.season_service.get_division_rounds(division.id)
+    rounds = await services.season_service.get_division_rounds(division.id)
     context.rounds = rounds
 
     if require_rounds and not rounds:
@@ -340,7 +359,7 @@ async def resolve_context(
     # The team read serves the drivers of every kind that draws them, and is two small
     # queries, so it is not worth conditioning on the kind.
     await _load_teams_and_drivers(
-        bot, context, driver_names_read if driver_names_read is not None else AwaitedHook(), guild=guild
+        services, context, driver_names_read if driver_names_read is not None else AwaitedHook(), guild=guild
     )
 
     if require_teams and not [
@@ -368,7 +387,7 @@ async def resolve_context(
             )
 
     context.asset_directories, context.directory_faults = await resolve_asset_directories(
-        bot
+        services
     )
     return context
 
@@ -380,7 +399,7 @@ def _format_of(round_obj) -> str:
 
 
 async def _load_teams_and_drivers(
-    bot: LeagueBot, context: PreviewContext, driver_names_read: AwaitedHook, *, guild=None
+    services: PreviewServices, context: PreviewContext, driver_names_read: AwaitedHook, *, guild=None
 ) -> None:
     """Read the division's teams and seats, and fill the drivers the preview will draw.
 
@@ -393,14 +412,14 @@ async def _load_teams_and_drivers(
         season_of_division,
     )
 
-    season_id = await season_of_division(bot.db_path, context.division_id)
+    season_id = await season_of_division(services.db_path, context.division_id)
     from leaguebot.image.services.aspects.image_lineup_post import seated_teams
 
-    teams = await seated_teams(bot.db_path, driver_names_read, context.division_id, season_id)
+    teams = await seated_teams(services.db_path, driver_names_read, context.division_id, season_id)
 
     context.teams = teams
     context.nationality_collected = await read_nationality_collected(
-        bot.db_path, driver_names_read
+        services.db_path, driver_names_read
     )
 
     # The first link of the name chain is the account's display name on the server at the
@@ -417,7 +436,7 @@ async def _load_teams_and_drivers(
     from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
-        bot.db_path,
+        services.db_path,
         list(members.values()),
         directory=context.asset_directories.get("driver"),
     )
@@ -519,7 +538,7 @@ ASSET_CLASS_COLUMNS: tuple[tuple[str, str], ...] = tuple(
 
 
 async def resolve_asset_directories(
-    bot: LeagueBot
+    services: PreviewServices
 ) -> tuple[dict[str, Path], list[DirectoryFault]]:
     """The league's own asset directories, and the ones that would not resolve.
 
@@ -532,7 +551,7 @@ async def resolve_asset_directories(
 
     faults: list[DirectoryFault] = []
 
-    config = await bot.image_config_service.get_config()
+    config = await services.image_config_service.get_config()
     if config is None:
         return {}, faults
 
@@ -584,7 +603,7 @@ async def resolve_asset_directories(
 # came from, and in nothing else.
 
 
-async def build_calendar_preview(bot: LeagueBot, context: PreviewContext):
+async def build_calendar_preview(services: PreviewServices, context: PreviewContext):
     """The calendar of the named division, exactly as configured (FR-016).
 
     Fabricates nothing: the rounds, their tracks, their formats and their dates are the
@@ -593,9 +612,9 @@ async def build_calendar_preview(bot: LeagueBot, context: PreviewContext):
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.aspects.image_calendar_service import build_fill_spec, resolve_drawing
 
-    config = await bot.image_config_service.get_config()
+    config = await services.image_config_service.get_config()
     rounds = context.rounds
-    tracks = await tracks_by_name(bot.db_path)
+    tracks = await tracks_by_name(services.db_path)
 
     drawing = resolve_drawing(
         division_name=context.division_name,
@@ -616,7 +635,7 @@ async def build_calendar_preview(bot: LeagueBot, context: PreviewContext):
     return [("Calendar", "calendar_template", _spec)]
 
 
-async def build_lineup_preview(bot: LeagueBot, context: PreviewContext):
+async def build_lineup_preview(services: PreviewServices, context: PreviewContext):
     """The lineup of the named division: its own teams, and its own seated drivers.
 
     Where the division has seated nobody, every seat carries an invented driver — written
@@ -738,7 +757,7 @@ def _driver_maps(context: PreviewContext, drivers=None):
     return names, teams, flags, team_key_of
 
 
-async def _race_name(bot: LeagueBot, context: PreviewContext) -> str:
+async def _race_name(services: PreviewServices, context: PreviewContext) -> str:
     """The grand prix the round is, as a posting would name it.
 
     Every posting path reads this from the **track registry** — ``tracks.gp_name`` — and
@@ -761,7 +780,7 @@ async def _race_name(bot: LeagueBot, context: PreviewContext) -> str:
         return MYSTERY_RACE_NAME
 
     track_name = getattr(round_obj, "track_name", None)
-    tracks = await tracks_by_name(bot.db_path)
+    tracks = await tracks_by_name(services.db_path)
     record = tracks.get(track_name) if track_name else None
     return getattr(record, "gp_name", None) or track_name or ""
 
@@ -769,16 +788,16 @@ async def _race_name(bot: LeagueBot, context: PreviewContext) -> str:
 # ── Check-in call ─────────────────────────────────────────────────────────
 
 
-async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
+async def build_rsvp_preview(services: PreviewServices, context: PreviewContext):
     """The check-in call for the named round. Fabricates nothing.
 
     The round's own format decides its session list, its own schedule the times, and the
     deadline is the one attendance works out from the league's stored check-in configuration
-    (`bot.preview_sources`), the module's default where none is stored.
+    (`services.preview_sources`), the module's default where none is stored.
     """
     from leaguebot.image.services.aspects.image_rsvp_service import build_fill_spec, resolve_drawing
 
-    config = await bot.image_config_service.get_config()
+    config = await services.image_config_service.get_config()
     round_obj = context.required_round()
     is_mystery = _format_of(round_obj) == "MYSTERY"
 
@@ -788,10 +807,10 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
         round_number=round_obj.round_number,
         round_format=_format_of(round_obj),
         scheduled_at=scheduled_at,
-        deadline_at=await bot.preview_sources.check_in_deadline(scheduled_at),
+        deadline_at=await services.preview_sources.check_in_deadline(scheduled_at),
         track_name=None if is_mystery else getattr(round_obj, "track_name", None),
-        race_name=await _race_name(bot, context),
-        country_name=await _country_of(bot, round_obj),
+        race_name=await _race_name(services, context),
+        country_name=await _country_of(services, round_obj),
         is_mystery=is_mystery,
         division_tier=context.division_tier,
         season_number=context.season_number,
@@ -805,13 +824,13 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
     ]
 
 
-async def _country_of(bot: LeagueBot, round_obj) -> str | None:
+async def _country_of(services: PreviewServices, round_obj) -> str | None:
     """The country the round is run in — the datum its flag resolves by."""
     if round_obj is None or _format_of(round_obj) == "MYSTERY":
         return None
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
 
-    tracks = await tracks_by_name(bot.db_path)
+    tracks = await tracks_by_name(services.db_path)
     record = tracks.get(getattr(round_obj, "track_name", None))
     return getattr(record, "country", None) if record else None
 
@@ -820,7 +839,7 @@ async def _country_of(bot: LeagueBot, round_obj) -> str | None:
 
 
 async def build_results_preview(
-    bot: LeagueBot, context: PreviewContext, sources: PreviewSources
+    services: PreviewServices, context: PreviewContext, sources: PreviewSources
 ):
     """One picture per session the named round is run over (FR-023).
 
@@ -834,7 +853,7 @@ async def build_results_preview(
     )
     from leaguebot.image.services.aspects.image_results_service import build_fill_spec
 
-    config = await bot.image_config_service.get_config()
+    config = await services.image_config_service.get_config()
     drivers = _racing_drivers(context)
     names, teams, flags, team_key_of = _driver_maps(context, drivers)
     round_obj = context.required_round()
@@ -868,7 +887,7 @@ async def build_results_preview(
             result_status="FINAL",
             division_name=context.division_name,
             round_number=round_obj.round_number,
-            race_name=await _race_name(bot, context),
+            race_name=await _race_name(services, context),
             driver_rows=rows,
             points_map={row.driver_user_id: row.points_awarded for row in rows},
             driver_names=names,
@@ -898,7 +917,7 @@ async def build_results_preview(
 
 
 async def build_standings_preview(
-    bot: LeagueBot, context: PreviewContext, sources: PreviewSources
+    services: PreviewServices, context: PreviewContext, sources: PreviewSources
 ):
     """Both championships, as they would stand after the named round (FR-025, FR-026).
 
@@ -945,7 +964,7 @@ async def build_standings_preview(
     round_obj = context.required_round()
     racing_teams = _racing_teams(context)
 
-    tracks = await _tracks(bot)
+    tracks = await _tracks(services)
 
     headings = []
     round_formats: dict[int, str] = {}
@@ -1017,7 +1036,7 @@ async def build_standings_preview(
             result_status="FINAL",
             division_tier=context.division_tier,
             season_number=context.season_number,
-            race_name=await _race_name(bot, context),
+            race_name=await _race_name(services, context),
             nationality_collected=context.nationality_collected,
         ),
     )
@@ -1039,7 +1058,7 @@ async def build_standings_preview(
 # ── Attendance sheet ──────────────────────────────────────────────────────
 
 
-async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
+async def build_attendance_preview(services: PreviewServices, context: PreviewContext):
     """The sheet as it would stand after the named round (FR-027, FR-028).
 
     The grid holds every round of the division's calendar; records are fabricated up to and
@@ -1060,7 +1079,7 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
     names, _teams, flags, _team_key_of = _driver_maps(context)
     round_obj = context.required_round()
     rounds = context.rounds
-    tracks = await _tracks(bot)
+    tracks = await _tracks(services)
 
     headings = []
     for ordinal, entry in enumerate(sorted(rounds, key=lambda r: r.round_number), start=1):
@@ -1105,7 +1124,7 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
         autosack_threshold=limit,
         division_tier=context.division_tier,
         season_number=context.season_number,
-        race_name=await _race_name(bot, context),
+        race_name=await _race_name(services, context),
         nationality_collected=context.nationality_collected,
     )
 
@@ -1118,17 +1137,17 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
     ]
 
 
-async def _tracks(bot: LeagueBot):
+async def _tracks(services: PreviewServices):
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
 
-    return await tracks_by_name(bot.db_path)
+    return await tracks_by_name(services.db_path)
 
 
 # ── Verdicts ──────────────────────────────────────────────────────────────
 
 
 async def build_verdict_preview(
-    bot: LeagueBot, context: PreviewContext, sources: PreviewSources
+    services: PreviewServices, context: PreviewContext, sources: PreviewSources
 ):
     """One picture per verdict case (FR-032 to FR-034).
 
@@ -1164,7 +1183,7 @@ async def build_verdict_preview(
             justification=case["justification"],
             season_number=context.season_number,
             division_tier=context.division_tier,
-            race_name=await _race_name(bot, context),
+            race_name=await _race_name(services, context),
             session_name=case["session_name"],
             team_name=driver.team_name,
             driver_nationality=driver.nationality,
@@ -1184,7 +1203,7 @@ async def build_verdict_preview(
 # ── Verdict banner ────────────────────────────────────────────────────────
 
 
-async def build_verdict_banner_preview(bot: LeagueBot, context: PreviewContext):
+async def build_verdict_banner_preview(services: PreviewServices, context: PreviewContext):
     """The banner that heads a batch of verdicts for the named round.
 
     Fabricates nothing at all, which no other preview can say: a banner draws the season,
@@ -1209,8 +1228,8 @@ async def build_verdict_banner_preview(bot: LeagueBot, context: PreviewContext):
         round_number=round_obj.round_number,
         season_number=context.season_number,
         division_tier=context.division_tier,
-        race_name=await _race_name(bot, context),
-        country_name=await _country_of(bot, round_obj),
+        race_name=await _race_name(services, context),
+        country_name=await _country_of(services, round_obj),
     )
 
     return [
@@ -1225,7 +1244,7 @@ async def build_verdict_banner_preview(bot: LeagueBot, context: PreviewContext):
 # ── Weather ───────────────────────────────────────────────────────────────
 
 
-async def build_weather_preview(bot: LeagueBot, context: PreviewContext, *, phase: int):
+async def build_weather_preview(services: PreviewServices, context: PreviewContext, *, phase: int):
     """One forecast picture for the named round, at *phase* (FR-029 to FR-031).
 
     Phase 0 is the mystery notice, which holds no session and carries no forecast. The
@@ -1246,8 +1265,8 @@ async def build_weather_preview(bot: LeagueBot, context: PreviewContext, *, phas
         round_number=round_obj.round_number,
         round_format=round_format,
         track_name=None if is_mystery else getattr(round_obj, "track_name", None),
-        race_name=await _race_name(bot, context),
-        country_name=await _country_of(bot, round_obj),
+        race_name=await _race_name(services, context),
+        country_name=await _country_of(services, round_obj),
         values=values,
         division_tier=context.division_tier,
         season_number=context.season_number,

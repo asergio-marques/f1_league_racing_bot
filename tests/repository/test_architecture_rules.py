@@ -1483,11 +1483,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/preview/image_preview_service.py", "build_calendar_preview"): (1, PASS["image"]),
-    ("image/services/preview/image_preview_service.py", "build_results_preview"): (1, PASS["image"]),
-    ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
-    ("image/services/preview/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
-    ("image/services/preview/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
 }
 
 

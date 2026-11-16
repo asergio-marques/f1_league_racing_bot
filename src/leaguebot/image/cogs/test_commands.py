@@ -11,6 +11,7 @@ from discord import app_commands
 
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.image.cogs.image_group import TEST_GROUP, ImageSubgroup
+from leaguebot.image.services.preview.image_preview_service import PreviewServices
 from leaguebot.image.services.preview.preview_runner import run_preview, send_preview
 
 
@@ -33,7 +34,7 @@ class TestCommands(ImageSubgroup):
 
         await run_preview(
             interaction,
-            bot=self.bot,
+            services=self._preview_services(),
             render=self._render,
             driver_names_read=self.bot.driver_names_read,
             post_log=self.bot.output_router.post_log,
@@ -42,6 +43,15 @@ class TestCommands(ImageSubgroup):
             division=division,
             build=build,
             round_number=round_number,
+        )
+
+    def _preview_services(self) -> PreviewServices:
+        """The services the previews draw through, named from the bot as a preview begins."""
+        return PreviewServices(
+            db_path=self.bot.db_path,
+            season_service=self.bot.season_service,
+            image_config_service=self.bot.image_config_service,
+            preview_sources=self.bot.preview_sources,
         )
 
     async def _render(self, *args, **kwargs):
@@ -65,7 +75,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_calendar_preview
 
         async def _build(context):
-            return await build_calendar_preview(self.bot, context)
+            return await build_calendar_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
@@ -90,7 +100,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_lineup_preview
 
         async def _build(context):
-            return await build_lineup_preview(self.bot, context)
+            return await build_lineup_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
@@ -119,7 +129,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_results_preview
 
         async def _build(context):
-            return await build_results_preview(self.bot, context, self.bot.preview_sources)
+            return await build_results_preview(self._preview_services(), context, self.bot.preview_sources)
 
         await self._run_preview(
             interaction,
@@ -149,7 +159,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_standings_preview
 
         async def _build(context):
-            return await build_standings_preview(self.bot, context, self.bot.preview_sources)
+            return await build_standings_preview(self._preview_services(), context, self.bot.preview_sources)
 
         await self._run_preview(
             interaction,
@@ -179,7 +189,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_attendance_preview
 
         async def _build(context):
-            return await build_attendance_preview(self.bot, context)
+            return await build_attendance_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
@@ -209,7 +219,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_rsvp_preview
 
         async def _build(context):
-            return await build_rsvp_preview(self.bot, context)
+            return await build_rsvp_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
@@ -239,7 +249,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_verdict_preview
 
         async def _build(context):
-            return await build_verdict_preview(self.bot, context, self.bot.preview_sources)
+            return await build_verdict_preview(self._preview_services(), context, self.bot.preview_sources)
 
         await self._run_preview(
             interaction,
@@ -269,7 +279,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_verdict_banner_preview
 
         async def _build(context):
-            return await build_verdict_banner_preview(self.bot, context)
+            return await build_verdict_banner_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
@@ -299,7 +309,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
-            return await build_weather_preview(self.bot, context, phase=1)
+            return await build_weather_preview(self._preview_services(), context, phase=1)
 
         await self._run_preview(
             interaction,
@@ -329,7 +339,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
-            return await build_weather_preview(self.bot, context, phase=2)
+            return await build_weather_preview(self._preview_services(), context, phase=2)
 
         await self._run_preview(
             interaction,
@@ -359,7 +369,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
-            return await build_weather_preview(self.bot, context, phase=3)
+            return await build_weather_preview(self._preview_services(), context, phase=3)
 
         await self._run_preview(
             interaction,
@@ -389,7 +399,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_weather_preview
 
         async def _build(context):
-            return await build_weather_preview(self.bot, context, phase=0)
+            return await build_weather_preview(self._preview_services(), context, phase=0)
 
         await self._run_preview(
             interaction,

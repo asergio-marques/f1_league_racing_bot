@@ -5,10 +5,10 @@ cog holds the command and the service the rule. A preview guards, then resolves,
 replies with the pictures and plainly what the render had to make do with. It changes nothing: a
 preview leaves a league's records exactly as it found them.
 
-What the runner needs of the bot it is handed, it is handed: it is not a cog and looks no service up
-(docs/design/architecture.md, "How the code is laid out"). The driver names reader is handed in, the
-render and the log writer as callables for the cog to resolve when it draws, and the bot only to be
-passed on to the resolution that asks it.
+What the runner needs, it is handed: it is not a cog and looks no service up (docs/design/architecture.md,
+"How the code is laid out"). The driver names reader is handed in, the render and the log writer as
+callables for the cog to resolve when it draws, and the services the previews draw through as one
+`PreviewServices`, passed on to the resolution that asks them.
 """
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from typing import Any
 import discord
 
 from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.image.services.preview import image_preview_service
 from leaguebot.image.services.render import image_render_service
@@ -32,7 +31,7 @@ type Requests = Sequence[tuple[str, str, Any]]
 async def run_preview(
     interaction: discord.Interaction,
     *,
-    bot: LeagueBot,
+    services: image_preview_service.PreviewServices,
     render: Callable[..., Awaitable[Any]],
     driver_names_read: AwaitedHook,
     post_log: Callable[[str], Awaitable[Any]],
@@ -64,7 +63,7 @@ async def run_preview(
 
     try:
         context = await image_preview_service.resolve_context(
-            bot,
+            services,
             division,
             guild=interaction.guild,
             round_number=round_number,

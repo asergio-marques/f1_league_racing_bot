@@ -803,6 +803,10 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
             module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)),
             driver_names_read=AwaitedHook(),
             output_router=SimpleNamespace(post_log=AsyncMock(return_value=None)),
+            db_path="league.db",
+            season_service=SimpleNamespace(),
+            image_config_service=SimpleNamespace(),
+            preview_sources=SimpleNamespace(),
         )
     )
     interaction = _Interaction()
