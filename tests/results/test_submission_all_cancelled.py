@@ -243,6 +243,9 @@ async def test_a_refused_deletion_of_an_all_cancelled_channel_stops_only_the_rou
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_audit(tmp_path):
     """Round 3 awaits its results, its qualifying entered as cancelled; the admin types CANCELLED
     for the race. When the queue runs, round 3 is CANCELLED and marked as not held, and one
@@ -258,7 +261,7 @@ async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_
 
     assert await stopped_job(league.db_path) is None
     assert await _round(league) == ("CANCELLED", 1)
-    assert await _round_audits(league) == [(ADMIN_ID, "AWAITING_RESULTS", "CANCELLED")]
+    assert await _round_audits(league) == [(ADMIN_ID, '"AWAITING_RESULTS"', '"CANCELLED"')]
     after = await league.rows(
         "SELECT id, status FROM rounds WHERE division_id = ? AND id != ? ORDER BY id", PRO, ROUND_3
     )
@@ -267,6 +270,9 @@ async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_
     ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_cancelled(
     tmp_path, monkeypatch,
 ):
@@ -310,7 +316,7 @@ async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_ca
         )).fetchall()
     assert (row["status"], row["not_held"]) == ("CANCELLED", 1)
     assert [(audit["old_value"], audit["new_value"]) for audit in audits] == [
-        ("AWAITING_REPORT_VERDICTS", "CANCELLED")
+        ('"AWAITING_REPORT_VERDICTS"', '"CANCELLED"')
     ]
     assert ("delete_channel", REVIEW_CHANNEL, REVIEW_CHANNEL) in league.events
     assert len(await _changes(league, REVIEW_OPEN)) == asked_before

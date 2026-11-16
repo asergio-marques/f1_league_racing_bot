@@ -318,6 +318,9 @@ async def test_cancelling_a_division_takes_its_unraced_rounds(tmp_path) -> None:
     assert await _round_status(db_path, in_appeals) == "AWAITING_APPEAL_VERDICTS"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -> None:
     """The audit row hardcoded "ACTIVE" as the old value whatever the division actually said."""
     db_path = str(tmp_path / "bot.db")
@@ -337,7 +340,7 @@ async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -
             (div_id,),
         )
         row = await cur.fetchone()
-    assert (row["old_value"], row["new_value"]) == ("SETUP", "CANCELLED")
+    assert (row["old_value"], row["new_value"]) == ('"SETUP"', '"CANCELLED"')
 
 
 async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_path) -> None:
@@ -417,6 +420,9 @@ async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path
     assert "PENDING_COMPLETION" not in written
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_cancelled_from(
     tmp_path,
 ) -> None:
@@ -438,7 +444,9 @@ async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_canc
             "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'round.status'"
         )
         audits = sorted((r["old_value"], r["new_value"]) for r in await cur.fetchall())
-    assert audits == [("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED")]
+    assert audits == [
+        ('"AWAITING_RESULTS"', '"CANCELLED"'), ('"NOT_RUN"', '"CANCELLED"')
+    ]
 
 
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:

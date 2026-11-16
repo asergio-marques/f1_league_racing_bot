@@ -212,6 +212,9 @@ async def _division_status(db) -> str:
     return (await cursor.fetchone())["status"]
 
 
+_NOT_JSON_YET = "#544: a status audit's values are written as plain words, not as JSON"
+
+
 async def _round_audits(db) -> list[tuple[str, str]]:
     cursor = await db.execute(
         "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'round.status' "
@@ -220,6 +223,9 @@ async def _round_audits(db) -> list[tuple[str, str]]:
     return [(row["old_value"], row["new_value"]) for row in await cursor.fetchall()]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(tmp_path):
     """Pro's round 1 is final, round 2 waits for its results (no submission open) and round 3 is
     not run. Cancelling round 2 on a connection answers the status it was cancelled from,
@@ -232,7 +238,7 @@ async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(
     async with get_connection(db_path) as db:
         assert await cancel_round_on(db, ROUND_ID + 1, **ACTOR) == "AWAITING_RESULTS"
         assert await _round_statuses(db) == ["FINAL", "CANCELLED", "NOT_RUN"]
-        assert await _round_audits(db) == [("AWAITING_RESULTS", "CANCELLED")]
+        assert await _round_audits(db) == [('"AWAITING_RESULTS"', '"CANCELLED"')]
         assert await _division_status(db) == "ACTIVE"
         await db.rollback()
 
@@ -290,6 +296,9 @@ async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_sea
         assert await _season(db) == ("ACTIVE", "ONGOING")
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 @pytest.mark.parametrize(
     "statuses",
     [
@@ -314,7 +323,9 @@ async def test_a_division_is_cancelled_on_the_save_handed(tmp_path, statuses):
         assert await cancel_division_on(db, DIVISION_ID, **ACTOR) == [ROUND_ID + n for n in later]
         assert await _division_status(db) == "CANCELLED"
         assert await _round_statuses(db) == ["FINAL"] + ["CANCELLED"] * len(later)
-        assert await _round_audits(db) == [(statuses[n], "CANCELLED") for n in later]
+        assert await _round_audits(db) == [
+            (f'"{statuses[n]}"', '"CANCELLED"') for n in later
+        ]
         assert await _season(db) == ("ACTIVE", "ONGOING")
         await db.rollback()
 
@@ -559,6 +570,9 @@ async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its
         assert await _statuses(db, "rounds", [unraced]) == {unraced: "NOT_RUN"}
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
     """Round 1 is awaiting its report verdicts, round 2 not yet run. Round 1 is made final and
     audited at the moment handed, and handed alone to the hook a round made final calls, once, on
@@ -596,8 +610,8 @@ async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
         assert dict(audit) == {
             "actor_id": ACTOR_ID,
             "division_id": division_id,
-            "old_value": "AWAITING_REPORT_VERDICTS",
-            "new_value": "FINAL",
+            "old_value": '"AWAITING_REPORT_VERDICTS"',
+            "new_value": '"FINAL"',
             "timestamp": END_NOW.isoformat(),
         }
         await db.rollback()
@@ -722,16 +736,19 @@ def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
 @pytest.mark.parametrize(
     "statuses,ended,moves",
     [
-        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results"),
+        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET)),
         pytest.param(("AWAITING_REPORT_VERDICTS", "NOT_RUN"), 0, True,
-                     id="awaiting report verdicts"),
+                     id="awaiting report verdicts",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET)),
         pytest.param(("NOT_RUN", "NOT_RUN"), 0, False, id="not run"),
         pytest.param(("AWAITING_APPEAL_VERDICTS", "NOT_RUN"), 0, False,
                      id="awaiting appeal verdicts"),
         pytest.param(("FINAL", "NOT_RUN"), 0, False, id="final"),
         pytest.param(("CANCELLED", "NOT_RUN"), 0, False, id="already cancelled"),
         pytest.param(("FINAL", "AWAITING_RESULTS", "NOT_RUN"), 1, True,
-                     id="the middle of three rounds"),
+                     id="the middle of three rounds",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET)),
     ],
 )
 async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(
@@ -769,7 +786,7 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
                 "CANCELLED" if n == ended else status for n, status in enumerate(statuses)
             ]
             assert await _not_held(db) == [int(n == ended) for n in range(len(statuses))]
-            assert await _round_audits(db) == [(statuses[ended], "CANCELLED")]
+            assert await _round_audits(db) == [(f'"{statuses[ended]}"', '"CANCELLED"')]
             assert await _division_status(db) == "ACTIVE", "the last round is still to run"
         else:
             assert answer is None

@@ -288,6 +288,9 @@ async def test_cancelling_the_last_division_moves_the_season_on_in_the_same_save
     assert (await league.season())["stage"] == "PENDING_COMPLETION"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled_from(tmp_path):
     league = await ongoing_league(tmp_path)
     await _awaiting_results(league, R4)
@@ -295,7 +298,7 @@ async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled
 
     await _done(league)
 
-    assert sorted(await _round_audits(league)) == ["AWAITING_RESULTS", "NOT_RUN"]
+    assert sorted(await _round_audits(league)) == ['"AWAITING_RESULTS"', '"NOT_RUN"']
 
 
 async def test_a_call_message_discord_will_not_delete_stops_the_queue(tmp_path):
@@ -701,6 +704,9 @@ async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_
     assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s_then_calls_off_the_rest(
     tmp_path,
 ):
@@ -720,7 +726,7 @@ async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s
     assert CANCELLED in reply(division_asked)
     assert (await _statuses(league))[R3] == "CANCELLED"
     assert (await _statuses(league))[R4] == "CANCELLED"
-    assert await _round_audits(league) == ["NOT_RUN", "NOT_RUN"]
+    assert await _round_audits(league) == ['"NOT_RUN"', '"NOT_RUN"']
     kinds = [row["kind"] for row in await change_rows(league.db_path)
              if row["kind"] in (ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND)]
     assert kinds == [ROUND_CANCEL_KIND, ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND]

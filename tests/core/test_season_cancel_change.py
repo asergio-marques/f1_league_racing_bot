@@ -1231,6 +1231,9 @@ async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_p
     assert await _status(league) == "CANCELLED"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
+)
 async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled_from(tmp_path):
     league = await ongoing_league(tmp_path)
     await _awaiting_results(league, R4)
@@ -1240,12 +1243,12 @@ async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled
 
     audits = await league.rows(
         "SELECT division_id, old_value FROM audit_entries WHERE change_type = 'round.status' "
-        "AND new_value = 'CANCELLED' ORDER BY id"
+        "AND new_value = '\"CANCELLED\"' ORDER BY id"
     )
     assert sorted(row["old_value"] for row in audits if row["division_id"] == PRO) == [
-        "AWAITING_RESULTS", "NOT_RUN",
+        '"AWAITING_RESULTS"', '"NOT_RUN"',
     ]
-    assert [row["old_value"] for row in audits if row["division_id"] == AM] == ["NOT_RUN"] * 4
+    assert [row["old_value"] for row in audits if row["division_id"] == AM] == ['"NOT_RUN"'] * 4
 
 
 async def test_every_driver_gets_a_history_entry_marked_cancelled(tmp_path):
