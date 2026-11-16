@@ -222,25 +222,48 @@ async def _stopped_at(league) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-async def test_amend_round_changes_the_field(tmp_path):
+_NOT_JSON_YET = "#544: a round field's audit values are written as text, not as JSON"
+
+
+@pytest.mark.parametrize(
+    ("mystery", "old_value"),
+    [
+        pytest.param(
+            False, '"Bahrain International Circuit"', id="a named track",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
+        ),
+        pytest.param(
+            True, "null", id="a mystery round naming none",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
+        ),
+    ],
+)
+async def test_amend_round_changes_the_field(tmp_path, mystery, old_value):
     """`/round amend` was dead on arrival: its opening SELECT asked `divisions` for a
     `division_id` column, which that table has never had, so every amendment of an active
     season's round raised `no such column: d.division_id` and the league was told the
     amendment failed. Nothing else in the suite executed this path.
 
-    Am's round 3, at Bahrain International Circuit, is amended to Silverstone Circuit and the
-    queue run: the round holds the new track, and its record names the change from the old.
+    Am's round 3, at Bahrain International Circuit, or (a mystery round naming none) a mystery
+    round with no track, is amended to Silverstone Circuit, the mystery round to the NORMAL
+    format with it, and the queue run: the round holds the new track, and its record names the
+    change from the old, each value as JSON: the old track in quotes, or null where there was
+    none, and the new one in quotes.
     """
     league = await ongoing_league(tmp_path)
     await _place(league, at=timedelta(days=90))
-
-    await _amend(league, track=SILVERSTONE)
+    if mystery:
+        await league.write(
+            "UPDATE rounds SET format = 'MYSTERY', track_name = NULL WHERE id = ?", AM_3
+        )
+        await _amend(league, track=SILVERSTONE, format="NORMAL")
+    else:
+        await _amend(league, track=SILVERSTONE)
 
     assert (await _round(league))["track_name"] == SILVERSTONE
-    [entry] = await _round_audits(league)
-    assert entry["change_type"] == "round.track_name"
-    assert entry["old_value"] == BAHRAIN
-    assert entry["new_value"] == SILVERSTONE
+    [entry] = [a for a in await _round_audits(league) if a["change_type"] == "round.track_name"]
+    assert entry["old_value"] == old_value
+    assert entry["new_value"] == '"Silverstone Circuit"'
 
 
 # ---------------------------------------------------------------------------

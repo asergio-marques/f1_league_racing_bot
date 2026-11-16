@@ -888,6 +888,9 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: a round field's audit values are written as text, not as JSON"
+)
 async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_renumbering(
     tmp_path, reposts,
 ):
@@ -897,7 +900,8 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
     its step is known. Pro's round 3 is moved 150 days out, past round 4.
 
     The module's part of the save is called once, with the save's own connection and round 3: on
-    that connection core's audit of the move and round 3's new moment are written already, while
+    that connection core's audit of the move, its new moment as JSON, and round 3's new moment
+    are written already, while
     another connection still reads the old moment, since the save has not committed; and round 3
     still bears number 3, the division not yet renumbered. What it hands back is kept with the
     save, not in memory: the queue is restarted once the save is made, and the module's part of
@@ -927,7 +931,7 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
         number, moment = await cursor.fetchone()
         cursor = await db.execute(
             "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'round.scheduled_at' "
-            "AND new_value = ?", (moment,),
+            "AND new_value = ?", (json.dumps(moment),),
         )
         [audited] = await cursor.fetchone()
         async with get_connection(league.db_path) as other:
