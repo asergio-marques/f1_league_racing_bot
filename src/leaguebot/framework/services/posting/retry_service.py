@@ -117,6 +117,22 @@ async def clear_pending_on(db: aiosqlite.Connection) -> int:
     return (await db.execute("DELETE FROM pending_messages")).rowcount
 
 
+async def pending_channel_ids_on(db: aiosqlite.Connection) -> set[int]:
+    """The channels the log lines still waiting for delivery are bound for, each once, read on *db*.
+
+    A value that is not a channel id (a TEXT column holds whatever it was given) is logged and
+    left out, so that one bad row never stops a clean-up reaching the rest.
+    """
+    found: set[int] = set()
+    cursor = await db.execute("SELECT channel_id FROM pending_messages WHERE channel_id IS NOT NULL")
+    for row in await cursor.fetchall():
+        try:
+            found.add(int(row[0]))
+        except (TypeError, ValueError):
+            log.warning("pending_messages.channel_id holds %r, which is not a channel id", row[0])
+    return found
+
+
 def _message_of(row: aiosqlite.Row) -> PendingMessage:
     last_attempted: datetime | None = None
     if row["last_attempted_at"]:

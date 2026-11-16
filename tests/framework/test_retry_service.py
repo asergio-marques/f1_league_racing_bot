@@ -248,7 +248,6 @@ async def test_clear_pending_on_deletes_every_undelivered_line_and_counts_them(t
         assert await clear_pending_on(db) == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the retry queue has no pending_channel_ids_on")
 async def test_pending_channel_ids_on_gives_each_bound_channel_and_skips_a_value_not_an_id(
     tmp_path, caplog
 ):

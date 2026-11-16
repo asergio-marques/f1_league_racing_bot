@@ -2335,8 +2335,8 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (2, "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`"),
     ("core/services/upkeep/factory_reset_service.py", "gather_targets"): (
         1,
-        "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, core's "
-        "`season_review_prompts`, and the framework's `pending_messages`",
+        "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, and core's "
+        "`season_review_prompts`",
     ),
     ("results/services/points/amendment_mode_service.py", "_staged_rows_on"):
         (1, "results' own live and staged points tables"),
@@ -2577,11 +2577,9 @@ SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
 )
 
 
-#: The tables of another owner a spliced read's tuple names, until its owner is asked for them:
-#: the factory reset's undelivered log lines, which are the framework's.
-KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER: dict[tuple[str, str, str], str] = {
-    ("core/services/upkeep/factory_reset_service.py", "_OTHER_SOURCES", "pending_messages"): "#544",
-}
+#: The tables of another owner a spliced read's tuple names, until its owner is asked for them.
+#: None is left: the factory reset asks the framework for its undelivered log lines.
+KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER: dict[tuple[str, str, str], str] = {}
 
 
 def test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s():
