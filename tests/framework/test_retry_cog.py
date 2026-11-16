@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from leaguebot.core.cogs.retry_cog import RetryCog
+from leaguebot.framework.cogs.retry_cog import RetryCog
 
 #: The change queue's clock, well before the host's, so that a time read from the host shows.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -35,7 +35,7 @@ def _retry_cog():
 
 def _pending(entries, error=None):
     return patch(
-        "leaguebot.core.cogs.retry_cog.get_all_pending",
+        "leaguebot.framework.cogs.retry_cog.get_all_pending",
         new=AsyncMock(side_effect=error, return_value=None if error else entries),
     )
 
@@ -48,7 +48,7 @@ async def test_every_queued_message_is_retried():
     entries = [MagicMock(), MagicMock(), MagicMock()]
 
     with _pending(entries), patch(
-        "leaguebot.core.cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
+        "leaguebot.framework.cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
     ) as attempt:
         await cog.retry_loop()
 
@@ -60,7 +60,7 @@ async def test_an_empty_queue_does_nothing():
     cog = _retry_cog()
 
     with _pending([]), patch(
-        "leaguebot.core.cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
+        "leaguebot.framework.cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
     ) as attempt:
         await cog.retry_loop()
 

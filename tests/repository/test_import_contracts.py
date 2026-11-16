@@ -221,12 +221,13 @@ def test_every_file_sits_in_a_folder_the_contracts_name():
     assert misplaced == []
 
 
-#: Core's services that are plumbing every module uses: the change queue, posting to Discord, and
-#: what core asks of the modules through its hooks and protocols.
-CORE_PLUMBING_FOLDERS = frozenset({"modules"})
-#: Core's services that hold a league rule of core's own.
+#: Core's services that are plumbing every module uses: none since the framework took them; the
+#: check is tightened once the scheduler leaves core too.
+CORE_PLUMBING_FOLDERS: frozenset[str] = frozenset()
+#: Core's services that hold a league rule of core's own, the hub and what core asks of the modules
+#: (`modules/`) among them.
 CORE_LEAGUE_RULE_FOLDERS = frozenset(
-    {"seasons", "cancellations", "rounds", "drivers", "settings", "test_mode", "upkeep"}
+    {"seasons", "cancellations", "rounds", "drivers", "settings", "test_mode", "upkeep", "modules"}
 )
 #: The files that sit directly in `core/services/`: the package's own, and the scheduler, whose
 #: path every saved job names (`test_every_stored_job_names_the_runner_by_its_pinned_module_path`).

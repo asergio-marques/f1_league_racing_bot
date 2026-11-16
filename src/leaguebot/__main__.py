@@ -1197,7 +1197,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.cogs.module_cog import ModuleCog
     from leaguebot.signup.cogs.signup_cog import SignupCog
     from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
-    from leaguebot.core.cogs.retry_cog import RetryCog
+    from leaguebot.framework.cogs.retry_cog import RetryCog
     from leaguebot.results.cogs.results_cog import ResultsCog
     from leaguebot.weather.cogs.weather_cog import WeatherCog
     from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
