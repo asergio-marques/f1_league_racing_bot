@@ -74,7 +74,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member, refusal_line
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.signup.services.closing_steps import CHANNEL_GONE, END, INACTIVITY_TIMER

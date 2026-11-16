@@ -52,7 +52,7 @@ from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
 

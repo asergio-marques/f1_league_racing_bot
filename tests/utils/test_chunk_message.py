@@ -7,7 +7,7 @@ takes blocks joined by blank lines and splits only between them.
 """
 from __future__ import annotations
 
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 
 
 def test_records_are_divided_only_between_records():

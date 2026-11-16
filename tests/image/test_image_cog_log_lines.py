@@ -23,7 +23,7 @@ import pytest
 from discord import app_commands
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 from leaguebot.image.cogs.config_commands import TierPaletteModal
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import (

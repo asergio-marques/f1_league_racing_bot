@@ -1410,7 +1410,7 @@ beside it so that each standard line is formed in one place. Like
 `queue_log_on` and `deliver_queued` for a line a change's step saves, `post_notice` for the stop
 notice, and `send_log_text` for the retry of a late one), which divides a record too long for one
 message on its line breaks where it can, and at the limit where one line alone is too long; a reply
-too long for one message is sent in parts through `chunk_message` (`core/utils/messages.py`), which
+too long for one message is sent in parts through `chunk_message` (`utils/messages.py`), which
 does the dividing for each of them. That is how a record meets the core specification's "The record
 of what changed" on length. `chunk_message` has a second mode for a list of records (`records=True`):
 the text is blocks joined by blank lines, and is divided only between blocks, so that no record is

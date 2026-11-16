@@ -18,7 +18,7 @@ from typing import Any
 import discord
 
 from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 from leaguebot.image.services.preview import image_preview_service
 from leaguebot.image.services.render import image_render_service
 from leaguebot.image.utils.image_naming import image_filename_stem, subject_for_template

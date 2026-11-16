@@ -60,7 +60,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.formatting import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
 from leaguebot.core.utils.roster_import import parse_roster_csv
 

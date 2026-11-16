@@ -52,7 +52,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.formatting import discord_ts
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 

@@ -43,7 +43,7 @@ import discord
 from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.member_names import interaction_member, member_named  # noqa: F401
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 

@@ -29,7 +29,7 @@ from discord.ext import commands
 from leaguebot.core.utils.interaction_errors import describe as describe_command
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 from leaguebot.image.cogs.config_commands import ConfigCommands
 from leaguebot.image.cogs.image_group import IMAGES_GROUP
 from leaguebot.image.cogs.template_commands import TemplateCommands

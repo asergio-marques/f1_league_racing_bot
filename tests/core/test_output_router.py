@@ -80,7 +80,7 @@ async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
     for channel 555, as the retry worker hands it, outside any job of a change. It is sent in the
     parts `chunk_message` divides it into, in order, each notifying nobody."""
     from leaguebot.core.services.posting.output_router import send_log_text
-    from leaguebot.core.utils.messages import chunk_message
+    from leaguebot.utils.messages import chunk_message
 
     channel = MagicMock(id=555)
     channel.send = AsyncMock()

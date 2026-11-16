@@ -21,7 +21,7 @@ from leaguebot.core.utils.interaction_errors import (
 )
 from leaguebot.core.utils.league_server import LeagueModal
 from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 from leaguebot.core.utils.paths import (
     PathContainmentError,
     relative_to_root,

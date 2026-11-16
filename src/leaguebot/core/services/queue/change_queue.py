@@ -234,7 +234,7 @@ from leaguebot.core.utils.log_lines import (
     went_through_line,
 )
 from leaguebot.core.utils.member_names import interaction_member, member_named
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.utils.messages import chunk_message
 
 if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService

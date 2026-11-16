@@ -514,7 +514,7 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
     standing-post handler, in order, to that channel and with role 1's mentions; the ids of the
     messages sent come back in order."""
     from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.utils.messages import chunk_message
+    from leaguebot.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))
@@ -558,7 +558,7 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
     - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel"."""
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.utils.messages import chunk_message
+    from leaguebot.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))
