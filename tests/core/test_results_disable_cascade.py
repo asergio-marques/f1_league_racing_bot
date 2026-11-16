@@ -118,6 +118,7 @@ async def _make_cog(db_path: str, *, attendance_enabled: bool,
         return cog
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.league_settings = bot.config_service
     bot.db_path = db_path
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)

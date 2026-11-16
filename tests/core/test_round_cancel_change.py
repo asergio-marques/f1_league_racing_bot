@@ -501,6 +501,7 @@ async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
     steps = getattr(notices, steps_of)(modules=MagicMock(spec=ModuleService), seasons=seasons)
     bot = notice_bot(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
+    bot.league_settings = bot.config_service
     bot.get_guild = MagicMock(return_value=None)
     ctx = StepContext(
         bot=bot, db_path=db_path, change_id=1, kind="round.cancel", payload={},

@@ -1660,9 +1660,11 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
     from leaguebot.core.models.change import GuildUnavailable
     from leaguebot.core.services.queue.change_types import StepContext
 
+    settings = SimpleNamespace(get_league_server_id=AsyncMock(return_value=1))
     bot = SimpleNamespace(
         module_service=MagicMock(spec=ModuleService),
-        config_service=SimpleNamespace(get_league_server_id=AsyncMock(return_value=1)),
+        config_service=settings,
+        league_settings=settings,
         get_guild=lambda _server_id: None,
         image_drawing=MagicMock(),
         driver_names_read=AwaitedHook(),

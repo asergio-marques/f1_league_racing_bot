@@ -323,6 +323,7 @@ def _guild(channel, *, roles=(BASE_ROLE, MANAGER_ROLE, ADMIN_ROLE)):
 def _bot(db_path, guild):
     bot = MagicMock()
     bot.config_service = ConfigService(db_path)
+    bot.league_settings = bot.config_service
     bot.get_guild = MagicMock(return_value=guild)
     bot.add_view = MagicMock()
     return bot

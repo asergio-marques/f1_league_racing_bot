@@ -435,7 +435,7 @@ def league_double(db_path: str, *, now: Any = None) -> Any:
     builder hands it, so that a test attaching a queue moves the router's time with the queue's.
 
     `bot.log_channel` and `bot.interaction_channel` record what each is sent. The league's server
-    is `SERVER_ID`, as `config_service.get_league_server_id` gives it; `bot.get_guild` finds no
+    is `SERVER_ID`, as `league_settings.get_league_server_id` gives it; `bot.get_guild` finds no
     guild for it until a test gives one.
     `bot.attendance_after_review` is the attendance hook the builder hands the review's change
     types (#439), as a league with attendance off sees it (`attendance_hook_double`). A test that
@@ -501,6 +501,8 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
     # The log writer reads the log channel on the caller's connection, as the league's own
     # configuration service reads it there: the row the database holds, None while unclaimed.
     bot.config_service.get_server_config_on = ConfigService(bot.db_path).get_server_config_on
+    # The framework's view of the league's settings, as the builder hands it over.
+    bot.league_settings = bot.config_service
 
 
 def attendance_hook_double() -> Any:

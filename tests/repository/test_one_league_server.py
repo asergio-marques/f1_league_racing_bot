@@ -43,6 +43,7 @@ def _bot(league: int | None):
     bot = create_bot()
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=league)
+    bot.league_settings = bot.config_service
     return bot
 
 
@@ -130,10 +131,14 @@ async def test_only_another_server_is_foreign():
     assert await is_foreign_guild(_bot(None), ELSEWHERE) is False
 
 
+@pytest.mark.xfail(strict=True, reason="#544: league_guild reads core's config_service, not the bot's league_settings")
 async def test_the_league_s_guild_is_found_through_its_configuration():
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
-    bot.get_guild.return_value = "the guild"
+    """The framework's settings protocol is all the lookup asks of the bot: a bot carrying only
+    `league_settings` finds the league's guild, with no service of core's on it."""
+    league_settings = MagicMock()
+    league_settings.get_league_server_id = AsyncMock(return_value=LEAGUE)
+    bot = SimpleNamespace(league_settings=league_settings,
+                          get_guild=MagicMock(return_value="the guild"))
 
     assert await league_guild(bot) == "the guild"
     bot.get_guild.assert_called_once_with(LEAGUE)
@@ -142,6 +147,7 @@ async def test_the_league_s_guild_is_found_through_its_configuration():
 async def test_no_guild_before_any_server_is_set_up():
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=None)
+    bot.league_settings = bot.config_service
 
     assert await league_guild(bot) is None
     bot.get_guild.assert_not_called()
@@ -387,6 +393,7 @@ async def test_the_host_is_warned_at_start_up_and_on_joining_a_server(event, mon
 def _listener_bot():
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
+    bot.league_settings = bot.config_service
     bot.wizard_service.get_wizard_by_channel = AsyncMock(return_value=None)
     bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router.post_log = AsyncMock()

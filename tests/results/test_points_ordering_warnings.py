@@ -417,6 +417,7 @@ def _cog(db_path):
     cog.bot.output_router.post_log = AsyncMock()
     # ``league_guild`` awaits this and then calls ``get_guild`` synchronously.
     cog.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    cog.bot.league_settings = cog.bot.config_service
     cog.bot.get_guild = MagicMock(return_value=_guild())
     # Both modules off, said in as many words: left to a whole-bot mock, an unawaited coroutine
     # is truthy and the image module would read as on.

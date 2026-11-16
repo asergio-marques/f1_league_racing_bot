@@ -166,6 +166,7 @@ def _channel(*, fetch_fails: bool = False, delete_fails: bool = False):
 def _bot(db_path: str, *, guild_missing: bool = False, channel=None):
     stub = MagicMock()
     stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    stub.league_settings = stub.config_service
     stub.db_path = db_path
     stub.add_view = MagicMock()
     stub.output_router = MagicMock()

@@ -124,6 +124,7 @@ async def test_refuse_replies_to_the_member_and_logs_one_line(case):
 def _bot(member_name: str | None = "Alex"):
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER)
+    bot.league_settings = bot.config_service
     guild = MagicMock()
     if member_name is None:
         guild.get_member = MagicMock(return_value=None)

@@ -136,6 +136,7 @@ def _team_bot() -> MagicMock:
     """A bot with no league server set up, so a role is judged by its holder alone."""
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=None)
+    bot.league_settings = bot.config_service
     return bot
 
 

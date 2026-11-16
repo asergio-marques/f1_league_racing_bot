@@ -719,6 +719,7 @@ def _daily_bot(db_path, directory, **config_overrides):
     guild.get_member.side_effect = members.get
     guild.id = SERVER_ID
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.league_settings = bot.config_service
     bot.get_guild.return_value = guild
     return bot
 

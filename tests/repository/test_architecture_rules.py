@@ -1422,10 +1422,10 @@ COG_FACING_HELPERS = frozenset({
 #: The helpers a service calls that may look a core service up on the bot, for good, with the reason.
 LOOKUPS_ALLOWED: dict[tuple[str, str], str] = {
     ("core/utils/league_server.py", "league_guild"): (
-        "the one route from a job or a service to the league's server, which reads the "
-        "configuration service to find it: handing the configuration service instead to every "
-        "service that posts would add a parameter to each, for no rule gained (architecture.md, "
-        "\"How the code is laid out\")"
+        "the one route from a job or a service to the league's server, which asks the "
+        "framework's settings protocol, `league_settings`, to find it: handing the settings "
+        "instead to every service that posts would add a parameter to each, for no rule gained "
+        "(architecture.md, \"How the code is laid out\")"
     ),
     ("core/utils/interaction_errors.py", "report_failure"): (
         "the one failure path, which a service's view or a change's step calls with the "

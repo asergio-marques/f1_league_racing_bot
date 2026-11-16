@@ -61,6 +61,7 @@ def _cog(db_path):
     bot.change_queue = MagicMock()
     bot.change_queue.ask = AsyncMock(return_value=1)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.league_settings = bot.config_service
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
     return cog

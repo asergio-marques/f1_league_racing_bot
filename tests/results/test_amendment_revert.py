@@ -137,6 +137,7 @@ def _bot(db_path):
     bot.output_router.deliver_queued = AsyncMock()
     bot.get_guild = MagicMock(return_value=None)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
+    bot.league_settings = bot.config_service
     return bot
 
 
