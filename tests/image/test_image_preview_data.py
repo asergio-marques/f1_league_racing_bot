@@ -775,7 +775,7 @@ class TestFabricatedTyreCompounds:
         Dealt in turn rather than keyed on the position, which would skip whichever
         compounds no position happened to land on.
         """
-        from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
+        from leaguebot.results.utils.tyre_compound import TYRE_COMPOUNDS
 
         assert set(self._tyres(6)) == {None, *TYRE_COMPOUNDS}
 
@@ -790,7 +790,7 @@ class TestFabricatedTyreCompounds:
     def test_every_compound_dealt_is_one_the_vocabulary_admits(self):
         """A fabricated value outside the set would draw the placeholder in a preview and
         so misreport the template a manager is judging."""
-        from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
+        from leaguebot.results.utils.tyre_compound import TYRE_COMPOUNDS
 
         assert {t for t in self._tyres(20) if t is not None} <= set(TYRE_COMPOUNDS)
 

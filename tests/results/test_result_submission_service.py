@@ -17,7 +17,7 @@ from leaguebot.results.services.submission.paste_reading import (
     extract_fl_override,
     validate_submission_block,
 )
-from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
+from leaguebot.results.utils.tyre_compound import TYRE_COMPOUNDS
 from tests.support.teams import seed_team_instances
 
 

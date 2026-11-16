@@ -368,9 +368,9 @@ def is_closed_set_datum(asset_class: str, slug: str) -> bool:
     the class is also what keeps those three vocabularies from being restated here where
     they would drift from the modules that define them: the position-change data in
     `standings_service`, the weathers in `math_utils`, the five compounds in
-    `leaguebot.image.utils.tyre_compound`. `flag` and `track` name countries and circuits a league chose,
-    and reserve two names within that, so there the datum settles it: asserting the whole
-    class would hand a league our file for a country it simply had not drawn yet.
+    `leaguebot.results.utils.tyre_compound`. `flag` and `track` name countries and circuits a
+    league chose, and reserve two names within that, so there the datum settles it: asserting
+    the whole class would hand a league our file for a country it simply had not drawn yet.
 
     A tyre compound joined the first kind at Constitution v7.8.0, having sat in the second
     by an accident of which list it was written into. It is what the game offers -- five

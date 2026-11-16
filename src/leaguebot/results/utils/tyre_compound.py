@@ -6,14 +6,15 @@ eight weathers a forecast can draw. A league did not choose them — the game of
 no sixth — so the module ships an icon for each under `resources/defaults/tyres/`, and a
 league that has drawn none still gets five correct pictures rather than five placeholders.
 
-**Why this lives in `utils/` and not in `image/models/image_constants.py`.** The compound is a
-results datum that an image happens to draw, not a fact about image assets, and
-`image_constants` deliberately does not restate the vocabulary of any closed class: it
+**Why this lives in the results module's `utils/` and not in image's `models/image_constants.py`.**
+The compound is a results datum that an image happens to draw, not a fact about image assets,
+and `image_constants` deliberately does not restate the vocabulary of any closed class: it
 asserts closure at the level of the *class*, leaving each vocabulary with the module that
-owns it, precisely so the two cannot drift. This is the tyre's such module, as
-`math_utils` is the weather's and `standings_service` the position changes'. It sits in
-`utils/` rather than `models/` because it reuses :func:`asset_resolver.normalise`, and
-nothing under `models/` imports from `utils/`.
+owns it, precisely so the two cannot drift. Results owns the tyre's, as `math_utils` is the
+weather's and `standings_service` the position changes', and hands the five to the image
+module's preview through the preview sources, so image imports none of it. It sits in
+`utils/` rather than `models/` because it reuses image's :func:`asset_resolver.normalise`, the
+one rule every class's normalisation takes.
 
 **Why the alias table is keyed on the normalised form.** Constitution XIV.13 requires one
 normalisation rule for every class, and reusing it here makes the spelling a steward may

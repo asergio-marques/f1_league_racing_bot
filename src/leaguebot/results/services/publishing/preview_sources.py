@@ -20,7 +20,7 @@ from leaguebot.image.models.standings_drawing import (
     RoundHeading,
     StandingsDrawing,
 )
-from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
+from leaguebot.results.utils.tyre_compound import TYRE_COMPOUNDS
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import (
     OutcomeModifier,

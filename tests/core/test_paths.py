@@ -108,7 +108,7 @@ from leaguebot.image.models.image_constants import (  # noqa: E402
     packaged_directory_for,
 )
 from leaguebot.image.utils.asset_resolver import normalise  # noqa: E402
-from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
+from leaguebot.results.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
 
 PROJECT_ROOT = _Path(__file__).resolve().parents[2]
 
