@@ -44,8 +44,6 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
-    FORECAST,
-    FORECAST_CLEAN_UP,
     ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
@@ -54,10 +52,10 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
     drawn_lines_kept,
-    forecasts_named,
 )
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
+from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP, forecasts_named
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
