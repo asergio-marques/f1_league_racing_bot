@@ -172,20 +172,20 @@ async def test_a_log_failure_is_swallowed_and_reported_as_none():
 # ── The standings path no longer floods the log ───────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_the_standings_path_posts_one_grouped_message():
+def test_the_standings_path_posts_one_grouped_message():
     """It used to post one Discord message per notice, which a twenty-driver championship
-    turned into twenty."""
-    from leaguebot.image.services.aspects.image_standings_post import report_notices
+    turned into twenty. The standings' drawing now hands its notices back as the job's lines
+    rather than posting them: twenty notices are one line, one grouped block naming what was
+    drawn under the render's heading."""
+    from leaguebot.image.services.aspects.image_standings_post import lines_of
 
-    bot = _bot()
     notices = [
         _notice(detail="no `marker` image for “gained”", field_id=f"row_{i}_marker")
         for i in range(20)
     ]
+    decision = MagicMock(notices=notices, problem=None)
 
-    await report_notices(bot, "drivers standings — Season 3", notices)
+    lines = lines_of("drivers standings — Season 3", decision)
 
-    assert bot.output_router.post_log.await_count == 1
-    posted = bot.output_router.post_log.await_args.args[0]
-    assert "drivers standings — Season 3" in posted
+    assert len(lines) == 1
+    assert lines[0].startswith("Image render notices — drivers standings — Season 3:")
