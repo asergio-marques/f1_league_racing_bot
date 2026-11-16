@@ -140,6 +140,21 @@ forbidden_modules =
     leaguebot.signup
 allow_indirect_imports = True
 
+# The modules that ask image to draw reach it through the one object they are handed, which is image's
+# own and carries every picture's gate, drawing and discard. Its render and its configuration are
+# image's alone (architecture.md, "How modules and core fit together").
+[importlinter:contract:results-attendance-and-weather-do-not-reach-image-s-render-or-configuration]
+name = Results, attendance and weather do not reach image's render or configuration
+type = forbidden
+source_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.weather
+forbidden_modules =
+    leaguebot.image.services.render.image_render_service
+    leaguebot.image.services.config
+allow_indirect_imports = True
+
 [importlinter:contract:image-uses-no-other-module]
 name = Image uses no other module
 type = forbidden

@@ -323,6 +323,7 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
                 attachment=attachment,
                 attachment_text="" if phase == 0 else f"<@&{mention}>",
                 mentions=_forecast_mentions(phase, mention),
+                drawing=drawing,
             )
         except StepFailedOnDiscord as stop:
             raise stop.carrying(tuple(lines)) from stop.__cause__

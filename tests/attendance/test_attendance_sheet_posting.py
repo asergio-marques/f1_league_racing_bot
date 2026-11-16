@@ -13,7 +13,7 @@ the ordering is pinned by the queued tests in ``tests/attendance/test_sheet_post
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import aiosqlite
 import discord
@@ -24,6 +24,7 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
 from leaguebot.attendance.services.sheet.attendance_sheet import post_attendance_sheet
+from leaguebot.image.services.render.image_render_service import discard_attachment
 from tests.support.change_queue import in_a_job
 
 
@@ -506,6 +507,11 @@ def _real_attachment(png):
     return _attachment
 
 
+#: The image module's drawing, through which a picture is discarded: its discard alone, which is
+#: the render's own.
+DRAWING = MagicMock(discard_attachment=discard_attachment)
+
+
 @pytest.mark.asyncio
 async def test_the_sheet_graphic_is_gone_once_it_has_posted(
     sheet_db, monkeypatch, tmp_path
@@ -517,7 +523,9 @@ async def test_the_sheet_graphic_is_gone_once_it_has_posted(
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
     with in_a_job():
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+        await post_attendance_sheet(
+                None, guild, sheet_db, round_id=3, division_id=7, drawing=DRAWING
+            )
 
     assert channel.sent_file is not None, "the sheet still posts as a graphic"
     assert not png.exists()
@@ -538,7 +546,9 @@ async def test_the_sheet_graphic_is_gone_when_the_send_fails(
 
     with pytest.raises(StepFailedOnDiscord):
         with in_a_job():
-            await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+            await post_attendance_sheet(
+                None, guild, sheet_db, round_id=3, division_id=7, drawing=DRAWING
+            )
 
     assert not png.exists(), "a failed upload must not strand the sheet"
 
@@ -699,6 +709,7 @@ def _drawing_that_draws_nothing(fault: str):
     return SimpleNamespace(
         attendance_wanted=AsyncMock(return_value=True),
         draw_attendance_sheet=AsyncMock(side_effect=_draw),
+        discard_attachment=discard_attachment,
     )
 
 

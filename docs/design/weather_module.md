@@ -457,7 +457,8 @@ round's facts and its division (`round_facts_on`, `division_on`), a round's sess
 
 Weather needs no other module (no entry in `NEEDS`). Of the image module it asks the forecast's
 graphic (`ImageDrawing.attach_forecast`, on the drawing the wiring hands the post job) and the
-discarding of a drawn attachment (`image_render_service.discard_attachment`), and builds the model
+discarding of a drawn attachment (`ImageDrawing.discard_attachment`, handed to `post_phase_message`
+beside the picture), and builds the model
 image declares for it (`image.models.forecast_values`); it uses no other module. The image module
 reads none of weather's tables: weather hands it the words, composed as the text composes them
 (`forecast_changes.forecast_values`), in a model image declares (`ForecastValues`: the phase's

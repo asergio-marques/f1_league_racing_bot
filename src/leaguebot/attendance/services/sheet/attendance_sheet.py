@@ -266,9 +266,8 @@ async def post_attendance_sheet(
     finally:
         # Posted or not, the picture has done all it will ever do: a try again posts the text
         # and never the image, so nothing reads this file again.
-        from leaguebot.image.services.render.image_render_service import discard_attachment
-
-        discard_attachment(attachment)
+        if drawing is not None:
+            drawing.discard_attachment(attachment)
 
     # The final sheet is terminal: it stands *beside* the last round's rather than replacing
     # it, so it neither claims the slot nor deletes what is in it. Claiming the slot would
