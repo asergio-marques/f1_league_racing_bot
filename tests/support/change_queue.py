@@ -47,6 +47,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.connections import close_lent_connections
 
 SERVER_ID = 12408
@@ -497,6 +498,9 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
         )
     )
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    # The log writer reads the log channel on the caller's connection, as the league's own
+    # configuration service reads it there: the row the database holds, None while unclaimed.
+    bot.config_service.get_server_config_on = ConfigService(bot.db_path).get_server_config_on
 
 
 def attendance_hook_double() -> Any:
