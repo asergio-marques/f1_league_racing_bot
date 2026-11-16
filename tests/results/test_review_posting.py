@@ -2012,12 +2012,7 @@ async def test_a_picture_whose_images_switch_nobody_signed_up_for_stops_its_job(
     assert league.sent_to(target) == []
 
 
-@pytest.mark.parametrize("picture", [
-    "results",
-    pytest.param("standings", marks=pytest.mark.xfail(
-        strict=True, reason="#288: a standings picture that cannot be drawn, followed by a refused "
-        "text post, leaves no line once the retry posts the text")),
-])
+@pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_picture_that_cannot_be_drawn_keeps_its_line_when_its_text_is_refused(
     tmp_path, picture,
 ):

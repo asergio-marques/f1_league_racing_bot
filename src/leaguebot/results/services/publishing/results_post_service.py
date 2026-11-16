@@ -1004,62 +1004,69 @@ async def produce_standings(
         )
         fresh = True
 
-    sent_msg: discord.Message | None = None
-    stale: list[int] = []
-    if existing_msg_id is not None and fresh:
-        stale = list(
-            await get_standings_message_ids(db_path, division_id, round_id, STANDINGS_DRIVERS)
-            or [existing_msg_id]
-        )
-    elif existing_msg_id is not None:
-        try:
-            existing_msg = await standings_channel.fetch_message(existing_msg_id)
-            # Only edit in-place when the content fits in a single message; otherwise
-            # fall through to send afresh so we can chunk across multiple messages.
-            if len(content) <= _MSG_MAX:
-                await edit_standing(existing_msg, mentions=_TABLE_MENTIONS, content=content)
-                sent_msg = existing_msg
-                # **A shorter table leaves the chunks it no longer fills** (#345). Editing the
-                # anchor in place is the cheap path, but a posting that was three messages and
-                # is now one has to lose the other two — and once the id is rewritten as a
-                # single-message list, nothing could ever reach them again.
-                stale = [
-                    message_id
-                    for message_id in (
+    try:
+        sent_msg: discord.Message | None = None
+        stale: list[int] = []
+        if existing_msg_id is not None and fresh:
+            stale = list(
+                await get_standings_message_ids(db_path, division_id, round_id, STANDINGS_DRIVERS)
+                or [existing_msg_id]
+            )
+        elif existing_msg_id is not None:
+            try:
+                existing_msg = await standings_channel.fetch_message(existing_msg_id)
+                # Only edit in-place when the content fits in a single message; otherwise
+                # fall through to send afresh so we can chunk across multiple messages.
+                if len(content) <= _MSG_MAX:
+                    await edit_standing(existing_msg, mentions=_TABLE_MENTIONS, content=content)
+                    sent_msg = existing_msg
+                    # **A shorter table leaves the chunks it no longer fills** (#345). Editing the
+                    # anchor in place is the cheap path, but a posting that was three messages and
+                    # is now one has to lose the other two — and once the id is rewritten as a
+                    # single-message list, nothing could ever reach them again.
+                    stale = [
+                        message_id
+                        for message_id in (
+                            await get_standings_message_ids(
+                                db_path, division_id, round_id, STANDINGS_DRIVERS
+                            )
+                            or []
+                        )
+                        if message_id != existing_msg_id
+                    ]
+                else:
+                    # The whole posting, not its anchor alone (#345): a three-chunk table deleted by
+                    # its first message left two-thirds of a superseded standings table below the
+                    # current one, and the row was then overwritten so nothing could reach them.
+                    stale = list(
                         await get_standings_message_ids(
                             db_path, division_id, round_id, STANDINGS_DRIVERS
                         )
-                        or []
+                        or [existing_msg_id]
                     )
-                    if message_id != existing_msg_id
-                ]
-            else:
-                # The whole posting, not its anchor alone (#345): a three-chunk table deleted by
-                # its first message left two-thirds of a superseded standings table below the
-                # current one, and the row was then overwritten so nothing could reach them.
-                stale = list(
-                    await get_standings_message_ids(
-                        db_path, division_id, round_id, STANDINGS_DRIVERS
-                    )
-                    or [existing_msg_id]
-                )
-        except discord.NotFound:
-            # Only a table already gone is posted afresh; a refusal reaches the job and stops its lane.
-            sent_msg = None
-            stale = []
+            except discord.NotFound:
+                # Only a table already gone is posted afresh; a refusal reaches the job and stops its lane.
+                sent_msg = None
+                stale = []
 
-    if sent_msg is None:
-        sent = await _send_chunked(standings_channel, content)
-        tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS, fault=fault)]
-        if constructors_old:
-            # Nothing new carries the constructors now: the table forgets its id and loses its
-            # messages with the drivers' (see `review_posting._record_standings_post`).
-            tables.append(PostedTable([], constructors_old, championship=STANDINGS_CONSTRUCTORS))
-        return tables
-    # Edited in place, so it is the one message it always was and occupies no others.
-    return [PostedTable(
-        [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault
-    )]
+        if sent_msg is None:
+            sent = await _send_chunked(standings_channel, content)
+            tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS, fault=fault)]
+            if constructors_old:
+                # Nothing new carries the constructors now: the table forgets its id and loses its
+                # messages with the drivers' (see `review_posting._record_standings_post`).
+                tables.append(PostedTable([], constructors_old, championship=STANDINGS_CONSTRUCTORS))
+            return tables
+        # Edited in place, so it is the one message it always was and occupies no others.
+        return [PostedTable(
+            [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault
+        )]
+    except Exception as failure:
+        # The picture that gave way to this text is kept on the stop, as the pictures' path keeps
+        # it, for the try that posts to hand back.
+        if fault is not None:
+            setattr(failure, PICTURE_FAULTS_ATTRIBUTE, {STANDINGS_DRIVERS: fault})
+        raise
 
 
 async def _round_is_cancelled(db_path: str, round_id: int) -> bool:
