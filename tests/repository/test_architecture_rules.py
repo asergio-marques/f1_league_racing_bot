@@ -2660,27 +2660,34 @@ def test_a_listed_read_that_is_gone_fails_the_read_check():
 # ── 15. Core reads no module's service on the bot ───────────────────────────────────────────
 
 
+#: Core and the two layers below the modules (architecture.md, "How the code is laid out"): none of
+#: them reaches a module but through the hooks it subscribes, so none reads a module's service on
+#: the bot.
+BELOW_THE_MODULES = frozenset({"core", "framework", "utils"})
+
+
 @cache
 def _module_attributes_of_the_bot() -> frozenset[str]:
     """The attributes `LeagueBot` declares with a type from a module's package: a module's service,
-    or the module's share of a hook. What core's own services are typed with is not among them."""
+    or the module's share of a hook. What core's own services and the framework's are typed with is
+    not among them."""
     return frozenset(
         name
         for name, (dotted, _cls) in _bot_attributes(_sources(), _files_by_module_name()).items()
-        if dotted.split(".")[1] != "core"
+        if dotted.split(".")[1] not in BELOW_THE_MODULES
     )
 
 
 def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[tuple[str, str]]:
     """The reads among *nodes*, each ``(file, function, node)``, of one of *attributes* on the bot
     from a file of core (its cogs, services and utils; the entry point builds the bot and is not
-    core), counted by file and function. The bot is reached as `_reaches_the_bot` reads it, or
+    core) or of a layer below the modules, counted by file and function. The bot is reached as `_reaches_the_bot` reads it, or
     through a local name bound to it (`_locals_bound_to_the_bot`), as the lookup check follows it."""
     nodes = list(nodes)
     bound = _locals_bound_to_the_bot(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
-        if _module_of(path) != "core":
+        if _module_of(path) not in BELOW_THE_MODULES:
             continue
         name = _attribute_read_on_the_bot(node)
         if name is None and isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
@@ -2702,7 +2709,8 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
 
 def test_core_reads_no_module_s_service_on_the_bot():
     """Core reaches a module only through the hooks the module subscribes (architecture.md, "Core
-    reaches a module only through hooks"), so no file of core reads on the bot an attribute that
+    reaches a module only through hooks"), and the framework and `utils` reach one no more than core
+    does, so no file of theirs or of core reads on the bot an attribute that
     `LeagueBot` types from a module's package: ``bot.X``, ``self.bot.X``, ``interaction.client.X``,
     ``bot_of(…).X``, ``getattr(bot, "X")``, or either through a local bound to the bot. A breach is
     keyed by the reading function, and listed with the issue that will fix it."""
@@ -2737,11 +2745,18 @@ _MODULE_LOOKUP_SAMPLE = (
 
 def test_the_module_lookup_check_counts_each_way_of_reading_a_module_s_service_in_core():
     """In a file of core, each way of reading a module's attribute on the bot is counted, a local
-    bound to the bot included, and a core service is not; a module's own file and the entry point
+    bound to the bot included, and a core service is not; so is it in a file of the framework or of
+    `utils`, which reach a module no more than core does; a module's own file and the entry point
     are not core."""
     attributes = frozenset({"wizard_service", "attendance_service", "image_render_service"})
 
-    for path in ("core/cogs/sample_cog.py", "core/services/sample_service.py", "core/utils/sample_helper.py"):
+    for path in (
+        "core/cogs/sample_cog.py",
+        "core/services/sample_service.py",
+        "core/utils/sample_helper.py",
+        "framework/services/queue/sample_service.py",
+        "utils/sample_helper.py",
+    ):
         assert _module_lookups_in_core_among(_sample(_MODULE_LOOKUP_SAMPLE, path), attributes) == Counter(
             {(path, "handler"): 6}
         )
