@@ -28,7 +28,7 @@ declared in `core/db/migrations/001_baseline.sql`.
 | `image_config` | the league's whole configuration: the switch (`module_enabled`), the template directory and the sixteen template filenames, the eight asset directories, the time zone and the clock and date formats, the fastest-lap colour, the per-tier colour switch, and the four portrait settings | `CHECK (id = 1)`; every value column `NOT NULL`, its default the value the bot ships |
 | `image_aspect_toggles` | one of the nine aspects a league switches on and off, and whether it is on | the aspect as primary key |
 | `image_tier_colour` | one colour of one slot of a tier, keyed by the division's normalised name so that a tier's palette survives the season rollover that replaces its `divisions` row (`image_config_service`, `set_tier_colours_on`) | the primary key `(division_slug, slot)` |
-| `driver_portraits` | one portrait the bot obtained: the account it is of, and its key (`avatar_key`, made by `portrait_key` of the avatar it was made from and the shape it was wrapped at) | the account as primary key |
+| `driver_portraits` | one portrait the bot obtained: the account it is of, and its key (`avatar_key`, `CLAIMED_KEY` while the portrait is being fetched, else made by `portrait_key` of the avatar it was made from and the shape it was wrapped at) | the account as primary key |
 
 The toggles are kept by aspect, not by template: the sixteen templates are a detail of what each
 aspect draws (`image_constants`'s module docstring; image specification, "Configuration").
@@ -206,8 +206,8 @@ The portrait toggles arm and disarm the same job through the same two steps (`ar
 
 ### Off the queue
 
-Two things image writes are not changes on the queue: the portrait register (above), and the files a
-render writes, which are not records. A rendered picture is taken down through the drawing's
+Two things image writes are not changes on the queue: the portrait register (above), and the picture
+files it writes, which are not records. A rendered picture is taken down through the drawing's
 `discard_attachment`, or `discard_picture` for a calendar or a lineup (image specification, "The
 rendered file").
 
@@ -230,9 +230,7 @@ through every driver assigned in the active season, a placement not yet confirme
 (`active_season_driver_ids`), fetching for each one on the server whose portrait is stale or
 missing, with no time budget, since nothing waits on it.
 
-Image offers no step for `/test-mode advance`, and its process caches (the converter lookup in
-`image_render_service`, the `lru_cache`s of `font_metrics`) are joined to no clearing of the
-in-memory state.
+Image offers no step for `/test-mode advance`.
 
 At start-up, image's one step (`portrait refresh job`) re-arms the job at the stored time where the
 league has portraits and daily updates on (`rearm_daily_refresh`); a scheduler that refuses it makes
@@ -289,10 +287,11 @@ object through the protocol it declares (`core/services/modules/image_drawing.py
 
 ### The gate
 
-Every picture drawn for a post or for a command's output, but the weather forecast's, asks
-`ImageDrawing.aspect_wanted` (`architecture.md`, "Errors and failures"); the forecast asks
-`_weather_gate`. Results asks the gate for each standings template before composing, and hands the
-drawing only the championships wanted. The `/images test` previews ask the module's switch alone.
+Every picture drawn for a post or for a command's output, but the weather forecast's and the
+`/images test` previews', asks `ImageDrawing.aspect_wanted` (`architecture.md`, "Errors and
+failures"); the forecast asks `_weather_gate`. Results asks the gate for each standings template
+before composing, and hands the drawing only the championships wanted. The `/images test` previews
+ask the module's switch alone.
 
 `aspect_attaches_files` answers the attachment checks of results' reposting and attendance's
 recalculation; why it does not ask template validity is its docstring's, pinned by
@@ -364,9 +363,9 @@ A render's problem and its notices are distinct outcomes (`RenderOutcome`, Princ
 `attach_check_in_call`, `draw_attendance_sheet`, `draw_banner` and the forecast's `_weather_gate`.
 Where another module posts the picture, the catch is the caller's, of place 5, the post itself
 falling back to text: results' `produce_session_results`, `produce_standings` and `_send_verdict`,
-and core's `LineupPoster._refresh_lineup_post`. The calendar a command draws for the placements
-review rides on no post: core's `render_for_command` refuses on its fault, as a commanded render
-does.
+and core's `LineupPoster._refresh_lineup_post` and `post_division_calendar`. The calendar a command
+draws for the placements review rides on no post: core's `render_for_command` refuses on its fault,
+as a commanded render does.
 
 **Work off the event loop is place 4.** The worker's catch is `_contained`, which hands the fault
 back as plain text, and `off_the_loop` raises it afresh on the loop, so that nothing parsed leaves
@@ -383,9 +382,10 @@ module docstring). `rasterise` writes the drawing to an intermediate SVG beside 
 converter on it with a timeout (`_RASTERISE_TIMEOUT_SECONDS`), and removes that SVG whatever the
 outcome (image specification, "The rendered file"); the render calls it in a thread, as a blocking
 subprocess must not run on the event loop (the comment at its call in `ImageRenderService.render`).
-The converter's location is looked up once a minute at most (`_CACHE_TTL_SECONDS`, whose comment
-gives the reason: it is probed too often for a filesystem walk each time, and briefly enough that
-installing it is noticed without a restart).
+A lookup of the converter's location is reused for up to a minute (`_CACHE_TTL_SECONDS`, whose
+comment gives the reason: it is probed too often for a filesystem walk each time, and briefly enough
+that installing it is noticed without a restart), save where a caller asks afresh: the switch-on's
+reply and the previews.
 
 ---
 
@@ -410,6 +410,8 @@ Each of these is held by the docstring named, and pinned by a test where one is 
   (`driver_portrait_service`, `test_a_portrait_cut_off_once_written_stays_the_bot_s`).
 - **A portrait is an SVG wrapping the PNG**, so that asset resolution keeps one extension
   (`driver_portrait_service`'s module docstring).
-- **A column is written only from the allow-list** (`SETTABLE_COLUMNS`, `image_config_service`).
+- **A setting writes a column only through the allow-lists** (`SETTABLE_COLUMNS` for text values,
+  `FLAG_COLUMNS` for flags, `image_config_service`), so the generic setter cannot reach
+  `module_enabled` or `id`.
 - **`aspect_attaches_files` does not ask template validity** (above).
 - **`posting_origin` is required and never inferred** (`render_for_posting`).
