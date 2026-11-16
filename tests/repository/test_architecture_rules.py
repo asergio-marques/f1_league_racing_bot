@@ -66,10 +66,13 @@ def _sources() -> tuple[tuple[str, ast.Module], ...]:
 
 
 def _kind(path: str) -> str:
-    """The kind of code a file of the package holds: the folder inside its module's folder
-    (``cogs``, ``services``, ``utils``, ``models`` or ``db``), or ``""`` for the entry point and a
+    """The kind of code a file of the package holds: the folder inside its part's or the
+    framework's folder (``cogs``, ``services``, ``utils``, ``models`` or ``db``), ``utils`` for a
+    file of the `utils` layer, which holds its helpers directly, or ``""`` for the entry point and a
     module's wiring (``<module>/wiring.py``), which keeps the entry point's rules."""
     parts = path.split("/")
+    if parts[0] == "utils" and len(parts) == 2:
+        return "utils"
     return parts[1] if len(parts) > 2 else ""
 
 
@@ -3418,6 +3421,19 @@ def test_the_sign_up_check_tells_the_module_of_each_subscriber():
         "bot.core_only": set(),
         "bot.starting": {"results", "image"},
     }
+
+
+def test_a_helper_of_the_utils_layer_is_held_to_a_helper_s_rules():
+    """A file of the `utils` layer is a helper, though it sits directly in its layer's folder: a
+    lookup of a service or of the queue on the bot is counted in it, as in any helper, which the
+    import contracts cannot see."""
+    path = "utils/time_parsing.py"
+
+    assert _kind(path) == "utils"
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) != Counter()
+    assert _queue_reached_through_the_bot_among(
+        _sample("async def handler(bot):\n    await bot.change_queue.ask('kind', {})\n", path)
+    ) != Counter()
 
 
 @pytest.mark.parametrize(
