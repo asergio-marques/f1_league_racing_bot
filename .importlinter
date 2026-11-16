@@ -32,7 +32,7 @@ source_modules =
     leaguebot.*.services
     leaguebot.*.utils
     leaguebot.*.models
-    leaguebot.core.db
+    leaguebot.*.db
 forbidden_modules =
     leaguebot.*.cogs
 allow_indirect_imports = True
@@ -47,7 +47,7 @@ forbidden_modules =
     discord
     aiosqlite
     sqlite3
-    leaguebot.core.db
+    leaguebot.*.db
     leaguebot.*.services
     leaguebot.*.cogs
 
@@ -55,7 +55,7 @@ forbidden_modules =
 name = The database code imports nothing else of the bot's
 type = forbidden
 source_modules =
-    leaguebot.core.db
+    leaguebot.*.db
 forbidden_modules =
     leaguebot.*.cogs
     leaguebot.*.services
@@ -230,7 +230,7 @@ source_modules =
     leaguebot.*.utils
     leaguebot.*.models
     leaguebot.*.wiring
-    leaguebot.core.db
+    leaguebot.*.db
 forbidden_modules =
     leaguebot.*.wiring
 allow_indirect_imports = True

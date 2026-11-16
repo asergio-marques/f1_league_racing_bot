@@ -202,7 +202,7 @@ def test_every_module_has_its_wiring_and_only_the_entry_point_imports_it():
     assert _named(WIRING_CONTRACT, "forbidden_modules") == {"*.wiring"}
     assert _named(WIRING_CONTRACT, "source_modules") == {f"*.{kind}" for kind in KINDS} | {
         "*.wiring",
-        "core.db",
+        "*.db",
     }
 
 
