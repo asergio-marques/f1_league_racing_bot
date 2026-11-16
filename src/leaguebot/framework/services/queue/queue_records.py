@@ -26,6 +26,7 @@ import os
 import sqlite3
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.framework.db.database import get_connection
@@ -171,6 +172,21 @@ async def in_hand_on(db: aiosqlite.Connection, kinds: Collection[str]) -> bool:
         kinds,
     )
     return await cursor.fetchone() is not None
+
+
+async def step_done_at_on(db: aiosqlite.Connection, change_id: int, name: str) -> datetime | None:
+    """When the change *change_id* marked its job *name* done, as a timezone-aware time, or None
+    where it has no such job or the job is not done.
+
+    Read on *db*, the caller's connection and transaction. The time is the queue's clock, as the
+    mark has it.
+    """
+    cursor = await db.execute(
+        "SELECT done_at FROM queued_change_steps WHERE change_id = ? AND name = ?",
+        (change_id, name),
+    )
+    row = await cursor.fetchone()
+    return datetime.fromisoformat(row[0]) if row and row[0] else None
 
 
 async def done_step_results_before(

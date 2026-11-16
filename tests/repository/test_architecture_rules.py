@@ -2395,13 +2395,10 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
     return _reads_outside_the_owner_among(_nodes())
 
 
-#: Today's reads of a table outside its owner, under the design pass that removes each: a module's
-#: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
-#: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
-#: Core's reads of the framework's queue tables, until core asks the framework for them.
-KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/seasons/season_review_changes.py", "season_review_post_change.arm_expiry"): (1, "#544"),
-}
+#: Today's reads of a table outside its owner. None is left: core reads the framework's queue tables
+#: through the framework's queue records. A table whose name is spliced into the statement at run
+#: time counts here, unless its function was read by hand (`SPLICED_READS_READ_BY_HAND`).
+KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_each_table_is_read_by_the_module_that_owns_it():

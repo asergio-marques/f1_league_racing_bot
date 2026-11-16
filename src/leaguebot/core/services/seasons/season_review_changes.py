@@ -82,6 +82,7 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.queue.queue_records import (
+    step_done_at_on,
     unfinished,
 )
 from leaguebot.framework.services.queue.change_types import (
@@ -609,15 +610,8 @@ def season_review_post_change(
         if not question or "new" not in question:
             return StepResult(result={"dropped": True})
         async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute(
-                "SELECT done_at FROM queued_change_steps WHERE change_id = ? AND name = ?",
-                (ctx.change_id, POST_QUESTION),
-            )
-            row = await cursor.fetchone()
-        posted = (
-            datetime.fromisoformat(row["done_at"]) if row and row["done_at"]
-            else now()
-        )
+            done_at = await step_done_at_on(db, ctx.change_id, POST_QUESTION)
+        posted = done_at if done_at is not None else now()
         run_at = posted + REVIEW_WINDOW
         scheduler.arm_once(TIMER, int(question["new"]), run_at)
         return StepResult(result={"armed": run_at.isoformat()})

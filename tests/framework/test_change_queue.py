@@ -2452,7 +2452,6 @@ async def test_in_hand_on_is_true_only_for_a_queued_or_running_change_of_the_kin
         await db.rollback()
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the queue's records have no step_done_at_on")
 async def test_step_done_at_on_gives_the_step_s_time_or_none(tmp_path):
     """`step_done_at_on` gives, on the caller's connection, when a change's step of that name was
     done. A change has two jobs, "step0" done at 12:05 on 1 October 2026 and "step1" not yet done;
