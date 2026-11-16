@@ -196,3 +196,23 @@ async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_
     if outcome == "fault":
         [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
         assert line.startswith("⚠️ Check-in call image — "), line
+
+
+async def test_a_check_in_call_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
+    """Pro's round 4's check-in call is due with image generation asked for, but the images
+    module's switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own
+    wiring. The fault reaches the call's job, which stops; the call is not posted as text with a
+    "the graphic could not be drawn" line, as a picture that merely would not draw is."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, "notice")
+    league.bot.module_service.is_images_enabled = AsyncMock(
+        side_effect=SwitchNotSignedUp("images")
+    )
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert _sent(league) == []
+    assert "could not be drawn" not in league.log(), league.log()

@@ -1984,3 +1984,34 @@ async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_ro
     [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
     heading = block.splitlines()[0]
     assert "Pro" in heading and "round 3" in heading.lower(), block
+
+
+@pytest.mark.parametrize(("draw", "job_name", "target"), [
+    pytest.param("draw_results", "post_session_results", RESULTS_CHANNEL, id="results"),
+    pytest.param("draw_standings", "post_standings", STANDINGS_CHANNEL, id="standings"),
+])
+async def test_a_picture_whose_images_switch_nobody_signed_up_for_stops_its_job(
+    tmp_path, draw, job_name, target,
+):
+    """Round 3's results and standings in Pro are posted again with pictures asked for, but the
+    images module's switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's
+    own wiring, raised as the *draw* picture is asked for. The fault reaches that post's job,
+    which stops; its table is not posted as text in the picture's place."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    league = await _league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    other = "draw_standings" if draw == "draw_results" else "draw_results"
+    with patch(
+        f"leaguebot.image.services.render.image_drawing.ImageDrawing.{draw}",
+        new=AsyncMock(side_effect=SwitchNotSignedUp("images")),
+    ), patch(
+        f"leaguebot.image.services.render.image_drawing.ImageDrawing.{other}",
+        new=AsyncMock(return_value=(None, ())),
+    ):
+        await _ask(league)
+        await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == job_name, job
+    assert league.sent_to(target) == []

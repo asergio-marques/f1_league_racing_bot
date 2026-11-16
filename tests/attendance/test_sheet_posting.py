@@ -469,3 +469,24 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
     heading = block.splitlines()[0]
     assert "Pro" in heading and "round 1" in heading.lower(), block
+
+
+async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
+    """The image module is on with the attendance graphic switched on, but the images module's
+    switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own wiring.
+    Alex runs `/attendance sync` for Pro from round 1: the fault reaches the sheet's job, which
+    stops; the sheet is not posted as text with a line saying its picture could not be drawn."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.module_service.is_images_enabled = AsyncMock(
+        side_effect=SwitchNotSignedUp("images")
+    )
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    assert _sends(league) == 0
+    log = await _said(league)
+    assert "Attendance sheet image" not in log and "could not be drawn" not in log, log
