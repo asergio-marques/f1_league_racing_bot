@@ -1,7 +1,8 @@
 """Attendance's share of what the image module's previews draw
 (the protocol is `image/services/preview/preview_sources.py`).
 
-Built once by the entry point and attached as `bot.preview_sources`. It reads the check-in's
+Built once by the entry point, which joins it with results' share and attaches the whole as
+`bot.preview_sources`. It reads the check-in's
 lead times as `windows_on` has them (the stored row's, or the schema's own column defaults where
 none is stored, writing nothing) and works the deadline out with `derive_checkin_deadline`, so
 the preview draws the deadline a real call draws and holds no arithmetic of its own. It answers

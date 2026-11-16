@@ -288,9 +288,9 @@ knows the module's name, and nothing else.
 The image module is used by the others to draw their posts, and a module that finds it turned off
 posts text instead, as the image module specification's "Configuration" section (the
 `images config toggle` and its fallback) says. The image module is asked only to draw: it draws what
-a module hands it, imports no other module, and posts nothing itself, but for the lineup a command
-draws, which runs in no job, so its drawing reports its notices itself. It hands back the picture,
-or none, and the lines saying what the drawing had to report, so the module that posts keeps the
+a module hands it, imports no other module, and posts nothing itself. The one exception is the
+lineup a command draws: that runs in no job, so its drawing reports its notices itself. It hands
+back the picture, or none, and the lines saying what the drawing had to report, so the module that posts keeps the
 posting and chooses the kind of post (a standing post for a session's table and the standings, a
 notice for a verdict and the batch's heading), and the lines reach the log channel as lines of the
 job that posts. Every other module may call the image module without an entry in the table, but only
@@ -299,8 +299,8 @@ discard, and the models the image module declares for what it is handed to draw:
 its configuration are image's alone (the `.importlinter` contract that keeps results, attendance and
 weather out of them), so that the one gate and the fall back to text are the image module's to keep
 and no module reaches round them. What a preview draws is read through a protocol the image module
-declares (`PreviewSources`), which the module that owns the data implements and the builder hands
-in. Core reaches the image module through a protocol it declares, which the image module implements
+declares (`PreviewSources`), each part of which the module that owns the data implements, and the builder
+joins the parts and hands them in. Core reaches the image module through a protocol it declares, which the image module implements
 and the builder hands in, as results reaches attendance (below). Core's own graphics (the calendar,
 the lineup) are asked for through it, with the capacity guards, the artwork signature and the checks
 that a calendar or a lineup is wanted, and both season reviews' image section is asked for through
@@ -1500,8 +1500,8 @@ the review would read as changed in every area.
 (`season_fingerprint_service.take_fingerprint`, a module's fault in handing over its areas included)
 is signed as an empty one, which differs from every fingerprint, another empty one included, and so
 refuses an approval whose review was read, because a fingerprint that could not be read must not
-wave one through. A switch nobody signed up for is let through by name, as it is by every reader
-that stands aside, for it is a fault in the bot's assembly and not a fingerprint that could not be
+wave one through. A switch nobody signed up for is let through by name, as it is by the readers
+that stand aside, for it is a fault in the bot's assembly and not a fingerprint that could not be
 read.
 
 **A telling or a clean-up that must not undo or hold what it follows.**

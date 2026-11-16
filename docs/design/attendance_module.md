@@ -569,9 +569,9 @@ image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet
 the post jobs, from what attendance hands it, the call's deadline included: attendance works it out
 (`derive_checkin_deadline`) and hands it in. The recalculation's check that the attendance channel
 can take a file asks the same drawing whether the aspect attaches files
-(`ImageDrawing.aspect_attaches_files`), which the cog reads off the bot. It also implements the
-image module's `PreviewSources`, which hands the previews that deadline, and the builder hands the
-implementation in as `bot.preview_sources`.
+(`ImageDrawing.aspect_attaches_files`), which the cog reads off the bot. It also implements its share of the
+image module's `PreviewSources`, the check-in deadline the previews draw, and the builder joins it
+with results' share and hands the whole in as `bot.preview_sources`.
 
 ---
 
