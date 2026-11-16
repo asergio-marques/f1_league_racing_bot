@@ -2400,7 +2400,6 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 #: Core's reads of the framework's queue tables, until core asks the framework for them.
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/seasons/season_end_changes.py", "_any_in_hand_on"): (1, "#544"),
     ("core/services/seasons/season_review_changes.py", "season_review_post_change.arm_expiry"): (1, "#544"),
 }
 

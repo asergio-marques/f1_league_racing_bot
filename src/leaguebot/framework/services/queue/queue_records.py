@@ -5,7 +5,9 @@ which read none of `ChangeQueue`'s state: a change type's check, a restart's rec
 and a factory reset call them without a queue. `empty_queue_in` and `carry_job_numbering` write,
 on a staged file nothing else holds open, so each commits and is named in the write check's
 allowance (`SAVES_ALLOWED`) as the queue's own record. The decision that governs the reads is
-below, pinned by a test in `tests/framework/test_change_queue.py`.
+below, pinned by a test in `tests/framework/test_change_queue.py`. `pending_job_on`, `in_hand_on`
+and `step_done_at_on` read on the caller's connection, inside the caller's transaction, for a
+caller that asks the queue while it saves.
 
 **What is still in hand is read, not remembered** (`unfinished`). A module-level read gives the
 payloads of the changes of the kinds asked that are QUEUED or RUNNING, a stopped one included
@@ -150,6 +152,25 @@ async def pending_job_on(db: aiosqlite.Connection) -> tuple[int, bool, str] | No
         )
     ).fetchone()
     return None if row is None else (int(row[0]), bool(row[1]), str(row[2]))
+
+
+async def in_hand_on(db: aiosqlite.Connection, kinds: Collection[str]) -> bool:
+    """Whether a change of *kinds* is queued or running, a stopped one included, as read on *db*.
+
+    Read on the caller's connection and transaction, for a check asked inside a save, where
+    :func:`in_hand` would open a connection of its own. A change stopped on a failure keeps its
+    state, running, so it counts as in hand; one done, refused, dropped or discarded does not.
+    """
+    kinds = list(kinds)
+    if not kinds:
+        return False
+    marks = ", ".join("?" for _ in kinds)
+    cursor = await db.execute(
+        f"SELECT 1 FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
+        "AND state IN ('QUEUED', 'RUNNING') LIMIT 1",
+        kinds,
+    )
+    return await cursor.fetchone() is not None
 
 
 async def done_step_results_before(

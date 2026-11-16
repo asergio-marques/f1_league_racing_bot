@@ -2419,7 +2419,6 @@ async def test_pending_job_on_gives_the_stopped_job_first_else_the_next_not_done
         await db.rollback()
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the queue's records have no in_hand_on")
 @pytest.mark.parametrize(
     ("kind", "state", "stopped", "expected"),
     [

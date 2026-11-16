@@ -73,6 +73,7 @@ from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.framework.services.queue.queue_records import (
     in_hand,
+    in_hand_on,
 )
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
@@ -294,17 +295,6 @@ async def season_end_in_hand(
 SEASON_ENDS = (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT)
 
 
-async def _any_in_hand_on(db: aiosqlite.Connection, kinds: tuple[str, ...]) -> bool:
-    """Whether a change of *kinds* is queued, running or stopped on a failure, read on *db*."""
-    marks = ", ".join("?" for _ in kinds)
-    cursor = await db.execute(
-        f"SELECT 1 FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
-        "AND state IN ('QUEUED', 'RUNNING') LIMIT 1",
-        kinds,
-    )
-    return await cursor.fetchone() is not None
-
-
 async def season_ending_on(db: aiosqlite.Connection) -> bool:
     """Whether a season's end (its completion, cancellation or abort) or its wind-down to Pending
     completion is in hand on the queue, queued, running or stopped on a failure, as read on *db*.
@@ -317,9 +307,9 @@ async def season_ending_on(db: aiosqlite.Connection) -> bool:
     holds no close back. One season is live at a time, so an end in hand is the live season's.
     Read on the caller's connection, so that a record may ask it inside its save.
     """
-    if await _any_in_hand_on(db, SEASON_ENDS):
+    if await in_hand_on(db, SEASON_ENDS):
         return True
-    return await _any_in_hand_on(db, (WIND_DOWN,)) and await wind_down_not_due_on(db) is None
+    return await in_hand_on(db, (WIND_DOWN,)) and await wind_down_not_due_on(db) is None
 
 
 async def season_ending(db_path: str) -> bool:
