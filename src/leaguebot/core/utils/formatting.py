@@ -1,8 +1,7 @@
-"""Core's listings: the division list, the round list and the roster block core's messages share.
+"""Core's listings: the division list, the round list and the roster block, in core's own wording.
 
-They are core's own wording, used by core's services. The Discord timestamp and the fenced listing
-split across Discord's message limit are not core's wording but Discord's, and sit in
-`leaguebot.utils.messages`.
+The Discord timestamp and the fenced listing split across Discord's message limit are not core's
+wording but Discord's, and sit in `leaguebot.utils.messages`.
 """
 
 from __future__ import annotations
