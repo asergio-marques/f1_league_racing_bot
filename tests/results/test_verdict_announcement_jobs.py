@@ -1078,3 +1078,39 @@ async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_i
     [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
     heading = block.splitlines()[0]
     assert "Pro" in heading and "round 3" in heading.lower(), block
+
+
+async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_when_its_text_post_is_refused(
+    tmp_path,
+):
+    """Image generation is on with the verdict picture alone switched on and its template valid,
+    and its render fails on a template fault, so the verdict is to be announced as text. The
+    verdicts channel refuses every post on the first try, the text included, stopping the queue;
+    the channel is let accept and a Retry announces the verdict. The log channel carries the
+    picture's fault line, headed "⚠️ Verdicts image", once: it is not lost with the refused try."""
+    from leaguebot.image.models.image_module import Problem, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"verdicts": True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={"verdicts_template": MagicMock(valid=True)}
+    )
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        problem=Problem(kind="TEMPLATE_INVALID", detail=RENDER_FAULT,
+                        template_key="verdicts_template"),
+    ))
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda _content, _kwargs: True
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is not None
+    league.channel(VERDICTS_CHANNEL).fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
+    log = league.log()
+    lines = [line for line in log.splitlines() if RENDER_FAULT in line]
+    assert len(lines) == 1, log
+    assert lines[0].startswith("⚠️ Verdicts image — "), lines[0]

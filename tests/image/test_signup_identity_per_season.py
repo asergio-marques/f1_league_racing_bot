@@ -13,6 +13,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.driver_names import read_driver_names, read_driver_nationalities
 from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
+from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 
 SERVER_ID = 22060
 USER = 5150
@@ -88,7 +89,20 @@ async def test_a_season_holding_no_signup_falls_back_to_the_latest(db_path):
 
 
 async def test_a_verdict_reads_the_nationality_of_its_rounds_season(db_path):
-    assert await _driver_nationality(db_path, _hook(db_path), USER, 1) == "French"
+    """Round 111 belongs to season 1, so the verdict drawn for it carries the nationality of
+    that season's signup; a driver read with no season named carries their latest."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.image.services.aspects.image_verdict_post import build_drawing
+
+    drawing = await build_drawing(
+        guild=MagicMock(), db_path=db_path, driver_names_read=_hook(db_path), round_id=111,
+        kind=VerdictKind.PENALTY, season_number=1, division_name="Old Pro", round_number=1,
+        session_label="Feature Race", driver_name="Old Name", driver_discord_id=USER,
+        penalty_description="+5s", description_text="", justification_text="",
+    )
+
+    assert drawing.driver_nationality == "French"
     assert await _driver_nationality(db_path, _hook(db_path), USER) == "British"
 
 

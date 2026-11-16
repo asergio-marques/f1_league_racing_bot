@@ -788,14 +788,18 @@ async def test_a_daily_refresh_that_fires_hours_after_its_time_is_skipped(
 
 
 async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job(tmp_path):
+    """The image module is on, against a migrated database, so the switch reads; the fault the
+    refresh swallows is the configuration read's, not a switch that cannot be read."""
     from leaguebot.image.services.portraits import driver_portrait_service as m
 
-    bot = MagicMock()
-    bot.db_path = str(tmp_path / "missing.db")
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    bot = _daily_bot(await _season_db(tmp_path), directory)
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("boom"))
 
     # An APScheduler job that raises is logged into a void the league never reads.
     assert await m.run_daily_refresh(bot, bot.image_config_service, now=NOW) == 0
+    bot.image_config_service.get_config.assert_awaited()
 
 
 async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp_path, monkeypatch):

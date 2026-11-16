@@ -209,15 +209,14 @@ async def test_template_validity_is_deliberately_not_consulted():
     drawing._validity.template_reports.assert_not_awaited()
 
 
-async def test_a_switch_nobody_signed_up_for_is_raised_not_read_as_no():
-    """A module switch nobody signed up for is a fault in the bot's assembly, which no reader
-    that stands aside takes for an answer (architecture.md, "How modules and core fit
-    together"): the pre-flight asking it fails on its command's failure path."""
+async def test_a_switch_nobody_signed_up_for_answers_no_and_is_left_to_the_job():
+    """A module switch nobody signed up for is a fault in the bot's assembly. The pre-flight is
+    not where it is raised: it answers no, and the picture's own gate, asked when the job draws,
+    raises it and stops the job (`test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job`)."""
     drawing = _drawing(toggles={"standings": True})
     drawing._modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
 
-    with pytest.raises(SwitchNotSignedUp):
-        await drawing.aspect_attaches_files("standings")
+    assert not await drawing.aspect_attaches_files("standings")
 
 
 async def test_a_reader_that_raises_answers_no_rather_than_raising():

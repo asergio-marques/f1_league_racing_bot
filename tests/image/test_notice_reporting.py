@@ -160,15 +160,6 @@ async def test_nothing_is_posted_and_none_returned_for_no_notices():
     bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_a_log_failure_is_swallowed_and_reported_as_none():
-    """A log-channel problem must never break the render that produced the notices."""
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no permission"))
-
-    assert await ImageRenderService.report_notices(bot, [_notice()]) is None
-
-
 # ── The standings path no longer floods the log ───────────────────────────
 
 

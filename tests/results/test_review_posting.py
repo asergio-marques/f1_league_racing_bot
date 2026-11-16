@@ -2010,3 +2010,93 @@ async def test_a_picture_whose_images_switch_nobody_signed_up_for_stops_its_job(
     job = await stopped_job(league.db_path)
     assert job is not None and job["name"] == job_name, job
     assert league.sent_to(target) == []
+
+
+@pytest.mark.parametrize("picture", [
+    "results",
+    pytest.param("standings", marks=pytest.mark.xfail(
+        strict=True, reason="#288: a standings picture that cannot be drawn, followed by a refused "
+        "text post, leaves no line once the retry posts the text")),
+])
+async def test_a_picture_that_cannot_be_drawn_keeps_its_line_when_its_text_is_refused(
+    tmp_path, picture,
+):
+    """Round 3's results and standings are posted again with image generation on, and *picture*
+    cannot be drawn (the drawn file cannot be opened). Discord refuses every send to its channel
+    on the first try, so the text the picture fell back to is refused too and the queue stops;
+    the channel is let accept and a Retry posts the text. The log channel carries the picture's
+    line, naming the fault, once: it is not lost with the refused try."""
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
+
+    league = await _league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
+    failing = AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT))
+    with patch(
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
+        new=failing if picture == "results" else AsyncMock(return_value=(None, ())),
+    ), patch(
+        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
+        new=failing if picture == "standings" else AsyncMock(return_value=StandingsDrawn()),
+    ):
+        league.channel(target).send_fails = http_error(text=REFUSAL)
+        # The standings' earlier table is gone, so their text is sent afresh rather than edited
+        # in place, and the refusal reaches it.
+        league.channel(STANDINGS_CHANNEL).messages.pop(OLD_STANDINGS, None)
+        await _ask(league)
+        await run_queue(league.bot)
+        assert await stopped_job(league.db_path) is not None
+        league.channel(target).send_fails = None
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    lines = [line.lower() for line in league.bot.log_channel.sent
+             if PICTURE_FILE_FAULT in line.lower()]
+    assert len(lines) == 1, league.bot.log_channel.sent
+    assert picture in lines[0] and "text" in lines[0], lines[0]
+
+
+class _SendsRefused:
+    """A `fail_send_at` refusing more than one send: equal to each send number in *numbers*."""
+
+    def __init__(self, *numbers: int) -> None:
+        self.numbers = numbers
+
+    def __eq__(self, other: object) -> bool:
+        return other in self.numbers
+
+    __hash__ = None
+
+
+@pytest.mark.xfail(strict=True, reason="#288: a retry whose removal of the earlier try's "
+                   "part-posted text is refused replaces the kept picture line, so it is lost")
+async def test_a_refused_picture_s_line_survives_a_retry_that_cannot_remove_the_part_posted_text(
+    tmp_path,
+):
+    """Round 3's results are posted again with the results picture drawn. Discord refuses the
+    picture's upload, takes the first chunk of the text it falls back to and refuses the second,
+    and refuses to delete the chunk, so the queue stops with it standing. On the first Retry
+    Discord still refuses to delete the chunk, and the queue stops again; on the second the chunk
+    is removed and the text posted. The
+    picture's refusal, with Discord's reason, reaches the log channel once."""
+    league = await _built_league(tmp_path)
+    results = league.channel(RESULTS_CHANNEL)
+    results.fail_send_at = _SendsRefused(1, 3)
+    results.delete_fails = http_error(text="Discord is down")
+    with await _drawn(league, tmp_path, "results"), patch(
+        "leaguebot.results.services.publishing.results_post_service._MSG_MAX", 40,
+    ):
+        await _ask(league)
+        await run_queue(league.bot)
+        assert (await stopped_job(league.db_path))["name"] == "post_session_results"
+        assert league.sent_to(RESULTS_CHANNEL), "the first chunk stands, for the retry to remove"
+        await retry_job(league.bot)
+        assert (await stopped_job(league.db_path))["name"] == "post_session_results"
+        results.delete_fails = None
+        results.fail_send_at = None
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    lines = [line for line in league.bot.log_channel.sent if REFUSAL.lower() in line.lower()]
+    assert len(lines) == 1, league.bot.log_channel.sent
+    assert "results" in lines[0].lower() and "refused" in lines[0].lower(), lines[0]

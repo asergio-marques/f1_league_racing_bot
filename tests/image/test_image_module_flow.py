@@ -1869,31 +1869,6 @@ async def test_only_wired_aspects_read_their_toggle(
     )
 
 
-async def test_no_source_module_posting_path_imports_the_render_service(
-    module_service, config_service
-):
-    """The render service must not be reachable from a posting path in this increment."""
-    import pathlib
-
-    src = pathlib.Path(__file__).resolve().parents[2] / "src"
-    posting_services = [
-        "results_post_service.py",
-        "standings_service.py",
-        "rsvp_service.py",
-        "verdict_announcement_service.py",
-        "mystery_notice_service.py",
-        "phase1_service.py",
-        "phase2_service.py",
-        "phase3_service.py",
-    ]
-
-    for name in posting_services:
-        (path,) = src.glob(f"leaguebot/*/services/**/{name}")
-        text = path.read_text(encoding="utf-8")
-        assert "image_render_service" not in text, f"{name} reaches the render service"
-        assert "image_config_service" not in text, f"{name} reads image config"
-
-
 # ── T037 — the third state when a source module is disabled ───────────────
 
 
