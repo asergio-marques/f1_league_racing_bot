@@ -961,3 +961,52 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
     [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
     heading = block.splitlines()[0]
     assert "Pro" in heading and "round 3" in heading.lower(), block
+
+
+@pytest.mark.parametrize(("aspect", "template", "name"), [
+    _FAULTED_PICTURES[0],
+    *_FAULTED_PICTURES[1:],
+], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_is_retried(
+    tmp_path, aspect, template, name,
+):
+    """Image generation is on with the *aspect* picture alone switched on and its template valid,
+    and the verdicts channel refuses every post carrying a picture. Alex approves a five-second
+    penalty for Lewis in round 3 of Pro; the picture is drawn with one notice, a flag falling back,
+    and Discord refuses its post, stopping the queue. A Retry posts it in words: the queue runs to
+    the end, Lewis's verdict is announced, and the log channel carries the notice once, in a block
+    whose heading names Pro and round 3, never lost with the refused try."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={template: MagicMock(valid=True)}
+    )
+    picture = tmp_path / f"{aspect}.png"
+
+    async def _render(*_args: Any, **_kwargs: Any) -> Any:
+        picture.write_bytes(b"\x89PNG")
+        return RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type=template, notice_kind="ASSET_FALLBACK_USED", detail=NOTICE_DETAIL,
+            field_id="flag",
+        )])
+
+    league.bot.image_render_service.render = AsyncMock(side_effect=_render)
+    league.channel(VERDICTS_CHANNEL).fail_when = (
+        lambda _content, kwargs: kwargs.get("file") is not None
+    )
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is not None
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 3" in heading.lower(), block
