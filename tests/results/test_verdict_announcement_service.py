@@ -57,6 +57,21 @@ def test_a_disqualification_is_still_described_as_one():
     assert describe_penalty("DSQ", None) == "Disqualified"
 
 
+@pytest.mark.parametrize(
+    ("penalty_type", "seconds", "expected"),
+    [
+        ("TIME_PENALTY", 5, "5 seconds added"),
+        ("TIME_PENALTY", 12, "12 seconds added"),
+        ("TIME_PENALTY", -3, "3 seconds removed"),
+        ("TIME_PENALTY", None, "Disqualified"),
+    ],
+)
+def test_a_positive_magnitude_adds_and_a_negative_one_removes(penalty_type, seconds, expected):
+    """Confirmed by the author on 2026-08-14: positive adds, negative removes. The graphic
+    draws this wording as the announcement carries it (XIV.7's one rendering)."""
+    assert describe_penalty(penalty_type, seconds) == expected
+
+
 def test_a_round_label_names_the_round_as_a_league_numbers_it():
     from leaguebot.results.services.review.verdict_announcement_service import _round_label
 

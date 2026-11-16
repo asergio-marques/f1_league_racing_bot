@@ -239,7 +239,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_verdict_preview
 
         async def _build(context):
-            return await build_verdict_preview(self.bot, context)
+            return await build_verdict_preview(self.bot, context, self.bot.preview_sources)
 
         await self._run_preview(
             interaction,

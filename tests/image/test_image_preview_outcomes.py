@@ -926,7 +926,7 @@ class TestVerdictPreview:
     async def test_one_picture_per_case(self, bot, league):
         context = await _context(bot, round_number=1, require_teams=True)
 
-        requests = await build_verdict_preview(bot, context)
+        requests = await build_verdict_preview(bot, context, bot.preview_sources)
 
         assert len(requests) == 5
         assert all(r[1] == "verdicts_template" for r in requests)
@@ -938,7 +938,7 @@ class TestVerdictPreview:
         results module can issue it (#138)."""
         context = await _context(bot, round_number=1, require_teams=True)
 
-        requests = await build_verdict_preview(bot, context)
+        requests = await build_verdict_preview(bot, context, bot.preview_sources)
         labels = " ".join(label for label, _k, _s in requests).lower()
 
         assert "no further action" in labels

@@ -1127,7 +1127,9 @@ async def _tracks(bot: LeagueBot):
 # ── Verdicts ──────────────────────────────────────────────────────────────
 
 
-async def build_verdict_preview(bot: LeagueBot, context: PreviewContext):
+async def build_verdict_preview(
+    bot: LeagueBot, context: PreviewContext, sources: PreviewSources
+):
     """One picture per verdict case (FR-032 to FR-034).
 
     The driver is one of the division's own, the session one the named round is run over,
@@ -1139,7 +1141,6 @@ async def build_verdict_preview(bot: LeagueBot, context: PreviewContext):
         VerdictDrawing,
         VerdictKind,
         build_fill_spec,
-        sanction_text,
     )
 
     round_obj = context.required_round()
@@ -1158,7 +1159,7 @@ async def build_verdict_preview(bot: LeagueBot, context: PreviewContext):
             division_name=context.division_name,
             round_number=round_obj.round_number,
             driver_name=driver.display_name,
-            penalty=sanction_text(case["penalty_type"], case["time_seconds"]),
+            penalty=sources.sanction_text(case["penalty_type"], case["time_seconds"]),
             description=case["description"],
             justification=case["justification"],
             season_number=context.season_number,

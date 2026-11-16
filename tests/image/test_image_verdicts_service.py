@@ -12,7 +12,6 @@ from leaguebot.image.services.aspects.image_verdict_service import (
     VerdictKind,
     mention_ids,
     resolve_mentions,
-    sanction_text,
     stage_label,
 )
 
@@ -75,37 +74,6 @@ def test_one_template_serves_all_three_kinds():
     assert {_drawing(kind=kind).template_key for kind in VerdictKind} == {
         "verdicts_template"
     }
-
-
-# ── T019: the sanction rendering is the text path's ───────────────────────
-
-
-def test_the_sanction_rendering_is_the_announcement_service_s():
-    """XIV.7's one rendering: the graphic calls it and holds none of its own."""
-    from leaguebot.results.services.review import verdict_announcement_service  # noqa: PLC0415
-
-    assert sanction_text.__module__ != verdict_announcement_service.__name__
-    assert sanction_text("TIME_PENALTY", 5) == verdict_announcement_service.describe_penalty(
-        "TIME_PENALTY", 5
-    )
-
-
-@pytest.mark.parametrize(
-    ("penalty_type", "seconds", "expected"),
-    [
-        ("TIME_PENALTY", 5, "5 seconds added"),
-        ("TIME_PENALTY", 12, "12 seconds added"),
-        ("TIME_PENALTY", -3, "3 seconds removed"),
-        ("DSQ", None, "Disqualified"),
-        ("TIME_PENALTY", None, "Disqualified"),
-        ("NFA", None, "No further action"),
-    ],
-)
-def test_a_positive_magnitude_adds_and_a_negative_one_removes(
-    penalty_type, seconds, expected
-):
-    """Confirmed by the author on 2026-08-14: positive adds, negative removes."""
-    assert sanction_text(penalty_type, seconds) == expected
 
 
 # ── T015: a mention inside free text (XIV.16, v4.8.0) ─────────────────────

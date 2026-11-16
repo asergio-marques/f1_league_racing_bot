@@ -197,7 +197,7 @@ KINDS = {
     "rsvp": (dict(round_number=1), lambda b, c: build_rsvp_preview(b, c)),
     "verdict": (
         dict(round_number=1, require_teams=True),
-        lambda b, c: build_verdict_preview(b, c),
+        lambda b, c: build_verdict_preview(b, c, b.preview_sources),
     ),
     #  No `require_teams`: the banner names nobody and draws on a bare division.
     "verdict-banner": (

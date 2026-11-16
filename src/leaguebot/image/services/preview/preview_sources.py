@@ -123,3 +123,7 @@ class PreviewSources(Protocol):
         and whether nationality is collected. *previous_positions* names a fictitious reference round for the
         movements, given the keys in standing order and the keys new to the classification."""
         ...
+
+    def sanction_text(self, penalty_type: str | None, time_seconds: int | None) -> str:
+        """A sanction as the announcement words it, from the record's own two fields."""
+        ...

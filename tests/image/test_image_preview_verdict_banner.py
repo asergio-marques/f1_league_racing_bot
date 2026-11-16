@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from leaguebot.results.services.publishing.preview_sources import ResultsPreviewSources
 from leaguebot.image.services.preview.image_preview_service import (
     PreviewContext,
     build_verdict_banner_preview,
@@ -105,7 +106,7 @@ async def test_it_draws_on_a_server_with_no_driver_signed_up():
     """The card beside it cannot, which is why the banner is roster-free."""
     context = _context(drivers=[])
     assert await build_verdict_banner_preview(_bot(), context) != []
-    assert await build_verdict_preview(_bot(), context) == []
+    assert await build_verdict_preview(_bot(), context, ResultsPreviewSources()) == []
 
 
 async def test_a_mystery_round_keeps_the_phrase_and_drops_the_flag():

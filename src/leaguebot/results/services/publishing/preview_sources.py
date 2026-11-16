@@ -28,6 +28,7 @@ from leaguebot.results.models.session_result import (
     RaceSessionResult,
 )
 from leaguebot.results.services.publishing import results_drawing_composer, standings_drawing_composer
+from leaguebot.results.services.review.verdict_announcement_service import describe_penalty
 from leaguebot.results.services.standings import standings_service
 from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 
@@ -286,3 +287,6 @@ class ResultsPreviewSources:
             **shared,
         )
         return drivers_drawing, constructors_drawing
+
+    def sanction_text(self, penalty_type: str | None, time_seconds: int | None) -> str:
+        return describe_penalty(penalty_type, time_seconds)

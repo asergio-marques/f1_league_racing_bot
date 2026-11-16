@@ -825,9 +825,11 @@ def build_verdict_drawing(root, *, case: str = "penalty_added_sprint"):
         VerdictDrawing,
         VerdictKind,
         resolve_mentions,
-        sanction_text,
     )
 
+    from leaguebot.results.services.publishing.preview_sources import ResultsPreviewSources
+
+    sanction_text = ResultsPreviewSources().sanction_text
     driver = "Ada Lovelace"
     common = dict(
         season_number=1,

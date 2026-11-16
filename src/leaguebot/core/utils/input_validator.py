@@ -374,56 +374,6 @@ def parse_penalty_seconds(text: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
-#: What a verdict of no further action reads, in the announcement and on the graphic alike
-#: (decided 2026-09-24, #138).
-NO_FURTHER_ACTION = "No further action"
-
-
-def translate_penalty(penalty_str: str) -> str:
-    """Convert a raw penalty magnitude to a human-readable description.
-
-    A positive magnitude is time **added** to the driver's time, which is what a
-    time penalty does; a negative one is time removed, as an appeal correction does.
-
-    | Input       | Output                           |
-    |-------------|----------------------------------|
-    | ``+5s``     | ``5 seconds added``              |
-    | ``5s``      | ``5 seconds added``              |
-    | ``-3s``     | ``3 seconds removed``            |
-    | ``DSQ``     | ``Disqualified``                 |
-    | ``NFA``     | ``No further action``            |
-    """
-    if is_disqualification(penalty_str):
-        return "Disqualified"
-    if is_no_further_action(penalty_str):
-        return NO_FURTHER_ACTION
-    seconds = parse_penalty_seconds(penalty_str)
-    if seconds is not None:
-        if seconds < 0:
-            return f"{abs(seconds)} seconds removed"
-        return f"{seconds} seconds added"
-    return penalty_str  # fallback: return raw value unchanged
-
-
-def describe_penalty(penalty_type: str | None, time_seconds: int | None) -> str:
-    """The descriptive rendering of a sanction, from the record's own two fields.
-
-    The one place the magnitude is turned into the sentence a league reads. Both the textual
-    announcement and the verdict graphic call it, so a change here reaches both by the same
-    stroke — Constitution XIV.7's one rendering, two presentations. It lives beside the readers
-    of a penalty it is built on, in core, so that the graphic asks no other module for it.
-    """
-    # Before the fallback below, which reads a record with no seconds as a disqualification:
-    # no further action carries none either, and a cleared driver would be published as
-    # disqualified (#138).
-    if penalty_type == "NFA":
-        return NO_FURTHER_ACTION
-    if penalty_type == "DSQ" or time_seconds is None:
-        return translate_penalty("DSQ")
-    magnitude = f"+{time_seconds}s" if time_seconds >= 0 else f"{time_seconds}s"
-    return translate_penalty(magnitude)
-
-
 # ── Formats: times ────────────────────────────────────────────────────────
 
 #: A time, in the one form the bot reads everywhere: minutes and seconds ``1:23.456``, seconds
