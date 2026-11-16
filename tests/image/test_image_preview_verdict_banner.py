@@ -56,7 +56,7 @@ def _registry(monkeypatch):
 
 
 def _bot():
-    return SimpleNamespace(db_path=":memory:")
+    return SimpleNamespace(db_path=":memory:", preview_sources=ResultsPreviewSources())
 
 
 def _round(track_name="Silverstone Circuit", fmt="NORMAL"):
@@ -106,7 +106,7 @@ async def test_it_draws_on_a_server_with_no_driver_signed_up():
     """The card beside it cannot, which is why the banner is roster-free."""
     context = _context(drivers=[])
     assert await build_verdict_banner_preview(_bot(), context) != []
-    assert await build_verdict_preview(_bot(), context, ResultsPreviewSources()) == []
+    assert await build_verdict_preview(_bot(), context) == []
 
 
 async def test_a_mystery_round_keeps_the_phrase_and_drops_the_flag():

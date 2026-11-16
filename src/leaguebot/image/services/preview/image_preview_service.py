@@ -839,14 +839,15 @@ async def _country_of(services: PreviewServices, round_obj) -> str | None:
 
 
 async def build_results_preview(
-    services: PreviewServices, context: PreviewContext, sources: PreviewSources
+    services: PreviewServices, context: PreviewContext
 ):
     """One picture per session the named round is run over (FR-023).
 
     The drivers are the division's own; the classification over them is fabricated, because
     a round not yet run has none. The sessions and the rows come from the results module,
-    through *sources*.
+    through the services' preview sources.
     """
+    sources = services.preview_sources
     from leaguebot.image.services.preview.image_preview_data import (
         fabricate_qualifying_rows,
         fabricate_race_rows,
@@ -917,7 +918,7 @@ async def build_results_preview(
 
 
 async def build_standings_preview(
-    services: PreviewServices, context: PreviewContext, sources: PreviewSources
+    services: PreviewServices, context: PreviewContext
 ):
     """Both championships, as they would stand after the named round (FR-025, FR-026).
 
@@ -944,6 +945,7 @@ async def build_standings_preview(
     left a manager judging their template's ``PTS · GAP`` column, and the three movement
     markers, seeing less than a posting would ever show them.
     """
+    sources = services.preview_sources
     from leaguebot.image.services.preview.image_preview_data import (
         fabricate_standings_previous_positions,
         fabricate_standings_round_results,
@@ -1147,13 +1149,14 @@ async def _tracks(services: PreviewServices):
 
 
 async def build_verdict_preview(
-    services: PreviewServices, context: PreviewContext, sources: PreviewSources
+    services: PreviewServices, context: PreviewContext
 ):
     """One picture per verdict case (FR-032 to FR-034).
 
     The driver is one of the division's own, the session one the named round is run over,
     and the sanction one the module can actually issue — never one it cannot.
     """
+    sources = services.preview_sources
     from leaguebot.image.services.preview.image_preview_data import fabricate_verdict_cases
     from leaguebot.image.services.aspects.image_rsvp_service import session_names
     from leaguebot.image.services.aspects.image_verdict_service import (

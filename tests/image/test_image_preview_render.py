@@ -184,11 +184,11 @@ KINDS = {
     "lineup": (dict(require_teams=True), lambda b, c: build_lineup_preview(b, c)),
     "results": (
         dict(round_number=1, require_teams=True),
-        lambda b, c: build_results_preview(b, c, b.preview_sources),
+        lambda b, c: build_results_preview(b, c),
     ),
     "standings": (
         dict(round_number=1, require_teams=True),
-        lambda b, c: build_standings_preview(b, c, b.preview_sources),
+        lambda b, c: build_standings_preview(b, c),
     ),
     "attendance": (
         dict(round_number=1, require_teams=True),
@@ -197,7 +197,7 @@ KINDS = {
     "rsvp": (dict(round_number=1), lambda b, c: build_rsvp_preview(b, c)),
     "verdict": (
         dict(round_number=1, require_teams=True),
-        lambda b, c: build_verdict_preview(b, c, b.preview_sources),
+        lambda b, c: build_verdict_preview(b, c),
     ),
     #  No `require_teams`: the banner names nobody and draws on a bare division.
     "verdict-banner": (

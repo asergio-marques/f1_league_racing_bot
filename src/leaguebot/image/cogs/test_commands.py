@@ -129,7 +129,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_results_preview
 
         async def _build(context):
-            return await build_results_preview(self._preview_services(), context, self.bot.preview_sources)
+            return await build_results_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
@@ -159,7 +159,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_standings_preview
 
         async def _build(context):
-            return await build_standings_preview(self._preview_services(), context, self.bot.preview_sources)
+            return await build_standings_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
@@ -249,7 +249,7 @@ class TestCommands(ImageSubgroup):
         from leaguebot.image.services.preview.image_preview_service import build_verdict_preview
 
         async def _build(context):
-            return await build_verdict_preview(self._preview_services(), context, self.bot.preview_sources)
+            return await build_verdict_preview(self._preview_services(), context)
 
         await self._run_preview(
             interaction,
