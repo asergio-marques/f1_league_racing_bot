@@ -1931,19 +1931,36 @@ async def test_a_picture_whose_upload_is_cut_off_is_posted_as_text_in_the_same_t
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
-@pytest.mark.parametrize("picture", ["results", "standings"])
+@pytest.mark.parametrize(("picture", "refused"), [
+    ("results", False),
+    ("standings", False),
+    pytest.param("standings", True, id="standings-refused-then-retried"),
+])
 async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_round(
-    tmp_path, picture,
+    tmp_path, picture, refused,
 ):
     """Round 3's results and standings in Pro are posted again with the *picture* picture drawn,
     its render coming back with one notice, a flag falling back. The picture is posted and the
     queue runs to the end; the log channel carries the notice once, in a block whose heading
-    names Pro and round 3, and no block without a heading carries it a second time."""
+    names Pro and round 3, and no block without a heading carries it a second time.
+
+    Where *refused*, the standings channel refuses every send on the first try, the picture and
+    then its text, so the queue stops at the standings' post; the channel is let accept and a
+    Retry posts the standings as text. The notice is still carried once, never lost with the
+    refused try."""
     league = await _built_league(tmp_path)
     target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
+    channel = league.channel(target)
+    if refused:
+        channel.send_fails = http_error(text=REFUSAL)
     with await _drawn(league, tmp_path, picture, notice=NOTICE_DETAIL):
         await _ask(league)
         await run_queue(league.bot)
+        if refused:
+            job = await stopped_job(league.db_path)
+            assert job is not None and job["name"] == "post_standings", job
+            channel.send_fails = None
+            await retry_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
     assert any(kwargs.get("file") is not None
