@@ -39,7 +39,7 @@ class DriverProfile:
     """A driver, as the league holds them.
 
     Carries no ban counters, as there are no ban states to count towards. The bot issues the
-    four sanctions in ``leaguebot.image.services.image_preview_data.VERDICT_SANCTIONS`` and no
+    four sanctions in ``leaguebot.image.services.preview.image_preview_data.VERDICT_SANCTIONS`` and no
     others; the fifth entry there, no further action, is no sanction at all.
     """
 

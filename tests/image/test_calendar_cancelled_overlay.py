@@ -14,8 +14,8 @@ from types import SimpleNamespace as NS
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
-from leaguebot.image.services.image_render_service import rasterise
+from leaguebot.image.services.aspects.image_calendar_service import build_fill_spec, resolve_drawing
+from leaguebot.image.services.render.image_render_service import rasterise
 from leaguebot.image.utils.svg_document import canvas_of
 from leaguebot.image.utils.svg_fill import fill
 

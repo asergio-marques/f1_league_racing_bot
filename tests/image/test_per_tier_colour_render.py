@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import inspect
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.image.services.image_render_service import ImageRenderService
+from leaguebot.image.services.render.image_render_service import ImageRenderService
 from leaguebot.image.utils.svg_document import parse_svg_bytes
 
 TEMPLATE = (
@@ -31,16 +32,15 @@ TEMPLATE = (
 
 #: Every module that renders, and the attribute it must pass as the tier.
 CALL_SITES = {
-    "image/services/image_attendance_post.py": "drawing.division_name",
-    "image/services/image_drawing.py": "drawing.division_name",
-    "image/services/image_lineup_post.py": "drawing.division_name",
-    "image/services/image_results_post.py": "drawing.division_name",
-    "image/services/image_rsvp_post.py": "drawing.division_name",
-    "image/services/image_standings_post.py": "drawing.division_name",
-    "image/services/image_verdict_post.py": "drawing.division_name",
-    "image/services/image_verdict_banner_post.py": "drawing.division_name",
-    "image/services/image_weather_post.py": "drawing.division_name",
-    "image/cogs/image_cog.py": "context.division_name",
+    "image/services/aspects/image_attendance_post.py": "drawing.division_name",
+    "image/services/render/image_drawing.py": "drawing.division_name",
+    "image/services/aspects/image_results_post.py": "drawing.division_name",
+    "image/services/aspects/image_rsvp_post.py": "drawing.division_name",
+    "image/services/aspects/image_standings_post.py": "drawing.division_name",
+    "image/services/aspects/image_verdict_post.py": "drawing.division_name",
+    "image/services/aspects/image_verdict_banner_post.py": "drawing.division_name",
+    "image/services/aspects/image_weather_post.py": "drawing.division_name",
+    "image/services/preview/preview_runner.py": "context.division_name",
 }
 
 
@@ -56,60 +56,131 @@ def _service(*, enabled=True, palette=None):
 # ── Applying the palette ──────────────────────────────────────────────────
 
 async def test_the_palette_is_painted_in():
+    """Division 1's tier has the accent slot set to #A78BFA: the read on the loop answers it, and
+    painting it into the parsed template writes that colour in."""
+    from lxml import etree
+
+    from leaguebot.image.utils.svg_palette import apply_palette
+
     service, _ = _service(palette={"accent": "#A78BFA"})
+    palette = await service.tier_palette("Division 1")
+    assert palette == {"accent": "#A78BFA"}
     root = parse_svg_bytes(TEMPLATE)
-    await service.apply_tier_palette(root, "Division 1")
-    assert b"#A78BFA" in __import__("lxml.etree", fromlist=["etree"]).tostring(root)
+    apply_palette(root, palette)
+    assert b"#A78BFA" in etree.tostring(root)
 
 
 async def test_nothing_is_painted_while_the_feature_is_off():
     """And the palette is never even read — an inert feature costs no queries."""
-    service, config_service = _service(enabled=False, palette={"accent": "#A78BFA"})
-    root = parse_svg_bytes(TEMPLATE)
-    await service.apply_tier_palette(root, "Division 1")
     from lxml import etree
 
+    from leaguebot.image.utils.svg_palette import apply_palette
+
+    service, config_service = _service(enabled=False, palette={"accent": "#A78BFA"})
+    palette = await service.tier_palette("Division 1")
+    root = parse_svg_bytes(TEMPLATE)
+    apply_palette(root, palette)
+
+    assert palette == {}
     assert b"#A78BFA" not in etree.tostring(root)
     config_service.get_tier_palette.assert_not_awaited()
 
 
 async def test_a_tier_with_no_colours_leaves_the_template_alone():
+    from lxml import etree
+
+    from leaguebot.image.utils.svg_palette import apply_palette
+
     service, _ = _service(palette={})
+    palette = await service.tier_palette("Division 1")
     root = parse_svg_bytes(TEMPLATE)
-    before = __import__("lxml.etree", fromlist=["etree"]).tostring(root)
-    await service.apply_tier_palette(root, "Division 1")
-    assert __import__("lxml.etree", fromlist=["etree"]).tostring(root) == before
+    before = etree.tostring(root)
+    apply_palette(root, palette)
+    assert palette == {}
+    assert etree.tostring(root) == before
 
 
 async def test_a_server_with_no_image_config_is_not_an_error():
     service, config_service = _service()
     config_service.get_config = AsyncMock(return_value=None)
-    await service.apply_tier_palette(parse_svg_bytes(TEMPLATE), "Division 1")
+    assert await service.tier_palette("Division 1") == {}
 
 
 # ── Where it happens, and how it fails ────────────────────────────────────
 
-def test_the_palette_is_applied_before_the_spec_builder():
+#: An image type no catalogue claims, so a render of it asks nothing of a template's fields.
+_PROBE = "palette_probe_template"
+
+
+async def _render(tmp_path, monkeypatch, palette, spec_builder=None):
+    """Render the one-rectangle template for Division 1 with per-tier colours on and *palette*
+    as the division's, with a rasteriser that writes a placeholder PNG."""
+    from leaguebot.image.services.render import image_render_service
+    from leaguebot.image.utils.svg_fill import FillSpec
+
+    monkeypatch.setattr(image_render_service, "converter_available", lambda *a, **k: True)
+
+    def _rasterise(svg, destination, canvas):
+        destination.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return destination
+
+    monkeypatch.setattr(image_render_service, "rasterise", _rasterise)
+    template = tmp_path / "probe.svg"
+    template.write_bytes(TEMPLATE)
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value={_PROBE: SimpleNamespace(
+        valid=True, reason=None, resolved_path=template,
+    )})
+    config_service = MagicMock()
+    config_service.get_config = AsyncMock(return_value=MagicMock(per_tier_colour_enabled=True))
+    if isinstance(palette, Exception):
+        config_service.get_tier_palette = AsyncMock(side_effect=palette)
+    else:
+        config_service.get_tier_palette = AsyncMock(return_value=palette)
+    return await ImageRenderService(config_service, validity).render(
+        _PROBE,
+        spec_builder or (lambda root: FillSpec(root=root, image_type=_PROBE)),
+        output_dir=tmp_path / "out",
+        division_name="Division 1",
+    )
+
+
+async def test_the_palette_is_applied_before_the_spec_builder(tmp_path, monkeypatch):
     """After it, a builder reading the stylesheet would read the unpalette'd file."""
-    source = inspect.getsource(ImageRenderService.render)
-    assert source.index("self.apply_tier_palette") < source.index("spec = spec_builder(root)")
+    from leaguebot.image.utils.svg_fill import FillSpec
+
+    seen: list[bytes] = []
+
+    def builder(root):
+        from lxml import etree
+
+        seen.append(etree.tostring(root))
+        return FillSpec(root=root, image_type=_PROBE)
+
+    await _render(tmp_path, monkeypatch, {"accent": "#A78BFA"}, builder)
+
+    assert len(seen) == 1 and b"#A78BFA" in seen[0]
 
 
-def test_a_failing_palette_never_stops_a_graphic_posting():
-    """A graphic in the wrong shade beats no graphic at all."""
-    source = inspect.getsource(ImageRenderService.render)
-    palette_at = source.index("self.apply_tier_palette")
-    assert "except Exception" in source[palette_at - 400 : palette_at + 400]
+@pytest.mark.parametrize(
+    "palette",
+    [{"accent": "#A78BFA\x00"}, RuntimeError("db is gone")],
+    ids=["unpaintable", "unreadable"],
+)
+async def test_a_failing_palette_never_stops_a_graphic_posting(tmp_path, monkeypatch, palette):
+    """A graphic in the wrong shade beats no graphic at all, but the league is told: a tier's
+    colours that cannot be written into the template, or cannot be read at all, still let the
+    picture be drawn, and the render hands back one notice in the image specification's words
+    (Conventions: colours that cannot be applied)."""
+    outcome = await _render(tmp_path, monkeypatch, palette)
 
-
-async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
-    service, config_service = _service()
-    config_service.get_config = AsyncMock(side_effect=RuntimeError("db is gone"))
-    root = parse_svg_bytes(TEMPLATE)
-    with pytest.raises(RuntimeError):
-        await service.apply_tier_palette(root, "Division 1")
-    # ...but `render` is what must not raise, and it wraps the call.
-    assert "except Exception" in inspect.getsource(ImageRenderService.render)
+    assert outcome.problem is None, outcome.problem
+    assert len(outcome.png_paths) == 1
+    assert [notice.image_type for notice in outcome.notices] == [_PROBE]
+    assert outcome.notices[0].detail == (
+        "the colours of Division 1 could not be applied, so the graphic is drawn in the "
+        "template's own colours"
+    )
 
 
 # ── Every call site names its tier ────────────────────────────────────────

@@ -16,18 +16,33 @@ import aiosqlite
 import pytest
 from lxml import etree
 
+from leaguebot.__main__ import LeaguePreviewSources
+from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_preview_service import (
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.preview.image_preview_service import (
     build_attendance_preview,
     build_results_preview,
     build_rsvp_preview,
     build_standings_preview,
     build_verdict_preview,
     build_weather_preview,
-    resolve_context,
+    resolve_context as _resolve_context,
 )
 from leaguebot.core.services.seasons.season_service import SeasonService
+from tests.support.saves import create_image_defaults
+
+
+async def resolve_context(bot, *args, **kwargs):
+    """`image_preview_service.resolve_context`, handed the hook signup answers how a driver is
+    named, as the command hands it from the bot, so that the names and flags a preview draws are
+    signup's."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=bot.db_path)
+    sign_up_driver_names_read(holder)
+    kwargs.setdefault("driver_names_read", holder.driver_names_read)
+    return await _resolve_context(bot, *args, **kwargs)
 
 SERVER_ID = 8383
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -61,17 +76,13 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
         image_config_service=config_service,
-        attendance_service=SimpleNamespace(get_division_config=_none),
+        preview_sources=LeaguePreviewSources(AttendancePreviewSources(db_path)),
     )
-
-
-async def _none(*args, **kwargs):
-    return None
 
 
 @pytest.fixture
@@ -167,12 +178,43 @@ class TestRsvpPreview:
         self, bot, league, round_number, fmt, count
     ):
         """The session list follows the round's own format, not a fabricated one."""
-        from leaguebot.image.services.image_rsvp_service import session_names
+        from leaguebot.image.services.aspects.image_rsvp_service import session_names
 
         context = await _context(bot, round_number=round_number)
 
         assert context.round.format.value == fmt
         assert len(session_names(context.round.format.value)) == count
+
+    @pytest.mark.parametrize(
+        ("stored", "hours"),
+        [((1, 5), 5), ((0, 5), 5), (None, 2)],
+        ids=["stored-while-on", "stored-while-off", "none-stored-draws-the-default"],
+    )
+    async def test_the_check_in_preview_draws_the_deadline_the_league_configured(
+        self, bot, league, db_path, stored, hours
+    ):
+        """Round 1 (two weeks out): the deadline drawn on `/images test rsvp` stands as many
+        hours before the round as the league's stored check-in deadline, whether or not the
+        attendance module is on, and two hours before it where none is stored."""
+        from leaguebot.image.utils.svg_document import load_svg
+
+        if stored is not None:
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "INSERT INTO attendance_config (id, module_enabled, rsvp_deadline_hours) "
+                    "VALUES (1, ?, ?)",
+                    stored,
+                )
+                await db.commit()
+        context = await _context(bot, round_number=1)
+
+        [(_label, key, spec_builder)] = await build_rsvp_preview(bot, context)
+        spec = spec_builder(load_svg(_TEMPLATES / f"{key}.svg"))
+
+        def hour(drawn: str) -> int:
+            return int(re.search(r"(\d{1,2}):\d{2}", drawn).group(1))
+
+        assert (hour(spec.text["round_time"]) - hour(spec.text["deadline_time"])) % 12 == hours
 
 
 # ── Results (T022) ────────────────────────────────────────────────────────
@@ -202,12 +244,12 @@ class TestResultsPreview:
 
     async def test_the_classification_is_over_the_leagues_own_drivers(self, bot, league):
         """The outcome is invented; who it happens to is not."""
-        from leaguebot.image.services.image_preview_data import fabricate_race_rows
+        from leaguebot.image.services.preview.image_preview_data import fabricate_race_rows
 
         context = await _context(bot, round_number=1, require_teams=True)
         role_of = {team.name: i + 1 for i, team in enumerate(context.teams)}
 
-        rows = fabricate_race_rows(context.drivers, role_of, {})
+        rows = fabricate_race_rows(context.drivers, role_of, {}, sources=bot.preview_sources)
 
         assert {row.driver_user_id for row in rows} == {d.key for d in context.drivers}
 
@@ -818,7 +860,7 @@ class TestAttendancePreview:
 
     async def test_no_record_falls_after_the_round_named(self, bot, league):
         """FR-027 — a round yet to be run confers nothing, and its cells stay empty."""
-        from leaguebot.image.services.image_preview_data import fabricate_attendance_records
+        from leaguebot.image.services.preview.image_preview_data import fabricate_attendance_records
 
         context = await _context(bot, round_number=2, require_teams=True)
 
@@ -836,7 +878,7 @@ class TestAttendancePreview:
         """
         from pathlib import Path
 
-        from leaguebot.image.services.image_attendance_service import (
+        from leaguebot.image.services.aspects.image_attendance_service import (
             MARK_ASSET_CLASS,
             MARK_NEAR,
             MARK_REACHED,

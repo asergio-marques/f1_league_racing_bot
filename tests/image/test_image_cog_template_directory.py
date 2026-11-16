@@ -39,7 +39,7 @@ import pytest
 from leaguebot.core.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import ASPECTS
-from leaguebot.image.services.image_validity_service import Problem
+from leaguebot.image.services.validity.image_validity_service import Problem
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
     assert_one_line,
@@ -64,7 +64,7 @@ BEFORE = "resources/league/templates"
 def _rasteriser_present(monkeypatch):
     """The rasteriser taken as present: no test here draws, and its absence would be a
     problem of its own."""
-    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.render.image_render_service as render
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
 
@@ -109,7 +109,7 @@ def _problem(key, detail):
 def _problems_found(monkeypatch, problems) -> list[Any]:
     """Make the survey of the folder find *problems*; returns the
     list each survey records the configuration it was asked about in."""
-    import leaguebot.image.services.image_validity_service as validity
+    import leaguebot.image.services.validity.image_validity_service as validity
 
     asked: list[Any] = []
 

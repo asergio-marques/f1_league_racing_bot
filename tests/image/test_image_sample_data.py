@@ -140,7 +140,7 @@ def test_seven_verdict_cases_are_drawn_from_the_one_template():
 
 
 def test_the_cases_cover_all_three_kinds_both_signs_and_no_further_action():
-    from leaguebot.image.services.image_verdict_service import VerdictKind
+    from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 
     drawings = _all_verdict_drawings()
 
@@ -270,7 +270,7 @@ def test_the_calendar_sample_draws_a_cancelled_round():
     the one no render of theirs ever shows."""
     from lxml import etree
 
-    from leaguebot.image.services.image_calendar_service import build_fill_spec
+    from leaguebot.image.services.aspects.image_calendar_service import build_fill_spec
     from tests.support.image_sample_data import build_calendar_drawing
 
     from pathlib import Path

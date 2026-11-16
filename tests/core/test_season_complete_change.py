@@ -82,6 +82,7 @@ from tests.support.season_league import (
     window_open,
     wizard_state,
     wizards_recovered,
+    standings_pictures_are_due,
 )
 
 
@@ -271,7 +272,7 @@ def _modules() -> list[Any]:
                  "leaguebot.core.services.test_mode.test_mode_service",
                  "leaguebot.core.services.test_mode.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service",
-                 "leaguebot.image.services.driver_portrait_service"):
+                 "leaguebot.image.services.portraits.driver_portrait_service"):
         try:
             found.append(importlib.import_module(name))
         except ImportError:
@@ -449,19 +450,12 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
     league = await pending_completion_league(tmp_path, images=part)
     standings = league.channel(PRO_CH.standings)
     if part:
-        from leaguebot.image.services import image_standings_post
-        from leaguebot.image.services.image_standings_post import (
-            FELL_BACK,
-            ChampionshipOutcome,
-            StandingsPostOutcome,
-        )
+        from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
         league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
-        monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
-            side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
-                drivers=ChampionshipOutcome(FELL_BACK),
-                constructors=ChampionshipOutcome(FELL_BACK),
-            )
+        standings_pictures_are_due(monkeypatch)
+        monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
+            return_value=StandingsDrawn(applicable=True)
         ))
         standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")
     else:
@@ -1476,7 +1470,7 @@ async def test_test_mode_is_switched_off_in_the_save_before_the_season_is_archiv
 async def test_the_portraits_of_the_drivers_deleted_are_discarded_after_the_save(
     tmp_path, monkeypatch,
 ):
-    from leaguebot.image.services import driver_portrait_service
+    from leaguebot.image.services.portraits import driver_portrait_service
 
     calls: list[tuple[str, str]] = []
     holder: dict[str, str] = {}
@@ -2842,14 +2836,18 @@ async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_i
 # ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
 
 
-@pytest.mark.parametrize("refused", ["the picture", "everything"])
+@pytest.mark.parametrize("refused", [
+    "the picture",
+    "everything",
+])
 async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_try(
     tmp_path, monkeypatch, refused,
 ):
     """Images on, both championships drawn. Pro's standings channel refuses (the picture) every
     send carrying a picture: the final standings go out as text in the same try, the job is
     done without stopping the queue and the season is completed, as a refused round's
-    standings picture is ("No, same try everywhere"); nothing is recorded of them, as before.
+    standings picture is ("No, same try everywhere"); nothing is recorded of them, as before, and
+    the log channel says the picture was refused, with Discord's reason, and went out as text.
     Where it refuses (everything) the text too, the queue stops at the job and the season is
     not completed."""
     from tests.support.season_league import draw_standings_pictures, refuses_pictures
@@ -2877,5 +2875,12 @@ async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_t
     assert any("**Driver Standings**" in text for text in texts), texts
     assert any("**Team Standings**" in text for text in texts), texts
     assert all(not files for files in standings.files), "a picture was posted"
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    refusals = [line for line in lines
+                if "refused" in line.lower() and "missing access" in line.lower()]
+    assert refusals, lines
+    assert all("standings" in line.lower() and "text" in line.lower() for line in refusals), \
+        refusals
+    assert len(refusals) == len(set(refusals)), refusals
     assert await _status(league) == "COMPLETED"
 

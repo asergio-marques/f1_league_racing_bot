@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.image.services.image_weather_post import (
+from leaguebot.image.services.aspects.image_weather_post import (
     ForecastRender,
     describe,
 )
@@ -67,15 +67,26 @@ def _drawing(template_key="weather_p2_template", **facts):
     return MagicMock(template_key=template_key, **named)
 
 
+def _image_drawing(bot):
+    """The image module's drawing, over *bot*'s services: the object whose `attach_forecast` the
+    weather post job asks."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    return ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path=bot.db_path,
+    )
+
+
 async def _attach(bot, monkeypatch, drawing, *, phase=2, png=None):
     """`attach_forecast` for round 1's *phase*, its round read as *drawing* and, where *png* is
     given, its render drawing that file; the picture and the log lines it hands back."""
-    import leaguebot.image.services.image_weather_post as post
+    import leaguebot.image.services.aspects.image_weather_post as post
 
     monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
     if png is not None:
         monkeypatch.setattr(post, "render_forecast", AsyncMock(return_value=ForecastRender(png=png)))
-    file, lines = await post.attach_forecast(bot, round_id=1, phase=phase, values=_values())
+    file, lines = await _image_drawing(bot).attach_forecast(1, phase, values=_values())
     return file, list(lines)
 
 
@@ -87,7 +98,7 @@ async def test_the_drawing_is_made_from_the_values_weather_hands_it(tmp_path):
     in that order, and nothing read from weather's tables; the heading still names the round's
     division and number (#287, W288)."""
     from leaguebot.image.models.forecast_values import ForecastSession
-    from leaguebot.image.services.image_weather_post import build_drawing_for_round
+    from leaguebot.image.services.aspects.image_weather_post import build_drawing_for_round
     from tests.support.season_league import PRO, ongoing_league, round_id
 
     league = await ongoing_league(tmp_path, weather=True)
@@ -106,7 +117,7 @@ async def test_the_drawing_is_made_from_the_values_weather_hands_it(tmp_path):
         ForecastSession(label="Race", weather_type="Rain", slots=("Rain",), summary="Rain"),
     ))
 
-    drawing = await build_drawing_for_round(league.bot, round_, 3, values=handed)
+    drawing = await build_drawing_for_round(league.db_path, round_, 3, values=handed)
 
     assert drawing.phase_description == "Final session forecast"
     assert drawing.rain_probability == "30%"
@@ -185,7 +196,7 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
     and the fault is handed back for the log channel, naming the forecast where its round can be
     read, as a league reads it (round 4 in **Division 1**), and only its phase where reading the
     round raises too: naming in a log line never fails the line (#287, B3, B8)."""
-    import leaguebot.image.services.image_weather_post as post
+    import leaguebot.image.services.aspects.image_weather_post as post
 
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
@@ -193,11 +204,26 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
              else AsyncMock(side_effect=RuntimeError("no round")))
     monkeypatch.setattr(post, "build_drawing_for_round", reads)
 
-    file, lines = await post.attach_forecast(bot, round_id=1, phase=2, values=_values())
+    file, lines = await _image_drawing(bot).attach_forecast(1, 2, values=_values())
 
     [line] = lines
     assert file is None and "boom" in line
     assert line.startswith(f"⚠️ Weather image — {named}: "), line
+
+
+async def test_a_forecast_whose_switch_nobody_signed_up_for_raises(monkeypatch):
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and round 4's
+    phase 2 forecast in Division 1 is drawn: that is a fault in the bot's assembly, not a switch
+    that cannot be read, so it is raised rather than handed back as the forecast's fault line."""
+    import leaguebot.image.services.aspects.image_weather_post as post
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    bot = _bot()
+    bot.module_service.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=_drawing()))
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await _image_drawing(bot).attach_forecast(1, 2, values=_values())
 
 
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
@@ -226,11 +252,11 @@ async def test_a_mystery_round_notice_whose_round_cannot_be_read_is_named_as_the
     """Weather posts a mystery round's notice, telling the picture it is the notice (phase 0), and
     the round cannot be read, its read raising or finding nothing. The line still names it the
     mystery round notice, never as a phase, though no round can be named (#287, B12, p9)."""
-    import leaguebot.image.services.image_weather_post as post
+    import leaguebot.image.services.aspects.image_weather_post as post
 
     monkeypatch.setattr(post, "build_drawing_for_round", reads)
 
-    file, lines = await post.attach_forecast(_bot(), round_id=1, phase=0, values=_values())
+    file, lines = await _image_drawing(_bot()).attach_forecast(1, 0, values=_values())
 
     [line] = lines
     assert file is None
@@ -278,11 +304,12 @@ def _render_bot(decision):
 async def test_a_scheduled_posting_falls_back_rather_than_rejecting():
     """FR-055 — nobody is at the keyboard, and the league still needs its forecast."""
     from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.image_weather_post import render_forecast
+    from leaguebot.image.services.aspects.image_weather_post import render_forecast
 
     bot = _render_bot(_decision(posts_image=False, problem_detail="template too small"))
     render = await render_forecast(
-        bot, MagicMock(template_key="weather_p2_template"),
+        bot.image_config_service, bot.image_render_service,
+        MagicMock(template_key="weather_p2_template"),
         origin=PostingOrigin.SCHEDULED,
     )
     assert render.draws is False
@@ -294,11 +321,12 @@ async def test_a_scheduled_posting_falls_back_rather_than_rejecting():
 async def test_a_commanded_posting_rejects_rather_than_falling_back():
     """FR-056 — the one person able to fix the template is standing there."""
     from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.image_weather_post import render_forecast
+    from leaguebot.image.services.aspects.image_weather_post import render_forecast
 
     bot = _render_bot(_decision(rejects=True, problem_detail="missing track_name"))
     render = await render_forecast(
-        bot, MagicMock(template_key="weather_p3_template"),
+        bot.image_config_service, bot.image_render_service,
+        MagicMock(template_key="weather_p3_template"),
         origin=PostingOrigin.COMMANDED,
     )
     assert render.rejects is True
@@ -306,28 +334,16 @@ async def test_a_commanded_posting_rejects_rather_than_falling_back():
     assert render.problem == "missing track_name"
 
 
-@pytest.mark.asyncio
-async def test_a_resolution_fault_rejects_only_when_commanded():
-    from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.image_weather_post import render_forecast
-
-    bot = MagicMock()
-    bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("no config"))
-    drawing = MagicMock(template_key="weather_p1_template")
-
-    scheduled = await render_forecast(bot, drawing, origin=PostingOrigin.SCHEDULED)
-    assert scheduled.draws is False and scheduled.rejects is False
-
-    commanded = await render_forecast(bot, drawing, origin=PostingOrigin.COMMANDED)
-    assert commanded.rejects is True
-
 
 @pytest.mark.asyncio
 async def test_a_successful_render_hands_back_the_png():
-    from leaguebot.image.services.image_weather_post import render_forecast
+    from leaguebot.image.services.aspects.image_weather_post import render_forecast
 
     bot = _render_bot(_decision())
-    render = await render_forecast(bot, MagicMock(template_key="weather_p1_template"))
+    render = await render_forecast(
+        bot.image_config_service, bot.image_render_service,
+        MagicMock(template_key="weather_p1_template"),
+    )
     assert render.draws is True
     assert str(render.png) == "/tmp/weather.png"
 
@@ -396,7 +412,7 @@ def test_no_notice_and_no_problem_reaches_a_forecast_channel():
     lines go to the log channel."""
     import inspect
 
-    import leaguebot.image.services.image_weather_post as post
+    import leaguebot.image.services.aspects.image_weather_post as post
 
     module_source = inspect.getsource(post)
     for forbidden in ("post_forecast", "forecast_channel_id", "channel.send"):
@@ -424,7 +440,7 @@ def test_no_phase_is_armed_for_a_mystery_round():
 
 def test_the_mystery_drawing_takes_the_mystery_template():
     """Whatever phase it is asked for, a mystery round reaches its own type."""
-    from leaguebot.image.services.image_weather_service import MYSTERY_TEMPLATE_KEY, resolve_drawing
+    from leaguebot.image.services.aspects.image_weather_service import MYSTERY_TEMPLATE_KEY, resolve_drawing
 
     for phase in (1, 2, 3):
         drawing = resolve_drawing(

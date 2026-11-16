@@ -96,6 +96,22 @@ class RenderNotice:
     field_id: str | None = None
 
 
+# ── Validity layers (Constitution XIV.9) ──────────────────────────────────
+
+#: Layer numbers. Layers 1 to 3 are implemented (`LAYERS`); LAYER_TRIAL_RENDER is reserved so
+#: that its numbering is settled before its definition arrives.
+LAYER_RESOLUTION = 1
+LAYER_CATALOGUE = 2       # needs the image type's field catalogue
+LAYER_BOUNDS = 3          # needs the catalogue plus which fields are bounded
+LAYER_TRIAL_RENDER = 4    # reserved — needs sample data per type
+
+LAYER_NAMES = {
+    LAYER_RESOLUTION: "Resolution",
+    LAYER_CATALOGUE: "Catalogue conformance",
+    LAYER_BOUNDS: "Bounds declaration",
+    LAYER_TRIAL_RENDER: "Trial render",
+}
+
 # ── Problems (Constitution XIV.4) ─────────────────────────────────────────
 
 #: A problem aborts whatever it is met by. Each kind is distinguishable from every other,

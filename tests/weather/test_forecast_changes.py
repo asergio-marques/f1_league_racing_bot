@@ -13,7 +13,7 @@ Silverstone Circuit, 90 days ahead, with a short qualifying and a long race; Pro
 is 605 and its role 801. Each test asks for a phase through weather's `ask_forecast`, as the timers
 do, runs the queue and reads the forecast channel, the log channel and the database. Images are
 off, so a forecast is posted as text, unless a test hands the job a picture by patching
-`image_weather_post.attach_forecast`, which the post job reaches through that module as it runs.
+the image drawing's `attach_forecast`, which the post job is handed.
 """
 from __future__ import annotations
 
@@ -180,14 +180,13 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     """The forecast refused stops the queue at its post, and nothing is put on the old retry
     queue; Retry posts it as text, with no picture drawn, and records its id. The forecast that
     finally stands notifies Pro's role 801, and no member, as the first would have."""
-    from leaguebot.image.services import image_weather_post
 
     league = await _league(tmp_path)
     drawn = AsyncMock(side_effect=lambda *_a, **_k: (
         discord.File(io.BytesIO(b"png"), filename="forecast.png"), (),
     ))
     if refused == "picture refused":
-        monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
+        monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", drawn)
         league.channel(FORECAST).fail_when = lambda _content, kwargs: kwargs.get("file") is not None
     else:
         _refusing(league)
@@ -257,7 +256,7 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     (weather spec, "Mystery rounds"), and a picture that cannot find its round names it the
     mystery round notice, never a phase (image spec, "Weather image generation", "Generation and
     posting"; criterion 13)."""
-    from leaguebot.image.services import image_weather_post
+    from leaguebot.image.services.aspects import image_weather_post
 
     mystery = cause.startswith("mystery")
     league = await _league(tmp_path, mystery=mystery)
@@ -296,6 +295,57 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         assert [line for line in written.splitlines() if "Weather image" in line] == [reason]
 
 
+#: The detail of the one render notice a drawn forecast comes back with.
+FORECAST_NOTICE = "no `weather_icon` image for “Heavy rain”"
+#: The detail of the fault a forecast's render fails on.
+FORECAST_FAULT = "the template declares no `phase` field"
+
+
+@pytest.mark.parametrize("outcome", ["notice", "fault"])
+async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is_retried(
+    tmp_path, outcome,
+):
+    """Phase 1 of Pro's round 3 is asked with pictures due, and its picture is drawn with one
+    render notice (*outcome* "notice") or its render fails on a template fault ("fault"). Discord
+    refuses the forecast's post, and the queue stops at it; Discord then accepts, Retry is pressed
+    and the forecast goes out as text. The notice, or the picture's "⚠️ Weather image" fault line,
+    reaches the log channel once, as it does when the forecast posts at the first try: never lost
+    with the refused post, and never twice."""
+    from leaguebot.image.models.image_module import Problem, RenderNotice, RenderOutcome
+
+    league = await _league(tmp_path)
+    _pictures_due(league)
+    picture = tmp_path / "forecast.png"
+    picture.write_bytes(b"\x89PNG")
+    if outcome == "notice":
+        drawn = RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type="weather_p1_template", notice_kind="ASSET_FALLBACK_USED",
+            detail=FORECAST_NOTICE, field_id="weather_icon",
+        )])
+    else:
+        drawn = RenderOutcome(problem=Problem(
+            kind="TEMPLATE_INVALID", detail=FORECAST_FAULT, template_key="weather_p1_template",
+        ))
+    league.bot.image_render_service.render = AsyncMock(return_value=drawn)
+    _refusing(league)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+
+    _accepting(league)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(FORECAST).files == [None]
+    detail = FORECAST_NOTICE if outcome == "notice" else FORECAST_FAULT
+    said = await _said(league)
+    assert said.count(detail) == 1, said
+    if outcome == "fault":
+        [line] = [line for line in said.splitlines() if FORECAST_FAULT in line]
+        assert line.startswith("⚠️ Weather image — "), line
+
+
 @pytest.mark.parametrize("phase", [1, 2, 3])
 async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws(
     tmp_path, monkeypatch, phase,
@@ -306,7 +356,6 @@ async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws
     the phase's description, the likelihood of rain Phase 1 drew as text, and from Phase 2 on each
     session's label and drawn weather type in run order, with Phase 3's slots and their summary
     (#287, W288)."""
-    from leaguebot.image.services import image_weather_post
     from leaguebot.weather.utils.message_builder import (
         format_rain_probability,
         format_session_weather_type,
@@ -316,7 +365,7 @@ async def test_a_forecast_s_picture_is_handed_the_values_composed_from_its_draws
     league = await _league(tmp_path)
     await _posted(league, *range(1, phase))
     drawn = AsyncMock(return_value=(None, ()))
-    monkeypatch.setattr(image_weather_post, "attach_forecast", drawn)
+    monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", drawn)
 
     await _ask(league, phase)
     await run_queue(league.bot)
@@ -1379,7 +1428,7 @@ def _step_context(league: Any, payload: dict[str, Any]) -> Any:
 def _steps(league: Any) -> dict[str, Any]:
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
-    return forecast_steps(now=lambda: league.clock.now)
+    return forecast_steps(now=lambda: league.clock.now, drawing=league.bot.image_drawing)
 
 
 async def test_a_post_whose_round_is_gone_raises_naming_the_round(tmp_path):

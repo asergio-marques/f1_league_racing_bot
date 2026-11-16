@@ -4,7 +4,7 @@ sanctions that follow (#439, slice 2).
 The approvals of a round's reports and appeals, and an amendment's replay, plan these jobs from
 this module, as they plan their posts from `review_posting`: `plan_verdicts` gives the heading and
 one verdict for each record an approval saved, `plan_attendance` the sheet and the sanctions after
-it, `verdict_steps(now, attendance)` the jobs themselves for a change type's `steps`, and `not_done(ctx)` one
+it, `verdict_steps(now, attendance, drawing)` the jobs themselves for a change type's `steps`, and `not_done(ctx)` one
 line for each job a league admin discarded, for the outcome and the `Incomplete` line.
 
 **Every failure stops the queue** (the owner's rule), and so a job here never swallows what the
@@ -14,9 +14,10 @@ and presses Retry. A retry posts as text (Constitution XIV, rule 8).
 
 **The heading is a job of its own** (`announce_heading`), ahead of the verdicts, and a heading
 Discord refuses stops the queue with no verdict posted ahead of it; once discarded, the verdicts go
-out beneath none, and the outcome says so. It treats a banner `try_post` returns as None as a
-failure. Its `record` saves the banner row, so the sanctions that follow read the heading back from
-its row and a stop and a restart between a verdict and a sanction post no second one. **The
+out beneath none, and the outcome says so. It posts the banner `ImageDrawing.draw_banner` draws, or the
+words where none is drawn, and a refusal of Discord's stops the queue naming it. Its `record` saves the
+banner row, so the sanctions that follow read the heading back from its row and a stop and a restart
+between a verdict and a sanction post no second one. **The
 sanction cards' own heading is the same job** (owner, 2026-10-06, "Yes, it stops too"): where no
 penalty was applied, so no heading stands over the round's verdicts, the first `apply_sanction`
 that applies plans one ahead of its card (`_sanction_heading`), which stops the queue as the
@@ -69,9 +70,11 @@ import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import discord
 
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     GuildUnavailable,
@@ -79,23 +82,27 @@ from leaguebot.core.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
+    drawn_lines_kept,
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.posting.notice_handler import delete_notice
+from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.image.services import image_verdict_banner_post
+from leaguebot.image.models import verdict_banner_drawing
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.review_state import ReadServerConfig
 from leaguebot.results.services.review.review_prompts import _build_penalty_review_state, send_appeals_prompt
 from leaguebot.results.services.publishing.results_post_service import _delete_posting
 from leaguebot.results.services.review.review_posting import _channel, _deletes, _league_guild
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -112,17 +119,27 @@ REFRESH_LINEUP = "refresh_lineup"
 
 _SYNC = "Run `/attendance sync` to finish it."
 
+#: The heading over a batch of verdicts notifies nobody: it names a season, a division and a round.
+_NO_MENTIONS = discord.AllowedMentions.none()
+
 #: What an `announce_heading` payload carries where it heads a round's sanction cards and no
 #: verdict, so that its job and a Discard of it name what it heads.
 _OVER_SANCTIONS = "sanctions"
 
 
 def verdict_steps(
-    now: Callable[[], datetime], attendance: AttendanceAfterReview
+    now: Callable[[], datetime],
+    attendance: AttendanceAfterReview,
+    drawing: ImageDrawing,
+    driver_names_read: AwaitedHook | None = None,
 ) -> dict[str, Step]:
     """The jobs of this module, keyed by their names, for a change type's `steps`. *now* is the
-    queue's clock, which stamps the heading's record, the lineup's audit and a sanction's; *attendance* the hook
-    the builder handed the change type, which the jobs use and never look up on the bot."""
+    queue's clock, which stamps the heading's record, the lineup's audit and a sanction's;
+    *attendance* the hook the builder handed the change type, which the jobs use and never look
+    up on the bot, and *drawing* the image module's, which draws the verdicts' pictures. *driver_names_read*
+    is the hook signup answers how a driver is named, which a picture names its driver through."""
+
+    names = driver_names_read if driver_names_read is not None else AwaitedHook()
 
     def bound(fn: Any) -> Any:
         async def run(ctx: StepContext) -> Any:
@@ -130,6 +147,18 @@ def verdict_steps(
 
         return run
 
+
+    def with_drawing(fn: Any) -> Any:
+        async def run(ctx: StepContext) -> Any:
+            return await fn(ctx, drawing)
+
+        return run
+
+    def with_drawing_and_names(fn: Any) -> Any:
+        async def run(ctx: StepContext) -> Any:
+            return await fn(ctx, drawing, names)
+
+        return run
 
     def bound_save(fn: Any) -> Any:
         async def run(db: Any, ctx: StepContext) -> Any:
@@ -170,12 +199,13 @@ def verdict_steps(
 
     return {
         ANNOUNCE_HEADING: Step(
-            ANNOUNCE_HEADING, StepKind.ACT, _announce_heading,
+            ANNOUNCE_HEADING, StepKind.ACT, with_drawing(_announce_heading),
             still_due=bound(_heading_still_due), describe=_describe_heading,
             record=record_heading,
         ),
         ANNOUNCE_VERDICT: Step(
-            ANNOUNCE_VERDICT, StepKind.ACT, _announce_verdict, describe=_describe_verdict,
+            ANNOUNCE_VERDICT, StepKind.ACT, with_drawing_and_names(_announce_verdict),
+            describe=_describe_verdict,
             record=record_verdict,
         ),
         ATTENDANCE_SHEET: Step(
@@ -563,24 +593,40 @@ async def _heading_still_due(ctx: StepContext, hook: AttendanceAfterReview) -> b
     return not await vas._banners_of(ctx.db_path, int(ctx.step_payload["round_id"]))
 
 
-async def _announce_heading(ctx: StepContext) -> StepResult:
+async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResult:
     round_id = int(ctx.step_payload["round_id"])
     channel, context = await _channel_of(ctx, round_id)
     await _take_down_kept(channel, ctx)
-    drawing = image_verdict_banner_post.build_drawing(
+    heading = verdict_banner_drawing.resolve_drawing(
         season_number=context.get("season_number"),
         division_name=context["division_name"],
         division_tier=context.get("division_tier"),
-        round_number=context.get("round_number"),
+        round_number=context["round_number"],
         race_name=context.get("race_name"),
         country_name=context.get("country_name"),
     )
-    message = await image_verdict_banner_post.try_post(
-        ctx.bot, channel, drawing, as_text=ctx.tries > 0
-    )
-    if message is None:
-        raise StepFailedOnDiscord("the heading over the verdicts could not be posted")
-    return StepResult(result={"message_id": message.id, "channel_id": channel.id})
+    # The picture is drawn on the first try alone, a retry heading the batch in words (Constitution
+    # XIV, rule 8); what it said is kept with every stop that follows, so that the try which posts
+    # hands it back with its own.
+    drawn = drawn_lines_kept(ctx.kept)
+    attachment = None
+    if ctx.tries == 0:
+        attachment, drawn = await drawing.draw_banner(heading)
+    try:
+        if attachment is None:
+            text: str | None = verdict_banner_drawing.heading_text(heading)
+            parts: dict[str, Any] = {}
+        else:
+            text, parts = None, {"file": attachment}  # a drawn banner's message carries no text
+        try:
+            message = await send_notice(channel, text, mentions=_NO_MENTIONS, **parts)
+        except discord.HTTPException as refused:
+            raise StepFailedOnDiscord(
+                f"the heading over the verdicts could not be posted: {refused}"
+            ).carrying(drawn) from refused
+    finally:
+        drawing.discard_attachment(attachment)
+    return StepResult(result={"message_id": message.id, "channel_id": channel.id}, lines=drawn)
 
 
 async def _describe_verdict(ctx: StepContext) -> str:
@@ -592,16 +638,35 @@ async def _describe_verdict(ctx: StepContext) -> str:
     return f"announcing the {kind} verdict for <@{payload['record']['driver_user_id']}>{where}"
 
 
-async def _announce_verdict(ctx: StepContext) -> StepResult:
+def _carrying_verdict_lines(
+    ctx: StepContext, stop: StepFailedOnDiscord, earlier: tuple[str, ...]
+) -> StepFailedOnDiscord:
+    """*stop*, a refused verdict or sanction card, with what its picture said kept on it beside
+    *earlier*, the lines of the tries before: a picture is drawn on the first try alone, so what it
+    said, and why it went out as text where it was not drawn, must go with the stop for the try
+    that posts to hand back, never lost with a post Discord refused."""
+    fallback = getattr(stop, vas.FALLBACK_ATTRIBUTE, None)
+    return stop.carrying(earlier + (() if fallback is None else fallback(ctx.named, ctx.what)))
+
+
+async def _announce_verdict(
+    ctx: StepContext, drawing: ImageDrawing, driver_names_read: AwaitedHook
+) -> StepResult:
     payload = ctx.step_payload
     round_id = int(payload["round_id"])
     channel, _context = await _channel_of(ctx, round_id)
-    await _take_down_kept(channel, ctx)
-    announced = await vas.announce_verdict(
-        ctx.bot, ctx.db_path, round_id, payload["table"], payload["record"],
-        as_text=ctx.tries > 0,
-    )
-    lines = () if announced.fallback is None else (announced.fallback(ctx.named, ctx.what),)
+    # What the picture said when it was drawn, on the first try, is kept with every stop that
+    # follows, so that the try which posts hands it back with its own.
+    drawn = drawn_lines_kept(ctx.kept)
+    try:
+        await _take_down_kept(channel, ctx)
+        announced = await vas.announce_verdict(
+            ctx.bot, driver_names_read, ctx.db_path, round_id, payload["table"],
+            payload["record"], drawing=drawing, as_text=ctx.tries > 0,
+        )
+    except StepFailedOnDiscord as stop:
+        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
+    lines = drawn + (() if announced.fallback is None else announced.fallback(ctx.named, ctx.what))
     return StepResult(
         result={"message_id": announced.message_id, "channel_id": announced.channel_id},
         lines=lines,
@@ -648,11 +713,17 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
     if payload.get("after_sanctions"):
         # Only a driver whose sanction applied is marked: one discarded or dropped is not.
         sanctioned &= {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
-    await standing_posts.remove_kept(ctx.bot, ctx.kept)
+    # What the sheet's picture said when it was drawn, on the first try, is kept with every stop
+    # that follows, so that the try which posts hands it back with its own.
+    earlier = drawn_lines_kept(ctx.kept)
+    try:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+    except StepFailedOnDiscord as stop:
+        raise stop.carrying(earlier) from stop.__cause__
     try:
         result = await hook.post_sheet(
             int(payload["round_id"]), int(payload["division_id"]),
-            sanctioned=sanctioned, as_text=ctx.tries > 0,
+            sanctioned=sanctioned, as_text=ctx.tries > 0, earlier_lines=earlier,
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
@@ -902,11 +973,15 @@ async def _describe_announce(ctx: StepContext) -> str:
 async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     # Headed by the approved round's banner, not the round the thresholds were read at.
-    fallback = await hook.announce_sanction(
-        int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
-        payload["candidate"], as_text=ctx.tries > 0,
-    )
-    return StepResult(lines=() if fallback is None else (fallback(ctx.named, ctx.what),))
+    drawn = drawn_lines_kept(ctx.kept)
+    try:
+        fallback = await hook.announce_sanction(
+            int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
+            payload["candidate"], as_text=ctx.tries > 0,
+        )
+    except StepFailedOnDiscord as stop:
+        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
+    return StepResult(lines=drawn + (() if fallback is None else fallback(ctx.named, ctx.what)))
 
 
 async def _describe_lineup(ctx: StepContext) -> str:
@@ -920,19 +995,24 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     message posted and the one it replaces, saves the new id with its mark and plans the
     review's own `delete_message` for the old one (`review_posting.not_done` names a discard).
     """
-    await standing_posts.remove_kept(ctx.bot, ctx.kept)
-    result = await hook.refresh_lineup(
-        int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
-    )
+    earlier = drawn_lines_kept(ctx.kept)
+    try:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        result = await hook.refresh_lineup(
+            int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
+        )
+    except StepFailedOnDiscord as stop:
+        raise lineup_posting.carry_lineup_lines(ctx, stop, earlier) from stop.__cause__
     if not result or result.get("new") is None:
-        return StepResult(result=result or {})
+        return StepResult(result=result or {}, lines=earlier)
     old = result.get("old")
     then = (
         _deletes(int(result["channel_id"]), [int(old)], "lineup")
         if old is not None and int(old) != int(result["new"]) else ()
     )
     return StepResult(
-        result=result, lines=lineup_posting.fallen_back_to_text_line(ctx, result), then=then,
+        result=result, lines=earlier + lineup_posting.fallen_back_to_text_line(ctx, result),
+        then=then,
     )
 
 

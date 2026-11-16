@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from leaguebot.image.services.image_attendance_service import (
+from leaguebot.image.services.aspects.image_attendance_service import (
     LIMIT_LABEL_RESERVE,
     LIMIT_LABEL_SACK,
     MARK_ASSET_CLASS,

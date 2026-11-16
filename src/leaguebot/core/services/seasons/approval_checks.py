@@ -203,7 +203,7 @@ async def unsettled_signups(db_path: str, driver_names_read: AwaitedHook) -> lis
     """The signups not yet settled, named: what the review and the confirmation both list.
 
     Each driver is named by what *driver_names_read* hands back for them, the name signup holds
-    from their signup, or by their account where it holds none.
+    from their latest signup, or by their account where it holds none.
     """
     from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES
 
@@ -218,8 +218,10 @@ async def unsettled_signups(db_path: str, driver_names_read: AwaitedHook) -> lis
         unsettled_rows = await cursor.fetchall()
 
     names: dict[int, str] = {}
-    for handed in await driver_names_read.call([row["id"] for row in unsettled_rows]):
-        names.update(handed)
+    for handed in await driver_names_read.call([row["id"] for row in unsettled_rows], None):
+        names.update({
+            profile_id: signup.name for profile_id, signup in handed.drivers.items() if signup.name
+        })
 
     state_labels = {
         "UNASSIGNED": "not yet placed",

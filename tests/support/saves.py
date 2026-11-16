@@ -17,7 +17,8 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.image.services.image_config_service import (
+from leaguebot.image.services.config.image_config_service import (
+    create_defaults_on,
     set_aspect_on,
     set_daily_portraits_on,
     set_field_on,
@@ -160,6 +161,14 @@ async def modify_fl_position_limit(db_path: str, season_id: int, config_name: st
 # ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------
+
+
+async def create_image_defaults(target: Any) -> None:
+    """Create the image configuration and its nine aspect toggles, each off, where missing, as
+    `/module enable images` does, leaving the module's own flag as it stands."""
+    async with get_connection(_path(target)) as db:
+        await create_defaults_on(db)
+        await db.commit()
 
 
 async def set_field(target: Any, column: str, value: str) -> bool:

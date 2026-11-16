@@ -31,9 +31,17 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+import discord
+
+from leaguebot.core.models.change import (
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    drawn_lines_kept,
+)
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.modules.module_service import ModuleService
@@ -43,15 +51,77 @@ from leaguebot.core.services.seasons.season_service import (
     division_rounds_on,
     round_by_id,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
     import aiosqlite
+
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     from leaguebot.results.services.publishing.results_post_service import PostedTable
 
 OPENING_STANDINGS = "opening_standings"
 FINAL_STANDINGS = "final_standings"
+
+
+def _refused_picture_line(
+    ctx: StepContext, championship: str | None, fault: str, *, subject: str
+) -> str:
+    """The line a job writes to the log for a *championship* picture of its *subject* (the
+    opening standings, the final classification) that went out as text: the member and the
+    change it ran for, then the division, the championship, what failed (Discord's refusal and
+    its reason, or the drawing's fault) and what puts it right, as the round's standings job
+    says it (image specification, "Errors"). No command posts these again, so none is named."""
+    from leaguebot.results.services.publishing.results_post_service import UploadFault
+
+    put_right = f"no command posts the {subject} again, and the text stands"
+    if not isinstance(fault, UploadFault):
+        put_right = f"fix the standings template; {put_right}"
+    return (
+        f"{ctx.named} | {ctx.what} | Standings posted as text\n"
+        f"  division: {ctx.step_payload['division_name']}\n"
+        f"  problem: the {championship} picture of the {subject} could not be "
+        f"posted: {fault}\n"
+        f"  to put it right: {put_right}"
+    )
+
+
+def _refused_picture_lines(
+    ctx: StepContext, tables: "Sequence[PostedTable]", *, subject: str
+) -> tuple[str, ...]:
+    """The lines for each table of the *subject* whose picture went out as text
+    (:func:`_refused_picture_line`)."""
+    return tuple(
+        _refused_picture_line(ctx, table.championship, table.fault, subject=subject)
+        for table in tables if table.fault is not None
+    )
+
+
+def _raise_keeping_refused_pictures(
+    ctx: StepContext, failure: StepFailedOnDiscord | discord.HTTPException, *, subject: str
+) -> NoReturn:
+    """Raise what a job raises where the *subject*'s post failed: *failure*, but where a picture
+    was refused or would not draw and the text that went out in its place failed too, a stop
+    carrying that picture's line beside the lines it already kept, for the try that posts the
+    text to hand back once."""
+    from leaguebot.results.services.publishing.results_post_service import (
+        PICTURE_FAULTS_ATTRIBUTE,
+    )
+
+    cause: BaseException | None = failure
+    while cause is not None and not getattr(cause, PICTURE_FAULTS_ATTRIBUTE, None):
+        cause = cause.__cause__
+    if cause is None:
+        raise failure
+    faults: dict[str, str] = getattr(cause, PICTURE_FAULTS_ATTRIBUTE)
+    refused = tuple(
+        _refused_picture_line(ctx, name, fault, subject=subject) for name, fault in faults.items()
+    )
+    if isinstance(failure, StepFailedOnDiscord):
+        raise failure.carrying(drawn_lines_kept(failure.result) + refused)
+    if isinstance(failure, discord.HTTPException):
+        raise StepFailedOnDiscord(f"the {subject} were refused").carrying(refused) from failure
+    raise failure
 
 
 async def _opening_round(db_path: str, division_id: int):
@@ -76,9 +146,10 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     since have left: a channel the guild no longer holds holds none of them. A message that will not
     delete raises, with what is still to remove. Once the copies are down, what is returned names
     none left, so that a failure of this try names what it left, even nothing, and the job no longer
-    keeps the copies removed.
+    keeps the copies removed. The earlier try's picture lines stay in it, as a stop's result
+    replaces what the job kept and a failure that is not Discord's carries none of its own.
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.publishing.results_post_service import remove_part_posted_messages
 
     earlier = [int(each) for each in (kept or {}).get("new") or []]
@@ -89,11 +160,14 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     if earlier_channel is not None:
         left, failures = await remove_part_posted_messages(earlier_channel, earlier)
         if left:
+            # The earlier try's picture lines go on the stop, as a stop's result replaces what
+            # the job kept: the retry that does remove the tables must still hand them back.
             raise StepFailedOnDiscord(
                 f"{len(left)} message(s) of the earlier try could not be removed",
                 result={"new": left, "channel_id": posted_in},
-            ) from (failures[0] if failures else None)
-    return {"new": [], "channel_id": posted_in}
+            ).carrying(drawn_lines_kept(kept)) from (failures[0] if failures else None)
+    lines = drawn_lines_kept(kept)
+    return {"new": [], "channel_id": posted_in, **({DRAWN_LINES: list(lines)} if lines else {})}
 
 
 @asynccontextmanager
@@ -121,23 +195,34 @@ async def keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[No
         ) from failure
 
 
-async def produce_stranding(what: str, channel_id, posting) -> "list[PostedTable]":
+async def produce_stranding(
+    what: str, channel_id, posting, kept: dict[str, Any] | None = None
+) -> "list[PostedTable]":
     """Await *posting*, results' ``produce_standings``, and hand back the tables it put up, naming
     on its failure a table already sent.
 
     The ids are recorded only once the posting is done, so a table already sent when a later one
-    failed is put on the failure for the job to keep, and the next try removes it.
+    failed is put on the failure for the job to keep, and the next try removes it. What the
+    pictures drawn for it said, on the failure or kept from an earlier try (*kept*), is kept
+    beside them, for the try that posts to hand back.
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    from leaguebot.core.models.change import StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.results.services.publishing.results_post_service import DRAWN_LINES_ATTRIBUTE
 
     try:
         return await posting
     except Exception as failure:
         stranded = [int(each) for each in getattr(failure, "left_standing", None) or []]
+        lines = drawn_lines_kept(kept) + tuple(getattr(failure, DRAWN_LINES_ATTRIBUTE, ()))
         if stranded:
             raise StepFailedOnDiscord(
                 f"the {what} standings were posted in part and the rest was refused",
                 result={"new": stranded, "channel_id": int(channel_id)},
+            ).carrying(lines) from failure
+        if lines and isinstance(failure, discord.HTTPException):
+            raise StepFailedOnDiscord(f"the {what} standings were refused").carrying(
+                lines
             ) from failure
         raise
 
@@ -159,11 +244,12 @@ async def standings_channel_of(db_path: str, division_id: int) -> int | None:
 
 
 async def post_opening_standings(
-    bot: LeagueBot,
+    driver_names_read: AwaitedHook,
     guild,
     db_path: str,
     division_id: int,
     *,
+    drawing: "ImageDrawing | None" = None,
     as_text: bool = False,
     kept: dict[str, Any] | None = None,
 ) -> "list[PostedTable]":
@@ -180,11 +266,11 @@ async def post_opening_standings(
     that copy, from the channel it was posted in, before it posts both again, failing again, with
     what it still has to remove, where a message will not delete. Once that copy is down, any
     failure of the try names what the try left, even nothing, so that the job no longer keeps the
-    copy removed. *as_text* leaves the graphic out, which is how a job retries (Constitution XIV
+    copy removed. *drawing* is the image module's, which draws the pictures (none is drawn where it is None); *as_text* leaves the graphic out, which is how a job retries (Constitution XIV
     rule 8).
     """
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.image.services.image_results_post import _driver_names
+    from leaguebot.core.services.drivers.driver_names import read_driver_names
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import (
         produce_standings,
@@ -209,8 +295,9 @@ async def post_opening_standings(
         # names are resolved from Discord by user id, so the roster has to be known before it can be
         # ordered. The first pass is read only for who is in it; the second is the one that counts.
         roster = await standings_service.opening_driver_standings(db_path, division_id)
-        names = await _driver_names(
-            bot, guild, [snapshot.driver_user_id for snapshot in roster], division_id=division_id
+        names = await read_driver_names(
+            db_path, driver_names_read, guild, [snapshot.driver_user_id for snapshot in roster],
+            division_id=division_id,
         )
         driver_snaps = await standings_service.opening_driver_standings(db_path, division_id, names)
         team_snaps = await standings_service.opening_team_standings(db_path, division_id)
@@ -231,9 +318,11 @@ async def post_opening_standings(
                 guild,
                 await reserves_in_standings(db_path, division_id),
                 "",
-                bot=None if as_text else bot,
+                drawing=None if as_text else drawing,
+                driver_names_read=driver_names_read,
                 occasion=ClassificationOccasion.SEASON_OPENING,
             ),
+            kept,
         )
 
 
@@ -301,12 +390,13 @@ async def _final_round(db_path: str, division_id: int, round_id: int):
 
 
 async def post_final_standings(
-    bot: LeagueBot,
+    driver_names_read: AwaitedHook,
     guild,
     db_path: str,
     division_id: int,
     round_id: int,
     *,
+    drawing: "ImageDrawing | None" = None,
     as_text: bool = False,
     kept: dict[str, Any] | None = None,
 ) -> "list[PostedTable]":
@@ -350,7 +440,7 @@ async def post_final_standings(
             )
 
         driver_snaps = await driver_standings_for_display(
-            db_path, division_id, round_id, guild, bot
+            db_path, division_id, round_id, guild, driver_names_read
         )
         team_snaps = await standings_service.compute_team_standings(
             db_path, division_id, round_id
@@ -372,10 +462,12 @@ async def post_final_standings(
                 guild,
                 await reserves_in_standings(db_path, division_id),
                 "",
-                bot=None if as_text else bot,
+                drawing=None if as_text else drawing,
+                driver_names_read=driver_names_read,
                 occasion=ClassificationOccasion.SEASON_FINAL,
                 fresh=True,
             ),
+            kept,
         )
 
 
@@ -449,7 +541,9 @@ async def season_completed_on(
     )
 
 
-def opening_steps(modules: ModuleService) -> dict[str, Step]:
+def opening_steps(
+    modules: ModuleService, drawing: "ImageDrawing", driver_names_read: AwaitedHook
+) -> dict[str, Step]:
     """Results' step definition for the opening standings, signed up to
     *placements_confirmed_steps* beside :func:`placements_confirmed_on`. The builder hands in
     *modules*, as it hands cancellation's steps theirs, so that `still_due` reads results'
@@ -460,13 +554,19 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
         guild = await require_guild(ctx.bot)
         division_id = int(ctx.step_payload["division_id"])
         channel_id = await standings_channel_of(ctx.db_path, division_id)
-        tables = await post_opening_standings(
-            ctx.bot, guild, ctx.db_path, division_id, as_text=ctx.tries > 0, kept=ctx.kept,
-        )
+        try:
+            tables = await post_opening_standings(
+                driver_names_read, guild, ctx.db_path, division_id, drawing=drawing,
+                as_text=ctx.tries > 0, kept=ctx.kept,
+            )
+        except (StepFailedOnDiscord, discord.HTTPException) as failure:
+            _raise_keeping_refused_pictures(ctx, failure, subject="opening standings")
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_OPENING, tables,
             channel_id,
-        ))
+        ), lines=drawn_lines_kept(ctx.kept) + tuple(
+            line for table in tables for line in table.lines
+        ) + _refused_picture_lines(ctx, tables, subject="opening standings"))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
@@ -502,7 +602,9 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
     }
 
 
-def final_steps(modules: ModuleService) -> dict[str, Step]:
+def final_steps(
+    modules: ModuleService, drawing: "ImageDrawing", driver_names_read: AwaitedHook
+) -> dict[str, Step]:
     """Results' step definition for the final standings, signed up to
     *season_completed_steps* beside :func:`season_completed_on`. The builder hands in *modules*,
     as it hands the opening standings' theirs, so that `still_due` reads results' switch
@@ -514,14 +616,19 @@ def final_steps(modules: ModuleService) -> dict[str, Step]:
         each = ctx.step_payload
         division_id = int(each["division_id"])
         channel_id = await standings_channel_of(ctx.db_path, division_id)
-        tables = await post_final_standings(
-            ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]),
-            as_text=ctx.tries > 0, kept=ctx.kept,
-        )
+        try:
+            tables = await post_final_standings(
+                driver_names_read, guild, ctx.db_path, division_id, int(each["round_id"]),
+                drawing=drawing, as_text=ctx.tries > 0, kept=ctx.kept,
+            )
+        except (StepFailedOnDiscord, discord.HTTPException) as failure:
+            _raise_keeping_refused_pictures(ctx, failure, subject="final classification")
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_FINAL, tables,
             channel_id,
-        ))
+        ), lines=drawn_lines_kept(ctx.kept) + tuple(
+            line for table in tables for line in table.lines
+        ) + _refused_picture_lines(ctx, tables, subject="final classification"))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()

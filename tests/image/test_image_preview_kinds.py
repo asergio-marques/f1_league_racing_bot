@@ -126,7 +126,7 @@ def test_draws_roster_matches_what_the_builder_actually_reads(kind, builder_name
     was made. A builder that stops reading the roster, or starts, fails here rather than
     silently changing which servers can draw it.
     """
-    from leaguebot.image.services import image_preview_service
+    from leaguebot.image.services.preview import image_preview_service
 
     source = inspect.getsource(getattr(image_preview_service, builder_name))
 

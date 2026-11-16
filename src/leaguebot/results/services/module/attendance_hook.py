@@ -105,10 +105,14 @@ class AttendanceAfterReview(Protocol):
         Does nothing while attendance is off."""
 
     async def post_sheet(
-        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
+        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool,
+        earlier_lines: tuple[str, ...] = (),
     ) -> dict[str, Any] | None:
         """Post the division's attendance sheet as at *round_id*, annotating *sanctioned*
         profiles. Raises where it could not post; *as_text* leaves the graphic out.
+        *earlier_lines* are the lines a try before this one kept on its stop, which the sheet
+        hands back with its own, so that what its picture said is not lost with a post Discord
+        refused.
 
         Saves and deletes nothing (#439). Gives the sheet posted and the one it replaces (`new`,
         `old`, `channel_id`, `takes_slot`) for the job to save and to plan the old one's
@@ -165,14 +169,14 @@ class AttendanceAfterReview(Protocol):
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
-    ) -> Callable[[str, str], str] | None:
+    ) -> Callable[[str, str], tuple[str, ...]] | None:
         """Announce one candidate's sanction in the verdicts channel, beneath the banner of
         *round_id*, which is the round whose verdicts it follows. Raises where it could not
         post.
 
-        Gives the line the job writes to the log, from the member and the change it ran for,
-        where the card's picture went out as text in its place; None otherwise, and while
-        attendance is off."""
+        Gives the lines the job writes to the log, from the member and the change it ran for: what
+        the card's picture was drawn with and, where it went out as text in its place, why; None
+        where there is nothing to say, and while attendance is off."""
 
     async def refresh_lineup(
         self, division_id: int, *, as_text: bool

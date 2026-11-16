@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_results_service import (
+from leaguebot.image.services.aspects.image_results_service import (
     QUALIFYING_TEMPLATE_KEY,
     RACE_TEMPLATE_KEY,
     FastestLapBlock,
@@ -552,7 +552,7 @@ def test_the_shipped_template_fills_from_the_sample_with_no_unresolved_field(fil
         name: Path(__file__).resolve().parents[2] / "resources" / "defaults" / folder
         for name, folder in (("team", "teams"), ("flag", "flags"), ("tyre", "tyres"))
     }
-    from leaguebot.image.services.image_results_service import build_fill_spec as project
+    from leaguebot.image.services.aspects.image_results_service import build_fill_spec as project
 
     result = fill(project(spec, root, asset_directories=directories))
     assert result.unresolved == []

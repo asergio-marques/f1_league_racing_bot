@@ -48,6 +48,7 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import sheet_posting
 from leaguebot.attendance.services.settings.channel_settings import NOT_ENABLED
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.refusal import Refused
@@ -83,6 +84,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 log = logging.getLogger(__name__)
@@ -151,9 +153,12 @@ def faults_verdict(faults: Sequence[str]) -> Verdict | None:
     )
 
 
-async def sync_verdict(bot: "LeagueBot", db_path: str, payload: dict[str, Any]) -> Verdict | None:
+async def sync_verdict(
+    bot: "LeagueBot", db_path: str, payload: dict[str, Any], drawing: "ImageDrawing"
+) -> Verdict | None:
     """The refusal of the sync *payload* asks, judged on the database as it stands, else None: the
-    check of the change, as it is asked and as it starts."""
+    check of the change, as it is asked and as it starts. *drawing* is the image module's, which
+    says whether the channels will be sent pictures."""
     async with get_connection(db_path) as db:
         if not await attendance_enabled_on(db):
             return Verdict.refuse(NOT_ENABLED)
@@ -174,7 +179,7 @@ async def sync_verdict(bot: "LeagueBot", db_path: str, payload: dict[str, Any]) 
     if refusal is not None:
         return refusal
     faults = await attendance_recompute.recalculation_faults(
-        db_path, season.id, await league_guild(bot), bot
+        db_path, season.id, await league_guild(bot), bot, drawing=drawing
     )
     return faults_verdict(faults)
 
@@ -412,18 +417,20 @@ def posting_steps(
     lineups: "LineupPoster",
     attendance: "AttendanceAfterReview",
     modules: "ModuleService",
+    drawing: "ImageDrawing",
     now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> dict[str, Step]:
     """The jobs a recalculation plans after its save, by name: a sanctioned driver's roles, the
     cards and their heading, the lineups, the sheets and the deletion of a post replaced. The
     sync's and a penalty's change both run them."""
-    announce = verdict_steps(now, attendance)
+    announce = verdict_steps(now, attendance, drawing, driver_names_read)
     return {
         SYNC_ROLES: _noted_in_the_host_log(role_move_step(roles, SYNC_ROLES, reason=ROLES_REASON)),
         ANNOUNCE_HEADING: announce[ANNOUNCE_HEADING],
         ANNOUNCE_SANCTION: announce[ANNOUNCE_SANCTION],
         lineup_posting.POST_LINEUP: lineup_posting.lineup_step(lineups, now=now),
-        sheet_posting.POST_SHEET: sheet_posting.sheet_step(modules),
+        sheet_posting.POST_SHEET: sheet_posting.sheet_step(modules, drawing, driver_names_read),
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
     }
 
@@ -435,15 +442,17 @@ def attendance_sync_change(
     lineups: "LineupPoster",
     attendance: "AttendanceAfterReview",
     modules: "ModuleService",
+    drawing: "ImageDrawing",
     now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """`attendance.sync`, see the module. *placement* applies the sanctions on the save, *roles*
     gives and takes a sanctioned driver's roles, *lineups* posts the lineups, *attendance* is the
-    hook results' jobs post the cards through, *modules* says whether attendance is on and *now*
-    is the queue's clock."""
+    hook results' jobs post the cards through, *modules* says whether attendance is on, *drawing* is
+    the image module's, which the sheets ask for their pictures, and *now* is the queue's clock."""
 
     async def check(ctx: CheckContext) -> Verdict:
-        return await sync_verdict(ctx.bot, ctx.db_path, ctx.payload) or Verdict.go()
+        return await sync_verdict(ctx.bot, ctx.db_path, ctx.payload, drawing) or Verdict.go()
 
     async def check_reserve(ctx: StepContext) -> StepResult:
         """The capacity the Reserve team is refused, if it is, read before the save."""
@@ -515,7 +524,8 @@ def attendance_sync_change(
         CHECK_RESERVE: Step(CHECK_RESERVE, StepKind.ACT, check_reserve, describe=describe_check),
         SYNC_SAVE: Step(SYNC_SAVE, StepKind.SAVE, save),
         **posting_steps(
-            roles=roles, lineups=lineups, attendance=attendance, modules=modules, now=now
+            roles=roles, lineups=lineups, attendance=attendance, modules=modules,
+            drawing=drawing, now=now, driver_names_read=driver_names_read,
         ),
         SYNC_CLOSE: Step(SYNC_CLOSE, StepKind.SAVE, close, describe=describe_close),
     }

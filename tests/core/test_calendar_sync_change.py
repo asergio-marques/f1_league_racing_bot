@@ -185,10 +185,18 @@ async def test_a_calendar_sync_that_cannot_post_stops_the_queue_and_queues_nothi
 
 
 async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
-    """Images on: Discord refuses the picture, and the queue stops; Retry posts the textual
-    calendar, drawing nothing again."""
+    """Images on: Discord refuses the picture, drawn with one notice (round 12 not fitting), and
+    the queue stops; Retry posts the textual calendar, drawing nothing again, and the log channel
+    holds the notice once, in one line naming the calendar and Pro, never lost with the refused
+    try."""
+    from tests.support.change_queue import queued_log_lines
+
     league = await ongoing_league(tmp_path, images=True)
-    drawn = _pictures_on(league, monkeypatch, tmp_path)
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG")
+    notice = "round 12 did not fit"
+    drawn = draw_calendars_with(league.bot, monkeypatch,
+                                CalendarDrawingStub(picture=png, notices=(notice,))).drawn
     league.channel(PRO_CALENDAR).fail_when = lambda _content, kwargs: bool(
         kwargs.get("file") or kwargs.get("files")
     )
@@ -202,7 +210,11 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     assert await stopped_job(league.db_path) is None
     assert drawn == ["Pro"]
     assert len(_calendar_texts(league)) == 1
-    assert _outcome(interaction) == "✅ Calendar for **Pro** reposted as text."
+    assert _outcome(interaction).startswith("✅ Calendar for **Pro** reposted as text.")
+    logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
+    named = [line for line in logged if notice in line]
+    assert len(named) == 1, logged
+    assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
 
 
 async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old_calendar_stands(

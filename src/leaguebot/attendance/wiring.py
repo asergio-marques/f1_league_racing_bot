@@ -16,6 +16,8 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.image.services.render.image_drawing import as_image_drawing
+
 if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
@@ -127,6 +129,7 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
         bot.output_router,
         now=lambda: bot.change_queue.now(),
         view_of=_check_in_view(),
+        drawing=as_image_drawing(bot.image_drawing),
         seasons=bot.season_service,
         modules=bot.module_service,
         deletes=check_in_clean_up.check_in_deletes(bot, bot.attendance_service),
@@ -261,7 +264,10 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.sheet import sheet_posting
 
     bot.placements_confirmed.subscribe(sheet_posting.placements_confirmed_on)
-    bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
+    bot.placements_confirmed_steps.subscribe(partial(
+            sheet_posting.opening_steps, bot.module_service, as_image_drawing(bot.image_drawing),
+            bot.driver_names_read,
+        ))
 
 
 def sign_up_to_season_completed(bot: "LeagueBot") -> None:
@@ -270,7 +276,10 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 
     bot.season_completed.subscribe(sheet_posting.season_completed_on)
     bot.season_completed_steps.subscribe(
-        partial(sheet_posting.final_steps, bot.module_service)
+        partial(
+            sheet_posting.final_steps, bot.module_service, as_image_drawing(bot.image_drawing),
+            bot.driver_names_read,
+        )
     )
 
 
@@ -305,6 +314,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         check_in_call_change(
             bot.attendance_service, bot.output_router,
             now=lambda: bot.change_queue.now(), view_of=_check_in_view(),
+            drawing=as_image_drawing(bot.image_drawing),
         )
     )
     bot.change_queue.register(
@@ -319,7 +329,8 @@ def register_change_types(bot: "LeagueBot") -> None:
         attendance_sync_change(
             placement=bot.placement_service, roles=bot.team_role_service,
             lineups=bot.lineup_poster, attendance=bot.attendance_after_review,
-            modules=bot.module_service, now=lambda: bot.change_queue.now(),
+            modules=bot.module_service, drawing=as_image_drawing(bot.image_drawing),
+            now=lambda: bot.change_queue.now(), driver_names_read=bot.driver_names_read,
         )
     )
     bot.change_queue.register(
@@ -341,7 +352,8 @@ def register_change_types(bot: "LeagueBot") -> None:
                 change, column=PENALTY_COLUMNS[setting.kind], placement=bot.placement_service,
                 roles=bot.team_role_service, lineups=bot.lineup_poster,
                 attendance=bot.attendance_after_review, modules=bot.module_service,
-                now=lambda: bot.change_queue.now(),
+                drawing=as_image_drawing(bot.image_drawing), now=lambda: bot.change_queue.now(),
+                driver_names_read=bot.driver_names_read,
             )
         bot.change_queue.register(change)
     for setting in attendance_channel_settings(

@@ -15,8 +15,8 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from leaguebot.attendance.services.sheet import attendance_sheet
-from leaguebot.image.services import image_attendance_post, image_rsvp_post
-from leaguebot.image.services.image_attendance_service import (
+from leaguebot.image.services.aspects import image_attendance_post, image_rsvp_post
+from leaguebot.image.services.aspects.image_attendance_service import (
     DriverRecord,
     RoundHeading,
     build_fill_spec,
@@ -127,14 +127,6 @@ def test_a_round_with_no_track_has_its_image_removed():
 # ── Where a report goes (FR-056, XIV.4) ───────────────────────────────────
 
 
-def test_both_hooks_report_through_the_shared_logging_helper():
-    """One reporting path, so a divergence between the types is impossible."""
-    for module in (image_attendance_post, image_rsvp_post):
-        source = inspect.getsource(module)
-        assert "image_results_post" in source
-        assert "report_notices" in source
-
-
 def test_neither_hook_can_post_into_a_channel_a_driver_reads():
     """A notice must never reach an attendance or RSVP channel (FR-056)."""
     for module in (image_attendance_post, image_rsvp_post):
@@ -144,12 +136,6 @@ def test_neither_hook_can_post_into_a_channel_a_driver_reads():
         assert "rsvp_channel" not in source
 
 
-def test_the_sheet_reports_its_notices_before_it_returns_an_attachment():
-    """A degradation must be reported even on the path that succeeds."""
-    source = inspect.getsource(attendance_sheet._sheet_attachment)
-    assert source.index("report_notices(") < source.index("return discord.File")
-
-
 def test_the_sheet_report_names_the_division_and_the_round():
     source = inspect.getsource(attendance_sheet._sheet_attachment)
     assert "division_name" in source and "round_number" in source
@@ -157,8 +143,9 @@ def test_the_sheet_report_names_the_division_and_the_round():
 
 
 def test_the_call_report_names_the_division_and_the_round():
-    source = inspect.getsource(image_rsvp_post.try_attach)
-    assert "check-in for round" in source
+    source = inspect.getsource(image_rsvp_post.describe)
+    assert "check-in call of round" in source
+    assert "division_name" in source
 
 
 # ── The configured absence is read from the league's own switch ───────────

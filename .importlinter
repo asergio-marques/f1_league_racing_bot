@@ -140,6 +140,23 @@ forbidden_modules =
     leaguebot.signup
 allow_indirect_imports = True
 
+# The modules that ask image to draw reach it through the one object they are handed, which is image's
+# own and carries every picture's gate, drawing and discard, and through the models image declares for
+# what they hand it to draw. Its render, its configuration and its aspects' services are image's alone
+# (architecture.md, "How modules and core fit together").
+[importlinter:contract:results-attendance-and-weather-do-not-reach-image-s-services]
+name = Results, attendance and weather do not reach image's render, configuration or aspects
+type = forbidden
+source_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.weather
+forbidden_modules =
+    leaguebot.image.services.render.image_render_service
+    leaguebot.image.services.config
+    leaguebot.image.services.aspects
+allow_indirect_imports = True
+
 [importlinter:contract:image-uses-no-other-module]
 name = Image uses no other module
 type = forbidden
@@ -151,25 +168,6 @@ forbidden_modules =
     leaguebot.signup
     leaguebot.weather
 allow_indirect_imports = True
-ignore_imports =
-    # #288: the image module fetches what it draws from the modules, where it is to draw what
-    # a module hands it.
-    leaguebot.image.services.image_preview_service -> leaguebot.attendance.services.check_in.attendance_config_service
-    leaguebot.image.services.image_rsvp_post -> leaguebot.attendance.services.check_in.attendance_config_service
-    leaguebot.image.services.image_preview_data -> leaguebot.results.services.submission.result_submission_service
-    leaguebot.image.services.image_preview_data -> leaguebot.results.models.session_result
-    leaguebot.image.services.image_preview_service -> leaguebot.results.services.submission.result_submission_service
-    leaguebot.image.services.image_preview_service -> leaguebot.results.services.standings.standings_service
-    leaguebot.image.services.image_results_service -> leaguebot.results.models.points_config
-    leaguebot.image.services.image_results_service -> leaguebot.results.utils.results_formatter
-    leaguebot.image.services.image_standings_post -> leaguebot.results.services.publishing.results_post_service
-    leaguebot.image.services.image_standings_post -> leaguebot.results.models.session_result
-    leaguebot.image.services.image_standings_post -> leaguebot.results.services.standings.standings_service
-    leaguebot.image.services.image_standings_service -> leaguebot.results.models.points_config
-    leaguebot.image.services.image_standings_service -> leaguebot.results.models.session_result
-    leaguebot.image.services.image_standings_service -> leaguebot.results.services.standings.standings_service
-    leaguebot.image.services.image_standings_service -> leaguebot.results.utils.results_formatter
-    leaguebot.image.services.image_verdict_service -> leaguebot.results.services.review.verdict_announcement_service
 
 [importlinter:contract:nothing-imports-the-entry-point]
 name = Nothing imports the entry point

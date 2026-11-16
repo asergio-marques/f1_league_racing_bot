@@ -60,7 +60,7 @@ class _Interaction:
 
 def _context(**overrides):
     """A resolved preview context, as `resolve_context` would return one."""
-    from leaguebot.image.services.image_preview_service import PreviewContext
+    from leaguebot.image.services.preview.image_preview_service import PreviewContext
 
     values = dict(
         season_number=1,
@@ -80,7 +80,10 @@ def _outcome(*, problem=None, png_paths=(), notices=()):
 
 @pytest.fixture
 def cog():
-    return ImageCog(SimpleNamespace())
+    async def post_log(content):
+        return None
+
+    return ImageCog(SimpleNamespace(output_router=SimpleNamespace(post_log=post_log)))
 
 
 # ── T011: the group ───────────────────────────────────────────────────────
@@ -313,7 +316,7 @@ class TestTheReply:
 
     async def test_a_rejected_directory_is_named_with_its_value_and_reason(self, cog):
         """FR-037, FR-038 — the manager is told which value was refused, and why."""
-        from leaguebot.image.services.image_preview_service import DirectoryFault
+        from leaguebot.image.services.preview.image_preview_service import DirectoryFault
 
         interaction = _Interaction()
 
@@ -353,7 +356,7 @@ class TestTheReply:
         """Forty asset folders that did not resolve must not push a part of the reply past
         what Discord accepts, nor cost the end of the reply: every fault arrives, in as many
         parts as it needs, each seen by the manager alone, with the picture attached once."""
-        from leaguebot.image.services.image_preview_service import DirectoryFault
+        from leaguebot.image.services.preview.image_preview_service import DirectoryFault
 
         png = tmp_path / "standings_drivers_template.png"
         png.write_bytes(b"\x89PNG")
@@ -627,7 +630,8 @@ class TestTheNoticeBlock:
 
         async def _post_log(content):
             if fail:
-                raise RuntimeError("no permission to write to the log channel")
+                # The router's writer contains its own failures and answers None.
+                return None
             posted.append(content)
             return SimpleNamespace(jump_url=jump_url)
 
@@ -655,12 +659,17 @@ class TestTheNoticeBlock:
         assert "http://discord/x/1" in reply
 
     async def test_the_notices_are_logged_as_well_as_shown(self, cog):
+        """`/images test standings` for Division 1 draws with one flag falling back. The notice
+        is logged once, in a block whose heading names what was drawn: the standings, of
+        Division 1."""
         cog.bot = self._bot()
 
         await self._run(cog, [self._notice("a flag fell back", "row_1_flag")])
 
         assert len(cog.bot.posted) == 1
         assert "a flag fell back" in cog.bot.posted[0]
+        heading = cog.bot.posted[0].splitlines()[0]
+        assert "Standings" in heading and "Division 1" in heading, heading
 
     async def test_a_log_failure_costs_the_link_and_nothing_else(self, cog):
         """A log-channel problem must never cost the preview, which is what was asked for."""
@@ -787,8 +796,18 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
 
     from leaguebot.core.utils.interaction_errors import describe
 
+    from leaguebot.core.utils.hooks import AwaitedHook
+
     cog = ImageCog(
-        SimpleNamespace(module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)))
+        SimpleNamespace(
+            module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)),
+            driver_names_read=AwaitedHook(),
+            output_router=SimpleNamespace(post_log=AsyncMock(return_value=None)),
+            db_path="league.db",
+            season_service=SimpleNamespace(),
+            image_config_service=SimpleNamespace(),
+            preview_sources=SimpleNamespace(),
+        )
     )
     interaction = _Interaction()
     interaction.command = SimpleNamespace(qualified_name="images test lineup")
@@ -798,10 +817,10 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
         raise fault
 
     with patch(
-        "leaguebot.image.services.image_render_service.converter_available",
+        "leaguebot.image.services.render.image_render_service.converter_available",
         new=MagicMock(return_value=True),
     ), patch(
-        "leaguebot.image.services.image_preview_service.resolve_context",
+        "leaguebot.image.services.preview.image_preview_service.resolve_context",
         new=AsyncMock(return_value=_context()),
     ):
         with pytest.raises(RuntimeError) as raised:
@@ -812,3 +831,36 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
     assert raised.value is fault
     assert not any("no such division row" in m for m in interaction.followup.messages)
     assert describe(interaction) == "`/images test lineup`"
+
+
+#: The four subgroup files of `/images`, in the order a league sees their groups.
+_SUBGROUP_FILES = ["config_commands", "template_commands", "use_pfp_commands", "test_commands"]
+
+
+@pytest.mark.parametrize("first", _SUBGROUP_FILES)
+def test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first(first):
+    """In a fresh interpreter, the *first* subgroup's file is imported before the other three,
+    and the `/images` group's children are read: config, template, use-pfp and test, in that
+    order, whichever file came first."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    order = [first] + [name for name in _SUBGROUP_FILES if name != first]
+    script = "\n".join(
+        [f"import leaguebot.image.cogs.{name}" for name in order]
+        + ["from leaguebot.image.cogs.image_group import IMAGES_GROUP",
+           "print(','.join(child.name for child in IMAGES_GROUP.commands))"]
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(root / "src"), str(root)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])
+    )
+
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                          cwd=root, env=env, timeout=120)
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "config,template,use-pfp,test"

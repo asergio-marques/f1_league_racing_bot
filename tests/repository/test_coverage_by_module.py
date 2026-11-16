@@ -64,7 +64,7 @@ def _report(*files: tuple[str, int, int]) -> dict:
         ("src/leaguebot/weather/services/weather_config_service.py", "weather"),
         ("src/leaguebot/weather/cogs/weather_cog.py", "weather"),
         ("src/leaguebot/weather/utils/math_utils.py", "weather"),
-        ("src/leaguebot/image/services/image_weather_service.py", "image"),
+        ("src/leaguebot/image/services/aspects/image_weather_service.py", "image"),
         ("src/leaguebot/image/utils/svg_fill.py", "image"),
         ("src/leaguebot/attendance/services/attendance_service.py", "attendance"),
         ("src/leaguebot/attendance/services/check_in/rsvp_service.py", "attendance"),
@@ -94,7 +94,7 @@ def test_known_files_are_classified(path, expected):
         ("src/leaguebot/signup/cogs/admin_review_cog.py", "signup"),
         ("src/leaguebot/results/models/amendment_state.py", "results"),
         ("src/leaguebot/results/services/points/season_points_service.py", "results"),
-        ("src/leaguebot/image/services/driver_portrait_service.py", "image"),
+        ("src/leaguebot/image/services/portraits/driver_portrait_service.py", "image"),
     ],
 )
 def test_files_named_for_the_wrong_module_are_placed_with_their_owner(path, expected):

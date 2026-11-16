@@ -12,12 +12,12 @@ from __future__ import annotations
 
 from datetime import timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-from tests.support.change_queue import run_queue, stopped_job
+from tests.support.change_queue import http_error, retry_job, run_queue, stopped_job
 from tests.support.season_league import (
     DIVISIONS,
     PRO,
@@ -66,18 +66,19 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     without it, the call posts with it, and the log channel is told so. (none) the graphic is drawn
     whole: no such line is written."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.image.services import image_rsvp_post
 
     league = await _league(tmp_path)
     picture = tmp_path / "checkin.png"
 
-    async def _attach(*_args: Any, **_kwargs: Any) -> discord.File:
+    async def _attach(*_args: Any, **_kwargs: Any) -> tuple[discord.File | None, tuple[str, ...]]:
         if fault == "not drawn":
             raise RuntimeError("template unreadable")
         picture.write_bytes(b"png")
-        return discord.File(str(picture), filename="checkin.png")
+        return discord.File(str(picture), filename="checkin.png"), ()
 
-    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(side_effect=_attach))
+    monkeypatch.setattr(
+        league.bot.image_drawing, "attach_check_in_call", AsyncMock(side_effect=_attach)
+    )
     if fault == "no deadline":
         monkeypatch.setattr(AttendanceService, "get_config",
                             AsyncMock(side_effect=RuntimeError("config unreadable")))
@@ -94,3 +95,124 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     # Each line names the division and the round.
     heading = f"**{DIVISIONS[PRO][0]}** — check-in call of round 4: "
     assert lines == [heading + clause for clause in expected]
+
+
+# ---------------------------------------------------------------------------
+# What the render itself reports reaches the log channel once, under the check-in call's name
+# ---------------------------------------------------------------------------
+
+#: The detail of the one render notice the drawing below comes back with.
+NOTICE_DETAIL = "no `flag` image for “Silverstone”"
+#: The detail of the fault the drawing below fails on.
+RENDER_FAULT = "the template declares no `round_number` field"
+
+
+def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
+    """Image generation on for the check-in call, its template valid; its render, the image
+    module's own, comes back drawn with one notice (*outcome* "notice") or failed on a template
+    fault (*outcome* "fault")."""
+    from leaguebot.image.models.image_module import Problem, RenderNotice, RenderOutcome
+
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"rsvp": True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={"rsvp_template": MagicMock(valid=True)}
+    )
+    picture = tmp_path / "checkin.png"
+    picture.write_bytes(b"\x89PNG")
+    if outcome == "notice":
+        drawn = RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type="rsvp_template", notice_kind="ASSET_FALLBACK_USED",
+            detail=NOTICE_DETAIL, field_id="flag",
+        )])
+    else:
+        drawn = RenderOutcome(problem=Problem(
+            kind="TEMPLATE_INVALID", detail=RENDER_FAULT, template_key="rsvp_template",
+        ))
+    league.bot.image_render_service.render = AsyncMock(return_value=drawn)
+
+
+async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
+    """Pro's round 4's check-in call is drawn, its flag falling back (one render notice). The
+    call posts with its picture, and the log channel carries the notice once, in a block whose
+    heading names Pro and round 4; no block without a heading carries it a second time."""
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, "notice")
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(CHECK_IN).files[-1] is not None
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    heading = block.splitlines()[0]
+    assert DIVISIONS[PRO][0] in heading and "round 4" in heading.lower(), block
+
+
+async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(tmp_path):
+    """Pro's round 4's check-in call is drawn, and its render fails on a template fault. The call
+    posts without a picture, and the log channel gives the fault on one line headed "⚠️ Check-in
+    call image", the name `/images config toggle` offers, naming Pro and round 4; nothing in the
+    log calls it a results image."""
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, "fault")
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(CHECK_IN).files[-1] is None
+    log = league.log()
+    [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+    assert line.startswith("⚠️ Check-in call image — "), line
+    assert DIVISIONS[PRO][0] in line and "round 4" in line.lower(), line
+    assert "Results image" not in log, log
+
+
+@pytest.mark.parametrize("outcome", ["notice", "fault"])
+async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_it_is_retried(
+    tmp_path, outcome
+):
+    """Pro's round 4's check-in call is drawn with one render notice (*outcome* "notice") or its
+    render fails on a template fault ("fault"), and Discord refuses the post: the queue stops at
+    the call. Discord then accepts, Retry is pressed and the call goes out as text. The notice, or
+    the fault's "⚠️ Check-in call image" line, reaches the log channel once, as it did when the
+    call was posted at the first try: never lost with the refused post, and never twice."""
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, outcome)
+    league.channel(CHECK_IN).send_fails = http_error(status=500, text="Internal Server Error")
+
+    await _ask_and_run(league)
+    assert await stopped_job(league.db_path) is not None
+
+    league.channel(CHECK_IN).send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_sent(league)) == 1
+    assert league.channel(CHECK_IN).files[-1] is None
+    detail = NOTICE_DETAIL if outcome == "notice" else RENDER_FAULT
+    log = league.log()
+    assert log.count(detail) == 1, log
+    if outcome == "fault":
+        [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+        assert line.startswith("⚠️ Check-in call image — "), line
+
+
+async def test_a_check_in_call_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
+    """Pro's round 4's check-in call is due with image generation asked for, but the images
+    module's switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own
+    wiring. The fault reaches the call's job, which stops; the call is not posted as text with a
+    "the graphic could not be drawn" line, as a picture that merely would not draw is."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, "notice")
+    league.bot.module_service.is_images_enabled = AsyncMock(
+        side_effect=SwitchNotSignedUp("images")
+    )
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert _sent(league) == []
+    assert "could not be drawn" not in league.log(), league.log()

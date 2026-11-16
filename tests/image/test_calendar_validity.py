@@ -11,10 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from leaguebot.image.services.image_validity_service import (
-    LAYER_BOUNDS,
-    LAYER_CATALOGUE,
-    LAYER_RESOLUTION,
+from leaguebot.image.models.image_module import LAYER_BOUNDS, LAYER_CATALOGUE, LAYER_RESOLUTION
+from leaguebot.image.services.validity.image_validity_service import (
     TemplateContext,
     evaluate_template,
 )

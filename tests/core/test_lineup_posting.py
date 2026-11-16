@@ -318,7 +318,10 @@ async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
     PNG; Pro's lineup channel refuses every send carrying a picture and takes the text. The
     lineup asked for is posted as text in the same try: the post job is done at its first try,
     the queue does not stop, no picture stands in the channel, the old lineup is deleted by the
-    job after it, nothing records the refusal in the log channel, and the PNG is released."""
+    job after it, and the PNG is released. The log channel holds the posting job's own "Lineup
+    posted as text" line once, naming Pro, Discord's reason for the refusal, and what puts it
+    right: not the template, which is not at fault, but the next change to the division's drivers,
+    which posts the picture again (the owner's decision on #288)."""
     from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
     from tests.support.season_league import refuses_pictures
 
@@ -342,7 +345,14 @@ async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
     assert await _lineup_id(league) == new
     post = [job for job in await _lineup_jobs(league) if job["name"] == "post_lineup"]
     assert [(bool(job["done_at"]), job["tries"]) for job in post] == [(True, 0)]
-    assert "Lineup posted as text" not in await _said(league)
+    said = await _said(league)
+    assert said.count("Lineup posted as text") == 1, said
+    assert (
+        "Lineup posted as text\n"
+        "  division: Pro\n"
+        "  problem: Discord refused the picture (403 Missing Access (error code: 0): Missing Access)\n"
+        "  to put it right: the picture is posted with the next change to the division's drivers"
+    ) in said, said
     assert drawing.discarded == [png]
 
 
@@ -467,6 +477,73 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
     press = await press_approve(league, await post_mid_season_review(league))
     assert not league.errors, league.errors
     return league, press
+
+
+async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
+    tmp_path, monkeypatch,
+):
+    """Pro's lineup asked of the queue, as a driver command asks it, and the drawing the builder
+    handed draws it as a PNG with two notices, Zara's flag and portrait each falling back. The
+    lineup posts as a picture and the queue does not stop; the log channel holds the two notices
+    once, together, in one line naming the lineup and Pro, which the posting job carries among its
+    own lines (Constitution XIV.4, "reported in one message"; the owner's decision on #288: code
+    inside a job never calls `post_log`)."""
+    from tests.support.change_queue import queued_log_lines
+    from tests.support.lineup_drawing import LineupDrawingStub
+
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    notices = ("a fallback flag stood in for Zara's", "a fallback portrait stood in for Zara's")
+    league, _ = await _lineup_asked(
+        tmp_path, monkeypatch, LineupDrawingStub(picture=png, notices=notices)
+    )
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(LINEUP[PRO]).files[-1] is not None, "the lineup was not a picture"
+    logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
+    named = [line for line in logged if notices[0] in line]
+    assert len(named) == 1, logged
+    [line] = named
+    assert notices[1] in line and "lineup" in line.lower() and "Pro" in line, line
+    assert sum(notices[1] in each for each in logged) == 1, logged
+
+
+async def test_a_refused_lineup_s_notices_reach_the_log_once_when_it_is_retried(
+    tmp_path, monkeypatch,
+):
+    """Pro's lineup asked of the queue, as a driver command asks it, and the drawing the builder
+    handed draws it as a PNG with two notices, Zara's flag and portrait each falling back. Pro's
+    lineup channel refuses every send, the picture and then the text, so the queue stops at the
+    posting job. The channel is let accept, and a Retry posts the lineup: the queue runs to the
+    end, and the log channel holds the two notices once, in one line naming the lineup and Pro,
+    never lost with the refused try."""
+    from tests.support.change_queue import queued_log_lines
+    from tests.support.lineup_drawing import LineupDrawingStub
+
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    notices = ("a fallback flag stood in for Zara's", "a fallback portrait stood in for Zara's")
+    league, _ = await _lineup_asked(
+        tmp_path, monkeypatch, LineupDrawingStub(picture=png, notices=notices)
+    )
+    channel = league.channel(LINEUP[PRO])
+    channel.fail_when = lambda _content, _kwargs: True
+
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    channel.fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
+    named = [line for line in logged if notices[0] in line]
+    assert len(named) == 1, logged
+    [line] = named
+    assert notices[1] in line and "lineup" in line.lower() and "Pro" in line, line
+    refused = [line for line in logged if "Discord refused the picture" in line]
+    assert len(refused) == 1 and "Lineup posted as text" in refused[0], logged
 
 
 @pytest.mark.parametrize(("start", "member", "change", "divisions"), [

@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.sanctions.attendance_sync_change import SYNC_SAVE
@@ -261,10 +262,9 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     Pro's live sheet, rather than a sheet with an empty grid replacing it. The points become
     readable again and a league admin presses Retry: the new sheet is posted and replaces
     6200."""
-    from leaguebot.image.services.image_attendance_post import (
+    from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
         ATTENDANCE_TEMPLATE_KEY,
-        attendance_enabled,
     )
 
     league = await _scored_league(tmp_path, images=True)
@@ -276,7 +276,9 @@ async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_o
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
     )
-    assert await attendance_enabled(league.bot), "the graphic is not drawn in this league"
+    assert await league.bot.image_drawing.attendance_wanted(), (
+        "the graphic is not drawn in this league"
+    )
 
     await _sync_pro(league)
     await _run_sync_through(league, SYNC_SAVE)
@@ -328,3 +330,163 @@ async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_dis
     assert "deleting the earlier attendance sheet of **Pro**" in await _said(league)
     assert OLD_SHEET in league.channel(SHEET).messages
     assert _sends(league) == 1
+
+
+# ---------------------------------------------------------------------------
+# A sheet's render fault is named in the log channel as the attendance sheet image
+# ---------------------------------------------------------------------------
+
+#: The detail of the template fault the sheet's render below fails on.
+SHEET_RENDER_FAULT = "the template declares no `total_points` field"
+
+
+async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp_path):
+    """The image module is on with the attendance graphic switched on and its template valid,
+    and the image module's render of Pro's sheet fails on a template fault. Alex runs
+    `/attendance sync` for Pro from round 1: the sheet posts once, as text with no picture, and
+    the queue runs to the end; the log channel gives the fault on one line headed "⚠️ Attendance
+    sheet image", the name `/images config toggle` offers, naming Pro and round 1, and nothing in
+    the log calls it a results image."""
+    from leaguebot.image.models.image_module import Problem, RenderOutcome
+    from leaguebot.image.services.aspects.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        problem=Problem(kind="TEMPLATE_INVALID", detail=SHEET_RENDER_FAULT,
+                        template_key=ATTENDANCE_TEMPLATE_KEY),
+    ))
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _sends(league) == 1
+    assert league.channel(SHEET).files[-1] is None
+    log = await _said(league)
+    [line] = [line for line in log.splitlines() if SHEET_RENDER_FAULT in line]
+    assert line.startswith("⚠️ Attendance sheet image — "), line
+    assert "Pro" in line and "round 1" in line.lower(), line
+    assert "Results image" not in log, log
+
+
+#: The detail of the one render notice the sheet's render below comes back with.
+SHEET_NOTICE = "no `flag` image for “Lewis”"
+
+
+async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
+    """The image module is on with the attendance graphic switched on and its template valid,
+    and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
+    Alex runs `/attendance sync` for Pro from round 1: the sheet posts once, as a picture, and the
+    queue runs to the end; the log channel carries the notice once, in a block whose heading
+    names Pro and round 1, and no block without a heading carries it a second time."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+    from leaguebot.image.services.aspects.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    picture = tmp_path / "sheet.png"
+    picture.write_bytes(b"\x89PNG")
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        png_paths=[picture], notices=[RenderNotice(
+            image_type=ATTENDANCE_TEMPLATE_KEY, notice_kind="ASSET_FALLBACK_USED",
+            detail=SHEET_NOTICE, field_id="flag",
+        )],
+    ))
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _sends(league) == 1
+    assert league.channel(SHEET).files[-1] is not None
+    log = await _said(league)
+    assert log.count(SHEET_NOTICE) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 1" in heading.lower(), block
+
+
+async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_retried(tmp_path):
+    """The image module is on with the attendance graphic switched on and its template valid,
+    and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
+    Pro's attendance channel refuses every send. Alex runs `/attendance sync` for Pro from round 1
+    and the queue stops at the sheet; the channel is let accept and a Retry posts the sheet as
+    text. The queue runs to the end, and the log channel carries the notice once, in a block whose
+    heading names Pro and round 1, never lost with the refused try."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+    from leaguebot.image.services.aspects.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    picture = tmp_path / "sheet.png"
+
+    async def _render(*_args: Any, **_kwargs: Any) -> Any:
+        picture.write_bytes(b"\x89PNG")
+        return RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type=ATTENDANCE_TEMPLATE_KEY, notice_kind="ASSET_FALLBACK_USED",
+            detail=SHEET_NOTICE, field_id="flag",
+        )])
+
+    league.bot.image_render_service.render = AsyncMock(side_effect=_render)
+    league.channel(SHEET).send_fails = http_error(discord.Forbidden, status=403,
+                                                  text="Missing Access")
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    league.channel(SHEET).send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(SHEET).files[-1] is None
+    log = await _said(league)
+    assert log.count(SHEET_NOTICE) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 1" in heading.lower(), block
+
+
+async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
+    """The image module is on with the attendance graphic switched on, but the images module's
+    switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own wiring.
+    Alex runs `/attendance sync` for Pro from round 1: the fault reaches the sheet's job, which
+    stops; the sheet is not posted as text with a line saying its picture could not be drawn."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.module_service.is_images_enabled = AsyncMock(
+        side_effect=SwitchNotSignedUp("images")
+    )
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    assert _sends(league) == 0
+    log = await _said(league)
+    assert "Attendance sheet image" not in log and "could not be drawn" not in log, log

@@ -37,6 +37,7 @@ from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.season_gate import season_for_command
+from leaguebot.image.services.render.image_drawing import as_image_drawing
 
 log = logging.getLogger(__name__)
 
@@ -363,6 +364,7 @@ class PointsAmendCommands(ResultsSubgroup):
         diff = await review_panel(
             self.bot.db_path, season, bot=self.bot, module_service=self.bot.module_service,
             attendance=self.bot.attendance_after_review,
+            drawing=as_image_drawing(self.bot.image_drawing),
         )
         if diff is None:
             await refuse(

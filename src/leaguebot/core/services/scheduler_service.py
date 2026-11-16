@@ -906,7 +906,7 @@ class SchedulerService:
                     log.info("Removed %s job", job.id)
 
     # ------------------------------------------------------------------
-    # Signup auto-close scheduling
+    # Standing jobs: the daily portrait refresh and the amendment sweep
     # ------------------------------------------------------------------
 
     def schedule_portrait_refresh(self, time_of_day: str) -> None:
@@ -924,6 +924,11 @@ class SchedulerService:
         A stored local time would need a zone stored with it and would drift against daylight
         saving twice a year; the league is told the zone when it names the time.
 
+        It is armed with no lateness limit (``misfire_grace_time=None``) as every standing job
+        here is, so that what becomes of a run missed while the bot was down is the handler's to
+        judge, not the scheduler's: the refresh skips it (core specification, "When the bot
+        stops").
+
         ``replace_existing=True`` so that naming a new time re-arms rather than duplicates.
         """
         hour, _, minute = time_of_day.partition(":")
@@ -933,6 +938,7 @@ class SchedulerService:
             trigger=CronTrigger(hour=int(hour), minute=int(minute), timezone="UTC"),
             id=job_id,
             replace_existing=True,
+            misfire_grace_time=None,
             name="Daily driver portrait refresh",
             kwargs={"kind": PORTRAIT_REFRESH_KIND},
         )

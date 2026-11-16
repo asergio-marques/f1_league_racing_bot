@@ -295,8 +295,8 @@ async def test_a_refused_lineup_picture_is_posted_as_text_in_the_same_try(tmp_pa
     """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing draws Pro's
     lineup as a PNG, and Discord refuses the send that carries it but takes the text. The text
     embed is posted in the same call, so nothing stops: no refusal is raised, what was posted is
-    the text replacing 8800 with nothing for the job's line (the picture was drawn), and the PNG
-    is handed back to the drawing to release."""
+    the text replacing 8800, its problem for the job's line Discord's refusal and marked as one
+    (the template is not at fault), and the PNG is handed back to the drawing to release."""
     db_path = await _make_db(tmp_path, name="lineup_refused", drivers=ONE_DRIVER)
     channel = _refusing_pictures()
     png = tmp_path / "lineup_template.png"
@@ -312,7 +312,8 @@ async def test_a_refused_lineup_picture_is_posted_as_text_in_the_same_try(tmp_pa
     assert (posted.message_id, posted.previous, posted.form) == (
         NEW_MESSAGE_ID, OLD_MESSAGE_ID, "text",
     )
-    assert posted.problem is None
+    assert posted.problem is not None and posted.problem.startswith("Discord refused the picture (")
+    assert posted.refused
     assert drawing.discarded == [png]
 
 

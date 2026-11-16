@@ -17,8 +17,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
-from tests.support.saves import set_field
+from tests.support.saves import create_image_defaults, set_field
 
 
 pytestmark = pytest.mark.asyncio
@@ -71,32 +72,6 @@ def _guild():
     return guild
 
 
-def _channel(sent, order=None):
-    channel = AsyncMock()
-
-    async def send(content=None, **kwargs):
-        if order is not None:
-            order.append(f"posted {kwargs.get('file')}")
-        sent.append((content, kwargs))
-        message = MagicMock()
-        message.id = 1000 + len(sent)
-        return message
-
-    async def fetch_message(message_id):
-        previous = AsyncMock()
-
-        async def delete():
-            if order is not None:
-                order.append(f"deleted {message_id}")
-
-        previous.delete = delete
-        return previous
-
-    channel.send = send
-    channel.fetch_message = fetch_message
-    return channel
-
-
 def _decision(*, posts=True, rejects=False, png=None, notices=(), problem=None):
     decision = MagicMock()
     decision.posts_image = posts
@@ -115,132 +90,111 @@ def _drawings():
     )
 
 
-def _patched(render, *, previous_ids=None, stored=None, stored_lists=None):
-    """Patch the module's collaborators: the drawings, the render, and the id columns.
+def _drawing(*, module=True, toggle=True, drivers_valid=True, constructors_valid=True,
+             post_log=None):
+    """The image drawing, over stub services: the images module on or off, the standings toggle
+    on or off (or an exception, for a toggle that cannot be read), and each championship's
+    template valid or not. Its bot is never read here, `_draw` standing in for the resolving."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-    Each previous posting is given a chunk list naming itself alone, as every posting written
-    since #345 records one — so replacing it deletes exactly that message.
-
-    The id readers are patched under their private names and their public ones alike, and the
-    committing save under its name, each created where it is missing (#439 6b): the poster stops
-    saving and may read the ids through public readers, and the save is deleted once nothing
-    calls it, while *stored* still shows that nothing was written.
-    """
-    from leaguebot.image.services import image_standings_post as m
-
-    previous_ids = previous_ids or {}
-    stored = stored if stored is not None else {}
-    stored_lists = stored_lists if stored_lists is not None else {}
-
-    async def _get(db_path, division_id, round_id, championship="drivers"):
-        return previous_ids.get(championship)
-
-    async def _get_list(db_path, division_id, round_id, championship="drivers"):
-        previous = previous_ids.get(championship)
-        return [previous] if previous is not None else None
-
-    async def _set(
-        db_path, division_id, round_id, message_id, championship="drivers", *, message_ids=None
-    ):
-        stored[championship] = message_id
-        stored_lists[championship] = message_ids
-
-    service = "leaguebot.results.services.publishing.results_post_service"
-    return [
-        patch.object(m, "build_drawings", AsyncMock(return_value=_drawings())),
-        patch.object(m, "render_png", render),
-        *(
-            patch(f"{service}.{prefix}get_standings_message_id",
-                  AsyncMock(side_effect=_get), create=True)
-            for prefix in ("_", "")
-        ),
-        *(
-            patch(f"{service}.{prefix}get_standings_message_ids",
-                  AsyncMock(side_effect=_get_list), create=True)
-            for prefix in ("_", "")
-        ),
-        patch(f"{service}._set_standings_message_id", AsyncMock(side_effect=_set), create=True),
-    ]
-
-
-async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
-                    stored=None, occasion=None, stored_lists=None):
-    from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.image_standings_post import try_post
-
-    kwargs = dict(
-        db_path="db",
-        division_id=7,
-        round_id=5,
-        round_number=5,
-        heading="**Season 3 Main Round 5 — Race**",
-        label="_Provisional Results_",
-        driver_snapshots=[],
-        team_snapshots=[],
-        reserve_user_ids=set(),
-        show_reserves=False,
-        result_status="AWAITING_REPORT_VERDICTS",
-        division_name="Main",
-    )
-    if origin is not None:
-        kwargs["origin"] = origin
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=module)
+    config = MagicMock()
+    if isinstance(toggle, Exception):
+        config.get_toggles = AsyncMock(side_effect=toggle)
     else:
-        kwargs["origin"] = PostingOrigin.SCHEDULED
-    if occasion is not None:
-        kwargs["occasion"] = occasion
-
-    patches = _patched(
-        render, previous_ids=previous_ids, stored=stored, stored_lists=stored_lists
+        config.get_toggles = AsyncMock(return_value={"standings": toggle})
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value={
+        DRIVERS: MagicMock(valid=drivers_valid, resolved_path=Path(f"{DRIVERS}.svg")),
+        CONSTRUCTORS: MagicMock(
+            valid=constructors_valid, resolved_path=Path(f"{CONSTRUCTORS}.svg")
+        ),
+    })
+    return ImageDrawing(
+        modules, config, validity, renderer=MagicMock(),
+        post_log=post_log if post_log is not None else AsyncMock(), db_path="db",
     )
-    for p in patches:
-        p.start()
-    try:
-        with in_a_job():
-            return await try_post(bot, _guild(), channel, **kwargs)
-    finally:
-        for p in patches:
-            p.stop()
 
 
-# ── Enablement ────────────────────────────────────────────────────────────
+async def _draw(drawing, render, *, build=None):
+    """Round 5 of Main drawn as the results module draws it once both templates are wanted: the
+    two championships composed (*build* stands in for the composer, by default giving two plain
+    drawings) and handed to `draw_standings`, each rendered by *render*, which is called as
+    ``render(config, renderer, drawing)``. The gate itself is `produce_standings`', and is pinned
+    through it in the section on the branch inside it below."""
+    from leaguebot.image.services.aspects import image_standings_post as m
+
+    build = build if build is not None else AsyncMock(return_value=_drawings())
+    templates = ("drivers", "constructors")
+    composed = await build()
+    with patch.object(m, "render_png", render):
+        return await drawing.draw_standings(
+            dict(zip(templates, composed)), subject="Main round 5",
+        )
+
+
+# ── The gate, asked for each template ─────────────────────────────────────
 
 
 async def test_the_aspect_is_read_per_template_so_one_faulty_half_does_not_stop_the_other():
-    from leaguebot.image.services.image_standings_post import standings_enabled
+    """The standings gate is asked for each template: a sound drivers template is drawn while
+    a faulty constructors template is not."""
+    drawing = _drawing(constructors_valid=False)
 
-    bot = _bot(constructors_valid=False)
-    assert await standings_enabled(bot, DRIVERS) is True
-    assert await standings_enabled(bot, CONSTRUCTORS) is False
-
-
-async def test_the_module_being_off_stands_the_whole_flow_aside():
-    from leaguebot.image.services.image_standings_post import standings_enabled
-
-    bot = _bot(module=False)
-    assert await standings_enabled(bot, DRIVERS) is False
+    assert await drawing.aspect_wanted("standings", DRIVERS) is True
+    assert await drawing.aspect_wanted("standings", CONSTRUCTORS) is False
 
 
-async def test_the_toggle_being_off_stands_the_whole_flow_aside():
-    from leaguebot.image.services.image_standings_post import standings_enabled
+async def _stood_aside(tmp_path, drawing):
+    """Round 3's standings put up by `produce_standings` over *drawing*, the composer of the two
+    drawings stood in for and `draw_standings` watched: handing back the composer and the
+    standings' text messages, once it is checked that no table brought back a line or a fault."""
+    db_path, division_id, round_id = await _seed(tmp_path)
+    captured: list[str] = []
+    composer = AsyncMock(return_value=_drawings())
+    drawing.draw_standings = AsyncMock(wraps=drawing.draw_standings)
 
-    assert await standings_enabled(_bot(toggle=False), DRIVERS) is False
+    tables = await _post(
+        db_path, division_id, round_id, captured, drawing=drawing,
+        composer=_composer_stood_in(composer),
+    )
+    assert all(table.lines == () and table.fault is None for table in tables), tables
+    return composer, captured
 
 
-async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting():
-    from leaguebot.image.services.image_standings_post import standings_enabled
+@pytest.mark.parametrize(
+    "drawing_kwargs",
+    [
+        {"module": False},
+        {"toggle": False},
+        {"toggle": RuntimeError("boom")},
+        {"drivers_valid": False, "constructors_valid": False},
+    ],
+    ids=["module-off", "toggle-off", "reader-raises", "neither-template-wanted"],
+)
+async def test_the_whole_flow_stands_aside_and_the_text_posts(tmp_path, drawing_kwargs):
+    """With the images module off, the toggle off, a toggle that cannot be read, or neither
+    template valid, `produce_standings` composes nothing and draws nothing, nothing is raised to
+    the posting, and the standings' own text runs untouched: one message of both tables."""
+    drawing = _drawing(**drawing_kwargs)
 
-    bot = _bot()
-    bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await standings_enabled(bot, DRIVERS) is False
+    composer, captured = await _stood_aside(tmp_path, drawing)
+
+    assert composer.await_count == 0, "nothing is read for a picture that is not due"
+    assert drawing.draw_standings.await_count == 0
+    assert len(captured) == 1
+    assert "Driver Standings" in captured[0] and "Team Standings" in captured[0]
 
 
 # ── The failure matrix ────────────────────────────────────────────────────
 
 
 async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(tmp_path):
-    sent = []
+    """Both championships draw: each has its picture, named as its render named it, and the
+    drawing has nothing to report."""
 
-    async def render(bot, drawing, origin):
+    async def render(_config, _renderer, drawing):
         return _decision(
             png=_drawn(
                 tmp_path,
@@ -248,16 +202,14 @@ async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(
             )
         )
 
-    outcome = await _try_post(_bot(), _channel(sent), AsyncMock(side_effect=render))
+    drawn = await _draw(_drawing(), AsyncMock(side_effect=render))
 
-    assert outcome.applicable
-    assert outcome.fallback_championships == []
-    assert outcome.drivers.posted and outcome.constructors.posted
-    assert len(sent) == 2, "the two championships are two messages"
-    assert [kwargs["file"].filename for _content, kwargs in sent] == [
+    assert drawn.applicable
+    assert drawn.lines == ()
+    assert [drawn.drivers.filename, drawn.constructors.filename] == [
         "season3_division1_round4_standings_drivers.png",
         "season3_division1_round4_standings_constructors.png",
-    ], "drivers first, constructors after, each attached under its own render's name"
+    ], "each championship attached under its own render's name"
 
 
 @pytest.mark.parametrize(
@@ -268,252 +220,145 @@ async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(
 async def test_a_failing_graphic_falls_back_to_its_own_section_alone(
     tmp_path, failing_key, failing, surviving
 ):
-    """The other graphic still draws, so its table must not be repeated as text."""
-    sent = []
+    """The other graphic still draws, so its table must not be repeated as text: the failing
+    championship has no picture, and one line headed by the toggle's name says why."""
 
-    async def render(bot, drawing, origin):
+    async def render(_config, _renderer, drawing):
         if drawing.template_key == failing_key:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
         return _decision(png=_drawn(tmp_path, surviving))
 
-    outcome = await _try_post(_bot(), _channel(sent), AsyncMock(side_effect=render))
+    drawn = await _draw(_drawing(), AsyncMock(side_effect=render))
 
-    assert outcome.fallback_championships == [failing]
-    assert getattr(outcome, surviving).posted
-    assert len(sent) == 1
+    assert drawn.file_of(failing) is None
     assert (
-        sent[0][1]["file"].filename
+        drawn.file_of(surviving).filename
         == f"season3_division1_round4_standings_{surviving}.png"
     )
+    assert drawn.lines == (f"⚠️ Standings image — Main round 5 — {failing} standings: no rows",)
 
 
 async def test_both_failing_falls_back_to_both_sections_so_each_is_read_exactly_once():
-    sent = []
-
-    outcome = await _try_post(
-        _bot(),
-        _channel(sent),
+    """Neither renders: the flow ran (applicable) and drew nothing, so each championship goes
+    out as its own text section."""
+    drawn = await _draw(
+        _drawing(),
         AsyncMock(return_value=_decision(posts=False, problem=MagicMock(detail="bad"))),
     )
 
-    assert outcome.applicable, "the flow ran; it simply drew nothing"
-    assert outcome.fallback_championships == ["drivers", "constructors"]
-    assert sent == [], (
-        "no graphic was posted, and nothing was reported into the standings channel: "
-        "drivers read that channel, and a template fault is the manager's business"
-    )
+    assert drawn.applicable, "the flow ran; it simply drew nothing"
+    assert drawn.drivers is None and drawn.constructors is None
 
 
 async def test_an_invalid_template_falls_that_championship_back_without_rendering(tmp_path):
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
-    sent = []
+    """The constructors template is invalid: `produce_standings` hands `draw_standings` only the
+    drivers' drawing, so only it is rendered and posted as a picture, and the constructors go out
+    as text with no line."""
+    from leaguebot.image.services.aspects import image_standings_post as m
+
+    db_path, division_id, round_id = await _seed(tmp_path)
+    captured: list[str] = []
+    pictures: list = []
+    png = _drawn(tmp_path, "drivers")
     render = AsyncMock(return_value=_decision(png=png))
+    drawing = _drawing(constructors_valid=False)
+    drawing.draw_standings = AsyncMock(wraps=drawing.draw_standings)
 
-    outcome = await _try_post(
-        _bot(constructors_valid=False), _channel(sent), render
-    )
-
-    assert outcome.fallback_championships == ["constructors"]
-    assert outcome.drivers.posted
-    assert render.await_count == 1, "the faulty template is never handed to the renderer"
-
-
-async def test_a_commanded_failure_rejects_and_posts_nothing_at_all(tmp_path):
-    from leaguebot.image.models.image_module import PostingOrigin
-
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
-    sent = []
-
-    async def render(bot, drawing, origin):
-        if drawing.template_key == DRIVERS:
-            return _decision(posts=False, rejects=True, problem=MagicMock(detail="bad"))
-        return _decision(png=png)
-
-    outcome = await _try_post(
-        _bot(),
-        _channel(sent),
-        AsyncMock(side_effect=render),
-        origin=PostingOrigin.COMMANDED,
-    )
-
-    assert outcome.rejects
-    assert outcome.message == "❌ the template is at fault"
-    assert sent == [], "a rejected command posts nothing, not even the sound championship"
-    assert outcome.fallback_championships == [], "and asks the caller for no text either"
-
-
-async def test_the_whole_flow_stands_aside_when_neither_template_is_wanted():
-    sent = []
-    render = AsyncMock()
-
-    outcome = await _try_post(
-        _bot(toggle=False), _channel(sent), render
-    )
-
-    assert not outcome.applicable, "the caller's untouched textual body must run"
-    assert outcome.fallback_championships == []
-    assert render.await_count == 0
-
-
-async def test_no_bot_no_guild_and_no_channel_each_stand_the_flow_aside():
-    from leaguebot.image.services.image_standings_post import StandingsPostOutcome, try_post
-
-    for args in ((None, _guild(), MagicMock()), (_bot(), None, MagicMock()), (_bot(), _guild(), None)):
-        outcome = await try_post(
-            *args,
-            db_path="db",
-            division_id=7,
-            round_id=5,
-            round_number=5,
-            heading="h",
-            label="l",
-            driver_snapshots=[],
-            team_snapshots=[],
-            reserve_user_ids=set(),
-            show_reserves=False,
-            result_status="AWAITING_REPORT_VERDICTS",
-            division_name="Main",
+    with patch.object(m, "render_png", render):
+        tables = await _post(
+            db_path, division_id, round_id, captured, drawing=drawing, pictures=pictures,
+            composer=_composer_stood_in(AsyncMock(return_value=_drawings())),
         )
-        assert isinstance(outcome, StandingsPostOutcome)
-        assert not outcome.applicable
 
-
-# ── Ordering, identity and delivery ───────────────────────────────────────
-
-
-async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tmp_path):
-    """FR-048. A render that fails must leave the league the standings it had.
-
-    The poster deletes nothing (#439 6b): it posts each picture and reports the message it
-    replaces, which the change queue deletes by a job of its own once the picture stands. It
-    saves nothing itself either."""
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
-    sent, order, stored = [], [], {}
-
-    outcome = await _try_post(
-        _bot(),
-        _channel(sent, order),
-        AsyncMock(return_value=_decision(png=png)),
-        previous_ids={"drivers": 111, "constructors": 222},
-        stored=stored,
-    )
-
-    assert [step for step in order if step.startswith("posted")] and len(sent) == 2
-    assert not [step for step in order if step.startswith("deleted")], (
-        "the poster deleted the message it replaces"
-    )
-    assert outcome.drivers.replaces == [111]
-    assert outcome.constructors.replaces == [222]
-    assert stored == {}, "the poster saved an id itself"
-
-
-async def test_each_graphic_records_the_one_message_it_occupies(tmp_path):
-    """**Without a list, deleting a graphic walked forward over the bot's own messages** (#345).
-
-    That fallback cannot tell one posting from the next, and a division rebuild posts every
-    replacement before it deletes any original — so the walk from each old graphic ran straight
-    into the new ones and deleted them. A graphic is one message; recording that says so.
-
-    The poster saves nothing (#439 6b): each championship's outcome carries the one message its
-    graphic occupies, which the change queue's job records, as a list of that one id, with its
-    done mark.
-    """
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
-    sent, stored, lists = [], {}, {}
-
-    outcome = await _try_post(
-        _bot(), _channel(sent), AsyncMock(return_value=_decision(png=png)),
-        stored=stored, stored_lists=lists,
-    )
-
-    assert stored == {} and lists == {}, "the poster saved an id itself"
-    assert [outcome.drivers.message_id, outcome.constructors.message_id] == [1001, 1002]
-
-
-async def test_a_discord_failure_falls_back_to_text_rather_than_retrying_the_image(tmp_path):
-    """FR-056 — the generation succeeded; it is the delivery that did not."""
-    import discord
-
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
-
-    channel = AsyncMock()
-    channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(), "rate limited"))
-
-    outcome = await _try_post(
-        _bot(), channel, AsyncMock(return_value=_decision(png=png))
-    )
-
-    assert outcome.fallback_championships == ["drivers", "constructors"]
+    assert list(drawing.draw_standings.await_args.args[0]) == ["drivers"]
+    assert render.await_count == 1, "the faulty template is never handed to the renderer"
+    assert render.await_args.args[2].template_key == DRIVERS
+    assert len(pictures) == 1
+    assert len(captured) == 1
+    assert "Team Standings" in captured[0] and "Driver Standings" not in captured[0]
+    assert all(table.lines == () and table.fault is None for table in tables), tables
 
 
 async def test_a_resolution_fault_reports_once_and_falls_both_back():
-    bot = _bot()
-    sent = []
+    """A fault resolving the data behind both championships is raised for the posting to name
+    as the reason both texts stand; nothing is rendered and nothing reaches the log channel
+    from the drawing."""
+    post_log = AsyncMock()
+    render = AsyncMock()
 
-    from leaguebot.image.services import image_standings_post as m
-
-    with patch.object(m, "build_drawings", AsyncMock(side_effect=RuntimeError("no calendar"))):
-        outcome = await m.try_post(
-            bot,
-            _guild(),
-            _channel(sent),
-            db_path="db",
-            division_id=7,
-            round_id=5,
-            round_number=5,
-            heading="h",
-            label="l",
-            driver_snapshots=[],
-            team_snapshots=[],
-            reserve_user_ids=set(),
-            show_reserves=False,
-            result_status="AWAITING_REPORT_VERDICTS",
-            division_name="Main",
+    with pytest.raises(RuntimeError, match="no calendar"):
+        await _draw(
+            _drawing(post_log=post_log), render,
+            build=AsyncMock(side_effect=RuntimeError("no calendar")),
         )
 
-    assert outcome.fallback_championships == ["drivers", "constructors"]
-    assert sent == []
-    bot.output_router.post_log.assert_awaited()
+    assert render.await_count == 0
+    post_log.assert_not_awaited()
+
+
+async def test_a_constructors_render_that_raises_discards_the_drivers_picture_already_drawn(
+    tmp_path,
+):
+    """The drivers' picture is rendered, then the constructors' render raises (its directories
+    cannot be resolved). The fault is raised for the posting to fall both back to text, and the
+    drivers' PNG, which nothing will post, is discarded rather than left on disk."""
+    png = _render_artifact(tmp_path, "standings_drivers_template")
+
+    async def render(_config, _renderer, drawing):
+        if drawing.template_key == DRIVERS:
+            return _decision(png=png)
+        raise RuntimeError("no team directory")
+
+    with pytest.raises(RuntimeError, match="no team directory"):
+        await _draw(_drawing(), AsyncMock(side_effect=render))
+
+    assert not png.exists(), "the drivers' picture outlived a drawing that raised"
 
 
 # ── Reporting (FR-053) ────────────────────────────────────────────────────
 
 
 async def test_a_fault_is_reported_to_the_log_channel_naming_the_championship():
-    bot = _bot()
-    sent = []
+    """Each championship that was due and not drawn hands back a line headed by the toggle's
+    name, naming the round and the championship, for the job to write; the drawing writes
+    nothing to the log channel itself."""
+    post_log = AsyncMock()
 
-    async def render(bot_, drawing, origin):
-        if drawing.template_key == DRIVERS:
-            return _decision(posts=False, problem=MagicMock(detail="a field is missing"))
-        return _decision(posts=False, problem=MagicMock(detail="a field is missing"))
+    drawn = await _draw(
+        _drawing(post_log=post_log),
+        AsyncMock(return_value=_decision(posts=False, problem=MagicMock(detail="a field is missing"))),
+    )
 
-    await _try_post(bot, _channel(sent), AsyncMock(side_effect=render))
-
-    logged = " ".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
-    assert "drivers standings" in logged
-    assert "constructors standings" in logged
-    assert "Main round 5" in logged
+    assert drawn.lines == (
+        "⚠️ Standings image — Main round 5 — drivers standings: a field is missing",
+        "⚠️ Standings image — Main round 5 — constructors standings: a field is missing",
+    )
+    post_log.assert_not_awaited()
 
 
 async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
+    """The drivers' picture draws with a render notice: it keeps its picture, and the notice
+    comes back as one line naming the round and the championship, nothing posted to the log
+    channel by the drawing."""
+    from leaguebot.image.models.image_module import RenderNotice
+
     png = tmp_path / "s.png"
     png.write_bytes(b"x")
-    bot = _bot()
-    notice = MagicMock(detail="a flag fell back")
-
-    await _try_post(
-        bot, _channel([]), AsyncMock(return_value=_decision(png=png, notices=[notice]))
+    post_log = AsyncMock()
+    notice = RenderNotice(
+        image_type=DRIVERS, notice_kind="ASSET_FALLBACK_USED", detail="a flag fell back"
     )
 
-    logged = " ".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
-    assert "a flag fell back" in logged
-    assert "drivers standings" in logged
+    async def render(_config, _renderer, drawing):
+        return _decision(png=png, notices=[notice] if drawing.template_key == DRIVERS else [])
+
+    drawn = await _draw(_drawing(post_log=post_log), AsyncMock(side_effect=render))
+
+    assert drawn.drivers is not None
+    assert len(drawn.lines) == 1
+    assert "a flag fell back" in drawn.lines[0]
+    assert "Main round 5 — drivers standings" in drawn.lines[0]
+    post_log.assert_not_awaited()
 
 
 # ── build_drawings, run against a real database ───────────────────────────
@@ -642,8 +487,19 @@ def _snapshots(round_id, division_id):
     return drivers, teams
 
 
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from types import SimpleNamespace
+
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
+
+
 async def test_build_drawings_resolves_both_championships_against_real_tables(tmp_path):
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -652,8 +508,8 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     drivers, constructors = await build_drawings(
-        bot,
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -679,7 +535,7 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
 
 async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
     """The two graphics key their team names differently — by driver, and by role."""
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -688,8 +544,8 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     drivers, constructors = await build_drawings(
-        bot,
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -714,7 +570,7 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
 
 
 async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_path):
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -723,8 +579,8 @@ async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     drivers, _constructors = await build_drawings(
-        bot,
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -755,15 +611,15 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
     import struct
     from types import SimpleNamespace
 
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import (
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import (
         ImageRenderService,
         resolve_configured_directories,
         spec_builder_with_faults,
     )
-    from leaguebot.image.services.image_standings_post import build_drawings
-    from leaguebot.image.services.image_standings_service import build_fill_spec
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
+    from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -772,9 +628,9 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         return True
 
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     validity_service = ImageValidityService(
-        config_service, SimpleNamespace(is_images_enabled=_true)
+        config_service, SimpleNamespace(is_images_enabled=_true), MagicMock()
     )
     bot = SimpleNamespace(
         db_path=db_path,
@@ -784,8 +640,8 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
     )
 
     drawings = await build_drawings(
-        bot,
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -828,7 +684,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
 
 
 async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(tmp_path):
-    from leaguebot.image.services.image_standings_post import build_drawings
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -837,8 +693,8 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
     bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
 
     _drivers, constructors = await build_drawings(
-        bot,
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -904,56 +760,124 @@ async def _seed(tmp_path, *, cancelled=False):
     return db_path, division_id, round_id
 
 
-def _outcome(*, applicable=True, rejects=False, fallbacks=()):
-    """A real outcome, so that whatever the standings poster reads of it holds: the flow stood
-    aside, a commanded posting refused, or each championship drawn (message 7701 for the
-    drivers, 7702 for the constructors) but those named in *fallbacks*."""
-    from leaguebot.image.services.image_standings_post import (
-        FELL_BACK,
-        POSTED,
-        REJECTED,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
+async def _seed_previous(db_path, division_id, round_id, **ids):
+    """Record the message each championship's standings stand as, e.g. ``drivers=4321``."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.publishing.results_post_service import (
+        set_standings_message_id_on,
     )
 
+    async with get_connection(db_path) as db:
+        for championship, message_id in ids.items():
+            await set_standings_message_id_on(
+                db, division_id, round_id, message_id, championship
+            )
+        await db.commit()
+
+
+def _standings_drawn(tmp_path, *, drivers=True, constructors=True, applicable=True, pngs=None):
+    """What the image drawing hands the standings: nothing applicable, or a picture of each
+    championship asked for (from *pngs* where given, else stub PNGs named as the render names
+    them) and none for the others."""
+    import discord
+
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
+
     if not applicable:
-        return StandingsPostOutcome()
-    if rejects:
-        return StandingsPostOutcome(
-            drivers=ChampionshipOutcome(action=REJECTED, message="❌ broken"),
-            constructors=ChampionshipOutcome(action=REJECTED, message="❌ broken"),
-        )
-    return StandingsPostOutcome(**{
-        name: (
-            ChampionshipOutcome(action=FELL_BACK) if name in fallbacks
-            else ChampionshipOutcome(action=POSTED, message_id=message_id)
-        )
-        for name, message_id in (("drivers", 7701), ("constructors", 7702))
-    })
+        return StandingsDrawn()
+    pngs = pngs or {}
+    files = {}
+    for name, wanted in (("drivers", drivers), ("constructors", constructors)):
+        if wanted:
+            png = pngs.get(name) or _drawn(tmp_path, name)
+            files[name] = discord.File(str(png), filename=png.name)
+    return StandingsDrawn(
+        applicable=True, drivers=files.get("drivers"), constructors=files.get("constructors"),
+    )
 
 
-async def _post(db_path, division_id, round_id, captured, *, bot=None, channel=None):
-    """Round 3's standings put up by `produce_standings` in a channel recording each text it
-    is sent in *captured*, giving the tables it reports."""
+def _poster_drawing(drawn=None, *, raises=None):
+    """The image drawing the standings are handed, its gate answering yes for both templates, its
+    `draw_standings` stubbed to hand back *drawn* (or raise *raises*), and its `discard_attachment`
+    the real one."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    drawing = ImageDrawing(
+        MagicMock(), MagicMock(), MagicMock(), renderer=MagicMock(), post_log=AsyncMock(),
+        db_path="db",
+    )
+    drawing.aspect_wanted = AsyncMock(return_value=True)
+    drawing.draw_standings = AsyncMock(return_value=drawn, side_effect=raises)
+    return drawing
+
+
+def _composer_stood_in(build=None):
+    """The results module's composer of the two drawings stood in for (by *build*, else an
+    `AsyncMock` giving two plain drawings): the gate is asked first and the drawings composed
+    before the drawing is handed them."""
+    return patch(
+        "leaguebot.results.services.publishing.standings_drawing_composer.build_drawings",
+        new=build if build is not None else AsyncMock(return_value=(MagicMock(), MagicMock())),
+    )
+
+
+def _standings_channel(captured, pictures=None, *, order=None, refuse_uploads=False):
+    """A standings channel recording each text it is sent in *captured* and each picture, with
+    its message text, in *pictures*; each message numbered from 8801 in the order sent. With
+    *refuse_uploads* Discord refuses every picture, and takes the text."""
+    import itertools
+
+    import discord
+
+    numbers = itertools.count(8801)
+    channel = AsyncMock()
+
+    async def send(content=None, **kwargs):
+        file = kwargs.get("file")
+        if file is not None and refuse_uploads:
+            raise discord.HTTPException(MagicMock(status=500, reason="Server Error"), "upload failed")
+        if order is not None:
+            order.append("posted")
+        if file is None:
+            captured.append(content)
+        elif pictures is not None:
+            pictures.append((content, file))
+        message = MagicMock()
+        message.id = next(numbers)
+        return message
+
+    async def fetch_message(message_id):
+        previous = AsyncMock()
+
+        async def delete():
+            if order is not None:
+                order.append(f"deleted {message_id}")
+
+        previous.delete = delete
+        return previous
+
+    channel.send = send
+    channel.fetch_message = fetch_message
+    return channel
+
+
+async def _post(db_path, division_id, round_id, captured, *, drawing=None, channel=None,
+                pictures=None, occasion=None, composer=None):
+    """Round 3's standings put up by `produce_standings` with *drawing* in scope, in *channel*
+    or one recording each text in *captured* and each picture in *pictures*, giving the tables
+    it reports."""
     from leaguebot.results.services.publishing.results_post_service import produce_standings
 
     if channel is None:
-        channel = AsyncMock()
-
-        async def send(content=None, **kwargs):
-            captured.append(content)
-            message = MagicMock()
-            message.id = 8800 + len(captured)
-            return message
-
-        channel.send = send
+        channel = _standings_channel(captured, pictures)
 
     guild = MagicMock()
     guild.id = 1
     guild.get_member.return_value = None
     guild.get_role.return_value = None
 
-    with in_a_job():
+    kwargs = {} if occasion is None else {"occasion": occasion}
+    with in_a_job(), composer or _composer_stood_in():
         return await produce_standings(
             db_path=db_path,
             division_id=division_id,
@@ -966,12 +890,14 @@ async def _post(db_path, division_id, round_id, captured, *, bot=None, channel=N
             guild=guild,
             show_reserves=False,
             label="Final Results",
-            bot=bot,
+            drawing=drawing,
+            **kwargs,
+            driver_names_read=AwaitedHook(),
         )
 
 
 async def test_no_bot_leaves_the_textual_body_exactly_as_it_was(tmp_path):
-    """The pre-040 shape: one message carrying both championships."""
+    """No image drawing in scope: the pre-040 shape, one message carrying both championships."""
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
 
@@ -986,11 +912,8 @@ async def test_the_flow_standing_aside_leaves_the_textual_body_exactly_as_it_was
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
 
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(return_value=_outcome(applicable=False)),
-    ):
-        await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+    drawing = _poster_drawing(_standings_drawn(tmp_path, applicable=False))
+    await _post(db_path, division_id, round_id, captured, drawing=drawing)
 
     assert len(captured) == 1
     assert "Driver Standings" in captured[0]
@@ -1000,70 +923,54 @@ async def test_the_flow_standing_aside_leaves_the_textual_body_exactly_as_it_was
 async def test_both_graphics_posting_leaves_no_textual_message_at_all(tmp_path):
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
+    pictures: list = []
 
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(return_value=_outcome(fallbacks=())),
-    ):
-        await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+    drawing = _poster_drawing(_standings_drawn(tmp_path))
+    await _post(db_path, division_id, round_id, captured, drawing=drawing, pictures=pictures)
 
     assert captured == []
+    assert [file.filename for _content, file in pictures] == [
+        "season3_division1_round4_standings_drivers.png",
+        "season3_division1_round4_standings_constructors.png",
+    ], "the drivers first, the constructors after, each a message of its own"
 
 
 async def test_one_championship_falling_back_posts_that_section_and_no_other(tmp_path):
     """FR-052 — never repeat what the surviving graphic already drew."""
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
+    pictures: list = []
 
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(return_value=_outcome(fallbacks=("drivers",))),
-    ):
-        await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+    drawing = _poster_drawing(_standings_drawn(tmp_path, drivers=False))
+    await _post(db_path, division_id, round_id, captured, drawing=drawing, pictures=pictures)
 
     assert len(captured) == 1
     assert "Driver Standings" in captured[0]
     assert "Team Standings" not in captured[0]
+    assert len(pictures) == 1
 
 
 async def test_both_falling_back_posts_each_championship_exactly_once(tmp_path):
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
 
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(return_value=_outcome(fallbacks=("drivers", "constructors"))),
-    ):
-        await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+    drawing = _poster_drawing(_standings_drawn(tmp_path, drivers=False, constructors=False))
+    await _post(db_path, division_id, round_id, captured, drawing=drawing)
 
     assert len(captured) == 2
     assert sum("Driver Standings" in c for c in captured) == 1
     assert sum("Team Standings" in c for c in captured) == 1
 
 
-async def test_a_rejected_commanded_posting_posts_nothing_at_all(tmp_path):
-    db_path, division_id, round_id = await _seed(tmp_path)
-    captured: list[str] = []
-
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(return_value=_outcome(rejects=True)),
-    ):
-        await _post(db_path, division_id, round_id, captured, bot=MagicMock())
-
-    assert captured == []
-
-
 async def test_a_cancelled_round_never_enters_the_image_branch(tmp_path):
     """FR-050 — the standings toggle notwithstanding."""
     db_path, division_id, round_id = await _seed(tmp_path, cancelled=True)
     captured: list[str] = []
-    spy = AsyncMock(return_value=_outcome(fallbacks=()))
+    drawing = _poster_drawing(_standings_drawn(tmp_path))
 
-    with patch("leaguebot.image.services.image_standings_post.try_post", spy):
-        await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+    await _post(db_path, division_id, round_id, captured, drawing=drawing)
 
-    assert spy.await_count == 0
+    assert drawing.draw_standings.await_count == 0
     assert len(captured) == 1, "the textual standings are untouched by the toggle"
 
 
@@ -1071,11 +978,8 @@ async def test_the_image_path_raising_never_costs_the_league_its_standings(tmp_p
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
 
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(side_effect=RuntimeError("boom")),
-    ):
-        await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+    drawing = _poster_drawing(raises=RuntimeError("boom"))
+    await _post(db_path, division_id, round_id, captured, drawing=drawing)
 
     assert len(captured) == 1
     assert "Driver Standings" in captured[0]
@@ -1083,38 +987,80 @@ async def test_the_image_path_raising_never_costs_the_league_its_standings(tmp_p
 
 
 async def test_each_picture_is_reported_as_a_table_with_the_message_it_replaces(tmp_path):
-    """Round 3's standings are drawn as two pictures, the drivers' as message 7701 replacing
-    4321, the constructors' as 7702 replacing 4322. `produce_standings` posts no text and
-    reports each picture as a table of its own, drawn, with the message it replaces, so that
-    the change queue saves the new id with its mark and deletes the old by a job of its own."""
+    """Round 3's standings stand as 4321 (drivers) and 4322 (constructors) and are drawn as two
+    pictures, posted as 8801 and 8802. `produce_standings` posts no text and reports each
+    picture as a table of its own, drawn, with the message it replaces, so that the change
+    queue saves the new id with its mark and deletes the old by a job of its own."""
     from leaguebot.results.services.publishing.results_post_service import PostedTable
 
     db_path, division_id, round_id = await _seed(tmp_path)
+    await _seed_previous(db_path, division_id, round_id, drivers=4321, constructors=4322)
     captured: list[str] = []
-    outcome = _outcome(fallbacks=())
-    outcome.drivers.replaces = [4321]
-    outcome.constructors.replaces = [4322]
 
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(return_value=outcome),
-    ):
-        tables = await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+    tables = await _post(
+        db_path, division_id, round_id, captured, drawing=_poster_drawing(_standings_drawn(tmp_path)),
+    )
 
     assert captured == []
     assert tables == [
-        PostedTable([7701], [4321], drawn=True, championship="drivers"),
-        PostedTable([7702], [4322], drawn=True, championship="constructors"),
+        PostedTable([8801], [4321], drawn=True, championship="drivers"),
+        PostedTable([8802], [4322], drawn=True, championship="constructors"),
     ]
+
+
+async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tmp_path):
+    """FR-048. A render that fails must leave the league the standings it had.
+
+    The poster deletes nothing (#439 6b): it posts each picture and reports the message it
+    replaces, which the change queue deletes by a job of its own once the picture stands. It
+    saves nothing itself either: the ids recorded before the posting are still recorded."""
+    from leaguebot.results.services.publishing.results_post_service import (
+        get_standings_message_id,
+    )
+
+    db_path, division_id, round_id = await _seed(tmp_path)
+    await _seed_previous(db_path, division_id, round_id, drivers=111, constructors=222)
+    order: list[str] = []
+    channel = _standings_channel([], [], order=order)
+
+    await _post(
+        db_path, division_id, round_id, [], channel=channel,
+        drawing=_poster_drawing(_standings_drawn(tmp_path)),
+    )
+
+    assert order == ["posted", "posted"], "the poster deleted the message it replaces"
+    assert await get_standings_message_id(db_path, division_id, round_id, "drivers") == 111
+    assert await get_standings_message_id(db_path, division_id, round_id, "constructors") == 222
+
+
+async def test_a_discord_failure_falls_back_to_text_rather_than_retrying_the_image(tmp_path):
+    """FR-056 — the generation succeeded; it is the delivery that did not. Discord refuses both
+    pictures: each championship goes out as its own text section in the same try, and each
+    table carries the refusal for the job's line."""
+    db_path, division_id, round_id = await _seed(tmp_path)
+    captured: list[str] = []
+    channel = _standings_channel(captured, refuse_uploads=True)
+
+    tables = await _post(
+        db_path, division_id, round_id, captured, channel=channel,
+        drawing=_poster_drawing(_standings_drawn(tmp_path)),
+    )
+
+    assert sum("Driver Standings" in c for c in captured) == 1
+    assert sum("Team Standings" in c for c in captured) == 1
+    assert not any(table.drawn for table in tables)
+    assert {table.championship for table in tables if table.fault} == {"drivers", "constructors"}
+    assert all("Discord refused the picture" in table.fault for table in tables if table.fault)
 
 
 async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_nothing(
     tmp_path,
 ):
     """Round 3's drivers' standings stand as message 4321. The drivers' picture falls back to
-    text: the table goes out as message 9999 and is reported with 4321 as the message it
-    replaces, which is left standing and its id left recorded, for the change queue's own jobs
-    to save the new id and delete the old once the new one stands (FR-048)."""
+    text while the constructors' picture draws: the table goes out as message 9999 and is
+    reported with 4321 as the message it replaces, which is left standing and its id left
+    recorded, for the change queue's own jobs to save the new id and delete the old once the new
+    one stands (FR-048)."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
     from leaguebot.results.services.publishing.results_post_service import (
@@ -1183,27 +1129,24 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
         first_finish_rounds={},
     )
 
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        AsyncMock(return_value=_outcome(fallbacks=("drivers",))),
-    ):
-        with in_a_job():
-            tables = await produce_standings(
-                db_path=db_path,
-                division_id=division_id,
-                round_id=round_id,
-                round_number=3,
-                track_name="Silverstone",
-                standings_channel=channel,
-                driver_snapshots=[snapshot],
-                team_snapshots=[],
-                guild=guild,
-                show_reserves=False,
-                label="Final Results",
-                bot=MagicMock(),
-            )
+    with in_a_job(), _composer_stood_in():
+        tables = await produce_standings(
+            db_path=db_path,
+            division_id=division_id,
+            round_id=round_id,
+            round_number=3,
+            track_name="Silverstone",
+            standings_channel=channel,
+            driver_snapshots=[snapshot],
+            team_snapshots=[],
+            guild=guild,
+            show_reserves=False,
+            label="Final Results",
+            drawing=_poster_drawing(_standings_drawn(tmp_path, drivers=False)),
+            driver_names_read=AwaitedHook(),
+        )
 
-    assert order == ["posted"]
+    assert "deleted" not in order
     assert PostedTable([9999], [4321], championship="drivers") in tables
     assert await get_standings_message_id(db_path, division_id, round_id) == 4321
 
@@ -1222,38 +1165,33 @@ def _render_artifact(tmp_path, name):
 
 async def test_both_championship_files_are_gone_once_they_have_posted(tmp_path):
     """Two renders per round, and neither is read again after its own send."""
-    pngs = [_render_artifact(tmp_path, "standings_drivers_template"),
-            _render_artifact(tmp_path, "standings_constructors_template")]
-    handed = iter(pngs)
+    db_path, division_id, round_id = await _seed(tmp_path)
+    pngs = {"drivers": _render_artifact(tmp_path, "standings_drivers_template"),
+            "constructors": _render_artifact(tmp_path, "standings_constructors_template")}
 
-    render = AsyncMock(side_effect=lambda *a, **k: _decision(png=next(handed)))
+    await _post(
+        db_path, division_id, round_id, [],
+        drawing=_poster_drawing(_standings_drawn(tmp_path, pngs=pngs)),
+    )
 
-    await _try_post(_bot(), _channel([]), render)
-
-    for png in pngs:
+    for png in pngs.values():
         assert not png.exists(), f"{png.name} outlived its posting"
         assert not png.parent.exists()
 
 
 async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     """The textual standings fall back; the picture is not kept for a retry (FR-056)."""
-    import discord
+    db_path, division_id, round_id = await _seed(tmp_path)
+    pngs = {"drivers": _render_artifact(tmp_path, "standings_drivers_template"),
+            "constructors": _render_artifact(tmp_path, "standings_constructors_template")}
 
-    pngs = [_render_artifact(tmp_path, "standings_drivers_template"),
-            _render_artifact(tmp_path, "standings_constructors_template")]
-    handed = iter(pngs)
-    channel = AsyncMock()
-
-    async def send(content=None, **kwargs):
-        raise discord.HTTPException(MagicMock(status=500), "upload failed")
-
-    channel.send = send
-
-    await _try_post(
-        _bot(), channel, AsyncMock(side_effect=lambda *a, **k: _decision(png=next(handed)))
+    await _post(
+        db_path, division_id, round_id, [],
+        channel=_standings_channel([], refuse_uploads=True),
+        drawing=_poster_drawing(_standings_drawn(tmp_path, pngs=pngs)),
     )
 
-    for png in pngs:
+    for png in pngs.values():
         assert not png.exists(), "a failed upload must not strand the picture"
 
 
@@ -1277,7 +1215,7 @@ async def _highlighted_svg(tmp_path):
     separately by the marked test below.
 
     **The marker directory is pinned to the packaged one, and must stay pinned** (2026-09-02).
-    `create_with_defaults` gives every asset class the default migration 043 set, which is
+    The defaults give every asset class the directory migration 043 set, which is
     `resources/league/<class>` — gitignored, unversioned, and holding whatever artwork the
     machine running the suite happens to carry. This fixture claims above to resolve "against
     the packaged artwork", and until it was pinned that claim was true only on a host whose
@@ -1287,10 +1225,10 @@ async def _highlighted_svg(tmp_path):
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.models.image_constants import packaged_directory_for
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import resolve_configured_directories
-    from leaguebot.image.services.image_standings_post import build_drawings
-    from leaguebot.image.services.image_standings_service import build_fill_spec
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.render.image_render_service import resolve_configured_directories
+    from leaguebot.results.services.publishing.standings_drawing_composer import build_drawings
+    from leaguebot.image.services.aspects.image_standings_service import build_fill_spec
     from leaguebot.image.utils.svg_document import load_svg
     from leaguebot.image.utils.svg_fill import fill
 
@@ -1320,14 +1258,14 @@ async def _highlighted_svg(tmp_path):
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
     bot = _bot(db_path)
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     # See the docstring: the default points into the league's own gitignored folder.
     await set_field(config_service, "marker_directory", packaged_directory_for("marker"))
     bot.image_config_service = config_service
 
     drawings = await build_drawings(
-        bot,
         _guild(),
+        driver_names_read=_hook(db_path),
         db_path=db_path,
         division_id=division_id,
         round_id=round_ids[0],
@@ -1415,7 +1353,7 @@ async def test_the_three_marks_reach_the_raster_in_their_own_corners(tmp_path):
     """
     from PIL import Image  # noqa: PLC0415
 
-    from leaguebot.image.services.image_render_service import rasterise
+    from leaguebot.image.services.render.image_render_service import rasterise
     from leaguebot.image.utils.svg_document import FieldIndex, canvas_of
     from leaguebot.image.utils.svg_fill import fill as fill_spec_onto
 
@@ -1464,25 +1402,18 @@ async def test_the_three_marks_reach_the_raster_in_their_own_corners(tmp_path):
 # part in no replacement — see `leaguebot.core.models.classification_occasion`.
 
 
-async def _boundary(tmp_path, occasion, *, previous_ids=None, stored=None):
-    from unittest.mock import AsyncMock as _AsyncMock
-
-    sent: list = []
-    render = _AsyncMock(
-        side_effect=[
-            _decision(png=_drawn(tmp_path, "drivers")),
-            _decision(png=_drawn(tmp_path, "constructors")),
-        ]
+async def _boundary(tmp_path, occasion, **previous):
+    """Round 3's division's two standings pictures posted for *occasion*, with *previous* ids
+    recorded on the round beforehand; the tables reported and the pictures sent."""
+    db_path, division_id, round_id = await _seed(tmp_path)
+    if previous:
+        await _seed_previous(db_path, division_id, round_id, **previous)
+    pictures: list = []
+    tables = await _post(
+        db_path, division_id, round_id, [], pictures=pictures, occasion=occasion,
+        drawing=_poster_drawing(_standings_drawn(tmp_path)),
     )
-    outcome = await _try_post(
-        _bot(),
-        _channel(sent),
-        render,
-        occasion=occasion,
-        previous_ids=previous_ids,
-        stored=stored,
-    )
-    return outcome, sent
+    return (db_path, division_id, round_id), tables, pictures
 
 
 @pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
@@ -1491,28 +1422,30 @@ async def test_an_opening_posting_carries_no_message_text(tmp_path, occasion_nam
     season's final classification is drawn the same way."""
     from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
-    _outcome, sent = await _boundary(tmp_path, getattr(ClassificationOccasion, occasion_name))
+    _where, _tables, pictures = await _boundary(
+        tmp_path, getattr(ClassificationOccasion, occasion_name)
+    )
 
-    assert len(sent) == 2
-    assert [content for content, _kwargs in sent] == [None, None]
-    assert all(kwargs.get("file") is not None for _content, kwargs in sent)
+    assert len(pictures) == 2
+    assert [content for content, _file in pictures] == [None, None]
+    assert all(file is not None for _content, file in pictures)
 
 
 async def test_an_ordinary_posting_still_carries_its_heading_and_label(tmp_path):
-    """The occasion that predates the enum is untouched by it."""
-    sent: list = []
-    render = AsyncMock(
-        side_effect=[
-            _decision(png=_drawn(tmp_path, "drivers")),
-            _decision(png=_drawn(tmp_path, "constructors")),
-        ]
-    )
-    await _try_post(_bot(), _channel(sent), render)
+    """The occasion that predates the enum is untouched by it: each picture goes out under the
+    round's heading and the lifecycle label."""
+    db_path, division_id, round_id = await _seed(tmp_path)
+    pictures: list = []
 
-    assert [content for content, _kwargs in sent] == [
-        "**Season 3 Main Round 5 — Race**\n_Provisional Results_",
-        "**Season 3 Main Round 5 — Race**\n_Provisional Results_",
-    ]
+    await _post(
+        db_path, division_id, round_id, [], pictures=pictures,
+        drawing=_poster_drawing(_standings_drawn(tmp_path)),
+    )
+
+    contents = [content for content, _file in pictures]
+    assert len(contents) == 2 and contents[0] == contents[1]
+    assert contents[0].startswith("**Season 2 Beta Round 3 — ")
+    assert contents[0].endswith("**\nFinal Results")
 
 
 @pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
@@ -1525,14 +1458,20 @@ async def test_a_boundary_posting_neither_reads_nor_writes_the_round_s_slot(
     belong to, and reading one would have it delete that round's own standings.
     """
     from leaguebot.core.models.classification_occasion import ClassificationOccasion
-
-    stored: dict = {}
-    _outcome, sent = await _boundary(
-        tmp_path,
-        getattr(ClassificationOccasion, occasion_name),
-        previous_ids={"drivers": 4242, "constructors": 4343},
-        stored=stored,
+    from leaguebot.results.services.publishing.results_post_service import (
+        get_standings_message_id,
     )
 
-    assert stored == {}, "a boundary posting must claim no round's slot"
-    assert len(sent) == 2, "and must delete nothing it did not post"
+    (db_path, division_id, round_id), tables, pictures = await _boundary(
+        tmp_path,
+        getattr(ClassificationOccasion, occasion_name),
+        drivers=4242,
+        constructors=4343,
+    )
+
+    assert all(table.old == [] for table in tables), "and must replace nothing it did not post"
+    assert len(pictures) == 2
+    assert await get_standings_message_id(db_path, division_id, round_id, "drivers") == 4242, (
+        "a boundary posting must claim no round's slot"
+    )
+    assert await get_standings_message_id(db_path, division_id, round_id, "constructors") == 4343

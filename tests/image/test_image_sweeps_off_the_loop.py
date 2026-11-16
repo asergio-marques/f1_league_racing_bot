@@ -3,9 +3,9 @@
 `evaluate_all_templates` parses all sixteen templates, which takes seconds on a Raspberry Pi,
 and a single template's parse a good part of a second; run on the loop either would leave the
 bot answering nothing until it finished. Each async entry point of the image module that runs
-a sweep or only reads a template hands it to a worker thread through `off_the_loop`. The render
-and the fastest-lap contrast measurement change the tree they parse on the loop, and so parse
-it there. Nothing parsed in a worker thread leaves it, neither a return value nor an exception
+a sweep or only reads a template hands it to a worker thread through `off_the_loop`, and the
+render and the fastest-lap contrast measurement hand over the whole of their work on the tree,
+from the parse to the serialised picture. Nothing parsed in a worker thread leaves it, neither a return value nor an exception
 (`load_svg`), which every test here also holds the entry point to.
 
 Each test patches the evaluation with a `Held` one (`tests/support/off_the_loop.py`), which
@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -30,18 +31,20 @@ from lxml import etree
 
 from leaguebot.core.models.change import ChangeOrigin, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.image.services import driver_portrait_service, image_render_service
-from leaguebot.image.services import image_validity_service as validity_module
-from leaguebot.image.services.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
+from leaguebot.image.services.portraits import driver_portrait_service
+from leaguebot.image.services.render import image_render_service
+from leaguebot.image.services.validity import image_validity_service as validity_module
+from leaguebot.image.services.config.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
 from leaguebot.core.db.database import run_migrations
 from leaguebot.image.models.image_catalogues import CapacityError
 from leaguebot.image.models.image_module import PROBLEM_UNRESOLVED_VALUE
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_render_service import ImageRenderService
-from leaguebot.image.services.image_setting_advice import measure_fastest_lap_contrast
-from leaguebot.image.services.image_validity_service import ImageValidityService
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.render.image_render_service import ImageRenderService
+from leaguebot.image.services.config.image_setting_advice import measure_fastest_lap_contrast
+from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 from leaguebot.image.utils import svg_document
 from leaguebot.image.utils.svg_document import FieldIndex, off_the_loop
+from tests.support.saves import create_image_defaults
 from tests.support.off_the_loop import (
     Held,
     answered_while,
@@ -58,7 +61,7 @@ SHIPPED = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "temp
 def _validity(config: Any) -> ImageValidityService:
     service = MagicMock()
     service.get_config = AsyncMock(return_value=config)
-    return ImageValidityService(service, MagicMock())
+    return ImageValidityService(service, MagicMock(), MagicMock())
 
 
 def _setting(kind: str, config: Any, proposed: Any) -> Any:
@@ -167,6 +170,7 @@ def _daily(monkeypatch, tmp_path, config: Any) -> Any:
     bot = MagicMock()
     bot.image_config_service.get_config = AsyncMock(return_value=config)
     monkeypatch.setattr(league_server, "league_guild", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(driver_portrait_service, "images_are_on", AsyncMock(return_value=True))
     monkeypatch.setattr(
         image_render_service, "resolve_configured_directories",
         lambda *_args, **_kwargs: ({"driver": tmp_path}, []),
@@ -177,6 +181,9 @@ def _daily(monkeypatch, tmp_path, config: Any) -> Any:
     return bot
 
 
+DAILY_NOW = datetime(2026, 1, 5, 3, 0, tzinfo=timezone.utc)
+
+
 async def test_the_daily_portrait_refresh_reads_the_shape_off_the_loop(monkeypatch, tmp_path):
     """The daily refresh reads the lineup's portrait shape in a worker thread, and refreshes
     at the shape it read."""
@@ -184,7 +191,9 @@ async def test_the_daily_portrait_refresh_reads_the_shape_off_the_loop(monkeypat
     config = SimpleNamespace(use_pfp=True, pfp_daily=True)
     bot = _daily(monkeypatch, tmp_path, config)
 
-    written = await answered_while(held, lambda: driver_portrait_service.run_daily_refresh(bot))
+    written = await answered_while(
+        held, lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service, now=DAILY_NOW)
+    )
 
     assert written == 3
     assert held.calls == [(config,)]
@@ -255,7 +264,7 @@ def _render_refresh_fails(monkeypatch, held, tmp_path):
 def _daily_refresh_fails(monkeypatch, held, tmp_path):
     monkeypatch.setattr(driver_portrait_service, "portrait_aspect", held)
     bot = _daily(monkeypatch, tmp_path, SimpleNamespace(use_pfp=True, pfp_daily=True))
-    return lambda: driver_portrait_service.run_daily_refresh(bot)
+    return lambda: driver_portrait_service.run_daily_refresh(bot, bot.image_config_service, now=DAILY_NOW)
 
 
 #: Each entry point, how its evaluation is made to fail, and what it then answers: the fault
@@ -371,7 +380,7 @@ async def test_a_fault_that_cannot_say_its_message_leaks_nothing():
 def _drawing(aspect: str) -> Any:
     """The image module's answers to core's capacity questions, the images module and *aspect*
     on, over every template the bot ships, each reported valid at its own path."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=True)
@@ -553,7 +562,7 @@ async def test_a_review_question_s_fault_crosses_back_with_nothing_it_parsed(
 
 
 # ---------------------------------------------------------------------------
-# The two parses kept on the loop, because the tree is changed there
+# The render and the contrast measurement, parse to picture in one worker thread
 # ---------------------------------------------------------------------------
 
 
@@ -570,9 +579,10 @@ def _parsed_where(monkeypatch) -> list[threading.Thread]:
     return threads
 
 
-async def test_a_render_parses_its_template_on_the_loop(monkeypatch):
-    """The render fills the tree on the loop, so it parses it there; nothing it runs in a
-    worker thread hands a tree back."""
+async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
+    """The calendar template rendered with a fill that fails after the parse: the parse runs
+    once, in a worker thread and never on the loop, the fill's fault still comes back as an
+    unresolved value, and nothing the worker hands back holds a tree."""
     threads = _parsed_where(monkeypatch)
     monkeypatch.setattr(image_render_service, "converter_available", lambda: True)
     validity = MagicMock()
@@ -587,21 +597,22 @@ async def test_a_render_parses_its_template_on_the_loop(monkeypatch):
         outcome = await ImageRenderService(MagicMock(), validity).render("calendar_template", stop)
 
     assert outcome.problem.kind == PROBLEM_UNRESOLVED_VALUE
-    assert threads == [threading.current_thread()]
+    assert len(threads) == 1 and threads[0] is not threading.current_thread()
     assert_no_tree_crossed(crossed)
 
 
-async def test_the_contrast_measurement_parses_its_template_on_the_loop(monkeypatch, tmp_path):
-    """The measurement paints each tier's palette into the tree on the loop, so it parses it
-    there; the sweep it reads first runs in a worker thread and hands back reports alone."""
+async def test_the_contrast_measurement_parses_its_template_off_the_loop(monkeypatch, tmp_path):
+    """The fastest-lap contrast measured against white over the shipped templates: every parse
+    runs in a worker thread, never on the loop, and nothing a worker hands back holds a tree."""
     db_path = str(tmp_path / "images.db")
     await run_migrations(db_path)
     config_service = ImageConfigService(db_path)
+    await create_image_defaults(config_service)
     config = dataclasses.replace(
-        await config_service.create_with_defaults(), template_directory=str(SHIPPED)
+        await config_service.get_config(), template_directory=str(SHIPPED)
     )
     config_service.get_config = AsyncMock(return_value=config)
-    validity = ImageValidityService(config_service, MagicMock())
+    validity = ImageValidityService(config_service, MagicMock(), MagicMock())
     threads = _parsed_where(monkeypatch)
 
     with recording_threads() as crossed:
@@ -610,7 +621,7 @@ async def test_the_contrast_measurement_parses_its_template_on_the_loop(monkeypa
             seasons=MagicMock(),
         )
 
-    assert threads == [threading.current_thread()]
+    assert threads and threading.current_thread() not in threads
     assert crossed
     assert_no_tree_crossed(crossed)
 

@@ -57,9 +57,12 @@ from tests.support.undecorate import undecorate
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-#: What a daily job that cannot be armed says became of the change, as today (image :132).
+#: What a daily job that cannot be armed says became of the change (image :132): stored, and
+#: scheduled at the next start with the module on or at the module's next switch-on.
 DAILY_JOB_NOT_SCHEDULED = (
-    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+    "⚠️ The setting is stored, but the daily update could not be scheduled. It will be scheduled "
+    "the next time the bot starts with the image module on, or when the module is next switched "
+    "on."
 )
 #: What a daily job that cannot be removed adds to the success (plan 2.11, Assumed 12).
 NOT_REMOVED = (
@@ -90,7 +93,7 @@ NO_TEMPLATES = "resources/defaults/tracks"
 def _rasteriser_present(monkeypatch):
     """The rasteriser taken as present wherever the check asks for it: no test here draws, and
     switching an output on is refused on a host without it."""
-    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.render.image_render_service as render
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
 
@@ -178,7 +181,8 @@ def _time_format() -> Ask:
 def _palette(division: str, text: str) -> Ask:
     """Submit the "Set one tier's colours" form for *division* with *text* pasted into it."""
     async def ask(league: Any) -> Any:
-        from leaguebot.image.cogs.image_cog import ImageCog, TierPaletteModal
+        from leaguebot.image.cogs.config_commands import TierPaletteModal
+        from leaguebot.image.cogs.image_cog import ImageCog
 
         modal = TierPaletteModal(ImageCog(league.bot), division)
         modal.block._value = text  # type: ignore[attr-defined]
@@ -200,7 +204,8 @@ def _import_file(xml: str) -> Ask:
 def _confirm(time_of_day: str) -> Ask:
     """Press ✅ Confirm on the daily portrait confirmation offered for *time_of_day* UTC."""
     async def ask(league: Any) -> Any:
-        from leaguebot.image.cogs.image_cog import ImageCog, PortraitTimeConfirm
+        from leaguebot.image.cogs.image_cog import ImageCog
+        from leaguebot.image.cogs.use_pfp_commands import PortraitTimeConfirm
 
         opened = interaction(league.bot, "images use-pfp daily-toggle")
         view = PortraitTimeConfirm(ImageCog(league.bot), time_of_day, opened)
@@ -744,8 +749,9 @@ async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lan
 ):
     """The scheduler refusing the daily job: ✅ Confirm on daily updates at 04:30, or
     `/images use-pfp toggle` turning portraits back on with daily updates set at 05:00. The
-    setting stays stored, the member gets today's failure reply saying it is stored and will be
-    scheduled when the bot next starts, one failure line is written and no Success line, no job
+    setting stays stored, the member gets the failure reply saying it is stored, that the daily
+    update could not be scheduled, and that it will be scheduled the next time the bot starts
+    with the image module on or when the module is next switched on, one failure line is written and no Success line, no job
     is stopped, and `/images config time-format` asked behind it is saved."""
     if route == "confirm":
         league = await _league(tmp_path, use_pfp=1)

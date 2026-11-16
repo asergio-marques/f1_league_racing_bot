@@ -21,54 +21,7 @@ from pathlib import Path
 
 from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import attendance_sheet
-from leaguebot.image.services.image_attendance_post import (
-    SheetRender,
-    attendance_enabled,
-)
-
-
-def _bot(*, module_on=True, aspect_on=True, template_valid=True):
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module_on)
-    bot.image_config_service.get_toggles = AsyncMock(
-        return_value={"attendance": aspect_on}
-    )
-    report = MagicMock()
-    report.valid = template_valid
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"attendance_template": report}
-    )
-    return bot
-
-
-# ── Enablement ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await attendance_enabled(_bot()) is True
-
-
-@pytest.mark.asyncio
-async def test_the_module_being_off_falls_back_to_text():
-    assert await attendance_enabled(_bot(module_on=False)) is False
-
-
-@pytest.mark.asyncio
-async def test_the_aspect_being_off_falls_back_to_text():
-    assert await attendance_enabled(_bot(aspect_on=False)) is False
-
-
-@pytest.mark.asyncio
-async def test_an_invalid_template_falls_back_to_text():
-    assert await attendance_enabled(_bot(template_valid=False)) is False
-
-
-@pytest.mark.asyncio
-async def test_a_reader_that_raises_never_breaks_the_posting():
-    bot = _bot()
-    bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await attendance_enabled(bot) is False
+from leaguebot.image.services.aspects.image_attendance_post import SheetRender
 
 
 # ── The render outcome ────────────────────────────────────────────────────
@@ -81,8 +34,8 @@ def test_the_sheet_resolves_the_folder_its_marks_are_drawn_from():
     sheet projects but never resolves draws nothing at all, silently, and no fixture would
     say so.
     """
-    from leaguebot.image.services import image_attendance_post
-    from leaguebot.image.services.image_attendance_service import MARK_ASSET_CLASS
+    from leaguebot.image.services.aspects import image_attendance_post
+    from leaguebot.image.services.aspects.image_attendance_service import MARK_ASSET_CLASS
 
     source = inspect.getsource(image_attendance_post.render_sheet)
     assert f'("{MARK_ASSET_CLASS}", "marker_directory")' in source
@@ -107,7 +60,7 @@ def test_the_image_path_has_no_send_site_of_its_own():
     half left deleting first would be the fallback — the path reached because something has
     already gone wrong.
     """
-    import leaguebot.image.services.image_attendance_post as post
+    import leaguebot.image.services.aspects.image_attendance_post as post
 
     source = inspect.getsource(post)
     assert "channel.send" not in source
@@ -209,8 +162,8 @@ def _rendered_sheet(tmp_path):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
     from tests.support.image_sample_data import build_attendance_drawing
 
-    from leaguebot.image.services.image_attendance_service import build_fill_spec
-    from leaguebot.image.services.image_render_service import rasterise
+    from leaguebot.image.services.aspects.image_attendance_service import build_fill_spec
+    from leaguebot.image.services.render.image_render_service import rasterise
     from leaguebot.core.utils.paths import PROJECT_ROOT
     from leaguebot.image.utils.svg_document import canvas_of
     from leaguebot.image.utils.svg_fill import fill as fill_spec_onto

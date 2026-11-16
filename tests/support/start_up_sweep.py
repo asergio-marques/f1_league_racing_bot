@@ -94,12 +94,31 @@ async def run_signup_start_up(bot: Any, *, on: bool) -> list[str]:
     turn of the real start-up sweep, signup's switch reading *on*, core's queue and scheduler stood
     in for (each step asks the bot's own change queue). Gives the lines the sweep posted to the log
     channel."""
+    return await _run_module_start_up(bot, "signup", on=on)
+
+
+async def run_image_start_up(bot: Any, *, on: bool) -> list[str]:
+    """Run every one of image's start-up steps, as `start_up_steps(bot)` gives them, in image's
+    turn of the real start-up sweep, image's switch reading *on*, core's queue and scheduler stood
+    in for (each step asks the bot's own scheduler service). Gives the lines the sweep posted to
+    the log channel."""
+    return await _run_module_start_up(bot, "image", on=on, switch="images")
+
+
+async def _run_module_start_up(
+    bot: Any, module: str, *, on: bool, switch: str | None = None
+) -> list[str]:
+    """Run every one of *module*'s start-up steps, from `leaguebot.<module>.wiring
+    .start_up_steps(bot)` and unwrapped, so that a step marked to run while the module is off keeps
+    its mark, in the turn of the real start-up sweep signed up under *switch* (the module's own
+    name where none is given), the switch reading *on* and core's queue and scheduler stood in
+    for. Gives the lines the sweep posted to the log channel."""
     import leaguebot.core.services.upkeep.start_up as start_up_module
     from leaguebot.core.utils.hooks import StartingHook
-    from leaguebot.signup import wiring
 
+    wiring = importlib.import_module(f"leaguebot.{module}.wiring")
     starting = StartingHook()
-    starting.subscribe(lambda: wiring.start_up_steps(bot), module="signup")
+    starting.subscribe(lambda: wiring.start_up_steps(bot), module=switch or module)
 
     class _Modules:
         async def is_enabled(self, module: str) -> bool:

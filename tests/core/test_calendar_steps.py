@@ -387,6 +387,67 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
             assert words not in told, told
 
 
+async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
+    tmp_path, monkeypatch,
+):
+    """Season 3 being raced with the images module on; the drawing the builder handed the calendar
+    job draws Pro's calendar as a PNG with one notice, round 12 not fitting. Pro's round 3 is
+    cancelled, and its calendar is posted again as a picture. The queue does not stop; the log
+    channel holds the notice once, in one line naming the calendar and Pro, which the posting job
+    carries among its own lines (Constitution XIV.4; the owner's decision on #288: code inside a
+    job never calls `post_log`)."""
+    from tests.support.change_queue import queued_log_lines
+
+    league = await ongoing_league(tmp_path, images=True)
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    notice = "round 12 did not fit"
+    draw_calendars_with(league.bot, monkeypatch,
+                        CalendarDrawingStub(picture=png, notices=(notice,)))
+    await _cancel(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
+    named = [line for line in logged if notice in line]
+    assert len(named) == 1, logged
+    assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+
+
+async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retried(
+    tmp_path, monkeypatch,
+):
+    """Season 3 being raced with the images module on; the drawing the builder handed the calendar
+    job draws Pro's calendar as a PNG with one notice, round 12 not fitting. Pro's round 3 is
+    cancelled, and Pro's calendar channel refuses every send, the picture and then the text, so
+    the queue stops at the calendar's posting job. The channel is let accept, and a Retry posts the
+    calendar: the queue runs to the end, and the log channel holds the notice once, in one line
+    naming the calendar and Pro, never lost with the refused try."""
+    from tests.support.change_queue import queued_log_lines
+
+    league = await ongoing_league(tmp_path, images=True)
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    notice = "round 12 did not fit"
+    draw_calendars_with(league.bot, monkeypatch,
+                        CalendarDrawingStub(picture=png, notices=(notice,)))
+    channel = league.channel(PRO_CALENDAR)
+    channel.fail_when = lambda _content, _kwargs: True
+    await _cancel(league)
+
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    channel.fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
+    named = [line for line in logged if notice in line]
+    assert len(named) == 1, logged
+    assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+
+
 async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_posted(
     tmp_path, monkeypatch,
 ):

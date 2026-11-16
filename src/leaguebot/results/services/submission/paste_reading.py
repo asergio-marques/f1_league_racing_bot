@@ -19,7 +19,7 @@ from leaguebot.core.utils.input_validator import (
     parse_time,
     parse_user_mention,
 )
-from leaguebot.image.utils.tyre_compound import (
+from leaguebot.results.utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
     tyre_compound_list,

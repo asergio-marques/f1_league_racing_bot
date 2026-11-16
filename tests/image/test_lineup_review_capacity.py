@@ -57,7 +57,7 @@ def _drawing(tmp_path, *, blocks=4, seats=2, lineup_on=True, images=True, valid=
     """The image module's implementation of core's protocol, over stand-ins for its own
     services: the images module *images*, the `lineup` aspect *lineup_on*, and a lineup
     template of *blocks* blocks of *seats* seat slots, *valid* or not."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     path = tmp_path / f"{LINEUP}.svg"
     path.write_bytes(_template_bytes(blocks, seats))

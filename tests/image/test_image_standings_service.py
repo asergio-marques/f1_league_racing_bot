@@ -14,7 +14,7 @@ import pytest
 
 from leaguebot.results.models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-from leaguebot.image.services.image_standings_service import (
+from leaguebot.image.services.aspects.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
     HIGHLIGHT_P1,
@@ -22,10 +22,14 @@ from leaguebot.image.services.image_standings_service import (
     HIGHLIGHT_P3,
     HIGHLIGHT_POINTS,
     RoundHeading,
+)
+from leaguebot.results.services.publishing.standings_drawing_composer import (
     highlight_for,
     resolve_drawing,
 )
+from leaguebot.image.models.standings_drawing import MovementText
 from leaguebot.results.services.standings.standings_service import MOVEMENT_GAINED, MOVEMENT_UNCHANGED, Movement
+from leaguebot.results.utils import results_formatter
 
 
 def _driver(user_id: int, position: int, points: int, *, participant: bool = True):
@@ -269,10 +273,15 @@ def test_a_nationality_is_carried_where_one_is_recorded():
 
 
 def test_the_movement_record_is_carried_through_untouched():
-    """XIV.7: the utility receives it and performs no arithmetic of its own."""
+    """XIV.7: the composer formats it as the textual standings do and performs no arithmetic of
+    its own."""
     movement = Movement(previous_position=3, change=2, direction=MOVEMENT_GAINED)
     drawing = _drivers_drawing(movements={1: movement, 2: None})
-    assert drawing.entries[0].movement is movement
+    assert drawing.entries[0].movement == MovementText(
+        previous_position=results_formatter.format_previous_position(3),
+        change=results_formatter.format_position_change(2),
+        direction=MOVEMENT_GAINED,
+    )
     assert drawing.entries[1].movement is None
 
 
@@ -285,12 +294,15 @@ def test_the_utility_holds_no_arithmetic_over_points_or_positions():
     """A reviewer's test for the derived-columns contract.
 
     The movement record is the *only* source of a gap or a change, so a drawing built with
-    a deliberately wrong record must carry that wrong record rather than a recomputed one.
+    a deliberately wrong record must carry that wrong record, as text, rather than a
+    recomputed one.
     """
     absurd = Movement(previous_position=99, change=97, direction=MOVEMENT_UNCHANGED)
     drawing = _drivers_drawing(movements={1: absurd, 2: None}, gaps={1: 999, 2: 0})
-    assert drawing.entries[0].gap_to_leader == 999
-    assert drawing.entries[0].movement.change == 97
+    assert drawing.entries[0].gap_to_leader == results_formatter.format_gap_to_leader(
+        999, is_leader=False
+    )
+    assert drawing.entries[0].movement.change == results_formatter.format_position_change(97)
 
 
 # ── 5. Configured absence ─────────────────────────────────────────────────

@@ -14,10 +14,12 @@ from leaguebot.results.models.session_result import (
     QualifyingSessionResult,
     RaceSessionResult,
 )
-from leaguebot.image.services.image_results_service import (
+from leaguebot.image.services.aspects.image_results_service import (
     QUALIFYING_TEMPLATE_KEY,
     RACE_TEMPLATE_KEY,
     ResultsDataError,
+)
+from leaguebot.results.services.publishing.results_drawing_composer import (
     resolve_drawing,
     status_label,
     template_key_for,

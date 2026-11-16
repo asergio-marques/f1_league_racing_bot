@@ -27,9 +27,22 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.test_mode import test_roster_service
-from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_preview_service import resolve_context
+from leaguebot.image.services.config.image_config_service import ImageConfigService
+from leaguebot.image.services.preview.image_preview_service import resolve_context as _resolve_context
 from leaguebot.core.services.seasons.season_service import SeasonService
+from tests.support.saves import create_image_defaults
+
+
+async def resolve_context(bot, *args, **kwargs):
+    """`image_preview_service.resolve_context`, handed the hook signup answers how a driver is
+    named, as the command hands it from the bot, so that the names and flags a preview draws are
+    signup's."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=bot.db_path)
+    sign_up_driver_names_read(holder)
+    kwargs.setdefault("driver_names_read", holder.driver_names_read)
+    return await _resolve_context(bot, *args, **kwargs)
 
 SERVER_ID = 8484
 
@@ -56,7 +69,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults()
+    await create_image_defaults(config_service)
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
@@ -291,6 +304,6 @@ class TestTestModeChangesNoReading:
         """
         import inspect
 
-        from leaguebot.image.services import image_preview_service
+        from leaguebot.image.services.preview import image_preview_service
 
         assert "test_mode_active" not in inspect.getsource(image_preview_service)

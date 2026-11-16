@@ -26,7 +26,7 @@ import pytest
 
 from lxml import etree
 
-from leaguebot.image.services.image_render_service import rasterise
+from leaguebot.image.services.render.image_render_service import rasterise
 from leaguebot.image.utils.svg_document import (
     FieldIndex,
     computed_style,

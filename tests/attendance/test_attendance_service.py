@@ -242,8 +242,8 @@ def _attendance_guild(present=(601, 602)):
 def _plain_bot():
     bot = MagicMock()
     bot.user.id = 4242
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-    bot.image_config_service.get_toggles = AsyncMock(return_value={})
+    # The image module's drawing: no aspect is switched on, so no channel needs Attach Files.
+    bot.image_drawing.aspect_attaches_files = AsyncMock(return_value=False)
     return bot
 
 
@@ -254,7 +254,7 @@ async def test_recalculation_faults_passes_a_healthy_division(tmp_path):
     path, season_id = await _seed_attendance_season(tmp_path)
 
     assert await recalculation_faults(
-        path, season_id, _attendance_guild(), _plain_bot()
+        path, season_id, _attendance_guild(), (bot := _plain_bot()), drawing=bot.image_drawing
     ) == []
 
 
@@ -265,7 +265,7 @@ async def test_recalculation_faults_names_a_deleted_attendance_channel(tmp_path)
     path, season_id = await _seed_attendance_season(tmp_path)
 
     faults = await recalculation_faults(
-        path, season_id, _attendance_guild(present=(602,)), _plain_bot()
+        path, season_id, _attendance_guild(present=(602,)), (bot := _plain_bot()), drawing=bot.image_drawing
     )
 
     assert len(faults) == 1, faults
@@ -287,10 +287,10 @@ async def test_recalculation_faults_names_a_cancelled_division_s_channels_only_w
         await db.commit()
 
     asked = await recalculation_faults(
-        path, season_id, _attendance_guild(present=(602,)), _plain_bot(), cancelled_too=True
+        path, season_id, _attendance_guild(present=(602,)), (bot := _plain_bot()), drawing=bot.image_drawing, cancelled_too=True
     )
     default = await recalculation_faults(
-        path, season_id, _attendance_guild(present=(602,)), _plain_bot()
+        path, season_id, _attendance_guild(present=(602,)), (bot := _plain_bot()), drawing=bot.image_drawing
     )
 
     assert len(asked) == 1, asked
@@ -307,7 +307,7 @@ async def test_recalculation_faults_names_a_deleted_verdicts_channel(tmp_path):
     path, season_id = await _seed_attendance_season(tmp_path)
 
     faults = await recalculation_faults(
-        path, season_id, _attendance_guild(present=(601,)), _plain_bot()
+        path, season_id, _attendance_guild(present=(601,)), (bot := _plain_bot()), drawing=bot.image_drawing
     )
 
     assert len(faults) == 1, faults
@@ -325,7 +325,7 @@ async def test_recalculation_faults_ignores_the_verdicts_channel_without_thresho
     )
 
     faults = await recalculation_faults(
-        path, season_id, _attendance_guild(present=(601,)), _plain_bot()
+        path, season_id, _attendance_guild(present=(601,)), (bot := _plain_bot()), drawing=bot.image_drawing
     )
 
     assert faults == []
@@ -340,7 +340,7 @@ async def test_recalculation_faults_ignores_an_unconfigured_attendance_channel(t
     )
 
     faults = await recalculation_faults(
-        path, season_id, _attendance_guild(present=()), _plain_bot()
+        path, season_id, _attendance_guild(present=()), (bot := _plain_bot()), drawing=bot.image_drawing
     )
 
     assert faults == []
@@ -354,7 +354,7 @@ async def test_recalculation_faults_says_nothing_about_an_absent_guild(tmp_path)
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
-    assert await recalculation_faults(path, season_id, None, _plain_bot()) == []
+    assert await recalculation_faults(path, season_id, None, (bot := _plain_bot()), drawing=bot.image_drawing) == []
 
 
 @pytest.mark.asyncio
@@ -377,14 +377,16 @@ async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_pa
 
     guild.get_channel = get_channel
 
-    assert await recalculation_faults(path, season_id, guild, _plain_bot()) == []
+    assert await recalculation_faults(path, season_id, guild, (bot := _plain_bot()), drawing=bot.image_drawing) == []
 
     with_graphics = _plain_bot()
-    with_graphics.module_service.is_images_enabled = AsyncMock(return_value=True)
-    with_graphics.image_config_service.get_toggles = AsyncMock(
-        return_value={"attendance": True}
+    # The image module's drawing: the module on and the `attendance` aspect on.
+    with_graphics.image_drawing.aspect_attaches_files = AsyncMock(
+        side_effect=lambda aspect: aspect == "attendance"
     )
-    faults = await recalculation_faults(path, season_id, guild, with_graphics)
+    faults = await recalculation_faults(
+        path, season_id, guild, with_graphics, drawing=with_graphics.image_drawing
+    )
 
     assert len(faults) == 1, faults
     assert "Attach Files" in faults[0]

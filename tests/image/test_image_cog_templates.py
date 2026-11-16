@@ -25,7 +25,11 @@ from typing import Any
 import pytest
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.image.cogs.config_commands import ConfigCommands
 from leaguebot.image.cogs.image_cog import ImageCog
+from leaguebot.image.cogs.template_commands import TemplateCommands
+from leaguebot.image.cogs.test_commands import TestCommands
+from leaguebot.image.cogs.use_pfp_commands import UsePfpCommands
 from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS, TEMPLATE_COMMAND_NAMES
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import interaction as _interaction, log_bot
@@ -114,7 +118,10 @@ def test_the_command_path_references_no_withdrawn_machinery():
     keyed collection. A lazy import of one inside a `try/except` fails silently, so a
     source-level check is what catches it — not a passing render.
     """
-    source = inspect.getsource(ImageCog)
+    source = "".join(
+        inspect.getsource(cls)
+        for cls in (ImageCog, ConfigCommands, TemplateCommands, UsePfpCommands, TestCommands)
+    )
 
     for name in (
         "binding_from_teams",

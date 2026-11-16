@@ -134,6 +134,18 @@ class StepResult:
     follow_ons: tuple[FollowOn, ...] = ()
 
 
+#: The key under which a post job keeps, in the result of the stop it raises, the lines its picture
+#: was drawn with, so that the try after it hands them back with its own.
+DRAWN_LINES = "drawn_lines"
+
+
+def drawn_lines_kept(kept: dict[str, Any] | None) -> tuple[str, ...]:
+    """The lines a post job's earlier try kept on its stop (`StepFailedOnDiscord.carrying`), for
+    the try that follows to hand back once its post is made: a picture is drawn on the first try
+    alone, and what it had to say must not be lost with a post Discord refused."""
+    return tuple((kept or {}).get(DRAWN_LINES) or ())
+
+
 class StepFailedOnDiscord(Exception):
     """Raised by step code for a failure Discord caused.
 
@@ -169,6 +181,14 @@ class StepFailedOnDiscord(Exception):
         self.result = result
         self.notice = notice
         self.record = record
+
+    def carrying(self, lines: tuple[str, ...]) -> "StepFailedOnDiscord":
+        """Keep *lines*, the lines a picture drawn for the post came back with, in the result the
+        stop saves (`DRAWN_LINES`), beside anything it already keeps; *self* is handed back so that
+        a step can raise it. A job whose picture said nothing keeps nothing more."""
+        if lines:
+            self.result = {**(self.result or {}), DRAWN_LINES: list(lines)}
+        return self
 
 
 class GuildUnavailable(Exception):

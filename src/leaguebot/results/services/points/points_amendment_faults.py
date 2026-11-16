@@ -16,6 +16,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services.publishing import results_post_service
 
 if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 log = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ log = logging.getLogger(__name__)
 
 async def approval_faults(
     db_path: str, season_id: int, bot: LeagueBot, *, module_service: ModuleService,
-    attendance: AttendanceAfterReview,
+    attendance: AttendanceAfterReview, drawing: ImageDrawing,
 ) -> list[str]:
     """Everything that would stop an approved amendment being published.
 
@@ -52,8 +53,9 @@ async def approval_faults(
     A fault reading whether the attendance module is on stands aside, logged on the host and read as
     off: an attendance switch that cannot be read never refuses an amendment. A switch nobody signed
     up for is not such a fault but one in the bot's assembly, and its `SwitchNotSignedUp` is raised.
-    The switch is asked of *module_service*, which the caller hands in: a service asks the bot for
-    no service of its own.
+    The switch is asked of *module_service* and whether a channel will be sent pictures of
+    *drawing*, the image module's, which the caller hands in: a service asks the bot for no service
+    of its own.
     """
     # Checked before the approval writes anything.
     if not await season_exists(db_path, season_id):
@@ -61,7 +63,7 @@ async def approval_faults(
 
     guild = (await league_guild(bot)) if bot is not None else None
     faults = await results_post_service.repost_channel_faults(
-        db_path, season_id, guild, bot
+        db_path, season_id, guild, bot, drawing=drawing
     )
 
     # The attendance module recalculates as part of the same cascade, so its channels are

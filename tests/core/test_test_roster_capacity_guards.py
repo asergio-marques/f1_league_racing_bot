@@ -102,7 +102,7 @@ def _standings(tmp_path, *, rows: int) -> str:
 def _drawing(db_path: str, templates: dict[str, str]):
     """The image module's implementation of core's protocol, every image aspect on and
     *templates* the only ones configured."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=True)

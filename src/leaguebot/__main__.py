@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from leaguebot.attendance import wiring as attendance_wiring
+from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.upkeep.start_up import start_up
 from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
@@ -28,11 +30,13 @@ from leaguebot.core.utils.league_server import (
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 from leaguebot.image import wiring as image_wiring
 from leaguebot.results import wiring as results_wiring
+from leaguebot.results.services.publishing.preview_sources import ResultsPreviewSources
 from leaguebot.signup import wiring as signup_wiring
 from leaguebot.weather import wiring as weather_wiring
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.seasons.season_review_changes import DrawnPicture
     from leaguebot.core.services.modules.hub_service import HubOptions
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
@@ -122,6 +126,16 @@ def create_bot() -> LeagueBot:
     setattr(bot, "on_error", partial(on_event_error, bot))
 
     return bot
+
+
+class LeaguePreviewSources(ResultsPreviewSources):
+    """The image module's `PreviewSources`: results' share, with attendance's deadline."""
+
+    def __init__(self, deadlines: AttendancePreviewSources) -> None:
+        self._deadlines = deadlines
+
+    async def check_in_deadline(self, scheduled_at: datetime) -> datetime:
+        return await self._deadlines.check_in_deadline(scheduled_at)
 
 
 def register_module_switches(modules: "ModuleService") -> None:
@@ -436,22 +450,32 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
     weather_wiring.sign_up_to_season_end_steps(bot)
 
 
-async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
-    """Draw one picture of a season review to a file, and give where it is.
+async def _draw_review_picture(
+    bot: LeagueBot, picture: Mapping[str, Any], notices: list[str] | None = None,
+) -> "Path":
+    """Draw one picture of a season review to a file, and give where it is. The drawing's render
+    notices are added to *notices*, where one is handed, for the job that posts the picture to
+    record among its own lines.
 
     A lineup is the image module's, drawn obtaining each seated driver's missing portrait first,
     so a review is not judged on a placeholder the league will not see, and, mid-season, with its
     uncommitted drivers in it. A calendar is core's, of the division's rounds as they stand when it
-    is drawn. A picture the renderer will not draw raises, with the renderer's message.
+    is drawn. A picture the renderer will not draw raises `PictureNotDrawn`, with the renderer's
+    message and the notices it was drawn with.
     """
+    from leaguebot.core.services.seasons.season_review_changes import PictureNotDrawn
+
     kind, division_id = str(picture["kind"]), int(picture["division_id"])
     if kind == "lineup":
         lineup = await bot.image_drawing.draw_review_lineup(
             await league_guild(bot), division_id,
             include_uncommitted=bool(picture.get("include_uncommitted")),
         )
+        if notices is not None:
+            notices.extend(lineup.notices)
         if lineup.path is None:
-            raise RuntimeError(lineup.problem or "the lineup could not be drawn")
+            raise PictureNotDrawn(
+                lineup.problem or "the lineup could not be drawn", tuple(lineup.notices))
         return lineup.path
     from leaguebot.core.services.rounds import calendar_post_service
 
@@ -461,18 +485,26 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
         await calendar_post_service.tracks_by_name(bot.db_path),
         season_number=picture.get("season_number"),
     )
+    if notices is not None:
+        notices.extend(outcome.notices)
     if outcome.png_path is None:
-        raise RuntimeError(outcome.message or f"the {kind} could not be drawn")
+        raise PictureNotDrawn(
+            outcome.message or f"the {kind} could not be drawn", tuple(outcome.notices))
     return outcome.png_path
 
 
-def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], Path]":
+def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], DrawnPicture]":
     """The drawing `season.review.post` is handed: it draws a picture in the worker thread the
     change runs it in, its coroutine awaited on the bot's event loop (`await_from_worker`)."""
-    from leaguebot.core.services.seasons.season_review_changes import await_from_worker
+    from leaguebot.core.services.seasons.season_review_changes import (
+        DrawnPicture,
+        await_from_worker,
+    )
 
-    def drawing(picture: Mapping[str, Any]) -> "Path":
-        return await_from_worker(_draw_review_picture(bot, picture))
+    def drawing(picture: Mapping[str, Any]) -> "DrawnPicture":
+        notices: list[str] = []
+        path = await_from_worker(_draw_review_picture(bot, picture, notices))
+        return DrawnPicture(path, tuple(notices))
 
     return drawing
 
@@ -602,7 +634,7 @@ def register_change_types(bot: LeagueBot) -> None:
         steps_of_the_modules,
         wind_down_change,
     )
-    from leaguebot.image.services.image_render_service import discard_render
+    from leaguebot.image.services.render.image_render_service import discard_render
     from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(
@@ -1036,9 +1068,12 @@ async def build(settings: Settings) -> LeagueBot:
 
     from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
+    # The hooks are made first: the image drawing and attendance's hook below are handed the one
+    # that names a driver, before any module's wiring signs up on it.
+    _make_hooks(bot)
     bot.module_service = ModuleService(settings.db_path)
     register_module_switches(bot.module_service)
     bot.hub_options = HubOptions()
@@ -1047,16 +1082,17 @@ async def build(settings: Settings) -> LeagueBot:
     bot.image_validity_service = ImageValidityService(
         bot.image_config_service,
         bot.module_service,
+        bot.season_service,
     )
 
-    from leaguebot.image.services.image_render_service import ImageRenderService
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
 
     bot.image_render_service = ImageRenderService(
         bot.image_config_service,
         bot.image_validity_service,
     )
 
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     # Core's drawing protocol, image's own implementation, made once and declared on the
     # bot so that core reaches it without importing this module (architecture.md, "How
@@ -1065,11 +1101,12 @@ async def build(settings: Settings) -> LeagueBot:
     # their notices are reported, in one message, whichever change posts one. The
     # database path is what the lineup's drawing reads beyond the image module's own
     # services: the division, its committed seats, and whether nationality is collected.
-    bot.image_drawing = ImageDrawing(
+    image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
-        db_path=settings.db_path, bot=bot,
+        db_path=settings.db_path, driver_names_read=bot.driver_names_read,
     )
+    bot.image_drawing = image_drawing
 
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
@@ -1101,15 +1138,20 @@ async def build(settings: Settings) -> LeagueBot:
     )
     bot.attendance_service = AttendanceService(settings.db_path)
 
+    # What the image module's previews ask of the modules that own what they draw: results'
+    # sample sessions, rows, compounds and standings, and attendance's check-in deadline. The
+    # builder makes it, so that image reaches no module.
+    bot.preview_sources = LeaguePreviewSources(AttendancePreviewSources(settings.db_path))
+
     from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through, the team-role service and the lineup poster; results' change types reach
     # attendance through it alone.
     bot.attendance_after_review = AttendanceAfterReview(
-        bot, bot.placement_service, roles=bot.team_role_service, lineups=bot.lineup_poster
+        bot, bot.placement_service, roles=bot.team_role_service, lineups=bot.lineup_poster,
+        drawing=image_drawing, driver_names_read=bot.driver_names_read,
     )
-    _make_hooks(bot)
     _sign_up_to_confirmation_refused(bot)
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)

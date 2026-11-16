@@ -36,6 +36,7 @@ from leaguebot.core.utils.messages import chunk_message
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -240,6 +241,7 @@ async def post_phase_message(
     attachment=None,
     attachment_text: str = "",
     mentions: discord.AllowedMentions,
+    drawing: ImageDrawing | None = None,
 ) -> list[int]:
     """Post one weather occasion, and nothing else: the job that calls it records the message and
     deletes the one it supersedes.
@@ -263,7 +265,9 @@ async def post_phase_message(
     the message it rides on, which for a forecast is the division role mention and nothing
     besides, and for a mystery notice is empty. *mentions* is who either may notify, stated by the
     caller and sent with the text or the picture alike: the division's role for a forecast,
-    nobody for a mystery notice.
+    nobody for a mystery notice. *drawing* is the image module's, which a picture is discarded
+    through once the post has been sent or has failed: only it draws one, so none is handed where
+    there is no picture.
 
     Both manners go through the standing-post handler (`post_standing`), the text divided by
     `chunk_message` and one post for each part, the graphic as one.
@@ -292,10 +296,8 @@ async def post_phase_message(
         # One `finally` around both manners, discarding the graphic where there is one. Two of
         # its exits abandon the picture *before* the send — an unfetchable channel and one that
         # is not a text channel — and those are the paths a per-send cleanup would miss.
-        if attachment is not None:
-            from leaguebot.image.services.image_render_service import discard_attachment
-
-            discard_attachment(attachment)
+        if attachment is not None and drawing is not None:
+            drawing.discard_attachment(attachment)
 
 
 async def _forecast_channel(bot: "LeagueBot", channel_id: int) -> discord.TextChannel:

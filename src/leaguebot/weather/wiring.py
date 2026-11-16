@@ -15,6 +15,8 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.image.services.render.image_drawing import as_image_drawing
+
 if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.core.services.modules.module_service import ModuleService
@@ -135,7 +137,8 @@ def sign_up_to_amendment_steps(bot: "LeagueBot") -> None:
 
     bot.amendment_steps.subscribe(partial(
         forecast_changes.amendment_steps,
-        now=lambda: bot.change_queue.now(), seasons=bot.season_service, modules=bot.module_service,
+        now=lambda: bot.change_queue.now(), drawing=as_image_drawing(bot.image_drawing), seasons=bot.season_service,
+        modules=bot.module_service,
     ))
 
 
@@ -239,7 +242,8 @@ def sign_up_to_season_end_steps(bot: "LeagueBot") -> None:
     from leaguebot.weather.services import forecast_changes
 
     bot.season_end_steps.subscribe(partial(
-        forecast_changes.season_end_steps, now=lambda: bot.change_queue.now()
+        forecast_changes.season_end_steps, now=lambda: bot.change_queue.now(),
+        drawing=as_image_drawing(bot.image_drawing),
     ))
 
 
@@ -260,8 +264,12 @@ def register_change_types(bot: "LeagueBot") -> None:
         forecast_channel_setting,
     )
 
-    bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
-    bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(
+        forecast_change(now=lambda: bot.change_queue.now(), drawing=as_image_drawing(bot.image_drawing))
+    )
+    bot.change_queue.register(
+        forecast_clean_up_change(now=lambda: bot.change_queue.now(), drawing=as_image_drawing(bot.image_drawing))
+    )
     bot.change_queue.register(
         setting_change(deadline_setting(modules=bot.module_service, seasons=bot.season_service))
     )

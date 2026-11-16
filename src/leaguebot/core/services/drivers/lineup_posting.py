@@ -42,7 +42,9 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    drawn_lines_kept,
 )
+from leaguebot.core.services.drivers.division_seating import SeatOccupant, division_seating
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -60,13 +62,28 @@ from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.log_lines import drawn_notices_line
 
 log = logging.getLogger(__name__)
 
 POST_LINEUP = "post_lineup"
+
+#: The attribute under which a `StepFailedOnDiscord` the lineup's text post raises holds what the
+#: picture drawn before it came back with (the division's name, its render notices and the problem
+#: that put the text in place of a picture), for the job to keep on its stop (`carry_lineup_lines`).
+LINEUP_DRAWN_ATTRIBUTE = "lineup_drawn"
 LINEUP_POST = "lineup.post"
 
 _LIVE = ("SETUP", "ACTIVE")
+
+
+@dataclass(frozen=True)
+class SeatedDriver:
+    """One driver of the textual lineup: the team they race for and the seat's occupant."""
+
+    team_name: str
+    is_reserve: bool
+    occupant: SeatOccupant
 
 
 @dataclass
@@ -76,7 +93,8 @@ class LineupPosted:
     *previous* is the division's recorded lineup message as it stood when the post was made, and
     *form* is "image" for a picture and "text" for the embed. *problem* is the image module's
     words for why a picture could not be drawn, carried for the job's own line where the lineup
-    fell back to text, or None where nothing went wrong. Nothing is saved: the post job's
+    fell back to text, or None where nothing went wrong, and *notices* the drawing's words for what a
+    picture it drew survived, for the job's own line. Nothing is saved: the post job's
     `record` saves *message_id* (`lineup_posting.record_lineup_on`) and the job after it deletes
     *previous*.
     """
@@ -87,6 +105,10 @@ class LineupPosted:
     division_name: str
     form: str
     problem: str | None = None
+    notices: tuple[str, ...] = ()
+    #: Whether *problem* was Discord refusing the picture rather than the drawing failing: the
+    #: line then says the next change to the drivers posts it again, the template being sound.
+    refused: bool = False
 
 
 class LineupPoster:
@@ -153,8 +175,9 @@ class LineupPoster:
         Either way the lineup is posted before the message it replaces is deleted, by a job after
         it (Constitution XIV rule 8; image spec :706): this method deletes nothing and saves
         nothing, and a refusal raises `StepFailedOnDiscord` for the queue to stop on. A picture
-        Discord refuses stands aside, so the text is posted in the same try; only a refused text
-        post stops the lane.
+        Discord refuses stands aside, so the text is posted in the same try, carrying Discord's
+        reason as its problem for the job's line (image spec, "Lineup"); only a refused text post
+        stops the lane.
         """
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
@@ -198,12 +221,15 @@ class LineupPoster:
 
         image_path: Path | None = None
         problem: str | None = None
+        refused = False
+        notices: tuple[str, ...] = ()
         drawing = self._drawing
         # Asked before the drawing's catch-all: the gate stands aside from its own faults, and a
         # switch nobody signed up for is a fault in the bot's assembly, not a picture not drawn.
         if not as_text and drawing is not None and await drawing.lineup_wanted():
             try:
                 picture = await drawing.draw_lineup(guild, division_id)
+                notices = tuple(picture.notices)
                 if picture.problem is not None:
                     problem = picture.problem
                 elif picture.path is not None:
@@ -227,12 +253,16 @@ class LineupPoster:
                     new_msg_id = await post_standing(
                         channel, mentions=discord.AllowedMentions.none(), file=attachment
                     )
-                except discord.HTTPException:
-                    # Discord refused the picture: fall to the text in the same try.
+                except discord.HTTPException as exc:
+                    # Discord refused the picture: fall to the text in the same try, its reason
+                    # the problem the job's line names.
                     send_as_image = False
+                    problem = f"Discord refused the picture ({str(exc) or type(exc).__name__})"
+                    refused = True
                 else:
                     return LineupPosted(
                         new_msg_id, lineup_channel_id, lineup_message_id, div_name, "image",
+                        notices=notices,
                     )
                 finally:
                     attachment.close()
@@ -244,50 +274,46 @@ class LineupPoster:
                 )
             except discord.HTTPException as exc:
                 log.error("_refresh_lineup_post: failed to post embed: %s", exc)
-                raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
+                failure = StepFailedOnDiscord(f"the lineup could not be posted: {exc}")
+                setattr(failure, LINEUP_DRAWN_ATTRIBUTE, {
+                    "division_name": div_name, "notices": list(notices), "problem": problem,
+                    "refused": refused,
+                })
+                raise failure from exc
 
             return LineupPosted(
                 new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text",
-                problem=problem,
+                problem=problem, notices=notices, refused=refused,
             )
         finally:
             if drawing is not None:
                 drawing.discard_picture(drawn_path)
 
-    async def _lineup_rows(self, division_id: int) -> list[aiosqlite.Row]:
-        """The division's committed, assigned seats, for the textual lineup."""
-        async with get_connection(self._db_path) as db:
-            cur = await db.execute(
-                """
-                SELECT ti.full_name AS team_name, ti.is_reserve,
-                       dp.discord_user_id,
-                       dp.is_test_driver, dp.test_display_name
-                FROM driver_season_assignments dsa
-                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                JOIN team_instances ti ON ti.id = ts.team_instance_id
-                JOIN seasons s ON s.id = dsa.season_id
-                WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                  -- A placement not yet confirmed mid-season is not posted.
-                  AND (dsa.committed = 1 OR s.status != 'ACTIVE')
-                ORDER BY ti.is_reserve ASC, ti.full_name ASC
-                """,
-                (division_id,),
-            )
-            return list(await cur.fetchall())
+    async def _lineup_rows(self, division_id: int) -> list[SeatedDriver]:
+        """The division's committed, assigned drivers, for the textual lineup: regular teams
+        first, each group by team name."""
+        teams = await division_seating(
+            self._db_path, division_id, states=frozenset({"ASSIGNED"})
+        )
+        return [
+            SeatedDriver(team.full_name, team.is_reserve, seat.occupant)
+            for team in sorted(teams, key=lambda t: (t.is_reserve, t.full_name))
+            for seat in team.seats
+            if seat.occupant is not None
+        ]
 
     @staticmethod
-    def _lineup_embed(div_name: str, assign_rows: Any) -> discord.Embed:
+    def _lineup_embed(div_name: str, assign_rows: Sequence[SeatedDriver]) -> discord.Embed:
         """The textual lineup embed: regular teams, then reserves after a separator."""
         regular: dict[str, list[str]] = {}
         reserve: dict[str, list[str]] = {}
         for row in assign_rows:
-            uid = int(row["discord_user_id"])
+            uid = int(row.occupant.discord_user_id)
             mention = f"<@{uid}>"
-            if row["is_test_driver"] and row["test_display_name"]:
-                mention = f"<@{uid}> ({row['test_display_name']})"
-            target = reserve if row["is_reserve"] else regular
-            target.setdefault(row["team_name"], []).append(mention)
+            if row.occupant.is_test_driver and row.occupant.test_display_name:
+                mention = f"<@{uid}> ({row.occupant.test_display_name})"
+            target = reserve if row.is_reserve else regular
+            target.setdefault(row.team_name, []).append(mention)
 
         parts: list[str] = [
             f"**{t}**: {', '.join(labels)}" for t, labels in regular.items()
@@ -316,6 +342,7 @@ def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "division_name": posted.division_name, "form": posted.form, "problem": posted.problem,
+        "notices": list(posted.notices), "refused": posted.refused,
     }
 
 
@@ -327,20 +354,43 @@ _FIX_IT = (
     "drivers"
 )
 
+#: What puts right a lineup posted as text because Discord refused its picture: the template is
+#: not at fault, and the next change to the division's drivers posts the picture again.
+_POST_AGAIN = "the picture is posted with the next change to the division's drivers"
+
 
 def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tuple[str, ...]:
-    """The lineup posting job's own line where it fell back to text, as the calendar's does:
-    the member and the change it ran for, the division, the problem, and what puts it right.
+    """The lineup posting job's own lines, as the calendar's are: where the picture drawn came
+    back with render notices, one line naming the lineup and the division, which is where they
+    reach the log channel (the drawing writes none itself); and where it fell back to text, the
+    member and the change it ran for, the division, the problem, and what puts it right: the
+    template, or, where Discord refused the picture, nothing but the next change to the drivers.
     Empty where nothing went wrong."""
+    lines: tuple[str, ...] = ()
+    if result.get("notices"):
+        lines += (drawn_notices_line(
+            ctx.named, ctx.what, f"lineup — {result.get('division_name')}", result["notices"]
+        ),)
     problem = result.get("problem")
     if problem is None:
-        return ()
-    return (
+        return lines
+    return lines + (
         f"{ctx.named} | {ctx.what} | Lineup posted as text\n"
         f"  division: {result.get('division_name')}\n"
         f"  problem: {problem}\n"
-        f"  to put it right: {_FIX_IT}",
+        f"  to put it right: {_POST_AGAIN if result.get('refused') else _FIX_IT}",
     )
+
+
+def carry_lineup_lines(
+    ctx: StepContext, stop: StepFailedOnDiscord, earlier: tuple[str, ...]
+) -> StepFailedOnDiscord:
+    """*stop*, a refused lineup post, with the lines its picture was drawn with kept on it beside
+    *earlier*, those of the tries before (`drawn_lines_kept`): a picture is drawn on the first try
+    alone, so what it said must go with the stop for the try that posts to hand back, never lost
+    with a post Discord refused."""
+    drawn = getattr(stop, LINEUP_DRAWN_ATTRIBUTE, None)
+    return stop.carrying(earlier + (fallen_back_to_text_line(ctx, drawn) if drawn else ()))
 
 
 def _then(result: Mapping[str, Any] | None) -> tuple[PlannedStep, ...]:
@@ -398,16 +448,24 @@ def lineup_step(
         return ctx.step_payload.get(key, ctx.payload.get(key, default))
 
     async def run(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        earlier = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(earlier) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
-        posted = await lineups.refresh_lineup(
-            guild, int(value_of(ctx, "division_id")), as_text=ctx.tries > 0
-        )
+        try:
+            posted = await lineups.refresh_lineup(
+                guild, int(value_of(ctx, "division_id")), as_text=ctx.tries > 0
+            )
+        except StepFailedOnDiscord as stop:
+            raise carry_lineup_lines(ctx, stop, earlier) from stop.__cause__
         result = posted_result(posted)
         return StepResult(
-            result=result, lines=fallen_back_to_text_line(ctx, result), then=_then(result),
+            result=result, lines=earlier + fallen_back_to_text_line(ctx, result),
+            then=_then(result),
         )
 
     async def describe(ctx: StepContext) -> str:

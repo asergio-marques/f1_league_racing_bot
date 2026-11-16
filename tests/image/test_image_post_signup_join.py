@@ -35,6 +35,15 @@ USER_ID = 9_100_000_000_000_001
 TEST_USER_ID = 9_000_000_000_000_000_001
 
 
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
+
+
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "signup_join.db")
@@ -116,34 +125,34 @@ class TestSignupRecordsJoin:
 
         A mock driver has no signup record; its nationality is on its profile.
         """
-        from leaguebot.image.services.image_results_post import _nationalities
+        from leaguebot.core.services.drivers.driver_names import read_driver_nationalities
 
         await seed(db_path, nationality=nationality)
 
-        assert await _nationalities(bot, [user_id]) == {user_id: nationality}
+        assert await read_driver_nationalities(db_path, _hook(db_path), [user_id]) == {user_id: nationality}
 
     async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
         """The fourth site, which joined the phantom column until this was written."""
-        from leaguebot.image.services.image_verdict_post import _driver_nationality
+        from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 
         await _seed_driver(db_path, nationality="Dutch")
         await _seed_test_driver(db_path, nationality="Italian")
 
-        assert await _driver_nationality(db_path, USER_ID) == "Dutch"
-        assert await _driver_nationality(db_path, TEST_USER_ID) == "Italian"
+        assert await _driver_nationality(db_path, _hook(db_path), USER_ID) == "Dutch"
+        assert await _driver_nationality(db_path, _hook(db_path), TEST_USER_ID) == "Italian"
 
     async def test_the_verdict_lookup_yields_none_for_an_unknown_driver(self, db_path):
-        from leaguebot.image.services.image_verdict_post import _driver_nationality
+        from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 
-        assert await _driver_nationality(db_path, USER_ID) is None
+        assert await _driver_nationality(db_path, _hook(db_path), USER_ID) is None
 
     async def test_driver_names_reads_a_seeded_driver(self, bot, db_path):
         """The second corrected site, in the results path."""
-        from leaguebot.image.services.image_results_post import _driver_names
+        from leaguebot.core.services.drivers.driver_names import read_driver_names
 
         await _seed_driver(db_path, name="Ada Lovelace")
 
-        names = await _driver_names(bot, None, [USER_ID])
+        names = await read_driver_names(db_path, _hook(db_path), None, [USER_ID])
 
         assert names.get(USER_ID) == "Ada Lovelace"
 
@@ -224,7 +233,7 @@ class TestNationalityCollected:
         ("nationality_required", "expected"), [(0, False), (1, True)], ids=["off", "on"]
     )
     async def test_the_signup_switch_is_observed(self, db_path, nationality_required, expected):
-        from leaguebot.image.services.image_results_post import _nationality_collected
+        from leaguebot.core.services.drivers.driver_names import read_nationality_collected
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -234,19 +243,19 @@ class TestNationalityCollected:
             )
             await db.commit()
 
-        assert await _nationality_collected(db_path) is expected
+        assert await read_nationality_collected(db_path, _hook(db_path)) is expected
 
     async def test_a_league_with_no_row_collects(self, db_path):
         """The documented default, and what a league without the signup module gets."""
-        from leaguebot.image.services.image_results_post import _nationality_collected
+        from leaguebot.core.services.drivers.driver_names import read_nationality_collected
 
-        assert await _nationality_collected(db_path) is True
+        assert await read_nationality_collected(db_path, _hook(db_path)) is True
 
     async def test_an_unreadable_switch_collects(self, db_path):
         """A broken reader is not a reason to fail a render."""
-        from leaguebot.image.services.image_results_post import _nationality_collected
+        from leaguebot.core.services.drivers.driver_names import read_nationality_collected
 
-        assert await _nationality_collected("no/such/database.db") is True
+        assert await read_nationality_collected("no/such/database.db", _hook(db_path)) is True
 
 
 class TestTheTestModeSwitchStandsIn:
@@ -278,17 +287,17 @@ class TestTheTestModeSwitchStandsIn:
     async def test_the_test_mode_switch_governs_only_while_test_mode_is_on(
         self, db_path, test_mode, test_nationality, signup, expected
     ):
-        from leaguebot.image.services.image_results_post import _nationality_collected
+        from leaguebot.core.services.drivers.driver_names import read_nationality_collected
 
         await self._set(
             db_path, test_mode=test_mode, test_nationality=test_nationality, signup=signup
         )
 
-        assert await _nationality_collected(db_path) is expected
+        assert await read_nationality_collected(db_path, _hook(db_path)) is expected
 
     async def test_the_switch_defaults_on_for_a_server_already_configured(self, db_path):
         """Migration 042 fills the existing rows in place, so no wipe is needed."""
-        from leaguebot.image.services.image_results_post import _nationality_collected
+        from leaguebot.core.services.drivers.driver_names import read_nationality_collected
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -297,12 +306,20 @@ class TestTheTestModeSwitchStandsIn:
             )
             await db.commit()
 
-        assert await _nationality_collected(db_path) is True
+        assert await read_nationality_collected(db_path, _hook(db_path)) is True
 
     async def test_the_preview_reads_it_through_the_same_reader(self, bot, db_path):
-        """The preview's copy is a shim, not a second implementation."""
-        from leaguebot.image.services.image_preview_service import _nationality_collected as preview_read
+        """The preview's switch is core's reader's, not a second implementation."""
+        from leaguebot.image.services.preview.image_preview_service import (
+            PreviewContext,
+            _load_teams_and_drivers,
+        )
 
         await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
+        context = PreviewContext(
+            season_number=1, division_id=1, division_name="Pro", division_tier=1
+        )
 
-        assert await preview_read(bot) is False
+        await _load_teams_and_drivers(bot, context, _hook(db_path))
+
+        assert context.nationality_collected is False

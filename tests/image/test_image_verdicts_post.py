@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.results.services.review import verdict_announcement_service as vas
-from leaguebot.image.services.image_verdict_service import VerdictKind
+from leaguebot.image.models.verdict_kind import VerdictKind
 from tests.support.change_queue import in_a_job
 
 
@@ -30,9 +30,17 @@ class _Channel:
         self.allowed_mentions.append(allowed_mentions)
 
 
-class _Bot:
-    def __init__(self) -> None:
-        self.db_path = ":memory:"
+def _drawing():
+    """The image drawing a verdict is posted with, over services that are never asked: the
+    fixture below stands in for its gate, its resolution and its render."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    return ImageDrawing(
+        MagicMock(), MagicMock(), MagicMock(), renderer=MagicMock(), post_log=AsyncMock(),
+        db_path=":memory:",
+    )
 
 
 @pytest.fixture()
@@ -52,14 +60,13 @@ def stub_image_path(monkeypatch, tmp_path):
         "notices": [],
         "problem": None,
         "built": [],
-        "reported": [],
         "rendered": [],
     }
 
-    async def _enabled(_bot):
+    async def _wanted(_self, _aspect, _template_key=None):
         return state["enabled"]
 
-    async def _build(_bot, **kwargs):
+    async def _build(**kwargs):
         """Stands in for `build_drawing` wholesale; it is not a model of it.
 
         The resolver below names every mention after the penalised driver, which the real
@@ -67,7 +74,7 @@ def stub_image_path(monkeypatch, tmp_path):
         the fallback and on what was posted, never on a name — but do not read it as the
         production rule. tests/image/test_image_verdict_mentions.py holds that.
         """
-        from leaguebot.image.services.image_verdict_service import VerdictDrawing, resolve_mentions
+        from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing, resolve_mentions
 
         state["built"].append(kwargs)
         return VerdictDrawing(
@@ -87,8 +94,8 @@ def stub_image_path(monkeypatch, tmp_path):
             ),
         )
 
-    async def _render(_bot, drawing, **_kwargs):
-        from leaguebot.image.services.image_verdict_post import VerdictRender
+    async def _render(_config, _renderer, drawing, **_kwargs):
+        from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
 
         state["rendered"].append(drawing)
         return VerdictRender(
@@ -97,23 +104,17 @@ def stub_image_path(monkeypatch, tmp_path):
             problem=state["problem"],
         )
 
-    async def _report(_bot, what, detail):
-        state["reported"].append(("problem", what, detail))
-
-    async def _report_notices(_bot, what, notices):
-        state["reported"].append(("notices", what, list(notices)))
-
-    async def _team(_bot, _guild, **_kwargs):
+    async def _team(*_args, **_kwargs):
         return "Red Bull"
 
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
-    monkeypatch.setattr(image_verdict_post, "verdicts_enabled", _enabled)
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
-    monkeypatch.setattr(image_verdict_post, "report", _report)
-    monkeypatch.setattr(image_verdict_post, "report_notices", _report_notices)
-    monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
+    monkeypatch.setattr(vas, "team_name_for_entry", _team)
     return state
 
 
@@ -136,7 +137,7 @@ async def _send(channel, *, kind=VerdictKind.PENALTY, **overrides):
     )
     values.update(overrides)
     with in_a_job():
-        await vas._send_verdict(_Bot(), channel, **values)
+        return await vas._send_verdict(_drawing(), channel, **values)
 
 
 # ── T028: the message is the mention and nothing besides ──────────────────
@@ -183,7 +184,7 @@ def test_the_posting_module_persists_no_message_id():
     """No table records a verdict's message, so there is no state to reconcile."""
     import inspect
 
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     source = inspect.getsource(image_verdict_post)
     # SQL statements, not the prose: the module's own docstring explains why
@@ -195,7 +196,7 @@ def test_the_posting_module_persists_no_message_id():
 def test_the_posting_module_never_edits_or_deletes_a_message():
     import inspect
 
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     source = inspect.getsource(image_verdict_post)
     assert ".edit(" not in source
@@ -245,7 +246,7 @@ async def test_an_exception_in_the_image_path_still_posts_the_announcement(
     channel, stub_image_path, monkeypatch
 ):
     """A graphic never costs a league its announcement (XIV.7's precondition clause)."""
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("rasteriser exploded")
@@ -361,10 +362,9 @@ async def test_notices_are_reported_and_never_sent_to_the_verdicts_channel(
             detail="`justification` was cut at the floor.",
         )
     ]
-    await _send(channel)
+    sent = await _send(channel)
 
-    kinds = [entry[0] for entry in stub_image_path["reported"]]
-    assert "notices" in kinds
+    assert sent.lines, "the notice is handed back as a line of the job that posts the verdict"
 
     (content, _file), = channel.sent
     assert content == "<@123>", "no notice may reach a channel drivers read"
@@ -383,9 +383,9 @@ async def test_a_notice_names_the_season_division_round_session_and_driver(
             detail="`justification` was cut at the floor.",
         )
     ]
-    await _send(channel)
+    sent = await _send(channel)
 
-    _kind, subject, _payload = stub_image_path["reported"][0]
+    [subject] = sent.lines
     for named in ("Season 3", "Pro Division", "Round 7", "Feature Race", "Ada Lovelace"):
         assert named in subject
 
@@ -432,12 +432,12 @@ def _render_artifact(tmp_path):
 async def test_the_graphic_is_gone_once_the_verdict_has_posted(
     channel, stub_image_path, monkeypatch, tmp_path
 ):
-    from leaguebot.image.services import image_verdict_post
-    from leaguebot.image.services.image_verdict_post import VerdictRender
+    from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
 
     png = _render_artifact(tmp_path)
 
-    async def _render(_bot, drawing, **_kwargs):
+    async def _render(_config, _renderer, drawing, **_kwargs):
         return VerdictRender(png=png, notices=[], problem=None)
 
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
@@ -454,12 +454,12 @@ async def test_the_graphic_is_gone_when_the_send_fails(
     channel, stub_image_path, monkeypatch, tmp_path
 ):
     """The announcement raising must not leave the picture behind."""
-    from leaguebot.image.services import image_verdict_post
-    from leaguebot.image.services.image_verdict_post import VerdictRender
+    from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
 
     png = _render_artifact(tmp_path)
 
-    async def _render(_bot, drawing, **_kwargs):
+    async def _render(_config, _renderer, drawing, **_kwargs):
         return VerdictRender(png=png, notices=[], problem=None)
 
     async def _send_boom(content=None, *, file=None, **_kwargs):

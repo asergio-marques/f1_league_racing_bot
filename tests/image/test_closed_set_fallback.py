@@ -27,7 +27,7 @@ from leaguebot.image.models.image_constants import (
     is_closed_set_datum,
 )
 from leaguebot.image.utils.asset_resolver import AssetOutcome, normalise, resolve_asset
-from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
+from leaguebot.results.utils.tyre_compound import TYRE_COMPOUNDS
 from leaguebot.image.utils.svg_document import parse_svg_bytes
 from leaguebot.image.utils.svg_fill import FillSpec, fill
 

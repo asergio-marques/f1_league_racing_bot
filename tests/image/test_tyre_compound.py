@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.image.utils.asset_resolver import normalise
-from leaguebot.image.utils.tyre_compound import (
+from leaguebot.results.utils.tyre_compound import (
     TYRE_COMPOUNDS,
     TYRE_COMPOUND_ALIASES,
     canonicalise_tyre,

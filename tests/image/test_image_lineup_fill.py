@@ -16,7 +16,7 @@ from types import SimpleNamespace as NS
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_lineup_service import (
+from leaguebot.image.services.aspects.image_lineup_service import (
     LineupDataError,
     build_fill_spec,
     resolve_drawing,

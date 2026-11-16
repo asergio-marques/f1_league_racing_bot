@@ -1,6 +1,58 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-11-16 — v14.15.0 → v14.15.1: PATCH — Principle X, rule 3: a disable whose job cannot be removed is recorded as done, the failure beside it (issue #288)]
+  Version change    : 14.15.0 → 14.15.1
+  Bump rationale    : PATCH: the wording of the last amendment is corrected to what was built,
+                      narrowing nothing a league relies on. The disable takes effect, so it is
+                      recorded as done; the failure to remove the job is recorded beside it, as
+                      the image module's portrait toggles record a stored setting whose job
+                      could not be removed. Rule 2's contrast stands: an enable whose job cannot
+                      be armed records no success, the job the league asked for not running.
+
+  Modified sections :
+    - Principle X, rule 3 (Disable atomicity) — the exception's last condition, "and no success
+      is recorded", becomes "the disable recorded as done and the failure to remove the job
+      recorded beside it".
+
+  Added sections    : none.
+  Removed sections  : none.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Deferred / TODO   : none.
+
+[2026-11-16 — v14.14.0 → v14.15.0: MINOR — Principle X: the image module's kept configuration listed in full, and a scheduled job a module arms again later may fail to arm or to be removed without undoing its switch (issue #288)]
+  Version change    : 14.14.0 → 14.15.0
+  Bump rationale    : MINOR: guidance within one principle is materially expanded, without
+                      removing or redefining any. Two declared exceptions are added to rules 2
+                      and 3, each bound by its conditions (the league told, no success
+                      recorded); no prior guarantee is narrowed beyond them. The image module's
+                      list under rule 6 is brought up to what it keeps (owner, comment on #288:
+                      "Its counts of templates and asset folders are wrong, and it leaves out
+                      the portrait settings and the tier colours").
+
+  Modified sections :
+    - Principle X, rule 2 (Enable atomicity) — a scheduled job the module's own specification
+      declares armed again later (at the next start with the module enabled, or the next
+      enable) may fail to arm without the enable being rolled back, the league told what failed
+      and when it will be armed, and no success recorded. As the image module specification's
+      "Configuration" section has it for the daily portrait update.
+    - Principle X, rule 3 (Disable atomicity) — a scheduled job whose handler checks the
+      module-enabled flag and does nothing while the module is off may be left armed where its
+      removal fails, the league told so, and no success recorded. As the same section has it.
+    - Principle X, rule 6, the exception for configuration that cannot go stale — the image
+      module's list now names the sixteen template filenames, the eight asset directories, the
+      per-tier colour switch and tier colours, and the driver-portrait settings, and says why
+      the daily update's time of day qualifies (it names no job; the job is removed on disable
+      and armed again on enable). The rationale's "thirty such values" becomes "dozens".
+
+  Added sections    : none (sentences within three rules of an existing principle).
+  Removed sections  : none.
+  Templates checked : .specify/templates/plan-template.md, spec-template.md, tasks-template.md
+                      cite principles by number only — no change needed.
+  Docs checked      : docs/wip-specs/image_module_specification.md "Configuration" already
+                      states both job rules; README.md names no kept-settings list — no change.
+  Deferred / TODO   : none.
+
 [2026-10-25 — v14.13.0 → v14.14.0: MINOR — Principles VIII, IX and XI: a signup ends when its channel is gone or deleted, and a team role a grant cannot give stops the change queue (issue #439)]
   Version change    : 14.13.0 → 14.14.0
   Bump rationale    : MINOR: a permitted transition is added, as v10.1.0 added one, and guidance
@@ -6029,7 +6081,11 @@ The following rules MUST hold for every optional module:
    create or arm any associated scheduled jobs. Module-specific configuration (channels,
    roles, settings) MAY be set via dedicated commands independently of the enable action —
    before or after enabling. If any step of the enable operation itself fails, it MUST be
-   rolled back and no partial state left. Any module function that depends on configuration
+   rolled back and no partial state left, with one exception: a scheduled job that the module's
+   own specification declares armed again later (when the bot next starts with the module
+   enabled, or when the module is next enabled) MAY fail to arm without the enable being rolled
+   back, provided the league is told what failed and when the job will be armed, and no success
+   is recorded. Any module function that depends on configuration
    not yet provided MUST validate those prerequisites before executing and return a clear,
    actionable error; the module-enabled flag alone does not guarantee all configuration is
    complete.
@@ -6037,7 +6093,10 @@ The following rules MUST hold for every optional module:
    associated with that module, delete or archive its channel/role configuration, and post
    a human-readable notice to the log channel. Historical data generated by the module
    (phase results, audit entries, signup records) MUST be retained; only live/scheduled
-   artifacts are removed.
+   artifacts are removed. A scheduled job whose handler checks the module-enabled flag, and does
+   nothing while the module is disabled, MAY be left armed where its removal fails, provided the
+   league is told that the disable stands and that the job does nothing while the module is
+   disabled, the disable recorded as done and the failure to remove the job recorded beside it.
 4. **Scheduling guard**: Scheduled jobs (e.g., weather phase timers) MUST only be created or
    re-armed when the relevant module is enabled. On bot restart, the bot MUST check module
    state before re-arming any job.
@@ -6057,13 +6116,19 @@ The following rules MUST hold for every optional module:
    message or scheduled job does NOT qualify and remains subject to the clearing rule above.
    A module claiming this exception MUST enumerate the qualifying values in its feature
    specification. The **Image generation module** claims it for the whole of its
-   configuration: template and asset directories, template filenames, time zone, clock and
-   date formats, the fastest-lap colour, and the per-aspect output toggles.
+   configuration: the template directory and the sixteen template filenames; the eight asset
+   directories (tracks, teams, flags, driver portraits, markers, weather icons, tyres and
+   division logos); the time zone and the clock and date formats; the fastest-lap colour; the
+   per-tier colour switch and each division's tier colours; the per-aspect output toggles; and
+   the driver-portrait settings (whether portraits are used, whether they are fetched before a
+   render, whether they are updated daily, and the time of day of that update). The time of day
+   qualifies because it names no job: the daily update it governs is a scheduled job, removed
+   on disable and armed again on enable (rules 3 and 4), while the stored time stays.
 
    **Rationale for the exception**: The clearing rule exists so that a re-enabled module
    cannot act on stale bindings to server objects that may have been deleted or reassigned
    while it was off. A filesystem path or a colour has no such binding — it is as true after
-   a disable as before it, and discarding thirty such values punishes a league admin for
+   a disable as before it, and discarding dozens of such values punishes a league admin for
    toggling a module off to diagnose a problem.
 
 **Rationale**: The bot's growth toward full league management requires a clean separation
@@ -9009,4 +9074,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.14.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-25
+**Version**: 14.15.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-16

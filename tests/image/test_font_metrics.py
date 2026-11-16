@@ -131,6 +131,77 @@ def test_measurement_falls_back_rather_than_raising():
     assert width > 0
 
 
+def test_a_face_whose_metrics_cannot_be_read_is_a_fault_not_an_estimate(tmp_path, caplog):
+    """A face resolved to a file that is no font: measuring a name in it raises, so the render
+    falls back as on any fault rather than drawing text that may overflow its box, and nothing
+    is written to the host's log on the way."""
+    broken = tmp_path / "Broken.ttf"
+    broken.write_bytes(b"this is not a font")
+    resolved = ResolvedFont("Broken", broken, "Broken", substituted=False)
+
+    with caplog.at_level("WARNING"), pytest.raises(Exception):
+        measure("Verstappen", resolved, 20)
+
+    assert not caplog.records
+
+
+def _a_font(path, family: str, *, weight: int | None, os2: str = "absent") -> None:
+    """A minimal TrueType font of *family* at *path*: OS/2 weight class *weight*; where *weight*
+    is None, no OS/2 table at all (*os2* "absent") or one too short to read (*os2*
+    "unreadable")."""
+    from fontTools.fontBuilder import FontBuilder  # noqa: PLC0415
+    from fontTools.pens.ttGlyphPen import TTGlyphPen  # noqa: PLC0415
+
+    builder = FontBuilder(1000, isTTF=True)
+    builder.setupGlyphOrder([".notdef", "A"])
+    builder.setupCharacterMap({ord("A"): "A"})
+    builder.setupGlyf({name: TTGlyphPen(None).glyph() for name in (".notdef", "A")})
+    builder.setupHorizontalMetrics({".notdef": (500, 0), "A": (600, 0)})
+    builder.setupHorizontalHeader(ascent=800, descent=-200)
+    builder.setupNameTable({"familyName": family,
+                            "styleName": "Regular" if weight is None else "Bold"})
+    builder.setupOS2(usWeightClass=weight or 400, usWidthClass=5)
+    builder.setupPost()
+    if weight is None:
+        del builder.font["OS/2"]
+        if os2 == "unreadable":
+            from fontTools.ttLib.tables.DefaultTable import DefaultTable  # noqa: PLC0415
+
+            corrupt = DefaultTable("OS/2")
+            corrupt.data = b"\x00\x01"
+            builder.font["OS/2"] = corrupt
+    builder.save(str(path))
+
+
+@pytest.mark.parametrize("os2", ["absent", "unreadable"])
+def test_a_regular_face_whose_os2_table_cannot_be_read_is_still_measured_as_the_regular(
+    tmp_path, monkeypatch, os2,
+):
+    """The only fonts on the host are one family's two faces: its regular face carries no OS/2
+    table, or one that is there but too short to read, and its bold face one of weight 700. A
+    regular request resolves to the regular face, which the face index keeps as regular, normal
+    width and upright, rather than to the bold face, against which a regular line would be
+    measured too wide."""
+    from leaguebot.image.utils import font_metrics  # noqa: PLC0415
+
+    regular, bold = tmp_path / "Probe-Regular.ttf", tmp_path / "Probe-Bold.ttf"
+    _a_font(regular, "Probe Sans", weight=None, os2=os2)
+    _a_font(bold, "Probe Sans", weight=700)
+    monkeypatch.setattr(font_metrics, "_FONT_DIRS_WINDOWS", (tmp_path,))
+    monkeypatch.setattr(font_metrics, "_FONT_DIRS_POSIX", (tmp_path,))
+    font_metrics.clear_cache()
+    font_metrics.face_index.cache_clear()
+    try:
+        faces = font_metrics.face_index().get(("probe sans", False), [])
+        chosen = font_metrics.resolve_family("Probe Sans", bold=False).path
+    finally:
+        font_metrics.clear_cache()
+        font_metrics.face_index.cache_clear()
+
+    assert (400, 5, regular) in faces, faces
+    assert chosen == regular
+
+
 def test_unknown_glyphs_do_not_raise(index):
     resolved = resolve_family(next(iter(index)))
     assert measure("中文\U0001f600", resolved, 20) >= 0
@@ -278,7 +349,7 @@ def test_measurement_errs_narrow_however_the_family_was_declared(where, template
 
     from lxml import etree  # noqa: PLC0415
 
-    from leaguebot.image.services.image_render_service import find_converter  # noqa: PLC0415
+    from leaguebot.image.services.render.image_render_service import find_converter  # noqa: PLC0415
     from leaguebot.image.utils.svg_document import computed_style, stylesheet  # noqa: PLC0415
 
     executable = find_converter()

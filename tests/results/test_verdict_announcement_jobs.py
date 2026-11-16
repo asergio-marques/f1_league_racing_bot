@@ -132,18 +132,22 @@ def _verdicts(league: ReviewLeague) -> list[str]:
 def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
     """Switch the verdict graphic on, and capture what each verdict asks it to draw without a
     rasteriser. Gives the list of the drawings' arguments, in order."""
-    from leaguebot.image.services import image_verdict_post
-    from leaguebot.image.services.image_verdict_post import VerdictRender
-    from leaguebot.image.services.image_verdict_service import VerdictDrawing
+    from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
+    from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+    from leaguebot.results.services.review import verdict_announcement_service as vas
 
     png = tmp_path / "verdict.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     built: list[dict[str, Any]] = []
 
-    async def _enabled(_bot: Any) -> bool:
-        return True
+    real_wanted = ImageDrawing.aspect_wanted
 
-    async def _build(_bot: Any, **kwargs: Any) -> Any:
+    async def _wanted(self: Any, aspect: str, template_key: str | None = None) -> bool:
+        return True if aspect == "verdicts" else await real_wanted(self, aspect, template_key)
+
+    async def _build(**kwargs: Any) -> Any:
         built.append(kwargs)
         return VerdictDrawing(
             kind=kwargs["kind"], season_number=kwargs["season_number"],
@@ -153,21 +157,16 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
             description=kwargs["description_text"], justification=kwargs["justification_text"],
         )
 
-    async def _render(_bot: Any, _drawing: Any, **_kwargs: Any) -> Any:
+    async def _render(_config: Any, _renderer: Any, _drawing: Any, **_kwargs: Any) -> Any:
         return VerdictRender(png=png, notices=[], problem=None)
 
-    async def _quiet(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
-    async def _team(_bot: Any, _guild: Any, **_kwargs: Any) -> str:
+    async def _team(*_args: Any, **_kwargs: Any) -> str:
         return "Red Bull"
 
-    monkeypatch.setattr(image_verdict_post, "verdicts_enabled", _enabled)
+    monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
-    monkeypatch.setattr(image_verdict_post, "report", _quiet)
-    monkeypatch.setattr(image_verdict_post, "report_notices", _quiet)
-    monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
+    monkeypatch.setattr(vas, "team_name_for_entry", _team)
     return built
 
 
@@ -403,8 +402,9 @@ async def _announced(league: ReviewLeague) -> int:
 async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp_path):
     """The verdicts channel refuses the written heading alone. The heading is a job of its own,
     so the queue stops at it and no verdict goes out ahead of it (owner, Gate 2, 2026-10-05:
-    "Heading stops the queue"). Once a league admin discards it, both verdicts are announced
-    beneath no heading, and the approval is recorded as incomplete."""
+    "Heading stops the queue"), and the stop notice names the fault in the core specification's
+    plain words, that Discord refused or failed a request. Once a league admin discards it, both
+    verdicts are announced beneath no heading, and the approval is recorded as incomplete."""
     league = await review_league(tmp_path)
     league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content == HEADING
     interaction = await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
@@ -413,6 +413,7 @@ async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp
     assert await stopped_at(league) == "announce_heading"
     assert league.sent_to(VERDICTS_CHANNEL) == []
     assert await _announced(league) == 0
+    assert "Discord refused or failed a request" in league.log(), league.log()
 
     # The channel would take the heading now, so a build that tried it again behind the
     # discarded job would show here.
@@ -433,9 +434,9 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
     """The banner's poster raising, a fault in the bot, stops the queue at the heading like any
     failure; no verdict goes out until it is cleared. A Retry once it works posts the heading
     first, then both verdicts beneath it."""
-    from leaguebot.image.services import image_verdict_banner_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-    real = image_verdict_banner_post.try_post
+    real = ImageDrawing.draw_banner
     broken = {"on": True}
 
     async def _boom(*args: Any, **kwargs: Any) -> Any:
@@ -443,7 +444,7 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
             raise RuntimeError("the banner could not be posted")
         return await real(*args, **kwargs)
 
-    monkeypatch.setattr(image_verdict_banner_post, "try_post", _boom)
+    monkeypatch.setattr(ImageDrawing, "draw_banner", _boom)
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
     await run_queue(league.bot)
@@ -464,21 +465,19 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
 async def test_a_banner_that_cannot_be_drawn_heads_the_verdicts_in_words(tmp_path, monkeypatch):
     """The banner switched on, its render failing for want of a rasteriser: the verdicts are
     headed by the written heading instead, posted first, and the verdict follows it."""
-    from leaguebot.image.services import image_verdict_banner_post as banner
+    from leaguebot.image.services.aspects import image_verdict_banner_post as banner
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-    async def _enabled(_bot: Any) -> bool:
-        return True
+    real_wanted = ImageDrawing.aspect_wanted
 
-    async def _render(_bot: Any, _drawing: Any, **_kwargs: Any) -> Any:
+    async def _wanted(self: Any, aspect: str, template_key: str | None = None) -> bool:
+        return True if aspect == "verdict_banner" else await real_wanted(self, aspect, template_key)
+
+    async def _render(_config: Any, _renderer: Any, _drawing: Any, **_kwargs: Any) -> Any:
         return banner.BannerRender(png=None, problem="RASTERISER")
 
-    async def _quiet(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
-    monkeypatch.setattr(banner, "banner_enabled", _enabled)
+    monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(banner, "render_banner", _render)
-    monkeypatch.setattr(banner, "report", _quiet)
-    monkeypatch.setattr(banner, "report_notices", _quiet)
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -587,7 +586,9 @@ def _real_attendance_hook(bot: Any, _db_path: str) -> Any:
         setattr(placement, name, AsyncMock(return_value=None))
     lineups = MagicMock()
     lineups.refresh_lineup = AsyncMock(return_value=None)
-    return AttendanceAfterReview(bot, placement, lineups=lineups)
+    return AttendanceAfterReview(
+        bot, placement, lineups=lineups, drawing=bot.image_drawing
+    )
 
 
 def _sheet_stop(league: ReviewLeague) -> str:
@@ -674,6 +675,74 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
 ATTENDANCE_CHANNEL = 707
 
 
+#: The notice the review's attendance sheet is drawn with, a flag falling back.
+REVIEW_SHEET_NOTICE = "no `flag` image for “Lewis”"
+
+
+async def test_a_review_s_refused_attendance_sheet_s_notice_reaches_the_log_once_when_retried(
+    tmp_path, monkeypatch,
+):
+    """Attendance is on, with its real hook, and Pro has an attendance channel and Lewis seated in
+    it. The image module is asked to draw the sheet, and draws it with one notice, a flag falling
+    back. Pro's attendance channel refuses every send (Missing Access). Alex approves round 3's
+    reports and the queue stops at the attendance sheet; the channel is let accept and a Retry
+    posts the sheet as text. The queue runs to the end, and the log channel carries the notice
+    once, in a line naming the sheet drawn (Pro, attendance after the round), never lost with the
+    refused try."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    picture = tmp_path / "sheet.png"
+    picture.write_bytes(b"\x89PNG\r\n\x1a\n")
+    asked: list[str] = []
+
+    async def _wanted(_self: Any) -> bool:
+        return True
+
+    async def _draw(_self: Any, _sheet: Any, *, what: str) -> Any:
+        asked.append(what)
+        return (discord.File(str(picture), filename=picture.name),
+                (f"⚠️ {what} — {REVIEW_SHEET_NOTICE}",))
+
+    monkeypatch.setattr(ImageDrawing, "attendance_wanted", _wanted)
+    monkeypatch.setattr(ImageDrawing, "draw_attendance_sheet", _draw)
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
+    async with get_connection(league.db_path) as db:
+        seat = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (3001, 1, ?)",
+            (LEWIS_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id) VALUES (?, 1, ?, ?)",
+            (LEWIS_PROFILE, DIVISION_ID, seat.lastrowid),
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL)),
+        )
+        await db.commit()
+    league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
+    league.channel(ATTENDANCE_CHANNEL).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "attendance_sheet"
+    [what] = asked
+    assert what.startswith("Pro — attendance after round "), what
+    league.channel(ATTENDANCE_CHANNEL).send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.sent_to(ATTENDANCE_CHANNEL)
+    said = [line for line in league.bot.log_channel.sent if REVIEW_SHEET_NOTICE in line]
+    assert len(said) == 1 and said[0].count(REVIEW_SHEET_NOTICE) == 1, league.log()
+    assert what in said[0], said[0]
+
+
 async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
     """Attendance is on, with its real hook, the real placement service and the real lineup
     poster (roles granted and revoked by doubles on the real team-role service), and division 11
@@ -695,7 +764,8 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
         roles.revoke_roles = AsyncMock()
         placement = PlacementService(db_path, roles=roles)
         return AttendanceAfterReview(bot, placement, roles=roles,
-                                     lineups=LineupPoster(db_path))
+                                     lineups=LineupPoster(db_path),
+                                     drawing=bot.image_drawing)
 
     league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     async with get_connection(league.db_path) as db:
@@ -761,7 +831,8 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     def _hook(bot: Any, db_path: str) -> Any:
         roles = TeamRoleService(db_path)
         return AttendanceAfterReview(bot, PlacementService(db_path, roles=roles), roles=roles,
-                                     lineups=LineupPoster(db_path))
+                                     lineups=LineupPoster(db_path),
+                                     drawing=bot.image_drawing)
 
     league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     await _no_reserve_team(league)
@@ -840,7 +911,7 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     the host alone. The verdict is announced as text naming Lewis, the queue runs to the end, and
     the log channel gains one line naming round 3 of Pro, the verdict picture, the fault, and
     that the verdict went out as text."""
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     fault = "the verdict picture's file could not be opened"
 
@@ -863,3 +934,184 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     assert "text" in line and fault in line, line
     assert ("to put it right: fix the verdict template, then, once the round is final, amend "
             "the round with `/results rounds amend`") in line, line
+
+
+# ---------------------------------------------------------------------------
+# A verdict's or a banner's render fault is named by its own picture in the log channel
+# ---------------------------------------------------------------------------
+
+#: The detail of the template fault the render below fails on.
+RENDER_FAULT = "the template declares no `driver_name` field"
+
+#: Each picture: the toggle `/images config toggle` offers it under, its template, and the name
+#: its fault line is headed with.
+_FAULTED_PICTURES = [
+    ("verdicts", "verdicts_template", "Verdicts"),
+    ("verdict_banner", "verdict_banner_template", "Verdict banner"),
+]
+
+
+@pytest.mark.parametrize(
+    ("aspect", "template", "name"), _FAULTED_PICTURES,
+    ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
+)
+async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
+    tmp_path, aspect, template, name,
+):
+    """Image generation is on with the *aspect* picture alone switched on and its template
+    valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
+    module's render of that picture fails on a template fault. The verdict is announced naming
+    Lewis and the queue runs to the end; the log channel gives the fault on a line headed
+    "⚠️ <name> image", the name `/images config toggle` offers, and nothing in the log calls it
+    a results image."""
+    from leaguebot.image.models.image_module import Problem, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={template: MagicMock(valid=True)}
+    )
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        problem=Problem(kind="TEMPLATE_INVALID", detail=RENDER_FAULT, template_key=template),
+    ))
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    [verdict] = _verdicts(league)
+    assert f"<@{LEWIS}>" in verdict
+    log = league.log()
+    [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+    assert line.startswith(f"⚠️ {name} image — "), line
+    assert "Results image" not in log, log
+
+
+#: The detail of the one render notice the drawing below comes back with.
+NOTICE_DETAIL = "no `flag` image for “Lewis”"
+
+
+@pytest.mark.parametrize(
+    ("aspect", "template", "name"), _FAULTED_PICTURES,
+    ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
+)
+async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_round(
+    tmp_path, aspect, template, name,
+):
+    """Image generation is on with the *aspect* picture alone switched on and its template
+    valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
+    module's render of that picture is drawn with one notice, a flag falling back. The verdict is
+    announced naming Lewis and the queue runs to the end; the log channel carries the notice
+    once, in a block whose heading names Pro and round 3, and no block without a heading carries
+    it a second time."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={template: MagicMock(valid=True)}
+    )
+    picture = tmp_path / f"{aspect}.png"
+    picture.write_bytes(b"\x89PNG")
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        png_paths=[picture], notices=[RenderNotice(
+            image_type=template, notice_kind="ASSET_FALLBACK_USED", detail=NOTICE_DETAIL,
+            field_id="flag",
+        )],
+    ))
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 3" in heading.lower(), block
+
+
+@pytest.mark.parametrize(
+    ("aspect", "template", "name"), _FAULTED_PICTURES,
+    ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
+)
+async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_is_retried(
+    tmp_path, aspect, template, name,
+):
+    """Image generation is on with the *aspect* picture alone switched on and its template valid,
+    and the verdicts channel refuses every post carrying a picture. Alex approves a five-second
+    penalty for Lewis in round 3 of Pro; the picture is drawn with one notice, a flag falling back,
+    and Discord refuses its post, stopping the queue. A Retry posts it in words: the queue runs to
+    the end, Lewis's verdict is announced, and the log channel carries the notice once, in a block
+    whose heading names Pro and round 3, never lost with the refused try."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={template: MagicMock(valid=True)}
+    )
+    picture = tmp_path / f"{aspect}.png"
+
+    async def _render(*_args: Any, **_kwargs: Any) -> Any:
+        picture.write_bytes(b"\x89PNG")
+        return RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type=template, notice_kind="ASSET_FALLBACK_USED", detail=NOTICE_DETAIL,
+            field_id="flag",
+        )])
+
+    league.bot.image_render_service.render = AsyncMock(side_effect=_render)
+    league.channel(VERDICTS_CHANNEL).fail_when = (
+        lambda _content, kwargs: kwargs.get("file") is not None
+    )
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is not None
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 3" in heading.lower(), block
+
+
+async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_when_its_text_post_is_refused(
+    tmp_path,
+):
+    """Image generation is on with the verdict picture alone switched on and its template valid,
+    and its render fails on a template fault, so the verdict is to be announced as text. The
+    verdicts channel refuses every post on the first try, the text included, stopping the queue;
+    the channel is let accept and a Retry announces the verdict. The log channel carries the
+    picture's fault line, headed "⚠️ Verdicts image", once: it is not lost with the refused try."""
+    from leaguebot.image.models.image_module import Problem, RenderOutcome
+
+    league = await review_league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"verdicts": True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={"verdicts_template": MagicMock(valid=True)}
+    )
+    league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+        problem=Problem(kind="TEMPLATE_INVALID", detail=RENDER_FAULT,
+                        template_key="verdicts_template"),
+    ))
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda _content, _kwargs: True
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is not None
+    league.channel(VERDICTS_CHANNEL).fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
+    log = league.log()
+    lines = [line for line in log.splitlines() if RENDER_FAULT in line]
+    assert len(lines) == 1, log
+    assert lines[0].startswith("⚠️ Verdicts image — "), lines[0]

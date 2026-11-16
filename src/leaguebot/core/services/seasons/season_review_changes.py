@@ -65,7 +65,7 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 import aiosqlite
 import discord
@@ -96,7 +96,7 @@ from leaguebot.core.services.settings.channel_registry_service import as_text_ch
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
+from leaguebot.core.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -122,9 +122,28 @@ DRAWING_NOTICE = "\U0001f3a8 Drawing the graphics for this review \u2014 one mom
 #: How a picture's message is headed, by the kind of picture.
 PICTURE_HEADINGS = {"calendar": "\U0001f4c5 **Calendar**", "lineup": "\U0001f3ce\ufe0f **Lineup**"}
 
-#: Draws a review's picture to a file, raising where it will not draw. It is synchronous and the
-#: change runs it in a worker thread; the builder makes it.
-ReviewDrawing = Callable[[Mapping[str, Any]], Path]
+class DrawnPicture(NamedTuple):
+    """A review's picture drawn to a file, with the drawing's words for what it survived (its
+    render notices), for the job that posts it to record among its own lines."""
+
+    path: Path
+    notices: tuple[str, ...] = ()
+
+
+class PictureNotDrawn(RuntimeError):
+    """A review's picture the renderer would not draw, with the render notices it was drawn with
+    before it failed, which the job that posts the picture records among its own lines beside the
+    fault: what a drawing noticed is not lost with the picture."""
+
+    def __init__(self, fault: str, notices: tuple[str, ...] = ()) -> None:
+        super().__init__(fault)
+        self.notices = notices
+
+
+#: Draws a review's picture to a file, raising where it will not draw: the file alone, or the file
+#: with the notices it was drawn with. It is synchronous and the change runs it in a worker
+#: thread; the builder makes it.
+ReviewDrawing = Callable[[Mapping[str, Any]], Path | DrawnPicture]
 #: The view of the question's Approve button, made from the post's payload by the builder's
 #: factory; not made where a picture did not draw.
 ApproveViewFactory = Callable[[dict[str, Any]], discord.ui.View]
@@ -468,13 +487,17 @@ def season_review_post_change(
         picture = ctx.step_payload["picture"]
         fault: str | None = None
         drawn: Path | None = None
+        notices: tuple[str, ...] = ()
         # The worker thread inherits the loop recorded here (`await_from_worker`).
         _HOST_LOOP.set(asyncio.get_running_loop())
         try:
-            drawn = await asyncio.to_thread(drawing, picture)
+            made = await asyncio.to_thread(drawing, picture)
+            drawn, notices = (made.path, made.notices) if isinstance(made, DrawnPicture) else (made, ())
         except Exception as exc:  # noqa: BLE001 — a render fault is no stop, it withholds Approve
             log.error("season review: %s did not draw: %s", picture["name"], exc, exc_info=True)
             fault = str(exc) or type(exc).__name__
+            if isinstance(exc, PictureNotDrawn):
+                notices = exc.notices
         message: discord.Message | None = None
         if drawn is not None:
             attachment = discord.File(str(drawn), filename=drawn.name)
@@ -494,14 +517,21 @@ def season_review_post_change(
                 channel, str(picture["text"]), mentions=_NO_MENTIONS
             )
         result: dict[str, Any] = {"new": message.id, "channel_id": channel.id}
+        # What the picture said when it was drawn is a line of this job, once, naming the picture:
+        # the drawing writes nothing to the log channel itself.
+        lines: tuple[str, ...] = (
+            (drawn_notices_line(
+                ctx.named, str(ctx.payload["review"]), str(picture["name"]), notices),)
+            if notices else ()
+        )
         if fault is None:
-            return StepResult(result=result)
+            return StepResult(result=result, lines=lines)
         result["fault"] = fault
         line = (
             f"{ctx.named} | {ctx.payload['review']} | Picture not drawn\n"
             f"  picture: {picture['name']}\n  fault: {fault}"
         )
-        return StepResult(result=result, lines=(line,))
+        return StepResult(result=result, lines=(*lines, line))
 
     shared_delete = standing_posts.delete_replaced_step(DELETE_DRAWING_NOTICE)
 

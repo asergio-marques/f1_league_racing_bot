@@ -12,6 +12,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.change import PlannedStep
+from leaguebot.core.models.driver_names import SignupName, SignupNames
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states
 from leaguebot.core.services.upkeep.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
@@ -167,13 +168,26 @@ class SignupModuleService:
             for driver in drivers
         ]
 
-    async def driver_signups(self, profile_ids: Iterable[int]) -> dict[int, aiosqlite.Row]:
+    async def driver_signups(
+        self, profile_ids: Iterable[int], season_id: int | None = None
+    ) -> dict[int, aiosqlite.Row]:
         """The signup that is each driver's, keyed by their profile id, as `driver_signup_on`
-        chooses it across the accounts core holds for them. A driver with none is absent."""
+        chooses it across the accounts core holds for them. A driver with none is absent.
+
+        Where *season_id* is named, the driver's signup to that season is the one that stands for
+        them, and where they made none to it, their latest of all: a signup is kept, never
+        overwritten, so a driver who has signed up in several seasons is named by what they gave
+        for the season asked about.
+        """
         found: dict[int, aiosqlite.Row] = {}
         async with get_connection(self._db_path) as db:
             for profile_id in profile_ids:
-                row = await driver_signup_on(db, await accounts_of_profile(db, profile_id))
+                accounts = await accounts_of_profile(db, profile_id)
+                row = None
+                if season_id is not None:
+                    row = await driver_signup_on(db, accounts, season_id=season_id)
+                if row is None:
+                    row = await driver_signup_on(db, accounts)
                 if row is not None:
                     found[profile_id] = row
         return found
@@ -1062,19 +1076,28 @@ async def driver_signup_on(
 
 
 async def driver_names(
-    service: SignupModuleService, profile_ids: Iterable[int]
-) -> dict[int, str]:
-    """The name each driver of *profile_ids* gave in their signup, keyed by profile id.
+    service: SignupModuleService, profile_ids: Iterable[int], season_id: int | None = None
+) -> SignupNames:
+    """How each driver of *profile_ids* is named by their signup, keyed by profile id, and whether
+    the league collects a driver's nationality.
 
-    Subscribed to core's `driver_names_read`. A driver with no signup, or whose signup holds no
-    name, is absent from the answer, and core names them by their account. Reads only, and whatever
-    the module's switch says: a signup kept while the module was on still names its driver.
+    Subscribed to core's `driver_names_read`. A driver with no signup is absent from the answer,
+    and core names them by their account. A driver is named by their signup to *season_id*, else
+    their latest (`SignupModuleService.driver_signups`). Reads only, and whatever the module's
+    switch says: a signup kept while the module was on still names its driver, and the setting is
+    handed back with none asked for.
     """
-    return {
-        profile_id: row["server_display_name"]
-        for profile_id, row in (await service.driver_signups(profile_ids)).items()
-        if row["server_display_name"]
-    }
+    return SignupNames(
+        drivers={
+            profile_id: SignupName(
+                name=row["server_display_name"] or None,
+                username=row["discord_username"] or None,
+                nationality=row["nationality"] or None,
+            )
+            for profile_id, row in (await service.driver_signups(profile_ids, season_id)).items()
+        },
+        nationality_collected=(await service.get_settings()).nationality_required,
+    )
 
 
 async def driver_turned_down_on(db: aiosqlite.Connection, driver_profile_id: int) -> None:

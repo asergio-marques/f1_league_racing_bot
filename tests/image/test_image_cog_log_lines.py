@@ -24,13 +24,14 @@ from discord import app_commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.messages import chunk_message
-from leaguebot.image.cogs.image_cog import ImageCog, TierPaletteModal
+from leaguebot.image.cogs.config_commands import TierPaletteModal
+from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import (
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
     TEMPLATE_COMMAND_NAMES,
 )
-from leaguebot.image.services.image_validity_service import Problem
+from leaguebot.image.services.validity.image_validity_service import Problem
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
     assert_one_line,
@@ -89,7 +90,7 @@ def _argument(parameter: app_commands.Parameter):
 @pytest.fixture(autouse=True)
 def _rasteriser_present(monkeypatch):
     """The rasteriser taken as present wherever a check asks for it: no test here draws."""
-    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.render.image_render_service as render
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
 
@@ -192,7 +193,7 @@ async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts(tmp_path, monke
     """`/images config template-directory` on a folder the survey finds six long faults in: the
     refusal names every one and the folder searched, in more than one part, each fitting one
     Discord message."""
-    import leaguebot.image.services.image_validity_service as validity
+    import leaguebot.image.services.validity.image_validity_service as validity
 
     problems = [
         Problem(
@@ -404,11 +405,11 @@ async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path, mo
     the path raises a bug's `ValueError` rather than a refusal. It goes on as a fault, out of the
     command, and is not answered to the manager as a refusal: the log channel takes no "⛔" line
     and nothing is stored."""
-    from leaguebot.image.cogs import image_cog
+    from leaguebot.image.cogs import config_commands
 
     league = await _league(tmp_path)
     before = await _stored(league.db_path)
-    monkeypatch.setattr(image_cog, "resolve_within_project_root", MagicMock(
+    monkeypatch.setattr(config_commands, "resolve_within_project_root", MagicMock(
         side_effect=ValueError("invalid literal for int() with base 10: 'x'"),
     ))
 

@@ -68,6 +68,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    drawn_lines_kept,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
 from leaguebot.core.services.posting import standing_posts
@@ -85,6 +86,7 @@ from leaguebot.core.services.settings.channel_registry_service import as_text_ch
 
 if TYPE_CHECKING:
     from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -244,10 +246,11 @@ def check_in_steps(
     *,
     now: Callable[[], datetime],
     view_of: CheckInViewFactory,
+    drawing: ImageDrawing,
 ) -> dict[str, Step]:
     """The jobs of a check-in call, *service* being attendance's, *router* the log channel's
-    writer, *now* the queue's clock and *view_of* the way to build the buttons the call
-    carries."""
+    writer, *now* the queue's clock, *view_of* the way to build the buttons the call carries and
+    *drawing* the image module's, which the post job asks for the call's picture."""
 
     async def still_due(ctx: StepContext) -> bool:
         async with get_connection(ctx.db_path) as db:
@@ -278,7 +281,14 @@ def check_in_steps(
         )
 
     async def post(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        # What the call's picture said when it was drawn, on the first try, is kept with every
+        # stop that follows, so that the try which posts hands it back, never lost with a refused
+        # post.
+        picture_lines = drawn_lines_kept(ctx.kept)
+        try:
+            await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        except StepFailedOnDiscord as stop:
+            raise stop.carrying(picture_lines) from stop.__cause__
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
             row = await call_row(db, round_id)
@@ -320,7 +330,7 @@ def check_in_steps(
                         "vanished": vanished},
                 notice=left if said is None else f"{left}; Discord said: {said}",
                 record=forget,
-            )
+            ).carrying(picture_lines)
 
         config = await service.get_division_config(division_id)
         if config is None or not config.rsvp_channel_id:
@@ -360,9 +370,10 @@ def check_in_steps(
         # posts the text. It is the one generation call of the module (XIV.17).
         attachment = None
         faults: list[str] = []
+        drawn_lines: tuple[str, ...] = ()
         if ctx.tries == 0:
-            attachment = await rsvp_service._checkin_attachment(
-                ctx.bot,
+            attachment, drawn_lines = await rsvp_service._checkin_attachment(
+                drawing,
                 service,
                 division_id=division_id,
                 division_name=division,
@@ -376,6 +387,10 @@ def check_in_steps(
                 country_name=row["track_country"],
                 faults=faults,
             )
+            picture_lines = tuple(
+                f"**{division}** — check-in call of round {row['round_number']}: {fault}"
+                for fault in faults
+            ) + drawn_lines
         try:
             parts: dict[str, Any] = {"embed": embed, "view": view_of(round_id)}
             if attachment is not None:
@@ -395,9 +410,7 @@ def check_in_steps(
                 said=str(exc) or type(exc).__name__,
             ) from exc
         finally:
-            from leaguebot.image.services.image_rsvp_post import discard_attachment
-
-            discard_attachment(attachment)
+            drawing.discard_attachment(attachment)
 
         # The messages of the call this one replaces come down by jobs of their own after it only
         # where the request said so. An amendment's repost, which replaces the call a discarded
@@ -420,10 +433,7 @@ def check_in_steps(
                 })
                 for message_id, channel_id in earlier_messages(coming_down)
             )
-        lines: tuple[str, ...] = tuple(
-            f"**{division}** — check-in call of round {row['round_number']}: {fault}"
-            for fault in faults
-        )
+        lines: tuple[str, ...] = picture_lines
         if ctx.actor_id is not None and ctx.kind == CHECK_IN_CALL:
             # Only the call's own change was asked by the command: an amendment that borrows this
             # step to repost the call has its own line, and nobody ran /attendance post-check-in.
@@ -492,6 +502,7 @@ def check_in_call_change(
     *,
     now: Callable[[], datetime],
     view_of: CheckInViewFactory,
+    drawing: ImageDrawing,
 ) -> ChangeType:
     """`attendance.check_in.call`: the bot's change that posts a round's check-in call, or gives
     it up where its deadline has passed. Not repeatable: a round is owed one call."""
@@ -538,7 +549,7 @@ def check_in_call_change(
     return ChangeType(
         kind=CHECK_IN_CALL,
         opening=(PlannedStep(GIVE_UP),),
-        steps=check_in_steps(service, router, now=now, view_of=view_of),
+        steps=check_in_steps(service, router, now=now, view_of=view_of, drawing=drawing),
         check=check,
         key=lambda payload: f"{CHECK_IN_CALL}:{payload['round_id']}",
         doing=_doing,

@@ -26,6 +26,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
+from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
@@ -62,6 +64,7 @@ from tests.support.season_league import (
     reply,
     round_id,
     season_league,
+    standings_pictures_are_due,
 )
 from tests.support.mentions import NOBODY, notified
 from tests.support.undecorate import undecorate
@@ -1149,12 +1152,12 @@ _RETRIED_POSTS = {
     ),
     "the opening standings": (
         "opening_standings", lambda chans: chans.standings, {"results": True},
-        ("leaguebot.image.services.image_standings_post", "try_post",
-         MagicMock(rejects=False, applicable=False), {}),
+        (lambda league: league.bot.image_drawing, "draw_standings",
+         StandingsDrawn(), {}),
     ),
     "the opening sheet": (
         "opening_sheet", lambda chans: chans.attendance, {"attendance": True},
-        ("leaguebot.image.services.image_attendance_post", "attendance_enabled", False, {}),
+        (lambda league: league.bot.image_drawing, "attendance_wanted", False, {}),
     ),
 }
 
@@ -1178,6 +1181,8 @@ async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     league.channel(cid).send_fails = http_error(status=503, text="Service Unavailable")
     await _pressed(league)
     draw = AsyncMock(return_value=returned)
+    if post == "the opening standings":
+        standings_pictures_are_due(monkeypatch)
     target = importlib.import_module(module) if isinstance(module, str) else module(league)
     # The drawing gains the lineup with the build, so its part is set where it is not there yet.
     monkeypatch.setattr(target, name, draw, raising=isinstance(module, str))
@@ -1207,19 +1212,13 @@ async def test_a_failed_opening_standings_post_leaves_one_copy_once_retried(
     not a second drivers' copy beside the first (#439). Only the outcome is pinned: whether the
     first copy comes down with the failure or at the start of the next try is the build's to
     choose."""
-    from leaguebot.image.services import image_standings_post
-    from leaguebot.image.services.image_standings_post import (
-        FELL_BACK,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
-    )
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
-    monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
-        side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
-            drivers=ChampionshipOutcome(FELL_BACK), constructors=ChampionshipOutcome(FELL_BACK),
-        )
+    standings_pictures_are_due(monkeypatch)
+    monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
+        return_value=StandingsDrawn(applicable=True)
     ))
     standings = league.channel(PRO_CH.standings)
     standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")
@@ -1241,18 +1240,12 @@ async def _opening_standings_posted_in_part(league: Any, monkeypatch: Any) -> li
     channel takes the drivers' table and refuses the teams', so the queue stops at
     `opening_standings`. The refusal is then cleared. Returns the ids standing in the channel,
     the drivers' table alone."""
-    from leaguebot.image.services import image_standings_post
-    from leaguebot.image.services.image_standings_post import (
-        FELL_BACK,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
-    )
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
-    monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
-        side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
-            drivers=ChampionshipOutcome(FELL_BACK), constructors=ChampionshipOutcome(FELL_BACK),
-        )
+    standings_pictures_are_due(monkeypatch)
+    monkeypatch.setattr(league.bot.image_drawing, "draw_standings", AsyncMock(
+        return_value=StandingsDrawn(applicable=True)
     ))
     standings = league.channel(PRO_CH.standings)
     standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")
@@ -1671,6 +1664,8 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
         module_service=MagicMock(spec=ModuleService),
         config_service=SimpleNamespace(get_league_server_id=AsyncMock(return_value=1)),
         get_guild=lambda _server_id: None,
+        image_drawing=MagicMock(),
+        driver_names_read=AwaitedHook(),
     )
     _sign_up_to_placements_confirmed(bot)
     steps = {name: step for defined in bot.placements_confirmed_steps.call()
@@ -2300,7 +2295,10 @@ async def test_an_opening_sheet_replaces_a_sheet_already_standing_by_a_job(tmp_p
 # ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
 
 
-@pytest.mark.parametrize("refused", ["the picture", "everything"])
+@pytest.mark.parametrize("refused", [
+    "the picture",
+    "everything",
+])
 async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same_try(
     tmp_path, monkeypatch, refused,
 ):
@@ -2308,8 +2306,10 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     standings channel refuses (the picture) every send carrying a picture: the opening
     standings go out as text in the same try, and the job is done without stopping the queue,
     as a refused round's standings, lineup or results table picture is ("No, same try
-    everywhere"); nothing is recorded of them, as before. Where it refuses (everything) the
+    everywhere"); nothing is recorded of them, as before, and the log channel says the picture
+    was refused, with Discord's reason, and went out as text. Where it refuses (everything) the
     text too, the queue stops at the job, as a refused post does."""
+    from tests.support.change_queue import queued_log_lines
     from tests.support.season_league import draw_standings_pictures, refuses_pictures
 
     league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
@@ -2335,6 +2335,13 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     assert any("**Driver Standings**" in text for text in texts), texts
     assert any("**Team Standings**" in text for text in texts), texts
     assert all(not files for files in standings.files), "a picture was posted"
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    refusals = [line for line in lines
+                if "refused" in line.lower() and "missing access" in line.lower()]
+    assert refusals, lines
+    assert all("standings" in line.lower() and "text" in line.lower() for line in refusals), \
+        refusals
+    assert len(refusals) == len(set(refusals)), refusals
     jobs = [job for job in await _jobs(league) if job["name"] == "opening_standings"]
     assert jobs and all(job["done_at"] and job["tries"] == 0 for job in jobs), jobs
 
@@ -2366,3 +2373,99 @@ async def test_the_review_channel_line_notifies_only_the_member_it_names(
     assert _mentions_of(league, REVIEW_CHANNEL, line) == {
         "everyone": False, "users": {int(ADMIN_ID)}, "roles": set()
     }
+
+
+async def test_a_refused_opening_standings_picture_s_line_survives_a_retry_that_cannot_remove_the_part_posted_text(
+    tmp_path, monkeypatch,
+):
+    """Images and results on, the standings aspect on, and both championships drawn. Pro's
+    standings channel refuses every send carrying a picture, and the teams' table besides: both
+    pictures are refused, the drivers' table goes out as text and the teams' table is refused, so
+    the queue stops at the opening standings with the drivers' table standing. That table is made
+    to refuse deletion, so the first Retry cannot take it down and stops again; once deletion is
+    allowed and the channel accepts everything, a second Retry takes it down and posts both. The
+    log channel says each picture was refused, with Discord's reason, and once."""
+    from tests.support.change_queue import queued_log_lines
+    from tests.support.season_league import draw_standings_pictures, refuses_pictures
+
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    draw_standings_pictures(monkeypatch, tmp_path)
+    standings = league.channel(PRO_CH.standings)
+    standings.fail_when = lambda content, kwargs: (
+        refuses_pictures(content, kwargs) or "**Team Standings**" in (content or "")
+    )
+    await _pressed(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+    earlier = sorted(standings.messages)
+    assert _tables(standings) == (1, 0)
+
+    standings.fail_when = None
+    deleting = {mid: standings.messages[mid].delete for mid in earlier}
+    for mid in earlier:
+        standings.messages[mid].delete = AsyncMock(
+            side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+        )
+    await retry_job(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+
+    for mid, delete in deleting.items():
+        standings.messages[mid].delete = delete
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert _tables(standings) == (1, 1)
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    refusals = [line for line in lines
+                if "refused" in line.lower() and "missing access" in line.lower()
+                and "picture" in line.lower()]
+    assert refusals, lines
+    assert len(refusals) == len(set(refusals)), refusals
+
+
+async def test_a_refused_opening_standings_picture_s_line_survives_a_retry_that_fails_after_removing_the_part_posted_text(
+    tmp_path, monkeypatch,
+):
+    """Images and results on, the standings aspect on, and both championships drawn. Pro's
+    standings channel refuses every send carrying a picture, and the teams' table besides, so the
+    queue stops at the opening standings with the drivers' table standing. On the first Retry the
+    channel accepts everything and the drivers' table is taken down, but reading the teams'
+    standings then fails on a fault in the bot, not Discord's, and the queue stops again; a second
+    Retry posts both. The log channel says each picture was refused, with Discord's reason, and
+    once."""
+    from leaguebot.results.services.standings import standings_service
+    from tests.support.change_queue import queued_log_lines
+    from tests.support.season_league import draw_standings_pictures, refuses_pictures
+
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    draw_standings_pictures(monkeypatch, tmp_path)
+    standings = league.channel(PRO_CH.standings)
+    standings.fail_when = lambda content, kwargs: (
+        refuses_pictures(content, kwargs) or "**Team Standings**" in (content or "")
+    )
+    await _pressed(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+    earlier = sorted(standings.messages)
+
+    standings.fail_when = None
+    reading = standings_service.opening_team_standings
+    monkeypatch.setattr(standings_service, "opening_team_standings",
+                        AsyncMock(side_effect=RuntimeError("the teams could not be read")))
+    await retry_job(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+    assert not set(earlier) & set(standings.messages), "the earlier copy was not taken down"
+
+    monkeypatch.setattr(standings_service, "opening_team_standings", reading)
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert _tables(standings) == (1, 1)
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    refusals = [line for line in lines
+                if "refused" in line.lower() and "missing access" in line.lower()
+                and "picture" in line.lower()]
+    assert refusals, lines
+    assert len(refusals) == len(set(refusals)), refusals

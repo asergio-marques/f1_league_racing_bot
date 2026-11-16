@@ -128,7 +128,7 @@ from leaguebot.results.services.submission.submission_steps import (
 from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
@@ -581,6 +581,7 @@ def submission_all_cancelled_change(
     *, seasons: "SeasonService", drawing: "ImageDrawing", attendance: "AttendanceAfterReview",
     cancellation_notices: AwaitedHook, cancellation_steps: dict[str, Step],
     now: Callable[[], datetime],
+    driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
     """The `results.submission.all_cancelled` change type, for the builder to register, on the
     league lane.
@@ -730,9 +731,9 @@ def submission_all_cancelled_change(
             END_ROUND, StepKind.SAVE, end_round, describe=describe_end_round,
             undiscardable=would_never_finish,
         ),
-        NAMES: posting_steps()[NAMES],
-        POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
-        POST_STANDINGS: posting_steps()[POST_STANDINGS],
+        NAMES: posting_steps(driver_names_read=driver_names_read)[NAMES],
+        POST_SESSION_RESULTS: posting_steps(drawing, driver_names_read)[POST_SESSION_RESULTS],
+        POST_STANDINGS: posting_steps(drawing, driver_names_read)[POST_STANDINGS],
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
         **calendar_steps(seasons, drawing),
         **cancellation_steps,

@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.image.services import image_rsvp_service
-from leaguebot.image.services.image_rsvp_service import (
+from leaguebot.image.services.aspects import image_rsvp_service
+from leaguebot.image.services.aspects.image_rsvp_service import (
     MYSTERY_LITERAL,
     MYSTERY_RACE_NAME,
     RsvpDataError,

@@ -1,81 +1,19 @@
-"""Unit tests for the lineup's command output and its portraits — T043, T044.
+"""Unit tests for the lineup's portraits and what stays out of the lineup — T043, T044.
 
 The posting of a lineup is core's: it asks the image module's drawing and posts what comes back,
 and the message it replaces is deleted by a job of the change queue after it (#439), so a failed
 rebuild leaves the league the lineup it had. That is tested in `tests/core/` against a stand-in
-drawing, and the drawing itself in `tests/image/test_image_drawing_lineup.py`. What stays here is
-the image module's own: its gate, the lineup drawn for `/team lineup` and the placements review,
-which never touches the record, and the portraits refreshed for the seats about to be drawn.
+drawing, and the drawing itself, its gate and the portraits a review obtains among it, in
+`tests/image/test_image_drawing_lineup.py`. What stays here is the seated members whose portraits
+are refreshed, and the places that must not redraw a lineup or ask for missing portraits.
 """
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
-
-from leaguebot.image.services.image_lineup_post import POSTED, lineup_enabled
+from unittest.mock import MagicMock
 
 SRC = Path(__file__).resolve().parents[2] / "src"
-
-
-# ── The enablement gate ───────────────────────────────────────────────────
-
-
-class _Bot:
-    def __init__(self, *, module=True, toggle=True, valid=True):
-        self._module, self._toggle, self._valid = module, toggle, valid
-        self.module_service = self
-        self.image_config_service = self
-        self.image_validity_service = self
-
-    async def is_images_enabled(self):
-        return self._module
-
-    async def get_toggles(self):
-        return {"lineup": self._toggle}
-
-    async def template_reports(self):
-        return {"lineup_template": type("R", (), {"valid": self._valid})()}
-
-
-async def test_the_gate_needs_module_toggle_and_a_valid_template():
-    assert await lineup_enabled(_Bot()) is True
-    assert await lineup_enabled(_Bot(module=False)) is False
-    assert await lineup_enabled(_Bot(toggle=False)) is False
-    assert await lineup_enabled(_Bot(valid=False)) is False
-
-
-async def test_the_gate_never_raises_on_a_broken_reader():
-    class _Broken:
-        module_service = property(lambda self: (_ for _ in ()).throw(RuntimeError()))
-
-    assert await lineup_enabled(_Broken()) is False
-
-
-# ── Reading one function's source ─────────────────────────────────────────
-
-
-def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
-    """The source of one function. With *code_only*, its docstring is stripped.
-
-    The docstrings here describe what the code must not do ("writes no
-    lineup_message_id"), so a test asserting the code does not do it has to read past
-    them or it asserts against its own prose.
-    """
-    text = path.read_text(encoding="utf-8")
-    tree = ast.parse(text)
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-            if code_only and ast.get_docstring(node) is not None:
-                body = node.body[1:]
-                return "\n".join(
-                    ast.get_source_segment(text, statement) or "" for statement in body
-                )
-            return ast.get_source_segment(text, node) or ""
-    raise AssertionError(f"{name} not found in {path}")
 
 
 # ── FR-024: the RSVP reserve distribution must not redraw ─────────────────
@@ -87,34 +25,11 @@ def test_the_attendance_reserve_distribution_does_not_refresh_the_lineup():
     assert "_refresh_lineup_post" not in source
 
 
-# ── FR-028: command output is not the lineup of record (T055) ─────────────
-
-
-def test_render_for_command_persists_no_message_id_and_deletes_nothing():
-    """FR-028 — `/team lineup` and `/season placements-review` must not touch the record."""
-    source = _function_source(
-        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "render_for_command", code_only=True
-    )
-    assert "lineup_message_id" not in source
-    assert "delete()" not in source
-    assert "audit_entries" not in source
-    assert "channel.send" not in source
-
-
-def test_render_for_command_is_always_a_commanded_posting():
-    """A commanded posting rejects rather than falling back (Constitution XIV.7)."""
-    source = _function_source(
-        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "render_for_command"
-    )
-    assert "PostingOrigin.COMMANDED" in source
-    assert "POST_TEXT_FALLBACK" not in source
-
-
 # ── Portraits are refreshed for the seats about to be drawn ───────────────
 
 
 def test_seated_members_reads_every_occupied_seat():
-    from leaguebot.image.services.image_lineup_post import seated_members
+    from leaguebot.image.services.aspects.image_lineup_post import seated_members
 
     guild = MagicMock()
     members = {5: MagicMock(name="a"), 6: MagicMock(name="b")}
@@ -134,82 +49,10 @@ def test_seated_members_reads_every_occupied_seat():
 
 
 def test_seated_members_is_empty_without_a_guild():
-    from leaguebot.image.services.image_lineup_post import seated_members
+    from leaguebot.image.services.aspects.image_lineup_post import seated_members
 
     teams = [SimpleNamespace(seats=[SimpleNamespace(discord_user_id="5")])]
     assert seated_members(None, teams) == {}
-
-
-def _stub_lineup_render(monkeypatch, tmp_path):
-    """Stub everything `render_png` reaches except the portrait gate, which is spied on.
-
-    Returns the bot to render with, the spy standing in for `refresh_before_render`, and
-    the one member the drawing seats.
-    """
-    import leaguebot.image.services.driver_portrait_service as portraits
-    import leaguebot.image.services.image_lineup_post as post
-    import leaguebot.image.services.image_render_service as render_service
-    import leaguebot.image.utils.image_naming as naming
-
-    member = MagicMock(id=5)
-    drawing = SimpleNamespace(division_name="Pro")
-    monkeypatch.setattr(post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        post, "build_drawing", AsyncMock(return_value=({}, drawing, [member]))
-    )
-    monkeypatch.setattr(
-        render_service,
-        "resolve_configured_directories",
-        lambda *args, **kwargs: ({"driver": tmp_path}, []),
-    )
-    monkeypatch.setattr(
-        render_service, "spec_builder_with_faults", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(naming, "stem_for_drawing", lambda *args, **kwargs: "lineup")
-    spy = AsyncMock(return_value=0)
-    monkeypatch.setattr(portraits, "refresh_before_render", spy)
-
-    bot = MagicMock()
-    bot.image_config_service.get_config = AsyncMock(return_value=SimpleNamespace())
-    bot.image_render_service.render_for_posting = AsyncMock(
-        return_value=SimpleNamespace(
-            posts_image=True, png_paths=[tmp_path / "lineup.png"], notices=[], rejects=False
-        )
-    )
-    return bot, spy, member
-
-
-async def test_the_placements_review_render_obtains_missing_portraits(
-    monkeypatch, tmp_path
-):
-    """The review draws the lineup a season is judged on, so a driver seated since the last
-    daily update is fetched before it is drawn (#407)."""
-    from leaguebot.image.services.image_lineup_post import render_for_command
-
-    bot, spy, member = _stub_lineup_render(monkeypatch, tmp_path)
-
-    outcome = await render_for_command(
-        bot, MagicMock(), 5, obtain_missing_portraits=True
-    )
-
-    assert outcome.action == POSTED
-    spy.assert_awaited_once()
-    assert spy.await_args.args[1] == [member]
-    assert spy.await_args.kwargs["obtain_missing"] is True
-    assert spy.await_args.kwargs["directory"] == tmp_path
-
-
-async def test_a_lineup_command_render_obtains_nothing_beyond_its_trigger(
-    monkeypatch, tmp_path
-):
-    """`/team lineup` is command output, not the review: the league's trigger governs."""
-    from leaguebot.image.services.image_lineup_post import render_for_command
-
-    bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
-
-    await render_for_command(bot, MagicMock(), 5)
-
-    assert spy.await_args.kwargs["obtain_missing"] is False
 
 
 def test_team_lineup_does_not_ask_for_missing_portraits():

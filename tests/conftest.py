@@ -319,7 +319,7 @@ def pytest_xdist_auto_num_workers(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    from leaguebot.image.services.image_render_service import converter_available
+    from leaguebot.image.services.render.image_render_service import converter_available
 
     if converter_available(use_cache=False):
         return

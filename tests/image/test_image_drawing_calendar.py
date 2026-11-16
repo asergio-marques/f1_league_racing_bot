@@ -1,7 +1,7 @@
 """The image module's calendar drawing, its answer to core's drawing protocol (#283).
 
 Core asks whether the league draws its calendar and has one division's calendar drawn
-(`core/services/modules/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
+(`core/services/modules/image_drawing.py`); the image module answers in `image/services/render/image_drawing.py`.
 These tests hold its answers: both gates read, a gate that cannot be read answering no, the two
 asset directories made absolute, a rejected directory carried as a fault, and the notices reported
 to the log channel in one message. Core's posting of the calendar is tested against a stand-in for
@@ -45,7 +45,7 @@ def _drawing(*, images_on=True, aspect_on=True, flag_directory="resources/defaul
     """Image's drawing over doubles of its services: the module and the `calendar` aspect as
     given, the configured directories, and a renderer giving *outcome* (nothing drawn by
     default), keeping the spec builder it was handed in `captured`."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=images_on)
@@ -147,10 +147,11 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault():
     assert "flag" in spec.asset_directory_faults
 
 
-async def test_a_drawing_reports_its_notices_to_the_log_channel_in_one_message():
-    """Elite's calendar drawn with a notice: the drawing itself reports it to the log channel, in
-    one message naming what was drawn, so the notice reaches the log whichever change posted the
-    calendar (Constitution XIV.4, "reported in one message")."""
+async def test_a_calendar_drawing_hands_its_notices_back_and_logs_nothing():
+    """Elite's calendar drawn with a notice. Every calendar is drawn inside a change's job, so the
+    drawing writes nothing to the log channel itself and hands the notice back with the picture,
+    for the posting job to record once among its own lines (the owner's decision on #288: code
+    inside a job never calls `post_log`)."""
     from leaguebot.image.models.image_module import RenderNotice
 
     notice = RenderNotice(image_type="calendar", notice_kind="ASSET_FALLBACK_USED",
@@ -159,11 +160,10 @@ async def test_a_drawing_reports_its_notices_to_the_log_channel_in_one_message()
         outcome=NS(problem=None, notices=[notice], png_paths=[])
     )
 
-    await drawing.draw_calendar(_division(), _rounds(), TRACKS)
+    picture = await drawing.draw_calendar(_division(), _rounds(), TRACKS)
 
-    [call] = post_log.await_args_list
-    assert call.args[0].startswith("Image render notices — calendar — Elite:\n"), call.args[0]
-    assert "a fallback flag stood in for Monaco's" in call.args[0]
+    post_log.assert_not_awaited()
+    assert "a fallback flag stood in for Monaco's" in picture.notices
 
 
 @pytest.mark.parametrize("drawn", ["a picture", "a problem"])

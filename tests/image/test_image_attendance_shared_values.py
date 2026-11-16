@@ -17,7 +17,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.sheet import attendance_sheet
-from leaguebot.image.services.image_attendance_service import resolve_drawing, DriverRecord
+from leaguebot.image.services.aspects.image_attendance_service import resolve_drawing, DriverRecord
 
 
 # ── The values both paths draw (FR-013) ───────────────────────────────────
@@ -145,7 +145,7 @@ async def test_the_cells_carry_the_points_each_round_conferred(grid_db):
 @pytest.mark.asyncio
 async def test_an_unfinalised_round_and_a_zero_round_are_the_same_picture(grid_db):
     """``points_awarded`` is NULL before finalisation and 0 after a fully pardoned round."""
-    from leaguebot.image.services.image_attendance_service import cell_text
+    from leaguebot.image.services.aspects.image_attendance_service import cell_text
 
     _, cells = await attendance_sheet._round_grid(grid_db, 7, [501, 502])
     assert cell_text(cells[502][1]) == ""   # NULL — not yet finalised

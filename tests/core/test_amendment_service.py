@@ -112,9 +112,10 @@ def _attendance_as_it_is(league, monkeypatch) -> None:
     from unittest.mock import AsyncMock
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.image.services import image_rsvp_post
 
-    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        league.bot.image_drawing, "attach_check_in_call", AsyncMock(return_value=(None, ()))
+    )
     attendance = AttendanceService(league.db_path)
     for name in dir(AttendanceService):
         if not name.startswith("_") and callable(getattr(AttendanceService, name)):

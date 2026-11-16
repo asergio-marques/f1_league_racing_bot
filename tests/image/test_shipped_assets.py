@@ -53,8 +53,8 @@ def _stretching_data() -> frozenset[str]:
     without a shape of its own cannot quietly appear here as one held to 1:1.
     """
     from leaguebot.image.models.image_constants import MARK_FALLBACK_ASSET_NAME
-    from leaguebot.image.services.image_attendance_service import MARK_DATA
-    from leaguebot.image.services.image_standings_service import HIGHLIGHT_DATA
+    from leaguebot.image.services.aspects.image_attendance_service import MARK_DATA
+    from leaguebot.image.services.aspects.image_standings_service import HIGHLIGHT_DATA
 
     return frozenset(
         [f"{datum}.svg" for datum in (*HIGHLIGHT_DATA, *MARK_DATA)]
@@ -145,7 +145,7 @@ def _png_size(data: bytes) -> tuple[int, int]:
 @pytest.mark.parametrize("name", ["other.svg", "mystery.svg", "fallback.svg"])
 def test_the_shipped_flags_rasterise_to_a_three_by_two_png(tmp_path, name):
     """The browser hides what the rasteriser exposes, so this asserts on real pixels."""
-    from leaguebot.image.services.image_render_service import find_converter
+    from leaguebot.image.services.render.image_render_service import find_converter
 
     source = PROJECT_ROOT / packaged_directory_for("flag") / name
     out = tmp_path / f"{name}.png"
@@ -176,7 +176,7 @@ def test_other_svg_actually_draws_something(tmp_path):
     Nothing here asserts *what* is drawn — only that the globe is not, say, entirely
     outside the viewBox, which no amount of reading the markup reliably catches.
     """
-    from leaguebot.image.services.image_render_service import find_converter
+    from leaguebot.image.services.render.image_render_service import find_converter
 
     source = PROJECT_ROOT / packaged_directory_for("flag") / "other.svg"
     out = tmp_path / "other.png"

@@ -699,12 +699,12 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
 def _with_image_s_drawing(bot: Any) -> None:
     """Attach to *bot* the image module's drawing, built over the bot's services as the builder
     builds it, so that a review's lineup drawn through it reaches image's own code."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot.image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
-        db_path=bot.db_path, bot=bot,
+        db_path=bot.db_path,
     )
 
 
@@ -722,7 +722,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     import asyncio
 
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services import image_lineup_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change
@@ -734,10 +734,10 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
     drawn = posting.drawing.folder / "lineup-11.png"
     drawn.write_bytes(b"\x89PNG\r\n\x1a\n")
-    render = AsyncMock(return_value=SimpleNamespace(posts_image=True, png_paths=[drawn],
-                                                    notices=[]))
-    monkeypatch.setattr(image_lineup_post, "render_png", render)
-    monkeypatch.setattr(image_lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    render = AsyncMock(return_value=({}, SimpleNamespace(problem=None, png_paths=[drawn],
+                                                         notices=[])))
+    monkeypatch.setattr(ImageDrawing, "_render_lineup", render)
+    monkeypatch.setattr(ImageDrawing, "lineup_wanted", AsyncMock(return_value=True))
     _with_image_s_drawing(posting.bot)
     attach_queue(posting.bot, posting.db_path, now=posting.clock)
 
@@ -755,7 +755,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
 def _lineup_will_not_post() -> Any:
     """The image module's decision not to post Pro's lineup: its template has no rows."""
     from leaguebot.image.models.image_module import PROBLEM_MISSING_MANDATORY_FIELD, Problem
-    from leaguebot.image.services.image_render_service import REJECT_COMMAND, PostingDecision
+    from leaguebot.image.services.render.image_render_service import REJECT_COMMAND, PostingDecision
 
     return PostingDecision(action=REJECT_COMMAND, problem=Problem(
         kind=PROBLEM_MISSING_MANDATORY_FIELD, detail="the template has no rows"))
@@ -781,7 +781,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     import asyncio
 
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services import image_lineup_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change
@@ -791,11 +791,12 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
         return built(**kwargs)
 
     monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
-    render = AsyncMock(return_value=_lineup_will_not_post())
+    render = AsyncMock(return_value=({}, SimpleNamespace(
+        problem=_lineup_will_not_post().problem, png_paths=[], notices=[])))
     if failing == "render_raises":
         render = AsyncMock(side_effect=RuntimeError("the template's font could not be loaded"))
-    monkeypatch.setattr(image_lineup_post, "render_png", render)
-    monkeypatch.setattr(image_lineup_post, "lineup_enabled",
+    monkeypatch.setattr(ImageDrawing, "_render_lineup", render)
+    monkeypatch.setattr(ImageDrawing, "lineup_wanted",
                         AsyncMock(return_value=failing != "switched_off"))
     if failing == "no_server":
         posting.bot.get_guild = MagicMock(return_value=None)
@@ -808,6 +809,92 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     assert str(raised.value) == fault
 
 
+@pytest.mark.parametrize("outcome", ["posted", "refused-then-retried", "lineup-not-drawn"])
+async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
+        posting, monkeypatch, tmp_path, outcome):
+    """The real change types are registered, as the builder registers them, and the drawing the
+    bot carries draws Alex's review's two pictures of Pro as PNGs: Pro's calendar of season 1 with
+    one notice (round 12 not fitting) and Pro's lineup with another (Zara's flag falling back).
+    Once the queue runs, both pictures are posted and the queue does not stop; the log channel
+    holds each notice once, in a line naming what was drawn (the calendar or the lineup, and
+    Pro), which the job that drew and posted it carries among its own lines (Constitution XIV.4;
+    the owner's decision on #288: code inside a job never calls `post_log`).
+
+    Where the post is refused, review channel 700 refuses the first picture and every message
+    after it, the text standing in for the picture too, so the queue stops at that picture's post;
+    the channel is let accept and a Retry carries the review on to its end. Each notice is still
+    held once, never lost with the failed post.
+
+    Where the lineup is not drawn, the image module draws it with its notice and then will not
+    draw it (its template has no rows): the lineup's text goes out in its place and the queue does
+    not stop. Its notice is still held once, naming the lineup and Pro, beside the job's "Picture
+    not drawn" line for the lineup, never lost with the picture."""
+    from leaguebot.core.services.modules.image_drawing import LineupPicture
+    from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
+    from tests.support.change_queue import queued_log_lines
+
+    drawn = {}
+    for kind in ("calendar", "lineup"):
+        folder = tmp_path / f"f1bot_render_{kind}"
+        folder.mkdir()
+        drawn[kind] = folder / f"{kind}.png"
+        drawn[kind].write_bytes(b"\x89PNG\r\n\x1a\n")
+    calendar_notice, lineup_notice = "round 12 did not fit", "a fallback flag stood in for Zara's"
+    draw_calendars_with(posting.bot, monkeypatch,
+                        CalendarDrawingStub(picture=drawn["calendar"], notices=(calendar_notice,)))
+    refused, not_drawn = outcome == "refused-then-retried", outcome == "lineup-not-drawn"
+    lineup = (LineupPicture(path=None, problem="the template has no rows", notices=(lineup_notice,))
+              if not_drawn else
+              LineupPicture(path=drawn["lineup"], problem=None, notices=(lineup_notice,)))
+    monkeypatch.setattr(posting.bot.image_drawing, "draw_review_lineup",
+                        AsyncMock(return_value=lineup))
+    posting.bot.season_service.get_division = AsyncMock(
+        return_value=SimpleNamespace(id=11, name="Pro", tier=1))
+    posting.bot.season_service.get_division_rounds = AsyncMock(return_value=[])
+    attach_queue(posting.bot, posting.db_path, now=posting.clock)
+    interaction = member_interaction(posting.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    pictures = [{**PICTURES[0], "season_number": 1}, PICTURES[1]]
+    await posting.bot.change_queue.ask(
+        POST, {**_payload(), "pictures": pictures, "question": None},
+        interaction=interaction, what="posting the placements review",
+    )
+    refusing = {"on": refused, "from_here": False}
+    send = posting.channel.send.side_effect
+
+    async def _refuse_from_the_first_picture(content: str = "", **kwargs: Any) -> Any:
+        if refusing["on"] and (refusing["from_here"] or kwargs.get("file")):
+            refusing["from_here"] = True
+            raise http_error(discord.Forbidden, status=403, text="Missing Permissions")
+        return await send(content, **kwargs)
+
+    posting.channel.send.side_effect = _refuse_from_the_first_picture
+
+    await run_queue(posting.bot)
+    if refused:
+        assert await stopped_job(posting.db_path) is not None
+        refusing["on"] = False
+        for png in drawn.values():  # drawn afresh on the retry, as a render writes a new file
+            png.parent.mkdir(exist_ok=True)
+            png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        await retry_job(posting.bot)
+        await run_queue(posting.bot)
+
+    assert await stopped_job(posting.db_path) is None
+    if not refused:
+        assert len([m for m in _posts(posting.channel) if m.picture]) == (1 if not_drawn else 2)
+    logged = [*posting.bot.log_channel.sent, *await queued_log_lines(posting.db_path)]
+    for notice, kind in ((calendar_notice, "calendar"), (lineup_notice, "lineup")):
+        named = [line for line in logged if notice in line]
+        assert len(named) == 1, logged
+        assert kind in named[0].lower() and "Pro" in named[0], named[0]
+    if not_drawn:
+        not_drawn_lines = [line for line in logged if "Picture not drawn" in line]
+        assert len(not_drawn_lines) == 1, logged
+        assert "lineup" in not_drawn_lines[0].lower(), not_drawn_lines[0]
+        assert "the template has no rows" in not_drawn_lines[0], not_drawn_lines[0]
+
+
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
         posting, tmp_path):
     """Alex's review carries two pictures, each drawn by the image module into a directory of its
@@ -818,7 +905,7 @@ async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes
     from pathlib import Path
 
     from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
-    from leaguebot.image.services.image_render_service import discard_render
+    from leaguebot.image.services.render.image_render_service import discard_render
 
     made: list[Path] = []
 
@@ -847,7 +934,7 @@ async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_rend
     `season.review.post` is handed the image module's `discard_render`, so that a picture's render
     directory goes with it."""
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.image.services.image_render_service import discard_render
+    from leaguebot.image.services.render.image_render_service import discard_render
 
     handed: dict[str, Any] = {}
     built = season_review_changes.season_review_post_change

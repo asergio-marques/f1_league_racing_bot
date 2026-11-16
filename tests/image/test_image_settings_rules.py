@@ -1,7 +1,7 @@
 """The two rules the image settings take from the cog (#439, slice 7, plan 2.10).
 
 `daily_portraits_refusal` and `aspect_blocking_reasons` move out of `ImageCog` into
-`image/services/image_settings.py` as plain functions handed the services they read, so that a
+`image/services/config/image_settings.py` as plain functions handed the services they read, so that a
 settings change's check can ask them without reaching through the bot (architecture.md,
 "Composition").
 """
@@ -21,7 +21,7 @@ async def test_daily_portraits_refusal_reads_the_module_it_is_handed():
     form's naming it a form and the confirmation's not, having asked the service it was handed;
     asked with one saying images are on, portraits obtained from Discord and daily updates off,
     it has nothing to refuse."""
-    from leaguebot.image.services.image_settings import daily_portraits_refusal
+    from leaguebot.image.services.config.image_settings import daily_portraits_refusal
 
     config = MagicMock()
     config.get_config = AsyncMock(return_value=SimpleNamespace(use_pfp=True, pfp_daily=False))
@@ -45,8 +45,8 @@ async def test_aspect_blocking_reasons_overrides_the_toggle_for_the_question(tmp
     league's own statuses report nothing blocking the calendar, it being off, but the rule,
     asking as though it were switched on, names the drawing that cannot be found, and leaves the
     switch off. With the shipped template it names nothing."""
-    import leaguebot.image.services.image_render_service as render
-    from leaguebot.image.services.image_settings import aspect_blocking_reasons
+    import leaguebot.image.services.render.image_render_service as render
+    from leaguebot.image.services.config.image_settings import aspect_blocking_reasons
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
     league = await settings_league(tmp_path, modules=("images",))

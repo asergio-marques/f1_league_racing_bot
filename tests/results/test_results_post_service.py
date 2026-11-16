@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.results.services.publishing.results_post_service import _label_from_status
+from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
 
 
@@ -116,6 +117,7 @@ async def test_session_results_include_heading_and_label(tmp_path):
             round_number=5,
             track_name="Monaco",
             label="Provisional Results",
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(captured_content) == 1
@@ -209,6 +211,7 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
                 round_number=1,
                 track_name="Monza",
                 label=label,
+                driver_names_read=AwaitedHook(),
             )
 
         assert label in captured[0], f"Label '{label}' not found for status {status}"
@@ -281,6 +284,7 @@ async def test_produce_standings_includes_heading_and_label(tmp_path):
             guild=mock_guild,
             show_reserves=False,
             label="Final Results",
+            driver_names_read=AwaitedHook(),
         )
 
     assert len(captured_content) == 1
@@ -481,8 +485,12 @@ def _bot_with_images(*, enabled=False, toggles=None):
     """
     bot = MagicMock()
     bot.user.id = 4242
-    bot.module_service.is_images_enabled = AsyncMock(return_value=enabled)
-    bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
+    wanted = toggles or {}
+    # The image module's drawing answers whether an aspect could attach a file: the module on and
+    # the aspect's toggle on.
+    bot.image_drawing.aspect_attaches_files = AsyncMock(
+        side_effect=lambda aspect: enabled and bool(wanted.get(aspect))
+    )
     return bot
 
 
@@ -494,7 +502,7 @@ async def test_repost_channel_faults_names_a_deleted_channel(tmp_path):
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=(502,)), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=(502,)), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert len(faults) == 1, faults
@@ -512,7 +520,7 @@ async def test_repost_channel_faults_names_a_channel_the_bot_cannot_post_to(tmp_
     faults = await repost_channel_faults(
         db_path, season_id,
         _guild_for_faults(permissions=_permissions(send_messages=False)),
-        _bot_with_images(),
+        (bot := _bot_with_images()), drawing=bot.image_drawing,
     )
 
     assert len(faults) == 2, faults
@@ -529,7 +537,7 @@ async def test_repost_channel_faults_wants_read_message_history(tmp_path):
     faults = await repost_channel_faults(
         db_path, season_id,
         _guild_for_faults(permissions=_permissions(read_message_history=False)),
-        _bot_with_images(),
+        (bot := _bot_with_images()), drawing=bot.image_drawing,
     )
 
     assert len(faults) == 1, faults
@@ -544,7 +552,7 @@ async def test_repost_channel_faults_ignores_an_unconfigured_channel(tmp_path):
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=(501,)), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=(501,)), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert faults == []
@@ -559,13 +567,13 @@ async def test_repost_channel_faults_asks_for_attach_files_only_with_graphics(tm
     guild = _guild_for_faults(permissions=_permissions(attach_files=False))
 
     text_only = await repost_channel_faults(
-        db_path, season_id, guild, _bot_with_images(enabled=False)
+        db_path, season_id, guild, (bot := _bot_with_images(enabled=False)), drawing=bot.image_drawing
     )
     assert text_only == [], "a text-only league was refused a permission it never uses"
 
     with_graphics = await repost_channel_faults(
         db_path, season_id, guild,
-        _bot_with_images(enabled=True, toggles={"results": True, "standings": True}),
+        (bot := _bot_with_images(enabled=True, toggles={"results": True, "standings": True})), drawing=bot.image_drawing,
     )
     assert len(with_graphics) == 2, with_graphics
     assert all("Attach Files" in line for line in with_graphics)
@@ -581,7 +589,7 @@ async def test_repost_channel_faults_asks_per_aspect(tmp_path):
     faults = await repost_channel_faults(
         db_path, season_id,
         _guild_for_faults(permissions=_permissions(attach_files=False)),
-        _bot_with_images(enabled=True, toggles={"standings": True}),
+        (bot := _bot_with_images(enabled=True, toggles={"standings": True})), drawing=bot.image_drawing,
     )
 
     assert len(faults) == 1, faults
@@ -600,7 +608,7 @@ async def test_repost_channel_faults_refuses_a_channel_that_is_not_text(tmp_path
     guild.get_member = lambda _user_id: object()
     guild.get_channel = lambda channel_id: MagicMock(spec=discord.CategoryChannel)
 
-    faults = await repost_channel_faults(db_path, season_id, guild, _bot_with_images())
+    faults = await repost_channel_faults(db_path, season_id, guild, (bot := _bot_with_images()), drawing=bot.image_drawing)
 
     assert len(faults) == 1, faults
     assert "not a text channel" in faults[0]
@@ -613,7 +621,7 @@ async def test_repost_channel_faults_reports_a_guild_the_bot_cannot_see(tmp_path
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
-    faults = await repost_channel_faults(db_path, season_id, None, _bot_with_images())
+    faults = await repost_channel_faults(db_path, season_id, None, (bot := _bot_with_images()), drawing=bot.image_drawing)
 
     assert len(faults) == 1, faults
     assert "not in this server" in faults[0]
@@ -629,7 +637,7 @@ async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_
 
     # Not in the member cache.
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(member=None), _bot_with_images()
+        db_path, season_id, _guild_for_faults(member=None), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
     assert len(faults) == 1, faults
     assert "own permissions" in faults[0]
@@ -637,7 +645,7 @@ async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_
     # And the other way it can be unresolvable: the client has no user of its own yet.
     bot = _bot_with_images()
     bot.user = None
-    faults = await repost_channel_faults(db_path, season_id, _guild_for_faults(), bot)
+    faults = await repost_channel_faults(db_path, season_id, _guild_for_faults(), bot, drawing=bot.image_drawing)
     assert len(faults) == 1, faults
     assert "own permissions" in faults[0]
 
@@ -655,7 +663,9 @@ async def test_repost_channel_faults_resolves_the_bot_member_from_the_cache(tmp_
     bot = _bot_with_images()
     bot.user.id = 4242
 
-    faults = await repost_channel_faults(db_path, season_id, guild, bot)
+    faults = await repost_channel_faults(
+        db_path, season_id, guild, bot, drawing=bot.image_drawing
+    )
 
     assert faults == []
     assert looked_up == [4242], "the member was not resolved through the cache by id"
@@ -671,7 +681,7 @@ async def test_repost_channel_faults_names_every_division_at_fault(tmp_path):
     )
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=()), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert len(faults) == 3, faults
@@ -692,7 +702,7 @@ async def test_repost_channel_faults_names_a_cancelled_division_s_deleted_channe
         await db.commit()
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=()), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert faults == ["**Alpha** — the results channel (id 501) is not in the server."]
@@ -776,20 +786,30 @@ def _guild_naming(names: dict[int, str]):
     return guild
 
 
+def _hook(db_path):
+    """The hook signup answers how a driver is named, as the builder signs it up."""
+    from types import SimpleNamespace
+
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    holder = SimpleNamespace(db_path=db_path)
+    sign_up_driver_names_read(holder)
+    return holder.driver_names_read
+
+
 @pytest.mark.asyncio
 async def test_the_posted_standings_are_ordered_on_the_resolved_names(tmp_path):
     """The order inverts with the names, so it cannot be the user id deciding it."""
     from leaguebot.results.services.publishing.results_post_service import driver_standings_for_display
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path)
-    bot = MagicMock()
-    bot.db_path = db_path
+    names_read = _hook(db_path)
 
     forwards = await driver_standings_for_display(
-        db_path, division_id, round_id, _guild_naming({1: "zulu", 2: "alpha"}), bot
+        db_path, division_id, round_id, _guild_naming({1: "zulu", 2: "alpha"}), names_read
     )
     backwards = await driver_standings_for_display(
-        db_path, division_id, round_id, _guild_naming({1: "alpha", 2: "zulu"}), bot
+        db_path, division_id, round_id, _guild_naming({1: "alpha", 2: "zulu"}), names_read
     )
 
     assert [s.driver_user_id for s in forwards] == [2, 1]
@@ -824,15 +844,16 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
     )
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=302)
-    bot = MagicMock()
-    bot.db_path = db_path
+    names_read = _hook(db_path)
     guild = _guild_naming({1: "zulu", 2: "alpha"})
 
-    names = await standings_display_names(db_path, division_id, guild, bot)
+    names = await standings_display_names(db_path, division_id, guild, names_read)
     async with get_connection(db_path) as db:
         await standings_service.cascade_recompute_from_round_on(db, division_id, round_id, names)
         await db.commit()
-    drawn = await driver_standings_for_display(db_path, division_id, round_id, guild, bot)
+    drawn = await driver_standings_for_display(
+        db_path, division_id, round_id, guild, names_read
+    )
 
     async with get_connection(db_path) as db:
         rows = await (
@@ -1024,6 +1045,7 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
             return await produce_session_results(
                 db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
                 "Provisional Results", **kwargs,
+                driver_names_read=AwaitedHook(),
             )
 
     async def _standings(label: str = "Provisional Results", **kwargs) -> list[PostedTable]:
@@ -1031,6 +1053,7 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
             return await produce_standings(
                 db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
                 guild, True, label, **kwargs,
+                driver_names_read=AwaitedHook(),
             )
 
     # A session's results: posted afresh, the old posting handed back and left standing.
@@ -1062,29 +1085,30 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
 
     # A session's results drawn as a picture: handed back with the posting it replaces, as a
     # text table is, for the caller's jobs to save and delete.
-    drew = MagicMock(applicable=True, message_id=9990, rejects=False, fallback_championships=[])
-    bot = MagicMock()
+    import io
+
+    drawing = MagicMock()
+    drawing.draw_results = AsyncMock(
+        return_value=(discord.File(io.BytesIO(b"\x89PNG"), filename="results.png"), ())
+    )
+    drawing.aspect_wanted = AsyncMock(return_value=True)
     with patch(
-        "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
+        "leaguebot.results.services.publishing.results_drawing_composer.build_drawing",
+        new=AsyncMock(return_value=MagicMock()),
     ):
-        assert await _results(bot=bot) == PostedTable([9990], [OLD_RESULTS], drawn=True)
+        posted = await _results(drawing=drawing)
+    picture = [mid for kind, cid, mid in events if kind == "send" and cid == RESULTS_CHANNEL][-1]
+    assert posted == PostedTable([picture], [OLD_RESULTS], drawn=True)
     # The standings drawn as pictures save and delete nothing either; what they report is
     # pinned in `test_image_standings_post.py`.
-    from leaguebot.image.services.image_standings_post import (
-        POSTED,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
-    )
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
-    pictures = StandingsPostOutcome(
-        drivers=ChampionshipOutcome(action=POSTED, message_id=9991),
-        constructors=ChampionshipOutcome(action=POSTED, message_id=9992),
-    )
-    with patch(
-        "leaguebot.image.services.image_standings_post.try_post",
-        new=AsyncMock(return_value=pictures),
-    ):
-        await _standings(bot=bot)
+    drawing.draw_standings = AsyncMock(return_value=StandingsDrawn(
+        applicable=True,
+        drivers=discord.File(io.BytesIO(b"\x89PNG"), filename="drivers.png"),
+        constructors=discord.File(io.BytesIO(b"\x89PNG"), filename="constructors.png"),
+    ))
+    await _standings(drawing=drawing)
 
     assert not [event for event in events if event[0] == "delete"]
     assert await _stored() == stored

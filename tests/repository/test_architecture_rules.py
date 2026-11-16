@@ -165,9 +165,7 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
-}
+KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_database_code_lives_only_in_services():
@@ -577,7 +575,6 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Each owned by the pass whose handler must first judge a missed event of its kind.
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["image"]),
 }
 
 
@@ -778,12 +775,6 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
-    ("attendance/services/sheet/attendance_sheet.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
-    ("results/services/publishing/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
-    ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("results/services/standings/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
 }
 
 
@@ -981,9 +972,6 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
-    ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
 }
 
 
@@ -1495,33 +1483,6 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
-    ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
-    ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
-    ("image/services/image_lineup_post.py", "lineup_enabled"): (3, PASS["image"]),
-    ("image/services/image_lineup_post.py", "render_png"): (2, PASS["image"]),
-    ("image/services/image_preview_service.py", "build_calendar_preview"): (1, PASS["image"]),
-    ("image/services/image_preview_service.py", "build_results_preview"): (1, PASS["image"]),
-    ("image/services/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
-    ("image/services/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
-    ("image/services/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
-    ("image/services/image_render_service.py", "ImageRenderService.report_notices"): (1, PASS["image"]),
-    ("image/services/image_results_post.py", "build_drawing"): (1, PASS["image"]),
-    ("image/services/image_results_post.py", "render_png"): (2, PASS["image"]),
-    ("image/services/image_results_post.py", "report"): (1, PASS["image"]),
-    ("image/services/image_results_post.py", "results_enabled"): (3, PASS["image"]),
-    ("image/services/image_rsvp_post.py", "rsvp_enabled"): (3, PASS["image"]),
-    ("image/services/image_rsvp_post.py", "try_attach"): (2, PASS["image"]),
-    ("image/services/image_standings_post.py", "render_png"): (2, PASS["image"]),
-    ("image/services/image_standings_post.py", "report"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "standings_enabled"): (3, PASS["image"]),
-    ("image/services/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
-    ("image/services/image_verdict_banner_post.py", "banner_enabled"): (3, PASS["image"]),
-    ("image/services/image_verdict_banner_post.py", "render_banner"): (2, PASS["image"]),
-    ("image/services/image_verdict_post.py", "render_verdict"): (2, PASS["image"]),
-    ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
-    ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
-    ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
 }
 
 
@@ -2085,6 +2046,13 @@ SAVES_ALLOWED = {
     ("core/services/upkeep/pack_service.py", "pack"):
         "`/bot pack` stays off the queue, refused while any lane holds a job (architecture.md, "
         "\"Every change goes through one queue\")",
+    ("image/services/portraits/driver_portrait_service.py", "_record"):
+        "the portrait register, written around the file it records and committed on its own, off "
+        "the queue, so that a fetch cut off between the file and its key leaves the portrait the "
+        "bot's (architecture.md, \"Every change goes through one queue\")",
+    ("image/services/portraits/driver_portrait_service.py", "_disown"):
+        "the portrait register, its row removed after the file and committed on its own, off the "
+        "queue (architecture.md, \"Every change goes through one queue\")",
 }
 
 
@@ -2111,9 +2079,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Attendance's pass
     # Signup's pass
     # Image's pass
-    ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
-    ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
-    ("image/services/image_config_service.py", "ImageConfigService.create_with_defaults"): (1, PASS["image"]),
 }
 
 
@@ -2427,22 +2392,6 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
-    ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
-        (2, PASS["image"]),
-    ("image/services/image_lineup_post.py", "build_drawing"): (8, PASS["image"]),
-    ("image/services/image_preview_service.py", "_load_teams_and_drivers"): (6, PASS["image"]),
-    ("image/services/image_results_post.py", "<module>"): (2, PASS["image"]),
-    ("image/services/image_results_post.py", "_driver_names"): (2, PASS["image"]),
-    ("image/services/image_results_post.py", "_nationalities"): (2, PASS["image"]),
-    ("image/services/image_results_post.py", "_nationality_collected"): (2, PASS["image"]),
-    ("image/services/image_results_post.py", "season_of_division"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "_calendar"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "_round_session_results"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "_seats"): (5, PASS["image"]),
-    ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
-    ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
-    ("image/services/image_weather_post.py", "build_drawing_for_round"): (4, PASS["image"]),
 }
 
 
@@ -2872,9 +2821,7 @@ KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {}
 #: migrations build.
 KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {}
 
-KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-}
+KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_no_statement_reads_sqlites_clock():
@@ -3022,6 +2969,9 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: the Discard is refused all the same, whatever the reader does",
     ("results/services/round_amendment/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
+    ("image/utils/svg_document.py", "_contained"):
+        "place 4, around work run in a worker thread: the error is handed back as plain text and "
+        "raised again on the loop, so that nothing parsed leaves the thread with it",
     ("core/utils/interaction_errors.py", "report_failure"):
         "place 3, around reporting a failure, where the report itself might fail",
     ("core/utils/league_server.py", "on_event_error"):
@@ -3089,8 +3039,8 @@ CATCH_ALLS_ALLOWED = {
         "fault a line of the job",
     ("core/services/rounds/calendar_post_service.py", "render_for_command"):
         "place 5, a commanded calendar that cannot be drawn is refused, its fault the review's line",
-    ("image/services/image_drawing.py", "ImageDrawing.calendar_wanted"):
-        "a stated exception: a calendar gate that cannot be read answers text, so none is lost",
+    ("image/services/render/image_drawing.py", "ImageDrawing.aspect_wanted"):
+        "a stated exception: a gate that cannot be read answers text, so no picture's text is lost",
     ("core/services/drivers/lineup_posting.py", "LineupPoster._refresh_lineup_post"):
         "place 5, a lineup that cannot be drawn is posted as text and its fault is the job's line",
     ("results/services/publishing/results_post_service.py", "produce_session_results"):
@@ -3102,18 +3052,63 @@ CATCH_ALLS_ALLOWED = {
     ("results/services/review/verdict_announcement_service.py", "_send_verdict"):
         "place 5, a verdict picture that cannot be drawn is announced as text and its fault is "
         "the job's line",
-    ("image/services/image_drawing.py", "ImageDrawing.lineup_wanted"):
-        "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
-    ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
+    ("image/services/render/image_render_service.py", "ImageRenderService.render"):
+        "place 5, a tier's colours that cannot be read are drawn in the template's own, with a "
+        "render notice",
+    ("image/services/render/image_render_service.py", "_draw"):
+        "place 5, the graphic's own assembling: a tier's colours that cannot be applied are drawn "
+        "in the template's own, with a render notice; data that cannot be assembled or a template "
+        "that cannot be filled comes back as a problem, from which the caller falls back to text",
+    ("image/services/render/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
-    ("image/services/image_weather_post.py", "attach_forecast"):
+    ("image/services/render/image_drawing.py", "ImageDrawing.attach_forecast"):
         "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
         "back as a line for the log channel, and the forecast goes out as text; and place 3, "
         "around reading the round to name the line of a switch that could not be read, which "
         "must not fail the line",
+    ("image/services/render/image_drawing.py", "ImageDrawing.attach_check_in_call"):
+        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
+        "back as a line for the log channel, and the call goes out without the picture",
+    ("image/services/render/image_drawing.py", "ImageDrawing.draw_attendance_sheet"):
+        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
+        "back as a line for the log channel, and the sheet goes out as text",
+    ("image/services/render/image_drawing.py", "ImageDrawing.draw_banner"):
+        "place 6, around the drawing alone of a graphic that rides on a post: a fault is handed "
+        "back as a line for the log channel, and the batch is headed in words",
+    ("image/services/render/image_drawing.py", "ImageDrawing._weather_gate"):
+        "place 6, around reading the switch of a graphic that rides on a post: a switch that "
+        "cannot be read is a reason like any other, handed back as a line for the log channel, "
+        "and the forecast goes out as text",
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
         "a stated exception: a put-back after a press already answered logs the error in full and "
         "leaves the message as the press's edit left it, for a report would answer the press twice",
+    ("image/services/portraits/driver_portrait_service.py", "refresh_portraits.fetch"):
+        "place 2, a task of its own for each member: one portrait that cannot be obtained goes to the "
+        "host's log and the others are still fetched",
+    ("image/services/portraits/driver_portrait_service.py", "refresh_before_render"):
+        "a stated exception: a portrait never fails the picture it is for, so the pre-render refresh "
+        "logs the fault on the host and the picture is drawn with the portraits it has",
+    ("image/services/portraits/driver_portrait_service.py", "portrait_aspect"):
+        "a stated exception: a portrait never fails the picture it is for, so a shape that cannot be "
+        "read is logged on the host and read as 1:1, the render reporting a template it cannot read",
+    ("image/services/portraits/driver_portrait_service.py", "discard_portraits"):
+        "a stated exception: the command or season's end that discards a portrait has committed, so a "
+        "portrait that cannot be removed is logged on the host and the command stands completed",
+    ("image/services/aspects/image_verdict_post.py", "_round_context"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("image/services/aspects/image_verdict_post.py", "_driver_nationality"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("results/services/review/verdict_announcement_service.py", "team_name_for_entry"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("results/services/review/verdict_announcement_service.py", "team_key_for_entry"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("image/services/aspects/image_verdict_post.py", "_mention_names"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
 }
 
 
@@ -3158,55 +3153,11 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
-    ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, PASS["image"]),
-    ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
-    ("image/services/driver_portrait_service.py", "portrait_aspect"): (1, PASS["image"]),
-    ("image/services/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
-    ("image/services/driver_portrait_service.py", "refresh_portraits.fetch"): (1, PASS["image"]),
-    ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
-    ("image/services/image_attendance_post.py", "attendance_enabled"): (1, PASS["image"]),
-    ("image/services/image_attendance_post.py", "render_sheet"): (1, PASS["image"]),
-    ("image/services/image_lineup_post.py", "lineup_enabled"): (1, PASS["image"]),
-    ("image/services/image_lineup_post.py", "render_for_command"): (1, PASS["image"]),
-    ("image/services/image_preview_service.py", "build_rsvp_preview"): (1, PASS["image"]),
-    ("image/services/image_render_service.py", "ImageRenderService.render"): (3, PASS["image"]),
-    ("image/services/image_render_service.py", "ImageRenderService.report_notices"):
-        (1, PASS["image"]),
-    ("image/services/image_results_post.py", "_nationality_collected"): (1, PASS["image"]),
-    ("image/services/image_results_post.py", "report"): (1, PASS["image"]),
-    ("image/services/image_results_post.py", "report_notices"): (1, PASS["image"]),
-    ("image/services/image_results_post.py", "results_enabled"): (1, PASS["image"]),
-    ("image/services/image_results_post.py", "try_post"): (2, PASS["image"]),
-    ("image/services/image_rsvp_post.py", "rsvp_enabled"): (1, PASS["image"]),
-    ("image/services/image_rsvp_post.py", "try_attach"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "report"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "report_notices"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "standings_enabled"): (1, PASS["image"]),
-    ("image/services/image_standings_post.py", "try_post"): (1, PASS["image"]),
-    ("image/services/image_validity_service.py", "aspect_attaches_files"): (1, PASS["image"]),
-    ("image/services/image_verdict_banner_post.py", "banner_enabled"): (1, PASS["image"]),
-    ("image/services/image_verdict_banner_post.py", "render_banner"): (1, PASS["image"]),
-    ("image/services/image_verdict_banner_post.py", "try_post"): (2, PASS["image"]),
-    ("image/services/image_verdict_post.py", "_driver_nationality"): (1, PASS["image"]),
-    ("image/services/image_verdict_post.py", "_mention_names"): (1, PASS["image"]),
-    ("image/services/image_verdict_post.py", "_round_context"): (1, PASS["image"]),
-    ("image/services/image_verdict_post.py", "render_verdict"): (1, PASS["image"]),
-    ("image/services/image_verdict_post.py", "team_key_for_entry"): (1, PASS["image"]),
-    ("image/services/image_verdict_post.py", "team_name_for_entry"): (1, PASS["image"]),
-    ("image/services/image_verdict_post.py", "verdicts_enabled"): (1, PASS["image"]),
-    ("image/services/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
-    ("image/services/image_weather_post.py", "weather_enabled"): (1, PASS["image"]),
-    ("image/utils/font_metrics.py", "_faces_of"): (3, PASS["image"]),
-    ("image/utils/font_metrics.py", "_families_of"): (4, PASS["image"]),
-    ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
-    ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
-    ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
+    ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
 }
 
 

@@ -38,9 +38,10 @@ if TYPE_CHECKING:
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_render_service import ImageRenderService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.preview.preview_sources import PreviewSources
+    from leaguebot.image.services.render.image_render_service import ImageRenderService
+    from leaguebot.image.services.validity.image_validity_service import ImageValidityService
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
@@ -99,6 +100,9 @@ class LeagueBot(commands.Bot):
     #: `template_capacity_service` and `lineup_poster`.
     image_drawing: ImageDrawing
     image_config_service: ImageConfigService
+    #: What the image module's previews ask of the modules that own what they draw; the builder
+    #: hands it the modules' own implementations.
+    preview_sources: PreviewSources
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService
     #: The moment a round's timing windows are read (the season's approval and review, and the
@@ -126,9 +130,11 @@ class LeagueBot(commands.Bot):
     #: stand when it is asked, so that `/season config-review` reads no module's service itself.
     configuration_faults: Callable[[int, discord.Guild | None], Awaitable[list[str]]]
     #: A driver's name read (the placements review and its confirmation naming the unsettled
-    #: signups): signup signs up a function handing back, for the profile ids it is given, the name
-    #: each gave in their signup. The builder makes it and signs signup up, so that core reads no
-    #: signup record (architecture.md, "A hook core declares is a list of subscribers").
+    #: signups, and every picture naming a driver): signup signs up a function handing back, for the
+    #: profile ids and the season it is given, a `SignupNames`: the name, username and nationality
+    #: each gave in their signup, and whether the league collects a nationality at all. The builder
+    #: makes it and signs signup up, so that core reads no signup record (architecture.md, "A hook
+    #: core declares is a list of subscribers").
     driver_names_read: AwaitedHook
     #: A division's channel faults read (the placements review and the confirmations judging each
     #: channel a division posts to): each module signs up a function handing back, by division id,

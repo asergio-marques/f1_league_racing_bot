@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.image.services.image_verdict_service import (
+from leaguebot.image.services.aspects.image_verdict_service import (
     VerdictDrawing,
     VerdictKind,
     build_fill_spec,
@@ -169,7 +169,7 @@ def test_a_mystery_round_reads_mystery_grand_prix():
 
 def test_a_league_that_collects_no_nationality_removes_the_flag_quietly():
     """XIV.4's configured absence: nothing has degraded, so nothing is reported."""
-    from leaguebot.image.services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
+    from leaguebot.image.services.aspects.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
 
     drawing = _penalty(driver_nationality=None, nationality_collected=False)
     spec = build_fill_spec(drawing, _root())
@@ -180,7 +180,7 @@ def test_a_league_that_collects_no_nationality_removes_the_flag_quietly():
 
 def test_the_switch_beats_a_nationality_the_driver_already_stated():
     """The switch is read before the value, so no driver keeps a flag the others lost."""
-    from leaguebot.image.services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
+    from leaguebot.image.services.aspects.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
 
     drawing = _penalty(driver_nationality="British", nationality_collected=False)
     spec = build_fill_spec(drawing, _root())
@@ -191,7 +191,7 @@ def test_the_switch_beats_a_nationality_the_driver_already_stated():
 
 
 def test_a_driver_who_stated_none_removes_the_flag_loudly():
-    from leaguebot.image.services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
+    from leaguebot.image.services.aspects.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
 
     drawing = _penalty(driver_nationality=None, nationality_collected=True)
     spec = build_fill_spec(drawing, _root())
@@ -203,7 +203,7 @@ def test_a_driver_who_stated_none_removes_the_flag_loudly():
 
 def test_a_sanction_names_no_team_so_its_image_removal_is_quiet():
     """Nothing degraded: this kind of verdict has no team, and the graphic says so."""
-    from leaguebot.image.services.image_verdict_service import suppressed_team_fields  # noqa: PLC0415
+    from leaguebot.image.services.aspects.image_verdict_service import suppressed_team_fields  # noqa: PLC0415
 
     drawing = _sanction()
     spec = build_fill_spec(drawing, _root())

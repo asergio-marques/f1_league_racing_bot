@@ -301,8 +301,8 @@ def test_the_widest_cell_a_grid_can_carry_stays_inside_its_column(tmp_path):
     """
     from PIL import Image  # noqa: PLC0415
 
-    from leaguebot.image.services.image_render_service import rasterise
-    from leaguebot.image.services.image_standings_service import (
+    from leaguebot.image.services.render.image_render_service import rasterise
+    from leaguebot.image.services.aspects.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         CellValue,
         RoundCells,

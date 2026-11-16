@@ -1,7 +1,7 @@
 """The image module's lineup drawing, its answer to core's drawing protocol (#283).
 
 Core asks whether the league draws its lineup and has one division's lineup drawn
-(`core/services/modules/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
+(`core/services/modules/image_drawing.py`); the image module answers in `image/services/render/image_drawing.py`.
 These tests hold its answers: the three gates read, a gate that cannot be read answering text with
 the error in the host's log alone, the lineup drawn from the division's committed seats with the
 portraits refreshed at the league's own trigger, the picture, the problem and the notices handed
@@ -54,7 +54,7 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
     lineup template's validity as given, the packaged directories configured, and a renderer
     giving *outcome* (nothing drawn by default), keeping the spec builder it was handed in
     `captured`. Handed the database path, as the builder hands it."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=images_on)
@@ -93,7 +93,7 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
 
 def _portraits_spied(monkeypatch):
     """Stand a spy in for the portrait refresh before a render; gives the spy."""
-    import leaguebot.image.services.driver_portrait_service as portraits
+    import leaguebot.image.services.portraits.driver_portrait_service as portraits
 
     spy = AsyncMock(return_value=0)
     monkeypatch.setattr(portraits, "refresh_before_render", spy)
@@ -142,6 +142,25 @@ async def test_a_lineup_gate_whose_switch_nobody_signed_up_for_raises():
         await drawing.lineup_wanted()
 
 
+#: Every aspect `/images config toggle` offers, by the value it stores.
+ASPECTS = ["calendar", "lineup", "results", "standings", "attendance", "rsvp", "weather",
+           "verdicts", "verdict_banner"]
+
+
+@pytest.mark.parametrize("aspect", ASPECTS)
+async def test_every_aspect_gate_lets_a_switch_nobody_signed_up_for_through(aspect):
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and the image
+    drawing is asked whether *aspect* is drawn: the fault is raised, not answered as text, whichever
+    of the nine pictures asks."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    drawing, _, _, modules = _drawing()
+    modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await drawing.aspect_wanted(aspect)
+
+
 @pytest.mark.parametrize("draw", DRAWS)
 async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, monkeypatch, draw):
     """Pro, in a season being raced, seats Zara (placement confirmed), Yuri (placed mid-season and
@@ -163,54 +182,101 @@ async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, mon
     assert "vexley" not in filled, spec.text
 
 
-@pytest.mark.parametrize("draw", DRAWS)
+#: Each way a lineup is drawn, what it is handed beyond the guild and the division, the drivers it
+#: draws, and whether it obtains the portraits missing among them: the placements review alone does
+#: (#407), and it draws Yuri, whose placement is not yet confirmed, beside Zara.
+PORTRAIT_TRIGGERS = [
+    pytest.param("draw_lineup", {}, [1001], False, id="of_record"),
+    pytest.param("draw_lineup_for_command", {}, [1001], False, id="for_command"),
+    pytest.param(
+        "draw_review_lineup", {"include_uncommitted": True}, [1001, 1002], True, id="for_review",
+    ),
+]
+
+
+@pytest.mark.parametrize("draw,handed,drawn,obtain_missing", PORTRAIT_TRIGGERS)
 async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
-    db_path, monkeypatch, draw,
+    db_path, monkeypatch, draw, handed, drawn, obtain_missing,
 ):
     """Pro's lineup drawn for a posting, or as `/team lineup`'s output: the portraits of the
     drivers it draws are brought up to date as the league's own trigger says, and none missing is
-    fetched beyond it, which only the placements review may ask for. Zara alone is drawn, so hers
-    alone is asked for."""
+    fetched beyond it. The placements review alone obtains the missing ones, since it draws the
+    lineup a season is judged on and a driver seated since the last daily update must be in it.
+    The drivers drawn, and they alone, are asked for, from the configured driver directory."""
     spy = _portraits_spied(monkeypatch)
-    guild, _, members = _guild()
+    guild, *_ = _guild()
     drawing, *_ = _drawing(db_path)
 
-    await getattr(drawing, draw)(guild, DIVISION_ID)
+    await getattr(drawing, draw)(guild, DIVISION_ID, **handed)
 
     spy.assert_awaited_once()
-    assert spy.await_args.args[1] == [members[1001]]
-    assert spy.await_args.kwargs["obtain_missing"] is False
+    assert sorted(m.id for m in spy.await_args.args[1]) == drawn
+    assert spy.await_args.kwargs["obtain_missing"] is obtain_missing
+    assert Path(spy.await_args.kwargs["directory"]).name == "drivers"
 
 
-@pytest.mark.parametrize("draw", DRAWS)
-async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_message(
-    db_path, monkeypatch, draw,
-):
-    """Pro's lineup drawn with two notices, as the lineup of record or as `/team lineup`'s output:
-    the drawing itself reports them to the log channel, in one message headed with the lineup and
-    the division, so they reach the log whichever change or command drew the lineup, and never
-    the lineup channel (Constitution XIV.4, "reported in one message"; the owner's decision on
-    #283)."""
+def _two_lineup_notices():
+    """Two notices a lineup of Pro's is drawn with: Zara's flag and portrait each falling back."""
     from leaguebot.image.models.image_module import RenderNotice
 
-    _portraits_spied(monkeypatch)
-    notices = [
+    return [
         RenderNotice(image_type="lineup", notice_kind="ASSET_FALLBACK_USED",
                      detail="a fallback flag stood in for Zara's"),
         RenderNotice(image_type="lineup", notice_kind="ASSET_FALLBACK_USED",
                      detail="a fallback portrait stood in for Zara's"),
     ]
+
+
+async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_channel_in_one_message(
+    db_path, monkeypatch,
+):
+    """Pro's lineup drawn with two notices as `/team lineup`'s output, which runs in no job: the
+    drawing itself reports them to the log channel, in one message headed with the lineup and the
+    division, and never to the lineup channel (Constitution XIV.4, "reported in one message")."""
+    _portraits_spied(monkeypatch)
     guild, channel, _ = _guild()
     drawing, _, post_log, _ = _drawing(
-        db_path, outcome=NS(problem=None, notices=notices, png_paths=[])
+        db_path, outcome=NS(problem=None, notices=_two_lineup_notices(), png_paths=[])
     )
 
-    await getattr(drawing, draw)(guild, DIVISION_ID)
+    await drawing.draw_lineup_for_command(guild, DIVISION_ID)
 
     [call] = post_log.await_args_list
     assert call.args[0].startswith("Image render notices — lineup — Pro:\n"), call.args[0]
     assert "a fallback flag stood in for Zara's" in call.args[0]
     assert "a fallback portrait stood in for Zara's" in call.args[0]
+    channel.send.assert_not_awaited()
+
+
+#: The lineups drawn inside a change's job: the lineup of record (the lineup job's), and the lineup
+#: a season review draws (`draw_review_lineup`, its uncommitted drivers in it).
+IN_A_JOB_DRAWS = [
+    pytest.param("draw_lineup", id="of_record"),
+    pytest.param("draw_review_lineup", id="for_review"),
+]
+
+
+@pytest.mark.parametrize("draw", IN_A_JOB_DRAWS)
+async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothing(
+    db_path, monkeypatch, draw,
+):
+    """Pro's lineup drawn with two notices inside a change's job, as the lineup of record or for a
+    season review: the drawing writes nothing to the log channel itself, and hands both notices
+    back with the picture, for the job that posts it to record once among its own lines (the
+    owner's decision on #288: code inside a job never calls `post_log`). Nothing reaches the
+    lineup channel."""
+    _portraits_spied(monkeypatch)
+    guild, channel, _ = _guild()
+    drawing, _, post_log, _ = _drawing(
+        db_path, outcome=NS(problem=None, notices=_two_lineup_notices(), png_paths=[])
+    )
+
+    more = {"include_uncommitted": True} if draw == "draw_review_lineup" else {}
+    picture = await getattr(drawing, draw)(guild, DIVISION_ID, **more)
+
+    post_log.assert_not_awaited()
+    assert "a fallback flag stood in for Zara's" in picture.notices
+    assert "a fallback portrait stood in for Zara's" in picture.notices
     channel.send.assert_not_awaited()
 
 

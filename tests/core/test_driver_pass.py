@@ -269,7 +269,7 @@ async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
 
 @pytest.fixture
 def portraits(tmp_path, monkeypatch):
-    from leaguebot.image.services import image_render_service
+    from leaguebot.image.services.render import image_render_service
 
     directory = tmp_path / "drivers"
     directory.mkdir()
@@ -298,8 +298,8 @@ async def _obtained(db_path, directory, *accounts) -> None:
         for account in accounts:
             (directory / f"{account}.svg").write_text("<svg>obtained</svg>")
             await db.execute(
-                "INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at) "
-                "VALUES (?, 'hash@1.0000', '2026-09-01T03:00:00+00:00')",
+                "INSERT INTO driver_portraits (discord_user_id, avatar_key) "
+                "VALUES (?, 'hash@1.0000')",
                 (account,),
             )
         await db.commit()
@@ -320,7 +320,7 @@ def _files(directory) -> list[str]:
 async def _pass_and_discard(db_path, directory):
     """The pass on the save handed, committed, then the `discard_portraits` job's work: the
     portraits of the accounts it gives discarded. Gives the pass's result."""
-    from leaguebot.image.services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services.portraits.driver_portrait_service import discard_portraits
 
     result = await _pass(db_path)
     bot = _bot_for(db_path, directory)
@@ -366,7 +366,7 @@ async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
     db_path, portraits, monkeypatch
 ):
     """The row taken without its file would disown the bot's own portrait for good."""
-    from leaguebot.image.services import image_render_service
+    from leaguebot.image.services.render import image_render_service
 
     await _obtained(db_path, portraits, "1002")
     monkeypatch.setattr(
@@ -385,7 +385,7 @@ async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
 async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
     db_path, portraits, monkeypatch
 ):
-    from leaguebot.image.services import driver_portrait_service
+    from leaguebot.image.services.portraits import driver_portrait_service
 
     monkeypatch.setattr(
         driver_portrait_service,

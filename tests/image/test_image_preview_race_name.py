@@ -16,12 +16,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.image.services import image_preview_service
-from leaguebot.image.services.image_preview_service import (
+from leaguebot.image.services.preview import image_preview_service
+from leaguebot.image.services.preview.image_preview_service import (
     PreviewContext,
     _race_name,
 )
-from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME
+from leaguebot.image.services.aspects.image_rsvp_service import MYSTERY_RACE_NAME
 
 pytestmark = pytest.mark.asyncio
 

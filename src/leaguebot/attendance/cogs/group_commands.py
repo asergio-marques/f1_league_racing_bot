@@ -28,6 +28,7 @@ from leaguebot.core.services.seasons.season_service import round_by_number
 from leaguebot.core.utils.channel_guard import league_manager_only
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import refuse
+from leaguebot.image.services.render.image_drawing import as_image_drawing
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 
 
@@ -88,7 +89,10 @@ class GroupCommands(AttendanceSubgroup):
             verdict = round_verdict(None if found is None else str(found.status), div.name, round)
         if verdict is None:
             verdict = faults_verdict(
-                await recalculation_faults(db_path, season.id, interaction.guild, self.bot)
+                await recalculation_faults(
+                    db_path, season.id, interaction.guild, self.bot,
+                    drawing=as_image_drawing(self.bot.image_drawing),
+                )
             )
         if verdict is not None:
             await refused(verdict.reply, verdict.reason or None)

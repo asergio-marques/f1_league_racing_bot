@@ -130,7 +130,7 @@ def test_every_image_slot_of_a_shipped_template_carries_its_classs_aspect(path):
         PACKAGED_ASSET_ASPECTS,
         RATIO_CONSISTENT_ASSET_CLASSES,
     )
-    from leaguebot.image.services.image_validity_service import (
+    from leaguebot.image.services.validity.image_validity_service import (
         class_aspect_faults_of,
         class_aspect_of,
         stretch_faults_of,

@@ -316,6 +316,10 @@ NOTICE_OPTIONAL_FIELD_EMPTIED = "OPTIONAL_FIELD_EMPTIED"
 #: Where it does not, the cut is made there anyway and this is raised (037, FR-026).
 NOTICE_CROP_POINT_OFF_CANVAS = "CROP_POINT_OFF_CANVAS"
 
+#: A tier's colours could not be applied to the graphic, which was drawn in the template's own
+#: colours instead (051). Raised by the render, never by the fill: the palette is applied before it.
+NOTICE_TIER_COLOURS_NOT_APPLIED = "TIER_COLOURS_NOT_APPLIED"
+
 
 # ── Asset classes ─────────────────────────────────────────────────────────
 
@@ -364,9 +368,9 @@ def is_closed_set_datum(asset_class: str, slug: str) -> bool:
     the class is also what keeps those three vocabularies from being restated here where
     they would drift from the modules that define them: the position-change data in
     `standings_service`, the weathers in `math_utils`, the five compounds in
-    `leaguebot.image.utils.tyre_compound`. `flag` and `track` name countries and circuits a league chose,
-    and reserve two names within that, so there the datum settles it: asserting the whole
-    class would hand a league our file for a country it simply had not drawn yet.
+    `leaguebot.results.utils.tyre_compound`. `flag` and `track` name countries and circuits a
+    league chose, and reserve two names within that, so there the datum settles it: asserting
+    the whole class would hand a league our file for a country it simply had not drawn yet.
 
     A tyre compound joined the first kind at Constitution v7.8.0, having sat in the second
     by an accident of which list it was written into. It is what the game offers -- five
@@ -453,6 +457,9 @@ def fallback_names_for(asset_class: str, slug: str) -> tuple[str, ...]:
 #: country -- is concealed until it is run (Constitution XIV.13). Reserved in the
 #: track image directory and the flag directory alike.
 MYSTERY_ASSET_NAME = "mystery.svg"
+
+#: The datum a mystery round's flag, and a mystery check-in round's track, resolve by.
+MYSTERY_DATUM = "Mystery"
 
 #: The reserved filename standing in for a driver who stated no nationality in particular
 #: (Constitution XIV.13). Reserved in the flag directory. `Other` is a *value* a driver

@@ -55,7 +55,8 @@ import dataclasses
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, TypedDict
+from functools import partial
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
 import discord
@@ -67,6 +68,8 @@ from leaguebot.core.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
+    DRAWN_LINES,
+    drawn_lines_kept,
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import SeasonStage
@@ -77,6 +80,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.standing_post_handler import delete_standing
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
@@ -85,6 +89,9 @@ from leaguebot.results.models.standings_snapshot import (
 )
 from leaguebot.results.services.standings import standings_service
 from leaguebot.results.services.publishing.results_post_service import (
+    DRAWN_LINES_ATTRIBUTE,
+    PICTURE_FAULTS_ATTRIBUTE,
+    UploadFault,
     _delete_posting,
     _label_from_status,
     _parse_ids,
@@ -101,6 +108,9 @@ from leaguebot.results.services.publishing.results_post_service import (
     set_standings_message_id_on,
     standings_display_names,
 )
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -135,21 +145,33 @@ def delete_message_step(
     )
 
 
-def posting_steps() -> dict[str, Step]:
-    """The posting jobs, keyed by their names, for a change type's `steps`."""
+def posting_steps(
+    drawing: ImageDrawing | None = None, driver_names_read: AwaitedHook | None = None
+) -> dict[str, Step]:
+    """The posting jobs, keyed by their names, for a change type's `steps`.
+
+    *drawing* is the image module's, which the session's results post draws its picture with, handed
+    by the builder to each change type that posts results; a change type that takes only the
+    deletions and the names hands none, and its results post, never run, would post the text.
+
+    *driver_names_read* is the hook signup answers how a driver is named, which the names a full tie
+    is ordered by are resolved through; none leaves the tie ordered by user id.
+    """
     return {
-        NAMES: Step(NAMES, StepKind.ACT, _resolve_names, describe=_describe_names),
+        NAMES: Step(
+            NAMES, StepKind.ACT, partial(_resolve_names, driver_names_read), describe=_describe_names
+        ),
         POST_SESSION_RESULTS: Step(
-            POST_SESSION_RESULTS, StepKind.ACT, _post_session_results,
+            POST_SESSION_RESULTS, StepKind.ACT, partial(_post_session_results, drawing, driver_names_read),
             still_due=_session_still_due, describe=_describe_session_post,
             record=_record_session_post,
         ),
         POST_STANDINGS: Step(
-            POST_STANDINGS, StepKind.ACT, _post_standings,
+            POST_STANDINGS, StepKind.ACT, partial(_post_standings, drawing, driver_names_read),
             describe=_describe_standings_post, record=_record_standings_post,
         ),
         POST_STANDINGS_AFRESH: Step(
-            POST_STANDINGS_AFRESH, StepKind.ACT, _post_standings_afresh,
+            POST_STANDINGS_AFRESH, StepKind.ACT, partial(_post_standings_afresh, drawing, driver_names_read),
             describe=_describe_standings_post, record=_record_standings_post,
         ),
         DELETE_MESSAGE: delete_message_step(),
@@ -296,10 +318,34 @@ async def _with_standings_posted(
     return {int(r["round_id"]) for r in await cursor.fetchall()}
 
 
-def _put_right(picture: str, remedy: str) -> str:
+def _refused_picture_line(
+    ctx: StepContext, error: BaseException, rnd: Any, payload: dict[str, Any], *, picture: str
+) -> tuple[str, ...]:
+    """The line for a *picture* ("results", "standings") whose post failed on *error* after the
+    picture was refused or would not draw, and whose text failed too: the picture's own line, as
+    the try that posts the text would have written it, for the stop to keep and the retry to hand
+    back once. None where *error* carries no such fault."""
+    faults = getattr(error, PICTURE_FAULTS_ATTRIBUTE, None)
+    if not faults:
+        return ()
+    fault = next(iter(faults.values()))
+    return (picture_fallback_line(
+        ctx.named, ctx.what, picture=picture, division=rnd["division_name"],
+        round_number=rnd["round_number"], fault=fault,
+        put_right=_put_right(picture, payload["remedy"], at_discord=isinstance(fault, UploadFault)),
+    ),)
+
+
+def _put_right(picture: str, remedy: str, *, at_discord: bool = False) -> str:
     """What puts a *picture* that went out as text right, by the job's own *remedy*: the sync
     command while the season is being raced, the round's amendment once it is pending
-    completion and the sync commands are refused (results spec :587, :589)."""
+    completion and the sync commands are refused (results spec :587, :589). Where Discord
+    refused the upload, or the connection failed it, the template is not at fault: the picture
+    is posted again with the same command."""
+    if at_discord:
+        if remedy == _AMEND:
+            return f"post the {picture} picture again by amending the round with `{_AMEND}`"
+        return f"post the {picture} picture again with `{remedy}`"
     if remedy == _AMEND:
         return f"fix the {picture} template, then amend the round with `{_AMEND}`"
     return f"fix the {picture} template, then run `{remedy}`"
@@ -531,7 +577,9 @@ async def _describe_names(ctx: StepContext) -> str:
     return "looking up the drivers' display names for the standings"
 
 
-async def _resolve_names(ctx: StepContext) -> StepResult:
+async def _resolve_names(
+    driver_names_read: AwaitedHook | None, ctx: StepContext
+) -> StepResult:
     """Resolve, from Discord, the names the division's standings are drawn under.
 
     A job of its own before the save that recomputes the snapshots, so that the save awaits
@@ -548,7 +596,9 @@ async def _resolve_names(ctx: StepContext) -> StepResult:
     division_id = ctx.step_payload.get("division_id")
     if division_id is None:
         division_id = (await _round_row(ctx.db_path, int(ctx.payload["round_id"])))["division_id"]
-    names = await standings_display_names(ctx.db_path, int(division_id), guild, ctx.bot)
+    names = await standings_display_names(
+        ctx.db_path, int(division_id), guild, driver_names_read
+    )
     return StepResult(result={"names": names})
 
 
@@ -651,10 +701,12 @@ async def _remove_kept(guild: discord.Guild, kept: dict[str, Any] | None) -> Non
             delete=delete_standing, failures=failures,
         ))
     if left:
+        # The earlier try's picture lines go on the stop, as a stop's result replaces what the
+        # job kept: the retry that does remove the text must still hand them back.
         raise StepFailedOnDiscord(
             f"{len(left)} message(s) of the earlier try could not be removed",
             result={"new": left, "channel_id": int(channel_id)},
-        ) from (failures[0] if failures else None)
+        ).carrying(drawn_lines_kept(kept)) from (failures[0] if failures else None)
 
 
 def _stranded(error: Exception, channel_id: int) -> dict[str, Any] | None:
@@ -716,7 +768,21 @@ async def _describe_session_post(ctx: StepContext) -> str:
     )
 
 
-async def _post_session_results(ctx: StepContext) -> StepResult:
+def _names_hook(drawing: ImageDrawing | None, driver_names_read: AwaitedHook | None) -> AwaitedHook:
+    """The hook a producer is handed. A step that may draw a picture must be given the hook signup
+    answers, for a picture is drawn with the signup names and flags, so none raises here and the
+    job fails where it is built wrong rather than posting a picture without them; a step with no
+    drawing posts text only, which reads no names through it."""
+    if driver_names_read is not None:
+        return driver_names_read
+    if drawing is not None:
+        raise ValueError("a posting step that draws a picture needs the driver names hook")
+    return AwaitedHook()
+
+
+async def _post_session_results(
+    drawing: ImageDrawing | None, driver_names_read: AwaitedHook | None, ctx: StepContext
+) -> StepResult:
     payload = ctx.step_payload
     row = await _session_row(ctx.db_path, payload["session_id"])
     if row is None:
@@ -759,24 +825,36 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
             ctx.db_path, _sr_from_row(row), driver_rows, points_map, channel, guild,
             rnd["round_number"], rnd["track_name"] or "Unknown", payload["label"], is_sprint,
             # The picture on the first try alone; a retry posts the text (XIV rule 8).
-            bot=ctx.bot if ctx.tries == 0 else None,
+            drawing=drawing if ctx.tries == 0 else None,
+            driver_names_read=_names_hook(drawing, driver_names_read),
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
+        picture_lines = drawn_lines_kept(ctx.kept) + tuple(
+            getattr(error, DRAWN_LINES_ATTRIBUTE, ())
+        ) + _refused_picture_line(ctx, error, rnd, payload, picture="results")
         if kept is not None:
             raise StepFailedOnDiscord(
                 "the results were posted in part and the rest was refused", result=kept
-            ) from error
+            ).carrying(picture_lines) from error
+        if picture_lines and isinstance(error, discord.HTTPException):
+            raise StepFailedOnDiscord(
+                "the results were refused", result=None
+            ).carrying(picture_lines) from error
         raise
     result = {
         "new": posted.new, "old": posted.old,
         "drawn": posted.drawn, "channel_id": channel_id,
     }
-    lines = () if posted.fault is None else (picture_fallback_line(
-        ctx.named, ctx.what, picture="results", division=rnd["division_name"],
-        round_number=rnd["round_number"], fault=posted.fault,
-        put_right=_put_right("results", payload["remedy"]),
-    ),)
+    # What the picture said when it was drawn on an earlier try, kept on that try's stop, is handed
+    # back with this one's.
+    lines = drawn_lines_kept(ctx.kept) + posted.lines
+    if posted.fault is not None:
+        lines += (picture_fallback_line(
+            ctx.named, ctx.what, picture="results", division=rnd["division_name"],
+            round_number=rnd["round_number"], fault=posted.fault,
+            put_right=_put_right("results", payload["remedy"], at_discord=posted.at_discord),
+        ),)
     return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
 
 
@@ -810,7 +888,13 @@ async def _describe_standings_post(ctx: StepContext) -> str:
     return f"posting round {rnd['round_number']}'s standings{where}"
 
 
-async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepResult:
+async def _post_standings(
+    drawing: ImageDrawing | None,
+    driver_names_read: AwaitedHook | None,
+    ctx: StepContext,
+    *,
+    recompute: bool = False,
+) -> StepResult:
     """Post one round's standings, drawing the snapshots the round stores, or with *recompute*
     the standings worked out again from the results as they stand when the job runs."""
     payload = ctx.step_payload
@@ -826,14 +910,14 @@ async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepR
 
     if recompute:
         driver_snaps = await driver_standings_for_display(
-            ctx.db_path, division_id, round_id, guild, ctx.bot
+            ctx.db_path, division_id, round_id, guild, driver_names_read
         )
         team_snaps = await standings_service.compute_team_standings(
             ctx.db_path, division_id, round_id
         )
     else:
         driver_snaps, team_snaps = await _stored_standings(
-            ctx.db_path, division_id, round_id, guild, ctx.bot
+            ctx.db_path, division_id, round_id, guild, driver_names_read
         )
     show_reserves = (
         bool(rnd["reserves_in_standings"]) if rnd["reserves_in_standings"] is not None else True
@@ -842,18 +926,26 @@ async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepR
         tables = await produce_standings(
             ctx.db_path, division_id, round_id, rnd["round_number"], rnd["track_name"] or "Unknown",
             channel, driver_snaps, team_snaps, guild, show_reserves, payload["label"],
-            bot=ctx.bot if ctx.tries == 0 else None,
+            drawing=drawing if ctx.tries == 0 else None,
+            driver_names_read=_names_hook(drawing, driver_names_read),
             # A retry after a part-posted try posts afresh: the earlier try went down the
             # picture path, whose tables replace what stood rather than edit it, and what it
             # sent has just been removed.
-            fresh=bool(payload.get("fresh")) or bool(ctx.kept),
+            fresh=bool(payload.get("fresh")) or _left_posted(ctx.kept),
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
+        picture_lines = drawn_lines_kept(ctx.kept) + tuple(
+            getattr(error, DRAWN_LINES_ATTRIBUTE, ())
+        ) + _refused_picture_line(ctx, error, rnd, payload, picture="standings")
         if kept is not None:
             raise StepFailedOnDiscord(
                 "the standings were posted in part and the rest was refused", result=kept
-            ) from error
+            ).carrying(picture_lines) from error
+        if picture_lines and isinstance(error, discord.HTTPException):
+            raise StepFailedOnDiscord(
+                "the standings were refused", result=None
+            ).carrying(picture_lines) from error
         raise
     what = f"round {rnd['round_number']}'s standings"
     then: list[PlannedStep] = []
@@ -870,22 +962,41 @@ async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepR
         "new": new, "channel_id": channel_id,
         "division_id": division_id, "round_id": round_id,
     }
-    fault = next((t.fault for t in tables if t.fault is not None), None)
-    lines = () if fault is None else (picture_fallback_line(
-        ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
-        round_number=rnd["round_number"], fault=fault,
-        put_right=_put_right("standings", payload["remedy"]),
-    ),)
+    failed = next((t for t in tables if t.fault is not None), None)
+    fault = failed.fault if failed is not None else None
+    # What the pictures said when they were drawn on an earlier try, kept on that try's stop, is
+    # handed back with this one's.
+    lines = drawn_lines_kept(ctx.kept) + tuple(line for t in tables for line in t.lines)
+    if fault is not None:
+        lines += (picture_fallback_line(
+            ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
+            round_number=rnd["round_number"], fault=fault,
+            put_right=_put_right(
+                "standings", payload["remedy"], at_discord=failed is not None and failed.at_discord,
+            ),
+        ),)
     return StepResult(result=result, lines=lines, then=tuple(then))
 
 
-async def _post_standings_afresh(ctx: StepContext) -> StepResult:
+def _left_posted(kept: dict[str, Any] | None) -> bool:
+    """True where an earlier try left a table posted in part, which this try's text replaces
+    afresh: what it kept beside the lines of its picture (`drawn_lines_kept`) is not one."""
+    return any(key != DRAWN_LINES for key in kept or {})
+
+
+async def _post_standings_afresh(
+    drawing: ImageDrawing | None, driver_names_read: AwaitedHook | None, ctx: StepContext
+) -> StepResult:
     """`/results standings sync`'s job: a round's standings recomputed, then posted anew."""
-    return await _post_standings(ctx, recompute=True)
+    return await _post_standings(drawing, driver_names_read, ctx, recompute=True)
 
 
 async def _stored_standings(
-    db_path: str, division_id: int, round_id: int, guild: discord.Guild, bot: LeagueBot
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    guild: discord.Guild,
+    driver_names_read: AwaitedHook | None,
 ) -> tuple[list[DriverStandingsSnapshot], list[TeamStandingsSnapshot]]:
     """The standings the round's snapshots hold, which a posting draws.
 
@@ -937,7 +1048,7 @@ async def _stored_standings(
         ]
     else:
         driver_snaps = await driver_standings_for_display(
-            db_path, division_id, round_id, guild, bot
+            db_path, division_id, round_id, guild, driver_names_read
         )
     if teams:
         team_snaps = [

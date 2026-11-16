@@ -58,7 +58,7 @@ def _drawing(
     services: the images module *images*, the `calendar` aspect *aspect*, and a valid calendar
     template drawing *rounds* rounds unless another *report* is given, or *reports_error*
     raised reading the reports."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     if report is ...:
         report = SimpleNamespace(

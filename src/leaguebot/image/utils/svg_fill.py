@@ -216,11 +216,10 @@ def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
     catalogue = spec.catalogue
     if catalogue is None:
         return frozenset()
-    try:
-        return frozenset(catalogue.all_mandatory_ids(spec.root))
-    except Exception:  # noqa: BLE001 — an uncountable template is reported elsewhere
-        log.warning("fill: the template's mandatory fields could not be counted", exc_info=True)
-        return frozenset()
+    # No catch: a template that cannot be counted never reaches here. The render's verify,
+    # which runs before fill, counts the same ids, and a fault it meets in counting them is
+    # raised out of the render, not reported as a problem.
+    return frozenset(catalogue.all_mandatory_ids(spec.root))
 
 
 def fill(spec: FillSpec) -> FillResult:

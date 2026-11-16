@@ -52,9 +52,9 @@ async def db_path(tmp_path):
 async def test_the_standings_headings_name_the_mystery_datum(db_path):
     from types import SimpleNamespace
 
-    from leaguebot.image.services.image_standings_post import _calendar
+    from leaguebot.results.services.publishing.standings_drawing_composer import _calendar
 
-    headings, ordinals = await _calendar(SimpleNamespace(db_path=db_path), 5)
+    headings, ordinals = await _calendar(db_path, 5)
 
     assert [h.country for h in headings] == [
         "United Kingdom",
@@ -68,15 +68,15 @@ async def test_the_mystery_heading_still_names_no_circuit(db_path):
     """The concealment is the point: only the flag is substituted, never the track."""
     from types import SimpleNamespace
 
-    from leaguebot.image.services.image_standings_post import _calendar
+    from leaguebot.results.services.publishing.standings_drawing_composer import _calendar
 
-    headings, _ = await _calendar(SimpleNamespace(db_path=db_path), 5)
+    headings, _ = await _calendar(db_path, 5)
     assert headings[1].track is None
 
 
 async def test_the_mystery_datum_is_the_calendar_service_s_literal():
     """One literal, in one place — the calendar has owned it since 037."""
-    from leaguebot.image.services.image_calendar_service import MYSTERY_COUNTRY, MYSTERY_DATUM
+    from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_COUNTRY, MYSTERY_DATUM
 
     assert MYSTERY_DATUM == MYSTERY_COUNTRY == "Mystery"
 
@@ -112,14 +112,14 @@ async def test_a_mystery_round_keeps_its_flag_through_the_fill(db_path):
 
     from lxml import etree
 
-    from leaguebot.image.services.image_standings_post import _calendar
-    from leaguebot.image.services.image_standings_service import (
+    from leaguebot.results.services.publishing.standings_drawing_composer import _calendar
+    from leaguebot.image.services.aspects.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         StandingsDrawing,
         build_fill_spec,
     )
 
-    headings, _ = await _calendar(SimpleNamespace(db_path=db_path), 5)
+    headings, _ = await _calendar(db_path, 5)
     root = etree.parse(
         str(
             __import__("pathlib").Path(__file__).resolve().parents[2]

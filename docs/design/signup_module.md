@@ -556,7 +556,7 @@ several modules join a hook the entry point calls the function in its order.
 | `configuration_confirmed` | `configuration_confirmed_on` | the season's copy of the configuration, in the confirmation's save |
 | `confirmation_refused`, `configuration_faults_read` | `signup_prerequisites.confirmation_refusals`, `configuration_faults` | what a season's approval and configuration lack while signup is on |
 | `review_sections_read` | `review_section` | signup's section of a season review |
-| `driver_names_read` | `driver_names` | a driver named from their signup |
+| `driver_names_read` | `driver_names` | each driver's signup to the season asked about, else their latest, as name, username and nationality, and whether the league collects a nationality |
 | `driver_turned_down` | `driver_turned_down_on` | the approval of the driver's signup withdrawn |
 | `driver_account_changed`, `driver_account_changed_steps` | `driver_account_changed_on`, `held_channel_moves.held_channel_steps` | the held channel's wizard row re-keyed in the save; its timer and permissions moved after it |
 | `season_end_closes`, `drivers_returned`, `driver_returned_jobs`, `season_end_steps` | `closing_steps`, `window_changes.season_end_steps` | the window closed at a season's end, each returned driver's wizard ended, told and their channel closed |
@@ -600,8 +600,11 @@ one question of core's `is_league_manager` ("Errors and failures", below).
 ### The dependency table and the image module
 
 Signup needs no other module (`NEEDS`, `core.md`, "The dependency table") and uses none: the
-`signup-uses-no-other-module-but-image` contract allows the image module, and signup imports
-nothing of it. Core names a driver from their signup through the `driver_names_read` hook above.
+`signup-uses-no-other-module-but-image` contract allows the image module, and signup imports nothing
+of it. Core names a driver from their signup through the `driver_names_read` hook above. Core's own
+reader (`core/services/drivers/driver_names.py`, not signup's `driver_names` subscriber) merges the
+answer with the profile and test-mode fields it holds. The builder hands the hook to image, results
+and attendance, and each asks the reader with it, so that none reads a signup record.
 
 ---
 

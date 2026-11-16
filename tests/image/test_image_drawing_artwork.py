@@ -4,7 +4,7 @@ Core's placements review fingerprints the templates and the artwork on disk, so 
 deleted or added between the review and the button is named as "the templates and artwork on
 disk" changing. Core asks the image module what the league's artwork looks like now
 (`core/services/modules/image_drawing.py`), and the image module answers in
-`image/services/image_drawing.py`: each configured template file, then each configured asset
+`image/services/render/image_drawing.py`: each configured template file, then each configured asset
 folder, by name, size and modification time, never by content. A folder that cannot be resolved is
 recorded as such, with a warning in the host's log, and the rest is still signed. Core's digest of
 the answer is tested against a stand-in for this drawing, under `tests/core/`.
@@ -52,7 +52,7 @@ def folders(request):
 def _drawing(**config):
     """Image's drawing over doubles of its services, its configuration as given in *config*: a
     column not given is unset, as in a league's configuration that leaves it so."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     service = MagicMock()
     service.get_config = AsyncMock(return_value=NS(**config))
@@ -98,7 +98,7 @@ async def test_the_signature_names_each_template_then_each_asset_folder_by_name_
 async def test_a_league_with_no_image_configuration_signs_no_artwork():
     """Before the image module has a configuration, there is no artwork to sign: the answer is
     empty, as the fingerprint's own signature was."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     service = MagicMock()
     service.get_config = AsyncMock(return_value=None)

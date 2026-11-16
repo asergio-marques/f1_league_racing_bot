@@ -312,7 +312,8 @@ class AttendanceDouble:
         from leaguebot.attendance.services.scoring import attendance_recompute
 
         return await attendance_recompute.recalculation_faults(
-            self.league.db_path, season_id, guild, self.league.bot, cancelled_too=True
+            self.league.db_path, season_id, guild, self.league.bot,
+            drawing=self.league.bot.image_drawing, cancelled_too=True
         )
 
     async def recalculate_on(self, db: Any, round_id: int, division_id: int) -> None:
@@ -321,7 +322,8 @@ class AttendanceDouble:
             raise self.recalculate_fails
 
     async def post_sheet(self, round_id: int, division_id: int, *, sanctioned: Any,
-                         as_text: bool) -> dict[str, Any] | None:
+                         as_text: bool, earlier_lines: tuple[str, ...] = ()
+                         ) -> dict[str, Any] | None:
         if not self.league.attendance_on:
             return None
         self.calls.append(("post_sheet", division_id, as_text))

@@ -12,6 +12,7 @@ from __future__ import annotations
 import inspect
 import logging
 from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 import pytest
 
@@ -90,7 +91,7 @@ async def test_the_builder_hands_the_capacity_guards_and_the_lineups_the_image_m
     given. Attendance's hook is handed the placement, team-role and lineup services the bot
     declares: its keywords for the last two are optional, so only this test sees one left out,
     which would leave a sanction's roles unchanged and its lineup unposted."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot = await built_bot(tmp_path, now=_NOW)
 
@@ -211,7 +212,6 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
 
     from leaguebot.__main__ import _draw_review_picture
     from leaguebot.core.services.modules.image_drawing import LineupPicture
-    from leaguebot.image.services import image_lineup_post
 
     bot = await built_bot(tmp_path, now=_NOW)
     png = tmp_path / "lineup.png"
@@ -228,8 +228,6 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
 
     monkeypatch.setattr(bot.image_drawing, "draw_review_lineup", draw_review_lineup,
                         raising=False)
-    monkeypatch.setattr(image_lineup_post, "render_for_command", AsyncMock(
-        side_effect=AssertionError("the review drew its lineup past the image module's drawing")))
 
     drawn = await _draw_review_picture(
         bot, {"kind": "lineup", "division_id": 11, "include_uncommitted": True})
@@ -256,7 +254,6 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
 
     from leaguebot.__main__ import _draw_review_picture
     from leaguebot.core.services.modules.image_drawing import LineupPicture
-    from leaguebot.image.services import image_lineup_post
 
     bot = await built_bot(tmp_path, now=_NOW)
     guild = SimpleNamespace(id=1)
@@ -269,8 +266,6 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
 
     monkeypatch.setattr(bot.image_drawing, "draw_review_lineup", draw_review_lineup,
                         raising=False)
-    monkeypatch.setattr(image_lineup_post, "render_for_command", AsyncMock(
-        side_effect=AssertionError("the review drew its lineup past the image module's drawing")))
 
     with pytest.raises(RuntimeError) as raised:
         await _draw_review_picture(bot, {"kind": "lineup", "division_id": 11})
@@ -386,7 +381,7 @@ _SEASON_END_PARTS = (
      "signup's wizards ended"),
     ("test_mode_flushed", "leaguebot.weather.services.forecast_changes", "test_mode_flushed_on",
      "weather's forecast flush"),
-    ("drivers_deleted", "leaguebot.image.services.driver_portrait_service", "discard_portraits",
+    ("drivers_deleted", "leaguebot.image.services.portraits.driver_portrait_service", "discard_portraits",
      "image's portraits discarded"),
 )
 
@@ -622,7 +617,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
                         lambda *_args, **_kwargs: called.append("signup's jobs") or (),
                         raising=False)
     weather_steps = sorted(
-        {*forecast_changes.forecast_steps(now=lambda: _NOW),
+        {*forecast_changes.forecast_steps(now=lambda: _NOW, drawing=mock.MagicMock()),
          "clean_up_forecast", "notify_invalidation", "rerun_phase"}
     )
 

@@ -647,8 +647,7 @@ CREATE TABLE "image_tier_colour" (
 -- driver_portraits
 CREATE TABLE "driver_portraits" (
     discord_user_id  TEXT PRIMARY KEY,
-    avatar_key       TEXT NOT NULL,
-    fetched_at       TEXT NOT NULL
+    avatar_key       TEXT NOT NULL
 );
 
 -- results_module_config

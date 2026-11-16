@@ -25,7 +25,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.image.cogs.image_cog import ImageCog, PortraitTimeConfirm, PortraitTimeModal
+from leaguebot.image.cogs.image_cog import ImageCog
+from leaguebot.image.cogs.use_pfp_commands import PortraitTimeConfirm, PortraitTimeModal
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
     QUEUED_MEMBER as MEMBER,
@@ -45,7 +46,9 @@ DAILY = "`/images use-pfp daily-toggle`"
 FORM = "the “Daily portrait updates” form"
 #: What a failure to schedule the daily job says became of the change.
 STORED_AT_RESTART = (
-    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+    "⚠️ The setting is stored, but the daily update could not be scheduled. It will be scheduled "
+    "the next time the bot starts with the image module on, or when the module is next switched "
+    "on."
 )
 #: The two lines beneath a cancel or a lapse of the confirmation.
 ENDED = (
@@ -348,8 +351,8 @@ async def test_cancelling_the_confirmation_changes_nothing(tmp_path):
 
 
 async def test_a_scheduler_failure_does_not_lose_the_setting(tmp_path):
-    """The setting is stored first, so startup recovery arms the job on the next restart; the
-    member is told so as a failure, never as a success (F1), and the one line is the failure."""
+    """The setting is stored first, so startup recovery arms the job on the next restart with the
+    module on, or the module's next switch-on does; the member is told so as a failure, never as a success (F1), and the one line is the failure."""
     cog, league = await _league(tmp_path, use_pfp=True)
     _fail_to_arm(league)
     view, _submitted = await _confirmation(cog, league)

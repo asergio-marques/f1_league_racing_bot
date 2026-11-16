@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_standings_service import (
+from leaguebot.image.services.aspects.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
     CellValue,
@@ -29,7 +29,9 @@ from leaguebot.image.services.image_standings_service import (
     StandingsEntry,
     build_fill_spec,
 )
+from leaguebot.image.models.standings_drawing import MovementText
 from leaguebot.results.services.standings.standings_service import MOVEMENT_GAINED, MOVEMENT_LOST, Movement
+from leaguebot.results.utils import results_formatter
 
 SVG_NS = "http://www.w3.org/2000/svg"
 
@@ -86,6 +88,18 @@ def _entry(ordinal: int, **overrides) -> StandingsEntry:
         ),
     )
     values.update(overrides)
+    # The entry the picture is handed carries the gap and the movement as the text composed from
+    # them, formatted as the textual standings format them.
+    gap = values["gap_to_leader"]
+    movement = values["movement"]
+    values["gap_to_leader"] = (
+        None if gap is None else results_formatter.format_gap_to_leader(gap, is_leader=False)
+    )
+    values["movement"] = None if movement is None else MovementText(
+        previous_position=results_formatter.format_previous_position(movement.previous_position),
+        change=results_formatter.format_position_change(movement.change),
+        direction=movement.direction,
+    )
     return StandingsEntry(**values)
 
 
@@ -864,7 +878,7 @@ def test_every_datum_the_projection_can_emit_has_a_packaged_file():
     from pathlib import Path
 
     from leaguebot.image.models.image_constants import packaged_directory_for
-    from leaguebot.image.services.image_standings_service import HIGHLIGHT_DATA
+    from leaguebot.image.services.aspects.image_standings_service import HIGHLIGHT_DATA
     from leaguebot.core.utils.paths import PROJECT_ROOT
 
     packaged = Path(PROJECT_ROOT) / packaged_directory_for("marker")

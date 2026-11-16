@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from leaguebot.image.services.image_verdict_banner_service import (
+from leaguebot.image.services.aspects.image_verdict_banner_service import (
     TEMPLATE_KEY,
     VerdictBannerDrawing,
     build_fill_spec,

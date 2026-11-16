@@ -17,10 +17,15 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.image.services.render.image_render_service import discard_attachment
 from tests.support.change_queue import in_a_job
 
 #: The mentions a forecast for a division with role 1 is sent with.
 ROLE_1 = discord.AllowedMentions(everyone=False, users=False, roles=[discord.Object(1)])
+
+#: The image module's drawing, through which a picture is discarded: its discard alone, which is
+#: the render's own.
+DRAWING = MagicMock(discard_attachment=discard_attachment)
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +317,7 @@ class TestTheForecastGraphicIsDiscarded:
             await post_phase_message(
                 bot, division_id=1, channel_id=99,
                 phase_number=2, text="phase 2 forecast",
-                attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
+                attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1, drawing=DRAWING,
             )
 
         assert not png.exists()
@@ -339,7 +344,7 @@ class TestTheForecastGraphicIsDiscarded:
                 await post_phase_message(
                     bot, division_id=1, channel_id=99,
                     phase_number=2, text="phase 2 forecast",
-                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
+                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1, drawing=DRAWING,
                 )
 
         assert not png.exists()
@@ -366,7 +371,7 @@ class TestTheForecastGraphicIsDiscarded:
                 await post_phase_message(
                     bot, division_id=1, channel_id=99,
                     phase_number=2, text="phase 2 forecast",
-                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
+                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1, drawing=DRAWING,
                 )
 
         assert not png.exists(), "a picture abandoned before its send must still be removed"
@@ -388,7 +393,7 @@ class TestTheForecastGraphicIsDiscarded:
                 await post_phase_message(
                     bot, division_id=1, channel_id=99,
                     phase_number=2, text="phase 2 forecast",
-                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
+                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1, drawing=DRAWING,
                 )
 
         assert not png.exists(), "a picture abandoned before its send must still be removed"
@@ -604,7 +609,7 @@ async def test_a_graphic_forecast_goes_through_the_standing_post_handler(tmp_pat
     with in_a_job():
         sent = await post_phase_message(
             bot, division_id=1, channel_id=999, phase_number=2, text="phase 2 forecast",
-            attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1,
+            attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1, drawing=DRAWING,
         )
 
     [call] = calls
@@ -660,7 +665,7 @@ async def test_a_graphic_forecast_that_fails_stops_in_today_s_words(tmp_path, ca
         with in_a_job():
             await post_phase_message(
                 bot, division_id=1, channel_id=999, phase_number=2, text="phase 2 forecast",
-                attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1,
+                attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1, drawing=DRAWING,
             )
 
     assert ChangeQueue._fault_kind(err.value) == words
@@ -694,7 +699,7 @@ async def test_a_forecast_whose_channel_discord_will_not_give_stops_as_discord_s
     if manner == "graphic":
         png = TestTheForecastGraphicIsDiscarded._artifact(tmp_path)
         graphic = {"attachment": TestTheForecastGraphicIsDiscarded._attachment(png),
-                   "attachment_text": "<@&1>"}
+                   "attachment_text": "<@&1>", "drawing": DRAWING}
 
     with pytest.raises(StepFailedOnDiscord) as err:
         with in_a_job():

@@ -542,6 +542,11 @@ _MODULE_EDITS = {
         "images", "images", None,
         "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES ('calendar', 1)",
     ),
+    "image's tier colours": (
+        "images", "images", None,
+        "INSERT INTO image_tier_colour (division_slug, slot, colour) "
+        "VALUES ('pro', 'accent', '#A78BFA')",
+    ),
 }
 
 
@@ -576,7 +581,8 @@ async def test_an_edit_to_a_module_s_configuration_changes_what_that_module_hand
     """Every module off. One module's own configuration is edited: Pro's weather channel or the
     weather phases; Pro's results channel, its reserves left out of the standings, or a points
     configuration attached to the season; Pro's RSVP channel or attendance's notice days; the
-    signup channel, settings or an availability slot; the image date format or an aspect toggle.
+    signup channel, settings or an availability slot; the image date format, an aspect toggle
+    or a division's tier colour.
     What that module hands changes, in that one area alone, and what every other module hands
     does not."""
     module, area, seed, sql = _MODULE_EDITS[edit]

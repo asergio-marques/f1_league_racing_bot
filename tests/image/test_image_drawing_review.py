@@ -3,7 +3,7 @@
 `/season config-review` and `/season placements-review` place an image section in their report,
 and they and the two confirmations refuse on the image configuration's faults. Core asks the image
 module for both (`core/services/modules/image_drawing.py`), and the image module answers in
-`image/services/image_drawing.py`, in its own words: the section's lines beneath core's heading,
+`image/services/render/image_drawing.py`, in its own words: the section's lines beneath core's heading,
 the drawing program's absence, the broken templates a switched-on output draws, the per-tier
 colours no tier has set, and the driver-portrait settings that would never fetch a portrait. Each
 question lets a fault reading the configuration out, for core to decide whether an unread check
@@ -29,7 +29,7 @@ from leaguebot.image.models.image_module import (
     DirectoryReport,
     ValidityReport,
 )
-from leaguebot.image.services.image_validity_service import (
+from leaguebot.image.services.validity.image_validity_service import (
     ImageValidityService,
     plain_reason,
     plain_remedy,
@@ -51,7 +51,7 @@ def _drawing(
     shortfall=None,
 ):
     """Image's drawing over doubles of its services, answering as given."""
-    from leaguebot.image.services.image_drawing import ImageDrawing
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=images_on)
@@ -72,7 +72,7 @@ def _drawing(
 @pytest.fixture
 def rasteriser(monkeypatch):
     """Sets whether the host carries the drawing program, as the image module reads it."""
-    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.render.image_render_service as render
 
     def set_available(available: bool) -> None:
         monkeypatch.setattr(render, "converter_available", lambda **_: available)

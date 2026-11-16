@@ -23,10 +23,14 @@ sanction `/attendance sync` asks the queue to announce, and the written heading:
 from __future__ import annotations
 
 import contextlib
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
-from leaguebot.image.services import image_verdict_banner_post as banner
+from leaguebot.image.services.aspects import image_verdict_banner_post as banner
+from leaguebot.image.models import verdict_banner_drawing
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from tests.support.change_queue import in_a_job
 
@@ -35,12 +39,22 @@ from tests.support.change_queue import in_a_job
 
 
 class _Channel:
-    def __init__(self, guild_id: int = 99) -> None:
+    """A verdicts channel keeping what is sent to it, and refusing it where *refuses*."""
+
+    id = 4242
+
+    def __init__(self, guild_id: int = 99, *, refuses: bool = False) -> None:
         self.sent: list[tuple[str | None, object]] = []
+        self.mentions: list[object] = []
+        self.refuses = refuses
         self.guild = type("_Guild", (), {"id": guild_id, "get_role": lambda self, r: None})()
 
-    async def send(self, content=None, *, file=None, **_kwargs):
+    async def send(self, content=None, *, file=None, allowed_mentions=None, **_kwargs):
+        if self.refuses:
+            raise discord.HTTPException(MagicMock(status=500), "upload failed")
         self.sent.append((content, file))
+        self.mentions.append(allowed_mentions)
+        return SimpleNamespace(id=777)
 
 
 class _Bot:
@@ -65,7 +79,11 @@ CONTEXT = {
 
 @pytest.fixture()
 def flow(monkeypatch, tmp_path):
-    """The announcement path with its database, its cards and its render stubbed out."""
+    """The announcement path with its database, its cards and its render stubbed out, and the
+    image drawing the heading job is handed: its gate open for the `verdict_banner` aspect alone
+    while `banner_wanted`, and its render drawing the png while `banner_draws`."""
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
     png = tmp_path / "season5_division1_round8_verdict_banner.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
 
@@ -75,11 +93,10 @@ def flow(monkeypatch, tmp_path):
             "round_number": 8, "session_type": "FEATURE_RACE", "format": "ENDURANCE",
             "round_id": 1, "division_id": 7,
         },
-        "banner_enabled": True,
+        "banner_wanted": True,
         "banner_draws": True,
         "banner_problem": None,
         "sent_verdicts": [],
-        "discarded": [],
         "png": png,
     }
 
@@ -105,66 +122,69 @@ def flow(monkeypatch, tmp_path):
 
         yield _Db()
 
-    async def _team(_bot, _guild, **_kwargs):
+    async def _team(*_args, **_kwargs):
         return None
 
-    async def _enabled(_bot):
-        return state["banner_enabled"]
+    async def _wanted(_self, aspect, _template_key=None):
+        return aspect == banner.BANNER_ASPECT and state["banner_wanted"]
 
-    async def _render(_bot, _drawing, **_kwargs):
+    async def _render(_config, _renderer, _drawing, **_kwargs):
         return banner.BannerRender(
             png=state["png"] if state["banner_draws"] else None,
             problem=state["banner_problem"],
         )
 
-    async def _report(_bot, _what, _detail):
-        return None
-
-    def _discard(render, attachment=None):
-        state["discarded"].append(getattr(render, "png", None))
-
-    from leaguebot.image.services import image_verdict_post
-
     monkeypatch.setattr(vas, "_get_announcement_context", _context)
     monkeypatch.setattr(vas, "_get_result_context", _result_context)
     monkeypatch.setattr(vas, "_send_verdict", _send_verdict)
     monkeypatch.setattr(vas, "get_connection", _connection)
-    monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
+    monkeypatch.setattr(vas, "team_name_for_entry", _team)
 
-    monkeypatch.setattr(banner, "banner_enabled", _enabled)
+    monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(banner, "render_banner", _render)
-    monkeypatch.setattr(banner, "report", _report)
-    monkeypatch.setattr(banner, "report_notices", _report)
-    monkeypatch.setattr(banner, "discard", _discard)
+    state["drawing"] = ImageDrawing(
+        MagicMock(), MagicMock(), MagicMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=":memory:",
+    )
     return state
+
+
+async def _head(flow, channel):
+    """Run the results heading job's step over round 8's verdicts in *channel*, on its first try,
+    with the image drawing it is handed."""
+    from leaguebot.results.services.review import review_verdicts
+
+    ctx = SimpleNamespace(
+        step_payload={"round_id": 1, "round_number": 8}, db_path=":memory:",
+        bot=_Bot(channel), kept=None, tries=0,
+    )
+    with in_a_job():
+        return await review_verdicts._announce_heading(ctx, flow["drawing"])
 
 
 # ── The message, and the filename that has to stand in for it ─────────────
 
 
-def _drawing():
-    return banner.build_drawing(
-        season_number=5, division_name="Pit Wall Premier", division_tier=1,
-        round_number=8, race_name="British Grand Prix", country_name="United Kingdom",
-    )
-
-
 async def test_the_banner_message_carries_no_text_at_all(flow):
+    """The heading job posts the banner the drawing hands back as a message of the picture alone,
+    notifying nobody."""
     channel = _Channel()
-    with in_a_job():
-        await banner.try_post(_Bot(channel), channel, _drawing())
+
+    await _head(flow, channel)
 
     assert len(channel.sent) == 1
     content, file = channel.sent[0]
     assert file is not None
     assert content is None
+    [mentions] = channel.mentions
+    assert (mentions.everyone, mentions.users, mentions.roles) == (False, False, False)
 
 
 async def test_the_attachment_is_named_for_the_round_it_heads():
     """The only handle a Discord search has, the message carrying no text."""
     from leaguebot.image.utils.image_naming import stem_for_drawing
 
-    drawing = banner.build_drawing(
+    drawing = verdict_banner_drawing.resolve_drawing(
         season_number=5, division_name="Pit Wall Premier", division_tier=1,
         round_number=8, race_name="British Grand Prix", country_name="United Kingdom",
     )
@@ -182,32 +202,34 @@ async def test_a_text_heading_is_returned_so_it_can_be_taken_down(flow):
     A heading that went unrecorded would be left standing over the empty space where the run
     it headed used to be.
     """
-    flow["banner_enabled"] = False
+    flow["banner_wanted"] = False
+    channel = _Channel()
 
-    sent = object()
+    result = await _head(flow, channel)
 
-    class _Recording(_Channel):
-        async def send(self, content=None, *, file=None, **_kwargs):
-            await super().send(content, file=file)
-            return sent
-
-    channel = _Recording()
-    drawing = banner.build_drawing(
-        season_number=5, division_name="Pit Wall Premier", division_tier=1,
-        round_number=8, race_name=None, country_name=None,
-    )
-
-    with in_a_job():
-        assert await banner.try_post(_Bot(channel), channel, drawing) is sent
+    assert result.result == {"message_id": 777, "channel_id": channel.id}
     assert channel.sent == [("**Season 5 Pit Wall Premier Round 8**", None)]
 
 
-async def test_the_banner_is_discarded_once_posted(flow):
-    channel = _Channel()
-    with in_a_job():
-        await banner.try_post(_Bot(channel), channel, _drawing())
+@pytest.mark.parametrize("refuses", [False, True], ids=["posted", "refused"])
+async def test_the_banner_is_discarded_once_posted(flow, monkeypatch, refuses):
+    """The banner's file is discarded through the drawing once its post is made, whether Discord
+    took it or refused it, so no rendered png outlives the heading."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
 
-    assert flow["discarded"] == [flow["png"]]
+    discard = MagicMock()
+    monkeypatch.setattr(flow["drawing"], "discard_attachment", discard)
+    channel = _Channel(refuses=refuses)
+
+    if refuses:
+        with pytest.raises(StepFailedOnDiscord):
+            await _head(flow, channel)
+    else:
+        await _head(flow, channel)
+
+    [call] = discard.call_args_list
+    [attachment] = call.args
+    assert attachment.filename == flow["png"].name
 
 
 # ── An attendance sanction is a verdict, and is headed like one ───────────
@@ -224,16 +246,16 @@ async def test_the_banner_is_discarded_once_posted(flow):
 
 
 def test_the_written_heading_names_season_division_and_round():
-    drawing = banner.build_drawing(
+    drawing = verdict_banner_drawing.resolve_drawing(
         season_number=5, division_name="Pit Wall Premier", division_tier=1,
         round_number=8, race_name=None, country_name=None,
     )
-    assert banner.heading_text(drawing) == "**Season 5 Pit Wall Premier Round 8**"
+    assert verdict_banner_drawing.heading_text(drawing) == "**Season 5 Pit Wall Premier Round 8**"
 
 
 def test_an_unnumbered_season_leaves_the_prefix_out():
-    drawing = banner.build_drawing(
+    drawing = verdict_banner_drawing.resolve_drawing(
         season_number=None, division_name="Elite", division_tier=None,
         round_number=3, race_name=None, country_name=None,
     )
-    assert banner.heading_text(drawing) == "**Elite Round 3**"
+    assert verdict_banner_drawing.heading_text(drawing) == "**Elite Round 3**"

@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from leaguebot.image.services.image_validity_service import calendar_overlay_faults_of
+from leaguebot.image.services.validity.image_validity_service import calendar_overlay_faults_of
 
 SVG_NS = "http://www.w3.org/2000/svg"
 PACKAGED = (

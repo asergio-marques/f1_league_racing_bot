@@ -38,6 +38,7 @@ from leaguebot.results.services.standings.standings_service import (
     previous_standing_positions,
 )
 from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 
@@ -245,6 +246,7 @@ async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
         await produce_session_results(
             db_path, session, rows, {FERRARI_DRIVER: 25, RIVAL_DRIVER: 18}, channel, guild,
             1, "Spa", "Provisional Results", is_sprint=False,
+            driver_names_read=AwaitedHook(),
         )
 
     text = "\n".join(sent)
@@ -253,14 +255,13 @@ async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
 
 
 async def test_results_graphic_names_a_team_after_its_role_is_replaced(tmp_path):
-    """The graphic finds the name and badge from the team, not by asking Discord about a role."""
-    from leaguebot.image.services.image_results_post import _team_names
+    """The graphic finds the name from the team, through the reader its composer reads it with
+    (`results_drawing_composer`), not by asking Discord about a role."""
+    from leaguebot.core.services.drivers.team_service import team_names_for_instances
 
     db_path, teams, _ = await _season_raced_across_a_role_change(tmp_path)
-    guild = MagicMock()
-    guild.get_role.return_value = None
 
-    names = await _team_names(_bot(db_path), guild, DIVISION_ID, [teams["Ferrari"]])
+    names = await team_names_for_instances(db_path, [teams["Ferrari"]])
 
     assert names == {teams["Ferrari"]: "Ferrari"}
 

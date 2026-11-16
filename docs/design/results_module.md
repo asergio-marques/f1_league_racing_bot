@@ -181,11 +181,11 @@ beside the configurations it amends. The table names a service by its file.
 | Folder | Services | Chiefly writes |
 |---|---|---|
 | `submission/` | `submission_changes` (a round's opening, the restart of a first paste cut short, a round whose every session is cancelled, and the closing of its channel), `submission_turn_change` (each paste a turn, for a submission and a resubmission, and the configuration's choice), `submission_steps` (the channel made and the lines posted in a dialogue), `resubmission_changes` (the resubmission started and its swap), `result_submission_service` (the submission's state, a session's save, the swap's writer, the configuration picker, the cancellation refusal and the round called off), `paste_reading` (a paste read and judged), `round_start` (what a round's start asks), `submission_recovery` and `review_recovery` (what a restart does to an open submission) | `round_submission_channels`, `resubmission_drafts`, `session_results` and the driver rows |
-| `review/` | `review_open_change` (the review opened, its prompt put up, the appeals prompt put back, a stale review closed), `review_stage_change` (a staging), `review_confirm_change` (the approval question), `review_lock_change` (the locked channel's warning), `report_approval_change` and `appeals_approval_change` (the two approvals), `review_posting` (every posting job a review plans), `review_verdicts` (the verdict, sheet and sanction jobs), `review_changes` (what holds a round or a division), `review_prompts` (the prompts and the appeal records), `review_state` (what a review holds, and the store above), `penalty_service` (a penalty validated and applied), `verdict_records` (the verdict join), `verdict_announcement_service` (a verdict or a card posted, and the banners' records), `penalty_wizard`, `penalty_review_views`, `appeals_review_views` (the review's buttons and forms) | `penalty_records`, `appeal_records`, `verdict_banner_messages`, `review_lock_warnings` |
+| `review/` | `review_open_change` (the review opened, its prompt put up, the appeals prompt put back, a stale review closed), `review_stage_change` (a staging), `review_confirm_change` (the approval question), `review_lock_change` (the locked channel's warning), `report_approval_change` and `appeals_approval_change` (the two approvals), `review_posting` (every posting job a review plans), `review_verdicts` (the verdict, sheet and sanction jobs), `review_changes` (what holds a round or a division), `review_prompts` (the prompts and the appeal records), `review_state` (what a review holds, and the store above), `penalty_service` (a penalty validated and applied), `verdict_records` (the verdict join), `verdict_announcement_service` (a verdict or a card posted, the banners' records, and the sanction's wording, which results hands the verdict's drawing), `penalty_wizard`, `penalty_review_views`, `appeals_review_views` (the review's buttons and forms) | `penalty_records`, `appeal_records`, `verdict_banner_messages`, `review_lock_warnings` |
 | `round_amendment/` | `amend_changes` (the amendment opened), `amend_turn_change` (each paste a turn, stage one recorded, the channel closed), `amend_end_changes` (the cancel, the lapse, the lapse's timer and the restart's recovery), `amendment_stage_changes` (the two stages approved), `amendment_writes` (the snapshot, the rewrite, the revert, the holds and the sweep), `amend_views` (Cancel Amendment) | `round_amend_channels`, `amend_drafts` |
 | `points/` | `points_config_service` (the league's configurations), `points_settings` (`/results config` and the reserves toggle as settings), `points_paste` (a points table pasted at once), `season_points_service` (attaching, the season's copy, validation, the staged install), `amendment_mode_service` and `amendment_settings` (the amendment mode and its settings), `points_amendment_change` (its approval), `points_amendment_faults` (what stops its publication), `scoring` (points applied to a session's rows) | the points tables, the season's copy and the modification store |
 | `standings/` | `standings_service` (standings computed, the snapshots and the cascade), `season_standings_posts` (the opening and final classifications, and the season's history reads), `standings_sync_change` | the snapshots |
-| `publishing/` | `results_post_service` (a table or standings posted, edited and deleted, the standings posting's and the classifications' ids, the reserves flag, the repost faults), `rounds_sync_change`, `cancellation_notice` (the called-off note) | `round_standings_posts`, `classification_posts`, `called_off_notes` |
+| `publishing/` | `results_post_service` (a table or standings posted, edited and deleted, the standings posting's and the classifications' ids, the reserves flag, the repost faults), `results_drawing_composer` and `standings_drawing_composer` (a session's results, and a round's two standings, composed into the models the image module declares), `preview_sources` (results' share of the image module's `PreviewSources`), `rounds_sync_change`, `cancellation_notice` (the called-off note) | `round_standings_posts`, `classification_posts`, `called_off_notes` |
 | `module/` | `module_switch_settings` (the switch-on and the switch reader), `results_off_change` (the switch-off), `results_purge_service` (the season erased, and the delete, merge and pack hooks), `channel_settings` and `division_channels` (a division's channels), `fingerprint_areas`, `test_mode_steps`, `attendance_hook` (`AttendanceAfterReview`) | `division_results_config`, `results_module_config` |
 
 **Every service is module functions**, and every change type a factory the builder calls with what
@@ -223,10 +223,11 @@ each hook several modules join, which the entry point calls in their order, `reg
 start-up step stands for a function of results' services.
 
 `results/utils/` holds `results_formatter` (one rendering for the text table and the picture, its
-docstring says), `points_ordering` (the ordering rule, held once for its four callers) and
-`xml_import`. `results/models/` holds plain data: a session's result, a points configuration, a
-standings snapshot, the amendment mode's state, `PointsChanged` (what a points amendment's approval
-changed) and `RecoveryFailed` (below, "Errors and failures").
+docstring says), `points_ordering` (the ordering rule, held once for its four callers),
+`tyre_compound` (the compounds a session's rows name, which the image module's preview takes through
+`PreviewSources`) and `xml_import`. `results/models/` holds plain data: a session's result, a points
+configuration, a standings snapshot, the amendment mode's state, `PointsChanged` (what a points
+amendment's approval changed) and `RecoveryFailed` (below, "Errors and failures").
 
 ---
 
@@ -487,7 +488,7 @@ results makes is a job of a change, and every function that posts carries `posts
 | A round's standings | standing post | the division's standings channel | as for a table | `round_standings_posts`, saved in the job's `record` (`set_standings_message_id_on`) | takes it down |
 | The opening and final classifications | standing post | the division's standings channel | as for a table | `classification_posts`, written in the record that marks the posting done; a part posted before a failure is kept on the job and removed by its next try | takes the opening one down; a final classification belongs to a completed season, which the switch-off never reads |
 | A verdict | notice | the division's verdicts channel | the driver it names, and no role (`_VERDICT_MENTIONS`) | `penalty_records` or `appeal_records`, announcement columns, saved in the job's `record` (`_record_announcement_on`) | takes it down |
-| The heading over a round's verdicts | notice, posted by the image module's `image_verdict_banner_post.try_post` | the verdicts channel | — | `verdict_banner_messages`, saved in the job's `record` | takes it down, but where it heads a sanction card |
+| The heading over a round's verdicts | notice, through `send_notice`, its picture drawn by `ImageDrawing.draw_banner` | the verdicts channel | — | `verdict_banner_messages`, saved in the job's `record` | takes it down, but where it heads a sanction card |
 | An attendance sanction card | notice | the verdicts channel | the driver it names | not kept; its banner is marked `heads_sanctions` | leaves it, as attendance's |
 | The called-off note | notice, silent, through core's `post_cancellation_message` | the division's results channel | nobody | `called_off_notes`, saved in the job's `record` (`record_note_on`) | takes it down |
 | The batch notice | notice | the submission or amendment channel | nobody | the job's result, read by `delete_batch_notice` | goes with the channel |
@@ -628,10 +629,22 @@ Results needs no module. Attendance needs results (`NEEDS`, `core.md`, "The depe
 which is why results' switch-off offers the cascade above.
 
 Results imports no module but image (the `results-uses-no-other-module-but-image` contract). The
-image module draws results' pictures: for a session's table, the standings and the verdicts'
-heading its `try_post` posts the picture and hands back what it posted, which results' job records
-and whose predecessors it deletes; for a verdict, `image_verdict_post` renders it and results posts
-it. A retry asks for no picture (above, "Pictures and their fallbacks").
+image module draws results' pictures and posts none of them: the posting jobs are handed its drawing
+by the builder. For a session's table and for the two standings they ask the drawing's gate whether
+each template is wanted, compose what is wanted into the models the image module declares
+(`results_drawing_composer`, `standings_drawing_composer`: the values worked out here, by results'
+own formatter and from results' own tables) and hand them to the drawing. For a verdict and the
+heading over a round's verdicts they hand it what it draws, the sanction's wording included. They
+post what it hands back themselves. Results also implements its share of the image module's
+`PreviewSources` (`preview_sources`: sample sessions, rows, a session's results drawing, tyre
+compounds, standings and the sanction's wording), which the builder joins with attendance's share
+and hands in. A session's table and the two standings go through the standing-post handler, and a
+picture Discord refuses goes out as its text in the same try. A verdict and the heading go through
+the notice handler (`send_notice`), and a picture Discord refuses stops the queue, so that the retry
+posts the text. What the drawing had to report comes back as lines of the job, in every case. The
+repost's check that a channel can take a file asks the drawing whether the aspect attaches files
+(`ImageDrawing.aspect_attaches_files`). A retry asks for no picture (above, "Pictures and their
+fallbacks").
 
 ### The `/results` group
 
@@ -681,7 +694,9 @@ amendment as a refused paste does (`amend_stage_one_change`'s docstring).
 **The stated exceptions** of results' are `architecture.md`'s, each with its docstring:
 `amend_end_changes._names_step` (an amendment's lapse and cancel go ahead with no names),
 `points_amendment_faults.approval_faults` (an attendance switch that cannot be read never refuses
-an amendment) and `_ConfigSelectView._put_back` (a put-back after a press already answered).
+an amendment), `_ConfigSelectView._put_back` (a put-back after a press already answered), and
+`verdict_announcement_service.team_name_for_entry` and `team_key_for_entry` (a verdict's team that
+cannot be read is left off its picture, an optional field not being worth a failed picture).
 `CATCH_ALLS_ALLOWED` names them with the three picture fallbacks.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops", and the

@@ -40,7 +40,7 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
 
     faults = await approval_faults(
         league.db_path, SEASON_ID, league.bot,
-        module_service=_switches(return_value=True), attendance=hook,
+        module_service=_switches(return_value=True), attendance=hook, drawing=league.bot.image_drawing,
     )
 
     named = [fault for fault in faults if "attendance channel" in fault]
@@ -65,7 +65,7 @@ async def test_approval_faults_asks_attendance_s_faults_through_the_hook_it_is_h
 
     faults = await approval_faults(
         league.db_path, SEASON_ID, league.bot,
-        module_service=_switches(return_value=True), attendance=hook,
+        module_service=_switches(return_value=True), attendance=hook, drawing=league.bot.image_drawing,
     )
 
     assert faults == ["the hook's own fault"]
@@ -87,6 +87,6 @@ async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_o
         await approval_faults(
             league.db_path, SEASON_ID, league.bot,
             module_service=_switches(side_effect=SwitchNotSignedUp("attendance")),
-            attendance=hook,
+            attendance=hook, drawing=league.bot.image_drawing,
         )
     hook.recalculation_faults.assert_not_awaited()

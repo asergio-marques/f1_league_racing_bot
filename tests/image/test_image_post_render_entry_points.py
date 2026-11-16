@@ -52,7 +52,7 @@ def _bot_with_decision(tmp_path):
     the drawing never has to be a real one, and the only code that runs is the render body
     under test.
     """
-    from leaguebot.image.services.image_render_service import POST_IMAGE, PostingDecision
+    from leaguebot.image.services.render.image_render_service import POST_IMAGE, PostingDecision
 
     png = tmp_path / "drawn.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -68,7 +68,7 @@ def _bot_with_decision(tmp_path):
 
 def _capture_image_type(monkeypatch):
     """Record the ``image_type`` each render body labels its directory resolution with."""
-    from leaguebot.image.services import image_render_service
+    from leaguebot.image.services.render import image_render_service
 
     seen: dict[str, object] = {}
     real = image_render_service.resolve_configured_directories
@@ -92,21 +92,26 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
 ):
     """``render_png`` referred to ``template_key``, a local of ``try_post``, not of itself."""
     from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.models.results_drawing import ResultsDrawing
+    from leaguebot.image.services.aspects import image_results_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
-    drawing = SimpleNamespace(
+    drawing = ResultsDrawing(
         template_key="results_race_template",
         session_name="Feature Race",
         season_number="3",
         division_tier="1",
         division_name="Elite",
         round_number="4",
+        race_name="Monaco",
+        result_status_label="Final Results",
+        penalty_phase_closed=True,
+        appeal_phase_closed=True,
     )
 
     decision = await image_results_post.render_png(
-        bot, drawing, PostingOrigin.SCHEDULED
+        bot.image_config_service, bot.image_render_service, drawing, PostingOrigin.SCHEDULED
     )
 
     assert decision.posts_image
@@ -130,20 +135,27 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
 ):
     """The label follows the drawing, so the two results templates cannot be confused."""
     from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services import image_results_post
+    from leaguebot.image.models.results_drawing import ResultsDrawing
+    from leaguebot.image.services.aspects import image_results_post
 
     bot, _png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
-    drawing = SimpleNamespace(
+    drawing = ResultsDrawing(
         template_key="results_qualifying_template",
         session_name="Sprint Qualifying",
         season_number="3",
         division_tier="1",
         division_name="Elite",
         round_number="4",
+        race_name="Monaco",
+        result_status_label="Final Results",
+        penalty_phase_closed=True,
+        appeal_phase_closed=True,
     )
 
-    await image_results_post.render_png(bot, drawing, PostingOrigin.SCHEDULED)
+    await image_results_post.render_png(
+        bot.image_config_service, bot.image_render_service, drawing, PostingOrigin.SCHEDULED
+    )
 
     assert seen["image_type"] == "results_qualifying_template"
     assert (
@@ -152,52 +164,18 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
     )
 
 
-async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
-    tmp_path, monkeypatch
-):
-    """``render_png`` referred to ``LINEUP_TEMPLATE_KEY``, which was defined nowhere."""
-    from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services import image_lineup_post
-
-    bot, png = _bot_with_decision(tmp_path)
-    seen = _capture_image_type(monkeypatch)
-
-    # The drawing is not what is under test here; the body around it is — but it must
-    # still carry `division_name`, which every drawing dataclass declares as mandatory
-    # and which the posting path passes as the tier whose colours to draw in (051).
-    monkeypatch.setattr(
-        image_lineup_post,
-        "build_drawing",
-        AsyncMock(
-            return_value=({"name": "Main"}, SimpleNamespace(division_name="Division 1"), [])
-        ),
-    )
-
-    decision = await image_lineup_post.render_png(
-        bot, MagicMock(), 7, PostingOrigin.SCHEDULED
-    )
-
-    assert decision.posts_image
-    assert decision.png_paths == [png]
-    assert seen["image_type"] == "lineup_template"
-    assert seen["classes"] == ["team", "flag", "driver"]
-    assert (
-        bot.image_render_service.render_for_posting.await_args.args[0]
-        == "lineup_template"
-    )
-
-
 # ── The four that were sound, kept honest ─────────────────────────────────
 
 
 async def test_the_attendance_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from leaguebot.image.services import image_attendance_post
+    from leaguebot.image.services.aspects import image_attendance_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
 
     render = await image_attendance_post.render_sheet(
-        bot, SimpleNamespace(division_name="Division 1")
+        bot.image_config_service, bot.image_render_service,
+        SimpleNamespace(division_name="Division 1"),
     )
 
     assert render.draws, render.problem
@@ -206,13 +184,14 @@ async def test_the_attendance_render_body_runs_and_labels_itself(tmp_path, monke
 
 
 async def test_the_verdict_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.aspects import image_verdict_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
 
     render = await image_verdict_post.render_verdict(
-        bot, SimpleNamespace(division_name="Division 1")
+        bot.image_config_service, bot.image_render_service,
+        SimpleNamespace(division_name="Division 1"),
     )
 
     assert render.draws, render.problem
@@ -221,7 +200,7 @@ async def test_the_verdict_render_body_runs_and_labels_itself(tmp_path, monkeypa
 
 
 async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from leaguebot.image.services import image_weather_post
+    from leaguebot.image.services.aspects import image_weather_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -233,7 +212,9 @@ async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypa
         round_number="7",
     )
 
-    render = await image_weather_post.render_forecast(bot, drawing)
+    render = await image_weather_post.render_forecast(
+        bot.image_config_service, bot.image_render_service, drawing
+    )
 
     assert render.draws, render.problem
     assert render.png == png
@@ -245,7 +226,7 @@ async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypa
 
 
 async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from leaguebot.image.services import image_rsvp_post
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -256,8 +237,11 @@ async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch
         return_value={"rsvp_template": report}
     )
 
-    attachment = await image_rsvp_post.try_attach(
-        bot,
+    drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path=bot.db_path,
+    )
+    attachment, _lines = await drawing.attach_check_in_call(
         division_name="Main",
         round_number=4,
         round_format="STANDARD",
@@ -265,7 +249,7 @@ async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch
         track_name="Silverstone",
         country_name="United Kingdom",
         season_number=3,
-        deadline_hours=24,
+        deadline_at=datetime(2026, 5, 31, 18, 0, tzinfo=timezone.utc),
     )
 
     assert attachment is not None
@@ -286,7 +270,7 @@ async def test_no_render_body_resolves_directories_under_the_default_label():
     import ast
     from pathlib import Path as _Path
 
-    root = _Path(__file__).resolve().parents[2] / "src" / "leaguebot" / "image" / "services"
+    root = _Path(__file__).resolve().parents[2] / "src" / "leaguebot" / "image" / "services" / "aspects"
     offenders = []
     for path in sorted(root.glob("image_*_post.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))

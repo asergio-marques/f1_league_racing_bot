@@ -173,7 +173,8 @@ class PointsLeague:
         bot.module_service.is_attendance_enabled = AsyncMock(
             side_effect=lambda: self.attendance_on
         )
-        bot.image_config_service.get_toggles = AsyncMock(return_value={})
+        # No picture aspect is switched on in these leagues, so no channel needs Attach Files.
+        bot.image_drawing.aspect_attaches_files = AsyncMock(return_value=False)
         league_queue(bot, db_path, now=NOW)
 
     def channel(self, cid: int) -> Any:

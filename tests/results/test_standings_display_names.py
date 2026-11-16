@@ -252,7 +252,7 @@ async def test_the_standings_are_computed_twice_to_order_by_name(tmp_path):
     calls: list = []
 
     with _standings(calls), patch(
-        "leaguebot.image.services.image_results_post._driver_names",
+        "leaguebot.results.services.publishing.results_post_service.read_driver_names",
         new=AsyncMock(return_value={DRIVER_A: "Alonso", DRIVER_B: "Bottas"}),
     ):
         await driver_standings_for_display(db_path, DIVISION_ID, 1, _guild(), MagicMock())
@@ -322,7 +322,7 @@ async def test_the_names_are_resolved_from_the_division_s_last_round(tmp_path):
         "leaguebot.results.services.standings.standings_service.compute_driver_standings",
         new=AsyncMock(side_effect=_compute),
     ), patch(
-        "leaguebot.image.services.image_results_post._driver_names",
+        "leaguebot.results.services.publishing.results_post_service.read_driver_names",
         new=AsyncMock(return_value={DRIVER_A: "Alonso"}),
     ):
         await standings_display_names(db_path, DIVISION_ID, _guild(), MagicMock())
@@ -344,7 +344,7 @@ async def test_a_cancelled_round_is_not_used_to_resolve_names(tmp_path):
         "leaguebot.results.services.standings.standings_service.compute_driver_standings",
         new=AsyncMock(side_effect=_compute),
     ), patch(
-        "leaguebot.image.services.image_results_post._driver_names",
+        "leaguebot.results.services.publishing.results_post_service.read_driver_names",
         new=AsyncMock(return_value={DRIVER_A: "Alonso"}),
     ):
         await standings_display_names(db_path, DIVISION_ID, _guild(), MagicMock())

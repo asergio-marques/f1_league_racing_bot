@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import aiosqlite
 import discord
@@ -43,6 +43,7 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.check_in import check_in_record
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, PlannedStep, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
@@ -52,6 +53,9 @@ from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 _Pardon = TypeVar("_Pardon")
 
@@ -85,10 +89,11 @@ def sanction_card_texts(sanction_type: str, driver_ref: str, threshold: int) -> 
 
 class AttendanceAfterReview:
     """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement,
-    roles=roles, lineups=lineups)``: *roles* is the team-role service that gives and takes a
-    sanction's roles and *lineups* the poster of the lineups a review owes. Each is optional so
-    that a hook which is never asked to change a sanction's roles or to post a lineup is built
-    without one, and asking it then raises."""
+    roles=roles, lineups=lineups, drawing=drawing)``: *roles* is the team-role service that gives
+    and takes a sanction's roles, *lineups* the poster of the lineups a review owes and *drawing*
+    the image module's, which a sheet it posts asks for its picture. Each is optional so that a
+    hook which is never asked to change a sanction's roles or to post a lineup is built without
+    one, and asking it then raises; one built without a *drawing* posts its sheets as text."""
 
     def __init__(
         self,
@@ -97,8 +102,16 @@ class AttendanceAfterReview:
         *,
         roles: TeamRoleService | None = None,
         lineups: LineupPoster | None = None,
+        drawing: ImageDrawing | None = None,
+        driver_names_read: AwaitedHook | None = None,
     ) -> None:
         self._bot = bot
+        self._drawing = drawing
+        #: The hook signup answers how a driver is named, which a sanction's card names its
+        #: driver through; none names them by their account alone.
+        self._driver_names_read = (
+            driver_names_read if driver_names_read is not None else AwaitedHook()
+        )
         self._placement = placement
         self._roles = roles
         self._lineups = lineups
@@ -191,18 +204,20 @@ class AttendanceAfterReview:
         if not await self.enabled():
             return []
         return await attendance_recompute.recalculation_faults(
-            self._db_path, season_id, guild, self._bot, cancelled_too=True
+            self._db_path, season_id, guild, self._bot, drawing=self._drawing, cancelled_too=True
         )
 
     async def post_sheet(
-        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
+        self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool,
+        earlier_lines: tuple[str, ...] = (),
     ) -> dict[str, Any] | None:
         if not await self.enabled():
             return None
         posted = await attendance_sheet.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
-            as_text=as_text,
+            as_text=as_text, drawing=self._drawing, driver_names_read=self._driver_names_read,
+            earlier_lines=earlier_lines,
         )
         return attendance_sheet.sheet_result(posted)
 
@@ -275,7 +290,7 @@ class AttendanceAfterReview:
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
-    ) -> Callable[[str, str], str] | None:
+    ) -> Callable[[str, str], tuple[str, ...]] | None:
         if not await self.enabled():
             return None
         from leaguebot.results.services.review import verdict_announcement_service as vas
@@ -291,8 +306,8 @@ class AttendanceAfterReview:
             sanction, driver_ref, (autosack if sanction == "AUTOSACK" else autoreserve) or 0
         )
         return await vas.announce_sanction(
-            self._bot, self._db_path, round_id, driver_discord_id, display_name,
-            label, description, justification, as_text=as_text,
+            self._bot, self._driver_names_read, self._db_path, round_id, driver_discord_id,
+            display_name, label, description, justification, drawing=self._drawing, as_text=as_text,
         )
 
     async def refresh_lineup(
