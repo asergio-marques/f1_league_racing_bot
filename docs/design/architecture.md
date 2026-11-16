@@ -1390,8 +1390,11 @@ stated exceptions below them:
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
-   work (above). Neither applies where an operation's own rule is all or nothing, as a points
-   amendment's save is (the results specification's "Changing points system mid-season");
+   work (above). A task of its own for each item, awaited together, is this place's too, each task
+   catching its own item's failure and the batch going on (`driver_portrait_service.refresh_portraits`,
+   one fetch for each member, a fault going to the host's log). Neither applies where an operation's
+   own rule is all or nothing, as a points amendment's save is (the results specification's "Changing
+   points system mid-season");
 3. around reporting a failure or a refusal, or writing a line to the log channel, where that itself
    might fail:
    keeping a line for retry (`OutputRouter._enqueue_if_configured`), recording a refusal already
@@ -1469,7 +1472,11 @@ signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catc
 configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to the
 host's log alone, and signs the rest all the same, because a fault that escaped it would empty the
 whole fingerprint and the review would read as changed in every area (its docstring says so); the
-queue's own telling, of a change's outcome, of its stop or of a press on a stop notice
+portraits' reads and clean-up (`driver_portrait_service.refresh_before_render`, `portrait_aspect`
+and `discard_portraits`) are stated exceptions as well: each catch-all logs the error on the host and
+the picture is drawn with the portraits it has, or the command or season's end that discarded a
+portrait stands completed, because a portrait never fails the picture or the command it serves (their
+docstrings say so); the queue's own telling, of a change's outcome, of its stop or of a press on a stop notice
 (`ChangeQueue._acknowledge`, `_acknowledge_saved`, `_name_job`, `_post_notice`, `_tell`,
 `_tell_origin`, `_update_reply` and `_finish`, and `OutputRouter.strip_view` beside them), is a
 stated exception as well: each catch-all puts the error in the host's log and what the queue was

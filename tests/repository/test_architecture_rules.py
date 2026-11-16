@@ -3089,6 +3089,18 @@ CATCH_ALLS_ALLOWED = {
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
         "a stated exception: a put-back after a press already answered logs the error in full and "
         "leaves the message as the press's edit left it, for a report would answer the press twice",
+    ("image/services/portraits/driver_portrait_service.py", "refresh_portraits.fetch"):
+        "place 2, a task of its own for each member: one portrait that cannot be obtained goes to the "
+        "host's log and the others are still fetched",
+    ("image/services/portraits/driver_portrait_service.py", "refresh_before_render"):
+        "a stated exception: a portrait never fails the picture it is for, so the pre-render refresh "
+        "logs the fault on the host and the picture is drawn with the portraits it has",
+    ("image/services/portraits/driver_portrait_service.py", "portrait_aspect"):
+        "a stated exception: a portrait never fails the picture it is for, so a shape that cannot be "
+        "read is logged on the host and read as 1:1, the render reporting a template it cannot read",
+    ("image/services/portraits/driver_portrait_service.py", "discard_portraits"):
+        "a stated exception: the command or season's end that discards a portrait has committed, so a "
+        "portrait that cannot be removed is logged on the host and the command stands completed",
 }
 
 
@@ -3137,10 +3149,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
-    ("image/services/portraits/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
-    ("image/services/portraits/driver_portrait_service.py", "portrait_aspect"): (1, PASS["image"]),
-    ("image/services/portraits/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
-    ("image/services/portraits/driver_portrait_service.py", "refresh_portraits.fetch"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
         (1, PASS["image"]),
