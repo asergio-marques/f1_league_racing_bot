@@ -36,18 +36,18 @@ const CANDIDATES = [
   '3. Settled: the layering rules are enforced by import-linter contracts (.importlinter, run by tests/repository/test_import_contracts.py) and ast checks (tests/repository/test_architecture_rules.py), each listing today\'s breaches against the issue that removes them (architecture.md, "How the rules are checked")',
   '4. Settled: one installed package, leaguebot, with a folder per module and a folder per kind of code inside each; ownership is the folder a file sits in (architecture.md, "How the code is laid out")',
   '5. Settled: a cog holds one command group, so season_cog.py is split along its groups (architecture.md, "How the code is laid out")',
-  '6. Settled: report_failure, the League* bases and the one-league claim kept; one handler per kind of post, the log line\'s handler being core/services/posting/output_router.py (architecture.md, "Posting to Discord")',
+  '6. Settled: report_failure, the League* bases and the one-league claim kept; one handler per kind of post, the log line\'s handler being framework/services/posting/output_router.py (architecture.md, "Posting to Discord")',
 ]
 
 const CONCERNS = [
   {
     key: 'layering',
-    brief: 'The layers and the direction of every dependency: each module\'s folders for cogs, services, utils and models, core\'s db, and the entry point src/leaguebot/__main__.py; SQL outside the services; services importing cogs (TYPE_CHECKING and function-local imports count); what a service may import. Data access as the layer beneath: connection handling in src/leaguebot/core/db/database.py, transaction length and the write lock held across a network call (#155 — assign_driver and persist_snapshots), tables written by a module that does not own them, a module\'s own columns on a core table included, stored derived copies (#238). The one-league claim structurally: what core/utils/league_server.py guarantees and why nothing below the command tree scopes by server.',
+    brief: 'The layers and the direction of every dependency: each module\'s folders for cogs, services, utils and models, core\'s db, and the entry point src/leaguebot/__main__.py; SQL outside the services; services importing cogs (TYPE_CHECKING and function-local imports count); what a service may import. Data access as the layer beneath: connection handling in src/leaguebot/framework/db/database.py, transaction length and the write lock held across a network call (#155 — assign_driver and persist_snapshots), tables written by a module that does not own them, a module\'s own columns on a core table included, stored derived copies (#238). The one-league claim structurally: what framework/utils/league_server.py guarantees and why nothing below the command tree scopes by server.',
     candidates: '3 and the one-league part of 6',
   },
   {
     key: 'composition',
-    brief: 'The composition root in src/leaguebot/__main__.py and how services are built and reached: the services attached to bot, LeagueBot in src/leaguebot/core/utils/league_bot.py, bot_of(), services that take bot or reach for another service at call time (service locator), import-time side effects and configuration (BOT_TOKEN read at import), and the hooks core offers the modules.',
+    brief: 'The composition root in src/leaguebot/__main__.py and how services are built and reached: the services attached to bot, LeagueBot in src/leaguebot/framework/utils/league_bot.py, bot_of(), services that take bot or reach for another service at call time (service locator), import-time side effects and configuration (BOT_TOKEN read at import), and the hooks core offers the modules.',
     candidates: '1 and 2',
   },
   {
@@ -62,7 +62,7 @@ const CONCERNS = [
   },
   {
     key: 'output-and-failure',
-    brief: 'How anything reaches Discord: the handler for each kind of post, core/services/posting/output_router.py being the log line\'s, the channel registry, the log channel, retries (retry_service, retry_cog), direct .send calls around the router, and whether a posted message\'s id is kept so it can be found again (#189). Where failures go: report_failure in core/utils/interaction_errors.py, the League* bases\' on_error, scheduled jobs\' failures, broad exception handlers by layer, and what a league sees when a post fails.',
+    brief: 'How anything reaches Discord: the handler for each kind of post, framework/services/posting/output_router.py being the log line\'s, the channel registry, the log channel, retries (retry_service, retry_cog), direct .send calls around the router, and whether a posted message\'s id is kept so it can be found again (#189). Where failures go: report_failure in framework/utils/interaction_errors.py, the League* bases\' on_error, scheduled jobs\' failures, broad exception handlers by layer, and what a league sees when a post fails.',
     candidates: 'the OutputRouter, report_failure and League* parts of 6',
   },
 ]
