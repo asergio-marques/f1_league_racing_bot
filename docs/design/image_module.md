@@ -27,11 +27,11 @@ declared in `core/db/migrations/001_baseline.sql`.
 |---|---|---|
 | `image_config` | the league's whole configuration: the switch (`module_enabled`), the template directory and the sixteen template filenames, the eight asset directories, the time zone and the clock and date formats, the fastest-lap colour, the per-tier colour switch, and the four portrait settings | `CHECK (id = 1)`; every value column `NOT NULL`, its default the value the bot ships |
 | `image_aspect_toggles` | one of the nine aspects a league switches on and off, and whether it is on | the aspect as primary key |
-| `image_tier_colour` | one colour of one slot of one division's tier | the primary key `(division_slug, slot)` |
+| `image_tier_colour` | one colour of one slot of a tier, keyed by the division's normalised name so that a tier's palette survives the season rollover that replaces its `divisions` row (`image_config_service`, `set_tier_colours_on`) | the primary key `(division_slug, slot)` |
 | `driver_portraits` | one portrait the bot obtained: the account it is of, and its key (`avatar_key`, made by `portrait_key` of the avatar it was made from and the shape it was wrapped at) | the account as primary key |
 
-A league switches an aspect, never a template: the toggle surface is the nine aspects, and the
-sixteen templates are a detail of what each aspect draws (`image_constants`'s module docstring).
+The toggles are kept by aspect, not by template: the sixteen templates are a detail of what each
+aspect draws (`image_constants`'s module docstring; image specification, "Configuration").
 
 None of image's columns sits on core's tables, and none of its tables holds a link to one of core's
 that would stop a delete: a tier's colours are keyed by the division's slug, and a portrait by the
@@ -104,7 +104,7 @@ A module's own services stay in its `services/` folder unless its design file gr
 | `config/` | the configuration's reads and writes (`image_config_service`), its settings on the queue (`image_settings`) and what a setting says beside its value once saved (`image_setting_advice`), the module's switch (`module_switch_settings`), and the fingerprint's area (`fingerprint_areas`) |
 | `validity/` | the layered template check (`image_validity_service`) and the roll-up of its reports into each aspect's state (`aspect_status`) |
 | `render/` | the render (`image_render_service`) and the one object every other part of the bot asks to draw (`image_drawing`) |
-| `aspects/` | for each of the nine aspects, its resolution (`image_<aspect>_service`) and its drawing for a caller (`image_<aspect>_post`), the two apart where an aspect has both |
+| `aspects/` | for each of the nine aspects, its resolution (`image_<aspect>_service`) and, where it has one, its post module (`image_<aspect>_post`): the drawing for a caller, or for the lineup, which `ImageDrawing` draws, the resolution of its seats |
 | `preview/` | the `/images test` previews: their resolution (`image_preview_service`), the outcomes they invent (`image_preview_data`), the protocol they read other modules' data through (`preview_sources`), the body every preview shares (`preview_runner`) and the `/images config view` report (`configuration_report`) |
 | `portraits/` | the driver portraits (`driver_portrait_service`) |
 
@@ -119,8 +119,9 @@ the render's and the validity check's outcomes (`RenderOutcome`, `ValidityReport
 Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus` and the validity
 layers' numbers. `image_constants` holds the static maps: the nine
 aspects, the sixteen templates and which aspect draws which. `image_catalogues` holds the field
-catalogue of each image type. `forecast_values`, `results_drawing` and `standings_drawing` hold what
-another module composes for a picture and hands in (below, "How modules and core fit together").
+catalogue of each image type. `forecast_values`, `results_drawing` and `standings_drawing` hold
+models another module composes for a picture and hands in (below, "How modules and core fit
+together").
 
 `image/utils/` holds the pure work, which reads no database and touches no Discord object:
 `svg_document` (parsing, the canvas, style resolution and `off_the_loop`), `svg_fill` (the six fill
@@ -223,18 +224,19 @@ Image has one timed job, the daily portrait refresh, the standing job at a time 
 The handler, `run_daily_refresh` (`driver_portrait_service`), is signed up by the wiring and handed
 the queue's moment. It reads the module's switch as it fires and does nothing while the module is
 off; reads the configuration and does nothing unless portraits and daily updates are on; and judges
-from the moment it is handed, against `MISSED_AFTER`, whether the run was missed (image
-specification, "Configuration"; core specification, "When the bot stops"). It then works through
-every driver assigned in the active season, a placement not yet confirmed included
-(`active_season_driver_ids`), one task for each, with no time budget, since nothing waits on it.
+from the moment it is handed, against `MISSED_AFTER`, whether the run was missed, and skips one that
+was (image specification, "Configuration"; core specification, "When the bot stops"). It then works
+through every driver assigned in the active season, a placement not yet confirmed included
+(`active_season_driver_ids`), fetching for each one on the server whose portrait is stale or
+missing, with no time budget, since nothing waits on it.
 
 Image offers no step for `/test-mode advance`, and its process caches (the converter lookup in
 `image_render_service`, the `lru_cache`s of `font_metrics`) are joined to no clearing of the
 in-memory state.
 
 At start-up, image's one step (`portrait refresh job`) re-arms the job at the stored time where the
-league has portraits and daily updates on (`rearm_daily_refresh`). A scheduler that refuses it makes
-the step raise, and the start-up sweep reports it in the log channel and goes on with the others.
+league has portraits and daily updates on (`rearm_daily_refresh`); a scheduler that refuses it makes
+the step raise, for the start-up sweep to report.
 
 ---
 
@@ -243,14 +245,13 @@ the step raise, and the start-up sweep reports it in the log channel and goes on
 Answers to `architecture.md`, "Posting to Discord".
 
 The image module posts nothing to a league's channels: what a drawing hands back, and who posts it,
-is `architecture.md`'s ("How modules and core fit together"). On image's side, the line saying why
-a picture that was due was not drawn is headed by the name its aspect's toggle is offered under, and
-its notices by what was drawn ("Image render notices — …", `ImageRenderService.format_notices`). The
-one drawing that writes its own notices, the lineup a command draws, is
-`ImageDrawing.draw_lineup_for_command`, through the log writer the builder hands it. The `/images
-test` previews write their notices through the writer the runner is handed (`preview_runner`),
-naming what was drawn. Every reply a cog or the runner sends is ephemeral (`image_cog`'s module
-docstring, pinned by `test_every_image_cog_reply_is_ephemeral`).
+is `architecture.md`'s ("How modules and core fit together"). On image's side, the line saying why a
+picture that was due was not drawn is headed by the aspect's own name (each post module's
+`*_TOGGLE_NAME`, the weather forecast's written in place), and its notices by what was drawn ("Image
+render notices — …", `ImageRenderService.format_notices`). The one drawing that writes its own
+notices, the lineup a command draws, is `ImageDrawing.draw_lineup_for_command`, through the log
+writer the builder hands it. The `/images test` previews write their notices through the writer the
+runner is handed (`preview_runner`), naming what was drawn.
 
 ---
 
@@ -262,13 +263,19 @@ Answers to `architecture.md`, "How modules and core fit together".
 
 How image meets the other modules is `architecture.md`'s ("How modules and core fit together"); the
 contract that holds its side is `image-uses-no-other-module`. On image's side, the models it
-declares are `ResultsDrawing` and `StandingsDrawing`, which results composes
+declares in `image/models/` are `ResultsDrawing` and `StandingsDrawing`, which results composes
 (`results_drawing_composer`, `standings_drawing_composer`), and `ForecastValues`, which weather
-composes; attendance hands in a check-in call's deadline.
+composes. Two pictures are composed from shapes declared beside their aspect's resolution instead:
+the attendance sheet, which attendance builds through `image_attendance_service` (`DriverRecord`,
+`RoundHeading`, `resolve_drawing`), and the verdicts' banner, which results builds through
+`image_verdict_banner_post.build_drawing`; results also reads a verdict's team name and key through
+`image_verdict_post`. Attendance hands in a check-in call's deadline.
 
-*Rejected:* image reading the results tables and formatter to compose those pictures itself. A rule
-of how a classification reads would then be held twice, and a picture could disagree with the text
-table it stands for (`results_drawing_composer`'s module docstring: Principle XIV.7).
+*Rejected:* image composing or formatting a classification's values itself. A rule of how a
+classification reads would then be held twice, and a picture could disagree with the text table it
+stands for: every value comes from `results_formatter`'s row builders and is merely placed
+(`results_drawing_composer`'s module docstring, Principle XIV.7), and image imports no other module
+(`architecture.md`, "How modules and core fit together").
 
 ### One drawing
 
@@ -324,8 +331,8 @@ to fill is this protocol (`architecture.md`, "How modules and core fit together"
 Image reads core's tables only through core's readers, among them a division's seating as the lineup
 of record shows it (`division_seating`), a round's and a division's context (`round_context`,
 `division_context`), and a driver's name and nationality and whether the league collects one
-(`core/services/drivers/driver_names.py`), which it is handed signup's hook to ask
-(`driver_names_read`, `core.md`). The portrait roster reads every driver assigned in the active
+(`core/services/drivers/driver_names.py`), which it asks with core's `driver_names_read` hook,
+the one signup answers (`core.md`). The portrait roster reads every driver assigned in the active
 season through `active_season_driver_ids`.
 
 ### The hooks image signs up to
@@ -367,19 +374,18 @@ the thread.
 
 **A portrait fetch.** A Discord error stops the tasks not yet started, since the CDN fetch has no
 back-off (`driver_portrait_service`'s module docstring, pinned by
-`test_an_http_error_abandons_the_rest_of_the_batch`). The daily refresh, `run_daily_refresh`,
-catches a fault itself and logs it on the host's log, and the job stays armed for its next day.
+`test_an_http_error_abandons_the_rest_of_the_batch`).
 
 **The rasteriser is a separate program.** The render hands the filled drawing to Inkscape, a binary
 no package declaration installs, one of the three dependencies the image specification's opening
 section names; its absence is fatal to the module and reported, not raised (`image_render_service`'s
-module docstring). No reason for the choice of a separate program is recorded, so this file records
-the boundary as built. `rasterise` writes the drawing to an intermediate SVG beside the PNG, runs
-the converter on it with a timeout (`_RASTERISE_TIMEOUT_SECONDS`), and removes that SVG whatever the
-outcome; the render calls it in a thread, as a blocking subprocess must not run on the event loop
-(the comment at its call in `ImageRenderService.render`). The converter's location is looked up once
-a minute at most (`_CACHE_TTL_SECONDS`, whose comment gives the reason: it is probed too often for a
-filesystem walk each time, and briefly enough that installing it is noticed without a restart).
+module docstring). `rasterise` writes the drawing to an intermediate SVG beside the PNG, runs the
+converter on it with a timeout (`_RASTERISE_TIMEOUT_SECONDS`), and removes that SVG whatever the
+outcome (image specification, "The rendered file"); the render calls it in a thread, as a blocking
+subprocess must not run on the event loop (the comment at its call in `ImageRenderService.render`).
+The converter's location is looked up once a minute at most (`_CACHE_TTL_SECONDS`, whose comment
+gives the reason: it is probed too often for a filesystem walk each time, and briefly enough that
+installing it is noticed without a restart).
 
 ---
 
