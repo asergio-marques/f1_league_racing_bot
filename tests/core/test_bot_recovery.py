@@ -160,8 +160,6 @@ async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use
     bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason="#288: a daily refresh the scheduler refuses at start-up is "
-                   "logged on the host alone, never reported in the log channel")
 async def test_a_refresh_that_cannot_be_armed_is_reported_by_the_start_up_sweep(tmp_path):
     """The league asks for portraits refreshed daily at 04:30, and the scheduler refuses the job
     as the bot starts again. Image's start-up steps run in its turn of the real start-up sweep,

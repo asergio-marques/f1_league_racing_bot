@@ -358,9 +358,9 @@ async def rearm_daily_refresh(db_path: str, scheduler: SchedulerService) -> None
     """Re-arm the daily refresh at start-up, at the time the league stored, where it has the
     refresh asked for (portraits on, daily on).
 
-    A stored time that is not ``HH:MM`` is the one fault expected of the arming, and it is
-    logged and left, so that the refresh not armed stops no other step of the start. Any other
-    fault is a defect in the bot and goes up to the start-up sweep, which reports it.
+    A scheduler that refuses the job, a stored time that is not ``HH:MM`` included, makes this
+    raise: the refresh left unarmed is a step of the start-up that failed, and the start-up sweep
+    reports it in the log channel and goes on with the others.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -369,10 +369,7 @@ async def rearm_daily_refresh(db_path: str, scheduler: SchedulerService) -> None
         row = await cursor.fetchone()
     if row is None:
         return
-    try:
-        scheduler.schedule_portrait_refresh(row["pfp_daily_time"])
-    except ValueError:
-        log.warning("driver portraits: the daily refresh could not be re-armed", exc_info=True)
+    scheduler.schedule_portrait_refresh(row["pfp_daily_time"])
 
 
 def _fired_late(now: datetime, time_of_day: str) -> bool:
