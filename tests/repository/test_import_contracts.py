@@ -2,8 +2,9 @@
 
 The import rules of `docs/design/architecture.md` are written as contracts in `.importlinter` at the
 repository root: nothing below the cogs imports a cog, models use no Discord and no database, the
-database code imports nothing else of the bot's, and utilities use no services; core uses no module,
-a module uses another only where the dependency table allows, and nothing imports the entry point.
+database code imports nothing else of the bot's, and utilities use no services; `utils` imports
+nothing of the bot, the framework imports nothing of core or of any module, core uses no module, a
+module uses another only where the dependency table allows, and nothing imports the entry point.
 Running them here, rather than as a CI step of their own, means the ordinary test run checks them on
 every host (decided with the plan for #282).
 
@@ -160,7 +161,7 @@ def _placed(parts: tuple[str, ...]) -> bool:
     if len(parts) == 1:
         return parts[0] in ("__init__.py", "__main__.py")
     if parts[0] == "utils":
-        return len(parts) == 2
+        return len(parts) == 2 and parts[1].removesuffix(".py") not in KINDS | {"db", "wiring"}
     if len(parts) == 2:
         return parts[1] == "__init__.py" or (
             parts[1] == WIRING and parts[0] not in {"core"} | LAYERS
@@ -176,6 +177,8 @@ def _placed(parts: tuple[str, ...]) -> bool:
         pytest.param(("results", "helpers.py"), False, id="another file beside the kinds"),
         pytest.param(("utils", "time_parsing.py"), True, id="a helper in utils"),
         pytest.param(("utils", "text", "messages.py"), False, id="a folder in utils"),
+        pytest.param(("utils", "services.py"), False, id="a helper in utils named for a kind"),
+        pytest.param(("utils", "wiring.py"), False, id="a helper in utils named for the wiring"),
         pytest.param(
             ("framework", "services", "queue", "change_queue.py"), True, id="a framework service"
         ),
@@ -187,7 +190,8 @@ def test_files_sit_where_their_part_or_layer_places_them(parts, placed):
     """A module's wiring is the one file a module keeps outside its kind folders; core and the
     framework keep none, and any other file there is out of place. The framework holds its kind
     folders as a part does, and its database code in `db/`; `utils` holds its helpers directly, one
-    file to a topic, with no folders."""
+    file to a topic, with no folders, and none named for a kind or the wiring, whose dotted name the
+    contracts' `leaguebot.*.<kind>` would take for a kind folder."""
     assert _placed(parts) is placed
 
 
