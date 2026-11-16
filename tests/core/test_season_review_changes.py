@@ -809,15 +809,21 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     assert str(raised.value) == fault
 
 
+@pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused-then-retried"])
 async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
-        posting, monkeypatch, tmp_path):
+        posting, monkeypatch, tmp_path, refused):
     """The real change types are registered, as the builder registers them, and the drawing the
     bot carries draws Alex's review's two pictures of Pro as PNGs: Pro's calendar of season 1 with
     one notice (round 12 not fitting) and Pro's lineup with another (Zara's flag falling back).
     Once the queue runs, both pictures are posted and the queue does not stop; the log channel
     holds each notice once, in a line naming what was drawn (the calendar or the lineup, and
     Pro), which the job that drew and posted it carries among its own lines (Constitution XIV.4;
-    the owner's decision on #288: code inside a job never calls `post_log`)."""
+    the owner's decision on #288: code inside a job never calls `post_log`).
+
+    Where *refused*, review channel 700 refuses the first picture and every message after it,
+    the text standing in for the picture too, so the queue stops at that picture's post; the
+    channel is let accept and a Retry carries the review on to its end. Each notice is still held
+    once, never lost with the failed post."""
     from leaguebot.core.services.modules.image_drawing import LineupPicture
     from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
     from tests.support.change_queue import queued_log_lines
@@ -844,11 +850,30 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
         POST, {**_payload(), "pictures": pictures, "question": None},
         interaction=interaction, what="posting the placements review",
     )
+    refusing = {"on": refused, "from_here": False}
+    send = posting.channel.send.side_effect
+
+    async def _refuse_from_the_first_picture(content: str = "", **kwargs: Any) -> Any:
+        if refusing["on"] and (refusing["from_here"] or kwargs.get("file")):
+            refusing["from_here"] = True
+            raise http_error(discord.Forbidden, status=403, text="Missing Permissions")
+        return await send(content, **kwargs)
+
+    posting.channel.send.side_effect = _refuse_from_the_first_picture
 
     await run_queue(posting.bot)
+    if refused:
+        assert await stopped_job(posting.db_path) is not None
+        refusing["on"] = False
+        for png in drawn.values():  # drawn afresh on the retry, as a render writes a new file
+            png.parent.mkdir(exist_ok=True)
+            png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        await retry_job(posting.bot)
+        await run_queue(posting.bot)
 
     assert await stopped_job(posting.db_path) is None
-    assert len([m for m in _posts(posting.channel) if m.picture]) == 2
+    if not refused:
+        assert len([m for m in _posts(posting.channel) if m.picture]) == 2
     logged = [*posting.bot.log_channel.sent, *await queued_log_lines(posting.db_path)]
     for notice, kind in ((calendar_notice, "calendar"), (lineup_notice, "lineup")):
         named = [line for line in logged if notice in line]
