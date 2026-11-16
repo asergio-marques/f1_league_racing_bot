@@ -199,7 +199,11 @@ vocabulary (`change.py`), the dependency table (`module_dependencies.py`) and `R
 the base classes for the command tree, buttons and forms (`league_server.py`), the hook types
 (`hooks.py`), the failure path for interactions (`interaction_errors.py`), the refusal and the
 standard log lines (`log_lines.py`), `bounded_autocomplete` (`autocomplete.py`), the posting guard
-(`in_a_job.py`), and plain formatting, parsing and time helpers.
+(`in_a_job.py`), and core's own listings (`formatting.py`) and readers of what a league types
+(`input_validator.py`, `round_import.py`, `roster_import.py`). The helpers that know nothing of the
+bot, reading a typed time, the time zones, the version and the fitting of text to Discord's limits,
+are not core's but the `utils` layer's (`architecture.md`, "How the code is laid out"), and the
+rendering of a date for a graphic is the image module's.
 
 **The database code** is `core/db/database.py`: `get_connection`, which lends idle connections
 again, `close_connections`, `run_migrations`, and the helpers `sole_row` and `inserted_id`.
