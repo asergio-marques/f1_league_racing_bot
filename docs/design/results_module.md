@@ -224,10 +224,10 @@ start-up step stands for a function of results' services.
 
 `results/utils/` holds `results_formatter` (one rendering for the text table and the picture, its
 docstring says), `points_ordering` (the ordering rule, held once for its four callers),
-`tyre_compound` (the compounds a session's rows name, which the image module's preview takes
-through `PreviewSources`) and `xml_import`. `results/models/` holds plain data: a session's result, a points configuration, a
-standings snapshot, the amendment mode's state, `PointsChanged` (what a points amendment's approval
-changed) and `RecoveryFailed` (below, "Errors and failures").
+`tyre_compound` (the compounds a session's rows name, which the image module's preview takes through
+`PreviewSources`) and `xml_import`. `results/models/` holds plain data: a session's result, a points
+configuration, a standings snapshot, the amendment mode's state, `PointsChanged` (what a points
+amendment's approval changed) and `RecoveryFailed` (below, "Errors and failures").
 
 ---
 
@@ -636,13 +636,13 @@ each template is wanted, compose what is wanted into the models the image module
 own formatter and from results' own tables) and hand them to the drawing. For a verdict and the
 heading over a round's verdicts they hand it what it draws, the sanction's wording included. They
 post what it hands back themselves. Results also implements its share of the image module's
-`PreviewSources` (`preview_sources`: sample sessions, rows, tyre compounds, standings and the
-sanction's wording), which the builder joins with attendance's share and hands in. A session's table
-and the two standings go through the standing-post handler, and a picture Discord refuses goes out
-as its text in the same try. A verdict and the heading go through the notice handler
-(`send_notice`), and a picture Discord refuses stops the queue, so that the retry posts the text.
-What the drawing had to report comes back as lines of the job, in every case. The repost's check
-that a channel can take a file asks the drawing whether the aspect attaches files
+`PreviewSources` (`preview_sources`: sample sessions, rows, a session's results drawing, tyre
+compounds, standings and the sanction's wording), which the builder joins with attendance's share
+and hands in. A session's table and the two standings go through the standing-post handler, and a
+picture Discord refuses goes out as its text in the same try. A verdict and the heading go through
+the notice handler (`send_notice`), and a picture Discord refuses stops the queue, so that the retry
+posts the text. What the drawing had to report comes back as lines of the job, in every case. The
+repost's check that a channel can take a file asks the drawing whether the aspect attaches files
 (`ImageDrawing.aspect_attaches_files`). A retry asks for no picture (above, "Pictures and their
 fallbacks").
 

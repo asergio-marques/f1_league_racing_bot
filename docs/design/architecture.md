@@ -286,30 +286,31 @@ the switch. It only means core no longer needs to know what the module does: for
 knows the module's name, and nothing else.
 
 The image module is used by the others to draw their posts, and a module that finds it turned off
-posts text instead, as the image module specification's "Configuration" section (the
-`images config toggle` and its fallback) says. The image module is asked only to draw: it draws what
-a module hands it, imports no other module, and posts nothing itself. The one exception is the
-lineup a command draws: that runs in no job, so its drawing reports its notices itself. It hands
-back the picture, or none, and the lines saying what the drawing had to report, so the module that posts keeps the
-posting and chooses the kind of post (a standing post for a session's table and the standings, a
-notice for a verdict and the batch's heading), and the lines reach the log channel as lines of the
-job that posts. Every other module may call the image module without an entry in the table, but only
-through the one drawing the builder hands it, which carries each picture's gate, drawing and
-discard, and the models the image module declares for what it is handed to draw: image's render and
-its configuration are image's alone (the `.importlinter` contract that keeps results, attendance and
-weather out of them), so that the one gate and the fall back to text are the image module's to keep
-and no module reaches round them. What a preview draws is read through a protocol the image module
-declares (`PreviewSources`), each part of which the module that owns the data implements, and the builder
-joins the parts and hands them in. Core reaches the image module through a protocol it declares, which the image module implements
-and the builder hands in, as results reaches attendance (below). Core's own graphics (the calendar,
-the lineup) are asked for through it, with the capacity guards, the artwork signature and the checks
-that a calendar or a lineup is wanted, and both season reviews' image section is asked for through
-it too, with the faults that refuse a confirmation or an approval (the rasteriser, the templates,
-the per-tier colours, the portrait settings), rather than drawn or read by importing the module.
-That is not the rejected object of named operations above: a hook is a moment several modules take
-part in, and this is a question one module answers. Where a module must let one that depends on it
-act (results after a round, for attendance), it does so through what the builder hands it, never by
-importing the dependant.
+posts text instead, as the image module specification's "Configuration" section (the `images config
+toggle` and its fallback) says. The image module is asked only to draw: it draws what a module hands
+it, imports no other module, and posts nothing itself. The one exception is the lineup a command
+draws: that runs in no job, so its drawing reports its notices itself. The image module hands back
+the picture, or none, and the lines saying what the drawing had to report, so the module that posts
+keeps the posting and chooses the kind of post (a standing post for a session's table and the
+standings, a notice for a verdict and the batch's heading), and the lines reach the log channel as
+lines of the job that posts. Every other module may call the image module without an entry in the
+table, but only through the one drawing the builder hands it, which carries each picture's gate,
+drawing and discard, and the models the image module declares for what it is handed to draw: image's
+render and its configuration are image's alone (the `.importlinter` contract that keeps results,
+attendance and weather out of them), so that the one gate and the fall back to text are the image
+module's to keep and no module reaches round them. What a preview draws is read through a protocol
+the image module declares (`PreviewSources`), each part of which the module that owns the data
+implements, and the builder joins the parts and hands them in. Core reaches the image module through
+a protocol it declares, which the image module implements and the builder hands in, as results
+reaches attendance (below). Core's own graphics (the calendar, the lineup) are asked for through it,
+with the capacity guards, the artwork signature and the checks that a calendar or a lineup is
+wanted, and both season reviews' image section is asked for through it too, with the faults that
+refuse a confirmation or an approval (the rasteriser, the templates, the per-tier colours, the
+portrait settings), rather than drawn or read by importing the module. That is not the rejected
+object of named operations above: a hook is a moment several modules take part in, and this is a
+question one module answers. Where a module must let one that depends on it act (results after a
+round, for attendance), it does so through what the builder hands it, never by importing the
+dependant.
 
 **Results reaches attendance through a protocol, handed in by the builder.** What attendance does
 after a round's review (recording the round's attendance and its pardons, recalculating after an

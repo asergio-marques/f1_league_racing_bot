@@ -12,8 +12,9 @@ back for ``ImageDrawing.draw_standings`` to place on templates.
 ``results_formatter.driver_is_drawn``, the predicate the textual standings compose by, and a grid
 cell's text is ``results_formatter.format_grid_cell``'s, which is Constitution XIV.7: nothing
 here restates a rule the textual path holds. The gap to the leader, the previous position and the
-position change are derived in ``standings_service`` and carried through untouched: nothing here
-subtracts points or compares positions.
+position change are derived in ``standings_service`` and formatted here as text by
+``results_formatter`` (``_gap_text``, ``_movement_text``): nothing here subtracts points or
+compares positions.
 
 See specs/040-standings-image-generation/contracts/ — standings-catalogue.md for the fields and
 derived-columns.md for what may be derived and where.
