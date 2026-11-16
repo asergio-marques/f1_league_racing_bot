@@ -292,6 +292,27 @@ async def test_a_resolution_fault_reports_once_and_falls_both_back():
     post_log.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#288: draw_standings leaves the drivers' rendered PNG on "
+                                       "disk when the constructors' render raises")
+async def test_a_constructors_render_that_raises_discards_the_drivers_picture_already_drawn(
+    tmp_path,
+):
+    """The drivers' picture is rendered, then the constructors' render raises (its directories
+    cannot be resolved). The fault is raised for the posting to fall both back to text, and the
+    drivers' PNG, which nothing will post, is discarded rather than left on disk."""
+    png = _render_artifact(tmp_path, "standings_drivers_template")
+
+    async def render(_config, _renderer, drawing):
+        if drawing.template_key == DRIVERS:
+            return _decision(png=png)
+        raise RuntimeError("no team directory")
+
+    with pytest.raises(RuntimeError, match="no team directory"):
+        await _draw(_drawing(), AsyncMock(side_effect=render))
+
+    assert not png.exists(), "the drivers' picture outlived a drawing that raised"
+
+
 # ── Reporting (FR-053) ────────────────────────────────────────────────────
 
 
