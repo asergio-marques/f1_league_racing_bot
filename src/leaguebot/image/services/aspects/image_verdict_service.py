@@ -26,7 +26,7 @@ from leaguebot.image.models.image_catalogues import (
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 from leaguebot.image.utils.country_data import country_for_nationality
-from leaguebot.core.utils.input_validator import USER_MENTION
+from leaguebot.utils.messages import USER_MENTION
 from leaguebot.image.models.verdict_kind import VerdictKind
 
 TEMPLATE_KEY = "verdicts_template"

@@ -4,12 +4,18 @@ A Discord message holds 2,000 characters. The log channel's router splits a reco
 that, and a reply to a member is split the same way, so a long list — the bad lines of a paste,
 a season's refusals — reaches its reader whole and in order rather than cut off or refused. A
 fenced listing is split on whole lines, its header on every page, and a moment is written as
-Discord's own timestamp, which each reader sees in their own time zone.
+Discord's own timestamp, which each reader sees in their own time zone. Discord's mention syntax
+sits here too, as pattern text for code that finds a mention inside a longer text.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+
+#: A user mention, ``<@123>`` or ``<@!123>``, and a role mention, ``<@&123>``, as pattern text
+#: for code that finds them inside a longer text. The id is the one group each captures.
+USER_MENTION = r"<@!?(\d+)>"
+ROLE_MENTION = r"<@&(\d+)>"
 
 
 def chunk_message(content: str, limit: int = 1990, *, records: bool = False) -> list[str]:

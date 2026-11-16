@@ -38,8 +38,7 @@ import discord
 
 from leaguebot.core.db.database import inserted_id
 from leaguebot.core.utils.answering import answering_now
-from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
-from leaguebot.utils.messages import chunk_message
+from leaguebot.utils.messages import ROLE_MENTION, USER_MENTION, chunk_message
 
 #: Every mention a log line can carry, wrapped whole as code so it names without notifying.
 #: Built from the shared forms, so ``<@!123>`` is wrapped as ``<@123>`` is.
