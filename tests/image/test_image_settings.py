@@ -64,8 +64,6 @@ DAILY_JOB_NOT_SCHEDULED = (
     "the next time the bot starts with the image module on, or when the module is next switched "
     "on."
 )
-#: Why the tests of that reply fail until it names both moments the update is scheduled.
-DAILY_REWORDED = "#288: the reply still says the daily job is scheduled when the bot next starts"
 #: What a daily job that cannot be removed adds to the success (plan 2.11, Assumed 12).
 NOT_REMOVED = (
     "⚠️ The setting is saved, but the daily job could not be removed; it does nothing while the "
@@ -743,7 +741,6 @@ async def test_the_daily_job_is_armed_by_a_job_after_the_save(tmp_path):
     assert (await log_lines(league)).count(success) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=DAILY_REWORDED)
 @pytest.mark.parametrize("route", ["confirm", "master-toggle"])
 async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lane_goes_on(
     tmp_path, route

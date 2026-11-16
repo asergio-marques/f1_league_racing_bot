@@ -20,8 +20,14 @@ waiting for Inkscape to be installed, which is exactly the case the notice exist
 **The switch-off is one save: the flag and the audit entry.** It deletes nothing and resets no
 toggle, which is the Principle X.6 exception for configuration that cannot go stale (FR-004a) — no
 image config value names a Discord channel, role or message, so none of those can become a stale
-binding while the module is off. It removes nothing else: the daily portrait job that `pfp_daily`
-arms stays armed while the module is off.
+binding while the module is off. The daily portrait job that `pfp_daily` arms is removed in a step
+after that save, which may fail without holding up the queue, and the job reads the module's switch
+as it fires, so one left armed does nothing.
+
+**The switch-on arms it again.** Where the kept configuration has portraits on with daily updates
+set, a step after the save arms the daily job at the stored time and carries the success line,
+so a job that cannot be armed leaves the module on, tells the league when it will be scheduled
+and records a failure and no success, as the portrait toggles do.
 
 **Each switch asks the hub's panel to be refreshed, once, as an `After` step**
 (`hub_service.hub_refresh_after`), rather than the command doing it after every press.
@@ -41,12 +47,20 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     modules_frozen_for_completion,
 )
 from leaguebot.core.services.queue.setting_change import Saved, Setting
-from leaguebot.image.services.config.image_config_service import create_defaults_on
+from leaguebot.image.services.config.image_config_service import create_defaults_on, read_config_on
+from leaguebot.image.services.config.image_settings import (
+    ARM_DAILY,
+    DAILY_JOB_NOT_REMOVED_MODULE_OFF,
+    DISARM_DAILY,
+    arm_daily,
+    disarm_daily,
+)
 
 if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 _ENABLE_COMMAND = "/module enable images"
@@ -68,9 +82,11 @@ def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable images` again once the fault is cleared."
 
 
-def module_on_images(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
+def module_on_images(
+    *, modules: "ModuleService", seasons: "SeasonService", scheduler: "SchedulerService"
+) -> Setting:
     """`module.on:images`: the configuration created where missing, the flag and the audit, in
-    one save.
+    one save, and the daily portrait job armed after it where the configuration asks for one.
 
     **The check reads the season's stage again as the change starts,** not only at the ask
     (`module_cog.py`'s stage refusal): asked while no season's placements are confirmed, and run
@@ -89,12 +105,15 @@ def module_on_images(*, modules: "ModuleService", seasons: "SeasonService") -> S
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
         await create_defaults_on(db)
         await db.execute("UPDATE image_config SET module_enabled = 1")
+        kept = await read_config_on(db)
+        daily = kept is not None and kept.use_pfp and kept.pfp_daily
         return Saved(
             changed=True,
             audits=(
                 AuditRecord(change_type="IMAGE_MODULE_ENABLED", old_value={}, new_value={}),
             ),
-            then=(PlannedStep(REFRESH_HUB),),
+            result={"daily_time": kept.pfp_daily_time} if kept is not None and daily else {},
+            then=(PlannedStep(ARM_DAILY),) * daily + (PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -116,13 +135,17 @@ def module_on_images(*, modules: "ModuleService", seasons: "SeasonService") -> S
         reply=reply,
         writes=("image_config", "image_aspect_toggles"),
         not_saved=_still_off,
-        after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
+        after={
+            ARM_DAILY: arm_daily(scheduler, lambda _payload: "/module enable"),
+            REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND),
+        },
     )
 
 
-def module_off_images(*, modules: "ModuleService") -> Setting:
-    """`module.off:images`: the flag lowered and the audit entry written, in one save. Nothing is
-    deleted and nothing is removed (Principle X.6's exception, which image claims).
+def module_off_images(*, modules: "ModuleService", scheduler: "SchedulerService") -> Setting:
+    """`module.off:images`: the flag lowered and the audit entry written, in one save, and the
+    daily portrait job removed after it where the configuration has one. Nothing is deleted
+    (Principle X.6's exception, which image claims).
 
     **The check reads Pending completion again as the change starts,** as `results_off_change`'s
     already does: asked before the season reaches it, and run once a change waiting ahead of it
@@ -139,12 +162,14 @@ def module_off_images(*, modules: "ModuleService") -> Setting:
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
         await db.execute("UPDATE image_config SET module_enabled = 0")
+        kept = await read_config_on(db)
+        daily = kept is not None and kept.use_pfp and kept.pfp_daily
         return Saved(
             changed=True,
             audits=(
                 AuditRecord(change_type="IMAGE_MODULE_DISABLED", old_value={}, new_value={}),
             ),
-            then=(PlannedStep(REFRESH_HUB),),
+            then=(PlannedStep(DISARM_DAILY),) * daily + (PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -161,7 +186,10 @@ def module_off_images(*, modules: "ModuleService") -> Setting:
         save=save,
         reply=reply,
         writes=("image_config",),
-        after={REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
+        after={
+            DISARM_DAILY: disarm_daily(scheduler, not_removed=DAILY_JOB_NOT_REMOVED_MODULE_OFF),
+            REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND),
+        },
     )
 
 

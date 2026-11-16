@@ -67,11 +67,17 @@ def register_change_types(bot: "LeagueBot") -> None:
 
     bot.change_queue.register(
         setting_change(
-            module_on_images(modules=bot.module_service, seasons=bot.season_service)
+            module_on_images(
+                modules=bot.module_service,
+                seasons=bot.season_service,
+                scheduler=bot.scheduler_service,
+            )
         )
     )
     bot.change_queue.register(
-        setting_change(module_off_images(modules=bot.module_service))
+        setting_change(
+            module_off_images(modules=bot.module_service, scheduler=bot.scheduler_service)
+        )
     )
     for setting in image_settings(
         modules=bot.module_service,

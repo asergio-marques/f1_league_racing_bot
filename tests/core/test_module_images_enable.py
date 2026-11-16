@@ -288,15 +288,7 @@ async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_o
 @pytest.mark.parametrize(
     ("use_pfp", "pfp_daily", "armed"),
     [
-        pytest.param(
-            1, 1, True,
-            id="daily updates asked for",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#288: switching the image module on does not arm the daily portrait "
-                "refresh",
-            ),
-        ),
+        pytest.param(1, 1, True, id="daily updates asked for"),
         pytest.param(1, 0, False, id="daily updates not asked for"),
         pytest.param(0, 1, False, id="portraits off"),
     ],
@@ -324,10 +316,6 @@ async def test_enabling_arms_the_daily_portrait_refresh_where_the_configuration_
         league.scheduler.schedule_portrait_refresh.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#288: switching the image module on does not arm the daily portrait refresh",
-)
 async def test_an_enable_that_cannot_arm_the_daily_refresh_leaves_the_module_on_as_one_failure(
     tmp_path,
 ):

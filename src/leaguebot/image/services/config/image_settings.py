@@ -112,15 +112,24 @@ NOT_CHECKED = (
 )
 
 #: What a daily job that cannot be armed says became of the change: the setting is stored before
-#: the job is scheduled, and the start-up recovery arms it.
+#: the job is scheduled, and the start-up recovery arms it where the module is on, as does the
+#: module's next switch-on.
 DAILY_JOB_NOT_SCHEDULED = (
-    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+    "⚠️ The setting is stored, but the daily update could not be scheduled. It will be scheduled "
+    "the next time the bot starts with the image module on, or when the module is next switched "
+    "on."
 )
 #: What a reply adds when the daily job cannot be removed: the setting stands, and the job does
 #: nothing while it is off.
 DAILY_JOB_NOT_REMOVED = (
     "⚠️ The setting is saved, but the daily job could not be removed; it does nothing while "
     "the setting is off."
+)
+#: The same where the module's switch-off could not remove it: the refresh reads the module's
+#: switch as it fires, so the job stays harmless until it is removed.
+DAILY_JOB_NOT_REMOVED_MODULE_OFF = (
+    "⚠️ The setting is saved, but the daily job could not be removed; it does nothing while "
+    "the module is off."
 )
 
 #: The command the daily portrait confirmation belongs to, as the log channel names it.
@@ -792,12 +801,13 @@ def _tier_import(modules: "ModuleService") -> Setting:
     )
 
 
-def _arm_daily(scheduler: "SchedulerService", command: Callable[[dict[str, Any]], str]) -> After:
-    """The step that arms the daily portrait job once the time and the flag are saved.
+def arm_daily(scheduler: "SchedulerService", command: Callable[[dict[str, Any]], str]) -> After:
+    """The step that arms the daily portrait job once the time and the flag are saved, for a
+    save that keeps the time under `daily_time` in its result where the payload names none.
 
     It carries the success line: a job that cannot be armed records no success (image
     specification :132). The setting stays stored and the lane goes on; the reply says the job
-    will be scheduled when the bot next starts, as it always has.
+    will be scheduled when the bot next starts with the module on, or when it is next switched on.
     """
 
     async def run(ctx: StepContext) -> StepResult:
@@ -814,11 +824,12 @@ def _arm_daily(scheduler: "SchedulerService", command: Callable[[dict[str, Any]]
     )
 
 
-def _disarm_daily(scheduler: "SchedulerService") -> After:
-    """The step that removes the daily portrait job once portraits or daily updates are off.
+def disarm_daily(scheduler: "SchedulerService", *, not_removed: str = DAILY_JOB_NOT_REMOVED) -> After:
+    """The step that removes the daily portrait job once portraits, daily updates or the module
+    are off.
 
-    It may fail without holding up the queue: the setting stays saved and the reply says the job
-    could not be removed and does nothing while the setting is off.
+    It may fail without holding up the queue: the setting stays saved and the reply adds
+    *not_removed*, which says the job could not be removed and does nothing while it is off.
     """
 
     async def run(_ctx: StepContext) -> StepResult:
@@ -827,7 +838,7 @@ def _disarm_daily(scheduler: "SchedulerService") -> After:
 
     return After(
         step=Step(DISARM_DAILY, StepKind.ACT, run),
-        fault_reply=lambda _payload, reply: f"{reply}\n{DAILY_JOB_NOT_REMOVED}",
+        fault_reply=lambda _payload, reply: f"{reply}\n{not_removed}",
     )
 
 
@@ -911,7 +922,7 @@ def _portraits(
         save=save,
         reply=reply,
         writes=("image_config",),
-        after={ARM_DAILY: _arm_daily(scheduler, command), DISARM_DAILY: _disarm_daily(scheduler)},
+        after={ARM_DAILY: arm_daily(scheduler, command), DISARM_DAILY: disarm_daily(scheduler)},
     )
 
 
@@ -956,7 +967,7 @@ def _daily_portraits(
         save=save,
         reply=reply,
         writes=("image_config",),
-        after={ARM_DAILY: _arm_daily(scheduler, command)},
+        after={ARM_DAILY: arm_daily(scheduler, command)},
     )
 
 
@@ -990,9 +1001,10 @@ def image_settings(
 
 
 __all__ = [
-    "ADVISE", "ARM_DAILY", "ASPECT", "DAILY_JOB_NOT_REMOVED", "DAILY_JOB_NOT_SCHEDULED",
+    "ADVISE", "ARM_DAILY", "ASPECT", "DAILY_JOB_NOT_REMOVED", "DAILY_JOB_NOT_REMOVED_MODULE_OFF",
+    "DAILY_JOB_NOT_SCHEDULED",
     "DAILY_PORTRAITS", "DAILY_TOGGLE", "DIRECTORY", "DISARM_DAILY", "FASTEST_LAP_COLOUR", "FORM_MODULE_OFF", "IMPORT_NOT_SAVED",
     "MODULE_OFF", "NOT_CHECKED", "PASTE_NOT_SAVED", "PER_TIER", "PORTRAITS", "PRESENTATION", "TEMPLATE",
-    "TEMPLATE_DIRECTORY", "TIER_COLOURS", "TIER_IMPORT", "aspect_blocking_reasons",
-    "daily_portraits_refusal", "image_settings",
+    "TEMPLATE_DIRECTORY", "TIER_COLOURS", "TIER_IMPORT", "arm_daily", "aspect_blocking_reasons",
+    "daily_portraits_refusal", "disarm_daily", "image_settings",
 ]

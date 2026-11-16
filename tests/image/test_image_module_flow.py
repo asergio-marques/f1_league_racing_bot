@@ -171,10 +171,6 @@ async def test_disable_preserves_every_settable_column(tmp_path):
     assert all((await config_service.get_toggles()).values())
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#288: switching the image module off leaves the daily portrait refresh armed",
-)
 async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     """Images on with portraits refreshed daily: `/module disable images` switches the module
     off and removes the daily refresh, which would otherwise go on firing while the module is
@@ -192,11 +188,6 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     league.scheduler.cancel_portrait_refresh.assert_called_once_with()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#288: switching the image module off does not try to remove the daily portrait "
-    "refresh, so a removal that fails goes untold",
-)
 async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_off_and_says_so(
     tmp_path,
 ):
