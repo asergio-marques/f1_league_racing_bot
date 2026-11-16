@@ -148,6 +148,12 @@ def picture_fallback_line(
 #: `left_standing` is), for the job to keep on the stop it raises.
 DRAWN_LINES_ATTRIBUTE = "drawn_lines"
 
+#: The attribute a failed send carries what kept a picture from posting on, by what it was the
+#: picture of (``"results"``, or a standings championship): the refusal and its reason, or the
+#: drawing's fault. The text that went out in its place failed too, so no table carries it, and
+#: the job keeps its line on the stop for the try that posts to hand back.
+PICTURE_FAULTS_ATTRIBUTE = "picture_faults"
+
 
 def fault_of(error: BaseException) -> str:
     """What to say of *error* in a log line: its message, else its type."""
@@ -700,9 +706,12 @@ async def produce_session_results(
     try:
         sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
     except Exception as failure:
-        # What the picture had to say is kept on the stop, for the try that posts to hand back.
+        # What the picture had to say, and why it was not posted, is kept on the stop, for the
+        # try that posts to hand back.
         if lines:
             setattr(failure, DRAWN_LINES_ATTRIBUTE, lines)
+        if fault is not None:
+            setattr(failure, PICTURE_FAULTS_ATTRIBUTE, {"results": fault})
         raise
     return PostedTable(sent, previous, fault=fault, lines=lines)
 
@@ -961,6 +970,8 @@ async def produce_standings(
                 # What the pictures said is kept on the stop, for the try that posts to hand back.
                 if lines:
                     setattr(failure, DRAWN_LINES_ATTRIBUTE, lines)
+                if faults:
+                    setattr(failure, PICTURE_FAULTS_ATTRIBUTE, faults)
                 raise
             tables = pictures + texts
             if tables:

@@ -31,9 +31,17 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, drawn_lines_kept
+import discord
+
+from leaguebot.core.models.change import (
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    drawn_lines_kept,
+)
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.modules.module_service import ModuleService
@@ -56,30 +64,64 @@ OPENING_STANDINGS = "opening_standings"
 FINAL_STANDINGS = "final_standings"
 
 
+def _refused_picture_line(
+    ctx: StepContext, championship: str | None, fault: str, *, subject: str
+) -> str:
+    """The line a job writes to the log for a *championship* picture of its *subject* (the
+    opening standings, the final classification) that went out as text: the member and the
+    change it ran for, then the division, the championship, what failed (Discord's refusal and
+    its reason, or the drawing's fault) and what puts it right, as the round's standings job
+    says it (image specification, "Errors"). No command posts these again, so none is named."""
+    from leaguebot.results.services.publishing.results_post_service import UploadFault
+
+    put_right = f"no command posts the {subject} again, and the text stands"
+    if not isinstance(fault, UploadFault):
+        put_right = f"fix the standings template; {put_right}"
+    return (
+        f"{ctx.named} | {ctx.what} | Standings posted as text\n"
+        f"  division: {ctx.step_payload['division_name']}\n"
+        f"  problem: the {championship} picture of the {subject} could not be "
+        f"posted: {fault}\n"
+        f"  to put it right: {put_right}"
+    )
+
+
 def _refused_picture_lines(
     ctx: StepContext, tables: "Sequence[PostedTable]", *, subject: str
 ) -> tuple[str, ...]:
-    """The lines a job writes to the log for each table of its *subject* (the opening standings,
-    the final classification) whose picture went out as text: the member and the change it ran
-    for, then the division, the championship, what failed (Discord's refusal and its reason, or
-    the drawing's fault) and what puts it right, as the round's standings job says it
-    (image specification, "Errors"). No command posts these again, so none is named."""
-    division = str(ctx.step_payload["division_name"])
-    lines: tuple[str, ...] = ()
-    for table in tables:
-        if table.fault is None:
-            continue
-        put_right = f"no command posts the {subject} again, and the text stands"
-        if not table.at_discord:
-            put_right = f"fix the standings template; {put_right}"
-        lines += (
-            f"{ctx.named} | {ctx.what} | Standings posted as text\n"
-            f"  division: {division}\n"
-            f"  problem: the {table.championship} picture of the {subject} could not be "
-            f"posted: {table.fault}\n"
-            f"  to put it right: {put_right}",
-        )
-    return lines
+    """The lines for each table of the *subject* whose picture went out as text
+    (:func:`_refused_picture_line`)."""
+    return tuple(
+        _refused_picture_line(ctx, table.championship, table.fault, subject=subject)
+        for table in tables if table.fault is not None
+    )
+
+
+def _raise_keeping_refused_pictures(
+    ctx: StepContext, failure: StepFailedOnDiscord | discord.HTTPException, *, subject: str
+) -> NoReturn:
+    """Raise what a job raises where the *subject*'s post failed: *failure*, but where a picture
+    was refused or would not draw and the text that went out in its place failed too, a stop
+    carrying that picture's line beside the lines it already kept, for the try that posts the
+    text to hand back once."""
+    from leaguebot.results.services.publishing.results_post_service import (
+        PICTURE_FAULTS_ATTRIBUTE,
+    )
+
+    cause: BaseException | None = failure
+    while cause is not None and not getattr(cause, PICTURE_FAULTS_ATTRIBUTE, None):
+        cause = cause.__cause__
+    if cause is None:
+        raise failure
+    faults: dict[str, str] = getattr(cause, PICTURE_FAULTS_ATTRIBUTE)
+    refused = tuple(
+        _refused_picture_line(ctx, name, fault, subject=subject) for name, fault in faults.items()
+    )
+    if isinstance(failure, StepFailedOnDiscord):
+        raise failure.carrying(drawn_lines_kept(failure.result) + refused)
+    if isinstance(failure, discord.HTTPException):
+        raise StepFailedOnDiscord(f"the {subject} were refused").carrying(refused) from failure
+    raise failure
 
 
 async def _opening_round(db_path: str, division_id: int):
@@ -160,7 +202,6 @@ async def produce_stranding(
     pictures drawn for it said, on the failure or kept from an earlier try (*kept*), is kept
     beside them, for the try that posts to hand back.
     """
-    import discord
 
     from leaguebot.core.models.change import StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.publishing.results_post_service import DRAWN_LINES_ATTRIBUTE
@@ -504,10 +545,13 @@ def opening_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, 
         guild = await require_guild(ctx.bot)
         division_id = int(ctx.step_payload["division_id"])
         channel_id = await standings_channel_of(ctx.db_path, division_id)
-        tables = await post_opening_standings(
-            ctx.bot, guild, ctx.db_path, division_id, drawing=drawing, as_text=ctx.tries > 0,
-            kept=ctx.kept,
-        )
+        try:
+            tables = await post_opening_standings(
+                ctx.bot, guild, ctx.db_path, division_id, drawing=drawing, as_text=ctx.tries > 0,
+                kept=ctx.kept,
+            )
+        except (StepFailedOnDiscord, discord.HTTPException) as failure:
+            _raise_keeping_refused_pictures(ctx, failure, subject="opening standings")
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_OPENING, tables,
             channel_id,
@@ -561,10 +605,13 @@ def final_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, St
         each = ctx.step_payload
         division_id = int(each["division_id"])
         channel_id = await standings_channel_of(ctx.db_path, division_id)
-        tables = await post_final_standings(
-            ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]), drawing=drawing,
-            as_text=ctx.tries > 0, kept=ctx.kept,
-        )
+        try:
+            tables = await post_final_standings(
+                ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]), drawing=drawing,
+                as_text=ctx.tries > 0, kept=ctx.kept,
+            )
+        except (StepFailedOnDiscord, discord.HTTPException) as failure:
+            _raise_keeping_refused_pictures(ctx, failure, subject="final classification")
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_FINAL, tables,
             channel_id,

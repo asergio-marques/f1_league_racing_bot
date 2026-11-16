@@ -1837,12 +1837,7 @@ REFUSAL = "Discord failed part-way"
 REPOST_COMMAND = {"results": "/results rounds sync", "standings": "/results standings sync"}
 
 
-@pytest.mark.parametrize("text_refused", [
-    False,
-    pytest.param(True, id="text-also-refused-then-retried", marks=pytest.mark.xfail(
-        strict=True, reason="#288: a refused picture's line is lost with the try whose text "
-        "Discord also refuses, so the retry that posts the text leaves no line saying why")),
-])
+@pytest.mark.parametrize("text_refused", [False, pytest.param(True, id="text-also-refused-then-retried")])
 @pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_picture_discord_refuses_is_posted_as_text_and_the_log_says_why(
     tmp_path, picture, text_refused,

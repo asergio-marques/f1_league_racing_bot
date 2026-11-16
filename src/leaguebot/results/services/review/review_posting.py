@@ -89,6 +89,8 @@ from leaguebot.results.models.standings_snapshot import (
 from leaguebot.results.services.standings import standings_service
 from leaguebot.results.services.publishing.results_post_service import (
     DRAWN_LINES_ATTRIBUTE,
+    PICTURE_FAULTS_ATTRIBUTE,
+    UploadFault,
     _delete_posting,
     _label_from_status,
     _parse_ids,
@@ -306,6 +308,24 @@ async def _with_standings_posted(
         (division_id, *round_ids),
     )
     return {int(r["round_id"]) for r in await cursor.fetchall()}
+
+
+def _refused_picture_line(
+    ctx: StepContext, error: BaseException, rnd: Any, payload: dict[str, Any], *, picture: str
+) -> tuple[str, ...]:
+    """The line for a *picture* ("results", "standings") whose post failed on *error* after the
+    picture was refused or would not draw, and whose text failed too: the picture's own line, as
+    the try that posts the text would have written it, for the stop to keep and the retry to hand
+    back once. None where *error* carries no such fault."""
+    faults = getattr(error, PICTURE_FAULTS_ATTRIBUTE, None)
+    if not faults:
+        return ()
+    fault = next(iter(faults.values()))
+    return (picture_fallback_line(
+        ctx.named, ctx.what, picture=picture, division=rnd["division_name"],
+        round_number=rnd["round_number"], fault=fault,
+        put_right=_put_right(picture, payload["remedy"], at_discord=isinstance(fault, UploadFault)),
+    ),)
 
 
 def _put_right(picture: str, remedy: str, *, at_discord: bool = False) -> str:
@@ -785,7 +805,7 @@ async def _post_session_results(
         kept = _stranded(error, channel_id)
         picture_lines = drawn_lines_kept(ctx.kept) + tuple(
             getattr(error, DRAWN_LINES_ATTRIBUTE, ())
-        )
+        ) + _refused_picture_line(ctx, error, rnd, payload, picture="results")
         if kept is not None:
             raise StepFailedOnDiscord(
                 "the results were posted in part and the rest was refused", result=kept
@@ -885,7 +905,7 @@ async def _post_standings(
         kept = _stranded(error, channel_id)
         picture_lines = drawn_lines_kept(ctx.kept) + tuple(
             getattr(error, DRAWN_LINES_ATTRIBUTE, ())
-        )
+        ) + _refused_picture_line(ctx, error, rnd, payload, picture="standings")
         if kept is not None:
             raise StepFailedOnDiscord(
                 "the standings were posted in part and the rest was refused", result=kept
