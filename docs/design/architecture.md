@@ -1650,13 +1650,14 @@ later on its own.
   `WALL_CLOCK_ALLOWED`), a catch-all handler outside the six places (one that raises again, calls
   `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
   loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
-  1, the stated exceptions, place 3's guards around reporting and writing a log line, the fourth
-  place's hand-off across a thread, and the fifth and sixth places' handlers), and a save outside
-  a queued change. The job check and the check of cogs handling their own errors are absolute,
-  with no list of breaches left to grow, and the log channel's check holds its six places for
-  good; every other check lists today's breaches, each under the work that removes it. The check
-  of a save outside a queued change counts each function's `.commit()` and `.executescript()`
-  calls, and a function writing on a handed connection commits nothing and is not counted. It
+  1, the stated exceptions, place 2's task of its own for each item, place 3's guards around
+  reporting and writing a log line, the fourth place's hand-off across a thread, and the fifth and
+  sixth places' handlers), and a save outside a queued change. The job check and the check of
+  cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
+  channel's check holds its six places for good; every other check lists today's breaches, each
+  under the work that removes it. The check of a save outside a queued change counts each
+  function's `.commit()` and `.executescript()` calls, and a function writing on a handed
+  connection commits nothing and is not counted. It
   allows for good the migrations run at start-up (`run_migrations` and `_enable_wal`, the journal
   mode set on the database file itself), the queue's own records, the retry queue for log lines,
   `/bot pack` (above), the image module's portrait register (above), and
