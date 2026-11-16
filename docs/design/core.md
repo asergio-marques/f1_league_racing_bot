@@ -20,8 +20,9 @@ Answers to `architecture.md`, "The database".
 
 ### Core's tables
 
-Core owns twenty tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `framework/db/migrations/001_baseline.sql`. `schema_migrations` is the migrations' own
+Core owns sixteen tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
+declared in `framework/db/migrations/001_baseline.sql`; the four marked as the framework's are its,
+listed for what core asks of them. `schema_migrations` is the migrations' own
 record, written by `run_migrations` alone.
 
 | Table | One row is | Held to it by |
@@ -41,10 +42,10 @@ record, written by `run_migrations` alone.
 | `driver_history_entries` | a driver's result in one division of a past season | unique over profile, season number and division name |
 | `driver_season_assignments` | a driver's placement in a division of a season | `committed` filled by a trigger when inserted empty |
 | `driver_division_memberships` | a driver having held a committed placement in a division | written by triggers on the placements |
-| `audit_entries` | one recorded change | — |
-| `pending_messages` | one log line the log channel has not yet taken | — |
-| `queued_changes` | one change asked of the queue | CHECKs on `origin` and `state`; `queued_changes_one_running` |
-| `queued_change_steps` | one job: a step of a change | `UNIQUE (change_id, position)` |
+| `audit_entries` (the framework's) | one recorded change | — |
+| `pending_messages` (the framework's) | one log line the log channel has not yet taken | — |
+| `queued_changes` (the framework's) | one change asked of the queue | CHECKs on `origin` and `state`; `queued_changes_one_running` |
+| `queued_change_steps` (the framework's) | one job: a step of a change | `UNIQUE (change_id, position)` |
 | `season_review_prompts` | one standing season-review question | keyed by its message id |
 
 **A season keeps two states.** `status` is the coarse one, `stage` the lifecycle's, and the
@@ -148,9 +149,9 @@ against it; `test_a_merge_leaves_nothing_naming_the_driver_absorbed` does the sa
 
 Answers to `architecture.md`, "How the code is laid out". Core's code sits in `core/cogs/`,
 `core/services/`, `core/models/` and `core/utils/`. The machinery it runs on, the database code, the
-change queue, posting, the module switches, the bot's type and the failure paths, is the
-framework's (`framework/`); the rows of the table below marked as the framework's are described
-here for what core asks of them.
+change queue, posting, the module switches, the retry loop's cog, the bot's type, the hook types
+and the failure paths, is the framework's (`framework/`). This file describes the parts of it core
+asks of, each marked as the framework's, until the framework has its own design file.
 
 ### Services, and what each owns
 
@@ -248,8 +249,8 @@ them, and `test_every_attribute_bot_py_attaches_is_declared` holds the two equal
 | `/track` | `track_cog` | `list` |
 | — | `clean_cog` | `/clean-bot`, a top-level command |
 
-`retry_cog` holds no command: it runs the retry loop for log lines (below). No module's command
-sits under one of these groups.
+No module's command sits under one of these groups. The retry loop for log lines runs in the
+framework's cog (`framework/cogs/retry_cog.py`), which holds no command.
 
 ---
 
@@ -526,9 +527,9 @@ results is on, a restart or not. The builder records the moment the bot came up
 (`LeagueBot.came_up_at`), which the wiring hands to results' `results` job and its catch-up alike,
 so both judge a start passed while the bot was down against one value.
 
-The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
-function"): core's is `RetryCog.retry_loop` (`retry_cog`), started by `LeagueBot.setup_hook`
-(`test_login_starts_the_retry_loop_once`).
+The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one function"):
+the framework's is `RetryCog.retry_loop` (`framework/cogs/retry_cog.py`), started by
+`LeagueBot.setup_hook` (`test_login_starts_the_retry_loop_once`).
 
 ### The clock
 
@@ -713,16 +714,16 @@ off the bot.
 Answers to `architecture.md`, "Errors and failures", which names each failure path and every
 stated exception, core's among them; each docstring there named carries its reason.
 
-| Starting point | Core's code |
+| Starting point | The code |
 |---|---|
-| A command, button or form | `LeagueCommandTree.on_error`, `LeagueView.on_error`, `LeagueModal.on_error` (`framework/utils/league_server.py`), each calling `report_failure` (`framework/utils/interaction_errors.py`) |
+| A command, button or form (the framework's) | `LeagueCommandTree.on_error`, `LeagueView.on_error`, `LeagueModal.on_error` (`framework/utils/league_server.py`), each calling `report_failure` (`framework/utils/interaction_errors.py`) |
 | The slash-command sync at start-up | `on_ready`, which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
-| A Discord event | `on_event_error` (`framework/utils/league_server.py`), attached by the builder with `setattr` |
-| An autocomplete | `bounded_autocomplete` (`framework/utils/autocomplete.py`) |
-| A change | `ChangeQueue._start` and `_run_step`, leading to `_stop`, or to `on_fault` or `on_check_fault` where the type gives one |
+| A Discord event (the framework's) | `on_event_error` (`framework/utils/league_server.py`), attached by the builder with `setattr` |
+| An autocomplete (the framework's) | `bounded_autocomplete` (`framework/utils/autocomplete.py`) |
+| A change (the framework's) | `ChangeQueue._start` and `_run_step`, leading to `_stop`, or to `on_fault` or `on_check_fault` where the type gives one |
 | A scheduled job | `_one_off_timer_job` (`core/services/scheduler_service.py`), which logs a handler's fault on the host |
 | A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each contained and reported to the log channel by `start_up_failure_line` |
-| The retry loop | `RetryCog.retry_loop` and `retry_service.attempt_delivery` |
+| The retry loop (the framework's) | `RetryCog.retry_loop` and `retry_service.attempt_delivery` |
 
 `report_failure` never raises: its reply and its line are each tried on their own. Its docstring
 gives the reason for the reply's words. The tree steps aside for a command with its own error
@@ -735,7 +736,8 @@ in `OutputRouter._read_config`, `_try_send` and `_enqueue_if_configured`
 (`test_a_database_fault_reading_the_log_channel_is_contained`). `log_destination` alone raises,
 being a query rather than a line posted (its docstring).
 
-**Core's refusal and fault types**, each caught by name:
+**The refusal and fault types core meets**, each caught by name; those in `framework/` are the
+framework's:
 
 | Type | Where | What it is |
 |---|---|---|
