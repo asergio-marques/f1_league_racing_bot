@@ -1121,6 +1121,12 @@ async def build(settings: Settings) -> LeagueBot:
     )
     bot.attendance_service = AttendanceService(settings.db_path)
 
+    from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
+
+    # What the image module's previews ask of the modules that own what they draw: for now
+    # attendance's check-in deadline. The builder makes it, so that image reaches no module.
+    bot.preview_sources = AttendancePreviewSources(settings.db_path)
+
     from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
 
     # Attendance's share of a round's review, handed the placement service it moves seats

@@ -3162,7 +3162,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/portraits/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "refresh_portraits.fetch"): (1, PASS["image"]),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
-    ("image/services/preview/image_preview_service.py", "build_rsvp_preview"): (1, PASS["image"]),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
         (1, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "_nationality_collected"): (1, PASS["image"]),

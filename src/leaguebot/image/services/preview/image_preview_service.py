@@ -771,27 +771,14 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
     """The check-in call for the named round. Fabricates nothing.
 
     The round's own format decides its session list, its own schedule the times, and the
-    division's own check-in configuration the deadline.
+    deadline is the one attendance works out from the league's stored check-in configuration
+    (`bot.preview_sources`), the module's default where none is stored.
     """
-    from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
     from leaguebot.image.services.aspects.image_rsvp_service import build_fill_spec, resolve_drawing
 
     config = await bot.image_config_service.get_config()
     round_obj = context.required_round()
     is_mystery = _format_of(round_obj) == "MYSTERY"
-
-    deadline_hours = 24
-    try:
-        division_config = await bot.attendance_service.get_division_config(
-            context.division_id
-        )
-        if division_config is not None:
-            deadline_hours = getattr(division_config, "rsvp_deadline_hours", 24)
-    except Exception:  # noqa: BLE001 — a league without the attendance module still previews
-        log.warning(
-            "rsvp preview: the division's RSVP deadline could not be read, so %d hours is drawn",
-            deadline_hours, exc_info=True,
-        )
 
     scheduled_at = round_obj.scheduled_at
     drawing = resolve_drawing(
@@ -799,7 +786,7 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
         round_number=round_obj.round_number,
         round_format=_format_of(round_obj),
         scheduled_at=scheduled_at,
-        deadline_at=derive_checkin_deadline(scheduled_at, deadline_hours),
+        deadline_at=await bot.preview_sources.check_in_deadline(scheduled_at),
         track_name=None if is_mystery else getattr(round_obj, "track_name", None),
         race_name=await _race_name(bot, context),
         country_name=await _country_of(bot, round_obj),

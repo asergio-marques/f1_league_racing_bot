@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.image.services.config.image_config_service import ImageConfigService
+    from leaguebot.image.services.preview.preview_sources import PreviewSources
     from leaguebot.image.services.render.image_render_service import ImageRenderService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
     from leaguebot.core.services.modules.module_service import ModuleService
@@ -99,6 +100,9 @@ class LeagueBot(commands.Bot):
     #: `template_capacity_service` and `lineup_poster`.
     image_drawing: ImageDrawing
     image_config_service: ImageConfigService
+    #: What the image module's previews ask of the modules that own what they draw; the builder
+    #: hands it the modules' own implementations.
+    preview_sources: PreviewSources
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService
     #: The moment a round's timing windows are read (the season's approval and review, and the

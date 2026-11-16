@@ -16,6 +16,7 @@ import aiosqlite
 import pytest
 from lxml import etree
 
+from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.preview.image_preview_service import (
@@ -67,12 +68,8 @@ async def bot(db_path):
         db_path=db_path,
         season_service=SeasonService(db_path),
         image_config_service=config_service,
-        attendance_service=SimpleNamespace(get_division_config=_none),
+        preview_sources=AttendancePreviewSources(db_path),
     )
-
-
-async def _none(*args, **kwargs):
-    return None
 
 
 @pytest.fixture
@@ -175,11 +172,6 @@ class TestRsvpPreview:
         assert context.round.format.value == fmt
         assert len(session_names(context.round.format.value)) == count
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="#288: the check-in preview draws the deadline 24 hours before the round, "
-        "whatever the league configured",
-    )
     @pytest.mark.parametrize(
         ("stored", "hours"),
         [((1, 5), 5), ((0, 5), 5), (None, 2)],

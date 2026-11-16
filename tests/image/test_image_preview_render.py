@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import aiosqlite
 import pytest
 
+from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.render.image_render_service import ImageRenderService
@@ -97,12 +98,8 @@ async def bot(db_path):
         image_config_service=config_service,
         image_validity_service=validity_service,
         image_render_service=ImageRenderService(config_service, validity_service),
-        attendance_service=SimpleNamespace(get_division_config=_none),
+        preview_sources=AttendancePreviewSources(db_path),
     )
-
-
-async def _none(*args, **kwargs):
-    return None
 
 
 async def _true(*args, **kwargs):
