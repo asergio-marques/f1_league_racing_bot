@@ -227,8 +227,8 @@ falling due, a round's amendment judged, a round amended or its timed work armed
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
-factory reset gathering the channels each module holds, a round's drawn phases read, a driver's name
-read, the divisions a driver's accounts raced in read, a driver's standing in a division read for
+factory reset gathering the channels each module holds, a round's drawn phases read, a driver's signup
+name, username and nationality read for a season, the divisions a driver's accounts raced in read, a driver's standing in a division read for
 the season's history, a season's fingerprint taken, a season's pending test-mode steps read, the
 test-mode review's marks read, a season's confirmation judged, a division's final round read, a
 season ending, a season, division, round or driver deleted, a driver merged into another or turned

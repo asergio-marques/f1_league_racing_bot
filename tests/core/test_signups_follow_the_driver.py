@@ -156,7 +156,8 @@ async def test_signup_names_a_driver_from_their_signup_across_accounts(
     if two_seasons:
         await _in_two_seasons(db_path)
 
-    assert await driver_names(SignupModuleService(db_path), [profile_id]) == {profile_id: name}
+    handed = await driver_names(SignupModuleService(db_path), [profile_id])
+    assert {pid: signup.name for pid, signup in handed.drivers.items()} == {profile_id: name}
 
 
 async def _signup_on(db_path: str) -> None:

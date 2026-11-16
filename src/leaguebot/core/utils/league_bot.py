@@ -130,9 +130,11 @@ class LeagueBot(commands.Bot):
     #: stand when it is asked, so that `/season config-review` reads no module's service itself.
     configuration_faults: Callable[[int, discord.Guild | None], Awaitable[list[str]]]
     #: A driver's name read (the placements review and its confirmation naming the unsettled
-    #: signups): signup signs up a function handing back, for the profile ids it is given, the name
-    #: each gave in their signup. The builder makes it and signs signup up, so that core reads no
-    #: signup record (architecture.md, "A hook core declares is a list of subscribers").
+    #: signups, and every picture naming a driver): signup signs up a function handing back, for the
+    #: profile ids and the season it is given, a `SignupNames`: the name, username and nationality
+    #: each gave in their signup, and whether the league collects a nationality at all. The builder
+    #: makes it and signs signup up, so that core reads no signup record (architecture.md, "A hook
+    #: core declares is a list of subscribers").
     driver_names_read: AwaitedHook
     #: A division's channel faults read (the placements review and the confirmations judging each
     #: channel a division posts to): each module signs up a function handing back, by division id,
