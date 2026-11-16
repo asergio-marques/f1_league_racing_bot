@@ -2758,14 +2758,21 @@ def test_core_reads_no_module_s_service_on_the_bot():
 BELOW_CORE = frozenset({"framework", "utils"})
 
 
+#: The hooks that are the framework's own moments rather than core's: the bot starting.
+FRAMEWORK_HOOKS = frozenset({"starting"})
+
+
 @cache
 def _core_attributes_of_the_bot() -> frozenset[str]:
-    """The attributes `LeagueBot` declares with a type from core's package: core's services and
-    the hooks core declares, which the framework and `utils` never read on the bot."""
+    """The attributes `LeagueBot` declares with a type from core's package, core's services, and
+    every hook it declares but the framework's own moments (`FRAMEWORK_HOOKS`): the hooks are core's
+    moments, typed by the framework's hook types, which the framework and `utils` never read on the
+    bot."""
     return frozenset(
         name
         for name, (dotted, _cls) in _bot_attributes(_sources(), _files_by_module_name()).items()
         if dotted.split(".")[1] == "core"
+        or (dotted == "leaguebot.framework.utils.hooks" and name not in FRAMEWORK_HOOKS)
     )
 
 
@@ -2796,6 +2803,8 @@ def test_a_framework_read_of_a_core_service_on_the_bot_is_counted():
     path = "core/services/sample_service.py"
     assert _module_lookups_in_core_among(_sample(sample, path), attributes, BELOW_CORE) == Counter()
     assert "season_service" in _core_attributes_of_the_bot()
+    assert "season_deleted" in _core_attributes_of_the_bot()
+    assert "starting" not in _core_attributes_of_the_bot()
     assert "attendance_service" not in _core_attributes_of_the_bot()
 
 
