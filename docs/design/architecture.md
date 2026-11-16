@@ -267,7 +267,8 @@ reader by the key, `ModuleService.is_enabled`, to pass a disabled module over); 
 switch and nothing more. A module that never signed up is a fault in the bot's assembly, and asking
 for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no reader that stands
 aside takes for an answer: each lets that type through by name and stands aside from any other
-fault. A link the dependency table allows between two modules is not one of core's hooks: there the
+fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named under "A catch-all error
+handler"). A link the dependency table allows between two modules is not one of core's hooks: there the
 module depended on may name what it asks of its dependant, as results does of attendance (below).
 Only core calls the subscribers of a hook it declares as a list. Where a module reaches such a
 moment, either the moment is its own and its dependants are reached through what the builder hands
@@ -285,14 +286,24 @@ knows the module's name, and nothing else.
 
 The image module is used by the others to draw their posts, and a module that finds it turned off
 posts text instead, as the image module specification's "Configuration" section (the
-`images config toggle` and its fallback) says. The image module draws what a module hands it, and
-imports no other module. Every other module may call the image module without an entry in the
-table. Core reaches it through a protocol it declares, which the image module implements and the
-builder hands in, as results reaches attendance (below). Core's own graphics (the calendar, the
-lineup) are asked for through it, with the capacity guards, the artwork signature and the checks
-that a calendar or a lineup is wanted, and both season reviews' image section is asked for through
-it too, with the faults that refuse a confirmation or an approval (the rasteriser, the templates,
-the per-tier colours, the portrait settings), rather than drawn or read by importing the module. That is not the
+`images config toggle` and its fallback) says. The image module is asked only to draw: it draws what
+a module hands it, imports no other module, and posts nothing itself. It hands back the picture, or
+none, and the lines saying what the drawing had to report, so the module that posts keeps the
+posting and chooses the kind of post (a standing post for a session's table and the standings, a
+notice for a verdict and the batch's heading), and the lines reach the log channel as lines of the
+job that posts. Every other module may call the image module without an entry in the table, but only
+through the one drawing the builder hands it, which carries each picture's gate, drawing and discard:
+image's render and its configuration are image's alone (the `.importlinter` contract that keeps
+results, attendance and weather out of them), so that the one gate and the fall back to text are
+the image module's to keep and no module reaches round them. What a preview draws is read through a
+protocol the image module declares (`PreviewSources`), which the module that owns the data
+implements and the builder hands in. Core reaches the image module through a protocol it declares,
+which the image module implements and the builder hands in, as results reaches attendance (below).
+Core's own graphics (the calendar, the lineup) are asked for through it, with the capacity guards,
+the artwork signature and the checks that a calendar or a lineup is wanted, and both season reviews'
+image section is asked for through it too, with the faults that refuse a confirmation or an approval
+(the rasteriser, the templates, the per-tier colours, the portrait settings), rather than drawn or
+read by importing the module. That is not the
 rejected object of named operations above: a hook is a moment several modules take part in, and
 this is a question one module answers. Where a module must let one that depends on it act (results
 after a round, for attendance), it does so through what the builder hands it, never by importing
@@ -1354,7 +1365,10 @@ does the dividing for each of them. That is how a record meets the core specific
 of what changed" on length. `chunk_message` has a second mode for a list of records (`records=True`):
 the text is blocks joined by blank lines, and is divided only between blocks, so that no record is
 split across two messages; a block too long for one message is divided as in the first mode. A reply that
-lists records, such as `/signup unassigned list`, divides through it.
+lists records, such as `/signup unassigned list`, divides through it. **Code inside a job never
+calls `post_log`:** a line that a job's work has to report is returned as a line of the job
+(`StepResult`), so that the log channel records it once, among the job's own lines and with its
+subject, and a notice or a fault carries the name of what was being drawn or done.
 
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
 command does not catch itself reaches `report_failure` through the command tree. The tree steps
@@ -1423,84 +1437,93 @@ stated exceptions below them:
    signed up for aside) is handed back as the reason of a line of the forecast's job, because that
    line already names why a picture that was due was not drawn.
 
-Beyond the six places, a stated exception has a catch-all of its own, each with its reason. The
-callback a change type may give for a Discard of a change before it started
-(`ChangeType.on_discarded`) is not a failure path but a stated exception: the catch-all around it
-(`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the log
-channel, and asks no follow-on, because a Discard is the queue's last way past a stop and a callback
-that raises must not hold it; the reader that says what dropping an undiscardable job would leave
-(`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the error
-in the host's log with the full details, and the Discard is refused all the same, naming the job in
-place of the reason, its refusal recorded in the log channel as any refused press is, because an
-undiscardable job is never dropped for want of its reason; the `names` job an amendment's lapse and
-its cancel share (`amend_end_changes._names_step`) is a stated exception as well: its catch-all puts
-the error in the host's log and completes the job with no names, so the revert goes ahead with a
-full tie ordered by user id, because a tie so ordered is the lesser fault than a round not put back
-(its docstring says so); the helper through which a placement's capacity guards count the seats and
-ask the image module (`TemplateCapacityService._ask_drawing`) is a stated exception too: its
-catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, and the
-guard lets the placement through as if no problem were found, because a capacity check that cannot
-run must not block a placement (its docstring says so); the image module's gate
-(`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the weather forecast's) is a
-stated exception likewise: its catch-all (a switch nobody signed up for aside) puts the error in
-the host's log in full, with no line to the log channel, and answers that the league does not draw
-the aspect, so the text goes out, because a gate that cannot be read must not lose a league its
-text (its docstring says so); the helper through which the season's own capacity checks count and
-ask the image module (`approval_checks.ask_drawing`) — the review's and the approval's
-(`lineup_problems`, and the review's calendar and attendance warnings) — is a stated exception beside
-`TemplateCapacityService._ask_drawing`'s: its catch-all (a switch nobody signed up for aside) puts
-the error in the host's log in full and lets the season through as if no problem were found, because
-a capacity check that cannot run must not block a season (its docstring says so); the round guard
-that `/round add` and the round imports share (`calendar_round_refusal`, in
-`core/services/rounds/round_add_changes.py`) is a stated exception beside it: the change types'
-checks call it when the change is asked for and again as it starts, and its catch-all (a switch
-nobody signed up for aside) puts the error in the host's log in full and lets the round through as
-if no problem were found, because a capacity check that cannot run must not block a round (its
-docstring says so); the season's reading of the image module's configuration faults
-(`approval_checks.image_configuration_faults`) is a stated exception too: each of its catch-alls
-puts the error in the host's log; a fault reading the templates is stated as a fault of its own,
-which refuses the season, because a check that never ran is not a pass, while a fault reading the
-per-tier colours or the portrait settings (a switch nobody signed up for aside) stands aside and
-lets the season through, because a reader that cannot answer must not be the thing that refuses a
-season (its docstring says so); the season's team-name check (`approval_checks.team_name_problems`)
-is a stated exception too: its catch-all puts the error in the host's log alone and finds nothing
-wrong, so each review and confirmation that checks the names carries on with them unchecked, because
-the check only keeps a team name from becoming a bad artwork filename (its docstring says so); the
-season cog's own image review section (`SeasonCog._build_image_review_section`) is a stated
-exception beside `approval_checks.image_configuration_faults`: its catch-all (a switch nobody signed
-up for aside) puts the error in the host's log and states the section as unreadable in the review,
-because a review must never fail for this (its docstring says so); the image module's artwork
-signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all signs a
-configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to the
-host's log alone, and signs the rest all the same, because a fault that escaped it would empty the
-whole fingerprint and the review would read as changed in every area (its docstring says so); the
-portraits' reads and clean-up (`driver_portrait_service.refresh_before_render`, `portrait_aspect`
-and `discard_portraits`) are stated exceptions as well: each catch-all logs the error on the host and
-the picture is drawn with the portraits it has, or the command or season's end that discarded a
-portrait stands completed, because a portrait never fails the picture or the command it serves (their
-docstrings say so); the queue's own telling, of a change's outcome, of its stop or of a press on a stop notice
-(`ChangeQueue._acknowledge`, `_acknowledge_saved`, `_name_job`, `_post_notice`, `_tell`,
-`_tell_origin`, `_update_reply` and `_finish`, and `OutputRouter.strip_view` beside them), is a
-stated exception as well: each catch-all puts the error in the host's log and what the queue was
-doing stands, the change, its stop or the press alike, a stop notice not posted being posted again,
-because telling what happened must never undo it (their docstrings say so); the readers that stand
-aside (results' `points_amendment_faults.approval_faults` and `approval_checks.channel_on_server`) are stated
-exceptions too: each puts the error in the host's log and reads an attendance switch as off (a
-switch nobody signed up for aside) or a channel as present, because a reader that cannot answer must
-not refuse an amendment or a season (their docstrings say so); a season's fingerprint that cannot be
-taken (`season_fingerprint_service.take_fingerprint`, a module's fault in handing over its areas
-included, a switch nobody signed up for aside) is a stated exception: it is signed as an empty one,
-which differs from every fingerprint, another empty one included, and so refuses an approval whose
-review was read, because a fingerprint that could not be read must not wave one through (its
-docstring says so); the factory reset's Discord clean-up (`bot_cog._clean_up`) is a stated
-exception: it says in the reset's last report and closing line that its clean-up stopped, because a
-reset must not end in silence (its docstring says so); the scheduler's removal of one job
-(`SchedulerService._remove_job`) is a stated exception: every cancel is a clean-up, so a job that
-will not go is logged on the host and left, a teardown list going on past it (`SchedulerService`
-says so); and the results picker's put-back after a press the bot has already answered
-(`_ConfigSelectView._put_back`) is a stated exception: its catch-all logs the error in full and
-leaves the message as the press's own edit left it, because a report would answer the press twice
-or stand in place of the fault the press is reporting (its docstring says so).
+Beyond the six places, a stated exception has a catch-all of its own, and each is of a kind, with
+that kind's reason. In every kind the full error goes to the host's log, and the handler's docstring
+says why its function is the exception.
+
+**A reader or a check that stands aside.** A check that cannot run must not block what it guards,
+and a reader that cannot answer must not refuse what it serves, so each answers as if nothing were
+found and lets the work through. A switch nobody signed up for is a fault in the bot's assembly,
+which none of these takes for an answer (above): each lets that type through by name, but for the
+one that says otherwise below.
+
+- The helper through which a placement's capacity guards count the seats and ask the image module
+  (`TemplateCapacityService._ask_drawing`) lets the placement through, and the one through which
+  the season's own capacity checks do (`approval_checks.ask_drawing`: the review's and the approval's
+  `lineup_problems`, and the review's calendar and attendance warnings) lets the season through; the
+  round guard that `/round add` and the round imports share (`calendar_round_refusal`, in
+  `core/services/rounds/round_add_changes.py`), which the change types' checks call when the change
+  is asked for and again as it starts, lets the round through. A check that cannot run must not block
+  a placement, a season or a round.
+- The season's reading of the image module's configuration faults
+  (`approval_checks.image_configuration_faults`): a fault reading the templates is stated as a fault
+  of its own, which refuses the season, because a check that never ran is not a pass; a fault
+  reading the per-tier colours or the portrait settings stands aside and lets the season through,
+  because a reader that cannot answer must not be the thing that refuses a season. The season cog's
+  own image review section (`SeasonCog._build_image_review_section`) states the section as
+  unreadable in the review, because a review must never fail for this.
+- The season's team-name check (`approval_checks.team_name_problems`) finds nothing wrong, so each
+  review and confirmation that checks the names carries on with them unchecked: the check only keeps
+  a team name from becoming a bad artwork filename.
+- Results' readers that stand aside (`points_amendment_faults.approval_faults` and
+  `approval_checks.channel_on_server`) read an attendance switch as off or a channel as present,
+  because a reader that cannot answer must not refuse an amendment or a season.
+- The image module's gate (`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the
+  weather forecast's, whose own gate is of the sixth place) answers that the league does not draw the
+  aspect, with no line to the log channel, so the text goes out, because a gate that cannot be read
+  must not lose a league its text. Its pre-flight question, whether the aspect attaches files
+  (`ImageDrawing.aspect_attaches_files`, asked by the checks of results' reposting and attendance's
+  recalculation), answers no too, and is the one reader that takes a switch nobody signed up for as
+  an answer: it is asked by a command's pre-flight ahead of the jobs that draw, and the picture's
+  own gate, asked when the job draws, raises that fault there and stops the job, where a manager
+  sees it with the rest of the queue.
+- The verdict picture's five readers of an optional field (the round's context, the driver's
+  nationality, the team's name and its shorthand, and the names a mention stands for:
+  `_round_context`, `_driver_nationality`, `team_name_for_entry`, `team_key_for_entry` and
+  `_mention_names`, in `image_verdict_post.py`) leave the field out, so that the verdict is drawn
+  without it: an optional field is not worth a failed picture. None of them reads a switch.
+
+**A portrait or an artwork that cannot be had is drawn without.** A portrait never fails the picture
+or the command it serves: the pre-render refresh (`driver_portrait_service.refresh_before_render`)
+draws the picture with the portraits it has, a template whose shape cannot be read
+(`portrait_aspect`) is read as 1:1 and the render reports the template, and a portrait that cannot be
+removed by a command or a season's end that has committed (`discard_portraits`) leaves that command
+completed. The artwork signature (`ImageDrawing.artwork_signature`) signs a configured directory it
+cannot resolve as `[column, value, "unresolvable"]`, with a warning to the host's log alone, and
+signs the rest all the same, because a fault that escaped it would empty the whole fingerprint and
+the review would read as changed in every area.
+
+**A fingerprint that cannot be read.** A season's fingerprint that cannot be taken
+(`season_fingerprint_service.take_fingerprint`, a module's fault in handing over its areas
+included) is signed as an empty one, which differs from every fingerprint, another empty one
+included, and so refuses an approval whose review was read, because a fingerprint that could not be
+read must not wave one through.
+
+**A telling or a clean-up that must not undo or hold what it follows.**
+
+- The callback a change type may give for a Discard of a change before it started
+  (`ChangeType.on_discarded`) is not a failure path: the catch-all around it
+  (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the
+  log channel, and asks no follow-on, because a Discard is the queue's last way past a stop and a
+  callback that raises must not hold it. The reader that says what dropping an undiscardable job
+  would leave (`ChangeQueue._undiscardable_refusal`) names the job in place of the reason, and the
+  Discard is refused all the same, its refusal recorded in the log channel as any refused press is,
+  because an undiscardable job is never dropped for want of its reason.
+- The queue's own telling, of a change's outcome, of its stop or of a press on a stop notice
+  (`ChangeQueue._acknowledge`, `_acknowledge_saved`, `_name_job`, `_post_notice`, `_tell`,
+  `_tell_origin`, `_update_reply` and `_finish`, and `OutputRouter.strip_view` beside them): what the
+  queue was doing stands, the change, its stop or the press alike, and a stop notice not posted is
+  posted again, because telling what happened must never undo it.
+- The `names` job an amendment's lapse and its cancel share (`amend_end_changes._names_step`)
+  completes with no names, so the revert goes ahead with a full tie ordered by user id, because a tie
+  so ordered is the lesser fault than a round not put back.
+- The factory reset's Discord clean-up (`bot_cog._clean_up`) says in the reset's last report and
+  closing line that its clean-up stopped, because a reset must not end in silence.
+- The scheduler's removal of one job (`SchedulerService._remove_job`): every cancel is a clean-up,
+  so a job that will not go is logged on the host and left, a teardown list going on past it.
+- The results picker's put-back after a press the bot has already answered
+  (`_ConfigSelectView._put_back`) leaves the message as the press's own edit left it, because a
+  report would answer the press twice or stand in place of the fault the press is reporting.
 
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
@@ -1590,7 +1613,8 @@ later on its own.
 
 - **`.importlinter`**, run by `tests/repository/test_import_contracts.py`, checks which code may
   import which: the rules for each kind of code, that core uses no module, that a module uses
-  another only where the dependency table allows, that nothing imports the entry point, and that
+  another only where the dependency table allows, that results, attendance and weather reach neither
+  the image module's render nor its configuration, that nothing imports the entry point, and that
   nothing but the entry point imports a module's wiring. The same test checks that core's services
   sit only in the named topic folders, each named as plumbing or as league rules, with the
   scheduler's file alone loose.

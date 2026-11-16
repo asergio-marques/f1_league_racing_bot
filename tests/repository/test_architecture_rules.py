@@ -3101,6 +3101,21 @@ CATCH_ALLS_ALLOWED = {
     ("image/services/portraits/driver_portrait_service.py", "discard_portraits"):
         "a stated exception: the command or season's end that discards a portrait has committed, so a "
         "portrait that cannot be removed is logged on the host and the command stands completed",
+    ("image/services/aspects/image_verdict_post.py", "_round_context"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("image/services/aspects/image_verdict_post.py", "_driver_nationality"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("image/services/aspects/image_verdict_post.py", "team_name_for_entry"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("image/services/aspects/image_verdict_post.py", "team_key_for_entry"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
+    ("image/services/aspects/image_verdict_post.py", "_mention_names"):
+        "a stated exception: an optional field is not worth a failed picture, so one that cannot "
+        "be read is logged on the host and the verdict is drawn without it",
 }
 
 
@@ -3152,11 +3167,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
         (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_post.py", "_driver_nationality"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_post.py", "_mention_names"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_post.py", "_round_context"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_post.py", "team_key_for_entry"): (1, PASS["image"]),
-    ("image/services/aspects/image_verdict_post.py", "team_name_for_entry"): (1, PASS["image"]),
 }
 
 
