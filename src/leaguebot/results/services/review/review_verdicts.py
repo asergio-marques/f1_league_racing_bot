@@ -93,7 +93,7 @@ from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.image.services.aspects import image_verdict_banner_post
+from leaguebot.image.models import verdict_banner_drawing
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.review_state import ReadServerConfig
@@ -597,11 +597,11 @@ async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResu
     round_id = int(ctx.step_payload["round_id"])
     channel, context = await _channel_of(ctx, round_id)
     await _take_down_kept(channel, ctx)
-    heading = image_verdict_banner_post.build_drawing(
+    heading = verdict_banner_drawing.resolve_drawing(
         season_number=context.get("season_number"),
         division_name=context["division_name"],
         division_tier=context.get("division_tier"),
-        round_number=context.get("round_number"),
+        round_number=context["round_number"],
         race_name=context.get("race_name"),
         country_name=context.get("country_name"),
     )
@@ -614,7 +614,7 @@ async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResu
         attachment, drawn = await drawing.draw_banner(heading)
     try:
         if attachment is None:
-            text: str | None = image_verdict_banner_post.heading_text(heading)
+            text: str | None = verdict_banner_drawing.heading_text(heading)
             parts: dict[str, Any] = {}
         else:
             text, parts = None, {"file": attachment}  # a drawn banner's message carries no text

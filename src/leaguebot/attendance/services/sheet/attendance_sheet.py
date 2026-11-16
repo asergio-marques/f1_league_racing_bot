@@ -479,7 +479,7 @@ async def _sheet_attachment(
         return None
 
     try:
-        from leaguebot.image.services.aspects.image_attendance_service import DriverRecord, resolve_drawing
+        from leaguebot.image.models.attendance_drawing import DriverRecord, resolve_drawing
 
         from leaguebot.core.services.drivers.driver_names import (
             read_driver_names,
@@ -605,7 +605,7 @@ async def _round_grid(
     their flags, the full error goes to the host's log and a clause saying so is added to *faults*.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
-    from leaguebot.image.services.aspects.image_attendance_service import RoundHeading
+    from leaguebot.image.models.attendance_drawing import RoundHeading
 
     headings: list = []
     cells: dict[int, dict[int, int | None]] = {}

@@ -22,7 +22,6 @@ Pure: no Discord, no database, no rasteriser. Everything that touches those live
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
 from leaguebot.image.models.image_catalogues import (
@@ -33,64 +32,13 @@ from leaguebot.image.models.image_catalogues import (
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 
-TEMPLATE_KEY = "verdict_banner_template"
-
-
-@dataclass(frozen=True)
-class VerdictBannerDrawing:
-    """One banner, resolved. Built from the database, or fabricated for a test render."""
-
-    division_name: str
-    round_number: int | str
-
-    season_number: int | str | None = None
-    division_tier: int | str | None = None
-
-    #: The grand prix, read from ``tracks.gp_name`` — never the circuit name off the round.
-    race_name: str | None = None
-
-    #: The country, read from ``tracks.country``. It is both the word a template may draw
-    #: and the datum its flag is resolved from, so one value serves two fields.
-    country_name: str | None = None
-
-    @property
-    def template_key(self) -> str:
-        return TEMPLATE_KEY
-
-    @property
-    def names_a_track(self) -> bool:
-        """Whether the round matched a track record at all.
-
-        The three optional fields stand or fall together, so this is asked once rather than
-        each of them being tested for itself.
-        """
-        return bool(self.race_name or self.country_name)
-
-
-def resolve_drawing(
-    *,
-    division_name: str,
-    round_number: int | str,
-    season_number: int | str | None = None,
-    division_tier: int | str | None = None,
-    race_name: str | None = None,
-    country_name: str | None = None,
-) -> VerdictBannerDrawing:
-    """Build a drawing, reading a blank as absent.
-
-    A `LEFT JOIN tracks` yields NULL for a round matching no record and the empty string
-    for one whose record leaves a column blank, and the two mean the same thing here. The
-    coercion is done once, so no caller has to remember it and the fill spec never has to
-    tell `""` from `None`.
-    """
-    return VerdictBannerDrawing(
-        division_name=division_name,
-        round_number=round_number,
-        season_number=season_number if season_number not in (None, "") else None,
-        division_tier=division_tier if division_tier not in (None, "") else None,
-        race_name=(race_name or "").strip() or None,
-        country_name=(country_name or "").strip() or None,
-    )
+# The banner's model and its building are image's models, which results heads its verdicts
+# through (`leaguebot.image.models.verdict_banner_drawing`); this file projects them.
+from leaguebot.image.models.verdict_banner_drawing import (  # noqa: F401 — re-exported for image's own callers
+    TEMPLATE_KEY,
+    VerdictBannerDrawing,
+    resolve_drawing,
+)
 
 
 def _ids_bearing(declared, stem: str) -> list[str]:

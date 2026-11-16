@@ -136,6 +136,7 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
     from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
     from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing
     from leaguebot.image.services.render.image_drawing import ImageDrawing
+    from leaguebot.results.services.review import verdict_announcement_service as vas
 
     png = tmp_path / "verdict.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -159,13 +160,13 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
     async def _render(_config: Any, _renderer: Any, _drawing: Any, **_kwargs: Any) -> Any:
         return VerdictRender(png=png, notices=[], problem=None)
 
-    async def _team(_bot: Any, _guild: Any, **_kwargs: Any) -> str:
+    async def _team(*_args: Any, **_kwargs: Any) -> str:
         return "Red Bull"
 
     monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
-    monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
+    monkeypatch.setattr(vas, "team_name_for_entry", _team)
     return built
 
 

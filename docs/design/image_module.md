@@ -119,8 +119,9 @@ the render's and the validity check's outcomes (`RenderOutcome`, `ValidityReport
 Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus` and the validity
 layers' numbers. `image_constants` holds the static maps: the nine
 aspects, the sixteen templates and which aspect draws which. `image_catalogues` holds the field
-catalogue of each image type. `forecast_values`, `results_drawing` and `standings_drawing` hold
-models another module composes for a picture and hands in (below, "How modules and core fit
+catalogue of each image type. `forecast_values`, `results_drawing`, `standings_drawing`,
+`attendance_drawing`, `verdict_banner_drawing` and `verdict_kind` hold models another module composes
+for a picture and hands in (below, "How modules and core fit
 together").
 
 `image/utils/` holds the pure work, which reads no database and touches no Discord object:
@@ -262,12 +263,20 @@ Answers to `architecture.md`, "How modules and core fit together".
 How image meets the other modules is `architecture.md`'s ("How modules and core fit together"); the
 contract that holds its side is `image-uses-no-other-module`. On image's side, the models it
 declares in `image/models/` are `ResultsDrawing` and `StandingsDrawing`, which results composes
-(`results_drawing_composer`, `standings_drawing_composer`), and `ForecastValues`, which weather
-composes. Two pictures are composed from shapes declared beside their aspect's resolution instead:
-the attendance sheet, which attendance builds through `image_attendance_service` (`DriverRecord`,
-`RoundHeading`, `resolve_drawing`), and the verdicts' banner, which results builds through
-`image_verdict_banner_post.build_drawing`; results also reads a verdict's team name and key through
-`image_verdict_post`. Attendance hands in a check-in call's deadline.
+(`results_drawing_composer`, `standings_drawing_composer`); `ForecastValues`, which weather composes;
+the attendance sheet's `DriverRecord` and `RoundHeading`, which attendance resolves into the sheet's
+drawing through the same file's `resolve_drawing` (`attendance_drawing`); the verdicts' banner, which
+results builds and words through `verdict_banner_drawing`; and `VerdictKind`, which names a verdict
+results asks to be drawn. The aspect a results or a standings picture is switched by is declared
+beside its model, for results to ask the gate about. Results reads a verdict's team name and key
+from core's team readers itself. Attendance hands in a check-in call's deadline. A resolution kept
+among the models is pure, as the models are, and holds the picture's own rules (the attendance
+sheet's limit plate and marks); the projection onto a template stays in the aspect's service.
+
+*Rejected:* the sheet's and the banner's shapes declared beside their aspect's resolution in
+`aspects/`, which the callers then imported. No contract could keep a caller out of the rest of an
+aspect's service while the shapes it needs lived there, and the verdict's team readers sat in image
+with results their only caller.
 
 *Rejected:* image composing or formatting a classification's values itself. A rule of how a
 classification reads would then be held twice, and a picture could disagree with the text table it
@@ -281,8 +290,8 @@ Every module that asks image to draw is handed one object, `ImageDrawing`
 (`image/services/render/image_drawing.py`), which the builder makes once over image's services and
 attaches as `bot.image_drawing`; a wiring hands it to the change types that post, and reaches it as
 image's own class through `as_image_drawing`. The contract that keeps results, attendance and
-weather out of image's render and configuration is
-`results-attendance-and-weather-do-not-reach-image-s-render-or-configuration`. Core reaches the same
+weather out of image's render, configuration and aspects' services is
+`results-attendance-and-weather-do-not-reach-image-s-services`. Core reaches the same
 object through the protocol it declares (`core/services/modules/image_drawing.py`, `core.md`).
 
 ### The gate

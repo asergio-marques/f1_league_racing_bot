@@ -28,8 +28,7 @@ from leaguebot.core.services.drivers.driver_service import (
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.image.services.aspects import image_verdict_post
-from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
+from leaguebot.image.models.verdict_kind import VerdictKind
 from leaguebot.results.services.publishing.results_post_service import (
     fault_of,
     picture_fallback_line,
@@ -48,6 +47,50 @@ if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
+
+
+async def team_name_for_entry(db_path: str, *, team_id: int | None) -> str | None:
+    """The name of the team whose car the driver drove, which the verdict's picture draws.
+
+    The session records the division's **team** an entry drove for (#375), so for a reserve
+    standing in for another driver this is the team whose car they drove and never the reserve
+    team, the team being the one the *result* records. The badge is found by its shorthand, from
+    `team_key_for_entry` (#381). Read from core's team readers, as the results picture's teams are.
+
+    A stated exception (architecture.md, "A catch-all error handler"): a name that cannot be read
+    answers None, and the verdict is drawn without the team, because an optional field is not
+    worth a failed picture. The full error goes to the host's log. It reads no switch.
+    """
+    if team_id is None:
+        return None
+    try:
+        from leaguebot.core.services.drivers.team_service import team_names_for_instances
+
+        names = await team_names_for_instances(db_path, [int(team_id)])
+    except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
+        log.warning("verdicts: team name unreadable for team %s: %s", team_id, exc, exc_info=True)
+        return None
+    return names.get(int(team_id))
+
+
+async def team_key_for_entry(db_path: str, *, team_id: int | None) -> str | None:
+    """The shorthand of the team whose car the driver drove, which its badge is found by.
+
+    A stated exception (architecture.md, "A catch-all error handler"): a shorthand that cannot be
+    read answers None, and the verdict is drawn without the team's badge, because an optional
+    field is not worth a failed picture. The full error goes to the host's log. It reads no
+    switch.
+    """
+    if team_id is None:
+        return None
+    try:
+        from leaguebot.core.services.drivers.team_service import team_artwork_keys_for_instances
+
+        keys = await team_artwork_keys_for_instances(db_path, [int(team_id)])
+    except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
+        log.warning("verdicts: team shorthand unreadable for team %s: %s", team_id, exc, exc_info=True)
+        return None
+    return keys.get(int(team_id))
 
 #: What the announcement carries where the steward entered neither. The **message** italicises
 #: it; the graphic draws the value the markup adorned and leaves the distinguishing to the
@@ -738,13 +781,8 @@ async def announce_verdict(
             ),
             description_text=record.get("description") or NOT_PROVIDED,
             justification_text=record.get("justification") or NOT_PROVIDED,
-            team_name=await image_verdict_post.team_name_for_entry(
-                db_path, guild, division_id=result_ctx["division_id"],
-                team_id=record.get("team_instance_id"),
-            ),
-            team_key=await image_verdict_post.team_key_for_entry(
-                db_path, team_id=record.get("team_instance_id")
-            ),
+            team_name=await team_name_for_entry(db_path, team_id=record.get("team_instance_id")),
+            team_key=await team_key_for_entry(db_path, team_id=record.get("team_instance_id")),
             as_text=as_text,
         )
     except VerdictRefused as refused:

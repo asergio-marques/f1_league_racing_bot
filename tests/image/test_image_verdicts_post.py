@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.results.services.review import verdict_announcement_service as vas
-from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
+from leaguebot.image.models.verdict_kind import VerdictKind
 from tests.support.change_queue import in_a_job
 
 
@@ -104,7 +104,7 @@ def stub_image_path(monkeypatch, tmp_path):
             problem=state["problem"],
         )
 
-    async def _team(_bot, _guild, **_kwargs):
+    async def _team(*_args, **_kwargs):
         return "Red Bull"
 
     from leaguebot.image.services.aspects import image_verdict_post
@@ -114,7 +114,7 @@ def stub_image_path(monkeypatch, tmp_path):
     monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
-    monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
+    monkeypatch.setattr(vas, "team_name_for_entry", _team)
     return state
 
 

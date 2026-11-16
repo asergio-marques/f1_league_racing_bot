@@ -141,10 +141,11 @@ forbidden_modules =
 allow_indirect_imports = True
 
 # The modules that ask image to draw reach it through the one object they are handed, which is image's
-# own and carries every picture's gate, drawing and discard. Its render and its configuration are
-# image's alone (architecture.md, "How modules and core fit together").
-[importlinter:contract:results-attendance-and-weather-do-not-reach-image-s-render-or-configuration]
-name = Results, attendance and weather do not reach image's render or configuration
+# own and carries every picture's gate, drawing and discard, and through the models image declares for
+# what they hand it to draw. Its render, its configuration and its aspects' services are image's alone
+# (architecture.md, "How modules and core fit together").
+[importlinter:contract:results-attendance-and-weather-do-not-reach-image-s-services]
+name = Results, attendance and weather do not reach image's render, configuration or aspects
 type = forbidden
 source_modules =
     leaguebot.results
@@ -153,6 +154,7 @@ source_modules =
 forbidden_modules =
     leaguebot.image.services.render.image_render_service
     leaguebot.image.services.config
+    leaguebot.image.services.aspects
 allow_indirect_imports = True
 
 [importlinter:contract:image-uses-no-other-module]

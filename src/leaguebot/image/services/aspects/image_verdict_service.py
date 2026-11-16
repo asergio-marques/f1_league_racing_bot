@@ -16,7 +16,6 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 
 from leaguebot.image.models.image_catalogues import (
@@ -28,16 +27,9 @@ from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 from leaguebot.image.utils.country_data import country_for_nationality
 from leaguebot.core.utils.input_validator import USER_MENTION
+from leaguebot.image.models.verdict_kind import VerdictKind
 
 TEMPLATE_KEY = "verdicts_template"
-
-
-class VerdictKind(Enum):
-    """The three occasions a verdict is announced on."""
-
-    PENALTY = "PENALTY"
-    APPEAL = "APPEAL"
-    ATTENDANCE_SANCTION = "ATTENDANCE_SANCTION"
 
 
 #: The stage each kind draws. Fixed text, and the graphic's own — the textual announcement

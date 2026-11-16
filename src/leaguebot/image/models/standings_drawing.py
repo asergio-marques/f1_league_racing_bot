@@ -9,6 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from leaguebot.image.models.image_constants import MYSTERY_DATUM
 
+#: The aspect a standings picture is switched by, which a caller asks the drawing's gate about.
+STANDINGS_ASPECT = "standings"
+
 DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
 CONSTRUCTORS_TEMPLATE_KEY = "standings_constructors_template"
 

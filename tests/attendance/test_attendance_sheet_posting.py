@@ -746,14 +746,14 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
         monkeypatch.setattr(calendar_post_service, "tracks_by_name", _unreadable)
     drawn: dict = {}
     if fault == "teams":
-        from leaguebot.image.services.aspects import image_attendance_service
+        from leaguebot.image.models import attendance_drawing
 
         def _resolve(**kwargs):
             drawn.update(kwargs)
             return SimpleNamespace()
 
         monkeypatch.setattr(TeamService, "placed_drivers_on", _unreadable)
-        monkeypatch.setattr(image_attendance_service, "resolve_drawing", _resolve)
+        monkeypatch.setattr(attendance_drawing, "resolve_drawing", _resolve)
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
@@ -802,7 +802,7 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
     from leaguebot.core.models.team import PlacedDriver
     from leaguebot.core.services.drivers.team_service import TeamService
     from leaguebot.core.services.drivers import driver_names
-    from leaguebot.image.services.aspects import image_attendance_service
+    from leaguebot.image.models import attendance_drawing
 
     reads: list[int] = []
     drawn: dict = {}
@@ -824,7 +824,7 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
         return {}
 
     monkeypatch.setattr(TeamService, "placed_drivers_on", _placed)
-    monkeypatch.setattr(image_attendance_service, "resolve_drawing", _resolve)
+    monkeypatch.setattr(attendance_drawing, "resolve_drawing", _resolve)
     monkeypatch.setattr(driver_names, "read_driver_names", _empty)
     monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
     await _config(sheet_db, prior=None)

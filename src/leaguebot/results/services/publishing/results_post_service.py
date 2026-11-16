@@ -40,8 +40,8 @@ from leaguebot.image.models.standings_drawing import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
 )
-from leaguebot.image.services.aspects.image_results_post import RESULTS_ASPECT
-from leaguebot.image.services.aspects.image_standings_post import STANDINGS_ASPECT
+from leaguebot.image.models.results_drawing import RESULTS_ASPECT
+from leaguebot.image.models.standings_drawing import STANDINGS_ASPECT
 from leaguebot.results.services.publishing import (
     results_drawing_composer,
     standings_drawing_composer,

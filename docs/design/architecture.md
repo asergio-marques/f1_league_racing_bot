@@ -1482,9 +1482,10 @@ one that says otherwise below.
   own gate, asked when the job draws, raises that fault there and stops the job, where a manager
   sees it with the rest of the queue.
 - The verdict picture's five readers of an optional field (the round's context, the driver's
-  nationality, the team's name and its shorthand, and the names a mention stands for:
-  `_round_context`, `_driver_nationality`, `team_name_for_entry`, `team_key_for_entry` and
-  `_mention_names`, in `image_verdict_post.py`) leave the field out, so that the verdict is drawn
+  nationality and the names a mention stands for: `_round_context`, `_driver_nationality` and
+  `_mention_names`, in `image_verdict_post.py`; the team's name and its shorthand:
+  `team_name_for_entry` and `team_key_for_entry`, in results' `verdict_announcement_service.py`)
+  leave the field out, so that the verdict is drawn
   without it: an optional field is not worth a failed picture. None of them reads a switch.
 
 **A portrait or an artwork that cannot be had is done without.** A portrait never fails the picture

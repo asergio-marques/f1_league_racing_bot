@@ -3100,10 +3100,10 @@ CATCH_ALLS_ALLOWED = {
     ("image/services/aspects/image_verdict_post.py", "_driver_nationality"):
         "a stated exception: an optional field is not worth a failed picture, so one that cannot "
         "be read is logged on the host and the verdict is drawn without it",
-    ("image/services/aspects/image_verdict_post.py", "team_name_for_entry"):
+    ("results/services/review/verdict_announcement_service.py", "team_name_for_entry"):
         "a stated exception: an optional field is not worth a failed picture, so one that cannot "
         "be read is logged on the host and the verdict is drawn without it",
-    ("image/services/aspects/image_verdict_post.py", "team_key_for_entry"):
+    ("results/services/review/verdict_announcement_service.py", "team_key_for_entry"):
         "a stated exception: an optional field is not worth a failed picture, so one that cannot "
         "be read is logged on the host and the verdict is drawn without it",
     ("image/services/aspects/image_verdict_post.py", "_mention_names"):

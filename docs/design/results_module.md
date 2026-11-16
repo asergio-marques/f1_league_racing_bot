@@ -694,7 +694,9 @@ amendment as a refused paste does (`amend_stage_one_change`'s docstring).
 **The stated exceptions** of results' are `architecture.md`'s, each with its docstring:
 `amend_end_changes._names_step` (an amendment's lapse and cancel go ahead with no names),
 `points_amendment_faults.approval_faults` (an attendance switch that cannot be read never refuses
-an amendment) and `_ConfigSelectView._put_back` (a put-back after a press already answered).
+an amendment), `_ConfigSelectView._put_back` (a put-back after a press already answered), and
+`verdict_announcement_service.team_name_for_entry` and `team_key_for_entry` (a verdict's team that
+cannot be read is left off its picture, an optional field not being worth a failed picture).
 `CATCH_ALLS_ALLOWED` names them with the three picture fallbacks.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops", and the

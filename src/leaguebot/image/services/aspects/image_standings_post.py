@@ -30,13 +30,13 @@ from dataclasses import dataclass
 import discord
 
 from leaguebot.image.models.image_module import PostingOrigin
-from leaguebot.image.models.standings_drawing import (
+from leaguebot.image.models.standings_drawing import (  # noqa: F401 — STANDINGS_ASPECT re-exported
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
+    STANDINGS_ASPECT,
 )
 
-#: The standings' own aspect and the name its toggle goes by, which heads each line it hands back.
-STANDINGS_ASPECT = "standings"
+#: The name the standings' toggle goes by, which heads each line it hands back.
 STANDINGS_TOGGLE_NAME = "Standings image"
 
 #: Championship -> the template that draws it, in the order the two are posted.

@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+#: The aspect a results picture is switched by, which a caller asks the drawing's gate about.
+RESULTS_ASPECT = "results"
+
 QUALIFYING_TEMPLATE_KEY = "results_qualifying_template"
 RACE_TEMPLATE_KEY = "results_race_template"
 

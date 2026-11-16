@@ -30,6 +30,7 @@ import discord
 import pytest
 
 from leaguebot.image.services.aspects import image_verdict_banner_post as banner
+from leaguebot.image.models import verdict_banner_drawing
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from tests.support.change_queue import in_a_job
 
@@ -121,7 +122,7 @@ def flow(monkeypatch, tmp_path):
 
         yield _Db()
 
-    async def _team(_bot, _guild, **_kwargs):
+    async def _team(*_args, **_kwargs):
         return None
 
     async def _wanted(_self, aspect, _template_key=None):
@@ -133,13 +134,11 @@ def flow(monkeypatch, tmp_path):
             problem=state["banner_problem"],
         )
 
-    from leaguebot.image.services.aspects import image_verdict_post
-
     monkeypatch.setattr(vas, "_get_announcement_context", _context)
     monkeypatch.setattr(vas, "_get_result_context", _result_context)
     monkeypatch.setattr(vas, "_send_verdict", _send_verdict)
     monkeypatch.setattr(vas, "get_connection", _connection)
-    monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
+    monkeypatch.setattr(vas, "team_name_for_entry", _team)
 
     monkeypatch.setattr(ImageDrawing, "aspect_wanted", _wanted)
     monkeypatch.setattr(banner, "render_banner", _render)
@@ -185,7 +184,7 @@ async def test_the_attachment_is_named_for_the_round_it_heads():
     """The only handle a Discord search has, the message carrying no text."""
     from leaguebot.image.utils.image_naming import stem_for_drawing
 
-    drawing = banner.build_drawing(
+    drawing = verdict_banner_drawing.resolve_drawing(
         season_number=5, division_name="Pit Wall Premier", division_tier=1,
         round_number=8, race_name="British Grand Prix", country_name="United Kingdom",
     )
@@ -247,16 +246,16 @@ async def test_the_banner_is_discarded_once_posted(flow, monkeypatch, refuses):
 
 
 def test_the_written_heading_names_season_division_and_round():
-    drawing = banner.build_drawing(
+    drawing = verdict_banner_drawing.resolve_drawing(
         season_number=5, division_name="Pit Wall Premier", division_tier=1,
         round_number=8, race_name=None, country_name=None,
     )
-    assert banner.heading_text(drawing) == "**Season 5 Pit Wall Premier Round 8**"
+    assert verdict_banner_drawing.heading_text(drawing) == "**Season 5 Pit Wall Premier Round 8**"
 
 
 def test_an_unnumbered_season_leaves_the_prefix_out():
-    drawing = banner.build_drawing(
+    drawing = verdict_banner_drawing.resolve_drawing(
         season_number=None, division_name="Elite", division_tier=None,
         round_number=3, race_name=None, country_name=None,
     )
-    assert banner.heading_text(drawing) == "**Elite Round 3**"
+    assert verdict_banner_drawing.heading_text(drawing) == "**Elite Round 3**"

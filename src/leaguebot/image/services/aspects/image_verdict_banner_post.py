@@ -10,7 +10,7 @@ Three rules are this module's own.
 **Every batch is headed, the aspect choosing only how** (decided 2026-09-21, issue #246,
 reversing 2026-09-09). Where the aspect is on and the picture can be drawn the header is the
 banner; where it is off, the module is off, the template is unusable or the render failed,
-the header is ``heading_text`` posted as words. This is the fallback every other image aspect
+the header is ``heading_text`` (`leaguebot.image.models.verdict_banner_drawing`) posted as words. This is the fallback every other image aspect
 makes — a picture replacing a text output, not adding one — and STW-VER-026 and STW-VER-027
 require it: a batch of verdicts names the round it belongs to however the league is
 configured.
@@ -87,33 +87,6 @@ class BannerRender:
         return self.png is not None
 
 
-def build_drawing(
-    *,
-    season_number,
-    division_name: str,
-    division_tier,
-    round_number,
-    race_name: str | None,
-    country_name: str | None,
-) -> VerdictBannerDrawing:
-    """The drawing, from the context the announcement service already loaded.
-
-    Takes no database of its own. `_get_announcement_context` reads the round once for the
-    channel and the division, and joins `tracks` in the same query, so the banner adds no
-    read to a path that runs on every review.
-    """
-    from leaguebot.image.services.aspects.image_verdict_banner_service import resolve_drawing
-
-    return resolve_drawing(
-        division_name=division_name,
-        round_number=round_number,
-        season_number=season_number,
-        division_tier=division_tier,
-        race_name=race_name,
-        country_name=country_name,
-    )
-
-
 def fault(what: str, detail: str) -> str:
     """The line saying why the picture of *what* was not drawn, headed by the toggle's name."""
     return f"⚠️ {BANNER_TOGGLE_NAME} — {what}: {detail}"
@@ -172,18 +145,6 @@ async def render_banner(
         )
 
     return BannerRender(png=decision.png_paths[0], notices=decision.notices)
-
-
-def heading_text(drawing: VerdictBannerDrawing) -> str:
-    """The heading the banner draws, as message text.
-
-    Posted wherever the picture is not: the aspect off, the module off, the template unusable,
-    the render having failed or a retry (#246). It is the ordinary case for a league not using the
-    banner, and the exception is the other way round: a banner that arrived says all of this
-    already, so nothing is posted beside it.
-    """
-    season = f"Season {drawing.season_number} " if drawing.season_number is not None else ""
-    return f"**{season}{drawing.division_name} Round {drawing.round_number}**"
 
 
 def describe(*, division_name: str, round_number, season_number=None) -> str:
