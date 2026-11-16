@@ -3451,7 +3451,7 @@ def _sign_ups_among(nodes, bot: dict[str, str]) -> dict[str, set[str]]:
             return set()
         how, name = root
         if how == "bot":
-            return {bot[name]} - {"core"} if name in bot else set()
+            return {bot[name]} - BELOW_THE_MODULES if name in bot else set()
         loop_name, over = looped.get(id(call), ("", []))
         if name == loop_name:
             return {module for each in over for module in modules_of(each, function, call)}
@@ -3461,7 +3461,7 @@ def _sign_ups_among(nodes, bot: dict[str, str]) -> dict[str, set[str]]:
             if scope in ("<module>", function) or function.startswith(f"{scope}.")
             for imported_name, package in names.items()
         }.get(name)
-        return {module} - {"core"} if module else set()
+        return {module} - BELOW_THE_MODULES if module else set()
 
     joined: dict[str, set[str]] = {}
     for _path, function, node in nodes:
@@ -3493,7 +3493,8 @@ def test_the_entry_point_signs_up_no_hook_one_module_joins():
 def test_the_sign_up_check_tells_the_module_of_each_subscriber():
     """The check tells a subscriber's module through a `partial`, an import made in the function
     or at the top of the file, a loop over modules, and a service read on the bot; a hook several
-    modules join names them all, and a subscriber of core's names none. The starting hook, core's
+    modules join names them all, and a subscriber of core's, of the framework's or of `utils`'
+    names none. The starting hook, core's
     step signed up by name and a module's wiring function bound to the bot by `module=`, names the
     modules whose wirings it binds, by package, not by the switch key it is signed up under."""
     source = (
@@ -3513,14 +3514,17 @@ def test_the_sign_up_check_tells_the_module_of_each_subscriber():
         "    for steps in (results_purge,):\n"
         "        bot.several.subscribe(steps.pending)\n"
         "    bot.core_only.subscribe(season_service.read)\n"
+        "    bot.with_the_queue.subscribe(bot.change_queue.wake)\n"
+        "    bot.with_the_queue.subscribe(results_purge.deleted_on)\n"
     )
-    bot = {"signup_module_service": "signup", "db_path": "core"}
+    bot = {"signup_module_service": "signup", "db_path": "core", "change_queue": "framework"}
 
     assert _sign_ups_among(_sample(source, ENTRY_POINT), bot) == {
         "bot.one": {"results"},
         "bot.two": {"signup"},
         "bot.several": {"weather", "results"},
         "bot.core_only": set(),
+        "bot.with_the_queue": {"results"},
         "bot.starting": {"results", "image"},
     }
 
