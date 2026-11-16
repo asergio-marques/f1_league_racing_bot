@@ -17,10 +17,17 @@ specs/039-results-image-generation/contracts/shared-rendering.md.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from leaguebot.image.models.results_drawing import (  # noqa: F401 — the models are image's, kept importable here
+    QUALIFYING_TEMPLATE_KEY,
+    RACE_TEMPLATE_KEY,
+    FastestLapBlock,
+    ResultsDataError,
+    ResultsDrawing,
+    ResultsEntry,
+)
 from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
@@ -43,9 +50,6 @@ from leaguebot.image.utils.country_data import country_for_nationality
 
 log = logging.getLogger(__name__)
 
-QUALIFYING_TEMPLATE_KEY = "results_qualifying_template"
-RACE_TEMPLATE_KEY = "results_race_template"
-
 _ROW_PREFIX = "row"
 
 #: The stages at which each sanction phase has closed. Before it closes, the column carries
@@ -60,85 +64,6 @@ _STATUS_LABELS = {
     "AWAITING_APPEAL_VERDICTS": "Post-Race Penalty Results",
     "FINAL": "Final Results",
 }
-
-
-class ResultsDataError(Exception):
-    """A fatal disagreement between a session and what a results graphic needs.
-
-    Raised before anything is drawn. The caller turns it into a Problem, which aborts the
-    render and — for an uncommanded posting — falls back to the textual table.
-    """
-
-
-@dataclass(frozen=True)
-class ResultsEntry:
-    """One row of the classification, every cell already the string that will be drawn.
-
-    ``None`` on a text cell means the value does not apply and the field is emptied quietly:
-    it was *determined* to be nothing, so no mandatory field is offended and no notice is
-    raised (Constitution XIV.3).
-    """
-
-    #: The row's discriminator, and the value placed on ``row_<x>_position``. Filled from
-    #: the ordinal itself; no comparison is made between it and anything else (XIV.11).
-    ordinal: int
-    driver_name: str
-    #: What is drawn: the team's full name (#381).
-    team_name: str
-    points: str
-    postrace_penalty: str | None
-    appeal_penalty: str | None
-    #: What the team's artwork is found by: its shorthand (#381). The drawn name where None.
-    team_key: str | None = None
-    #: The datum behind ``row_<x>_driver_flag``. None where the driver recorded none.
-    nationality: str | None = None
-    #: Qualifying only.
-    tyre: str | None = None
-    best_lap: str | None = None
-    gap: str | None = None
-    #: Race only.
-    time: str | None = None
-    fastest_lap: str | None = None
-    ingame_penalty: str | None = None
-    holds_fastest_lap: bool = False
-
-
-@dataclass(frozen=True)
-class FastestLapBlock:
-    """The whole-graphic fastest-lap block of a race graphic."""
-
-    driver_name: str
-    lap_time: str
-
-
-@dataclass(frozen=True)
-class ResultsDrawing:
-    """One session's results, resolved and ready to project onto a template."""
-
-    template_key: str
-    division_name: str
-    round_number: str
-    race_name: str
-    session_name: str
-    result_status_label: str
-    penalty_phase_closed: bool
-    appeal_phase_closed: bool
-    division_tier: str | None = None
-    season_number: str | None = None
-    fastest_lap: FastestLapBlock | None = None
-    fastest_lap_colour: str | None = None
-    #: True where the league collects a driver's nationality at all. Where it does not, an
-    #: empty flag field is exactly what was configured and raises nothing (XIV.4).
-    nationality_collected: bool = True
-    entries: list[ResultsEntry] = field(default_factory=list)
-
-    @property
-    def is_qualifying(self) -> bool:
-        return self.template_key == QUALIFYING_TEMPLATE_KEY
-
-    @property
-    def entry_count(self) -> int:
-        return len(self.entries)
 
 
 # ── 1. Resolution ─────────────────────────────────────────────────────────
