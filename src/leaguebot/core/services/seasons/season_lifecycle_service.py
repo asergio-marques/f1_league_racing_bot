@@ -11,7 +11,6 @@ with nothing but a path.
 """
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -37,6 +36,7 @@ from leaguebot.core.models.season import (
     SeasonStage,
     status_of_stage,
 )
+from leaguebot.framework.services.queue.audit_service import record_system_change_on
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -281,15 +281,10 @@ async def _turn_down_on(
         if state in _APPROVED_STATES:
             await driver_turned_down.call(db, driver["id"])
     if drivers:
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, ?)",
-            (
-                json.dumps({d["id"]: d["current_state"] for d in drivers}, sort_keys=True),
-                json.dumps({"state": "NOT_SIGNED_UP"}),
-                now.isoformat(),
-            ),
+        await record_system_change_on(
+            db, change_type="PENDING_PLACEMENTS_TURNED_DOWN",
+            old_value={d["id"]: d["current_state"] for d in drivers},
+            new_value={"state": "NOT_SIGNED_UP"}, now=now,
         )
 
 
@@ -878,15 +873,10 @@ async def run_driver_pass_on(
     accounts = await delete_driver_profiles(
         db, pending_deletion, keep_history=False, profiles_deleted=profiles_deleted
     )
-    await db.execute(
-        "INSERT INTO audit_entries "
-        "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-        "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, ?)",
-        (
-            json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
-            json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
-            now.isoformat(),
-        ),
+    await record_system_change_on(
+        db, change_type="DRIVER_PASS",
+        old_value={d["id"]: d["current_state"] for d in to_reset},
+        new_value={"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}, now=now,
     )
     return DriverPass(
         reset=len(to_reset),

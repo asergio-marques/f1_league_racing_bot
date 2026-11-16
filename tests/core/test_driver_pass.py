@@ -240,9 +240,6 @@ async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatc
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: the driver pass's new value is not written with sorted keys"
-)
 async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
     """The driver pass is audited once, by the system, at the time it is handed, each value JSON
     with its keys sorted: the old value each reset driver's state by their profile id, the new
