@@ -733,7 +733,7 @@ def submission_all_cancelled_change(
         ),
         NAMES: posting_steps(driver_names_read=driver_names_read)[NAMES],
         POST_SESSION_RESULTS: posting_steps(drawing)[POST_SESSION_RESULTS],
-        POST_STANDINGS: posting_steps(drawing)[POST_STANDINGS],
+        POST_STANDINGS: posting_steps(drawing, driver_names_read)[POST_STANDINGS],
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
         **calendar_steps(seasons, drawing),
         **cancellation_steps,
