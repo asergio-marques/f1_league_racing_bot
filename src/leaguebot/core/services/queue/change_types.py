@@ -5,7 +5,7 @@ member; `Step` is one of the jobs it is carried out in; the contexts are what a 
 outcome and the two hooks of a refusal and a discard are handed. They hold no state and read none of
 `ChangeQueue`'s: the queue (`change_queue`) is built from them, and a change type of any module
 imports them from here. The engineering decisions that govern them are below, each pinned by a test
-in `tests/core/test_change_queue.py`.
+in `tests/framework/test_change_queue.py`.
 
 **A post's id is saved with the post's mark** (`Step.record`). A step that is not a `SAVE` may carry
 a `record(db, ctx, result)`, which the worker awaits inside the save that marks the step done,

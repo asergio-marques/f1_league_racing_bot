@@ -273,7 +273,7 @@ may be updated; `WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_co
 `EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The
 engineering decisions that govern the queue are in its module docstring, and those that govern a
 step's kinds, its record and a fault's ending in `change_types`', each pinned by a test in
-`tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or `test_change_queue_controls.py`.
+`tests/framework/test_change_queue.py`, `test_change_queue_lanes.py` or `test_change_queue_controls.py`.
 Among them:
 
 - **One save at a time across lanes**, under an in-process lock (`ChangeQueue._writing`) held for
@@ -306,7 +306,7 @@ starts. A message typed into a conversation's channel is answered through `typed
 Every settings command, core's own included, declares a `Setting`, and `setting_change` builds its
 change type, so the line, the audit entry, the answer for a value already held and the answer for
 a fault are formed in one place. `setting_change`'s docstring holds the shape and its rejected
-alternatives, each pinned by a test in `tests/core/test_setting_change.py`.
+alternatives, each pinned by a test in `tests/framework/test_setting_change.py`.
 
 Core's settings, each of kind `core.setting.<name>`:
 

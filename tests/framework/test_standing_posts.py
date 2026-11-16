@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixture
+from tests.framework.test_change_queue import (  # noqa: F401 — `env` is the fixture
     _ask,
     _queue,
     _type,

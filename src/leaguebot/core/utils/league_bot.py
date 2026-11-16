@@ -13,7 +13,7 @@ in `__main__.py` to its declaration. Its one behaviour is `setup_hook`, which st
 loop once per run, at login; it should not grow another. It is a type, and the services it names
 are still built and attached by `__main__.py`, in the order that file explains. An attribute is
 declared here before `__main__.py` attaches it —
-`tests/core/test_league_bot.py` holds the two lists equal, in both directions.
+`tests/framework/test_league_bot.py` holds the two lists equal, in both directions.
 
 **`bot_of` is where a `discord.Client` becomes the league's bot.** An interaction knows only
 that its client is some `discord.Client`, and the one this bot is handed is always the

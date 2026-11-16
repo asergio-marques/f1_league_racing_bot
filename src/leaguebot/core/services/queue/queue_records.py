@@ -5,7 +5,7 @@ which read none of `ChangeQueue`'s state: a change type's check, a restart's rec
 and a factory reset call them without a queue. `empty_queue_in` and `carry_job_numbering` write,
 on a staged file nothing else holds open, so each commits and is named in the write check's
 allowance (`SAVES_ALLOWED`) as the queue's own record. The decision that governs the reads is
-below, pinned by a test in `tests/core/test_change_queue.py`.
+below, pinned by a test in `tests/framework/test_change_queue.py`.
 
 **What is still in hand is read, not remembered** (`unfinished`). A module-level read gives the
 payloads of the changes of the kinds asked that are QUEUED or RUNNING, a stopped one included

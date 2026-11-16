@@ -26,7 +26,7 @@ _DECLARES_A_TABLE = re.compile(
 #: The files that may declare a table the migrations declare, and why. A database whose schema
 #: is itself the subject, and a file nothing reads inside, are the only two reasons there are.
 _MAY_DECLARE_A_PRODUCTION_TABLE = {
-    "tests/core/test_database.py": (
+    "tests/framework/test_database.py": (
         "stands up a database from before the baseline, which the runner must refuse"
     ),
     "tests/core/test_backup_service.py": (

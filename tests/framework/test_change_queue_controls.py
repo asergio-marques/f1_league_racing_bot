@@ -19,7 +19,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixture
+from tests.framework.test_change_queue import (  # noqa: F401 — `env` is the fixture
     NOW,
     STOPPED_AT,
     WENT_THROUGH,

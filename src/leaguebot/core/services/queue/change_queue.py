@@ -2,7 +2,7 @@
 
 `docs/design/architecture.md`, "How a change is carried out", designs it; the core specification's
 section of that name holds the rules a league sees. This module holds the engineering decisions,
-each pinned by a test in `tests/core/test_change_queue.py`. The decisions that govern the types a
+each pinned by a test in `tests/framework/test_change_queue.py`. The decisions that govern the types a
 change is made of, a step's four kinds, its record and a fault's ending, are in `change_types`,
 which holds `Step` and `ChangeType`. What is read of the queue's tables by a function of its own,
 outside the class (what is in hand, what was ever asked, the job numbering and the emptying of a

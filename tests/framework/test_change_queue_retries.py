@@ -15,7 +15,7 @@ from typing import Any
 import discord
 import pytest
 
-from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixture
+from tests.framework.test_change_queue import (  # noqa: F401 — `env` is the fixture
     NOW,
     _act,
     _api,
