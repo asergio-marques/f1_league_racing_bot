@@ -274,9 +274,6 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
     assert await _numbers(db_path) == [(1, 1), (2, 2)]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_cancelling_is_audited_against_its_division(tmp_path):
     db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
 

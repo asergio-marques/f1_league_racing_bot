@@ -243,9 +243,6 @@ async def test_a_refused_deletion_of_an_all_cancelled_channel_stops_only_the_rou
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_audit(tmp_path):
     """Round 3 awaits its results, its qualifying entered as cancelled; the admin types CANCELLED
     for the race. When the queue runs, round 3 is CANCELLED and marked as not held, and one
@@ -270,9 +267,6 @@ async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_cancelled(
     tmp_path, monkeypatch,
 ):

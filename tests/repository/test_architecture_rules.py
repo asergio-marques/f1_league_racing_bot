@@ -1936,11 +1936,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 #: Core's writes to the framework's audit log, until core writes it through the framework's audit
 #: writers.
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/seasons/season_service.py", "cancel_division_on"): (2, "#544"),
-    ("core/services/seasons/season_service.py", "cancel_round_on"): (1, "#544"),
-    ("core/services/seasons/season_service.py", "close_raced_rounds_on"): (1, "#544"),
-    ("core/services/seasons/season_service.py", "end_round_not_held_on"): (1, "#544"),
-    ("core/services/seasons/season_service.py", "end_rounds_awaiting_results_on"): (1, "#544"),
     ("core/services/upkeep/pack_service.py", "pack"): (2, "#544"),
 }
 

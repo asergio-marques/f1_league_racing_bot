@@ -212,8 +212,6 @@ async def _division_status(db) -> str:
     return (await cursor.fetchone())["status"]
 
 
-_NOT_JSON_YET = "#544: a status audit's values are written as plain words, not as JSON"
-
 
 async def _round_audits(db) -> list[tuple[str, str]]:
     cursor = await db.execute(
@@ -223,9 +221,6 @@ async def _round_audits(db) -> list[tuple[str, str]]:
     return [(row["old_value"], row["new_value"]) for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(tmp_path):
     """Pro's round 1 is final, round 2 waits for its results (no submission open) and round 3 is
     not run. Cancelling round 2 on a connection answers the status it was cancelled from,
@@ -296,9 +291,6 @@ async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_sea
         assert await _season(db) == ("ACTIVE", "ONGOING")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 @pytest.mark.parametrize(
     "statuses",
     [
@@ -570,9 +562,6 @@ async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its
         assert await _statuses(db, "rounds", [unraced]) == {unraced: "NOT_RUN"}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
     """Round 1 is awaiting its report verdicts, round 2 not yet run. Round 1 is made final and
     audited at the moment handed, and handed alone to the hook a round made final calls, once, on
@@ -736,19 +725,16 @@ def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
 @pytest.mark.parametrize(
     "statuses,ended,moves",
     [
-        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET)),
+        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results"),
         pytest.param(("AWAITING_REPORT_VERDICTS", "NOT_RUN"), 0, True,
-                     id="awaiting report verdicts",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET)),
+                     id="awaiting report verdicts"),
         pytest.param(("NOT_RUN", "NOT_RUN"), 0, False, id="not run"),
         pytest.param(("AWAITING_APPEAL_VERDICTS", "NOT_RUN"), 0, False,
                      id="awaiting appeal verdicts"),
         pytest.param(("FINAL", "NOT_RUN"), 0, False, id="final"),
         pytest.param(("CANCELLED", "NOT_RUN"), 0, False, id="already cancelled"),
         pytest.param(("FINAL", "AWAITING_RESULTS", "NOT_RUN"), 1, True,
-                     id="the middle of three rounds",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET)),
+                     id="the middle of three rounds"),
     ],
 )
 async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(

@@ -1231,9 +1231,6 @@ async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_p
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled_from(tmp_path):
     league = await ongoing_league(tmp_path)
     await _awaiting_results(league, R4)

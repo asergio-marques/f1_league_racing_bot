@@ -287,9 +287,6 @@ async def test_a_stop_after_the_round_is_cancelled_still_tells_the_modules_takes
     assert len(lines) == 1 and CHECKIN_LOGGED in lines[0]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_a_stop_after_the_timed_work_is_removed_cancels_the_round_on_restart(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     await _asked(league)
@@ -331,9 +328,6 @@ async def test_cancelling_the_last_outstanding_round_winds_the_season_down_as_a_
     assert all(row["state"] == "DONE" for row in await change_rows(league.db_path))
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 @pytest.mark.parametrize("status", [
     "NOT_RUN",
     "AWAITING_RESULTS",

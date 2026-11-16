@@ -482,9 +482,6 @@ async def test_a_season_not_yet_running_has_nothing_closed_or_deleted(tmp_path) 
     assert await _count(db_path, "session_results") == 1
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_every_closed_round_is_audited(tmp_path) -> None:
     db_path, _, _ = await _seed(
         tmp_path, round_statuses=("AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS")

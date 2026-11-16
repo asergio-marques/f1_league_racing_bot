@@ -288,9 +288,6 @@ async def test_cancelling_the_last_division_moves_the_season_on_in_the_same_save
     assert (await league.season())["stage"] == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled_from(tmp_path):
     league = await ongoing_league(tmp_path)
     await _awaiting_results(league, R4)
@@ -704,9 +701,6 @@ async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_
     assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: a status audit's values are written as plain words, not as JSON"
-)
 async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s_then_calls_off_the_rest(
     tmp_path,
 ):
