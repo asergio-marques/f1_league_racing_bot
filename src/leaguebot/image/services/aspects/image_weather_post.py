@@ -65,38 +65,25 @@ async def build_drawing_for_round(
     which the textual forecast does not: the season number, the division's tier, the grand prix
     name and the country. Returns None where the round cannot be found at all.
     """
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.rounds.round_context import round_context
     from leaguebot.image.services.aspects.image_weather_service import resolve_drawing
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.round_number, r.format, r.track_name, r.division_id, "
-            "       d.name AS division_name, d.tier, "
-            "       s.season_number, "
-            "       t.gp_name, t.country "
-            "FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id "
-            "JOIN seasons s ON s.id = d.season_id "
-            "LEFT JOIN tracks t ON t.name = r.track_name "
-            "WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
+    context = await round_context(db_path, round_id)
+    if context is None:
+        return None
 
-    tier = row["tier"]
+    tier = context.division.tier
     return resolve_drawing(
         phase=phase,
-        division_name=row["division_name"],
-        round_number=row["round_number"],
-        round_format=row["format"],
-        track_name=row["track_name"],
-        race_name=row["gp_name"],
-        country_name=row["country"],
+        division_name=context.division.name,
+        round_number=context.round_number,
+        round_format=context.format,
+        track_name=context.track_name,
+        race_name=context.gp_name,
+        country_name=context.country,
         values=values,
         division_tier=tier if tier else None,
-        season_number=row["season_number"],
+        season_number=context.division.season_number,
     )
 
 

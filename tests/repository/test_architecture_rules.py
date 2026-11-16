@@ -2411,18 +2411,13 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/config/image_config_service.py", "ImageConfigService.season_division_names"):
         (2, PASS["image"]),
-    ("image/services/aspects/image_lineup_post.py", "build_drawing"): (2, PASS["image"]),
     ("image/services/aspects/image_lineup_post.py", "seated_teams"): (2, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "<module>"): (2, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "_driver_names"): (2, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "_nationalities"): (2, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "_nationality_collected"): (2, PASS["image"]),
-    ("image/services/aspects/image_results_post.py", "season_of_division"): (1, PASS["image"]),
-    ("image/services/aspects/image_standings_post.py", "_calendar"): (1, PASS["image"]),
     ("image/services/aspects/image_standings_post.py", "_round_session_results"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
-    ("image/services/aspects/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
-    ("image/services/aspects/image_weather_post.py", "build_drawing_for_round"): (4, PASS["image"]),
 }
 
 

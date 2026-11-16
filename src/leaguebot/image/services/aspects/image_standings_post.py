@@ -104,19 +104,13 @@ async def _calendar(bot: LeagueBot, division_id: int):
     from one posting to the next. A round's *cells* are what emptying handles.
     """
     from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.round_context import division_rounds
     from leaguebot.image.services.aspects.image_calendar_service import MYSTERY_DATUM
     from leaguebot.image.services.aspects.image_standings_service import RoundHeading
 
     tracks = await tracks_by_name(bot.db_path)
 
-    async with get_connection(bot.db_path) as db:
-        rows = await (
-            await db.execute(
-                "SELECT id, round_number, format, track_name FROM rounds "
-                "WHERE division_id = ? ORDER BY round_number",
-                (division_id,),
-            )
-        ).fetchall()
+    rows = await division_rounds(bot.db_path, division_id)
 
     headings = []
     ordinal_of_round: dict[int, int] = {}
@@ -126,13 +120,13 @@ async def _calendar(bot: LeagueBot, division_id: int):
         # `Mystery`, which the closed-set rule resolves to the module's own `mystery.svg`
         # even where a league's flag directory has none — so this is a *substitution*, not
         # an absence, and `country=None` would delete the heading's flag instead.
-        mystery = row["format"] == "MYSTERY"
-        track_name = None if mystery else row["track_name"]
+        mystery = row.format == "MYSTERY"
+        track_name = None if mystery else row.track_name
         record = tracks.get(track_name) if track_name else None
         headings.append(
             RoundHeading(
                 ordinal=ordinal,
-                number=str(row["round_number"]),
+                number=str(row.round_number),
                 track=track_name,
                 country=(
                     MYSTERY_DATUM
@@ -141,7 +135,7 @@ async def _calendar(bot: LeagueBot, division_id: int):
                 ),
             )
         )
-        ordinal_of_round[row["id"]] = ordinal
+        ordinal_of_round[row.round_id] = ordinal
 
     return headings, ordinal_of_round
 

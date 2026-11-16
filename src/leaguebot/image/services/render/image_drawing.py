@@ -1114,7 +1114,7 @@ class ImageDrawing:
         if outcome.notices:
             await self._post_log(
                 ImageRenderService.format_notices(
-                    outcome.notices, subject=f"lineup — {division['name']}"
+                    outcome.notices, subject=f"lineup — {division.name}"
                 )
             )
         problem = outcome.problem.message("the lineup") if outcome.problem is not None else None

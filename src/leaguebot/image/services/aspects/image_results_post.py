@@ -104,11 +104,10 @@ async def season_of_division(db_path: str, division_id: int | None) -> int | Non
     """The season *division_id* belongs to, or None."""
     if division_id is None:
         return None
-    async with get_connection(db_path) as db:
-        row = await (
-            await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
-        ).fetchone()
-    return int(row["season_id"]) if row is not None else None
+    from leaguebot.core.services.rounds.round_context import division_context
+
+    division = await division_context(db_path, division_id)
+    return division.season_id if division is not None else None
 
 
 async def _driver_names(

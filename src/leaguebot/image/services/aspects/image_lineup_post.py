@@ -127,19 +127,14 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
     """
     from leaguebot.image.services.aspects.image_lineup_service import resolve_drawing
 
-    async with get_connection(db_path) as db:
-        division = await (
-            await db.execute(
-                "SELECT d.id, d.name, d.tier, s.id AS season_id, s.season_number "
-                "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
-                (division_id,),
-            )
-        ).fetchone()
-        if division is None:
-            from leaguebot.image.services.aspects.image_lineup_service import LineupDataError
+    from leaguebot.core.services.rounds.round_context import division_context
 
-            raise LineupDataError(f"division {division_id} no longer exists")
-        season_id = division["season_id"]
+    division = await division_context(db_path, division_id)
+    if division is None:
+        from leaguebot.image.services.aspects.image_lineup_service import LineupDataError
+
+        raise LineupDataError(f"division {division_id} no longer exists")
+    season_id = division.season_id
 
     teams = await seated_teams(
         db_path, division_id, season_id, include_uncommitted=include_uncommitted
@@ -163,9 +158,9 @@ async def build_drawing(db_path: str, guild, division_id: int, *, include_uncomm
     return (
         division,
         resolve_drawing(
-            division_name=division["name"],
-            division_tier=division["tier"],
-            season_number=division["season_number"],
+            division_name=division.name,
+            division_tier=division.tier,
+            season_number=division.season_number,
             teams=teams,
             display_names=display_names,
             nationality_collected=collected,

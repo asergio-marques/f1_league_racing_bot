@@ -71,29 +71,19 @@ async def _round_context(db_path: str, round_id: int) -> dict:
     Read exactly as the weather graphic reads them, so the two cannot disagree about what a
     round is called.
     """
+    from leaguebot.core.services.rounds.round_context import round_context
+
     try:
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT d.tier AS division_tier, r.format AS round_format,
-                       t.gp_name AS race_name
-                FROM rounds r
-                JOIN divisions d ON d.id = r.division_id
-                LEFT JOIN tracks t ON t.name = r.track_name
-                WHERE r.id = ?
-                """,
-                (round_id,),
-            )
-            row = await cursor.fetchone()
+        context = await round_context(db_path, round_id)
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
         log.warning("verdicts: round context unreadable for round %s: %s", round_id, exc, exc_info=True)
         return {}
-    if row is None:
+    if context is None:
         return {}
     return {
-        "division_tier": row["division_tier"],
-        "round_format": row["round_format"],
-        "race_name": row["race_name"],
+        "division_tier": context.division.tier,
+        "round_format": context.format,
+        "race_name": context.gp_name,
     }
 
 
