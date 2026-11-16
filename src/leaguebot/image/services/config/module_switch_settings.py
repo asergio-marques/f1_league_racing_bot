@@ -136,7 +136,7 @@ def module_on_images(
         writes=("image_config", "image_aspect_toggles"),
         not_saved=_still_off,
         after={
-            ARM_DAILY: arm_daily(scheduler, lambda _payload: "/module enable"),
+            ARM_DAILY: arm_daily(scheduler, lambda _payload: _ENABLE_COMMAND),
             REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND),
         },
     )
