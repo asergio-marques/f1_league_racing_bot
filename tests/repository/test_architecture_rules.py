@@ -1495,7 +1495,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/preview/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
     ("image/services/preview/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"): (1, PASS["image"]),
-    ("image/services/validity/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
 }
 
 
@@ -3158,7 +3157,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/render/image_render_service.py", "ImageRenderService.report_notices"):
         (1, PASS["image"]),
     ("image/services/aspects/image_results_post.py", "_nationality_collected"): (1, PASS["image"]),
-    ("image/services/validity/image_validity_service.py", "aspect_attaches_files"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_driver_nationality"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_mention_names"): (1, PASS["image"]),
     ("image/services/aspects/image_verdict_post.py", "_round_context"): (1, PASS["image"]),

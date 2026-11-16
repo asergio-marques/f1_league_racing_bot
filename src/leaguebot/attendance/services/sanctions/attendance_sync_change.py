@@ -152,9 +152,12 @@ def faults_verdict(faults: Sequence[str]) -> Verdict | None:
     )
 
 
-async def sync_verdict(bot: "LeagueBot", db_path: str, payload: dict[str, Any]) -> Verdict | None:
+async def sync_verdict(
+    bot: "LeagueBot", db_path: str, payload: dict[str, Any], drawing: "ImageDrawing"
+) -> Verdict | None:
     """The refusal of the sync *payload* asks, judged on the database as it stands, else None: the
-    check of the change, as it is asked and as it starts."""
+    check of the change, as it is asked and as it starts. *drawing* is the image module's, which
+    says whether the channels will be sent pictures."""
     async with get_connection(db_path) as db:
         if not await attendance_enabled_on(db):
             return Verdict.refuse(NOT_ENABLED)
@@ -175,7 +178,7 @@ async def sync_verdict(bot: "LeagueBot", db_path: str, payload: dict[str, Any]) 
     if refusal is not None:
         return refusal
     faults = await attendance_recompute.recalculation_faults(
-        db_path, season.id, await league_guild(bot), bot
+        db_path, season.id, await league_guild(bot), bot, drawing=drawing
     )
     return faults_verdict(faults)
 
@@ -446,7 +449,7 @@ def attendance_sync_change(
     the image module's, which the sheets ask for their pictures, and *now* is the queue's clock."""
 
     async def check(ctx: CheckContext) -> Verdict:
-        return await sync_verdict(ctx.bot, ctx.db_path, ctx.payload) or Verdict.go()
+        return await sync_verdict(ctx.bot, ctx.db_path, ctx.payload, drawing) or Verdict.go()
 
     async def check_reserve(ctx: StepContext) -> StepResult:
         """The capacity the Reserve team is refused, if it is, read before the save."""

@@ -966,6 +966,44 @@ class ImageDrawing:
             log.exception("%s: could not read the image gates", aspect)
             return False
 
+    async def aspect_attaches_files(self, aspect: str) -> bool:
+        """Whether *aspect* could cause a file to be attached to a posting on this server.
+
+        **This deliberately does NOT check template validity, and must not be "fixed" to.** That
+        is the one thing separating it from the gate every picture asks, `aspect_wanted` with a
+        template, which asks whether a *particular* template is valid. That is the right grain
+        for its question, which is whether **this** graphic draws or falls back to text. It is
+        the wrong grain for this one.
+
+        The reason is that the two questions change on different clocks. Template validity moves
+        whenever a league edits its artwork; a permission does not. A check built on validity
+        would let a permission requirement appear and vanish as a league worked on its own SVGs,
+        so the same amendment would be refused on Tuesday and accepted on Wednesday for reasons
+        having nothing to do with the permission it was actually about. What is asked here is the
+        stable question, *could this channel ever be sent a file*, and it is answered by the
+        module switch and the aspect toggle, which are what a league sets once and leaves set.
+
+        The over-approximation is deliberate and is the safe direction. A league with the module
+        on and the aspect on, but without Attach Files, cannot receive the graphics it has asked
+        for; being told so is right, even though a broken template would have fallen back to text
+        and limped on regardless.
+
+        **Why the image module answers it rather than the caller** (#187). The callers are the
+        pre-flight checks of results' reposting and attendance's recalculation, which are handed
+        this drawing and ask it; a posting service may hand an occasion to the image module and
+        act on what it returns, but may not read the image module's configuration.
+
+        A switch that cannot be read answers False, as `aspect_wanted` does, so that a pre-flight
+        is never refused for a fault reading it, the permission it guards being only an additional
+        requirement on top of the three a posting needs anyway. So does a switch nobody signed up
+        for (`SwitchNotSignedUp`), which this question is not the place to raise: the picture's own
+        gate raises it when the job draws, and stops the job.
+        """
+        try:
+            return await self.aspect_wanted(aspect)
+        except SwitchNotSignedUp:
+            return False
+
     async def calendar_wanted(self) -> bool:
         """Whether this league conveys its calendar as a picture: both the module and the
         `calendar` aspect must be on (`aspect_wanted`)."""

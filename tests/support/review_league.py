@@ -312,7 +312,8 @@ class AttendanceDouble:
         from leaguebot.attendance.services.scoring import attendance_recompute
 
         return await attendance_recompute.recalculation_faults(
-            self.league.db_path, season_id, guild, self.league.bot, cancelled_too=True
+            self.league.db_path, season_id, guild, self.league.bot,
+            drawing=self.league.bot.image_drawing, cancelled_too=True
         )
 
     async def recalculate_on(self, db: Any, round_id: int, division_id: int) -> None:

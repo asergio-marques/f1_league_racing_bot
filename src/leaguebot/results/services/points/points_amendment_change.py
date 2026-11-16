@@ -312,7 +312,8 @@ def points_amendment_change(
             )
 
         faults = await approval_faults(
-            db_path, season_id, ctx.bot, module_service=module_service, attendance=attendance
+            db_path, season_id, ctx.bot, module_service=module_service, attendance=attendance,
+            drawing=drawing,
         )
         if faults:
             bullets = "\n• ".join(faults)

@@ -481,8 +481,12 @@ def _bot_with_images(*, enabled=False, toggles=None):
     """
     bot = MagicMock()
     bot.user.id = 4242
-    bot.module_service.is_images_enabled = AsyncMock(return_value=enabled)
-    bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
+    wanted = toggles or {}
+    # The image module's drawing answers whether an aspect could attach a file: the module on and
+    # the aspect's toggle on.
+    bot.image_drawing.aspect_attaches_files = AsyncMock(
+        side_effect=lambda aspect: enabled and bool(wanted.get(aspect))
+    )
     return bot
 
 
@@ -494,7 +498,7 @@ async def test_repost_channel_faults_names_a_deleted_channel(tmp_path):
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=(502,)), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=(502,)), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert len(faults) == 1, faults
@@ -512,7 +516,7 @@ async def test_repost_channel_faults_names_a_channel_the_bot_cannot_post_to(tmp_
     faults = await repost_channel_faults(
         db_path, season_id,
         _guild_for_faults(permissions=_permissions(send_messages=False)),
-        _bot_with_images(),
+        (bot := _bot_with_images()), drawing=bot.image_drawing,
     )
 
     assert len(faults) == 2, faults
@@ -529,7 +533,7 @@ async def test_repost_channel_faults_wants_read_message_history(tmp_path):
     faults = await repost_channel_faults(
         db_path, season_id,
         _guild_for_faults(permissions=_permissions(read_message_history=False)),
-        _bot_with_images(),
+        (bot := _bot_with_images()), drawing=bot.image_drawing,
     )
 
     assert len(faults) == 1, faults
@@ -544,7 +548,7 @@ async def test_repost_channel_faults_ignores_an_unconfigured_channel(tmp_path):
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=(501,)), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=(501,)), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert faults == []
@@ -559,13 +563,13 @@ async def test_repost_channel_faults_asks_for_attach_files_only_with_graphics(tm
     guild = _guild_for_faults(permissions=_permissions(attach_files=False))
 
     text_only = await repost_channel_faults(
-        db_path, season_id, guild, _bot_with_images(enabled=False)
+        db_path, season_id, guild, (bot := _bot_with_images(enabled=False)), drawing=bot.image_drawing
     )
     assert text_only == [], "a text-only league was refused a permission it never uses"
 
     with_graphics = await repost_channel_faults(
         db_path, season_id, guild,
-        _bot_with_images(enabled=True, toggles={"results": True, "standings": True}),
+        (bot := _bot_with_images(enabled=True, toggles={"results": True, "standings": True})), drawing=bot.image_drawing,
     )
     assert len(with_graphics) == 2, with_graphics
     assert all("Attach Files" in line for line in with_graphics)
@@ -581,7 +585,7 @@ async def test_repost_channel_faults_asks_per_aspect(tmp_path):
     faults = await repost_channel_faults(
         db_path, season_id,
         _guild_for_faults(permissions=_permissions(attach_files=False)),
-        _bot_with_images(enabled=True, toggles={"standings": True}),
+        (bot := _bot_with_images(enabled=True, toggles={"standings": True})), drawing=bot.image_drawing,
     )
 
     assert len(faults) == 1, faults
@@ -600,7 +604,7 @@ async def test_repost_channel_faults_refuses_a_channel_that_is_not_text(tmp_path
     guild.get_member = lambda _user_id: object()
     guild.get_channel = lambda channel_id: MagicMock(spec=discord.CategoryChannel)
 
-    faults = await repost_channel_faults(db_path, season_id, guild, _bot_with_images())
+    faults = await repost_channel_faults(db_path, season_id, guild, (bot := _bot_with_images()), drawing=bot.image_drawing)
 
     assert len(faults) == 1, faults
     assert "not a text channel" in faults[0]
@@ -613,7 +617,7 @@ async def test_repost_channel_faults_reports_a_guild_the_bot_cannot_see(tmp_path
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
-    faults = await repost_channel_faults(db_path, season_id, None, _bot_with_images())
+    faults = await repost_channel_faults(db_path, season_id, None, (bot := _bot_with_images()), drawing=bot.image_drawing)
 
     assert len(faults) == 1, faults
     assert "not in this server" in faults[0]
@@ -629,7 +633,7 @@ async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_
 
     # Not in the member cache.
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(member=None), _bot_with_images()
+        db_path, season_id, _guild_for_faults(member=None), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
     assert len(faults) == 1, faults
     assert "own permissions" in faults[0]
@@ -637,7 +641,7 @@ async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_
     # And the other way it can be unresolvable: the client has no user of its own yet.
     bot = _bot_with_images()
     bot.user = None
-    faults = await repost_channel_faults(db_path, season_id, _guild_for_faults(), bot)
+    faults = await repost_channel_faults(db_path, season_id, _guild_for_faults(), bot, drawing=bot.image_drawing)
     assert len(faults) == 1, faults
     assert "own permissions" in faults[0]
 
@@ -655,7 +659,9 @@ async def test_repost_channel_faults_resolves_the_bot_member_from_the_cache(tmp_
     bot = _bot_with_images()
     bot.user.id = 4242
 
-    faults = await repost_channel_faults(db_path, season_id, guild, bot)
+    faults = await repost_channel_faults(
+        db_path, season_id, guild, bot, drawing=bot.image_drawing
+    )
 
     assert faults == []
     assert looked_up == [4242], "the member was not resolved through the cache by id"
@@ -671,7 +677,7 @@ async def test_repost_channel_faults_names_every_division_at_fault(tmp_path):
     )
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=()), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert len(faults) == 3, faults
@@ -692,7 +698,7 @@ async def test_repost_channel_faults_names_a_cancelled_division_s_deleted_channe
         await db.commit()
 
     faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
+        db_path, season_id, _guild_for_faults(present=()), (bot := _bot_with_images()), drawing=bot.image_drawing
     )
 
     assert faults == ["**Alpha** — the results channel (id 501) is not in the server."]

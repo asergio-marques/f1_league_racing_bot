@@ -5,6 +5,8 @@ them last whichever file is imported first.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import discord
 from discord import app_commands
 
@@ -29,6 +31,9 @@ from leaguebot.core.utils.channel_guard import league_manager_only
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 
 class GroupCommands(AttendanceSubgroup):
@@ -88,7 +93,13 @@ class GroupCommands(AttendanceSubgroup):
             verdict = round_verdict(None if found is None else str(found.status), div.name, round)
         if verdict is None:
             verdict = faults_verdict(
-                await recalculation_faults(db_path, season.id, interaction.guild, self.bot)
+                await recalculation_faults(
+                    db_path, season.id, interaction.guild, self.bot,
+                    # `LeagueBot` declares `image_drawing` as core's protocol; the entry point
+                    # attaches image's own class, which answers what attendance asks besides.
+                    # True by construction.
+                    drawing=cast("ImageDrawing", self.bot.image_drawing),
+                )
             )
         if verdict is not None:
             await refused(verdict.reply, verdict.reason or None)

@@ -196,7 +196,7 @@ def penalty_change(
             if refusal is not None:
                 return refusal
         faults = await attendance_recompute.recalculation_faults(
-            ctx.db_path, season_id, await league_guild(ctx.bot), ctx.bot
+            ctx.db_path, season_id, await league_guild(ctx.bot), ctx.bot, drawing=drawing
         )
         return sync.faults_verdict(faults) or verdict
 

@@ -58,7 +58,6 @@ from leaguebot.image.models.image_module import (
     ValidityReport,
 )
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.utils.svg_document import (
     FieldIndex,
@@ -1232,59 +1231,6 @@ def evaluate_directories(
             )
 
     return reports
-
-
-async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
-    """Whether *aspect* could cause a file to be attached to a posting on this server.
-
-    **This predicate deliberately does NOT check template validity, and must not be
-    "fixed" to.** That is the one thing separating it from the gate every picture asks,
-    ``ImageDrawing.aspect_wanted``, which takes the extra step
-    and asks whether a *particular* template is valid. That is the right grain for its
-    question, which is whether **this** graphic draws or falls back to text. It is the
-    wrong grain for this one.
-
-    The reason is that the two questions change on different clocks. Template validity
-    moves whenever a league edits its artwork; a permission does not. A check built on
-    validity would let a permission requirement appear and vanish as a league worked on its
-    own SVGs, so the same amendment would be refused on Tuesday and accepted on Wednesday
-    for reasons having nothing to do with the permission it was actually about. What is
-    asked here is the stable question — *could this channel ever be sent a file* — and it is
-    answered by the module switch and the aspect toggle, which are what a league sets once
-    and leaves set.
-
-    The over-approximation is deliberate and is the safe direction. A league with the module
-    on and the aspect on, but without Attach Files, cannot receive the graphics it has asked
-    for; being told so is right, even though a broken template would have fallen back to
-    text and limped on regardless.
-
-    **Why it lives in the image module rather than beside its caller** (#187). Its callers
-    are the pre-flight checks of `results_post_service` and `attendance_sheet`, and a
-    posting service may hand an occasion to the image module and act on what it returns but
-    may not read the image module's configuration — the layering
-    ``tests/image/test_image_module_flow.py`` holds with
-    ``test_no_source_module_posting_path_imports_the_render_service`` and
-    ``test_only_wired_aspects_read_their_toggle``. Asking the image module a question is the
-    shape those guards permit. Reading ``get_toggles`` from a posting file is not. It still
-    reads the services off the bot it is handed, which is the lookup a ratchet entry names.
-
-    Never raises: a reader that refused an amendment because it could not answer would be
-    worse than one that under-reports, since the permission it guards is only ever an
-    additional requirement on top of the three a posting needs anyway.
-    """
-    if bot is None:
-        return False
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False
-        toggles = await bot.image_config_service.get_toggles()
-        return bool(toggles.get(aspect))
-    except Exception as exc:  # noqa: BLE001 — never refuse a posting's pre-flight on this
-        log.error(
-            "aspect_attaches_files: image enablement check failed: %s",
-            exc, exc_info=True,
-        )
-        return False
 
 
 def templates_of_enabled_aspects(toggles: dict[str, bool]) -> set[str]:

@@ -422,7 +422,7 @@ def _cog(db_path):
     # is truthy and the image module would read as on.
     cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={})
+    cog.bot.image_drawing.aspect_attaches_files = AsyncMock(return_value=False)
     return cog
 
 
@@ -544,7 +544,7 @@ async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_not
     cog = _cog_with_season(db_path, season)
     # The cog's bot with a real router and queue, keeping what the command reads of it.
     bot = league_double(db_path)
-    for name in ("user", "get_guild", "module_service", "image_config_service"):
+    for name in ("user", "get_guild", "module_service", "image_drawing"):
         setattr(bot, name, getattr(cog.bot, name))
     bot.season_service.get_setup_or_active_season = AsyncMock(
         return_value=SimpleNamespace(id=season, season_number=1, stage=SeasonStage.ONGOING)

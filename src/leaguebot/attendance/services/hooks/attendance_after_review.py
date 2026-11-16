@@ -197,7 +197,7 @@ class AttendanceAfterReview:
         if not await self.enabled():
             return []
         return await attendance_recompute.recalculation_faults(
-            self._db_path, season_id, guild, self._bot, cancelled_too=True
+            self._db_path, season_id, guild, self._bot, drawing=self._drawing, cancelled_too=True
         )
 
     async def post_sheet(

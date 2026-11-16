@@ -6,6 +6,8 @@ round after it on one connection, and `recalculation_faults` says what stands be
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import aiosqlite
 
 from leaguebot.attendance.services.scoring import attendance_scoring
@@ -15,6 +17,9 @@ from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.seasons.season_service import division_round_states_on, season_divisions_on
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services.module.division_channels import verdicts_channels_on
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 
 async def _recalculate_forward(
@@ -112,6 +117,7 @@ async def recalculation_faults(
     guild,
     bot: LeagueBot | None = None,
     *,
+    drawing: ImageDrawing | None,
     cancelled_too: bool = False,
 ) -> list[str]:
     """What stands between this season and recalculating its attendance (#187).
@@ -134,8 +140,10 @@ async def recalculation_faults(
     *cancelled_too* (owner, 2026-10-06, "Refuse at the press"): it recalculates and reposts
     the raced rounds of a division since cancelled too, so the channels of that division are
     part of its question, and the results specification's "every division's" holds.
+
+    **Whether a channel will be sent pictures is asked of *drawing*, the image module's, which the
+    caller hands in**; with none, no picture is drawn and no channel needs Attach Files.
     """
-    from leaguebot.image.services.validity.image_validity_service import aspect_attaches_files
     from leaguebot.results.services.publishing import results_post_service
 
     if guild is None:
@@ -177,7 +185,8 @@ async def recalculation_faults(
         thresholds
         and (thresholds["autoreserve_threshold"] or thresholds["autosack_threshold"])
     )
-    attendance_graphics = await aspect_attaches_files(bot, "attendance")
+    # Asked of the image module's drawing, which is handed in; with none, nothing is drawn.
+    attendance_graphics = drawing is not None and await drawing.aspect_attaches_files("attendance")
 
     faults: list[str] = []
     for division in sorted(divisions, key=lambda d: (d.tier, d.id)):

@@ -7,6 +7,7 @@ with the form and the review panel they post (`BulkAmendSessionModal`, the amend
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord import app_commands
@@ -37,6 +38,9 @@ from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.season_gate import season_for_command
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -363,6 +367,9 @@ class PointsAmendCommands(ResultsSubgroup):
         diff = await review_panel(
             self.bot.db_path, season, bot=self.bot, module_service=self.bot.module_service,
             attendance=self.bot.attendance_after_review,
+            # `LeagueBot` declares `image_drawing` as core's protocol; the entry point attaches
+            # image's own class, which answers what results asks besides. True by construction.
+            drawing=cast("ImageDrawing", self.bot.image_drawing),
         )
         if diff is None:
             await refuse(

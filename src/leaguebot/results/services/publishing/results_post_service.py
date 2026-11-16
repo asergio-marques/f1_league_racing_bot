@@ -1502,6 +1502,8 @@ async def repost_channel_faults(
     season_id: int,
     guild: "discord.Guild | None",
     bot: LeagueBot | None = None,
+    *,
+    drawing: "ImageDrawing",
 ) -> list[str]:
     """What stands between this season and reposting every division's results (#187).
 
@@ -1551,7 +1553,7 @@ async def repost_channel_faults(
                 "standings_channel_id": None if config is None else config["standings_channel_id"],
             })
 
-    return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
+    return await _channel_faults_for_rows(division_rows, guild, bot_member, drawing)
 
 
 def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot | None):
@@ -1578,17 +1580,15 @@ def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot | None):
 
 
 async def _channel_faults_for_rows(
-    division_rows, guild, bot_member, bot: LeagueBot | None
+    division_rows, guild, bot_member, drawing: "ImageDrawing"
 ) -> list[str]:
     """The faults across *division_rows*, each row carrying a division's two channel ids."""
-    # Asked of the image module rather than read out of its configuration here: a posting
-    # service hands the image module an occasion and acts on what comes back, and does not
-    # read its settings (#187, and the layering
+    # Asked of the image module's drawing, which is handed in, rather than read out of its
+    # configuration here: a posting service hands the image module an occasion and acts on what
+    # comes back, and does not read its settings (#187, and the layering
     # `tests/image/test_image_module_flow.py` holds).
-    from leaguebot.image.services.validity.image_validity_service import aspect_attaches_files
-
-    results_graphics = await aspect_attaches_files(bot, "results")
-    standings_graphics = await aspect_attaches_files(bot, "standings")
+    results_graphics = await drawing.aspect_attaches_files("results")
+    standings_graphics = await drawing.aspect_attaches_files("standings")
 
     faults: list[str] = []
     for row in division_rows:
