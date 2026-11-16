@@ -57,10 +57,9 @@ from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothin
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.utils.messages import paginate_fenced
+from leaguebot.utils.messages import chunk_message, paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.utils.messages import chunk_message
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
 from leaguebot.core.utils.roster_import import parse_roster_csv
 
