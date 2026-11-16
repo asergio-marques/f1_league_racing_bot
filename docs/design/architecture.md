@@ -28,11 +28,13 @@ clash with an installed library of the same name.
 *Rejected:* keeping each folder as a top-level package of its own. *Rejected:* setting the path
 in the start command instead of installing.
 
-There is one folder for core and one for each module:
+The code is in three layers, each depending only on the layers below it:
 
 ```
 leaguebot/
-    core/         the shared plumbing, and core's own commands and rules
+    utils/        helpers that know nothing of the bot or the league
+    framework/    the bot's own machinery, which holds no league rule
+    core/         core's league rules and commands
     results/
     attendance/
     signup/
@@ -42,65 +44,87 @@ leaguebot/
     __main__.py   the entry point: builds everything and starts the bot
 ```
 
-Each folder holds that part's **cogs** (its commands, and the buttons and forms they post), its
-**services** (its rules and its database code) and its **models** (plain data). Which module owns
-a file is then plain from where it sits. The tests follow the same folders, one for core and one
-for each module under `tests/`, beside `tests/repository/` for the checks on the repository itself
-(these rules, its configuration and its tools) and `tests/support/` for the helpers the tests
-share.
+- **`utils`** holds helpers that would serve any program: reading a time a person typed, the list
+  of time zones, the running version, fitting text to Discord's limits. It imports nothing of the
+  bot, though it may use a library, discord.py among them.
+- **`framework`** holds what makes the bot run, whatever the league's rules: the bot object
+  (`LeagueBot`), the base classes for the command tree, buttons and forms, the database connection
+  and the migrations, the change queue, the scheduler's timers and the start-up sweep, the hooks, the
+  failure paths (`report_failure`, the job runner, the bot's error handler for events,
+  `bounded_autocomplete`, the helper that starts background work), and the handlers for each kind of
+  post: the log writer, the notice handler, the standing-post handler and the bot-owned channel
+  handler. It may use `utils`, and imports nothing of core or of any module: where it needs a league
+  rule, such as who may act on a change, it is handed it by the builder or reaches it through a hook,
+  as it does a module's.
+- **Core and every module** hold league rules only: their commands, their services and their data.
+  Each may use the framework and `utils`. Core is a part like a module, with no switch: what every
+  module shares as machinery is the framework's, and what core holds besides is the league's own
+  rules (seasons, divisions, rounds, drivers, teams, the settings), which the modules use as before
+  ("How modules and core fit together").
+
+So a file's place says what it is: a helper anything could use, the bot's machinery, or a rule of
+the league. A layer's contract keeps it so: `utils` cannot come to depend on the bot, nor the
+framework on a league rule, without the checks failing.
+
+A module keeps a technical helper that only it uses in its own `utils/` folder, as the image module
+keeps its SVG, font and colour tooling: `utils` and the framework hold what more than one part
+needs, and no helper is made more general than its callers need. A file that holds both machinery
+and a league rule is split, the machinery to the framework and the rule to the part that owns it,
+rather than placed whole in either.
+
+*Rejected:* core holding all three, its shared helpers, the bot's machinery and its own league
+rules, side by side, where nothing says which may depend on which and a helper can come to import a
+rule unnoticed. *Rejected:* one shared package for the helpers and the machinery together, with no
+contract between them, which grows into a place for anything. *Rejected:* moving a module's own
+technical helpers into `utils` because they know nothing of the bot, which makes a shared package
+serve one caller.
+
+Core and each module are a **part**, with a folder of its own. Each part's folder holds that part's **cogs** (its commands, and the buttons and forms they post),
+its **services** (its rules and its database code) and its **models** (plain data). Which module
+owns a file is then plain from where it sits. The tests follow the same folders, one for core, one
+for each module and one for each layer under `tests/`, beside `tests/repository/` for the checks on
+the repository itself (these rules, its configuration and its tools) and `tests/support/` for the
+helpers the tests share.
 
 *Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which spreads
 one module over four folders. *Rejected:* grouping only the services by module. *Rejected:* staying
 flat with a list of which file belongs where, which is the arrangement that misfiled core's driver
 and team code under signup. *Rejected:* leaving the tests in one flat folder.
 
-Inside each folder, each kind of code has a folder of its own: `cogs/`, `services/`, `models/`,
-and `utils/` for the part's helpers, with `db/` in core for the database code. What kind of code a
-file holds is then plain from where it sits as well, so a rule about one kind (no service imports
-a cog) is written once for every module, and the checks tell a service from a cog by its folder.
+Inside each part's folder, and the framework's, each kind of code has a folder of its own: `cogs/`,
+`services/`, `models/`, and `utils/` for the part's helpers, with `db/` in the framework for the
+database code. What kind of code a file holds is then plain from where it sits as well, so a rule
+about one kind (no service imports a cog) is written once for every part and the framework, and the
+checks tell a service from a cog by its folder. `utils` itself has no kind folders: every file in it
+is a helper, one file to a topic.
 
 *Rejected:* a module's files side by side in its folder, where a file's kind is known only from
 its name, and several files are named for neither.
 
-**Core's services are grouped by topic into packages** (`core/services/queue/`, `seasons/` and so
-on), because core holds so many that a flat folder cannot be read, and the grouping puts the
-plumbing every module uses apart from core's own league rules. The plumbing is `queue/` (the change
-queue, its types and records, the stop view, the typed turns, the setting change, the audit
-writers), `posting/` (the four handlers for each kind of post, the log writer among them, the retry
-queue, the standing posts, the channel notice) and `modules/` (the module service, the drawing
-protocol, the hooks' readers, the hub). The league rules are `seasons/`, `cancellations/`, `rounds/`
-(divisions, rounds and their amendments, tracks and the calendar post), `drivers/` (drivers, teams,
-placements, the lineup and the changes to them), `settings/`, `test_mode/` and `upkeep/` (backup,
-pack, factory reset, the in-memory state, clean-up and start-up). No plumbing folder holds a league
-rule, so that a later decision on what core should hold can move a whole folder rather than sort its
-files again; a file that serves both sits in the league-rule folder it serves, as `start_up.py` does
-in `upkeep/`, and is moved with it. One file stays loose in `core/services/`:
-`scheduler_service.py`, because the job store saves its path
-(`leaguebot.core.services.scheduler_service`) for every timed job, and a move would leave a saved
-job store, or the state test mode keeps, unloadable. A folder is not a kind: every check reads a
-file's kind from the first folder below its part, so `core/services/seasons/season_service.py` is a
-service of core. Only core's services are grouped: a module's own services stay in its `services/`
-folder unless its design file groups them. `tests/repository/test_import_contracts.py` holds it: no
-core service sits outside a topic folder but the scheduler's.
+**The framework's and core's services are grouped by topic into packages**
+(`framework/services/queue/`, `core/services/seasons/` and so on), because each holds too many for a
+flat folder to be read. The framework's are `queue/` (the change queue, its types and records, the
+stop view, the typed turns, the setting change, the audit writers), `posting/` (the four handlers
+for each kind of post, the log writer among them, the retry queue, the standing posts, the channel
+notice), `modules/` (the module service, the hooks' readers, the hub) and `jobs/` (the scheduler's timers
+and the start-up sweep). Core's are `seasons/` (with the season's confirmation and review), `cancellations/`,
+`rounds/` (divisions, rounds and their amendments, tracks, the calendar post and the scheduling of a
+round's jobs), `drivers/` (drivers, teams, placements, the lineup and the changes to them),
+`settings/`, `test_mode/`, `upkeep/` (backup, pack, factory reset, the in-memory state and clean-up)
+and `modules/` (what core asks of the modules, such as the drawing protocol). A folder is not a kind:
+every check reads a file's kind from the first folder below its part or layer, so
+`core/services/seasons/season_service.py` is a service of core. A module's own services stay in its
+`services/` folder unless its design file groups them. `tests/repository/test_import_contracts.py`
+holds it: no service of core's sits outside a topic folder.
 
-*Rejected:* keeping the services flat, where the plumbing and core's league rules lie side by side
-in one folder too long to read. *Rejected:* folders by topic alone, mixing the plumbing with league
-rules (the setting change beside the league's settings, the scheduler beside backup), which a later
-decision on what core should hold would have to sort file by file and move a second time.
-*Rejected:* moving the scheduler's file with the rest, which would leave every job a saved job store
-holds, and every saved test-mode state, unable to load.
+*Rejected:* keeping the services flat, where unrelated topics lie side by side in one folder too
+long to read.
 
 Beside its kind folders, a module's folder holds one file: its **wiring** (`<module>/wiring.py`),
-the module's part of the builder (below). Core has none: its part is the builder's own.
+the module's part of the builder (below). Core and the framework have none: core's part is the
+builder's own, and the framework is wired by the builder.
 
-Core holds what every module shares: the database connection and the migrations, the bot object
-(`LeagueBot`), the change queue, the scheduler service and the start-up sweep, the base classes
-for the command tree, buttons and forms, the failure paths (`report_failure`, the job runner, the
-bot's error handler for events, `bounded_autocomplete`, the helper that starts background work), and
-the handlers for each kind of post: the log writer, the notice handler, the standing-post handler
-and the bot-owned channel handler, each a service of its own in `core/services/posting/`.
-
-**The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
+**The entry point** (`__main__.py`) sits above core, the modules and the layers below them, and is the one place that
 imports every module at run time. It holds the builder, which makes every service and every hook,
 loads every module's cogs and persistent views, signs up the hooks that several modules join, each
 module's function in the order its subscribers are called, calls each module's wiring, and orders
@@ -171,12 +195,13 @@ point, which would then hold every module's registrations and grow with each mod
   separate posting layer, which a bot this size has no use for. A service never imports a cog.
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
-- **Shared helpers in core** are of two kinds. Those used by cogs (the base classes, the guards,
-  autocomplete) reach core's own services through the bot, as a cog does. Plain helpers (formatting,
-  parsing, time) use no service at all. Neither imports a service, and core uses no module; the one
-  exception to both is the bot's type, which names every service for the type checker (below). Each
-  handler for a kind of post is a service in core, not a helper. Some helpers a service may call
-  reach the bot, each for one thing. `league_guild(bot)` (`core/utils/league_server.py`) is the one
+- **Shared helpers** are of two kinds. The framework's (the base classes, the failure paths,
+  autocomplete) reach services through the bot, as a cog does; `utils` uses no service at all.
+  Neither imports a service, the framework imports nothing of core, and core uses no module; the one
+  exception to all three is the bot's type, which names every service, core's and the modules'
+  among them, for the type checker (below). Each handler for a kind of post is a service in the
+  framework, not a helper. Some helpers a service may call
+  reach the bot, each for one thing. `league_guild(bot)` (`league_server.py`, among the framework's helpers) is the one
   route from a job or a service to the league's server, which it finds through the configuration
   service. `report_failure`, `refuse` (through `record_refusal`) and `record_abandoned` write a
   failure, a refusal, or a cancellation or a lapse, through the bot's log writer ("Errors and
@@ -184,10 +209,10 @@ point, which would then hold every module's registrations and grow with each mod
   them would add a parameter to each, for no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
-- **The database code in core** opens connections, lends them again, closes them and applies
+- **The database code in the framework** opens connections, lends them again, closes them and applies
   migrations, and imports nothing else of the bot's.
-- **The entry point** builds the services, wires them together and starts the bot, and calls core's
-  database code to close the connections as the bot stops. It holds no rules and no database code
+- **The entry point** builds the services, wires them together and starts the bot, and calls the
+  framework's database code to close the connections as the bot stops. It holds no rules and no database code
   of its own, nor does a module's wiring, which is under the same rules.
 
 **Services stay attached to the bot, and are built in one place.** The bot object keeps a typed
@@ -1619,12 +1644,15 @@ some of the same things, and, with its formatter, a commit touching nearly every
 later on its own.
 
 - **`.importlinter`**, run by `tests/repository/test_import_contracts.py`, checks which code may
-  import which: the rules for each kind of code, that core uses no module, that a module uses
+  import which: the rules for each kind of code, that `utils` imports nothing of the bot, that the
+  framework imports nothing of core or of any module, that core uses no module, that a module uses
   another only where the dependency table allows, that results, attendance and weather reach neither
   the image module's render nor its configuration, that nothing imports the entry point, and that
   nothing but the entry point imports a module's wiring. The same test checks that core's services
   sit only in the named topic folders, each named as plumbing or as league rules, with the
-  scheduler's file alone loose.
+  scheduler's file alone loose until the framework takes the plumbing; that every file sits in a
+  folder the contracts name, `utils` holding its helpers directly and the framework its kind
+  folders as a part does; and that each layer's contract forbids exactly core and every module.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside
   services, awaiting anything but the connection mid-save (in a function that opens it and in one
   handed it), cogs handling their own errors, catch-all handlers that lose the error details,
