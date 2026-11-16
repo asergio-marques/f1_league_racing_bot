@@ -421,3 +421,51 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
     heading = block.splitlines()[0]
     assert "Pro" in heading and "round 1" in heading.lower(), block
+
+
+async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_retried(tmp_path):
+    """The image module is on with the attendance graphic switched on and its template valid,
+    and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
+    Pro's attendance channel refuses every send. Alex runs `/attendance sync` for Pro from round 1
+    and the queue stops at the sheet; the channel is let accept and a Retry posts the sheet as
+    text. The queue runs to the end, and the log channel carries the notice once, in a block whose
+    heading names Pro and round 1, never lost with the refused try."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+    from leaguebot.image.services.aspects.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
+
+    league = await _scored_league(tmp_path, images=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    picture = tmp_path / "sheet.png"
+
+    async def _render(*_args: Any, **_kwargs: Any) -> Any:
+        picture.write_bytes(b"\x89PNG")
+        return RenderOutcome(png_paths=[picture], notices=[RenderNotice(
+            image_type=ATTENDANCE_TEMPLATE_KEY, notice_kind="ASSET_FALLBACK_USED",
+            detail=SHEET_NOTICE, field_id="flag",
+        )])
+
+    league.bot.image_render_service.render = AsyncMock(side_effect=_render)
+    league.channel(SHEET).send_fails = http_error(discord.Forbidden, status=403,
+                                                  text="Missing Access")
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    league.channel(SHEET).send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.channel(SHEET).files[-1] is None
+    log = await _said(league)
+    assert log.count(SHEET_NOTICE) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
+    heading = block.splitlines()[0]
+    assert "Pro" in heading and "round 1" in heading.lower(), block

@@ -46,6 +46,7 @@ from tests.support.change_queue import (
     league_queue,
     member_interaction,
     restart_queue,
+    retry_job,
     run_queue,
     seed_server,
     set_guilds,
@@ -846,3 +847,57 @@ async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_
     assert "text" in line, line
     assert "to put it right: fix the verdict template; no command posts a sanction's card again" \
         in line, line
+
+
+#: The detail of the one render notice the sanction card's picture below is drawn with.
+CARD_NOTICE = "no `flag` image for “Racer”"
+
+
+async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_when_it_is_retried(
+    tmp_path, drawn, monkeypatch,
+):
+    """Round 1 is final; its driver, a member of the server known as "Racer" (Discord user
+    5101), is owed an auto-reserve, and the verdict graphic is on. The card's picture is drawn
+    with one notice, a flag falling back, and the verdicts channel refuses every post carrying a
+    picture. Manager 77 runs `/attendance sync` from round 1 and the queue is run: it stops at the
+    card. A Retry posts the card in words: the queue runs to the end, the card names the driver,
+    and the log channel carries the notice once, in a block whose heading names Division 1 and
+    round 1, never lost with the refused try."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
+
+    png = tmp_path / "card.png"
+
+    async def _render(*_args: Any, **_kwargs: Any) -> Any:
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return VerdictRender(png=png, notices=[RenderNotice(
+            image_type="verdicts_template", notice_kind="ASSET_FALLBACK_USED",
+            detail=CARD_NOTICE, field_id="flag",
+        )], problem=None)
+
+    monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
+    league = await _league(tmp_path, autosack=None, autoreserve=3)
+    await _a_member_owed_an_autoreserve(league)
+    verdicts = league.channels[VERDICTS_CHANNEL]
+    post = verdicts.send.side_effect
+
+    async def _refuse_a_picture(content: str = "", **kwargs: Any) -> Any:
+        if kwargs.get("file") is not None:
+            raise http_error(discord.Forbidden, status=403, text="Missing Access")
+        return await post(content, **kwargs)
+
+    verdicts.send.side_effect = _refuse_a_picture
+
+    await _sync(league)
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert any("<@5101>" in each and "Moved to Reserve" in each for each in league.verdicts())
+    log = "\n".join(league.log_lines())
+    assert log.count(CARD_NOTICE) == 1, log
+    [block] = [line for line in league.log_lines() if CARD_NOTICE in line]
+    heading = block.splitlines()[0]
+    assert "Division 1" in heading and "round 1" in heading.lower(), block
