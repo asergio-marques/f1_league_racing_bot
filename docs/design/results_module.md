@@ -634,7 +634,9 @@ verdict and of the heading over a round's verdicts, and post what it hands back 
 session's table and the two standings go through the standing-post handler, and a picture Discord
 refuses goes out as its text in the same try. A verdict and the heading go through the notice
 handler (`send_notice`), and a picture Discord refuses stops the queue, so that the retry posts the
-text. What the drawing had to report comes back as lines of the job, in every case. A retry asks for
+text. What the drawing had to report comes back as lines of the job, in every case. The repost's
+check that a channel can take a file asks the drawing whether the aspect attaches files
+(`ImageDrawing.aspect_attaches_files`). A retry asks for
 no picture (above, "Pictures and their fallbacks").
 
 ### The `/results` group

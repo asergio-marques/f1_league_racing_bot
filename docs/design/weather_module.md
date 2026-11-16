@@ -384,16 +384,16 @@ reading none of weather's tables. Where `attach_forecast` returns no file, the f
 text. It hands back, with the file or without, the lines saying why a picture that was due was not
 drawn; which reasons those are, and when no picture is due, the specification's "Image generation"
 says. The two switches are asked first, so that nothing is read for a picture not due. The graphic
-has the catch-alls `architecture.md` allows it ("Errors and failures"): one around its drawing, and
-one around reading its switch (`ImageDrawing._weather_gate`, whose reason becomes the line's), both
-of the place for a graphic that rides on a post, and one around reading the round to name the line
-of a switch that could not be read, the place for naming something in a line, which leaves the line
-naming the phase, or the notice, alone. A line names the round, and its phase or the notice, as the
-image specification's "Weather image generation", "Generation and posting" has it, through
-`describe`. Weather hands the notice's picture as phase 0, so its line names the notice without the
-round being read. The post job puts the lines on its `StepResult`, so they reach the log channel in
-the save that records the post. The render is given no bot, so a render's notices come back as those
-lines alone and are posted once. A graphic Discord refuses stops the queue for Retry.
+has two catch-alls `architecture.md` allows it ("Errors and failures"), both of the place for a
+graphic that rides on a post: one around its drawing, and one around reading its switch
+(`ImageDrawing._weather_gate`, whose reason becomes the line's). A third, around reading the round
+to name the line of a switch that could not be read, is the place for naming something in a line,
+and leaves the line naming the phase, or the notice, alone. A line names the round, and its phase or
+the notice, as the image specification's "Weather image generation", "Generation and posting" has
+it, through `describe`. Weather hands the notice's picture as phase 0, so its line names the notice
+without the round being read. The post job puts the lines on its `StepResult`, so they reach the log
+channel in the save that records the post. The render is given no bot, so a render's notices come
+back as those lines alone and are posted once. A graphic Discord refuses stops the queue for Retry.
 
 ---
 
@@ -458,13 +458,13 @@ round's facts and its division (`round_facts_on`, `division_on`), a round's sess
 Weather needs no other module (no entry in `NEEDS`). Of the image module it asks the forecast's
 graphic (`ImageDrawing.attach_forecast`, on the drawing the wiring hands the post job) and the
 discarding of a drawn attachment (`ImageDrawing.discard_attachment`, handed to `post_phase_message`
-beside the picture), and builds the model
-image declares for it (`image.models.forecast_values`); it uses no other module. The image module
-reads none of weather's tables: weather hands it the words, composed as the text composes them
-(`forecast_changes.forecast_values`), in a model image declares (`ForecastValues`: the phase's
-description, the likelihood of rain as text, and each session's label, weather type, slots and the
-summary of its slots, in the order they are run), so that image imports no other module and holds no
-second copy of weather's wording. For `/images test`, image composes sample words of its own.
+beside the picture), and builds the model image declares for it (`image.models.forecast_values`); it
+uses no other module. The image module reads none of weather's tables: weather hands it the words,
+composed as the text composes them (`forecast_changes.forecast_values`), in a model image declares
+(`ForecastValues`: the phase's description, the likelihood of rain as text, and each session's
+label, weather type, slots and the summary of its slots, in the order they are run), so that image
+imports no other module and holds no second copy of weather's wording. For `/images test`, image
+composes sample words of its own.
 
 ### The forecast provider
 

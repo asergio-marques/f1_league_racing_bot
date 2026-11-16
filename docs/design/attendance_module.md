@@ -194,8 +194,8 @@ needs when the builder registers it. The jobs and the hooks are handed the servi
 (`architecture.md`, "Services stay attached to the bot"), so that a job never looks one up on the
 bot, and a function that needs Discord is handed the bot for that.
 
-`derive_checkin_deadline`, the moment a round's check-in closes, stays in
-`attendance_config_service`, where attendance works the deadline out and hands it to the drawing and to the previews.
+`derive_checkin_deadline`, the moment a round's check-in closes, stays in `attendance_config_service`,
+where attendance works the deadline out and hands it to the drawing and to the previews.
 
 ### The cog
 
@@ -567,7 +567,9 @@ uses no other module (the `attendance-uses-no-other-module-but-results-and-image
 image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet
 (`ImageDrawing.attendance_wanted` and `draw_attendance_sheet`), both on the drawing the wiring
 hands the post jobs, from what attendance hands it, the call's deadline included: attendance
-works it out (`derive_checkin_deadline`) and hands it in. It also implements the image module's
+works it out (`derive_checkin_deadline`) and hands it in. The recalculation's check that the
+attendance channel can take a file asks the same drawing whether the aspect attaches files
+(`ImageDrawing.aspect_attaches_files`), which the cog reads off the bot. It also implements the image module's
 `PreviewSources`, which hands the previews that deadline, and the builder hands the
 implementation in as `bot.preview_sources`.
 
