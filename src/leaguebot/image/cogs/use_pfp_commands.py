@@ -16,7 +16,7 @@ from leaguebot.core.utils.interaction_errors import (
 )
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.image.cogs.image_group import USE_PFP_GROUP, ImageSubgroup
 from leaguebot.image.services.config.image_settings import (
     DAILY_PORTRAITS,

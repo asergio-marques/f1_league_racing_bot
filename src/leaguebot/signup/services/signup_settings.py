@@ -35,7 +35,7 @@ from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
-from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.signup.services.signup_module_service import settings_on, slots_on
 

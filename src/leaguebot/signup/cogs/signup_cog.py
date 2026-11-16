@@ -48,7 +48,7 @@ from leaguebot.signup.services.window_changes import (
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild

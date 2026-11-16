@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.utils.time_parsing import parse_time_of_day
 
 
 @pytest.mark.parametrize(

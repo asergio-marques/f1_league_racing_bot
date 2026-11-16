@@ -26,7 +26,7 @@ and applies them in one of two modes:
   nobody to refuse.
 
 **Formats** are the values an input parses rather than publishes, each defined once below. A time
-of day and a colour keep homes of their own: ``leaguebot.core.utils.time_parsing`` and
+of day and a colour keep homes of their own: ``leaguebot.utils.time_parsing`` and
 ``leaguebot.image.utils.colour``.
 """
 from __future__ import annotations
