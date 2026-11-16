@@ -81,6 +81,30 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
     assert result == (None, ())
 
 
+async def test_a_call_whose_switch_nobody_signed_up_for_raises():
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and Division
+    1's round 1 check-in call at Silverstone is drawn: that is a fault in the bot's assembly, not a
+    gate that cannot be read, so it is raised rather than answered as a call without a picture."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    bot = MagicMock()
+    bot.module_service.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path="unused.db",
+    )
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await drawing.attach_check_in_call(
+            division_name="Division 1",
+            round_number=1,
+            round_format="NORMAL",
+            scheduled_at=None,
+            track_name="Silverstone Circuit",
+        )
+
+
 # ── The static call graph (XIV.17) ────────────────────────────────────────
 
 

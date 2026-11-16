@@ -211,6 +211,21 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
     assert line.startswith(f"⚠️ Weather image — {named}: "), line
 
 
+async def test_a_forecast_whose_switch_nobody_signed_up_for_raises(monkeypatch):
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and round 4's
+    phase 2 forecast in Division 1 is drawn: that is a fault in the bot's assembly, not a switch
+    that cannot be read, so it is raised rather than handed back as the forecast's fault line."""
+    import leaguebot.image.services.aspects.image_weather_post as post
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+
+    bot = _bot()
+    bot.module_service.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=_drawing()))
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await _image_drawing(bot).attach_forecast(1, 2, values=_values())
+
+
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
 
 
