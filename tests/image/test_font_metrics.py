@@ -173,17 +173,7 @@ def _a_font(path, family: str, *, weight: int | None, os2: str = "absent") -> No
     builder.save(str(path))
 
 
-#: Why a regular face whose OS/2 table is there but cannot be read is not yet indexed.
-OS2_UNREADABLE_SKIPPED = (
-    "#288: a face whose OS/2 table is present but cannot be read is skipped by the face index, "
-    "not indexed as regular, normal width and upright as at the base"
-)
-
-
-@pytest.mark.parametrize("os2", [
-    "absent",
-    pytest.param("unreadable", marks=pytest.mark.xfail(strict=True, reason=OS2_UNREADABLE_SKIPPED)),
-])
+@pytest.mark.parametrize("os2", ["absent", "unreadable"])
 def test_a_regular_face_whose_os2_table_cannot_be_read_is_still_measured_as_the_regular(
     tmp_path, monkeypatch, os2,
 ):

@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import logging
 import os
+import struct
 import sys
 from contextlib import closing
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont, TTLibError
 
 log = logging.getLogger(__name__)
 
@@ -142,19 +143,23 @@ def face_index() -> dict[tuple[str, bool], list[tuple[int, int, Path]]]:
 def _faces_of(path: Path) -> list[tuple[str, int, int, bool]]:
     """(family, OS/2 weight class, OS/2 width class, italic) per family name declared.
 
-    A face with no OS/2 table is indexed as regular weight, normal width and upright, as it
-    was before the index's catches moved into its loops: its family's other faces must not
-    stand in for it, a bold face measuring a regular request too wide. Raises for a font that
-    cannot be read, a table that is there but corrupt included. `face_index` skips that file
-    and logs it with its traceback, which is not noise: this is read only while the indexes
-    are built, each once a run, so an unreadable font is logged once for each index it is read
-    for, and never again while the bot runs. A family skipped here is still found by
-    `font_index`, which `_face` falls back to.
+    A face with no OS/2 table, or one that is there but cannot be read (a truncated table),
+    is indexed as regular weight, normal width and upright, as it was before the index's
+    catches moved into its loops: its family's other faces must not stand in for it, a bold
+    face measuring a regular request too wide. The unreadable table is logged, once for each
+    index built, which is not noise: the indexes are built once a run. Raises for a font file
+    that cannot be read at all; `face_index` skips that file and logs it with its traceback.
+    A family skipped here is still found by `font_index`, which `_face` falls back to.
     """
     weight, width, italic = _WEIGHT_REGULAR, _WIDTH_NORMAL, False
     with closing(TTFont(path, fontNumber=0, lazy=True)) as font:
+        os2 = None
         if "OS/2" in font:
-            os2 = font["OS/2"]
+            try:
+                os2 = font["OS/2"]
+            except (struct.error, TTLibError, ValueError):
+                log.warning("face_index: the OS/2 table of %s cannot be read", path, exc_info=True)
+        if os2 is not None:
             weight = int(getattr(os2, "usWeightClass", _WEIGHT_REGULAR))
             width = int(getattr(os2, "usWidthClass", _WIDTH_NORMAL))
             # fsSelection bit 0 is italic; bit 5 is bold, which some faces set without a
