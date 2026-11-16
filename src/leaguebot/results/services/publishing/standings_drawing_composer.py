@@ -21,7 +21,7 @@ derived-columns.md for what may be derived and where.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Mapping, Sequence
+from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
@@ -43,7 +43,7 @@ from leaguebot.image.models.standings_drawing import (
     HIGHLIGHT_P3,
     HIGHLIGHT_POINTS,
     CellValue,
-    PositionMovement,
+    MovementText,
     RoundCells,
     RoundHeading,
     StandingsDrawing,
@@ -58,6 +58,38 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
+
+
+class PositionMovement(Protocol):
+    """One entry's change of position against the reference round, as ``derive_movement`` works it
+    out: ``change`` is unsigned and ``direction`` carries the sense."""
+
+    @property
+    def previous_position(self) -> int: ...
+
+    @property
+    def change(self) -> int: ...
+
+    @property
+    def direction(self) -> str: ...
+
+
+def _movement_text(movement: PositionMovement | None) -> MovementText | None:
+    """The movement as the text a picture draws it as, or None where there is none."""
+    if movement is None:
+        return None
+    return MovementText(
+        previous_position=results_formatter.format_previous_position(movement.previous_position),
+        change=results_formatter.format_position_change(movement.change),
+        direction=movement.direction,
+    )
+
+
+def _gap_text(gap: int | None) -> str | None:
+    """The gap to the leader as the text a picture draws it as, or None where there is none."""
+    if gap is None:
+        return None
+    return results_formatter.format_gap_to_leader(gap, is_leader=False)
 
 #: The lifecycle labels, shared with the textual standings path (XIV.7).
 _STATUS_LABELS = {
@@ -152,8 +184,9 @@ def resolve_drawing(
     rows of the round being drawn. Their ``standing_position`` is the order — already
     separated by the countback — and is read, never re-established (XIV.12).
 
-    *movements* comes from ``standings_service.derive_movement`` and is carried through
-    untouched. Nothing here subtracts points or compares positions.
+    *movements* comes from ``standings_service.derive_movement`` and *gaps* from the standings'
+    own points; both are formatted as the textual standings format them, and nothing here
+    subtracts points or compares positions.
 
     *rounds* is the division's calendar, headed for the grid. *round_session_results*
     maps a round's ordinal to its session results, keyed by :class:`SessionType` value — a
@@ -207,8 +240,8 @@ def resolve_drawing(
                 points=str(snapshot.total_points),
                 driver_name=display_names.get(key) if drivers else None,
                 nationality=nationality_map.get(key) if drivers else None,
-                gap_to_leader=gap_map.get(key),
-                movement=movements.get(key),
+                gap_to_leader=_gap_text(gap_map.get(key)),
+                movement=_movement_text(movements.get(key)),
                 cells=cells,
                 team_key=(team_keys or {}).get(key),
             )

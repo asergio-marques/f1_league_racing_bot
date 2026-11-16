@@ -29,7 +29,9 @@ from leaguebot.image.services.aspects.image_standings_service import (
     StandingsEntry,
     build_fill_spec,
 )
+from leaguebot.image.models.standings_drawing import MovementText
 from leaguebot.results.services.standings.standings_service import MOVEMENT_GAINED, MOVEMENT_LOST, Movement
+from leaguebot.results.utils import results_formatter
 
 SVG_NS = "http://www.w3.org/2000/svg"
 
@@ -86,6 +88,18 @@ def _entry(ordinal: int, **overrides) -> StandingsEntry:
         ),
     )
     values.update(overrides)
+    # The entry the picture is handed carries the gap and the movement as the text composed from
+    # them, formatted as the textual standings format them.
+    gap = values["gap_to_leader"]
+    movement = values["movement"]
+    values["gap_to_leader"] = (
+        None if gap is None else results_formatter.format_gap_to_leader(gap, is_leader=False)
+    )
+    values["movement"] = None if movement is None else MovementText(
+        previous_position=results_formatter.format_previous_position(movement.previous_position),
+        change=results_formatter.format_position_change(movement.change),
+        direction=movement.direction,
+    )
     return StandingsEntry(**values)
 
 

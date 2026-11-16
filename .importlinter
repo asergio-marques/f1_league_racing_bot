@@ -166,10 +166,6 @@ forbidden_modules =
     leaguebot.signup
     leaguebot.weather
 allow_indirect_imports = True
-ignore_imports =
-    # #288: the image module fetches what it draws from the modules, where it is to draw what
-    # a module hands it.
-    leaguebot.image.services.aspects.image_standings_service -> leaguebot.results.utils.results_formatter
 
 [importlinter:contract:nothing-imports-the-entry-point]
 name = Nothing imports the entry point

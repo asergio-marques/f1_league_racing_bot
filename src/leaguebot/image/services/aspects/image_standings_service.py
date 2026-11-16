@@ -30,7 +30,6 @@ from leaguebot.image.models.image_catalogues import (
     column_crop_fields,
     row_crop_fields,
 )
-from leaguebot.results.utils import results_formatter
 from leaguebot.image.models.standings_drawing import (  # noqa: F401 — the models are image's, kept importable here
     CELL_SUFFIXES,
     CONSTRUCTORS_TEMPLATE_KEY,
@@ -45,7 +44,6 @@ from leaguebot.image.models.standings_drawing import (  # noqa: F401 — the mod
     HIGHLIGHT_P2,
     HIGHLIGHT_P3,
     HIGHLIGHT_POINTS,
-    PositionMovement,
     QUALIFYING_DATUM_PREFIX,
     RACE_DATUM_PREFIX,
     RoundCells,
@@ -602,11 +600,9 @@ def _project_movement(
         return
 
     if previous_id in declared:
-        text[previous_id] = results_formatter.format_previous_position(
-            movement.previous_position
-        )
+        text[previous_id] = movement.previous_position
     if number_id in declared:
-        text[number_id] = results_formatter.format_position_change(movement.change)
+        text[number_id] = movement.change
     if marker_id in declared:
         image_data[marker_id] = ("marker", movement.direction)
 
@@ -623,19 +619,13 @@ def _put_gap(
 ) -> None:
     """The gap to the leader — empty for the first-placed entry, and never otherwise absent.
 
-    It is arithmetic over the classification being drawn alone, so unlike the other two
+    It is worked out over the classification being drawn alone, so unlike the other two
     columns it is available even where no earlier round holds standings. Tying it to the
     movement record once blanked it for every entry the reference round did not hold.
     """
     if gap_id not in declared:
         return
-    if entry.ordinal == 1 or entry.gap_to_leader is None:
+    if entry.ordinal == 1 or not entry.gap_to_leader:
         empty_quietly.append(gap_id)
         return
-    rendered = results_formatter.format_gap_to_leader(
-        entry.gap_to_leader, is_leader=False
-    )
-    if rendered:
-        text[gap_id] = rendered
-    else:
-        empty_quietly.append(gap_id)
+    text[gap_id] = entry.gap_to_leader

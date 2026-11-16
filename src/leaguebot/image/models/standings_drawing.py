@@ -7,8 +7,6 @@ values on a template and works none of them out. Pure: no Discord, no database, 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
-
 from leaguebot.image.models.image_constants import MYSTERY_DATUM
 
 DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
@@ -23,21 +21,17 @@ class StandingsDataError(Exception):
     """
 
 
-class PositionMovement(Protocol):
-    """One entry's change of position against the reference round, as the drawing reads it.
-
-    ``change`` is unsigned; ``direction`` carries the sense. Whoever composes the drawing
-    derives it, and the drawing carries it through untouched.
+@dataclass(frozen=True)
+class MovementText:
+    """One entry's change of position against the reference round, every part already the text
+    the picture draws: the previous position as written, the change unsigned and the direction
+    the marker is found by. Whoever composes the drawing works it out and formats it; the
+    drawing carries it through untouched.
     """
 
-    @property
-    def previous_position(self) -> int: ...
-
-    @property
-    def change(self) -> int: ...
-
-    @property
-    def direction(self) -> str: ...
+    previous_position: str
+    change: str
+    direction: str
 
 
 #: The four backgrounds a cell may be given, in precedence order. A podium place takes
@@ -172,13 +166,14 @@ class StandingsEntry:
     driver_name: str | None = None
     #: The datum behind ``row_<x>_driver_flag``. None where the driver recorded none.
     nationality: str | None = None
-    #: The leader's points less this entry's. Always available: it is arithmetic over the
-    #: classification being drawn alone, so it survives a first round with no reference.
-    gap_to_leader: int | None = None
+    #: The leader's points less this entry's, as the text drawn. Always available: it is
+    #: worked out over the classification being drawn alone, so it survives a first round with
+    #: no reference. None where the composer holds none; the first-placed entry is drawn empty.
+    gap_to_leader: str | None = None
     #: The change against the reference round, or None where it cannot be determined — the
     #: first round of a division, or an entry the reference round does not hold. Absent
     #: entirely rather than partly filled, and not a failure (FR-017).
-    movement: PositionMovement | None = None
+    movement: MovementText | None = None
     #: Round ordinal → its cells. Empty on a template declaring no round.
     cells: dict[int, RoundCells] = field(default_factory=dict)
     #: What the team's artwork is found by: its shorthand (#381). The drawn name where None.
