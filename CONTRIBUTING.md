@@ -217,7 +217,7 @@ merged since it, so `v0.4.0-230` follows `v0.4.0-229`. Pull requests are squash-
 each on `main`, which is what keeps the number in merge order. Nobody stamps it: `VERSION` holds two
 placeholders, the version and the date and time its last change was made, that GitHub fills in
 whenever it packages the code, and a clone asks git instead. **Never write a value into `VERSION`**
-— see `src/leaguebot/core/utils/version.py`.
+— see `src/leaguebot/utils/version.py`.
 
 **Go-live is `v1.0.0`.** Every release before it is marked a pre-release. From `v1.0.0` on the
 migration baseline is frozen, and every schema change is a new migration (see `run_migrations`

@@ -13,7 +13,7 @@
 # on, pinned exactly, and it is installed first; a second list here would drift from it.
 #
 # **The version below is not the bot's.** The bot's version is read from `VERSION`, or from git,
-# when it starts (`src/leaguebot/core/utils/version.py`); this one only satisfies the packaging
+# when it starts (`src/leaguebot/utils/version.py`); this one only satisfies the packaging
 # tools and never changes.
 #
 # The install is editable (`-e`): the package stays in `src/`, where `PROJECT_ROOT` in

@@ -1028,9 +1028,9 @@ async def build(settings: Settings) -> LeagueBot:
     bot.db_path = settings.db_path
 
     # The version is read once, here, and never when a command runs: it belongs to
-    # the code this process loaded. See `core/utils/version.py`.
+    # the code this process loaded. See `utils/version.py`.
     from leaguebot.core.utils.paths import PROJECT_ROOT
-    from leaguebot.core.utils.version import read_version, read_version_date
+    from leaguebot.utils.version import read_version, read_version_date
 
     version = read_version(PROJECT_ROOT)
     made = read_version_date(PROJECT_ROOT)

@@ -65,7 +65,7 @@ class LeagueBot(commands.Bot):
     """The league's bot: every attribute `__main__.py` attaches, declared with its type."""
 
     db_path: str
-    #: The version and date of the copy of the bot this process loaded; see `core/utils/version.py`.
+    #: The version and date of the copy of the bot this process loaded; see `utils/version.py`.
     running_version: str | None
     running_version_date: datetime | None
     #: The queue's moment when the bot came up, taken once by `build`. The wiring hands it, as a
