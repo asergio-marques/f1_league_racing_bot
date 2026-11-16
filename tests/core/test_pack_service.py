@@ -407,7 +407,6 @@ async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
 # ── The record of the pack ────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the pack's audit values are not written with sorted keys")
 @pytest.mark.parametrize(
     ("signup_configured", "signup_channel", "wizards"),
     [(True, 80, 1), (False, None, 0)],

@@ -108,6 +108,15 @@ _COLUMNS = (
 )
 
 
+async def clear_pending_on(db: aiosqlite.Connection) -> int:
+    """Delete every log line still waiting for delivery, on *db*, and give how many.
+
+    Written on the caller's connection and transaction, and not committed here: the caller
+    commits the deletion with whatever else it clears, or rolls it back with it.
+    """
+    return (await db.execute("DELETE FROM pending_messages")).rowcount
+
+
 def _message_of(row: aiosqlite.Row) -> PendingMessage:
     last_attempted: datetime | None = None
     if row["last_attempted_at"]:

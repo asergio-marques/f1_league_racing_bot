@@ -221,7 +221,6 @@ class TestMarkFailed:
         assert await _row_count(db_path) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the retry queue has no clear_pending_on")
 async def test_clear_pending_on_deletes_every_undelivered_line_and_counts_them(tmp_path):
     """`clear_pending_on` deletes, on the caller's connection, every log line still waiting for
     delivery, and gives how many it deleted. Two lines wait, for channels 100 and 200. Cleared in

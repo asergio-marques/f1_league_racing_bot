@@ -2393,7 +2393,6 @@ async def _seed_change(
     return jobs
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the queue's records have no pending_job_on")
 async def test_pending_job_on_gives_the_stopped_job_first_else_the_next_not_done(tmp_path):
     """`pending_job_on` reads, on the caller's connection, the job the queue holds as (number,
     stopped, lane). With no change in hand, or only finished ones, it gives None. A league change

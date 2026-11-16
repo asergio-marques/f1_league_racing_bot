@@ -1933,11 +1933,9 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
     return +found
 
 
-#: Core's writes to the framework's audit log, until core writes it through the framework's audit
-#: writers.
-KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/upkeep/pack_service.py", "pack"): (2, "#544"),
-}
+#: Today's writes to a table outside its owner. None is left: core writes the framework's audit log
+#: through the framework's audit writers.
+KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_what_was_read_by_hand_is_still_what_it_was():
@@ -2404,7 +2402,6 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/seasons/season_end_changes.py", "_any_in_hand_on"): (1, "#544"),
     ("core/services/seasons/season_review_changes.py", "season_review_post_change.arm_expiry"): (1, "#544"),
-    ("core/services/upkeep/pack_service.py", "pending_job"): (2, "#544"),
 }
 
 

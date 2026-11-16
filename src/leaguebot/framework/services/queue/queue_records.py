@@ -24,9 +24,12 @@ import os
 import sqlite3
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from leaguebot.framework.db.database import get_connection
+
+if TYPE_CHECKING:
+    import aiosqlite
 
 
 def empty_queue_in(path: str | os.PathLike[str]) -> None:
@@ -128,6 +131,25 @@ async def in_hand(
             (*kinds, excluding, excluding),
         )
         return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
+
+
+async def pending_job_on(db: aiosqlite.Connection) -> tuple[int, bool, str] | None:
+    """The job the queue holds, as (number, stopped, lane), or None where no lane holds one.
+
+    Read on *db*, the caller's connection and transaction. Every lane is read, the league's and
+    each conversation's. A job *stopped* (failed, holding its lane until Retry or Discard) comes
+    first; else the first job not yet done of the oldest change still queued or running, which is
+    the one its lane's worker runs next.
+    """
+    row = await (
+        await db.execute(
+            "SELECT s.id, s.failing_since IS NOT NULL, c.lane FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id "
+            "WHERE c.state IN ('QUEUED', 'RUNNING') AND s.done_at IS NULL "
+            "ORDER BY s.failing_since IS NULL, c.id, s.position LIMIT 1"
+        )
+    ).fetchone()
+    return None if row is None else (int(row[0]), bool(row[1]), str(row[2]))
 
 
 async def done_step_results_before(
