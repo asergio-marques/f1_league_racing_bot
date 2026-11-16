@@ -377,9 +377,9 @@ module docstring). No reason for the choice of a separate program is recorded, s
 the boundary as built. `rasterise` writes the drawing to an intermediate SVG beside the PNG, runs
 the converter on it with a timeout (`_RASTERISE_TIMEOUT_SECONDS`), and removes that SVG whatever the
 outcome; the render calls it in a thread, as a blocking subprocess must not run on the event loop
-(the comment at its call in `ImageRenderService.render`). The converter's location is looked up once a minute at most
-(`_CACHE_TTL_SECONDS`, whose comment gives the reason: it is probed too often for a filesystem walk
-each time, and briefly enough that installing it is noticed without a restart).
+(the comment at its call in `ImageRenderService.render`). The converter's location is looked up once
+a minute at most (`_CACHE_TTL_SECONDS`, whose comment gives the reason: it is probed too often for a
+filesystem walk each time, and briefly enough that installing it is noticed without a restart).
 
 ---
 
