@@ -75,6 +75,7 @@ from leaguebot.core.services.rounds.round_steps import (
 )
 from leaguebot.core.services.cancellations import cancellation_notice_service as notices
 from leaguebot.core.services.cancellations.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
+from leaguebot.framework.services.queue.audit_service import record_change_on
 from leaguebot.framework.services.queue.queue_records import (
     in_hand,
 )
@@ -443,17 +444,14 @@ def _round_change(
             )
 
         division_id = int(row["division_id"])
-        stamp = now().isoformat()
+        stamp = now()
         changed = ""
         for field, new in ctx.payload["changes"]:
             old = row[field]
-            await db.execute(
-                "INSERT INTO audit_entries (actor_id, actor_name, division_id, change_type, "
-                "old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    ctx.actor_id, ctx.actor_name, division_id, f"round.{field}",
-                    str(old) if old is not None else "", str(new), stamp,
-                ),
+            await record_change_on(
+                db, actor_id=ctx.actor_id, actor_name=ctx.actor_name,
+                change_type=f"round.{field}", old_value=old, new_value=new, now=stamp,
+                division_id=division_id,
             )
             # Each field by a statement naming its column, so that nothing is spliced in.
             if field == "track_name":

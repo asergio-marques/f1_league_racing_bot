@@ -222,19 +222,14 @@ async def _stopped_at(league) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-_NOT_JSON_YET = "#544: a round field's audit values are written as text, not as JSON"
-
-
 @pytest.mark.parametrize(
     ("mystery", "old_value"),
     [
         pytest.param(
             False, '"Bahrain International Circuit"', id="a named track",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
         ),
         pytest.param(
             True, "null", id="a mystery round naming none",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JSON_YET),
         ),
     ],
 )
