@@ -133,7 +133,10 @@ async def _render(tmp_path, monkeypatch, palette, spec_builder=None):
     )})
     config_service = MagicMock()
     config_service.get_config = AsyncMock(return_value=MagicMock(per_tier_colour_enabled=True))
-    config_service.get_tier_palette = AsyncMock(return_value=palette)
+    if isinstance(palette, Exception):
+        config_service.get_tier_palette = AsyncMock(side_effect=palette)
+    else:
+        config_service.get_tier_palette = AsyncMock(return_value=palette)
     return await ImageRenderService(config_service, validity).render(
         _PROBE,
         spec_builder or (lambda root: FillSpec(root=root, image_type=_PROBE)),
@@ -159,25 +162,25 @@ async def test_the_palette_is_applied_before_the_spec_builder(tmp_path, monkeypa
     assert len(seen) == 1 and b"#A78BFA" in seen[0]
 
 
-async def test_a_failing_palette_never_stops_a_graphic_posting(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "palette",
+    [{"accent": "#A78BFA\x00"}, RuntimeError("db is gone")],
+    ids=["unpaintable", "unreadable"],
+)
+async def test_a_failing_palette_never_stops_a_graphic_posting(tmp_path, monkeypatch, palette):
     """A graphic in the wrong shade beats no graphic at all, but the league is told: a tier's
-    colour that cannot be written into the template still lets the picture be drawn, and the
-    render hands back one notice saying the tier's colours were not applied."""
-    outcome = await _render(tmp_path, monkeypatch, {"accent": "#A78BFA\x00"})
+    colours that cannot be written into the template, or cannot be read at all, still let the
+    picture be drawn, and the render hands back one notice in the image specification's words
+    (Conventions: colours that cannot be applied)."""
+    outcome = await _render(tmp_path, monkeypatch, palette)
 
     assert outcome.problem is None, outcome.problem
     assert len(outcome.png_paths) == 1
     assert [notice.image_type for notice in outcome.notices] == [_PROBE]
-    assert "colour" in outcome.notices[0].detail.lower()
-
-
-async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
-    service, config_service = _service()
-    config_service.get_config = AsyncMock(side_effect=RuntimeError("db is gone"))
-    with pytest.raises(RuntimeError):
-        await service.tier_palette("Division 1")
-    # ...but `render` is what must not raise, and it wraps the call.
-    assert "except Exception" in inspect.getsource(ImageRenderService.render)
+    assert outcome.notices[0].detail == (
+        "the colours of Division 1 could not be applied, so the graphic is drawn in the "
+        "template's own colours"
+    )
 
 
 # ── Every call site names its tier ────────────────────────────────────────
