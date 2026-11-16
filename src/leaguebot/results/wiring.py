@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 
 
 def _drawing_of(bot: "LeagueBot") -> "ImageDrawing":
-    """The image module's drawing, as image's own class, which the verdict jobs ask for the
-    verdicts' pictures.
+    """The image module's drawing, as image's own class, which results' jobs ask for the pictures
+    they post: a round's verdicts and the heading over them, its results and the standings.
 
     `LeagueBot` declares `image_drawing` as core's protocol, which holds only what core asks of
     it; the entry point attaches image's `ImageDrawing`, which answers what results asks besides.

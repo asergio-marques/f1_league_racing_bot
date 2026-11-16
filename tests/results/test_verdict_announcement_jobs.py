@@ -950,10 +950,10 @@ _FAULTED_PICTURES = [
 ]
 
 
-@pytest.mark.parametrize(("aspect", "template", "name"), [
-    _FAULTED_PICTURES[0],
-    *_FAULTED_PICTURES[1:],
-], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+@pytest.mark.parametrize(
+    ("aspect", "template", "name"), _FAULTED_PICTURES,
+    ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
+)
 async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     tmp_path, aspect, template, name,
 ):
@@ -990,10 +990,10 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
-@pytest.mark.parametrize(("aspect", "template", "name"), [
-    _FAULTED_PICTURES[0],
-    *_FAULTED_PICTURES[1:],
-], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+@pytest.mark.parametrize(
+    ("aspect", "template", "name"), _FAULTED_PICTURES,
+    ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
+)
 async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, aspect, template, name,
 ):
@@ -1031,10 +1031,10 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
     assert "Pro" in heading and "round 3" in heading.lower(), block
 
 
-@pytest.mark.parametrize(("aspect", "template", "name"), [
-    _FAULTED_PICTURES[0],
-    *_FAULTED_PICTURES[1:],
-], ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES])
+@pytest.mark.parametrize(
+    ("aspect", "template", "name"), _FAULTED_PICTURES,
+    ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
+)
 async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_is_retried(
     tmp_path, aspect, template, name,
 ):
