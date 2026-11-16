@@ -56,6 +56,32 @@ OPENING_STANDINGS = "opening_standings"
 FINAL_STANDINGS = "final_standings"
 
 
+def _refused_picture_lines(
+    ctx: StepContext, tables: "Sequence[PostedTable]", *, subject: str
+) -> tuple[str, ...]:
+    """The lines a job writes to the log for each table of its *subject* (the opening standings,
+    the final classification) whose picture went out as text: the member and the change it ran
+    for, then the division, the championship, what failed (Discord's refusal and its reason, or
+    the drawing's fault) and what puts it right, as the round's standings job says it
+    (image specification, "Errors"). No command posts these again, so none is named."""
+    division = str(ctx.step_payload["division_name"])
+    lines: tuple[str, ...] = ()
+    for table in tables:
+        if table.fault is None:
+            continue
+        put_right = f"no command posts the {subject} again, and the text stands"
+        if not table.at_discord:
+            put_right = f"fix the standings template; {put_right}"
+        lines += (
+            f"{ctx.named} | {ctx.what} | Standings posted as text\n"
+            f"  division: {division}\n"
+            f"  problem: the {table.championship} picture of the {subject} could not be "
+            f"posted: {table.fault}\n"
+            f"  to put it right: {put_right}",
+        )
+    return lines
+
+
 async def _opening_round(db_path: str, division_id: int):
     """The division's first round, read through core's `division_first_round`, or None where it
     has none.
@@ -487,7 +513,7 @@ def opening_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, 
             channel_id,
         ), lines=drawn_lines_kept(ctx.kept) + tuple(
             line for table in tables for line in table.lines
-        ))
+        ) + _refused_picture_lines(ctx, tables, subject="opening standings"))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
@@ -544,7 +570,7 @@ def final_steps(modules: ModuleService, drawing: "ImageDrawing") -> dict[str, St
             channel_id,
         ), lines=drawn_lines_kept(ctx.kept) + tuple(
             line for table in tables for line in table.lines
-        ))
+        ) + _refused_picture_lines(ctx, tables, subject="final classification"))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()

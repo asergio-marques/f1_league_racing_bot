@@ -2834,16 +2834,8 @@ async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_i
 # ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
 
 
-#: Why a refused final standings picture's log line is not yet pinned as written.
-REFUSED_PICTURE_UNLOGGED = (
-    "#288: a refused final standings picture goes out as text with no line in the log channel "
-    "saying Discord refused it, or why"
-)
-
-
 @pytest.mark.parametrize("refused", [
-    pytest.param("the picture",
-                 marks=pytest.mark.xfail(strict=True, reason=REFUSED_PICTURE_UNLOGGED)),
+    "the picture",
     "everything",
 ])
 async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_try(
