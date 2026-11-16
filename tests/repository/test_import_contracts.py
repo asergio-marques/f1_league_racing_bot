@@ -248,6 +248,26 @@ def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules()
     assert not CORE_PLUMBING_FOLDERS & CORE_LEAGUE_RULE_FOLDERS
 
 
+#: The framework's services, by topic (architecture.md, "How the code is laid out"): the change
+#: queue, posting to Discord, the modules' switches, and the scheduler's timers with the start-up
+#: sweep.
+FRAMEWORK_SERVICE_FOLDERS = frozenset({"queue", "posting", "switches", "jobs"})
+
+
+def test_the_framework_s_services_sit_in_its_topic_folders():
+    """The framework's services are grouped by topic into packages as core's are, with none loose
+    (architecture.md, "How the code is laid out"). The folders fill as the machinery moves out of
+    core, so each that is there is one of the named, and no file sits outside them."""
+    services = PACKAGE / "framework" / "services"
+    if not services.is_dir():
+        return
+    loose = sorted(path.name for path in services.glob("*.py") if path.name != "__init__.py")
+    folders = {path.name for path in services.iterdir() if (path / "__init__.py").is_file()}
+
+    assert loose == []
+    assert folders <= FRAMEWORK_SERVICE_FOLDERS
+
+
 def test_the_bot_s_type_names_the_services_for_the_type_checker_only():
     """The one permanent exception in `.importlinter` lets the bot's type import every service,
     the modules' among them, because it does so under `TYPE_CHECKING` and nothing runs because of
