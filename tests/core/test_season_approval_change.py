@@ -935,7 +935,7 @@ async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_
     change queue to open its round's submission, as the bot, and the queue is run. With results
     off every round is made FINAL, each division finishes, no channel is created and nothing is
     posted."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     league = await _league_for(tmp_path, monkeypatch, weather=False, results=False)
     await _pressed(league)
@@ -1657,7 +1657,7 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
     raises GuildUnavailable, a failure on Discord's side the queue stops on, rather than ending
     as done with nothing posted."""
     from leaguebot.__main__ import _sign_up_to_placements_confirmed
-    from leaguebot.core.models.change import GuildUnavailable
+    from leaguebot.framework.models.change import GuildUnavailable
     from leaguebot.core.services.queue.change_types import StepContext
 
     settings = SimpleNamespace(get_league_server_id=AsyncMock(return_value=1))

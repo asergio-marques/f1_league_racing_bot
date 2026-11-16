@@ -29,7 +29,7 @@ from typing import Any
 
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,

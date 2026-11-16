@@ -551,7 +551,7 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
     queue is not stopped."""
     import dataclasses
 
-    from leaguebot.core.models.change import Verdict
+    from leaguebot.framework.models.change import Verdict
     from leaguebot.core.services.settings.bot_init_change import KIND
     from tests.support.change_queue import run_queue, stopped_job
 
@@ -1011,7 +1011,7 @@ async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_anoth
     the stopped job stays stopped. Nothing is written as they ask; once the queue runs, the setting
     is saved and they are answered with today's reply, past the stop, while the other job stays
     stopped where it was."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import (
         acknowledgement,

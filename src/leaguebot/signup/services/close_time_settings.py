@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.queue.setting_change import After, Saved, Setting
 from leaguebot.utils.messages import discord_ts

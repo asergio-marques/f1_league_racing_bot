@@ -28,7 +28,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import Verdict
+from leaguebot.framework.models.change import Verdict
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting

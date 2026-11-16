@@ -910,7 +910,7 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
 
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.amendment import RoundArming
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
     from leaguebot.core.services.queue.change_types import Step
     from tests.support.change_queue import restart_queue
 

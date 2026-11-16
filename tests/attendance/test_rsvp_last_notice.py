@@ -208,7 +208,7 @@ async def _ask(bot: MagicMock, round_id: int = ROUND_ID) -> None:
     """Ask the queue for *round_id*'s last notice as its timer does, as the bot; run the
     queue."""
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_last_notice(bot.change_queue, bot.db_path, round_id,
                                    origin=ChangeOrigin.BOT)
@@ -497,7 +497,7 @@ async def _no_call_league(tmp_path):
 
 async def _ask_last_notice(league) -> None:
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
     from tests.support.season_league import PRO, round_id
 

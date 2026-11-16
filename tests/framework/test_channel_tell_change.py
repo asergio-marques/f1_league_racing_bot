@@ -67,7 +67,7 @@ async def env(tmp_path):
 
 async def _tell(env, *, mention: int | None = None) -> None:
     """Register `channel.tell` alone and ask it, as the bot's, to tell channel 707 `TEXT`."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.core.services.posting.channel_tell_change import channel_tell_change
 
     attach_queue(env.bot, env.db_path, now=env.clock, types=(channel_tell_change(),))

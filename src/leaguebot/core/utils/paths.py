@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 
 #: Repository root — five levels up from src/leaguebot/core/utils/paths.py.
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[4]

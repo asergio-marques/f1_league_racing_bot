@@ -915,7 +915,7 @@ async def _ask_channel_gone(league: SeasonLeague) -> int | None:
     """Ask the queue, as the bot, to end Kimi's signup because his signup channel (6405) was gone
     when his review panel was due, as the panel's job does; gives the change's id, or None where
     it was not due."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.signup.services.wizard_changes import CHANNEL_GONE
 
     return await league.bot.change_queue.ask(
@@ -1503,7 +1503,7 @@ def _stuck_turn(league: SeasonLeague) -> list[str]:
     """Register `KIMI_TURN`, a change of the test's own on Kimi's lane: one job posting in his
     channel, which Discord refuses, its conversation read from his wizard's row. Gives the list
     each try that reaches Discord is noted in."""
-    from leaguebot.core.models.change import (
+    from leaguebot.framework.models.change import (
         PlannedStep,
         StepFailedOnDiscord,
         StepKind,

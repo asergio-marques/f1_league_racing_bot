@@ -275,7 +275,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     Without `forget_held` in the clear the reply would still be updated, as
     `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
     """
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
     from leaguebot.core.utils.hooks import Hook
 

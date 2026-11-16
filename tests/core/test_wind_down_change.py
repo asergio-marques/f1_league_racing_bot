@@ -23,7 +23,7 @@ from unittest.mock import patch
 import discord
 import pytest
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from tests.support.change_queue import (
     change_rows,
     discard_job,

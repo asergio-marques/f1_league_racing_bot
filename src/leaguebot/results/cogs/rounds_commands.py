@@ -206,7 +206,7 @@ class RoundsCommands(ResultsSubgroup):
         replaces it, or until a restart forgets it, first deleting its channel where an
         earlier deletion failed.
         """
-        from leaguebot.core.models.change import VerdictKind
+        from leaguebot.framework.models.change import VerdictKind
         from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
         from leaguebot.results.models.points_config import SessionType
         from leaguebot.results.services.round_amendment.amend_changes import (

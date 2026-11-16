@@ -41,7 +41,7 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
 from leaguebot.attendance.services.check_in.check_in_record import checkin_record
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,
     StepFailedOnDiscord,

@@ -47,7 +47,7 @@ from leaguebot.results.services.publishing import (
     standings_drawing_composer,
 )
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from leaguebot.core.models.change import AuditRecord
+from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.session_result import (

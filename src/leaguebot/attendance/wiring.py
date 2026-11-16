@@ -378,7 +378,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
         advance_steps as check_in_advance_steps,
     )
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     scheduler = bot.scheduler_service
 

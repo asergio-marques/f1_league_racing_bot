@@ -16,7 +16,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.image.services.render.image_render_service import discard_attachment
 from tests.support.change_queue import in_a_job
 

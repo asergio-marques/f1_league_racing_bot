@@ -30,8 +30,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.change import AuditRecord, Verdict
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed

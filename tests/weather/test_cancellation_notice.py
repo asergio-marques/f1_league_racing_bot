@@ -67,7 +67,7 @@ async def test_a_raising_notice_raises_where_discord_refuses(tmp_path):
 
     import discord
 
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     bot = notice_bot(await notice_db(tmp_path))
     guild, channels = notice_guild()

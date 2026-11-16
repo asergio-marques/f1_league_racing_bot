@@ -228,7 +228,7 @@ async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
 
 
 async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(
@@ -1044,7 +1044,7 @@ async def _gate_s_unsettled_signups_and_channel_faults(db_path, monkeypatch):
 
 
 async def _gate_tiers_not_sequential(db_path, monkeypatch):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(

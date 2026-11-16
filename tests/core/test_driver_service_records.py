@@ -319,7 +319,7 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
 
 
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = DriverService(db_path)
 
@@ -332,7 +332,7 @@ async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
     Merging them is the one thing an account holding a profile could mean (issue #243), and
     two live signups cannot be one driver. The refusal changes nothing: the old profile stands
     and nothing is audited."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_profile(db_path, user_id=NEW_USER)
@@ -349,7 +349,7 @@ async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp
     """The new account holds no profile but results of its own — a driver deleted for never
     having raced a round in full — in the very division the driver raced. Joined, one person
     would stand twice in that season's standings (issue #243)."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_results(db_path, user_id=OLD_USER)
@@ -374,7 +374,7 @@ async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
 
 
 async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_snapshot(db_path, user_id=NEW_USER)

@@ -188,7 +188,7 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
     The check-in channel stands on the server holding every message `_msg_ids` names for both
     rounds; the call is posted there once, and nothing stops the queue."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     bot = await league_bot(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
@@ -263,7 +263,7 @@ async def _clean_up(
     rounds; with *attendance_enabled* false the module is off, in its configuration and to the
     module service alike."""
     from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_in_clean_up
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     if not attendance_enabled:
         async with get_connection(db_path) as db:
@@ -479,7 +479,7 @@ async def _ask(league, step: str) -> None:
     timer does, and run the queue to its end."""
     import importlib
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     home = importlib.import_module(f"leaguebot.attendance.services.check_in.check_in_{step}")
     ask = getattr(home, f"ask_check_in_{step}")

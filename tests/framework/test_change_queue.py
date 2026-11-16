@@ -83,7 +83,7 @@ def _acknowledges(text: str) -> bool:
 
 
 def _api() -> SimpleNamespace:
-    from leaguebot.core.models import change
+    from leaguebot.framework.models import change
     from leaguebot.core.services.queue import change_types
 
     return SimpleNamespace(

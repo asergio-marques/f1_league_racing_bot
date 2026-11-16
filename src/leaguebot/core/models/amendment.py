@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from leaguebot.core.models.change import PlannedStep
+from leaguebot.framework.models.change import PlannedStep
 from leaguebot.core.models.round import CheckInJobs, ForecastJobs
 
 

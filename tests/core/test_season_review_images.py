@@ -325,7 +325,7 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest(tmp_path):
     delete completing as already gone, and the queue is not stopped."""
     import discord
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import http_error, run_queue, stopped_job
 
     env = await _standing_placements(tmp_path)
@@ -618,7 +618,7 @@ SEASON_CHANGED = (
 def _approval_double(refusal: str, on_check=None):
     """A `season.approve` whose check, made as the queue is asked, refuses with *refusal*,
     calling *on_check* first where given. Its jobs, never reached, do nothing."""
-    from leaguebot.core.models import change
+    from leaguebot.framework.models import change
     from leaguebot.core.services.queue import change_types
 
     async def _check(_ctx):

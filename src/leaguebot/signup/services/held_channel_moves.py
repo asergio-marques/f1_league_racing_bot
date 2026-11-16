@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from leaguebot.core.models.change import GuildUnavailable, StepKind, StepResult
+from leaguebot.framework.models.change import GuildUnavailable, StepKind, StepResult
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.utils.interaction_errors import describe_fault

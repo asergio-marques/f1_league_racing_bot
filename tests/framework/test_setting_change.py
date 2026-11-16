@@ -88,7 +88,7 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False, **fie
     "Checked." for the reply, and raises while `after_faults` lasts; *carries_line* makes the
     success line wait for it.
     """
-    from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import Step
     from leaguebot.core.services.queue.setting_change import After, Saved, Setting
 

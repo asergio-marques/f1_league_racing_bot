@@ -465,7 +465,7 @@ async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
     (`season_lifecycle_service.py:493-494`)."""
     import discord
 
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 

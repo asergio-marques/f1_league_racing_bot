@@ -1758,7 +1758,7 @@ async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     with it) and Kimi's wizard unengaged; both turns are then found no longer due and
     dropped (the manager's whole, Kimi's job marked done as dropped), nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
     and neither lane stopped."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import member, register
     from tests.support.season_league import SIGNUP_CHANNEL_BASE

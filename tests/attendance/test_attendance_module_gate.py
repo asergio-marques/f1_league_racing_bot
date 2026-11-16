@@ -226,7 +226,7 @@ async def _ask(bot: MagicMock, step: str) -> list[int]:
     as the bot; run the queue; return the ids posted in the check-in channel."""
     import importlib
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
     home = importlib.import_module(f"leaguebot.attendance.services.check_in.check_in_{step}")
@@ -298,7 +298,7 @@ async def _ask_last_notice(bot: MagicMock) -> list[int]:
     """Ask the queue for the round's last notice as its timer does; run the queue; return the
     ids posted in the check-in channel."""
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
     await ask_check_in_last_notice(bot.change_queue, bot.db_path, ROUND_ID,

@@ -305,7 +305,7 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
     none stands; its switch-off is its own change already (`signup_off_change`), its tables not
     declared (#283, S11e)."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.models.change import module_off, module_on
+    from leaguebot.framework.models.change import module_off, module_on
 
     bot = MagicMock()
     register_change_types(bot)

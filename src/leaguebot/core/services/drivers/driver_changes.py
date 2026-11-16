@@ -72,7 +72,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -81,7 +81,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts

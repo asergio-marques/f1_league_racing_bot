@@ -810,7 +810,7 @@ async def test_a_dropped_panel_whose_parts_discord_will_not_remove_still_clears(
     is no longer stopped, and the log names the parts left for a manager to remove by hand
     (architecture.md, "How a change is carried out": an undiscardable step completes once its
     work is no longer owed)."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.posting import standing_posts
 
     league = await _submitted_at_length(tmp_path)

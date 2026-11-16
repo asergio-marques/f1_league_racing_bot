@@ -59,7 +59,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     FollowOn,
     PlannedStep,
     StepKind,

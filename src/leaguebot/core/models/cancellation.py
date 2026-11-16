@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from leaguebot.core.models.change import PlannedStep
+from leaguebot.framework.models.change import PlannedStep
 
 SCOPE_ROUND = "round"
 SCOPE_DIVISION = "division"

@@ -179,7 +179,7 @@ async def test_no_sheet_drawn_means_no_problem(tmp_path, toggle, images):
 async def test_a_reserve_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """Deliberate, and unlike the standings: a seated reserve takes a row, and so would the
     reserve being placed."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 

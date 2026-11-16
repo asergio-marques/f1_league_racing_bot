@@ -178,7 +178,7 @@ async def _seed(tmp_path):
 async def test_a_placement_past_the_declared_rows_is_refused_through_guard_assign(
     tmp_path, declare
 ):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 

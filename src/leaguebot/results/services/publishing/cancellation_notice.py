@@ -32,7 +32,7 @@ from leaguebot.core.models.cancellation import (
     SCOPE_ROUND,
     CancellationNotices,
 )
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services.cancellations.cancellation_notice_service import (
     post_cancellation_message,
     require_division,

@@ -485,7 +485,7 @@ async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
     server is set up but not in the bot's cache, as just after a restart. The job raises
     GuildUnavailable, so the queue stops on the server and Retry runs it again: it never reports a
     channel that is still there as gone, nor ends as "no channel is set" without having looked."""
-    from leaguebot.core.models.change import GuildUnavailable
+    from leaguebot.framework.models.change import GuildUnavailable
     from leaguebot.core.services.queue.change_types import StepContext
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
@@ -1630,7 +1630,7 @@ async def test_a_re_arming_queued_behind_a_cancellation_that_then_calls_the_roun
     cancellation refused earlier asks it. The queue runs: the cancellation calls round 3 off,
     and the re-arming, finding the round cancelled, is dropped as no longer due: nothing is armed
     and nothing stops the queue."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     league = await ongoing_league(tmp_path)
     await _asked(league)

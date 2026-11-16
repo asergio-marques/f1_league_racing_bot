@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -69,7 +69,7 @@ def _refusing(league: Any, channel_id: int) -> Any:
 async def _stop_the_queue(league: Any) -> None:
     """A change of the bot's, asked before anything else, whose job Discord refuses: the queue
     stops at it, and whatever is asked after it waits."""
-    from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     async def _refused(_ctx: Any) -> Any:
@@ -671,7 +671,7 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     channel, for the queue to stop on; nothing is posted."""
     from types import SimpleNamespace
 
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.drivers.lineup_posting import lineup_step
     from tests.support.change_queue import in_a_job
 

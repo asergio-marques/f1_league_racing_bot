@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.interaction_errors import report_failure

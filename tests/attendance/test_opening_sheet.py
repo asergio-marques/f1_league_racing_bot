@@ -110,7 +110,7 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     always raises, so it is asked for no `raise_on_failure`) reaches the job, for the queue to
     stop on."""
     from leaguebot.attendance.services.sheet import sheet_posting as service
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     _season_id, division_ids = await seed_season(db_path)
     attendance = AsyncMock(side_effect=StepFailedOnDiscord("the sheet could not be posted"))

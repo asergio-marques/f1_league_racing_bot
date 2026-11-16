@@ -41,9 +41,9 @@ from typing import TYPE_CHECKING, Any
 
 import discord
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.seasons.approval_checks import channel_on_server
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.queue.setting_change import (
     RENAMED_OUTCOME,

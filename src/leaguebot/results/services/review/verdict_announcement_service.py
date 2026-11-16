@@ -18,7 +18,7 @@ import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.notice_handler import send_notice
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import (

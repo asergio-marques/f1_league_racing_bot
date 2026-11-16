@@ -26,7 +26,7 @@ from leaguebot.core.models.cancellation import (
     CalledOffSteps,
     CancellationRound,
 )
-from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
+from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.utils.in_a_job import posts_in_a_job

@@ -65,7 +65,7 @@ async def _attach_verdict(tmp_path, *, status: str, name: str):
     """A league with results on, one season in *status* and the configuration "CFG" created;
     the `config_attach` setting's check asked, as a member asks it, to attach *name*.
     Returns the league, the season's id and the check's verdict."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.core.services.queue.change_types import CheckContext
     from leaguebot.results.services.points.points_settings import points_settings
 
@@ -89,7 +89,7 @@ async def _attach_verdict(tmp_path, *, status: str, name: str):
 
 async def test_attach_config_blocked_outside_setup(tmp_path):
     """The season is active: the check refuses in today's words, and nothing is attached."""
-    from leaguebot.core.models.change import VerdictKind
+    from leaguebot.framework.models.change import VerdictKind
 
     league, season_id, verdict = await _attach_verdict(tmp_path, status="ACTIVE", name="CFG")
 
@@ -122,7 +122,7 @@ async def test_attach_config_rejects_a_name_not_in_the_store(tmp_path):
     """#132. A typo attached a phantom that only surfaced as silence at approval. The season
     is in setup and "Standrad" was never created: the check refuses, naming the way out, and
     nothing is attached."""
-    from leaguebot.core.models.change import VerdictKind
+    from leaguebot.framework.models.change import VerdictKind
 
     league, season_id, verdict = await _attach_verdict(
         tmp_path, status="SETUP", name="Standrad"
@@ -138,7 +138,7 @@ async def test_attach_config_rejects_a_name_not_in_the_store(tmp_path):
 
 async def test_attach_config_checks_the_season_status_before_the_name(tmp_path):
     """An active season is refused for being active, whatever was typed into it."""
-    from leaguebot.core.models.change import VerdictKind
+    from leaguebot.framework.models.change import VerdictKind
 
     _league, _season_id, verdict = await _attach_verdict(
         tmp_path, status="ACTIVE", name="Whatever"

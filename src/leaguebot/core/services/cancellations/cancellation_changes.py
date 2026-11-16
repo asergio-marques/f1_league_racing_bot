@@ -108,7 +108,7 @@ from leaguebot.core.models.cancellation import (
     CalledOffSteps,
     CancellationRound,
 )
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     FollowOn,
     PlannedStep,

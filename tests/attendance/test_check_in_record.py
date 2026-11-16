@@ -108,7 +108,7 @@ def _check_in_deletes(*, refuse=None, wipe_db=None):
     raises `StepFailedOnDiscord` naming the three messages as undeleted, raised from *refuse*.
     With *wipe_db*, it clears that database's answers first, as delete steps that took them would.
     Its `calls` list each `(round_id, division_id)` it was asked."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     calls: list[tuple[int, int]] = []
 
@@ -245,7 +245,7 @@ async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(
 
     from leaguebot.attendance.services.check_in.check_in_clean_up import take_down_call
 
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)

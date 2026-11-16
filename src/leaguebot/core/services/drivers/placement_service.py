@@ -21,7 +21,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection, sole_row
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.services.drivers.driver_service import write_transition
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService

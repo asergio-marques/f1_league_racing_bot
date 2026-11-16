@@ -44,7 +44,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.results.test_amendment_stage_changes import (

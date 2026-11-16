@@ -98,7 +98,7 @@ async def test_every_departure_goes_through_the_wizard_clean_up(tmp_path, state)
     """Whatever the member's state, the listener asks the queue, as the bot, for one
     `signup.member_left` change naming them, and cleans nothing up itself: their driver state
     is as it was."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     db_path = await _make_db(tmp_path, name=f"mr_{state}", state=state)
     cog = _cog(db_path)

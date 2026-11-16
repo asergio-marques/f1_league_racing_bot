@@ -27,7 +27,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from tests.support.change_queue import (
     Clock,
     INTERACTION_CHANNEL_ID,

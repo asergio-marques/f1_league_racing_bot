@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.review.review_state import StagedPardon
@@ -696,7 +696,7 @@ async def block_queue(league: ReviewLeague, *, lane: str | None = None) -> dict[
 
     It stops the league lane, or with *lane* a conversation's (`"channel:<id>"`); `"league"` names
     the league's own."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     holder: dict[str, Any] = {"fail": True}

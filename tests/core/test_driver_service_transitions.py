@@ -96,7 +96,7 @@ async def test_a_transition_the_table_does_not_allow_raises(db_path, from_state,
     refusal a member reads: a caller judges the move first, and catches this by name only where
     a move raced past its judgement."""
     from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     await _seed_driver(db_path, "u1", from_state)
     with pytest.raises(InvalidDriverTransition) as refused:
         await transitioned(db_path, "u1", DriverState(to_state))

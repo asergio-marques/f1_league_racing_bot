@@ -19,7 +19,7 @@ import discord
 
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import driver_identities_on

@@ -61,7 +61,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, sole_row
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,

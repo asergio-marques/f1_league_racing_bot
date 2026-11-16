@@ -2159,7 +2159,7 @@ async def _ending(league: Any, end: str) -> Any:
     """Ask for *end* of the season: `/season complete`, `/season cancel`, `/season abort`, or the
     wind-down the bot asks once every division is done. Gives the command's interaction, or None
     for the wind-down, which no one types."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.season_league import WIND_DOWN_KIND, abort_season, cancel_season
 
     if end == "completion":

@@ -286,7 +286,7 @@ def _posting_type(
 ) -> Any:
     """A change whose one opening job plans the round's republication through the module, under
     *label*."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
     from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.results.services.review import review_posting
@@ -1386,7 +1386,7 @@ async def test_a_batch_notice_discord_refuses_stops_the_queue_like_any_job(tmp_p
 async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path):
     """The names only order a full tie, so a server the bot cannot see leaves them unresolved
     rather than stopping the queue: a post after the job stops it on the same fault."""
-    from leaguebot.core.models.change import PlannedStep, Verdict
+    from leaguebot.framework.models.change import PlannedStep, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType
     from leaguebot.results.services.review import review_posting
 

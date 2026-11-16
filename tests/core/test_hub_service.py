@@ -374,7 +374,7 @@ def _offer(league, *options):
 
 async def _ask_refresh(league, command="/module enable weather"):
     """The bot asks the queue to refresh the panel, as a module toggle's save does."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     return await league.bot.change_queue.ask(
         hub_service.HUB_REFRESH, {"command": command},

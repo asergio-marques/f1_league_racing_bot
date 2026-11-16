@@ -42,7 +42,7 @@ def _service(db_path):
 
 
 async def test_a_real_driver_is_refused_under_test_mode(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})
 
     with pytest.raises(Refused) as excinfo:
@@ -74,7 +74,7 @@ async def test_an_unknown_profile_is_left_to_the_check_that_reports_it(tmp_path)
 
 async def test_the_guard_runs_before_a_placement(tmp_path):
     """The refusal reaches the caller through the assignment's guards, not only in isolation."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})
     service = _service(db_path)
 

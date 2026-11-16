@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.models.change import Verdict
+from leaguebot.framework.models.change import Verdict
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.services.submission import result_submission_service, paste_reading

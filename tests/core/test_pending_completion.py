@@ -163,7 +163,7 @@ async def _wind_down_league(tmp_path, *, stage, signups_open=False):
 
 async def _wind_down(league):
     """Ask for the wind-down as the bot does, and run the queue; give the change's id."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
     from tests.support.season_league import WIND_DOWN_KIND
 

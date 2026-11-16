@@ -12,7 +12,7 @@ import logging
 import discord
 from discord import app_commands
 
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import (

@@ -48,7 +48,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,

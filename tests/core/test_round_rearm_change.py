@@ -61,7 +61,7 @@ async def _ask_rearm(league: Any, rid: int = R3, number: int = 3, *,
                      cleanups_only: bool = False) -> int | None:
     """Ask, as the bot, for round *number* of Pro (id *rid*) to be armed again, as a refused
     `/round cancel` asks it; with *cleanups_only*, its clean-ups alone, as for a raced round."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     payload: dict[str, Any] = {
         "round_id": rid, "round_number": number, "division_id": PRO, "division_name": "Pro",

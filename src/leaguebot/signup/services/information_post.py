@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Literal
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild

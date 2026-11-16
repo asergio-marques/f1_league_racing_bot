@@ -59,7 +59,7 @@ def _deleting(env) -> Any:
 
 
 def test_replaced_plans_one_delete_of_the_old_message():
-    from leaguebot.core.models.change import PlannedStep
+    from leaguebot.framework.models.change import PlannedStep
     from leaguebot.core.services.posting import standing_posts
 
     planned = standing_posts.replaced(CALENDAR_CHANNEL, OLD, NEW, what="calendar",
@@ -170,7 +170,7 @@ async def test_a_copy_a_failed_record_left_is_removed_before_the_next_try(env, r
     """A post's record failed after it sent 7001: before the next try posts again, 7001 is
     deleted and the old calendar (6001) is left for the delete job; where Discord refuses, the
     job fails again keeping 7001 to remove."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.posting import standing_posts
 
     calendar = _server(env)

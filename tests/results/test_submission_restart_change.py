@@ -188,7 +188,7 @@ async def test_a_round_whose_closing_is_stopped_is_not_taken_for_a_first_paste_a
     restart the recovery leaves round 3 alone, as one whose submission a change is closing: it
     asks no restart of it, which would delete the cancelled sessions and open the submission
     afresh."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.results.services.submission.submission_changes import CLOSE_KIND
 
     league = await _league(tmp_path)
@@ -219,7 +219,7 @@ async def test_a_round_whose_opening_is_stopped_is_not_taken_for_a_first_paste_a
     submission row open. At the restart the recovery leaves round 3 alone: it asks no restart of
     it, which would delete the new channel and its row, say the sessions were lost and open the
     submission afresh behind the stopped opening."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     league = await _league(tmp_path)
     await league.write("DELETE FROM round_submission_channels WHERE round_id = ?", ROUND_3)
@@ -253,7 +253,7 @@ async def test_a_resubmission_whose_swap_is_in_hand_is_not_ended_at_a_restart(tm
     round 3 alone: it asks no review opening to end the resubmission, which would queue behind
     the swap, say the earlier results still stand and record the resubmission as lapsed after the
     swap had replaced them."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.results.services.submission.resubmission_changes import SWAP_KIND
 
     league = await _league(tmp_path)

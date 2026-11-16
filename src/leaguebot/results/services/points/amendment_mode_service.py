@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import AuditRecord
+from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import Season
 from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.amendment_state import SeasonAmendmentState

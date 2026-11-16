@@ -30,7 +30,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import drivers_in_states
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
     PlannedStep,

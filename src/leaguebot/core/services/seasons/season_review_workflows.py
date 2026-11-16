@@ -31,7 +31,7 @@ from datetime import datetime
 
 import discord
 
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.seasons import approval_checks

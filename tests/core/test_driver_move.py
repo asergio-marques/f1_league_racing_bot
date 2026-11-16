@@ -177,7 +177,7 @@ async def test_the_seat_left_is_freed(db_path):
 
 
 async def test_an_uncommitted_placement_is_refused(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha", committed=0)
 
     with pytest.raises(Refused, match="not yet confirmed"):
@@ -187,7 +187,7 @@ async def test_an_uncommitted_placement_is_refused(db_path):
 
 
 async def test_a_move_into_a_division_already_held_is_refused(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
     await _seat(db_path, AM, "Alpha")
 
@@ -196,7 +196,7 @@ async def test_a_move_into_a_division_already_held_is_refused(db_path):
 
 
 async def test_a_move_into_the_team_already_sat_in_is_refused(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
 
     with pytest.raises(Refused, match="already sits in"):
@@ -204,7 +204,7 @@ async def test_a_move_into_the_team_already_sat_in_is_refused(db_path):
 
 
 async def test_a_move_into_a_full_team_is_refused_and_changes_nothing(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
     async with get_connection(db_path) as db:
         for profile_id in (6, 7):
@@ -248,14 +248,14 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
 
 
 async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     with pytest.raises(Refused, match="Driver profile not found"):
         await _move(_service(db_path), PRO, "Reserve", profile_id=999)
 
 
 async def test_a_move_from_a_division_the_driver_does_not_sit_in_is_refused(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     await _seat(db_path, AM, "Alpha")
 
     with pytest.raises(Refused, match="holds no seat in the division they are moved from"):

@@ -704,7 +704,7 @@ def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
     what it is handed (the connection, the scope and the round's target) and hands back one
     module's notice of its own. Returns the hook, the record, and that notice."""
     from leaguebot.core.models.cancellation import CancellationNotices
-    from leaguebot.core.models.change import PlannedStep
+    from leaguebot.framework.models.change import PlannedStep
     from leaguebot.core.utils.hooks import AwaitedHook
 
     planned = CancellationNotices(steps=(PlannedStep("notify_test", {"round": 1}),))

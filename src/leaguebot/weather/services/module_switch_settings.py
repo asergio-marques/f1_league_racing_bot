@@ -3,7 +3,7 @@
 `/module enable weather` and `/module disable weather` each ask one change built from a
 `Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("weather")` and
-`module_off("weather")` (`core/models/change.py`), so core's cog names the change without
+`module_off("weather")` (`framework/models/change.py`), so core's cog names the change without
 importing weather. Each save writes only `server_configs.weather_module_enabled`, weather's own
 column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 `tests/repository/test_architecture_rules.py`).
@@ -31,7 +31,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,

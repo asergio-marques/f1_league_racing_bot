@@ -200,7 +200,7 @@ async def test_no_standings_drawn_means_no_problem(tmp_path, toggle, images):
 
 async def test_a_race_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """The two seated reserves are not among the drivers counted: they hold no row."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     db_path, season_id, division_id = await _seed(tmp_path, drivers=2, reserves=2)
     template = _template_file(tmp_path, rows=2)

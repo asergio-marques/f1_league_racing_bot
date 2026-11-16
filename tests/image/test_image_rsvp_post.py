@@ -186,7 +186,7 @@ async def _post_the_call(league: SeasonLeague) -> list[int]:
     """Ask the queue for round 4's call as its timer does and run it; the ids sent in Pro's
     check-in channel."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
                             origin=ChangeOrigin.BOT)
@@ -320,7 +320,7 @@ async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeagu
 
 async def _run_the_deadline(league: SeasonLeague) -> None:
     from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_deadline(league.bot.change_queue, league.db_path, ROUND_3,
                                 origin=ChangeOrigin.BOT)

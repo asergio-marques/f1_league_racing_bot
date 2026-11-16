@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from leaguebot.core.models.change import StepKind, StepResult
+from leaguebot.framework.models.change import StepKind, StepResult
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile

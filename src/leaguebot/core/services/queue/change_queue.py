@@ -187,7 +187,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id, never_lend
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     ALWAYS_RUN_LANES,
     AuditRecord,
     ChangeOrigin,

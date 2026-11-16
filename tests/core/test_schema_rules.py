@@ -391,13 +391,13 @@ def _queue_change(db: sqlite3.Connection, state: str = "QUEUED", kind: str = "du
 
 async def test_a_change_s_states_match_the_enum(db_path):
     """Written twice, in the CHECK list and in `ChangeState`, and must not drift."""
-    from leaguebot.core.models.change import ChangeState
+    from leaguebot.framework.models.change import ChangeState
 
     assert _check_list(db_path, "queued_changes", "state") == {s.value for s in ChangeState}
 
 
 async def test_a_change_s_origins_match_the_enum(db_path):
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     assert _check_list(db_path, "queued_changes", "origin") == {o.value for o in ChangeOrigin}
 

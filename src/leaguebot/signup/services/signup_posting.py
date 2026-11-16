@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import discord
 
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.posting.owned_channel_handler import (
     delete_owned_channel,
     post_in_owned_channel,

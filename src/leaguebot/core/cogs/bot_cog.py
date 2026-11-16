@@ -38,7 +38,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.models.change import LEAGUE_LANE
+from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
 from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT

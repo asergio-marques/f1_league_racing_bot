@@ -2,7 +2,7 @@
 
 `/module enable results` asks one change built from the `Setting` below by `setting_change`
 (`core/services/queue/setting_change.py`, which holds what every settings change does with a value
-already held and with a fault): `module_on("results")` (`core/models/change.py`), so core's cog
+already held and with a fault): `module_on("results")` (`framework/models/change.py`), so core's cog
 names the change without importing results. `docs/design/architecture.md`, "How modules and core
 fit together", designs the gap this closes: weather's switch
 (`weather/services/module_switch_settings.py`) is the model.
@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,

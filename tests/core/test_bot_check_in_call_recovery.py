@@ -519,7 +519,7 @@ async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_i
     nothing is posted or written, the answer left for the round stands, the log channel is not
     told it was given up, and the queue does not stop."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     db_path = await _make_db(
         tmp_path, until_round=-timedelta(days=3), round_status=status, checkin_cleared=cleared

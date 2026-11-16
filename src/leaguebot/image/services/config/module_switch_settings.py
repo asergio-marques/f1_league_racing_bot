@@ -3,7 +3,7 @@
 `/module enable images` and `/module disable images` each ask one change built from a
 `Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("images")` and
-`module_off("images")` (`core/models/change.py`), so core's cog names the change without
+`module_off("images")` (`framework/models/change.py`), so core's cog names the change without
 importing image. `docs/design/architecture.md`, "How modules and core fit together", designs the
 gap this closes: weather's switch (`weather/services/module_switch_settings.py`) is the model.
 
@@ -38,7 +38,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (

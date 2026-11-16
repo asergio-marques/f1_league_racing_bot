@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-from leaguebot.core.models.change import ChangeOrigin, Verdict
+from leaguebot.framework.models.change import ChangeOrigin, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.image.services.portraits import driver_portrait_service
 from leaguebot.image.services.render import image_render_service

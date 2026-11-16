@@ -707,7 +707,7 @@ async def _run_the_round_job(db_path, round_id, *, results_enabled):
     """
     import contextlib
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.__main__ import register_module_switches
     from leaguebot.core.services.modules.module_service import ModuleService

@@ -31,7 +31,7 @@ from collections.abc import Collection
 
 import discord
 
-from leaguebot.core.models.change import StepFailedOnDiscord, StepKind, StepResult
+from leaguebot.framework.models.change import StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.services.queue.queue_records import unfinished
 from leaguebot.core.services.queue.change_types import ChangeType, Step, StepContext
 from leaguebot.core.services.posting.output_router import OutputRouter

@@ -13,7 +13,7 @@ from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import (
     DriverProfile, DriverState, InvalidDriverTransition,
 )
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)

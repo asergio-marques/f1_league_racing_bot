@@ -642,7 +642,7 @@ async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_
     the change runs at once, past the stop, and that the stopped job stays stopped; nothing is
     written as they ask. Once the queue runs, Division 1 has 780001, the manager is told the
     channel was set, and the other job is still stopped where it was."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     async def fails(_ctx) -> StepResult:

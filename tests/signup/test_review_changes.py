@@ -361,7 +361,7 @@ def _standing_timers(league: SeasonLeague, *standing: tuple[str, str]) -> set[tu
 
 async def _withdraw(league: SeasonLeague) -> None:
     """Kimi withdraws his signup, as Cancel Signup asks: `signup.end` for the reason withdrawn."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await league.bot.change_queue.ask(
         "signup.end", {"user_id": str(SIGNING_UP), "reason": "withdrawn"},

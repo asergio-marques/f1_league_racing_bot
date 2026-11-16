@@ -13,7 +13,7 @@ import aiosqlite
 from leaguebot.core.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.models.cancellation import SCOPE_ROUND, CancellationNotices
 from leaguebot.core.models.division import Division, DivisionStatus
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,

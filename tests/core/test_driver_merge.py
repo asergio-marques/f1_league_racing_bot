@@ -253,7 +253,7 @@ async def test_leftover_results_elsewhere_become_the_drivers(tmp_path):
 
 
 async def _refused(db_path: str, match: str) -> None:
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     before = await _snapshot(db_path)
     with pytest.raises(Refused, match=match):
         await _reassign(db_path, A, B)
@@ -292,7 +292,7 @@ async def test_with_no_module_answering_only_a_shared_seat_is_refused(tmp_path, 
     obstacle and the two are merged as though neither had raced, B's account becoming the
     driver's; a shared seat, which core records itself, is still refused in today's words,
     changing nothing."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     from leaguebot.core.utils.hooks import AwaitedHook
     from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 

@@ -82,7 +82,7 @@ async def _reassign(db_path: str, old: str, new: str):
 
 
 async def _refused(db_path: str, old: str, new: str, match: str) -> None:
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     before = await _state_of_the_league(db_path)
     with pytest.raises(Refused, match=match):
         await _reassign(db_path, old, new)

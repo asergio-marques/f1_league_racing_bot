@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.pending_message import PendingMessage
+from leaguebot.framework.models.pending_message import PendingMessage
 from leaguebot.utils.messages import discord_ts
 
 if TYPE_CHECKING:

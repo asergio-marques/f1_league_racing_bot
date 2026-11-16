@@ -53,7 +53,7 @@ from typing import Any, Awaitable, Callable
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
     GuildUnavailable,

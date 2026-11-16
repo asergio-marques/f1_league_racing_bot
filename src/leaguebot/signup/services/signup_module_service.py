@@ -11,7 +11,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
-from leaguebot.core.models.change import PlannedStep
+from leaguebot.framework.models.change import PlannedStep
 from leaguebot.core.models.driver_names import SignupName, SignupNames
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states

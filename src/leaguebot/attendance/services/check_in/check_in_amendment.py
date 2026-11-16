@@ -77,7 +77,7 @@ from leaguebot.attendance.services.check_in.check_in_deadline import check_in_de
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
-from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
+from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, CheckInJobs, Round
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import Step, StepContext, StepView

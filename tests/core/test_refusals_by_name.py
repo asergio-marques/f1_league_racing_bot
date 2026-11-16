@@ -58,7 +58,7 @@ def _placement_check(factory: str, **handed: Any) -> Callable[..., Awaitable[Non
     roles and posts a lineup afterwards."""
 
     async def run(tmp_path, monkeypatch) -> None:
-        from leaguebot.core.models.change import ChangeOrigin
+        from leaguebot.framework.models.change import ChangeOrigin
         from leaguebot.core.services.queue.change_types import CheckContext
         from leaguebot.core.services.drivers import driver_changes
 
@@ -158,7 +158,7 @@ def _team_check(factory: str, payload: dict) -> Callable[..., Awaitable[None]]:
     with a team service that raises a bug's `ValueError`."""
 
     async def run(tmp_path, monkeypatch) -> None:
-        from leaguebot.core.models.change import ChangeOrigin
+        from leaguebot.framework.models.change import ChangeOrigin
         from leaguebot.core.services.queue.change_types import CheckContext
 
         db_path = str(tmp_path / "check.db")
@@ -227,7 +227,7 @@ def _reassign_change(driver, profiles_merged=None):
 
 async def _reassign_checked(tmp_path, monkeypatch) -> None:
     """`/driver reassign` of 6501 to 6502 checked, the service's judge raising."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.core.services.queue.change_types import CheckContext
 
     db_path = str(tmp_path / "check.db")

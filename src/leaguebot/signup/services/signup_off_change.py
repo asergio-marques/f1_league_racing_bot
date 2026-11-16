@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     FollowOn,
     PlannedStep,

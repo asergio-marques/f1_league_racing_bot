@@ -50,8 +50,8 @@ from leaguebot.attendance.services.settings.channel_settings import NOT_ENABLED
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.drivers.role_moves import role_move_step

@@ -43,7 +43,7 @@ async def env(tmp_path):
 
 def _type(*steps: Any, check=None) -> Any:
     """A member's change, `dummy`, running *steps* in order."""
-    from leaguebot.core.models.change import PlannedStep, Verdict
+    from leaguebot.framework.models.change import PlannedStep, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType
 
     async def _go(_ctx):
@@ -62,7 +62,7 @@ def _type(*steps: Any, check=None) -> Any:
 
 def _peeking(name: str, seen: dict[str, Any]) -> Any:
     """An `ACT` job noting the running job's number it sees, under its own name."""
-    from leaguebot.core.models.change import StepKind, StepResult
+    from leaguebot.framework.models.change import StepKind, StepResult
     from leaguebot.core.services.queue.change_types import Step
     from leaguebot.core.utils.in_a_job import current_job
 
@@ -100,7 +100,7 @@ async def test_a_step_runs_with_its_job_number_in_context(env):
 async def test_a_record_runs_with_its_job_number_in_context(env):
     """A job that posts and records what it posted: its `record`, saved with its mark, sees the
     job's number too."""
-    from leaguebot.core.models.change import StepKind, StepResult
+    from leaguebot.framework.models.change import StepKind, StepResult
     from leaguebot.core.services.queue.change_types import Step
     from leaguebot.core.utils.in_a_job import current_job
 
@@ -133,7 +133,7 @@ async def test_nothing_outside_a_step_sees_a_job_number(env):
 
 async def test_a_task_a_step_starts_inherits_its_job_number(env):
     """A job starts a task of its own and waits for it: the task sees the job's number."""
-    from leaguebot.core.models.change import StepKind, StepResult
+    from leaguebot.framework.models.change import StepKind, StepResult
     from leaguebot.core.services.queue.change_types import Step
     from leaguebot.core.utils.in_a_job import current_job
 
@@ -155,7 +155,7 @@ async def test_a_step_s_check_and_still_due_run_outside_a_job(env):
     """The change's check, asked when it is asked for and again when it runs, and a job's
     `still_due`, asked before the job runs, are not the job: they see no job's number, while
     the job itself does."""
-    from leaguebot.core.models.change import StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import Step
     from leaguebot.core.utils.in_a_job import current_job
 
@@ -218,7 +218,7 @@ async def test_the_guard_raises_no_discord_failure():
     """A post outside a job is a fault in the bot's own code, not a refusal by Discord: the error
     is no `StepFailedOnDiscord`, so a step that posts outside its job is never taken for a
     message Discord refused and tried again on the schedule as one."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.utils.in_a_job import PostedOutsideAJob, posts_in_a_job
 
     assert not issubclass(PostedOutsideAJob, StepFailedOnDiscord)

@@ -161,7 +161,7 @@ async def test_the_opening_standings_post_reads_the_division_s_standings_channel
 async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     """Div A's standings channel (900) has been deleted from the server: the job raises for
     the queue to stop on, rather than passing over the division in silence."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
@@ -289,7 +289,7 @@ async def test_the_final_standings_stand_beside_the_last_round_s_and_replace_not
 async def test_final_standings_whose_channel_was_deleted_raise(db_path):
     """Div A's standings channel (900) has been deleted from the server: the job raises for the
     queue to stop on."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
@@ -339,7 +339,7 @@ async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try
     """Div A's final standings are posted in part: message 9201 went out and the rest was
     refused. The job raises with 9201 to keep; the next try, handed it, removes 9201 from the
     standings channel before it posts both again."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
@@ -381,7 +381,7 @@ async def test_the_earlier_try_s_picture_lines_stay_on_what_a_removal_returns(db
     left standing and still carrying the line, since a stop's result replaces what the job kept and
     the retry that posts the text must hand it back once. Where 9201 will not delete, the stop it
     raises names it as left and carries the line too."""
-    from leaguebot.core.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.framework.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.standings import season_standings_posts as service
 
     line = "⚠️ Standings image — Pro round 2 — drivers standings: refused (Missing Access)"
@@ -409,7 +409,7 @@ async def test_the_final_standings_keep_the_earlier_try_s_picture_lines_when_thi
     kept with the table standing. On the retry the table is taken down, then reading the
     standings fails on a fault in the bot, not Discord's: the stop that results names nothing
     left standing and keeps the picture's line."""
-    from leaguebot.core.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.framework.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)

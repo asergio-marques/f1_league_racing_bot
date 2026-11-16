@@ -53,7 +53,7 @@ from typing import Any
 import discord
 from discord import app_commands
 
-from leaguebot.core.models.recovery import RoundsFailed
+from leaguebot.framework.models.recovery import RoundsFailed
 from leaguebot.core.utils.member_names import interaction_member
 
 log = logging.getLogger(__name__)

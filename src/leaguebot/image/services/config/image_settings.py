@@ -35,7 +35,7 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
 from leaguebot.core.utils.paths import resolve_within_project_root

@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict
+from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,

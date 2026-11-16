@@ -178,7 +178,7 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     """Each guard refuses in its words where the drawing reports a problem, and lets the assignment
     through where it reports none, and where it raises (the error kept whole in the host's
     log)."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     from leaguebot.core.services.modules.image_drawing import CapacityProblem
 
     db_path, season_id, division_id = await _seed(tmp_path)

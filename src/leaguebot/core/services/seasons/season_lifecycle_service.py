@@ -22,7 +22,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     GuildUnavailable,
     PlannedStep,
     StepKind,

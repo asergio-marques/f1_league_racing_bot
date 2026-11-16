@@ -1123,7 +1123,7 @@ async def test_the_close_wins_over_a_last_answer_handed_over_behind_it(tmp_path)
     close is done and Kimi returned to Not Signed Up; his submission finds him returned and is
     dropped as no longer due, saving no signup record. Kimi learns of the close from the close's
     own notice in his channel, the only one he is sent."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     league = await _close_league(tmp_path, SIGNING_UP)
     # On his last question, a state of the wizard's own (the helper gives it the driver's).

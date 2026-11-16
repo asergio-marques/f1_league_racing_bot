@@ -536,7 +536,7 @@ async def test_a_subscriber_s_planned_steps_are_planned_in_the_save_in_order(tmp
     save, then Pro's check-in notice, attendance's own take-down of round 3's call, the module's
     take-down of round 4's, then the forecast and results notes, the calendar and the close."""
     from leaguebot.core.models.cancellation import CalledOffSteps
-    from leaguebot.core.models.change import PlannedStep
+    from leaguebot.framework.models.change import PlannedStep
 
     league = await ongoing_league(tmp_path)
     seen: list[tuple[str, list[tuple[int, int, str, bool]]]] = []

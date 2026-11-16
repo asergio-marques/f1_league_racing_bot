@@ -291,7 +291,7 @@ async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_
     is stopped at a change of its own. When the timer fires, the callback the builder registered
     asks the clear as the bot's: it is saved on the channel's lane, not the league's, and runs
     there while the league stays stopped."""
-    from leaguebot.core.models.change import (
+    from leaguebot.framework.models.change import (
         ChangeOrigin,
         PlannedStep,
         StepFailedOnDiscord,

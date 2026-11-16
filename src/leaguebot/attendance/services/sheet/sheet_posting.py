@@ -27,7 +27,7 @@ import aiosqlite
 
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,

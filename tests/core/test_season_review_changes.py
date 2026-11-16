@@ -150,7 +150,7 @@ async def standing(tmp_path):
 
 async def _take_down(env: Any, ending: str) -> None:
     """The bot asks for Alex's review in channel 700 to be taken down, as *ending* has it."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     channel = env.channel
     await env.bot.change_queue.ask(

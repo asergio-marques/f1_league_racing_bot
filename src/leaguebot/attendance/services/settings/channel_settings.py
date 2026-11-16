@@ -35,7 +35,7 @@ from leaguebot.attendance.services.settings.division_channels import (
     set_attendance_channel,
     set_rsvp_channel,
 )
-from leaguebot.core.models.change import AuditRecord, Verdict
+from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.channel_registry_service import (

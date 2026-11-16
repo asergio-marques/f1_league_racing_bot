@@ -133,7 +133,7 @@ async def test_a_committed_driver_is_refused_where_only_uncommitted_ones_may_be_
     """Mid-season placing: the driver already holds a confirmed seat at Alpha in Division 1, and
     is assigned to Division 2 where only unconfirmed drivers may be placed. The save refuses him,
     saying he already holds a confirmed placement, and places him nowhere new."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _place(db_path)  # committed, in the ACTIVE fixture season
     async with get_connection(db_path) as db:
@@ -170,7 +170,7 @@ async def test_removing_an_uncommitted_placement_revokes_nothing_and_posts_nothi
 async def test_a_committed_placement_is_refused_where_only_uncommitted_ones_may_be_removed(tmp_path):
     """The driver sits confirmed at Alpha in Division 1. Taking him out where only unconfirmed
     placements may be removed is refused, pointing to `/driver move`, and he stays confirmed."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _place(db_path)  # committed, in the ACTIVE fixture season
 

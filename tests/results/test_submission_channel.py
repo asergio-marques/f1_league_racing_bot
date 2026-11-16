@@ -142,7 +142,7 @@ async def _opening_league(tmp_path: Any) -> SeasonLeague:
 async def _open(league: SeasonLeague) -> None:
     """Pro's round 3 starts: its timer asks the queue to open its submission, as the bot, and
     the queue is run."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await league.bot.change_queue.ask(
         "results.submission.open", {"round_id": PRO_ROUND_3},

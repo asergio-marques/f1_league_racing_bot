@@ -161,7 +161,7 @@ async def _seat_occupant(db_path: str, division_id: int):
 
 
 async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     async with get_connection(db_path) as db:
@@ -175,7 +175,7 @@ async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
 @pytest.mark.parametrize("state", ["UNASSIGNED", "NOT_SIGNED_UP", "PENDING_ADMIN_APPROVAL"])
 async def test_a_driver_not_currently_assigned_is_refused(tmp_path, state):
     """The refusal quotes the state back, so a manager can see why."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, state=state)
 
     with pytest.raises(Refused, match="Assigned state"):
@@ -185,7 +185,7 @@ async def test_a_driver_not_currently_assigned_is_refused(tmp_path, state):
 async def test_a_driver_not_in_that_division_is_refused_by_division_name(tmp_path):
     """A manager unassigning from the wrong division needs to know which one was looked
     in — "not assigned" alone would leave them checking the driver instead."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seat(db_path, DIVISION_A)
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,

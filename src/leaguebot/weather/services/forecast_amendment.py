@@ -22,7 +22,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
-from leaguebot.core.models.change import PlannedStep
+from leaguebot.framework.models.change import PlannedStep
 from leaguebot.core.models.round import (
     ForecastJobs,
     Round,

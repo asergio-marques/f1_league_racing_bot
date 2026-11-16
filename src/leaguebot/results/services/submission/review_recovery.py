@@ -53,7 +53,7 @@ from typing import Any, Protocol
 
 import discord
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.queue_records import ever_asked, unfinished

@@ -59,7 +59,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import sole_row
-from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.framework.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.posting.notice_handler import delete_notice
 from leaguebot.core.services.posting.standing_post_handler import delete_standing

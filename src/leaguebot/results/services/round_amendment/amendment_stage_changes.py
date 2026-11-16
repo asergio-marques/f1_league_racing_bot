@@ -63,7 +63,7 @@ import aiosqlite
 
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     FollowOn,
     PlannedStep,
     StepFailedOnDiscord,

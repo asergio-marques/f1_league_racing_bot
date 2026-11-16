@@ -227,7 +227,7 @@ def _taken(member) -> set[int]:
 async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
     """Discord answers the fetch of driver 101 with a server error, not "unknown member": the
     job stops, raised from the fault, and nothing is taken."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     fault = discord.HTTPException(MagicMock(status=503, reason="Unavailable"), "try later")
@@ -245,7 +245,7 @@ async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
 async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
     """Driver 101 is fetched, but Discord refuses to take their roles (403): the job stops,
     raised from the refusal."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     guild, member = _revocation_guild()

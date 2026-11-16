@@ -21,7 +21,7 @@ from leaguebot.core.services.posting.owned_channel_handler import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons import season_service

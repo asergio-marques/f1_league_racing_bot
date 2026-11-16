@@ -42,7 +42,7 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     standing_call_row,
 )
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,
     StepFailedOnDiscord,

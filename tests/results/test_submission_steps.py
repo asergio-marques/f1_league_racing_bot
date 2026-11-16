@@ -80,7 +80,7 @@ async def _record_channel(db: Any, _ctx: Any, result: Any) -> None:
 async def _run(league: ReviewLeague, *planned: tuple[Any, dict[str, Any]]) -> None:
     """Ask a member's dummy change running the *planned* steps, each with its payload, then run
     the queue."""
-    from leaguebot.core.models.change import PlannedStep, Verdict
+    from leaguebot.framework.models.change import PlannedStep, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType
 
     async def _go(_ctx: Any) -> Any:

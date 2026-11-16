@@ -29,7 +29,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,

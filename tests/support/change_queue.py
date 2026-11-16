@@ -761,7 +761,7 @@ PAST_THE_STOP = (
 async def stop_the_league_lane(bot: Any, db_path: str) -> dict[str, Any]:
     """Stop the league's lane on another job: a change whose one job fails on a fault in the bot
     is asked and run. Gives the job it stopped at."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     async def fails(_ctx: Any) -> StepResult:

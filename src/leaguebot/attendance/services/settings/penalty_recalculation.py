@@ -55,7 +55,7 @@ from leaguebot.attendance.services.scoring import attendance_recompute
 from leaguebot.attendance.services.sheet import sheet_posting
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict, VerdictKind
+from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict, VerdictKind
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import ONGOING_STAGES

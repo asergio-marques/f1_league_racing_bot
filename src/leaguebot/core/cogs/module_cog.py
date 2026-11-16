@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.models.change import module_off, module_on
+from leaguebot.framework.models.change import module_off, module_on
 from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot

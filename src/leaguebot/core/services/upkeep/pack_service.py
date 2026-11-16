@@ -47,7 +47,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import LEAGUE_LANE
+from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL

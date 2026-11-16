@@ -253,7 +253,7 @@ async def _ask(bot: MagicMock, *, replacing: bool = False) -> None:
     """Ask the queue for round 1's call, as its timer does or, *replacing*, as an amendment
     posts it again; then run the queue."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_call(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT,
                             replacing=replacing)
@@ -664,7 +664,7 @@ async def _second_reserve(db_path: str) -> None:
 async def _ask_deadline(bot: MagicMock) -> None:
     """Ask the queue for round 1's deadline as its timer does, and run the queue."""
     from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_deadline(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
     await run_queue(bot)

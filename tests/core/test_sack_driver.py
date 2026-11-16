@@ -201,7 +201,7 @@ async def _profile_state(db_path):
 
 async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     """Issue #220: an uncommitted placement is unassigned, an Unassigned driver rejected."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, name="sack_uncommitted")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE driver_season_assignments SET committed = 0")
@@ -228,7 +228,7 @@ async def test_any_other_state_is_refused(tmp_path, state):
     refusal names the state it found: a manager who meets it needs to know which state they
     hit, not merely that they hit one — a driver still in review and one already gone call for
     different next steps."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, name=f"refuse_{state.value}", state=state)
 
     with pytest.raises(Refused, match=f"Unassigned or Assigned.*{state.value}"):

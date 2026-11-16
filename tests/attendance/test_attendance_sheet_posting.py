@@ -20,7 +20,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
 from leaguebot.attendance.services.sheet.attendance_sheet import post_attendance_sheet

@@ -31,7 +31,7 @@ from dataclasses import dataclass
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.services.modules.image_drawing import CapacityProblem, ImageDrawing
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
