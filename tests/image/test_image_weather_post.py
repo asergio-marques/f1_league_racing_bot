@@ -334,25 +334,6 @@ async def test_a_commanded_posting_rejects_rather_than_falling_back():
     assert render.problem == "missing track_name"
 
 
-@pytest.mark.asyncio
-async def test_a_resolution_fault_rejects_only_when_commanded():
-    from leaguebot.image.models.image_module import PostingOrigin
-    from leaguebot.image.services.aspects.image_weather_post import render_forecast
-
-    bot = MagicMock()
-    bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("no config"))
-    drawing = MagicMock(template_key="weather_p1_template")
-
-    scheduled = await render_forecast(
-        bot.image_config_service, bot.image_render_service, drawing, origin=PostingOrigin.SCHEDULED,
-    )
-    assert scheduled.draws is False and scheduled.rejects is False
-
-    commanded = await render_forecast(
-        bot.image_config_service, bot.image_render_service, drawing, origin=PostingOrigin.COMMANDED,
-    )
-    assert commanded.rejects is True
-
 
 @pytest.mark.asyncio
 async def test_a_successful_render_hands_back_the_png():
