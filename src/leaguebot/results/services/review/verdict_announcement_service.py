@@ -381,15 +381,48 @@ async def _record_announcement_on(
     )
 
 
-class PictureRefused(Exception):
-    """Discord refused the post of a verdict's picture, *cause* being its refusal. The picture is
-    drawn on the first try alone, so *lines*, what it said when drawn, are kept with the stop for
-    the try that posts the text to hand back."""
+_SANCTION_PUT_RIGHT = (
+    "fix the verdict template; no command posts a sanction's card again, and the text card stands"
+)
+_VERDICT_PUT_RIGHT = (
+    "fix the verdict template, then, once the round is final, amend the round with "
+    "`/results rounds amend` to announce it again"
+)
 
-    def __init__(self, cause: discord.HTTPException, lines: tuple[str, ...]) -> None:
+
+class VerdictRefused(Exception):
+    """Discord refused the post of a verdict, as a picture or, where the picture could not be
+    drawn, as the text that stands in its place, *cause* being its refusal. The picture is drawn
+    on the first try alone, so *lines*, what it said when drawn, and *fault*, why it was not
+    posted where it was not drawn, are kept with the stop (`FALLBACK_ATTRIBUTE`) for the try that
+    posts the text to hand back."""
+
+    def __init__(
+        self, cause: discord.HTTPException, lines: tuple[str, ...], fault: str | None = None
+    ) -> None:
         super().__init__(str(cause))
         self.cause = cause
         self.lines = lines
+        self.fault = fault
+
+
+#: What a stop raised for a refused verdict carries the lines of its picture under: a callable
+#: from the job's member and change to the lines (`_fallback_lines`), for the job to compose.
+FALLBACK_ATTRIBUTE = "verdict_fallback"
+
+
+def _refused_stop(
+    refused: VerdictRefused, what: str, division_name: str, round_number, put_right: str
+) -> StepFailedOnDiscord:
+    """The stop for a refused verdict (*what*, "the verdict" or "the sanction's announcement"),
+    with its picture's lines kept on it for the job to hand back once the text posts."""
+    stop = StepFailedOnDiscord(
+        f"{what} could not be posted: {refused.cause}"
+    ).carrying(refused.lines)
+    setattr(stop, FALLBACK_ATTRIBUTE, _fallback_lines(
+        SentVerdict(None, refused.fault, refused.lines), division_name, round_number, put_right,
+    ))
+    return stop
 
 
 class SentVerdict(NamedTuple):
@@ -514,7 +547,7 @@ async def _send_verdict(
                     file=attachment,
                 )
             except discord.HTTPException as refused:
-                raise PictureRefused(refused, lines) from refused
+                raise VerdictRefused(refused, lines) from refused
             return SentVerdict(message, None, lines)
         finally:
             if drawing is not None:  # a picture is drawn only through it
@@ -531,9 +564,11 @@ async def _send_verdict(
         justification_text,
         driver_display_name=driver_display_name,
     )
-    return SentVerdict(
-        await send_notice(target_channel, content, mentions=_VERDICT_MENTIONS), fault, lines
-    )
+    try:
+        message = await send_notice(target_channel, content, mentions=_VERDICT_MENTIONS)
+    except discord.HTTPException as refused:
+        raise VerdictRefused(refused, lines, fault) from refused
+    return SentVerdict(message, fault, lines)
 
 
 async def announce_sanction(
@@ -606,16 +641,16 @@ async def announce_sanction(
             justification_text=justification_text,
             as_text=as_text,
         )
-    except PictureRefused as refused:
-        raise StepFailedOnDiscord(
-            f"the sanction's announcement could not be posted: {refused.cause}"
-        ).carrying(refused.lines) from refused.cause
+    except VerdictRefused as refused:
+        raise _refused_stop(
+            refused, "the sanction's announcement", ctx["division_name"], ctx["round_number"],
+            _SANCTION_PUT_RIGHT,
+        ) from refused.cause
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the sanction's announcement could not be posted: {exc}") from exc
     return _fallback_lines(
         sent, ctx["division_name"], ctx["round_number"],
-        "fix the verdict template; no command posts a sanction's card again, and the text card "
-        "stands",
+        _SANCTION_PUT_RIGHT,
     )
 
 
@@ -707,18 +742,18 @@ async def announce_verdict(
             ),
             as_text=as_text,
         )
-    except PictureRefused as refused:
-        raise StepFailedOnDiscord(
-            f"the verdict could not be posted: {refused.cause}"
-        ).carrying(refused.lines) from refused.cause
+    except VerdictRefused as refused:
+        raise _refused_stop(
+            refused, "the verdict", ctx["division_name"], result_ctx["round_number"],
+            _VERDICT_PUT_RIGHT,
+        ) from refused.cause
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the verdict could not be posted: {exc}") from exc
     if sent.message is None:
         raise StepFailedOnDiscord("the verdict could not be posted")
     fallback = _fallback_lines(
         sent, ctx["division_name"], result_ctx["round_number"],
-        "fix the verdict template, then, once the round is final, amend the round with "
-        "`/results rounds amend` to announce it again",
+        _VERDICT_PUT_RIGHT,
     )
     return AnnouncedVerdict(int(getattr(sent.message, "id")), int(channel.id), fallback)
 

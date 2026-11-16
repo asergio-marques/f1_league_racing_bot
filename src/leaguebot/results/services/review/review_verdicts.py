@@ -625,6 +625,17 @@ async def _describe_verdict(ctx: StepContext) -> str:
     return f"announcing the {kind} verdict for <@{payload['record']['driver_user_id']}>{where}"
 
 
+def _carrying_verdict_lines(
+    ctx: StepContext, stop: StepFailedOnDiscord, earlier: tuple[str, ...]
+) -> StepFailedOnDiscord:
+    """*stop*, a refused verdict or sanction card, with what its picture said kept on it beside
+    *earlier*, the lines of the tries before: a picture is drawn on the first try alone, so what it
+    said, and why it went out as text where it was not drawn, must go with the stop for the try
+    that posts to hand back, never lost with a post Discord refused."""
+    fallback = getattr(stop, vas.FALLBACK_ATTRIBUTE, None)
+    return stop.carrying(earlier + (() if fallback is None else fallback(ctx.named, ctx.what)))
+
+
 async def _announce_verdict(ctx: StepContext, drawing: ImageDrawing) -> StepResult:
     payload = ctx.step_payload
     round_id = int(payload["round_id"])
@@ -639,7 +650,7 @@ async def _announce_verdict(ctx: StepContext, drawing: ImageDrawing) -> StepResu
             drawing=drawing, as_text=ctx.tries > 0,
         )
     except StepFailedOnDiscord as stop:
-        raise stop.carrying(drawn) from stop.__cause__
+        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
     lines = drawn + (() if announced.fallback is None else announced.fallback(ctx.named, ctx.what))
     return StepResult(
         result={"message_id": announced.message_id, "channel_id": announced.channel_id},
@@ -954,7 +965,7 @@ async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> S
             payload["candidate"], as_text=ctx.tries > 0,
         )
     except StepFailedOnDiscord as stop:
-        raise stop.carrying(drawn) from stop.__cause__
+        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
     return StepResult(lines=drawn + (() if fallback is None else fallback(ctx.named, ctx.what)))
 
 
