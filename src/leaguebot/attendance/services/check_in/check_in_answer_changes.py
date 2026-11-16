@@ -71,7 +71,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.posting.notice_handler import edit_notice
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import round_facts_on

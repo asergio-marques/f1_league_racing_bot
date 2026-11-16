@@ -16,7 +16,7 @@ from leaguebot.core.services.posting.owned_channel_handler import edit_in_owned_
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse

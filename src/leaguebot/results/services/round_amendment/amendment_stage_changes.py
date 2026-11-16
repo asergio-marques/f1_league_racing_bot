@@ -87,7 +87,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.seasons.season_service import round_facts_on, rounds_from_on
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review import review_posting, review_verdicts

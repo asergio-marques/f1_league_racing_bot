@@ -29,7 +29,7 @@ from leaguebot.core.services.seasons.season_service import (
     division_rounds_in_order_on,
     round_facts_on,
 )
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot

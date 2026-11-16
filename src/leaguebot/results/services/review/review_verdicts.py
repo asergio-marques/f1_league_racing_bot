@@ -92,7 +92,7 @@ from leaguebot.core.services.posting.owned_channel_handler import delete_in_owne
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.image.models import verdict_banner_drawing
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview

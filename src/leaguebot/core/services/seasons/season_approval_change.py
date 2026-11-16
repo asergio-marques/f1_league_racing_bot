@@ -76,7 +76,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.seasons.season_service import (
     SeasonService,

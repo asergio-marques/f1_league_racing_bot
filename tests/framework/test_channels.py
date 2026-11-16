@@ -9,10 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
-
-@pytest.mark.xfail(strict=True, reason="#544: the channel cast is not yet in the framework")
 def test_as_text_channel_hands_back_the_channel_it_was_given():
     """A narrowing for the type check alone: the same object, and None stays None."""
     from leaguebot.framework.utils.channels import as_text_channel

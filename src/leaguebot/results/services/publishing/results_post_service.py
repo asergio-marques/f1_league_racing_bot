@@ -20,7 +20,7 @@ from leaguebot.core.services.posting.standing_post_handler import (
     post_standing,
 )
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.drivers.driver_service import (
     current_account_map_for_division,

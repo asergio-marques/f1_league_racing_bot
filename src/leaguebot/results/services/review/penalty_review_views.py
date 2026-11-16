@@ -25,7 +25,7 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import (
     accounts_of_in_division, current_account_map_for_division, driver_test_names_on,
 )

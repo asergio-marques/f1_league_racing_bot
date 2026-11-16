@@ -33,9 +33,9 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
-    as_text_channel,
     find_channel_use,
     refusal,
 )
