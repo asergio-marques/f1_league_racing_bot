@@ -160,13 +160,23 @@ async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use
     bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
 
 
-async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
-    from leaguebot.image.wiring import recover_portrait_refresh_job
+@pytest.mark.xfail(strict=True, reason="#288: a daily refresh the scheduler refuses at start-up is "
+                   "logged on the host alone, never reported in the log channel")
+async def test_a_refresh_that_cannot_be_armed_is_reported_by_the_start_up_sweep(tmp_path):
+    """The league asks for portraits refreshed daily at 04:30, and the scheduler refuses the job
+    as the bot starts again. Image's start-up steps run in its turn of the real start-up sweep,
+    images on: the start goes on, and the sweep reports the step that failed in the log channel,
+    in one line (core specification, "When the bot stops": a step of it that fails shall be
+    reported in the log channel), rather than the step swallowing the refusal."""
+    from tests.support.start_up_sweep import run_image_start_up
 
     bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
     bot.scheduler_service.schedule_portrait_refresh.side_effect = ValueError("bad time")
 
-    await recover_portrait_refresh_job(bot)
+    lines = await run_image_start_up(bot, on=True)
+
+    bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with("04:30")
+    assert len(lines) == 1, lines
 
 
 async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp_path):
