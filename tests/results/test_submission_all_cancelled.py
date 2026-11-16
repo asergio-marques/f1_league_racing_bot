@@ -1040,3 +1040,26 @@ async def test_a_discarded_standings_deletion_is_named_for_deletion_by_hand(
     assert standing in league.channel(STANDINGS_CHANNEL).messages
     [line] = _ended_lines(league)
     assert "could not be deleted" in line and "delete it by hand" in line
+
+
+def test_every_change_that_posts_standings_hands_its_step_the_driver_names_hook(tmp_path):
+    """Every change type the builder registers, the all-cancelled round's among them, builds its
+    standings jobs with the driver names hook the builder signs up, so that a full tie in a round
+    holding no stored standings is ordered by name and never by user id."""
+    from datetime import datetime, timezone
+
+    from tests.support.change_queue import attach_queue, league_double
+
+    bot = league_double(str(tmp_path / "league.db"))
+    queue = attach_queue(bot, str(tmp_path / "league.db"),
+                         now=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    posting = {
+        (kind, job): queue._type(kind).steps[job].run
+        for kind in sorted(queue._types)
+        for job in ("post_standings", "post_standings_afresh")
+        if job in queue._type(kind).steps
+    }
+
+    assert ("results.submission.all_cancelled", "post_standings") in posting
+    assert {key for key, run in posting.items()
+            if bot.driver_names_read not in getattr(run, "args", ())} == set()

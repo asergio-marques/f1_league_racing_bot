@@ -822,3 +822,36 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
     assert raised.value is fault
     assert not any("no such division row" in m for m in interaction.followup.messages)
     assert describe(interaction) == "`/images test lineup`"
+
+
+#: The four subgroup files of `/images`, in the order a league sees their groups.
+_SUBGROUP_FILES = ["config_commands", "template_commands", "use_pfp_commands", "test_commands"]
+
+
+@pytest.mark.parametrize("first", _SUBGROUP_FILES)
+def test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first(first):
+    """In a fresh interpreter, the *first* subgroup's file is imported before the other three,
+    and the `/images` group's children are read: config, template, use-pfp and test, in that
+    order, whichever file came first."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    order = [first] + [name for name in _SUBGROUP_FILES if name != first]
+    script = "\n".join(
+        [f"import leaguebot.image.cogs.{name}" for name in order]
+        + ["from leaguebot.image.cogs.image_group import IMAGES_GROUP",
+           "print(','.join(child.name for child in IMAGES_GROUP.commands))"]
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(root / "src"), str(root)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])
+    )
+
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                          cwd=root, env=env, timeout=120)
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "config,template,use-pfp,test"

@@ -2360,10 +2360,16 @@ def _non_ephemeral_sends(path):
 
 
 def test_every_image_cog_reply_is_ephemeral():
-    """The image module speaks to the caller, never to the room."""
-    cogs = sorted((_SRC / "leaguebot" / "image" / "cogs").glob("*.py"))
-    assert cogs
-    assert [offender for path in cogs for offender in _non_ephemeral_sends(path)] == []
+    """The image module speaks to the caller, never to the room: every file of the module that
+    answers an interaction, its cogs and the preview runner that `/images test` hands its reply
+    to alike."""
+    image = _SRC / "leaguebot" / "image"
+    files = sorted(path for path in image.rglob("*.py") if "interaction" in path.read_text(
+        encoding="utf-8"))
+    names = {path.relative_to(image).as_posix() for path in files}
+    assert any(name.startswith("cogs/") for name in names), names
+    assert "services/preview/preview_runner.py" in names, names
+    assert [offender for path in files for offender in _non_ephemeral_sends(path)] == []
 
 
 def test_the_render_service_writes_only_to_the_log_channel():
