@@ -810,6 +810,22 @@ async def refuse_the_job(db_path: str, kind: str, job: str, refusing: bool) -> N
         await db.commit()
 
 
+async def refuse_notice_records(db_path: str, refusing: bool) -> None:
+    """While *refusing*, a fault of the database refuses to save which message a job's stop notice
+    is, so that the notice lands in the log channel and its id goes unrecorded; otherwise the fault
+    is lifted. Clearing the id, as a stop that clears does, is still saved."""
+    async with get_connection(db_path) as db:
+        if refusing:
+            await db.execute(
+                "CREATE TRIGGER refuse_notice_records BEFORE UPDATE OF notice_message_id "
+                "ON queued_change_steps WHEN NEW.notice_message_id IS NOT NULL "
+                "BEGIN SELECT RAISE(ABORT, 'disk fault'); END"
+            )
+        else:
+            await db.execute("DROP TRIGGER refuse_notice_records")
+        await db.commit()
+
+
 async def _press(bot: Any, action: str, user: Any, run: bool, lane: str | None = None) -> Any:
     job = await stopped_job(bot.db_path, lane)
     assert job is not None, f"no job stops the queue for {action} to act on"

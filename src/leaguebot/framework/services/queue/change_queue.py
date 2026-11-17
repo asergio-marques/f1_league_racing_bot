@@ -125,6 +125,13 @@ posted by the router's `post_notice`, after the stop's save and never on the log
 each pass of the worker, while `notice_message_id` is empty. `strip_view` takes the buttons off
 once the job clears.
 
+A notice that has landed whose save of `notice_message_id` failed is kept in memory
+(`_unsaved_notices`), and only that save is tried again: the notice is not posted again, and the
+admins are not mentioned again. Meanwhile the notice's buttons work and it counts as standing, and
+it loses its buttons when its stop clears, as a recorded one does. The memory is lost at a restart:
+a restart before the save lands posts the notice again and mentions the admins again, and the first
+notice's buttons are refused as those of a notice of no stop and stay on it (accepted).
+
 **A restart leaves a stopped job stopped.** `start()` clears its `next_try_at`, so that only Retry
 or Discard moves the queue, and writes one line saying so. A change cut off by the stop, with no job
 failed, carries on from its first job not done. Where recording a stop itself fails, nothing is
@@ -392,6 +399,10 @@ class ChangeQueue:
         # When each stopped job's notice was last attempted, for the job whose notice has not
         # landed: the schedule of its re-posting. Lost at a restart, which posts it at once.
         self._notice_tried: dict[int, datetime] = {}
+        # A stop notice that has landed in the log channel but whose message could not be saved
+        # on its job, by job id: the channel and the message. Posted again would be a second
+        # notice, so the save is tried again instead. Lost at a restart; see `_post_notice`.
+        self._unsaved_notices: dict[int, tuple[int, int]] = {}
         # A job a Retry has made due, with who pressed it and when its next try stood before: a
         # Retry that fails writes its own line and leaves the schedule as it was.
         self._retrying: dict[int, tuple[str, str | None]] = {}
@@ -973,9 +984,8 @@ class ChangeQueue:
         on a failure stays stopped: its `next_try_at` is cleared, so that after a restart only
         Retry or Discard moves the queue, and one line says so. Every log line saved and never
         tried, which the stop came between the save and the delivery of, is delivered, with no
-        interaction to tell if it fails. The stop notice of a job that never landed is posted
-        again, and the view of its buttons is registered, so that a notice posted before the
-        restart still works.
+        interaction to tell if it fails. Any stop notice not saved is posted again, and the view of
+        its buttons is registered, so that a notice posted before the restart still works.
         """
         if self._task is not None and not self._task.done():
             return
@@ -996,8 +1006,8 @@ class ChangeQueue:
         self, *, without_notice: bool = False, lane: str | None = None
     ) -> list[tuple[aiosqlite.Row, list[aiosqlite.Row], aiosqlite.Row]]:
         """Every job the queue is stopped at, in job order, each with its change and the change's
-        steps; with *without_notice*, only those whose stop notice has not landed, and with
-        *lane*, only those on that lane."""
+        steps; with *without_notice*, only those whose stop notice is not saved (not landed, or
+        landed with its save failed), and with *lane*, only those on that lane."""
         missing = " AND s.notice_message_id IS NULL" if without_notice else ""
         on_lane = "" if lane is None else " AND c.lane = ?"
         async with get_connection(self._db_path) as db:
@@ -1074,6 +1084,7 @@ class ChangeQueue:
         the changes they belong to."""
         self._held.clear()
         self._notice_tried.clear()
+        self._unsaved_notices.clear()
         self._retrying.clear()
 
     async def stop(self) -> None:
@@ -1562,10 +1573,7 @@ class ChangeQueue:
         if stopped and pending is not None:
             self._retrying.pop(pending["id"], None)
             await self._router.deliver_queued(ids, interaction=self._answerable(change))
-            if pending["notice_message_id"] is not None:
-                await self._router.strip_view(
-                    pending["notice_channel_id"], pending["notice_message_id"]
-                )
+            await self._strip_notice(pending)
 
     async def _refuse(
         self, change: aiosqlite.Row, verdict: Verdict, pending: aiosqlite.Row | None = None
@@ -1670,10 +1678,23 @@ class ChangeQueue:
         if pending is None or pending["failing_since"] is None:
             return
         self._retrying.pop(pending["id"], None)
-        if pending["notice_message_id"] is not None:
-            await self._router.strip_view(
-                pending["notice_channel_id"], pending["notice_message_id"]
-            )
+        await self._strip_notice(pending)
+
+    def _notice_of(self, row: aiosqlite.Row) -> tuple[int, int] | None:
+        """Where the stop notice of the job *row* is (channel id, message id), and forget the
+        queue's memory of it: the message saved on the job, else the one that has landed but whose
+        save failed (`_unsaved_notices`); None where the job has no notice. Called once the job's
+        stop has cleared, so that the notice loses its buttons whether or not its save landed."""
+        unsaved = self._unsaved_notices.pop(row["id"], None)
+        if row["notice_message_id"] is not None:
+            return (row["notice_channel_id"], row["notice_message_id"])
+        return unsaved
+
+    async def _strip_notice(self, row: aiosqlite.Row) -> None:
+        """Take the buttons off the stop notice of the job *row*, where it has one (`_notice_of`)."""
+        notice = self._notice_of(row)
+        if notice is not None:
+            await self._router.strip_view(*notice)
 
     async def _end(
         self,
@@ -1935,8 +1956,7 @@ class ChangeQueue:
         if saved is None:
             return False
         await self._router.deliver_queued(saved, interaction=self._answerable(change))
-        if row["notice_message_id"] is not None:
-            await self._router.strip_view(row["notice_channel_id"], row["notice_message_id"])
+        await self._strip_notice(row)
         return True
 
     async def _step_failed(
@@ -2131,62 +2151,80 @@ class ChangeQueue:
         log channel with its Retry and Discard buttons, and keep where it landed on the job.
 
         Never raises: where the post fails the stop stands (the router has told the member), the
-        attempt is noted and `_post_missing_notices` tries again on its schedule. The notice goes
+        attempt is noted and `_post_missing_notices` tries again on its schedule. A notice that
+        lands but whose save fails is kept in `_unsaved_notices`, and the schedule then tries only
+        the save, through here again, posting nothing and mentioning no one. A restart forgets
+        that memory, so the notice is posted again, the admins mentioned again and the first
+        notice's buttons left refused and on (accepted). The notice goes
         through the router's `post_notice`, which never puts it on the log lines' retry queue, as
         that would send it again without its buttons. The queue's own telling, of an outcome, a
         stop or a press, never undoes what it tells: the stop stands.
         """
         self._notice_tried[job_id] = self._clock()
         try:
-            admins = await self._admins_to_notify(change["lane"])
-            message = await self._router.post_notice(
-                stop_line(job_id, job, change["what"], self._named(change), fault,
-                          change["lane"], admins=admins),
-                QueueStopView(self),
-                interaction=self._answerable(change),
-                mention_role=admins,
-            )
-            if message is None:
-                return
-            async with self._writing, get_connection(self._db_path) as db:
-                await db.execute(
-                    "UPDATE queued_change_steps SET notice_message_id = ?, notice_channel_id = ? "
-                    "WHERE id = ? AND done_at IS NULL",
-                    (message.id, message.channel.id, job_id),
+            landed = self._unsaved_notices.get(job_id)
+            if landed is None:
+                admins = await self._admins_to_notify(change["lane"])
+                message = await self._router.post_notice(
+                    stop_line(job_id, job, change["what"], self._named(change), fault,
+                              change["lane"], admins=admins),
+                    QueueStopView(self),
+                    interaction=self._answerable(change),
+                    mention_role=admins,
                 )
-                await db.commit()
-        except Exception:  # noqa: BLE001 — the stop stands; the notice is posted again
+                if message is None:
+                    return
+                landed = (message.channel.id, message.id)
+                self._unsaved_notices[job_id] = landed
+            await self._keep_notice(job_id, *landed)
+            self._unsaved_notices.pop(job_id, None)
+        except Exception:  # noqa: BLE001 — the stop stands; the notice, or its save, is tried again
             log.error("could not post the stop notice of job %s (change %s)", job_id,
                       change["id"], exc_info=True)
+
+    async def _keep_notice(self, job_id: int, channel_id: int, message_id: int) -> None:
+        """Save where the stop notice of the job *job_id* landed, on the job. Raises where the save
+        fails: the caller, `_post_notice`, answers for it."""
+        async with self._writing, get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE queued_change_steps SET notice_message_id = ?, notice_channel_id = ? "
+                "WHERE id = ? AND done_at IS NULL",
+                (message_id, channel_id, job_id),
+            )
+            await db.commit()
 
     async def _admins_to_notify(self, lane: str) -> int | None:
         """The league admins' role, where a stop notice of *lane* is to mention it, else None.
 
         A league stop always mentions them; a conversation's only where no other conversation's
-        stop notice stands (one that has landed, on a job still stopped), so that a burst of
-        conversations notifies them once. Asked only of a notice that has not landed, so a
-        re-post, which is the first landing where the first post was refused, mentions them and
-        the hour and restart lines, which are not notices, mention nobody.
+        stop notice stands (one that has landed, saved or not, on a job still stopped), so that a
+        burst of conversations notifies them once. Asked only of a notice that has not landed, so a
+        re-post, which is the first landing where the first post was refused, mentions them. A
+        notice that has landed but whose save failed (`_unsaved_notices`) stands, as a saved one
+        does. A retried save, like the hour's and the restart's lines, mentions nobody.
         """
         config = await self._config.get_server_config()
         role = None if config is None else config.league_admin_role_id
         if role is None or lane == LEAGUE_LANE:
             return role
+        unsaved = list(self._unsaved_notices)
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT 1 FROM queued_change_steps s JOIN queued_changes c ON c.id = s.change_id "
                 "WHERE s.done_at IS NULL AND s.failing_since IS NOT NULL "
-                "AND s.notice_message_id IS NOT NULL AND c.state IN ('QUEUED', 'RUNNING') "
+                f"AND (s.notice_message_id IS NOT NULL OR s.id IN ({','.join('?' * len(unsaved))})) "
+                "AND c.state IN ('QUEUED', 'RUNNING') "
                 "AND c.lane <> ? AND c.lane <> ? LIMIT 1",
-                (LEAGUE_LANE, lane),
+                (*unsaved, LEAGUE_LANE, lane),
             )
             standing = await cursor.fetchone()
         return None if standing is not None else role
 
     async def _post_missing_notices(self, lane: str | None = None) -> None:
-        """Post again the stop notice of every stopped job whose notice has not landed, where it
-        is due: at start-up and at the end of each pass of a lane's worker, no more often than the
-        retry marks (`_notice_due`) and hourly once they are spent.
+        """Post again the stop notice of every stopped job whose notice is not saved, where it
+        is due (a job whose notice landed but is not saved has only its save tried again, through
+        `_post_notice`): at start-up and at the end of each pass of a lane's worker, no more often
+        than the retry marks (`_notice_due`) and hourly once they are spent.
 
         On *lane*, that lane's alone, the caller holding its lock; without one, every lane's, which
         only the start does, before any lane has a task."""
@@ -2289,11 +2327,18 @@ class ChangeQueue:
         self, notice_message_id: int | None
     ) -> tuple[aiosqlite.Row, list[aiosqlite.Row], aiosqlite.Row] | None:
         """The job the stop notice *notice_message_id* is of, with its change and the change's
-        steps, where it still stops the queue; None where it does not."""
+        steps, where it still stops the queue; None where it does not.
+
+        A notice is found by the message saved on its job, or by the queue's memory of one that
+        has landed but whose save failed (`_unsaved_notices`), so that its buttons work meanwhile.
+        A restart forgets that memory: the notice is then posted again and the first one's
+        buttons are refused, as a notice of no stop (accepted; see `_post_notice`)."""
         if notice_message_id is None:
             return None
         for found in await self._stopped_jobs():
-            if found[2]["notice_message_id"] == notice_message_id:
+            unsaved = self._unsaved_notices.get(found[2]["id"])
+            if notice_message_id in (found[2]["notice_message_id"],
+                                     None if unsaved is None else unsaved[1]):
                 return found
         return None
 
@@ -2392,8 +2437,7 @@ class ChangeQueue:
         self._retrying.pop(job["id"], None)
         await self._tell(interaction, f"🗑️ Job #{job['id']} ({name}) is discarded.")
         await self._router.deliver_queued(ids, interaction=interaction)
-        if job["notice_message_id"] is not None:
-            await self._router.strip_view(job["notice_channel_id"], job["notice_message_id"])
+        await self._strip_notice(job)
         if not started:
             await self._update_reply(
                 change,
