@@ -13,9 +13,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-#: Why each test fails until the runner is built.
-NOT_YET = "#453: there is no job runner"
-
 
 def _raising(error: Exception):
     async def work() -> None:
@@ -24,7 +21,6 @@ def _raising(error: Exception):
     return work
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_job_that_raises_is_logged_with_its_traceback_and_reported_once(caplog):
     """The work raises: one ERROR record carries the traceback and names the job, the report
     gets the job's failure line once, and the runner says the work failed without raising."""
@@ -45,7 +41,6 @@ async def test_a_job_that_raises_is_logged_with_its_traceback_and_reported_once(
     report.assert_awaited_once_with(job_failure_line("rsvp_notice (key 12)", error))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_report_that_raises_is_logged_and_the_runner_still_does_not_raise(caplog):
     """The work raises and so does the report, the log channel being what failed: both faults
     reach the host's log, and the runner still returns rather than raising."""
@@ -64,7 +59,6 @@ async def test_a_report_that_raises_is_logged_and_the_runner_still_does_not_rais
     assert logged == {error, refused}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_job_that_succeeds_reports_nothing(caplog):
     """Work that finishes is not reported, and nothing about it reaches the host's log as a
     failure."""

@@ -3084,6 +3084,10 @@ CATCH_ALLS_ALLOWED = {
     ("image/utils/svg_document.py", "_contained"):
         "place 4, around work run in a worker thread: the error is handed back as plain text and "
         "raised again on the loop, so that nothing parsed leaves the thread with it",
+    ("framework/utils/job_runner.py", "run_job"):
+        "place 1, the failure path of timed work: the traceback goes to the host's log and one "
+        "line to the log channel, the runner never raising; and place 3, around reporting that "
+        "failure, where the report itself might fail",
     ("framework/utils/interaction_errors.py", "report_failure"):
         "place 3, around reporting a failure, where the report itself might fail",
     ("framework/utils/league_server.py", "on_event_error"):
