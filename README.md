@@ -307,10 +307,10 @@ submission channel is a message, not a command, and is not covered; so is an ans
 signup wizard, which records only its refusal. Where the bot's handling of something Discord
 tells it — a message posted, a member leaving, the connection made — fails, one line says so:
 *"❌ The bot's handling of the Discord event `on_message` failed — KeyError. The details are in
-the host's log."* It is kept and delivered later like any line. So is a timed job or the bot's
-own background work that fails, with no member to answer: *"❌ The bot's timed job `rsvp_notice` (key 12)
-failed — KeyError. The details are in the host's log."* A job that repeats runs again at its next
-time. A round of retrying the lines the log channel refused that fails, whole or for some of the
+the host's log."* It is kept and delivered later like any line. A timed job or the bot's own
+background work that fails, with no member to answer, is reported the same way: *"❌ The bot's
+timed job `rsvp_notice` (key 12) failed — KeyError. The details are in the host's log."* A job that
+repeats runs again at its next time. A round of retrying the lines the log channel refused that fails, whole or for some of the
 lines, is reported by one such line; if the log channel refuses that line it is not kept, and the
 host's log alone records it. One line failing never stops the others being retried.
 
