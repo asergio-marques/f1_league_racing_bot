@@ -154,7 +154,7 @@ restart leaves to be done is found from them by the start-up steps ("Timed work 
 
 Answers to `architecture.md`, "How the code is laid out". Weather's code sits in `weather/cogs/`,
 `weather/services/`, `weather/models/` and `weather/utils/`, beside `weather/wiring.py`. Its
-services are one flat folder of eighteen files, as `architecture.md` keeps a module's services
+services are one flat folder of nineteen files, as `architecture.md` keeps a module's services
 unless its design file groups them.
 
 ### Services
@@ -163,6 +163,7 @@ unless its design file groups them.
 |---|---|
 | `forecast_changes` | the `weather.forecast` and `weather.forecast.clean_up` changes, their jobs, the timer handlers and `/test-mode advance`'s steps, the jobs weather defines for a season's end and the test-mode flush, the steps it plans in an amendment, and the words for weather's jobs left undone |
 | `forecast_amendment` | weather's part of an amendment: its judgement, and its answer when the round is armed again |
+| `forecast_leads` | the round's leads (`forecast_leads`), the moments they and weather's recovery and amendment rules all read (`forecast_moments`), and the kinds weather owns (`WEATHER_JOB_KINDS`) |
 | `forecast_recovery` | the two start-up steps |
 | `forecast_cleanup_service` | what is recorded of a posted forecast, the send of a forecast, and the plan to delete forecasts |
 | `phase1_service`, `phase2_service`, `phase3_service` | the three draws |
