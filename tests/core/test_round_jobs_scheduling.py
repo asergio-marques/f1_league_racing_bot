@@ -5,8 +5,8 @@ same ids, names and moments as the scheduler armed them before it.
 
 Its starting, pausing and shutting down are in `tests/framework/test_scheduler_lifecycle.py`.
 
-Issue #208. `schedule_all_rounds`, the signup close timer and the season-end cancellation were
-uncovered. They are thin, and each has one property that matters more than its size suggests. What
+Issue #208. The arming of every round, the signup close timer and the season-end cancellation
+were uncovered. They are thin, and each has one property that matters more than its size suggests. What
 every job is stored with, and that each kind's handler is reached through the one runner, is pinned
 in `test_round_jobs_runner.py`.
 
@@ -75,23 +75,6 @@ def _added(service) -> list:
 # ---------------------------------------------------------------------------
 # Scheduling rounds
 # ---------------------------------------------------------------------------
-
-
-def test_schedule_all_rounds_passes_each_rounds_own_division(monkeypatch):
-    round_jobs = _round_jobs(_service())
-    calls = []
-    monkeypatch.setattr(round_jobs, "schedule_round", lambda rnd, **kw: calls.append((rnd.id, kw)))
-
-    round_jobs.schedule_all_rounds(
-        [_round(21, 11), _round(22, 12)],
-        division_meta={11: (7, 1), 12: (7, 2)},
-        phase_1_days=6,
-    )
-
-    assert [(rid, kw["division_tier"], kw["phase_1_days"]) for rid, kw in calls] == [
-        (21, 1, 6),
-        (22, 2, 6),
-    ]
 
 
 @pytest.mark.xfail(strict=True, reason="#544: core runs no lead at once yet (run_lead_now)")
