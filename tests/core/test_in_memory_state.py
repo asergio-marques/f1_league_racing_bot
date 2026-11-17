@@ -52,10 +52,12 @@ CLEARED = {
     # deletes the changes they belong to (#439), and a pack finds none, being refused while the
     # queue holds a job.
     ("framework/services/queue/change_queue.py", "_held"),
-    # What the queue remembers of its stopped jobs: when each stop notice was last tried, and
-    # each Retry under way. `forget_held` clears them with the interactions above (#439).
+    # What the queue remembers of its stopped jobs: when each stop notice was last tried, each
+    # Retry under way, and each stop notice that landed but whose message id is not yet saved.
+    # `forget_held` clears them with the interactions above (#439, #554).
     ("framework/services/queue/change_queue.py", "_notice_tried"),
     ("framework/services/queue/change_queue.py", "_retrying"),
+    ("framework/services/queue/change_queue.py", "_unsaved_notices"),
     # The penalty review a staging is handed on to its change, by (round, appeals): dropped by
     # results' subscriber to the bot's hook for the clear, so a pack's or a reset's gone round
     # holds no review (#439, 6b, C54; #283 S8a).
