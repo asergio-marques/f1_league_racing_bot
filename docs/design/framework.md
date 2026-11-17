@@ -261,8 +261,8 @@ before it, from reading the settings to connecting, is the entry point's (`core.
   an outer `finally`, so a scheduler that cannot start does not leave every request waiting for the
   rest of the run.
 - **The queue's start follows the sweep.** `ChangeQueue.start` registers the stop notice's view,
-  leaves every stopped job stopped, delivers lines never tried, posts any stop notice that never
-  landed, and starts the dispatcher.
+  leaves every stopped job stopped, delivers lines never tried, posts any stop notice not
+  saved, and starts the dispatcher.
 - **A guard of its own** makes a second ready, after a network drop, run nothing.
 
 Each is pinned by a test in `tests/framework/test_start_up.py`; `ChangeQueue.start`'s docstring
@@ -293,7 +293,7 @@ The framework posts two things of its own:
 | Post | Kind | Channel | Posted by | Found again by |
 |---|---|---|---|---|
 | A log line | log line | the log channel the league's settings name (`LeagueSettings`) | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
-| The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id`, or the queue's memory until that save lands |
+| The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id`, or the queue's memory until that save lands (lost at a restart) |
 
 A replaced standing post is deleted by a job after the new one, built by `standing_posts`
 (`replaced`, `delete_replaced_step`), which also removes a copy a failed `record` left
