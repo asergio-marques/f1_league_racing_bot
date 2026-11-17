@@ -373,12 +373,6 @@ _NOTICE = "a fallback flag stood in for Zara's"
 _NOTICES_LINK = "https://discord.test/4242/7"
 
 
-#: Why a public `/team lineup` refused still fails: the refusal is the first follow-up after the
-#: public deferral, and so is shown in the channel.
-_REFUSAL_SHOWN_PUBLICLY = (
-    "#550: a public /team lineup's refusal is shown in the channel; the acknowledgement is not "
-    "deleted first"
-)
 #: The one line the channel is shown where Discord refuses to delete the acknowledgement.
 _NEUTRAL_LINE = "⛔ The lineup could not be shown."
 
@@ -390,10 +384,7 @@ _NEUTRAL_LINE = "⛔ The lineup could not be shown."
         "public",
         "refused_after",
         "refused_after_public",
-        pytest.param(
-            "refused_after_public_undeletable",
-            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
-        ),
+        "refused_after_public_undeletable",
         "unlinked",
     ],
 )
@@ -433,7 +424,7 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     cog = _make_cog(
         divisions=divisions, teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing
     )
-    interaction = _interaction()
+    interaction = _interaction(deletable=not asked.endswith("undeletable"))
 
     await _lineup(cog, interaction, public="public" in asked)
 
