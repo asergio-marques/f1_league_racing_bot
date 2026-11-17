@@ -1232,7 +1232,7 @@ def season_cancel_change(
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *seasons*
     service, the *scheduler* (whose job store holds the saved test-mode state), core's round jobs
-    (*round_jobs*), the the team-role service, *roles* (which takes back roles), the image
+    (*round_jobs*), the team-role service, *roles* (which takes back roles), the image
     module's drawing (*drawing*), the hooks the modules sign up to (*cancellation_refused*,
     *rounds_called_off*, *cancellation_notices*, *rounds_made_final*, *cancellation_steps*,
     *season_end_refused*, *season_standing_read*, *season_end_closes*, *drivers_returned*,

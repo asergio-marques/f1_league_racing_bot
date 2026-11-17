@@ -478,7 +478,7 @@ def season_complete_change(
 
     The builder hands in the *seasons* service (the season the check reads), the *scheduler* (whose
     job store holds the saved test-mode state), core's round jobs *round_jobs* (whose season-end job
-    cancel `settle` calls), the the team-role service, *roles* (which takes back roles), the hooks
+    cancel `settle` calls), the team-role service, *roles* (which takes back roles), the hooks
     the modules sign up to (*final_round_read*, *season_standing_read*, *season_completed*,
     *season_completed_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
     *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,

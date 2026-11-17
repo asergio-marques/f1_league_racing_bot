@@ -15,8 +15,8 @@ and resumes after a stop:
    take-downs and the close, in the queue's order (`hub_service.hub_refresh_change`, `season_lifecycle_service.wind_down_change`).
 2. **`disarm_sweep`**, first of what follows: the standing sweep that undoes an amendment nobody
    carried through, which turning results on arms (`module_switch_settings.ARM_SWEEP`), is
-   removed through the scheduler service the builder hands in, as a switch-off undoes what the
-   switch-on set up.
+   removed through `cancel_amendment_sweep`, handed in through results' wiring, as a switch-off
+   undoes what the switch-on set up.
 3. **`take_down`**, one for each message or channel: `results_purge_service.take_down`. **Each is
    a job like any other**, so a removal that fails stops the queue until it is cleared (decided with
    the owner, 2026-10-02, withdrawing the earlier "tried once"): the bot tries it again on the

@@ -340,7 +340,7 @@ class RoundJobs:
         The store is listed once, before anything is removed, and that listing is the only call
         that can raise: a store that cannot be read removes nothing, so a division's or a
         season's cancellation that unarms its rounds first stands as it was. Each removal then goes
-        through `_remove_job`, which never raises. With *season_end*, any stale ``season_end*`` job
+        through the scheduler's `remove`, which never raises. With *season_end*, any stale ``season_end*`` job
         the store still carries goes in the same pass.
         """
         wanted = set(round_ids)

@@ -1,4 +1,4 @@
-"""SchedulerService — APScheduler wrapper for phase job management.
+"""SchedulerService — APScheduler wrapper for the bot's timed jobs.
 
 Uses SQLAlchemyJobStore backed by **its own** SQLite file, separate from the league
 database, so jobs survive restarts. A job whose moment passed while the bot was stopped runs
