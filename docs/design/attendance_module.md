@@ -54,12 +54,12 @@ write.
 
 | Table | Written by | What it writes |
 |---|---|---|
-| `attendance_config` | `module_switch_settings` | the switch-on: the row is replaced naming only the flag (below) |
+| `attendance_config` | `module_switch_settings` | the switch-on: the row created naming only the flag, or, where one is stored, only the flag raised (below) |
 | | `attendance_settings` | one column for each of the eight settings, in the setting's save |
 | | `attendance_config_service` (`switch_off_on`) | the flag lowered, the settings kept |
 | `attendance_division_config` | `division_channels` | each channel, by an upsert naming its one column, so setting one never blanks the other |
 | | `attendance_sheet` (`record_sheet_on`) | the live sheet's message id |
-| | `attendance_config_service` (`switch_off_on`) | every row deleted, so a returning module posts into no stale channel |
+| | `attendance_config_service` (`switch_off_on`) | every row's sheet message id cleared, the channels kept, so a returning module posts a sheet afresh and keeps its channels |
 | | `attendance_hooks` | a deleted division's row; every sheet id cleared when the bot is packed |
 | `driver_round_attendance` | `attendance_config_service` | a round's rows as its call is posted (`bulk_insert_attendance_rows_on`) and a driver's answer (`upsert_rsvp_status_on`, `answer_rsvp_on`) |
 | | `rsvp_service` | the reserves' placement, made at the deadline and cleared when an amended round reopens its check-in, and a round's answers cleared when a call is given up (`clear_check_in_answers_on`) |
@@ -110,16 +110,19 @@ so that a figure that looks wrong can be traced round by round, which a flattene
 commit a connection of their own, which a stop leaves right up to one round and stale from the
 next (`_recalculate_forward`'s docstring).
 
-### The packaged defaults are written once
+### The packaged defaults are written by the first switch-on
 
 The module's packaged settings are the column defaults of `attendance_config`. The switch-on's save
-writes `INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1, 1)`, naming the
-flag alone and leaving the eight values to the schema, so a module turned off and on again starts
-from the packaged values, not from the ones it was left with, and the defaults live in one place.
+writes `INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1) ON CONFLICT(id) DO UPDATE
+SET module_enabled = 1`, naming the flag alone. A first switch-on, with no row, leaves the eight
+values to the schema, and the defaults live in one place; a later one finds the row and raises the
+flag, so a module turned off and on again comes back with the values it was left with (Principle X,
+rule 6). *Rejected:* `INSERT OR REPLACE`, which deletes the stored row and writes the defaults over
+the league's settings.
 `get_config_or_defaults` reads the same defaults off the schema where no row is stored, so a read
 creates no row. A read hook, the leads core asks for when a round is armed, is a reader and writes
 nothing (`attendance_hooks.round_leads`). Pinned by
-`test_re_enabling_attendance_starts_from_the_packaged_defaults`,
+`test_re_enabling_attendance_keeps_the_league_s_settings`,
 `test_enabling_attendance_leaves_the_schema_s_own_defaults` and
 `test_reading_a_round_s_window_writes_nothing`.
 
@@ -141,7 +144,7 @@ cascade, from their attendance row.
 Each works on the delete's own connection and commits nothing, so the rows go with the thing they
 belong to or not at all (`architecture.md`, "Deletes are proven by a test, and each module deletes
 its own rows"). Turning attendance off is another delete of attendance's own: it lowers the flag and
-clears the divisions' channels but keeps the settings and the answers (`switch_off_on`).
+keeps the settings, the divisions' channels and the answers, and clears only the divisions' sheet message ids, which name messages the module posted and are not configuration (`switch_off_on`).
 
 ### What a restart loses
 
@@ -635,7 +638,7 @@ Each is stated where it lives and pinned by the test named.
 | Constraint | Stated in | Pinned by |
 |---|---|---|
 | `/attendance`'s subgroups join the group in one file, in the order a league sees them | `attendance_group.py`'s docstring | `test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first` |
-| The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_on_attendance`'s save | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
+| The switch-on writes the flag alone: a first one leaves the eight values to the column defaults, a later one keeps the stored row | `module_on_attendance`'s save | `test_re_enabling_attendance_keeps_the_league_s_settings` and `test_enabling_attendance_leaves_the_schema_s_own_defaults` |
 | A read of a round's leads creates no row | `attendance_hooks.round_leads` | `test_reading_a_round_s_window_writes_nothing` |
 | A cross-setting rule is judged by the setting's change as it starts | `attendance_settings`' docstring | `test_set_setting_refuses_a_timing_that_breaks_the_invariant` and its two companions |
 | A stored copy has one recompute, run on its caller's connection | `_recalculate_forward`'s docstring | the four tests of "The stored copies of derived figures" |
