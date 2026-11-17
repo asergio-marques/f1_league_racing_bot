@@ -1,6 +1,6 @@
 """The scheduler's lifecycle: starting it, pausing it, shutting it down, removing a job.
 
-Split from `tests/core/test_scheduler_service_registration.py` (#544), whose round scheduling
+Split from `tests/core/test_round_jobs_scheduling.py` (#544), whose round scheduling
 stayed in core.
 
 **The service registers itself as the global only when it starts.** Constructing a second
@@ -8,7 +8,7 @@ service — a test, a reset — must not redirect jobs already firing at the run
 
 **Cancelling something that is not scheduled is not an error.** A job that has already fired,
 or was never armed, is the ordinary case for every cancellation; that is pinned, for each of
-them, in `tests/core/test_scheduler_cancels.py`.
+them, in `tests/core/test_round_jobs_cancels.py`.
 """
 from __future__ import annotations
 

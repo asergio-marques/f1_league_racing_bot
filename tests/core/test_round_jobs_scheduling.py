@@ -21,7 +21,7 @@ up with two closes, and the job id is per server for that reason.
 
 **Cancelling something that is not scheduled is not an error.** A job that has already fired,
 or was never armed, is the ordinary case for every cancellation here; that is pinned, for each
-of them, in `test_scheduler_cancels.py`.
+of them, in `test_round_jobs_cancels.py`.
 """
 from __future__ import annotations
 

@@ -21,7 +21,7 @@ Weather's switch-off cancels its forecast jobs through a function of weather's o
 `cancel_all_weather`, handed core's round jobs (`RoundJobs`, #544): it asks them to cancel the
 weather kinds of every round of the live season, and holds no SQL on core's tables. A round's
 cancel, filtered or not, is core's round jobs' (`cancel_round`), pinned in
-`tests/core/test_scheduler_cancels.py`.
+`tests/core/test_round_jobs_cancels.py`.
 """
 from __future__ import annotations
 

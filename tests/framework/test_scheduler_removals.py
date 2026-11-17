@@ -1,6 +1,6 @@
 """Removing a scheduled job: "already gone" is the aim, and any other fault is kept (#442).
 
-Split from `tests/core/test_scheduler_cancels.py` (#544), whose round cancels stayed in core with
+Split from `tests/core/test_round_jobs_cancels.py` (#544), whose round cancels stayed in core with
 core's round jobs. These are the scheduler's own removals: one job by its id, every job, and a
 one-off timer by its kind and key.
 

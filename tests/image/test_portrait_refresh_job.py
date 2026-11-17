@@ -9,7 +9,7 @@ should find a test saying it is meant.
 
 Cancelling is a clean-up, as every cancel of a job is (#442): a refresh already gone is passed over
 in silence, and any other fault is logged as a warning with its traceback, and neither raises.
-These were cases of the scheduler's cancel tests in `tests/core/test_scheduler_cancels.py`.
+These were cases of the scheduler's cancel tests in `tests/core/test_round_jobs_cancels.py`.
 
 Every test here tears its files down, sidecars included: the suite also runs on `windows-latest`,
 where a job store left connected cannot be deleted.
