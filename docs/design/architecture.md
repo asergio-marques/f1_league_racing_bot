@@ -117,15 +117,15 @@ its name, and several files are named for neither.
 flat folder to be read. The framework's are `queue/` (the change queue, its types and records, the
 stop view, the typed turns, the setting change, the audit writers), `posting/` (the four handlers
 for each kind of post, the log writer among them, the retry queue, the standing posts, the channel
-notice), `switches/` (the module service and the modules' switch readers) and `jobs/` (the
-scheduler's timers and the start-up sweep). Core's are `seasons/` (with the readers of a season's
-confirmation and review), `cancellations/`, `rounds/` (divisions, rounds and their amendments,
-tracks, the calendar post, and the arming of a round's timed work through the framework's
-scheduler), `drivers/` (drivers, teams, placements, the lineup and the changes to them), `settings/`
-(which answers the framework's questions of the league), `test_mode/`, `upkeep/` (backup, pack,
-factory reset, the in-memory state and clean-up) and `modules/` (the hub and its About option, and
-what core asks of the modules, such as the drawing protocol). A folder is not a kind: every check
-reads a file's kind from the first folder below its part or the framework, so
+notice), `switches/` (the module service, which holds the keyed hook the modules' switch readers
+sign up on) and `jobs/` (the scheduler's timers and the start-up sweep). Core's are `seasons/` (with
+the readers of a season's confirmation and review), `cancellations/`, `rounds/` (divisions, rounds
+and their amendments, tracks, the calendar post, and the arming of a round's timed work through the
+framework's scheduler), `drivers/` (drivers, teams, placements, the lineup and the changes to them),
+`settings/` (which answers the framework's questions of the league), `test_mode/`, `upkeep/`
+(backup, pack, factory reset, the in-memory state and clean-up) and `modules/` (the hub and its
+About option, and what core asks of the modules, such as the drawing protocol). A folder is not a
+kind: every check reads a file's kind from the first folder below its part or the framework, so
 `core/services/seasons/season_service.py` is a service of core. A module's own services stay in its
 `services/` folder unless its design file groups them. `tests/repository/test_import_contracts.py`
 holds it: no service of the framework's or of core's sits outside a topic folder.
@@ -271,25 +271,24 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 moment that concerns the league is core's, which declares its hook on that machinery, and one that
 concerns the machinery alone (the bot starting, a timed event falling due, a module's switch read)
 is the framework's. What this section says of core declaring and calling a hook holds for the
-framework's moments as well. Where something in core has to let the modules act (a round's
-amendment judged, a round amended or its timed work armed again,
-a round's timed work read as leads, a round, a division or a season cancelled, a round's results made
-final, placements confirmed, a season's approval saved, a season's configuration confirmed, a review
-gathering its lines, the placements review gathering each division's lines, a division's channel
-faults read, a channel's uses read as a command sets it, the factory reset gathering the channels
-each module holds, a round's drawn phases read, a driver's signup name, username and nationality
-read for a season, with whether a nationality is collected, which the modules that draw a driver ask
-through core's reader, the divisions a driver's accounts raced in read, a driver's standing in a
-division read for the season's history, a season's fingerprint taken, a season's pending test-mode
-steps read, the test-mode review's marks read, a season's confirmation judged, a division's final
-round read, a season ending, a season, division, round or driver deleted, a driver merged into
-another or turned down, a driver's account changed, a base role changed, the bot packed, test mode
-turned on, the bot's in-memory state cleared, the hub's panel gathering its options, a module's
-switch read), core declares a hook. The builder, or the module's wiring it calls, signs each module
-up to it before the bot connects. Core calls whoever signed up, and never imports a module, the
-bot's type aside (see "How the code is laid out"). A module turned on or off is not a hook but a
-change of the module's own, which core asks for by its kind (see "Each module turns itself on and
-off").
+framework's moments as well. Where something in core has to let the modules act (a round's amendment
+judged, a round amended or its timed work armed again, a round's timed work read as leads, a round,
+a division or a season cancelled, a round's results made final, placements confirmed, a season's
+approval saved, a season's configuration confirmed, a review gathering its lines, the placements
+review gathering each division's lines, a division's channel faults read, a channel's uses read as a
+command sets it, the factory reset gathering the channels each module holds, a round's drawn phases
+read, a driver's signup name, username and nationality read for a season, with whether a nationality
+is collected, which the modules that draw a driver ask through core's reader, the divisions a
+driver's accounts raced in read, a driver's standing in a division read for the season's history, a
+season's fingerprint taken, a season's pending test-mode steps read, the test-mode review's marks
+read, a season's confirmation judged, a division's final round read, a season ending, a season,
+division, round or driver deleted, a driver merged into another or turned down, a driver's account
+changed, a base role changed, the bot packed, test mode turned on, the bot's in-memory state
+cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
+builder, or the module's wiring it calls, signs each module up to it before the bot connects. Core
+calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
+out"). A module turned on or off is not a hook but a change of the module's own, which core asks for
+by its kind (see "Each module turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
@@ -301,31 +300,32 @@ core calls each in the order they signed up. A subscriber may hand something bac
 gathers in that order; what core does with them, if anything, is the moment's: a value to read or to
 keep, a line to write, a step to plan or to register, a refusal to give. The hook names no module
 and no module's operation, so a module's part of the moment is the module's own code, and a module
-added later signs up without core changing, the switch read aside (below). A hook keyed by a kind
-takes one function for each key instead, as a kind of timed job takes its one handler (see "Timed
-work and restarts") and a kind of a round's job its one `/test-mode advance` step; each is an object
-the builder makes and each module's wiring signs its own up on, never a registry kept at module
-level for the life of the process, as nothing is wired in after the bot starts (see "Services stay
-attached to the bot"). **A module's switch read is a keyed hook:** one reader for each module, keyed
-by the module's name, which the module's own work may also call; core asks for it by that name
-(`is_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
-modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
-dependency table (above). The key is the name the module's switch is asked by: `images` for the
-image module, the module's own name for the rest. The framework's module service holds the keyed
-hook and asks it by the key alone (`ModuleService.is_enabled`, as the start-up sweep does to pass a
-disabled module over), and names no module, and keeps no reader for any: core asks by the module's
-name, which it already holds, a module asks for its own switch by a key constant of its own, and a
-module asking another's, where the dependency table allows it, asks by that module's name as a
-literal and never imports its constant. A module added later signs its switch up and nothing more;
-core knows its name for the switch and nothing more. A module that never signed up is a fault in the
-bot's assembly, and asking for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which
-no reader that stands aside takes for an answer: each lets that type through by name and stands
-aside from any other fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named
-under "A catch-all error handler"). A link the dependency table allows between two modules is not
-one of core's hooks: there the module depended on may name what it asks of its dependant, as results
-does of attendance (below). Only core calls the subscribers of a hook it declares as a list. Where a
-module reaches such a moment, either the moment is its own and its dependants are reached through
-what the builder hands it, or a core function writes the change and calls the hook itself.
+added later signs up without core changing, save that core names it where it shows which modules are
+on (below). A hook keyed by a kind takes one function for each key instead, as a kind of timed job
+takes its one handler (see "Timed work and restarts") and a kind of a round's job its one
+`/test-mode advance` step; each is an object the builder makes and each module's wiring signs its
+own up on, never a registry kept at module level for the life of the process, as nothing is wired in
+after the bot starts (see "Services stay attached to the bot"). **A module's switch read is a keyed
+hook:** one reader for each module, keyed by the module's name, which the module's own work may also
+call; core asks for it by that name (`is_enabled`, or `is_enabled_on` on a connection the caller
+holds), because core names the modules and shows which are on in the reviews (the core
+specification's "Modules"), and keeps the dependency table (above). The key is the name the module's
+switch is asked by: `images` for the image module, the module's own name for the rest. The
+framework's module service holds the keyed hook and asks it by the key alone
+(`ModuleService.is_enabled`, as the start-up sweep does to pass a disabled module over), and names
+no module, and keeps no reader for any: core asks by the module's name, which it already holds, a
+module asks for its own switch by a key constant of its own, and a module asking another's asks by
+that module's name as a literal and never imports its constant. A module added later signs its
+switch up and nothing more; core knows its name for the switch and nothing more. A module that never
+signed up is a fault in the bot's assembly, and asking for it raises `SwitchNotSignedUp`, a
+`LookupError` of its own type, which no reader that stands aside takes for an answer: each lets that
+type through by name and stands aside from any other fault (one stated exception,
+`ImageDrawing.aspect_attaches_files`, is named under "A catch-all error handler"). A link the
+dependency table allows between two modules is not one of core's hooks: there the module depended on
+may name what it asks of its dependant, as results does of attendance (below). Only core calls the
+subscribers of a hook it declares as a list. Where a module reaches such a moment, either the moment
+is its own and its dependants are reached through what the builder hands it, or a core function
+writes the change and calls the hook itself.
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -1048,29 +1048,30 @@ judging a lead armed while ahead against the `now` it is handed ("The time is al
 `run_lead_now` runs at once a lead whose moment has passed. Which leads are run at once, and which
 core drops where test mode leaves them to `/test-mode advance`, are marks on a lead, never a check
 of its kind, and core's rule of when test mode leaves one (`results_left_to_advance`) is core's own.
-Results answers its submission as a lead for every round, whatever its switch, since it is the
-round's one way off Not run. Only three changes arm leads: a season's approval, the amendment of a
-round (`round_amend_change`), and the re-arming of a round whose timed work a refused cancellation
-took, a change of its own (`round_rearm_change`, `season.round.rearm`) built from the amendment's
-steps. The arming step those two share runs at once the lead marked so of a round still to be run
-whose moment has passed, save under test mode. Every path arms through these calls. **Core names no
-kind of a round's timer:** each module signs its kinds up with `RoundJobs` at build, each with the
-phase `/test-mode advance` numbers it by, and `RoundJobs` knows a job is a round's, and which phase
-it is, by that register alone. Results signs its kind up with no advance phase, since the advance
-reads its phase from the round's state. A restart arms nothing, the job store keeping the jobs and
-the start-up sweep catching up those missed (above), and neither does test mode, whose advance
-brings forward work already armed or found due in the database. A round's next-day clean-ups, which
-its weather and its attendance arming both owe, are leads of their modules, armed with the rest.
-**In the amendment and the re-arming of a round still to be run, whether a module's work is armed,
-and with what, is that module's answer through `round_armed`**: each module hands back its steps and
-the leads it owes, less any phase it draws at once, and the arming step arms what each hands back,
-so that core holds no module's rule about which jobs a moved round still to be run owes. What a
-module keeps from its part of the amendment's judgement, its own windows included, core stores as it
-is given and hands the merged record back to every module, each reading only its own, reading it for
-none itself: core names no module's windows. The re-arming of a round raced, or ended cancelled
-because every session was entered as not held, arms the clean-up leads alone: core asks the modules
-for their leads and arms those marked as clean-ups, and a module that is off answers no clean-up, so
-core reads no module's switch and no module's window.
+Results answers its submission as a lead for every round, whatever its switch (the core
+specification's "What confirming placements does"), since it is the round's one way off Not run.
+Only three changes arm leads: a season's approval, the amendment of a round (`round_amend_change`),
+and the re-arming of a round whose timed work a refused cancellation took, a change of its own
+(`round_rearm_change`, `season.round.rearm`) built from the amendment's steps. The arming step those
+two share runs at once the lead marked so of a round still to be run whose moment has passed, save
+under test mode. Every path arms through these calls. **Core names no kind of a round's timer:**
+each module signs its kinds up with `RoundJobs` at build, each with the phase `/test-mode advance`
+numbers it by, and `RoundJobs` knows a job is a round's, and which phase it is, by that register
+alone. Results signs its kind up with no advance phase, since the advance reads its phase from the
+round's state. A restart arms nothing, the job store keeping the jobs and the start-up sweep
+catching up those missed (above), and neither does test mode, whose advance brings forward work
+already armed or found due in the database. A round's next-day clean-ups, which its weather and its
+attendance arming both owe, are leads of their modules, armed with the rest. **In the amendment and
+the re-arming of a round still to be run, whether a module's work is armed, and with what, is that
+module's answer through `round_armed`**: each module hands back its steps and the leads it owes,
+less any phase it draws at once, and the arming step arms what each hands back, so that core holds
+no module's rule about which jobs a moved round still to be run owes. What a module keeps from its
+part of the amendment's judgement, its own windows included, core stores as it is given and hands
+the merged record back to every module, each reading only its own, reading it for none itself: core
+names no module's windows. The re-arming of a round raced, or ended cancelled because every session
+was entered as not held, arms the clean-up leads alone: core asks the modules for their leads and
+arms those marked as clean-ups, and a module that is off answers no clean-up, so core reads no
+module's switch and no module's window.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
@@ -1729,20 +1730,21 @@ later on its own.
   directly in its body, or sits directly in the body of a `for` loop, is in a place by its shape;
   `CATCH_ALLS_ALLOWED` names for good the failure paths of place 1, the stated exceptions, place 2's
   task of its own for each item, place 3's guards around reporting and writing a log line, the
-  fourth place's hand-off across a thread, and the fifth and sixth places' handlers), a file of
-  core naming a kind of a round's timer (a weather phase or clean-up, a check-in timer, results'
-  submission, in a timer's place and not in a docstring), and a save outside a queued change. The
-  job check and the check of cogs handling their own errors are
-  absolute, with no list of breaches left to grow, and the log channel's check holds its nine places
-  for good; every other check lists today's breaches, each under the work that removes it. The check
-  of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls,
-  and a function writing on a handed connection commits nothing and is not counted. It allows for
-  good the migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on
-  the database file itself), the queue's own records, the retry queue for log lines, `/bot pack`
-  (above), the image module's portrait register (above), and `backup_service._write_empty_database`,
-  which writes the scheduler's empty file and not the league's. The connection-state check refuses,
-  outside the database code, a SQL function added with `create_function`, an authoriser, an
-  assignment to `row_factory` or `isolation_level`, and a PRAGMA, ATTACH or temporary table
+  fourth place's hand-off across a thread, and the fifth and sixth places' handlers), a file of core
+  naming a kind of a round's timer (a weather phase or a check-in timer anywhere in its code,
+  weather's clean-up or results' submission where it stands as a timer's kind; a docstring is not
+  counted), and a save outside a queued change. The job check and the check of cogs handling their
+  own errors are absolute, with no list of breaches left to grow, and the log channel's check holds
+  its nine places for good; every other check lists today's breaches, each under the work that
+  removes it. The check of a save outside a queued change counts each function's `.commit()` and
+  `.executescript()` calls, and a function writing on a handed connection commits nothing and is not
+  counted. It allows for good the migrations run at start-up (`run_migrations` and `_enable_wal`,
+  the journal mode set on the database file itself), the queue's own records, the retry queue for
+  log lines, `/bot pack` (above), the image module's portrait register (above), and
+  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
+  league's. The connection-state check refuses, outside the database code, a SQL function added with
+  `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and a
+  PRAGMA, ATTACH or temporary table
   (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set up
   a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
 - **`tests/framework/test_module_service.py`** checks that the framework's module service names no
