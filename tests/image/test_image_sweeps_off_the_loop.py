@@ -276,7 +276,7 @@ FAILING = [
     ("template-directory-check", _folder_survey_fails, CapacityError),
     ("template-check", _template_check_fails, CapacityError),
     ("refresh-before-render", _render_refresh_fails, 0),
-    ("daily-refresh", _daily_refresh_fails, 0),
+    ("daily-refresh", _daily_refresh_fails, CapacityError),
 ]
 
 
