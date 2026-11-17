@@ -752,11 +752,6 @@ async def test_enabling_attendance_is_audited(tmp_path):
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: switching attendance back on still writes the packaged defaults over the "
-    "league's own timings, penalties and thresholds",
-)
 async def test_re_enabling_attendance_keeps_the_league_s_settings(tmp_path):
     """Principle X rule 6: a disabled module keeps its configuration, and re-enabling it restores
     it as it stood. A league that set its own windows, penalties and thresholds finds them all

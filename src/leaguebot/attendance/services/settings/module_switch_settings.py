@@ -7,14 +7,13 @@ settings change does with a value already held and with a fault): `module_on("at
 importing attendance. `docs/design/architecture.md`, "How modules and core fit together", designs
 the gap this closes: weather's switch (`weather/services/module_switch_settings.py`) is the model.
 
-**The switch-on is one save.** The packaged values are written over any stored row and the flag
-raised, with the audit entry, so a fault anywhere in the save leaves none of it: never the module
-on with nothing configured, and never a part-made configuration a later enable would build on.
-Writing the packaged values over a row already there, rather than leaving it, is the Principle
-X.6 reset: re-enabling starts fresh, pinned by
-`tests/core/test_module_enable_disable.py::test_re_enabling_attendance_starts_from_the_packaged_defaults`.
-The switch-off keeps the settings row rather than clearing it; issue #449 would keep it across
-a switch-off and re-enable without the reset instead.
+**The switch-on is one save.** The flag is raised and the audit entry written together, so a fault
+anywhere in the save leaves none of it: never the module on with nothing configured, and never a
+part-made configuration a later enable would build on. A league's first switch-on creates the
+row with the packaged values, the schema's column defaults; every later one finds the row the
+switch-off kept and raises only the flag, so the league's timings, penalties and thresholds come
+back as they were (Principle X.6), pinned by
+`tests/core/test_module_enable_disable.py::test_re_enabling_attendance_keeps_the_league_s_settings`.
 
 **The switch-off is one save: `AttendanceService.switch_off_on` and the audit entry.** That
 method lowers the flag and clears every division's check-in and attendance channel bindings —
@@ -93,8 +92,8 @@ def _nothing_saved(_payload: dict[str, Any]) -> str:
 
 
 def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
-    """`module.on:attendance`: the packaged values written over any stored row, the flag raised
-    and the audit, in one save (Principle X.6's reset)."""
+    """`module.on:attendance`: the flag raised and the audit, in one save; the row is created with
+    the packaged values on the first switch-on and kept as the league left it after that."""
 
     async def check(_ctx: CheckContext) -> Verdict:
         if await modules.is_enabled(SWITCH_KEY):
@@ -111,10 +110,11 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
         # The packaged values are the column defaults of `attendance_config`, held once there:
-        # the row is replaced naming only the flag (whose own default is off), so the eight
-        # settings come back as the schema declares them.
+        # a first switch-on inserts the row naming only the flag, so the eight settings take the
+        # schema's defaults; a row already kept is left as it is and only its flag is raised.
         await db.execute(
-            "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1, 1)"
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1) "
+            "ON CONFLICT(id) DO UPDATE SET module_enabled = 1"
         )
         return Saved(
             changed=True,
