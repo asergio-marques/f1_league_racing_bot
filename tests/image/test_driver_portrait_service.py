@@ -788,19 +788,24 @@ async def test_a_daily_refresh_that_fires_hours_after_its_time_is_skipped(
     assert await _rows(path) == {}
 
 
-async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job(tmp_path):
-    """The image module is on, against a migrated database, so the switch reads; the fault the
-    refresh swallows is the configuration read's, not a switch that cannot be read."""
+@pytest.mark.xfail(strict=True, reason="#453: the daily refresh swallows its own failure")
+async def test_a_daily_refresh_that_fails_raises_to_its_runner(tmp_path):
+    """The image module is on, against a migrated database, so the switch reads; the image
+    configuration cannot be read. The refresh raises that fault rather than swallowing it, so the
+    job runner it runs through logs it and writes the timed job's line to the log channel (#453).
+    A single portrait that cannot be fetched is still `refresh_portraits`' to pass over."""
     from leaguebot.image.services.portraits import driver_portrait_service as m
 
     directory = tmp_path / "drivers"
     directory.mkdir()
     bot = _daily_bot(await _season_db(tmp_path), directory)
-    bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("boom"))
+    error = RuntimeError("boom")
+    bot.image_config_service.get_config = AsyncMock(side_effect=error)
 
-    # An APScheduler job that raises is logged into a void the league never reads.
-    assert await m.run_daily_refresh(bot, bot.image_config_service, now=NOW) == 0
-    bot.image_config_service.get_config.assert_awaited()
+    with pytest.raises(RuntimeError) as raised:
+        await m.run_daily_refresh(bot, bot.image_config_service, now=NOW)
+
+    assert raised.value is error
 
 
 async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp_path, monkeypatch):
