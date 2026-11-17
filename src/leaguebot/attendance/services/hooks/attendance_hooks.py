@@ -15,7 +15,8 @@ import aiosqlite
 
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.attendance.services.check_in.check_in_leads import check_in_leads
-from leaguebot.core.models.round import AttendanceWindows, RoundLead
+from leaguebot.attendance.models.attendance import AttendanceWindows
+from leaguebot.core.models.round import RoundLead
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 

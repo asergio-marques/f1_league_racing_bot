@@ -12,12 +12,18 @@ handler, the check-in's change, judges what late means (a last notice is sent la
 deadline is ahead, and a call or a deadline is asked as it would be on time), while a moment
 already past when a round is armed is not armed at all, the restart's catch-up taking it
 (`check_in_recovery`).
+
+`check_in_moments` places the same leads at a round's moment, for every read attendance makes of
+when its events fall (recovery, the amendment's rules, its test-mode steps), so those reads and
+core's arming cannot drift apart.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.models.round import AttendanceWindows, RoundLead
+from leaguebot.attendance.models.attendance import AttendanceWindows
+from leaguebot.core.models.round import RoundLead
 from leaguebot.core.services.rounds.round_moments import (
     POST_RACE_CLEANUP_DELAY,
     days_before,
@@ -54,3 +60,12 @@ def check_in_leads(windows: AttendanceWindows) -> tuple[RoundLead, ...]:
         ahead_only=True, clean_up=True,
     ))
     return tuple(leads)
+
+
+def check_in_moments(scheduled_at: datetime, windows: AttendanceWindows) -> Mapping[str, datetime]:
+    """When each of a round's check-in events falls, by the kind its timer is stored under, in UTC:
+    the leads `check_in_leads` gives for *windows*, placed at *scheduled_at*. A last notice of 0
+    hours is no last notice and is absent. No moment is judged, neither past nor ahead: whether one
+    still falls ahead is the caller's to ask of the `now` it holds."""
+    at = scheduled_at.astimezone(timezone.utc)
+    return {lead.kind: at + lead.offset for lead in check_in_leads(windows)}

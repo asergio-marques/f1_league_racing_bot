@@ -686,7 +686,6 @@ async def test_a_track_amendment_whose_first_forecast_is_posted_while_it_waits_i
     assert len(_amend_refusals(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_is_refused_by_the_save(
     tmp_path, monkeypatch,
 ):
@@ -735,7 +734,6 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 @pytest.mark.parametrize("stopped", ["apply", "unarm"])
 async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_deadline_passed_is_refused_by_the_save(
     tmp_path, reposts, stopped,
@@ -811,7 +809,6 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 @pytest.mark.parametrize("weather, attendance", [
     pytest.param(True, True),
     pytest.param(True, False),
@@ -1272,8 +1269,7 @@ async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_on
 
 @pytest.mark.parametrize("stopped", [
     pytest.param("apply", id="the save stopped"),
-    pytest.param("take_down_call", id="the take-down stopped after the arming",
-                 marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
+    pytest.param("take_down_call", id="the take-down stopped after the arming"),
 ])
 async def test_a_call_that_fell_due_while_the_amendment_stood_stopped_is_posted_again(
     tmp_path, reposts, stopped,
@@ -3156,7 +3152,7 @@ async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
     The record `judge` keeps holds no windows, and `round_armed` is handed none: no argument
     named for attendance or weather, and no forecast horizons or check-in lead times among what
     it is handed."""
-    from leaguebot.core.models.round import AttendanceWindows
+    from leaguebot.attendance.models.attendance import AttendanceWindows
     from leaguebot.weather.models.weather_config import WeatherWindows
 
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
@@ -3179,7 +3175,6 @@ async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
                    for value in (*asked["args"], *asked["kwargs"].values()))
 
 
-@pytest.mark.xfail(strict=True, reason="#544: weather and attendance answer no leads yet")
 async def test_an_amendment_stopped_across_the_update_reads_each_module_s_windows_afresh(tmp_path):
     """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, check-in lead times
     5 days, 24 hours, 2 hours. Pro's round 3 is moved to 60 days out, and the amendment stops at

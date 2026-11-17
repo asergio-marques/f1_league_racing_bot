@@ -478,11 +478,6 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-#: Why the check-in amendment tests fail until attendance answers its leads and core arms them.
-_NO_CHECK_IN_LEADS = "#544: attendance answers its check-in as no leads yet, nor core arms them (arm_leads)"
-
-
-@pytest.mark.xfail(strict=True, reason=_NO_CHECK_IN_LEADS)
 async def test_amending_a_round_rearms_its_check_in(tmp_path):
     """The reported defect: amending a round destroyed its check-in for good.
 

@@ -12,6 +12,15 @@ CHECK_IN_DEADLINE = "attendance.check_in.deadline"
 CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 
 
+@dataclass(frozen=True)
+class AttendanceWindows:
+    """The three check-in lead times, as `attendance_config` stores them."""
+
+    notice_days: int
+    last_notice_hours: int
+    deadline_hours: int
+
+
 @dataclass
 class AttendanceConfig:
     module_enabled: bool

@@ -129,7 +129,6 @@ def phases(monkeypatch):
 # ── A round still to be run ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_re_arming_arms_the_round_as_it_stands_and_catches_up_the_phases_and_the_call_that_fell_due(
     tmp_path, phases, monkeypatch,
 ):

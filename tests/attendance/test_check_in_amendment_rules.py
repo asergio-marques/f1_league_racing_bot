@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.models.round import AttendanceWindows
+from leaguebot.attendance.models.attendance import AttendanceWindows
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 

@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from leaguebot.core.models.amendment import AmendmentPart
-from leaguebot.core.models.round import AttendanceWindows
-from leaguebot.core.services.rounds.round_moments import round_event_moments
+from leaguebot.attendance.models.attendance import AttendanceWindows
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_moments
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,7 @@ def judge_check_in(
     refusals: list[str] = []
     warnings: list[str] = []
     if windows is not None:
-        moments = round_event_moments(moment, attendance=windows)
+        moments = check_in_moments(moment, windows)
         listed = [
             ("call", "Check-in call", moments["rsvp_notice"]),
             # Absent from the moments where the last notice is 0 hours: no last notice at all.

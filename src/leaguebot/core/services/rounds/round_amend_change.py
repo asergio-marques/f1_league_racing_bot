@@ -49,7 +49,6 @@ from leaguebot.framework.models.change import (
 from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
     ROUND_RACED_AWAITING_VERDICTS,
-    CheckInJobs,
     Round,
     RoundFormat,
     RoundLead,
@@ -548,9 +547,7 @@ def _round_change(
             round_jobs.arm_leads(rnd, clean_ups, season_number, tier, now())
             return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
         planned, jobs = await plan_posts(ctx, rnd)
-        leads = tuple(
-            lead for each in jobs if isinstance(each, tuple) for lead in each
-        )
+        leads = tuple(lead for each in jobs for lead in each)
         if results_left_to_advance(
             test_mode=bool(found["test_mode"]),
             results_on=await modules.is_results_enabled(),
@@ -587,7 +584,7 @@ def _round_change(
     async def plan_posts(
         ctx: StepContext, rnd: Round
     ) -> tuple[
-        tuple[PlannedStep, ...], tuple[tuple[RoundLead, ...] | CheckInJobs, ...]
+        tuple[PlannedStep, ...], tuple[tuple[RoundLead, ...], ...]
     ]:
         """The posts the amendment owes and the timed work to arm, as each module answers the
         round armed again (`RoundArming`): its steps, which the queue runs in today's order (the

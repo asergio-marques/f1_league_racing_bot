@@ -24,8 +24,7 @@ from types import MappingProxyType
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from leaguebot.core.models.round import AttendanceWindows, Round, RoundLead
-from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
+from leaguebot.core.models.round import Round, RoundLead
 from leaguebot.framework.db.database import get_connection
 
 if TYPE_CHECKING:
@@ -180,89 +179,6 @@ class RoundJobs:
             job_id=job_id, kind=lead.kind, key=rnd.id,
             name=f"{lead.label} s{season_number} d{division_tier} r{rnd.round_number}",
         )
-
-    def schedule_attendance_round(
-        self,
-        rnd: Round,
-        *,
-        season_number: int,
-        division_tier: int,
-        notice_days: int,
-        last_notice_hours: int,
-        deadline_hours: int,
-        now: datetime,
-    ) -> None:
-        """Register RSVP DateTrigger jobs for *rnd* (attendance module).
-
-        Job IDs follow the same ``<event_type>_s{S}_d{D}_r{R}_id{round_id}`` convention
-        as `arm_leads`.  Jobs are only created when their fire time is in
-        the future.  ``replace_existing=True`` makes re-scheduling amended
-        rounds safe.
-
-        Args:
-            season_number:       Season number (for human-readable job IDs).
-            division_tier:       Division tier (for human-readable job IDs).
-            notice_days:         Days before round to post RSVP embed.
-            last_notice_hours:   Hours before round for last-notice ping (0 = disabled).
-            deadline_hours:      Hours before round for distribution deadline.
-            now:                 The moment the jobs are judged against: one whose moment is not
-                                 ahead of it is skipped (the queue's clock, never the wall's).
-
-        A fourth job, ``rsvp_cleanup``, takes the round's call, last notice and distribution
-        message down `POST_RACE_CLEANUP_DELAY` after the round's start.
-
-        Each of the four is armed with no lateness limit (`misfire_grace_time=None`), so one whose
-        moment passed while the bot was down fires when it is back, and its handler, the
-        check-in's change, judges what late means: a last notice is sent late while the deadline
-        is ahead, and a call or a deadline is asked as it would be on time.
-        """
-        moments = round_event_moments(
-            rnd.scheduled_at,
-            attendance=AttendanceWindows(notice_days, last_notice_hours, deadline_hours),
-        )
-        _suffix = _round_job_suffix(rnd, season_number, division_tier)
-
-        # The call, the last notice (absent where its hours are 0) and the deadline, each only
-        # while its moment is still ahead of *now*.
-        for kind, label in (
-            ("rsvp_notice", "RSVP notice"),
-            ("rsvp_last_notice", "RSVP last-notice"),
-            ("rsvp_deadline", "RSVP deadline"),
-        ):
-            fire_at = moments.get(kind)
-            if fire_at is None:
-                continue
-            job_id = f"{kind}{_suffix}"
-            if fire_at > now:
-                self._timers.arm_at(
-                    job_id=job_id, kind=kind, key=rnd.id,
-                    run_at=fire_at, name=f"{label} s{season_number} d{division_tier} r{rnd.round_number}",
-                )
-            else:
-                log.info("Skipping %s — fire time %s is in the past", job_id, fire_at.isoformat())
-
-        # Cleanup job, a day after the round
-        self.schedule_round_cleanups(
-            rnd, season_number=season_number, division_tier=division_tier, now=now
-        )
-
-    def schedule_round_cleanups(
-        self, rnd: Round, *, season_number: int, division_tier: int, now: datetime
-    ) -> None:
-        """Register the ``rsvp_cleanup`` that takes a round's call, last notice and distribution
-        message down `POST_RACE_CLEANUP_DELAY` after its start, only while its moment is still
-        ahead of *now*, the restart's catch-up taking one already past (attendance's
-        `recover_missed_check_in_clean_ups`). It replaces a job of the same id."""
-        suffix = _round_job_suffix(rnd, season_number, division_tier)
-        cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
-        rsvp_job_id = f"rsvp_cleanup{suffix}"
-        if cleanup_fire_at > now:
-            self._timers.arm_at(
-                job_id=rsvp_job_id, kind="rsvp_cleanup", key=rnd.id,
-                run_at=cleanup_fire_at, name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-            )
-        else:
-            log.info("Skipping %s — fire time %s is in the past", rsvp_job_id, cleanup_fire_at.isoformat())
 
     def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> list[str]:
         """Remove scheduler jobs belonging to *round_id*, and give the ids of those that went.

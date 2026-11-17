@@ -139,23 +139,6 @@ ROUND_JOB_PHASES = {
 
 
 @dataclass(frozen=True)
-class AttendanceWindows:
-    """The three check-in lead times, as `attendance_config` stores them."""
-
-    notice_days: int
-    last_notice_hours: int
-    deadline_hours: int
-
-
-@dataclass(frozen=True)
-class CheckInJobs:
-    """What a module asks the scheduler to arm of a round's check-in, as the round is armed again:
-    the lead times its call, its last notice and its deadline fall at."""
-
-    windows: AttendanceWindows
-
-
-@dataclass(frozen=True)
 class RoundLead:
     """One timer a module wants set for a round, as a plain record core arms under its own naming.
 

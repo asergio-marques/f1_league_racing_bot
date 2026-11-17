@@ -1,23 +1,20 @@
-"""When a round's timed events fall, and the delay after the race that places its clean-ups.
+"""The delay after the race that places a round's clean-ups, and the words and reads the modules' timers share.
 
-`round_event_moments` works out when each of a round's events falls, keyed by the kind its job is
-stored with (`ROUND_JOB_KINDS`); `clean_up_moment` gives the clean-ups' moment alone, and
-`round_event_moments` places them by it. The scheduler's arming, the approval's overdue windows
-and the amendment's rules all read `round_event_moments`, so for them the rules hold in one place:
-a last notice of 0 hours is no last notice, a deadline of 0 hours is the round's own moment, and a
-moment stored without a zone is UTC.
+`clean_up_moment` gives when a round's clean-ups fall, the one next-day figure the weather and
+attendance modules both place theirs by. Each module places the rest of its own events from its
+own lead builder (`forecast_moments`, `check_in_moments`), which core's arming reads the same
+leads from, so for them the rules hold in one place: a last notice of 0 hours is no last notice,
+a deadline of 0 hours is the round's own moment, and a moment stored without a zone is UTC.
 
 Pure by design: no database, no clock, no scheduler; `read_round_leads` only gathers what the
-modules' subscribers to the leads hook hand back. The two window types `round_event_moments`
-reads, and the kind names its keys match (`ROUND_JOB_KINDS`), are plain data and live in
-`core.models.round`, which imports no service.
+modules' subscribers to the leads hook hand back.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.models.round import AttendanceWindows, RoundLead
+from leaguebot.core.models.round import RoundLead
 from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
@@ -82,31 +79,7 @@ def clean_up_moment(scheduled_at: datetime) -> datetime:
     """When a round's clean-ups fall, `POST_RACE_CLEANUP_DELAY` after its moment, in UTC.
 
     The forecast's and the check-in's fall together and depend on no lead time, so the callers
-    that need only this, the arming of a clean-up and the amendment's test of one due, ask for
-    it here and `round_event_moments` places both clean-ups by it.
+    that need only this, the amendment's test of a clean-up due and the restart's catch-up, ask
+    for it here; the modules' lead builders place both clean-ups by `POST_RACE_CLEANUP_DELAY`.
     """
     return scheduled_at + POST_RACE_CLEANUP_DELAY
-
-
-def round_event_moments(
-    scheduled_at: datetime, *, attendance: AttendanceWindows | None
-) -> Mapping[str, datetime]:
-    """When each of a round's check-in events falls, keyed by the kind its job is stored with.
-
-    Where *attendance* is handed, the check-in's call, last notice and deadline fall at theirs
-    before the round and its clean-up `POST_RACE_CLEANUP_DELAY` after it: a last notice of 0 hours
-    is no last notice and is left out, and a deadline of 0 hours is the round's own moment. A
-    round's moment is aware, and every moment given is in UTC.
-
-    No moment is judged here, neither past nor ahead: whether one still falls ahead is the
-    caller's to ask of the `now` it holds.
-    """
-    at = scheduled_at.astimezone(timezone.utc)
-    moments: dict[str, datetime] = {}
-    if attendance is not None:
-        moments["rsvp_notice"] = at - timedelta(days=attendance.notice_days)
-        if attendance.last_notice_hours > 0:
-            moments["rsvp_last_notice"] = at - timedelta(hours=attendance.last_notice_hours)
-        moments["rsvp_deadline"] = at - timedelta(hours=max(attendance.deadline_hours, 0))
-        moments["rsvp_cleanup"] = clean_up_moment(at)
-    return moments
