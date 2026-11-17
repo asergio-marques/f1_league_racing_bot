@@ -2304,11 +2304,18 @@ class ChangeQueue:
         self, notice_message_id: int | None
     ) -> tuple[aiosqlite.Row, list[aiosqlite.Row], aiosqlite.Row] | None:
         """The job the stop notice *notice_message_id* is of, with its change and the change's
-        steps, where it still stops the queue; None where it does not."""
+        steps, where it still stops the queue; None where it does not.
+
+        A notice is found by the message saved on its job, or by the queue's memory of one that
+        has landed but whose save failed (`_unsaved_notices`), so that its buttons work meanwhile.
+        A restart forgets that memory: the notice is then posted again and the first one's
+        buttons are refused, as a notice of no stop (accepted; see `_post_notice`)."""
         if notice_message_id is None:
             return None
         for found in await self._stopped_jobs():
-            if found[2]["notice_message_id"] == notice_message_id:
+            unsaved = self._unsaved_notices.get(found[2]["id"])
+            if notice_message_id in (found[2]["notice_message_id"],
+                                     None if unsaved is None else unsaved[1]):
                 return found
         return None
 
