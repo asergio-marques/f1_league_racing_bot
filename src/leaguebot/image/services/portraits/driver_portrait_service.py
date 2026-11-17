@@ -389,9 +389,10 @@ def cancel_portrait_refresh(scheduler: SchedulerService) -> bool:
     """Remove the daily portrait refresh, and say whether it is gone: True where it was removed or
     was not there, False where it stands still because the scheduler could not remove it.
 
-    It never raises, as every cancel of a job is a clean-up. The scheduler's removal logs a fault
-    and answers False, which is also what it answers for a job already gone; so a False is read
-    against whether the job stands, and only a job that stands is a failure.
+    The removal never raises, as every cancel of a job is a clean-up: the scheduler's removal logs
+    a fault and answers False, which is also what it answers for a job already gone; so a False is
+    read against whether the job stands, and only a job that stands is a failure. That read of the
+    store can raise where the store cannot be read, and `disarm_daily`'s fault reply covers it.
     """
     if scheduler.remove(PORTRAIT_REFRESH_JOB_ID):
         log.info("Removed %s", PORTRAIT_REFRESH_JOB_ID)
