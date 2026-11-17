@@ -39,7 +39,8 @@ service by its file, not its folder.
 tiers the change queue asks (who is a league admin, who a league manager) and `league_settings` the
 league's settings the posting handlers read (the claimed server, the roles and the log channel),
 each as a protocol. Core's `ConfigService` fulfils both, so the rule stays in core
-(`core.md`, "Services, and what each owns") and the framework names no core type.
+(`core.md`, "Services, and what each owns") and no framework service names a core type; only
+`LeagueBot` does, for the type checker (`architecture.md`, "How the code is laid out").
 
 **The framework's models** (`framework/models/`) are plain data: the change queue's vocabulary
 (`change.py`), the refusal a member reads (`Refused`, `refusal.py`), what a start-up step's error
@@ -186,10 +187,18 @@ the helpers `sole_row` and `inserted_id`. The schema's one baseline is
 `framework/db/migrations/001_baseline.sql`; `run_migrations`' docstring says how a migration is
 applied and when one is refused.
 
-The framework owns four tables: the queue's `queued_changes` and `queued_change_steps`,
-`audit_entries` and `pending_messages`. Core reads and writes them only through the framework's
-services (`queue_records`, `audit_service`, `retry_service`), as `architecture.md`'s rules on
-table owners have it.
+The framework owns four tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`).
+Core reads and writes them only through the framework's services (`queue_records`, `audit_service`,
+`retry_service`), as `architecture.md`'s rules on table owners have it; how it does so is
+`core.md`'s ("Core's tables"). `schema_migrations` is the migrations' own record, written by
+`run_migrations` alone.
+
+| Table | One row is | Held to it by |
+|---|---|---|
+| `queued_changes` | one change asked of the queue | CHECKs on `origin` and `state`; `queued_changes_one_running` |
+| `queued_change_steps` | one job: a step of a change | `UNIQUE (change_id, position)` |
+| `audit_entries` | one recorded change | — |
+| `pending_messages` | one log line the log channel has not yet taken | — |
 
 | Constraint | Stated in | Pinned by |
 |---|---|---|
@@ -203,7 +212,7 @@ table owners have it.
 
 Answers to `architecture.md`, "Timed work and restarts". What each kind of job does when missed is
 the core specification's ("When the bot stops"); a round's timers are armed by core's `RoundJobs`
-(`core.md`, "The scheduler, and core's round jobs").
+(`core.md`, "Core's round jobs").
 
 ### The scheduler
 
@@ -235,11 +244,10 @@ before it, from reading the settings to connecting, is the entry point's (`core.
   order, it reads the module's switch (`ModuleService.is_enabled`, by the switch key), passes the
   module over, with a line in the host's log, where it is off, save for any step the module marks
   `runs_while_off`, which runs whatever the switch says, and otherwise runs the module's own steps
-  in the module's own order. A module marks a step so only where it finishes work the module
-  announced while on. Each enabled module catches up its own missed events in its turn: no pass
+  in the module's own order (`architecture.md`, "Timed work and restarts", says when a step may be
+  so marked). Each enabled module catches up its own missed events in its turn: no pass
   interleaves the events of different modules by time (`architecture.md`, "Timed work and
-  restarts"). *Rejected:* one list of every module's steps in core's hands, which ran a disabled
-  module's recoveries and left the order of the modules' steps among themselves to the builder.
+  restarts").
 - **Each step, each switch read, each module's list of steps and the queue's start is contained**:
   one that raises is logged with its traceback and reported to the log channel by one line
   (`start_up_failure_line`), and the rest carry on, the module's later steps included. Where the
@@ -263,9 +271,10 @@ says what the queue's start does. Which steps are signed up, and in what order, 
 
 | Constraint | Stated in | Pinned by |
 |---|---|---|
-| The scheduler starts paused and is resumed last, so a restart's take-down of a review comes before its timer | `framework/services/jobs/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
+| The scheduler starts paused and is resumed last, so a start-up step's work is asked before any timer that would act on the same thing can fire | `framework/services/jobs/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
 | The queue is held from before the bot connects until the sweep has asked its own, and released whatever the sweep does | `ChangeQueue.hold`, `release` and `sweeping`, `start_up`'s docstring | `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`, `test_the_sweep_releases_held_requests_before_the_queue_starts` |
 | A held typed answer counts as waiting, so a second is turned away | `turn_waiting`, `ChangeQueue.held_turn_channels` | `test_a_second_message_typed_while_the_first_is_held_is_turned_away` |
+| The job runner's module path is pinned, since the job store keeps the path of the callable each job runs | `framework/services/jobs/scheduler.py`'s docstring | `test_every_stored_job_names_the_runner_by_its_pinned_module_path` |
 
 The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
 function"): it is `RetryCog.retry_loop` (`framework/cogs/retry_cog.py`), started by
@@ -283,7 +292,7 @@ The framework posts two things of its own:
 
 | Post | Kind | Channel | Posted by | Found again by |
 |---|---|---|---|---|
-| A log line | log line | `server_configs.log_channel_id` | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
+| A log line | log line | the log channel the league's settings name (`LeagueSettings`) | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
 | The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id` |
 
 A replaced standing post is deleted by a job after the new one, built by `standing_posts`

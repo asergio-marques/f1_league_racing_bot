@@ -21,9 +21,9 @@ Answers to `architecture.md`, "The database".
 ### Core's tables
 
 Core owns sixteen tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `framework/db/migrations/001_baseline.sql`; the four marked as the framework's are its,
-listed for what core asks of them. `schema_migrations` is the migrations' own
-record, written by `run_migrations` alone.
+declared in `framework/db/migrations/001_baseline.sql`. The framework's four, the queue's, the
+record's and the log lines', and the migrations' own record are `framework.md`'s ("The database");
+core asks of them as below.
 
 | Table | One row is | Held to it by |
 |---|---|---|
@@ -42,14 +42,10 @@ record, written by `run_migrations` alone.
 | `driver_history_entries` | a driver's result in one division of a past season | unique over profile, season number and division name |
 | `driver_season_assignments` | a driver's placement in a division of a season | `committed` filled by a trigger when inserted empty |
 | `driver_division_memberships` | a driver having held a committed placement in a division | written by triggers on the placements |
-| `audit_entries` (the framework's) | one recorded change | — |
-| `pending_messages` (the framework's) | one log line the log channel has not yet taken | — |
-| `queued_changes` (the framework's) | one change asked of the queue | CHECKs on `origin` and `state`; `queued_changes_one_running` |
-| `queued_change_steps` (the framework's) | one job: a step of a change | `UNIQUE (change_id, position)` |
 | `season_review_prompts` | one standing season-review question | keyed by its message id |
 
-**Core writes the audit log and reaches the queue through the framework.** The four tables marked as
-the framework's are not written or read by core's own SQL. A change's audit entry is written by the
+**Core writes the audit log and reaches the queue through the framework.** The framework's four
+tables are not written or read by core's own SQL. A change's audit entry is written by the
 framework's writers (`record_change_on`, `record_system_change_on`), each handed the raw old and new
 values, which the writer encodes as JSON with sorted keys, so no core site chooses an encoding of its
 own; core asks the change queue through `queue_records` and the retry queue through `retry_service`
@@ -238,8 +234,7 @@ modules: every service, every hook and the order of its subscribers, a hand-in f
 another, the cogs and views, and the order of the modules' start-up turns. Core has no wiring of its
 own. `test_build_returns_every_service_complete` and
 `test_every_kind_is_registered_before_the_scheduler_starts` pin that. `LeagueBot`
-(`framework/utils/league_bot.py`) declares every attribute the builder attaches, each hook among
-them, and `test_every_attribute_bot_py_attaches_is_declared` holds the two equal.
+declares every attribute the builder attaches (`framework.md`, "How the code is laid out").
 
 ### Command groups
 
