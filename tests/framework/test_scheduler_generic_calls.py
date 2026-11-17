@@ -222,9 +222,6 @@ def _names_and_texts(tree: ast.AST) -> set[str]:
     return found
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: the scheduler still holds the round and module scheduling"
-)
 def test_the_scheduler_names_no_round_module_or_kind_of_job():
     """The scheduler's code is read: no name it defines or reads, and no string it holds outside
     a docstring, carries a word naming a round, a module or a kind of job."""

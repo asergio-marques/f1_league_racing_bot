@@ -962,9 +962,6 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results has no arming or cancelling of its amendment sweep yet"
-)
 async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
     """Results is on, and the standing sweep that undoes an amendment nobody carried through is
     armed on the bot's scheduler, as turning results on and each start of the bot arm it. The

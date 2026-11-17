@@ -123,8 +123,8 @@ def results_off_change(
     handed rather than read from attendance's own table directly, so this module still imports
     none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
     results calls with the rounds it made FINAL. *disarm_amendment_sweep* removes the amendment
-    sweep from the scheduler (`SchedulerService.cancel_amendment_sweep`). *now* is the queue's clock, which dates the closing of
-    the rounds (`ChangeQueue.now`). The payload is ``{"cascade_attendance": bool}``.
+    sweep from the scheduler (`amendment_writes.cancel_amendment_sweep`, handed the scheduler by
+    results' wiring). *now* is the queue's clock, which dates the closing of the rounds (`ChangeQueue.now`). The payload is ``{"cascade_attendance": bool}``.
     """
 
     async def check(ctx: CheckContext) -> Verdict:

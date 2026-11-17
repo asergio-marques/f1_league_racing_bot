@@ -890,9 +890,6 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 _RECOVERIES_GIVEN_THE_DATABASE_PATH = frozenset({"missed phases", "missed forecast clean-ups"})
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results has no arming of its amendment sweep of its own yet"
-)
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read

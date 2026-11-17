@@ -355,6 +355,7 @@ def register_change_types(
         submission_open_change,
         submission_restart_change,
     )
+    from leaguebot.results.services.round_amendment.amendment_writes import cancel_amendment_sweep
     from leaguebot.results.services.submission.submission_turn_change import (
         submission_config_change,
         submission_turn_change,
@@ -365,7 +366,7 @@ def register_change_types(
             attendance_off_on=attendance_off_on,
             attendance_enabled=bot.module_service.is_attendance_enabled,
             rounds_made_final=bot.rounds_made_final,
-            disarm_amendment_sweep=bot.scheduler_service.cancel_amendment_sweep,
+            disarm_amendment_sweep=lambda: cancel_amendment_sweep(bot.scheduler_service),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -590,13 +591,15 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     bot.advance_steps.register_step("results", advance_step(bot.change_queue, bot.db_path))
 
     # The standing sweep that undoes an amendment nobody carried through; start-up arms it.
+    from leaguebot.results.services.round_amendment.amendment_writes import AMENDMENT_SWEEP_KIND
+
     async def _amendment_sweep_cb() -> None:
         from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
         await sweep_expired_amendments(
             bot.db_path, queue=bot.change_queue, now=bot.change_queue.now()
         )
 
-    scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
+    scheduler.register_timer(AMENDMENT_SWEEP_KIND, _amendment_sweep_cb)
 
 
 
@@ -638,4 +641,6 @@ async def arm_amendment_sweep(bot: "LeagueBot") -> None:
     without a setting of its own: the amendment's first stage commits, so a league running the results module at all can
     leave a round half-amended, and the sweep is what makes that recoverable without anybody
     noticing it happened."""
-    bot.scheduler_service.schedule_amendment_sweep()
+    from leaguebot.results.services.round_amendment.amendment_writes import schedule_amendment_sweep
+
+    schedule_amendment_sweep(bot.scheduler_service)

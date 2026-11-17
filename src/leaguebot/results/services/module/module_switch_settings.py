@@ -40,6 +40,7 @@ from leaguebot.framework.services.queue.change_types import CheckContext, Step, 
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import PLACEMENTS_CONFIRMED_REFUSAL
 from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
+from leaguebot.results.services.round_amendment.amendment_writes import schedule_amendment_sweep
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -79,7 +80,7 @@ def _arm_sweep(scheduler: "SchedulerService") -> After:
     """
 
     async def run(_ctx: StepContext) -> StepResult:
-        scheduler.schedule_amendment_sweep()
+        schedule_amendment_sweep(scheduler)
         return StepResult()
 
     def fault_reply(_payload: dict[str, Any], reply: str) -> str:

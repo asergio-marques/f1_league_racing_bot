@@ -354,9 +354,6 @@ NEEDS_RESULTS = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results does not yet arm its amendment sweep through arm_every"
-)
 async def test_results_is_enabled(tmp_path):
     """The member is acknowledged at once, and once the change has run the module is on and
     audited, the sweep that undoes a lapsed amendment is armed, once, and the reply and the
@@ -381,9 +378,6 @@ async def test_results_is_enabled(tmp_path):
     assert await log_lines(league) == [f"{NAMED} | /module enable results | Success"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results does not yet arm its amendment sweep through arm_every"
-)
 async def test_a_results_enable_whose_sweep_cannot_be_armed_leaves_results_on_and_says_so(
     tmp_path,
 ):

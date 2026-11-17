@@ -73,11 +73,6 @@ class _JobScheduler(AsyncIOScheduler):
 _GLOBAL_SERVICE: "SchedulerService | None" = None
 
 
-#: The kinds of the standing and one-shot jobs no round owns, named for what they do. Each is
-#: signed up with `SchedulerService.register_timer`, and stored on its job as ``kind``.
-AMENDMENT_SWEEP_KIND = "amendment_sweep"
-
-
 async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
     """The one module-level APScheduler callable every job the scheduler arms runs through —
     picklable for the job store, and named for the one-off timer it first ran.
@@ -103,17 +98,6 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
             await outcome
     except Exception:  # noqa: BLE001 — one job's fault must not reach the scheduler
         log.exception("_one_off_timer_job: the %s job for %s failed", kind, key)
-
-
-#: The standing sweep that undoes an amendment nobody approved.
-AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
-
-#: How often it looks. An amendment lapses after
-#: ``amendment_writes.AMENDMENT_STAGE_TIMEOUT_SECONDS``; sweeping every five minutes
-#: means a lapsed one is undone within five minutes of its deadline rather than at the deadline
-#: exactly, which is close enough for a round nobody is working on and cheap — the sweep reads
-#: one indexed table and almost always finds nothing.
-AMENDMENT_SWEEP_MINUTES = 5
 
 
 @dataclass(frozen=True)
@@ -436,41 +420,3 @@ class SchedulerService:
                 removed += 1
         log.info("Removed %d scheduled job(s), keeping %s", removed, sorted(keep) or "none")
         return removed
-
-    # ------------------------------------------------------------------
-    # Standing jobs: the amendment sweep
-    # ------------------------------------------------------------------
-
-    def schedule_amendment_sweep(self) -> None:
-        """Arm the standing sweep that undoes an amendment nobody carried through.
-
-        An ``IntervalTrigger`` for the reason ``arm_daily`` gives for its cron
-        one: this is a standing instruction rather than an event, and re-arming it from inside
-        its own callback would put the survival of the schedule at the mercy of the job body —
-        a sweep that raised would silently be the last.
-
-        It is a sweep that repeats, not one timer per amendment, because an amendment is left
-        abandoned by no event the bot sees: nobody carried it through. Each run re-reads the
-        amendments' rows and undoes those past their deadline, as architecture.md's standing sweep
-        is (a job that re-reads its rows each time it runs). It is armed with no lateness limit
-        (`misfire_grace_time=None`), so a run due while the bot was down is made when it is back.
-
-        ``replace_existing=True`` so a restart re-arms rather than duplicates it.
-        """
-        self._scheduler.add_job(
-            _one_off_timer_job,
-            trigger=IntervalTrigger(minutes=AMENDMENT_SWEEP_MINUTES),
-            id=AMENDMENT_SWEEP_JOB_ID,
-            replace_existing=True,
-            misfire_grace_time=None,
-            name="Revert abandoned round amendments",
-            kwargs={"kind": AMENDMENT_SWEEP_KIND},
-        )
-        log.info(
-            "Scheduled %s every %d minutes", AMENDMENT_SWEEP_JOB_ID, AMENDMENT_SWEEP_MINUTES
-        )
-
-    def cancel_amendment_sweep(self) -> None:
-        """Remove the standing sweep `schedule_amendment_sweep` arms (no-op where it is not armed),
-        as turning results off undoes what turning it on set up."""
-        self.cancel_job(AMENDMENT_SWEEP_JOB_ID)

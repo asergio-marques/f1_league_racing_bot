@@ -489,9 +489,6 @@ async def test_a_round_with_no_deadline_is_not_swept(tmp_path):
 # ── The sweep is actually armed ────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results has no arming of its amendment sweep of its own yet"
-)
 def test_the_sweep_is_scheduled_as_a_standing_job():
     """**A timeout nothing invokes is a promise the documentation would be lying about.**
 
@@ -513,9 +510,6 @@ def test_the_sweep_is_scheduled_as_a_standing_job():
     assert "schedule_amendment_sweep(" in arming
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results does not yet hold the amendment sweep's interval"
-)
 def test_the_sweep_runs_often_enough_to_honour_the_deadline():
     """Sweeping less often than the deadline would let a lapsed amendment sit past it.
 
@@ -529,9 +523,6 @@ def test_the_sweep_runs_often_enough_to_honour_the_deadline():
     assert AMENDMENT_SWEEP_MINUTES * 60 < AMENDMENT_STAGE_TIMEOUT_SECONDS
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results does not yet arm its amendment sweep through arm_every"
-)
 def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     """A job that re-arms itself from inside its body stops for good the first time it raises.
 
@@ -557,10 +548,6 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     assert [call[0] for call in scheduler.method_calls] == ["arm_every"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#544: results has no amendment sweep of its own; the scheduler still arms it",
-)
 async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
     """Results arms its sweep on a paused scheduler, with a handler signed up for the kind
     `amendment_sweep`: the job stands under `amend_sweep`, its callable is the scheduler's one
