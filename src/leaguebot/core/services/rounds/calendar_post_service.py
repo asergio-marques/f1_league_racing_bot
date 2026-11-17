@@ -36,6 +36,8 @@ from leaguebot.framework.models.change import (
     PlannedStep,
     StepKind,
     StepFailedOnDiscord,
+    RESULT_DRAWN,
+    RESULT_NOTICES,
     StepResult,
     Verdict,
     drawn_lines_kept,
@@ -49,6 +51,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
+    drawn_notices_of,
 )
 from leaguebot.core.services.modules.image_drawing import CalendarPicture, ImageDrawing
 from leaguebot.core.services.seasons.season_end_changes import SEASON_CANCEL
@@ -56,7 +59,9 @@ from leaguebot.framework.services.posting.standing_post_handler import post_stan
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import league_guild
-from leaguebot.framework.utils.log_lines import drawn_notices_line, refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import (
+    drawn_notices_line, drawn_notices_section, refusal_line, reply_reason,
+)
 from leaguebot.core.utils.season_gate import stage_refusal
 
 if TYPE_CHECKING:
@@ -395,6 +400,11 @@ def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str
     )
 
 
+def _drawn_as(division_name: str) -> str:
+    """What the calendar's log line, and the reply listing its notices, call the picture."""
+    return f"calendar — {division_name}"
+
+
 def _posting_lines(
     ctx: StepContext, division_name: str, posting: CalendarPosting, *, text_stands: bool
 ) -> tuple[str, ...]:
@@ -404,7 +414,7 @@ def _posting_lines(
     lines: tuple[str, ...] = ()
     if posting.notices:
         lines += (drawn_notices_line(
-            ctx.named, ctx.what, f"calendar — {division_name}", posting.notices
+            ctx.named, ctx.what, _drawn_as(division_name), posting.notices
         ),)
     if text_stands and posting.problem is not None:
         lines += (_fallen_back_to_text_line(ctx, division_name, str(posting.problem)),)
@@ -500,7 +510,8 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             result={
                 "division": division.name,
                 "problem": posting.problem,
-                "notices": list(posting.notices),
+                RESULT_NOTICES: list(posting.notices),
+                RESULT_DRAWN: _drawn_as(division.name),
                 "rejected": posting.problem is not None and posting.message_id is None,
                 "posted_as_image": posting.posted_as_image,
                 "new": posting.message_id,
@@ -508,6 +519,8 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
                 "channel_id": posting.channel_id,
             },
             lines=lines,
+            # The notices line comes first of this try's own, after the lines kept from before.
+            linked=len(earlier) if posting.notices else None,
             # A posting that put nothing up (a commanded render that failed) replaces nothing.
             then=standing_posts.replaced(
                 posting.channel_id, division.calendar_message_id, posting.message_id,
@@ -630,10 +643,9 @@ def calendar_sync_change(seasons: "SeasonService", drawing: ImageDrawing) -> Cha
         result = (posted.result if posted is not None else None) or {}
         drawn = "image" if result.get("posted_as_image") else "text"
         lines = [f"✅ Calendar for **{name}** reposted as {drawn}."]
-        if result.get("notices"):
-            lines.append("")
-            lines.append("**Notices**")
-            lines.extend(f"  • {detail}" for detail in result["notices"])
+        section = drawn_notices_section(drawn_notices_of(ctx.steps, POST_CALENDAR))
+        if section:
+            lines.extend(("", section))
         return "\n".join(lines) + not_deleted(ctx)
 
     return ChangeType(

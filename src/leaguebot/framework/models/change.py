@@ -140,6 +140,24 @@ class StepResult:
     linked: int | None = None
 
 
+#: The keys under which a job that drew a picture puts, on its result, the notices the picture came
+#: back with and the subject its log line names it by ("calendar — Pro"), for the change's outcome
+#: to list in the reply (`drawn_notices_of`).
+RESULT_NOTICES = "notices"
+RESULT_DRAWN = "drawn"
+
+
+@dataclass(frozen=True)
+class DrawnNotices:
+    """The render notices of one picture, as a reply lists them: *label* is what the picture's log
+    line calls it, *notices* their words, and *link* the link to the log message holding them,
+    None where the log channel did not take the line or the reply is no longer fed by memory."""
+
+    label: str
+    notices: tuple[str, ...]
+    link: str | None = None
+
+
 #: The key under which a post job keeps, in the result of the stop it raises, the lines its picture
 #: was drawn with, so that the try after it hands them back with its own.
 DRAWN_LINES = "drawn_lines"

@@ -47,7 +47,7 @@ Pinned by the tests under "A job that ends on a fault".
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -55,9 +55,12 @@ import aiosqlite
 
 from leaguebot.framework.models.change import (
     ChangeOrigin,
+    DrawnNotices,
     FollowOn,
     LEAGUE_LANE,
     PlannedStep,
+    RESULT_DRAWN,
+    RESULT_NOTICES,
     StepKind,
     StepResult,
     Verdict,
@@ -96,6 +99,21 @@ class StepView:
     result: dict[str, Any] | None
     done: bool
     log_link: str | None = None
+
+
+def drawn_notices_of(steps: Iterable[StepView], name: str) -> tuple[DrawnNotices, ...]:
+    """The notices of every picture the jobs called *name* among *steps* drew, in their order, for
+    an outcome to list through `drawn_notices_section`: each is labelled as the job's result
+    names its picture (`RESULT_DRAWN`) and carries the job's `log_link`. A job discarded, or one
+    whose picture came back with no notice, has none."""
+    found: list[DrawnNotices] = []
+    for each in steps:
+        result = each.result or {}
+        notices = tuple(str(text) for text in result.get(RESULT_NOTICES) or ())
+        if each.name != name or "discarded" in result or not notices:
+            continue
+        found.append(DrawnNotices(str(result.get(RESULT_DRAWN) or name), notices, each.log_link))
+    return tuple(found)
 
 
 @dataclass(frozen=True)

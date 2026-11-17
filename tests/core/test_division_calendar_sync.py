@@ -243,9 +243,6 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#550: the reply lists its notices under no Image notices heading or link"
-)
 @pytest.mark.parametrize("log_channel", ["takes", "refuses"])
 async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(
     tmp_path, log_channel,
