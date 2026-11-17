@@ -1057,8 +1057,8 @@ async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(d
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
-    # No module's window counts: a windows hook nothing is signed up to.
-    cog.bot.round_windows_read = AwaitedHook()
+    # No module's window counts: a leads hook nothing is signed up to.
+    cog.bot.round_leads_read = AwaitedHook()
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction.followup.send.reset_mock()
 

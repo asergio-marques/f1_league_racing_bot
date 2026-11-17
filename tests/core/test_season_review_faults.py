@@ -88,13 +88,23 @@ def _make_cog(
 
 
 def _reading_windows(**kwargs) -> SeasonCog:
-    """`_make_cog`'s cog, its bot signed up to the windows hook as the builder signs attendance
-    and weather up to it, which the cog's `_approval_windows` reads through."""
+    """`_make_cog`'s cog, its bot signed up to the leads hook as the builder signs attendance,
+    weather and results up to it (`_sign_up_to_round_windows`), which the cog's
+    `_approval_windows` reads through."""
     from leaguebot.__main__ import _sign_up_to_round_windows
 
     cog = _make_cog(**kwargs)
     _sign_up_to_round_windows(cog.bot)
     return cog
+
+
+#: Why the windows tests fail until the cog reads the modules' leads.
+_LEADS_NOT_READ = "#544: the cog reads the modules' windows, not their leads"
+
+
+def _quoted(leads) -> list[tuple[str, str]]:
+    """The leads the approval's date check quotes, as it quotes them: label and wording."""
+    return [(lead.check_label, lead.check_wording) for lead in leads if lead.check_label]
 
 
 def _weather(cog):
@@ -212,40 +222,44 @@ def test_both_faults_name_the_command_that_fixes_them():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_a_league_running_neither_module_has_no_windows():
     """Nothing to be inside, so nothing can be refused for it — a league running only the
     results module must not be blocked by windows it does not have."""
     cog = _reading_windows(attendance_enabled=False, weather_enabled=False)
 
     with _weather(cog):
-        attendance, weather = await cog._approval_windows()
+        leads = await cog._approval_windows()
 
-    assert attendance is None
-    assert weather is None
+    assert _quoted(leads) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_the_weather_windows_are_read_when_the_module_is_on():
     cog = _reading_windows(weather_enabled=True)
 
     with _weather(cog):
-        _, weather = await cog._approval_windows()
+        leads = await cog._approval_windows()
 
-    assert weather is not None
-    assert weather.phase_1_days == 5
-    assert weather.phase_2_days == 2
-    assert weather.phase_3_hours == 2
+    assert _quoted(leads) == [
+        ("Weather Phase 1", "5 days before"),
+        ("Weather Phase 2", "2 days before"),
+        ("Weather Phase 3", "2 hours before"),
+    ]
 
 
+@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_one_module_on_leaves_the_other_s_windows_absent():
     """The two are independent, and a league running attendance without weather must not
     be judged against phase horizons it never configured."""
     cog = _reading_windows(attendance_enabled=True, weather_enabled=False)
 
     with _weather(cog):
-        attendance, weather = await cog._approval_windows()
+        leads = await cog._approval_windows()
 
-    assert attendance is not None
-    assert weather is None
+    assert [label for label, _wording in _quoted(leads)] == [
+        "Check-in call", "Check-in last notice", "Check-in deadline"
+    ]
 
 
 async def test_a_disabled_module_s_configuration_is_not_even_read():
@@ -260,6 +274,7 @@ async def test_a_disabled_module_s_configuration_is_not_even_read():
     weather_read.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_the_windows_reflect_what_the_league_configured():
     """A league that shortened its notice to two days is judged against two, not against
     the packaged default — which is the point of reading them at all."""
@@ -271,8 +286,10 @@ async def test_the_windows_reflect_what_the_league_configured():
     )
 
     with _weather(cog):
-        attendance, _ = await cog._approval_windows()
+        leads = await cog._approval_windows()
 
-    assert attendance.notice_days == 2
-    assert attendance.last_notice_hours == 6
-    assert attendance.deadline_hours == 1
+    assert _quoted(leads) == [
+        ("Check-in call", "2 days before"),
+        ("Check-in last notice", "6 hours before"),
+        ("Check-in deadline", "1 hour before"),
+    ]

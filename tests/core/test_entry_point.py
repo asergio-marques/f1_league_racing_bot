@@ -340,17 +340,11 @@ _CANCELLATION_PARTS = (
 )
 
 
-#: Each module's subscriber to a round's timing windows read, as the module names it, and what the
-#: test calls it, in the order the builder signs them up.
-_WINDOWS_PARTS = (
-    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_window", "attendance's window"),
-    ("leaguebot.weather.services.weather_config_service", "round_window", "weather's window"),
-)
-
-
 #: Each module's subscriber to a round's leads read (`round_leads_read`), as the module names it,
 #: and what the test calls it, in the order the builder signs them up.
 _LEADS_PARTS = (
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_leads", "attendance's check-in"),
+    ("leaguebot.weather.services.weather_config_service", "round_leads", "weather's forecasts"),
     ("leaguebot.results.services.submission.round_start", "submission_leads",
      "results' submission"),
 )
@@ -525,9 +519,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     check-in notice, then weather's forecast note, then results' results note; and the steps a
     module plans, results' deletion of a submission channel, attendance's take-down of a call,
     attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
-    forecast note and results' results note. A round's timing windows read: attendance's window,
-    then weather's, each handed whether the round is being amended. A round's leads read: results'
-    submission. A round amended: as it is judged,
+    forecast note and results' results note. A round's leads read: attendance's check-in, then
+    weather's forecasts, then results' submission; no round's timing windows read is made. A round
+    amended: as it is judged,
     attendance's judgement of its check-in, then weather's of its forecasts; inside the
     save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's reopening
     of its check-in; as the round is armed again, the posts and timers each owes, attendance's then
@@ -588,7 +582,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
             cancellation_handed.append(args)
         monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
                             raising=False)
-    for module_name, name, part in (*_WINDOWS_PARTS, *_LEADS_PARTS):
+    for module_name, name, part in _LEADS_PARTS:
         async def window_spy(*_args, part=part, **_kwargs):
             called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, window_spy,
@@ -660,9 +654,6 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         ["delete_channel"], ["take_down_call"], ["read_check_in"], ["notify_checkin"],
         ["notify_forecast"], ["notify_results"],
     ]
-    called.clear()
-    await bot.round_windows_read.call()
-    assert called == ["attendance's window", "weather's window"]
     called.clear()
     await bot.round_leads_read.call()
     assert called == [part for _module, _name, part in _LEADS_PARTS]
@@ -790,25 +781,20 @@ async def test_the_builder_signs_signup_up_to_a_driver_s_account_changed(tmp_pat
     assert steps and all(isinstance(name, str) for name in steps)
 
 
-#: The windows the league configures in the pair test: attendance's three lead times, and
+#: The windows the league configures in the leads test: attendance's three lead times, and
 #: weather's three horizons, each unlike its default.
 _ATTENDANCE_SET = (3, 12, 1)
 _WEATHER_SET = (4, 1, 3)
 
+#: Why the leads tests fail until the modules answer the leads read in place of the windows read.
+_NO_MODULE_LEADS = "#544: attendance and weather answer no round_leads_read yet"
 
-@pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
-@pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
-async def test_the_windows_hook_hands_each_caller_today_s_pair(
-    tmp_path, attendance_on, weather_on
-):
-    """A league whose check-in calls go out 3 days ahead, their last notice 12 hours and their
-    deadline 1 hour before the round, and whose forecasts fall 4 days, 1 day and 3 hours before
-    it, with attendance and weather each on or off. Read through the hook the builder makes,
-    `(attendance, weather)` is what each caller has always received: attendance's window only
-    where attendance is on; weather's only where weather is on."""
+
+async def _leads_read(tmp_path, *, attendance_on, weather_on, attendance=_ATTENDANCE_SET):
+    """Every lead the hook the builder makes (`round_leads_read`) hands back, in order, for a
+    league whose check-in lead times are *attendance* and forecast horizons `_WEATHER_SET`, with
+    attendance and weather each on or off and results on."""
     from leaguebot.framework.db.database import get_connection
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-    from leaguebot.core.services.rounds.round_moments import read_round_windows
     from tests.support.change_queue import seed_server
 
     bot = await built_bot(tmp_path, now=_NOW)
@@ -817,7 +803,7 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
         await db.execute(
             "INSERT INTO attendance_config (id, module_enabled, rsvp_notice_days, "
             "rsvp_last_notice_hours, rsvp_deadline_hours) VALUES (1, ?, ?, ?, ?)",
-            (int(attendance_on), *_ATTENDANCE_SET),
+            (int(attendance_on), *attendance),
         )
         await db.execute(
             "INSERT INTO weather_pipeline_config (id, phase_1_days, phase_2_days, phase_3_hours) "
@@ -827,13 +813,76 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
         await db.execute("UPDATE server_configs SET weather_module_enabled = ?",
                          (int(weather_on),))
         await db.commit()
+    return [lead for leads in await bot.round_leads_read.call() for lead in leads or ()]
 
-    pair = await read_round_windows(bot.round_windows_read)
 
-    assert pair == (
-        AttendanceWindows(*_ATTENDANCE_SET) if attendance_on else None,
-        WeatherWindows(*_WEATHER_SET) if weather_on else None,
-    )
+@pytest.mark.xfail(strict=True, reason=_NO_MODULE_LEADS)
+@pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
+@pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
+async def test_the_leads_hook_hands_each_enabled_module_s_leads(
+    tmp_path, attendance_on, weather_on
+):
+    """A league whose check-in calls go out 3 days ahead, their last notice 12 hours and their
+    deadline 1 hour before the round, and whose forecasts fall 4 days, 1 day and 3 hours before
+    it, with attendance and weather each on or off and results on. Read through the hook the
+    builder makes, the leads come in the order the modules are signed up: attendance's only where
+    it is on (its call, last notice and deadline, each armed only while ahead and quoted by the
+    approval's date check as "Check-in call" and the like with its lead time worded "3 days
+    before", "12 hours before", "1 hour before", then its clean-up a day after the round, armed
+    only while ahead and never quoted); weather's only where it is on (its three phases, armed
+    whatever the hour and quoted as "Weather Phase 1" to 3 with "4 days before", "1 day before"
+    and "3 hours before", then its clean-up, never quoted); then results' submission, at the
+    round. Each timer keeps today's name."""
+    from leaguebot.core.models.round import RoundLead
+    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
+
+    handed = await _leads_read(tmp_path, attendance_on=attendance_on, weather_on=weather_on)
+
+    check_in = [
+        RoundLead(kind="rsvp_notice", offset=-timedelta(days=3), label="RSVP notice",
+                  ahead_only=True, check_label="Check-in call", check_wording="3 days before"),
+        RoundLead(kind="rsvp_last_notice", offset=-timedelta(hours=12), label="RSVP last-notice",
+                  ahead_only=True, check_label="Check-in last notice",
+                  check_wording="12 hours before"),
+        RoundLead(kind="rsvp_deadline", offset=-timedelta(hours=1), label="RSVP deadline",
+                  ahead_only=True, check_label="Check-in deadline", check_wording="1 hour before"),
+        RoundLead(kind="rsvp_cleanup", offset=POST_RACE_CLEANUP_DELAY, label="RSVP cleanup",
+                  ahead_only=True, clean_up=True),
+    ]
+    forecasts = [
+        RoundLead(kind="weather_p1", offset=-timedelta(days=4), label="Weather P1",
+                  check_label="Weather Phase 1", check_wording="4 days before"),
+        RoundLead(kind="weather_p2", offset=-timedelta(days=1), label="Weather P2",
+                  check_label="Weather Phase 2", check_wording="1 day before"),
+        RoundLead(kind="weather_p3", offset=-timedelta(hours=3), label="Weather P3",
+                  check_label="Weather Phase 3", check_wording="3 hours before"),
+        RoundLead(kind="cleanup", offset=POST_RACE_CLEANUP_DELAY, label="Forecast cleanup",
+                  clean_up=True),
+    ]
+    submission = RoundLead(kind="results", offset=timedelta(0), label="Result submission",
+                           run_at_once=True, left_to_advance=True)
+    assert handed == [
+        *(check_in if attendance_on else []), *(forecasts if weather_on else []), submission
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_MODULE_LEADS)
+async def test_a_zero_hour_last_notice_is_no_lead_and_a_zero_hour_deadline_falls_at_the_round(
+    tmp_path,
+):
+    """A league with attendance on whose check-in calls go out 5 days ahead, with its last notice
+    set to 0 hours and its deadline to 0 hours, and weather off. Attendance answers no last notice
+    at all, and its deadline at the round's own moment, quoted by the approval's date check as
+    "at the round"."""
+    handed = await _leads_read(tmp_path, attendance_on=True, weather_on=False,
+                               attendance=(5, 0, 0))
+
+    assert [(lead.kind, lead.offset, lead.check_label, lead.check_wording)
+            for lead in handed if lead.kind.startswith("rsvp_")] == [
+        ("rsvp_notice", -timedelta(days=5), "Check-in call", "5 days before"),
+        ("rsvp_deadline", timedelta(0), "Check-in deadline", "at the round"),
+        ("rsvp_cleanup", timedelta(hours=24), None, None),
+    ]
 
 
 @pytest.mark.xfail(strict=True, reason="#544: the builder makes no round_leads_read hook, nor does results answer it yet")

@@ -33,7 +33,7 @@ from tests.support.season_league import (
 
 #: Every workflow and gate the review's buttons run on `SeasonCog` today: work the press must not
 #: reach on the cog. All but `_approval_windows` move into core's services; `_approval_windows`
-#: stays for the review command, the workflow reading the windows through `read_round_windows`.
+#: stays for the review command, the workflow reading the modules' leads through `round_leads_read`.
 _COG_WORK = (
     "_do_approve", "_offer_backup_before_approving", "_record_backup_question_ended",
     "_do_confirm_mid_season_placements", "_do_confirm_configuration",

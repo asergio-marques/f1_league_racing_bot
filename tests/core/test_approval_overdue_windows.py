@@ -15,6 +15,11 @@ The first half answers the two faults below, reduced to the arithmetic underneat
 Every test pins ``now`` beside the dates it seeds. The module takes ``now`` as a required
 argument for exactly this reason: a test that seeded a future date and let the code read the
 wall clock would pass today and fail silently some months from now.
+
+The windows judged are a round's leads (`RoundLead`) that carry the date check's wording, as each
+module answers them; the leads here are written as attendance and weather answer them with their
+packaged settings, the wording each module gives its own being pinned where the modules answer
+(`test_entry_point.py`).
 """
 from __future__ import annotations
 
@@ -22,24 +27,62 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from leaguebot.core.models.round import (
-    AttendanceWindows,
-    Round,
-    RoundFormat,
-    RoundStatus,
-    WeatherWindows,
-)
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults, overdue_windows
 
 #: The moment every test judges against. Fixed, so the dates below mean the same thing on
 #: every host and in every year.
 NOW = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
 
-#: The defaults a league gets without configuring anything.
-DEFAULT_ATTENDANCE = AttendanceWindows(
-    notice_days=5, last_notice_hours=24, deadline_hours=2
-)
-DEFAULT_WEATHER = WeatherWindows(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
+#: Why the tests judging leads fail until the date check takes them.
+LEADS_NOT_JUDGED = "#544: the approval's date check takes the modules' windows, not their leads"
+
+
+def _lead(kind, offset, label, check_label=None, check_wording=None, **marks):
+    """A lead, imported where it is made, so that this file collects before `RoundLead` exists."""
+    from leaguebot.core.models.round import RoundLead
+
+    return RoundLead(kind=kind, offset=offset, label=label, check_label=check_label,
+                     check_wording=check_wording, **marks)
+
+
+def _check_in(notice_days=5, last_notice_hours=24, deadline_hours=2, *, last_notice=True,
+              deadline_wording=None):
+    """Attendance's leads as it answers them for the given lead times: the call, the last notice
+    (none where *last_notice* is false), the deadline, each quoted by the date check, and the
+    clean-up, which is not."""
+    leads = [_lead("rsvp_notice", -timedelta(days=notice_days), "RSVP notice", "Check-in call",
+                   f"{notice_days} days before", ahead_only=True)]
+    if last_notice:
+        leads.append(_lead("rsvp_last_notice", -timedelta(hours=last_notice_hours),
+                           "RSVP last-notice", "Check-in last notice",
+                           f"{last_notice_hours} hours before", ahead_only=True))
+    leads.append(_lead("rsvp_deadline", -timedelta(hours=deadline_hours), "RSVP deadline",
+                       "Check-in deadline", deadline_wording or f"{deadline_hours} hours before",
+                       ahead_only=True))
+    leads.append(_lead("rsvp_cleanup", timedelta(hours=24), "RSVP cleanup", ahead_only=True,
+                       clean_up=True))
+    return tuple(leads)
+
+
+def _forecasts(phase_1_days=5, phase_2_days=2, phase_3_hours=2):
+    """Weather's leads as it answers them for the given horizons: its three phases, each quoted by
+    the date check, and its clean-up, which is not."""
+    return (
+        _lead("weather_p1", -timedelta(days=phase_1_days), "Weather P1", "Weather Phase 1",
+              f"{phase_1_days} days before"),
+        _lead("weather_p2", -timedelta(days=phase_2_days), "Weather P2", "Weather Phase 2",
+              f"{phase_2_days} days before"),
+        _lead("weather_p3", -timedelta(hours=phase_3_hours), "Weather P3", "Weather Phase 3",
+              f"{phase_3_hours} hours before"),
+        _lead("cleanup", timedelta(hours=24), "Forecast cleanup", clean_up=True),
+    )
+
+
+def _submission():
+    """Results' lead, at the round, which the date check never quotes."""
+    return (_lead("results", timedelta(0), "Result submission", run_at_once=True,
+                  left_to_advance=True),)
 
 
 def _round(
@@ -67,6 +110,7 @@ def _labels(found) -> list[str]:
 # ── The two reported faults ───────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_an_elapsed_check_in_notice_is_reported():
     """#121: round 1 is three days away and the check-in notice is five days.
 
@@ -74,7 +118,7 @@ def test_an_elapsed_check_in_notice_is_reported():
     division credited with perfect attendance.
     """
     found = overdue_windows(
-        [("Premier", _round(days_out=3))], now=NOW, attendance=DEFAULT_ATTENDANCE
+        [("Premier", _round(days_out=3))], now=NOW, leads=_check_in()
     )
 
     assert "Check-in call" in _labels(found)
@@ -85,23 +129,24 @@ def test_an_elapsed_check_in_notice_is_reported():
     assert overdue.lead == "5 days before"
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_an_elapsed_phase_1_deadline_is_reported():
     """#122: the same season, against the default five-day Phase 1 horizon."""
     found = overdue_windows(
-        [("Premier", _round(days_out=3))], now=NOW, weather=DEFAULT_WEATHER
+        [("Premier", _round(days_out=3))], now=NOW, leads=_forecasts()
     )
 
     assert "Weather Phase 1" in _labels(found)
     assert next(w for w in found if w.label == "Weather Phase 1").fire_at == NOW - timedelta(days=2)
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_both_modules_are_reported_from_one_call():
     """One check covers both, which is what #121 and #122 each ask for."""
     found = overdue_windows(
         [("Premier", _round(days_out=3))],
         now=NOW,
-        attendance=DEFAULT_ATTENDANCE,
-        weather=DEFAULT_WEATHER,
+        leads=(*_check_in(), *_forecasts(), *_submission()),
     )
 
     assert _labels(found) == ["Check-in call", "Weather Phase 1"]
@@ -110,31 +155,33 @@ def test_both_modules_are_reported_from_one_call():
 # ── The season that is fine ───────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_beyond_every_window_is_clean():
     """The ordinary case. The gate must not refuse a season it has no business refusing."""
     found = overdue_windows(
         [("Premier", _round(days_out=30))],
         now=NOW,
-        attendance=DEFAULT_ATTENDANCE,
-        weather=DEFAULT_WEATHER,
+        leads=(*_check_in(), *_forecasts(), *_submission()),
     )
 
     assert found == []
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_disabled_module_contributes_no_windows():
     """A module that is off has no lead times to miss, so it cannot refuse a season."""
     past_round = [("Premier", _round(days_out=3))]
 
-    assert overdue_windows(past_round, now=NOW) == []
-    assert _labels(overdue_windows(past_round, now=NOW, weather=DEFAULT_WEATHER)) == [
+    assert overdue_windows(past_round, now=NOW, leads=_submission()) == []
+    assert _labels(overdue_windows(past_round, now=NOW, leads=_forecasts())) == [
         "Weather Phase 1"
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_no_rounds_at_all_is_clean():
     found = overdue_windows(
-        [], now=NOW, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+        [], now=NOW, leads=(*_check_in(), *_forecasts())
     )
 
     assert found == []
@@ -143,30 +190,21 @@ def test_no_rounds_at_all_is_clean():
 # ── The settings whose zero means something particular ────────────────────────
 
 
-def test_a_last_notice_of_zero_is_not_a_window():
-    """Zero disables the last notice, exactly as `schedule_attendance_round` reads it."""
-    windows = AttendanceWindows(notice_days=5, last_notice_hours=0, deadline_hours=2)
-
-    found = overdue_windows(
-        [("Premier", _round(days_out=-1))], now=NOW, attendance=windows
-    )
-
-    assert "Check-in last notice" not in _labels(found)
-
-
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_deadline_of_zero_is_the_round_itself():
-    """Zero does not disable the deadline — it puts it at the round's own start time."""
-    windows = AttendanceWindows(notice_days=5, last_notice_hours=24, deadline_hours=0)
+    """Zero does not disable the deadline — it puts it at the round's own start time, where its
+    lead falls with no offset, and the refusal quotes the wording attendance gives it."""
+    windows = _check_in(deadline_hours=0, deadline_wording="at the round")
 
     # A round one hour away: its start time is still ahead, so the deadline is not overdue.
     ahead = overdue_windows(
-        [("Premier", _round(days_out=1 / 24))], now=NOW, attendance=windows
+        [("Premier", _round(days_out=1 / 24))], now=NOW, leads=windows
     )
     assert "Check-in deadline" not in _labels(ahead)
 
     # A round one hour ago: its start time has passed, and so has the deadline.
     behind = overdue_windows(
-        [("Premier", _round(days_out=-1 / 24))], now=NOW, attendance=windows
+        [("Premier", _round(days_out=-1 / 24))], now=NOW, leads=windows
     )
     overdue = next(w for w in behind if w.label == "Check-in deadline")
     assert overdue.fire_at == overdue.scheduled_at
@@ -176,6 +214,7 @@ def test_a_deadline_of_zero_is_the_round_itself():
 # ── The rounds and the boundary ───────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_cancelled_round_is_not_reported():
     """A cancelled round has no scheduled work left to lose.
 
@@ -187,13 +226,13 @@ def test_a_cancelled_round_is_not_reported():
     found = overdue_windows(
         [("Premier", cancelled)],
         now=NOW,
-        attendance=DEFAULT_ATTENDANCE,
-        weather=DEFAULT_WEATHER,
+        leads=(*_check_in(), *_forecasts(), *_submission()),
     )
 
     assert found == []
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_window_exactly_now_is_overdue():
     """The ``fire_at <= now`` boundary the module docstring pins.
 
@@ -202,19 +241,20 @@ def test_a_window_exactly_now_is_overdue():
     """
     exactly = _round(days_out=5)  # notice window falls precisely on NOW
 
-    found = overdue_windows([("Premier", exactly)], now=NOW, attendance=DEFAULT_ATTENDANCE)
+    found = overdue_windows([("Premier", exactly)], now=NOW, leads=_check_in())
 
     call = next(w for w in found if w.label == "Check-in call")
     assert call.fire_at == NOW
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_past_round_reports_every_window():
-    """A round wholly behind us has missed all six, and the manager is told all six."""
+    """A round wholly behind us has missed all six, and the manager is told all six: its two
+    clean-ups and its result submission carry no date check's wording and are never judged."""
     found = overdue_windows(
         [("Premier", _round(days_out=-1))],
         now=NOW,
-        attendance=DEFAULT_ATTENDANCE,
-        weather=DEFAULT_WEATHER,
+        leads=(*_check_in(), *_forecasts(), *_submission()),
     )
 
     assert len(found) == 6
@@ -223,6 +263,7 @@ def test_a_past_round_reports_every_window():
 # ── Determinism and drift ─────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_report_is_ordered_deterministically():
     """Never the order the divisions came back in.
 
@@ -235,7 +276,7 @@ def test_the_report_is_ordered_deterministically():
         ("Premier", _round(days_out=-1, number=1)),
     ]
 
-    found = overdue_windows(rounds, now=NOW, attendance=DEFAULT_ATTENDANCE)
+    found = overdue_windows(rounds, now=NOW, leads=_check_in())
 
     seen = [(w.division_name, w.round_number) for w in found]
     assert seen == sorted(seen)
@@ -250,28 +291,26 @@ def test_the_report_is_ordered_deterministically():
     assert premier_1 == sorted(premier_1)
 
 
-def test_each_window_falls_at_its_event_s_moment():
-    """The approval and the scheduler read one function for when a round's events fall
-    (`round_event_moments`), so the gate cannot disagree with the jobs it judges. A round a day
-    behind `NOW`, its check-in called seven days out with a last notice at 36 hours and a
-    deadline at 3, and its phases at 6 days, 3 days and 4 hours: each window the approval
-    reports falls at the moment the function gives its event."""
-    from leaguebot.core.services.rounds.round_moments import round_event_moments
-
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
+def test_each_window_falls_at_its_lead_s_offset_from_the_round():
+    """The approval judges each lead at the moment `RoundJobs.arm_leads` arms it, the round's
+    moment plus the lead's offset, so the gate cannot disagree with the jobs it judges. A round a
+    day behind `NOW`, its check-in called seven days out with a last notice at 36 hours and a
+    deadline at 3, and its phases at 6 days, 3 days and 4 hours: each window the approval reports
+    falls at the round's moment plus its lead's offset."""
     rnd = _round(days_out=-1)
-    attendance = AttendanceWindows(notice_days=7, last_notice_hours=36, deadline_hours=3)
-    weather = WeatherWindows(phase_1_days=6, phase_2_days=3, phase_3_hours=4)
+    leads = (*_check_in(7, 36, 3), *_forecasts(6, 3, 4))
 
-    found = overdue_windows([("Premier", rnd)], now=NOW, attendance=attendance, weather=weather)
-    moments = round_event_moments(rnd.scheduled_at, weather=weather, attendance=attendance)
+    found = overdue_windows([("Premier", rnd)], now=NOW, leads=leads)
 
+    at = rnd.scheduled_at
     assert {w.label: w.fire_at for w in found} == {
-        "Check-in call": moments["rsvp_notice"],
-        "Check-in last notice": moments["rsvp_last_notice"],
-        "Check-in deadline": moments["rsvp_deadline"],
-        "Weather Phase 1": moments["weather_p1"],
-        "Weather Phase 2": moments["weather_p2"],
-        "Weather Phase 3": moments["weather_p3"],
+        "Check-in call": at - timedelta(days=7),
+        "Check-in last notice": at - timedelta(hours=36),
+        "Check-in deadline": at - timedelta(hours=3),
+        "Weather Phase 1": at - timedelta(days=6),
+        "Weather Phase 2": at - timedelta(days=3),
+        "Weather Phase 3": at - timedelta(hours=4),
     }
 
 
@@ -288,10 +327,11 @@ def test_each_window_falls_at_its_event_s_moment():
 # calendar past the round named has moved it past all of them.
 
 
-def _faults(rounds, *, attendance=None, weather=None, now=NOW):
-    return calendar_faults(rounds, now=now, attendance=attendance, weather=weather)
+def _faults(rounds, *, leads=(), now=NOW):
+    return calendar_faults(rounds, now=now, leads=leads)
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_season_wholly_in_the_past_is_a_fault_with_no_modules_at_all():
     """#181, reduced to the arithmetic underneath it.
 
@@ -305,6 +345,7 @@ def test_a_season_wholly_in_the_past_is_a_fault_with_no_modules_at_all():
     assert fault.latest_window is None
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_latest_past_round_is_named_and_not_the_first():
     """The last one bounds the calendar. Naming round 1 would understate what must move."""
     rounds = [_round(days_out=d, number=n) for n, d in ((1, -30), (2, -20), (3, -10), (4, 30))]
@@ -314,6 +355,7 @@ def test_the_latest_past_round_is_named_and_not_the_first():
     assert fault.latest_past.round_number == 3
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_later_round_inside_a_window_is_named_as_well():
     """Two findings, because they are two different things to fix.
 
@@ -321,13 +363,14 @@ def test_a_later_round_inside_a_window_is_named_as_well():
     """
     rounds = [_round(days_out=-1, number=1), _round(days_out=3, number=2)]
 
-    fault = _faults(rounds, attendance=DEFAULT_ATTENDANCE)
+    fault = _faults(rounds, leads=_check_in())
 
     assert fault.latest_past.round_number == 1
     assert fault.latest_window.round_number == 2
     assert fault.latest_window.label == "Check-in call"
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_already_run_is_not_also_named_for_its_windows():
     """The suppression rule. A round behind us has missed all six of its windows.
 
@@ -335,13 +378,14 @@ def test_a_round_already_run_is_not_also_named_for_its_windows():
     twice, and the remedy — move it — is the same either way.
     """
     fault = _faults(
-        [_round(days_out=-1)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+        [_round(days_out=-1)], leads=(*_check_in(), *_forecasts())
     )
 
     assert fault.latest_past.round_number == 1
     assert fault.latest_window is None
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_furthest_overdue_window_of_that_round_is_the_one_named():
     """Clearing the earliest-due window clears the rest, so it sets how far the round moves.
 
@@ -349,7 +393,7 @@ def test_the_furthest_overdue_window_of_that_round_is_the_one_named():
     but not the 24-hour last notice. The call is named, being the earliest due of them.
     """
     fault = _faults(
-        [_round(days_out=3)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+        [_round(days_out=3)], leads=(*_check_in(), *_forecasts())
     )
 
     assert fault.latest_past is None
@@ -357,17 +401,20 @@ def test_the_furthest_overdue_window_of_that_round_is_the_one_named():
     assert fault.latest_window.label in {"Check-in call", "Weather Phase 1"}
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_healthy_calendar_is_no_fault_at_all():
     """The gate must not stand in the way of an ordinary season."""
     rounds = [_round(days_out=d, number=n) for n, d in ((1, 30), (2, 37), (3, 44))]
 
-    assert _faults(rounds, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER) is None
+    assert _faults(rounds, leads=(*_check_in(), *_forecasts())) is None
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_no_rounds_at_all_is_no_fault():
-    assert _faults([], attendance=DEFAULT_ATTENDANCE) is None
+    assert _faults([], leads=_check_in()) is None
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_exactly_now_has_already_run():
     """``scheduled_at <= now``, the threshold `judge_amendment` refuses a backwards move on.
 
@@ -380,6 +427,7 @@ def test_a_round_exactly_now_has_already_run():
     assert fault.latest_past.scheduled_at == NOW
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_cancelled_round_is_no_fault_however_far_behind():
     """Refusing a season over one would leave a league unable to approve at all until they
     deleted a round they may well want to keep a record of."""
@@ -388,15 +436,17 @@ def test_a_cancelled_round_is_no_fault_however_far_behind():
         _round(days_out=30, number=2),
     ]
 
-    assert _faults(rounds, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER) is None
+    assert _faults(rounds, leads=(*_check_in(), *_forecasts())) is None
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_division_of_nothing_but_cancelled_rounds_is_no_fault():
     cancelled = _round(days_out=-30, status=RoundStatus.CANCELLED.value)
 
     assert _faults([cancelled]) is None
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
     """Never the order a host's database handed them back in.
 
@@ -416,19 +466,21 @@ def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
 # beside the calendar whichever form it took is pinned in `test_season_review_images.py`.
 
 
-def _lines_for(rounds, *, attendance=None, weather=None):
+def _lines_for(rounds, *, leads=()):
     from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = SeasonCog.__new__(SeasonCog)
     return cog._calendar_fault_lines(
-        calendar_faults(rounds, now=NOW, attendance=attendance, weather=weather)
+        calendar_faults(rounds, now=NOW, leads=leads)
     )
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_healthy_calendar_carries_no_lines():
-    assert _lines_for([_round(days_out=30)], attendance=DEFAULT_ATTENDANCE) == []
+    assert _lines_for([_round(days_out=30)], leads=_check_in()) == []
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_past_round_line_names_the_round_and_the_remedy():
     lines = _lines_for([_round(days_out=-5, number=3)])
 
@@ -438,10 +490,11 @@ def test_the_past_round_line_names_the_round_and_the_remedy():
     assert "/round amend" in lines[0]
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_windowed_round_adds_a_second_line_naming_its_window():
     lines = _lines_for(
         [_round(days_out=-1, number=1), _round(days_out=3, number=2)],
-        attendance=DEFAULT_ATTENDANCE,
+        leads=_check_in(),
     )
 
     assert len(lines) == 2
@@ -450,18 +503,20 @@ def test_a_windowed_round_adds_a_second_line_naming_its_window():
     assert "5 days before" in lines[1]
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_already_run_yields_one_line_and_not_two():
     """The suppression rule, seen from the message rather than the verdict."""
     lines = _lines_for(
-        [_round(days_out=-1)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+        [_round(days_out=-1)], leads=(*_check_in(), *_forecasts())
     )
 
     assert len(lines) == 1
     assert "already inside" not in lines[0]
 
 
+@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_window_alone_yields_the_window_line_alone():
-    lines = _lines_for([_round(days_out=3)], attendance=DEFAULT_ATTENDANCE)
+    lines = _lines_for([_round(days_out=3)], leads=_check_in())
 
     assert len(lines) == 1
     assert "already inside its check-in call" in lines[0]
