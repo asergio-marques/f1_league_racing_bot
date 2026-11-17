@@ -42,6 +42,7 @@ from tests.support.season_league import (
     ROUND_CANCEL_KIND,
     SUBMISSION_CHANNEL,
     accept_session,
+    cancel_division,
     cancel_round,
     cancel_season,
     ongoing_league,
@@ -364,8 +365,8 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
     opening with the member and the change it ran for as every line does, and in no line of the
     change's own (Constitution XIV.4, the data model's render problems). No line
     names a calendar as not notified, and the member's reply names neither the problem nor a
-    calendar posted as text: no "Not notified" for a cancellation, and no "Calendar images"
-    section for the approval, where the fallback was all it would have held. Where the season is
+    calendar posted as text: no "Not notified" for a cancellation, and no "Image notices"
+    section, where the fallback was all it would have held. Where the season is
     being cancelled, the line says nothing puts it right, as no command posts the calendar
     again."""
     league, asked = await start(tmp_path, monkeypatch)
@@ -384,38 +385,77 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
     assert not [line for line in logged if "not notified:" in line], logged
     if asked is not None:
         told = reply(asked)
-        for words in (PROBLEM, "posted as text", "Not notified", "Calendar images"):
+        for words in (PROBLEM, "posted as text", "Not notified", "Image notices"):
             assert words not in told, told
 
 
+#: What the drawing of Pro's calendar notes in the tests below, which it draws as a picture.
+NOTICE = "round 12 did not fit"
+
+
+def _notices_told(league: Any) -> str:
+    """The "Image notices" section a reply ends in for Pro's calendar drawn with `NOTICE`: Pro's
+    calendar labelled as its log line names it, linked to the log channel's one message holding
+    the notice, then the notice."""
+    [held] = [n for n, line in enumerate(league.bot.log_channel.sent, 1) if NOTICE in line]
+    return (
+        "\n\n⚠️ **Image notices**\n"
+        f"  **calendar — Pro** ([see them in the log](https://discord.test/{held}))\n"
+        f"  • {NOTICE}"
+    )
+
+
+async def _cancel_division(league: Any) -> Any:
+    """Cancel Pro, as admin 77; the queue is not run."""
+    return await cancel_division(league, "Pro")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#550: a cancellation's reply lists no notices of the calendar it posted again",
+)
+@pytest.mark.parametrize("cancel", [
+    pytest.param(_cancel, id="/round cancel"),
+    pytest.param(_cancel_division, id="/division cancel"),
+    pytest.param(cancel_season, id="/season cancel"),
+])
 async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, cancel,
 ):
     """Season 3 being raced with the images module on; the drawing the builder handed the calendar
-    job draws Pro's calendar as a PNG with one notice, round 12 not fitting. Pro's round 3 is
-    cancelled, and its calendar is posted again as a picture. The queue does not stop; the log
-    channel holds the notice once, in one line naming the calendar and Pro, which the posting job
-    carries among its own lines (Constitution XIV.4; the owner's decision on #288: code inside a
-    job never calls `post_log`)."""
+    job draws Pro's calendar as a PNG with one notice, round 12 not fitting. Pro's round 3, Pro, or
+    season 3 is cancelled, and Pro's calendar is posted again as a picture. The queue does not
+    stop; the log channel holds the notice once, in one line naming the calendar and Pro, which
+    the posting job carries among its own lines (Constitution XIV.4; the owner's decision on #288:
+    code inside a job never calls `post_log`). The admin's reply ends in one "Image notices"
+    section listing the notice under `calendar — Pro`, linked to that message (image spec,
+    Calendar)."""
     from tests.support.change_queue import queued_log_lines
 
     league = await ongoing_league(tmp_path, images=True)
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    notice = "round 12 did not fit"
     draw_calendars_with(league.bot, monkeypatch,
-                        CalendarDrawingStub(picture=png, notices=(notice,)))
-    await _cancel(league)
+                        CalendarDrawingStub(picture=png, notices=(NOTICE,)))
+    interaction = await cancel(league)
+    assert not league.errors, league.errors
 
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
-    named = [line for line in logged if notice in line]
+    named = [line for line in logged if NOTICE in line]
     assert len(named) == 1, logged
     assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+    told = reply(interaction)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert _notices_told(league) in told, told
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#550: a round's cancellation, retried, lists no notices of the calendar it posted",
+)
 async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retried(
     tmp_path, monkeypatch,
 ):
@@ -424,18 +464,19 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
     cancelled, and Pro's calendar channel refuses every send, the picture and then the text, so
     the queue stops at the calendar's posting job. The channel is let accept, and a Retry posts the
     calendar: the queue runs to the end, and the log channel holds the notice once, in one line
-    naming the calendar and Pro, never lost with the refused try."""
+    naming the calendar and Pro, never lost with the refused try. The admin's reply, after the
+    Retry, still lists the notice under `calendar — Pro`, linked to that message (image spec,
+    Calendar)."""
     from tests.support.change_queue import queued_log_lines
 
     league = await ongoing_league(tmp_path, images=True)
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    notice = "round 12 did not fit"
     draw_calendars_with(league.bot, monkeypatch,
-                        CalendarDrawingStub(picture=png, notices=(notice,)))
+                        CalendarDrawingStub(picture=png, notices=(NOTICE,)))
     channel = league.channel(PRO_CALENDAR)
     channel.fail_when = lambda _content, _kwargs: True
-    await _cancel(league)
+    interaction = await _cancel(league)
 
     await run_queue(league.bot)
     assert await stopped_job(league.db_path) is not None
@@ -444,9 +485,12 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
 
     assert await stopped_job(league.db_path) is None
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
-    named = [line for line in logged if notice in line]
+    named = [line for line in logged if NOTICE in line]
     assert len(named) == 1, logged
     assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+    told = reply(interaction)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert _notices_told(league) in told, told
 
 
 async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_posted(
