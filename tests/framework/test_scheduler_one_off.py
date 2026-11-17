@@ -430,22 +430,25 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, 
 
 
 #: The one runner, as the job store saves it for every job: its module's path and its name.
-RUNNER_REFERENCE = "leaguebot.core.services.scheduler_service:_one_off_timer_job"
+RUNNER_REFERENCE = "leaguebot.framework.services.jobs.scheduler:_one_off_timer_job"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)
+@pytest.mark.xfail(
+    strict=True,
+    reason="#544: the scheduler has no generic calls yet, and is not yet the framework's",
+)
 async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(services):
     """Every way the scheduler arms a job is used, a one-off timer's included, on a paused
     scheduler; every job is then read back as the job store's file holds it, and each names the
-    one runner by `leaguebot.core.services.scheduler_service:_one_off_timer_job`.
+    one runner by `leaguebot.framework.services.jobs.scheduler:_one_off_timer_job`.
 
-    **The path is pinned, and `scheduler_service.py` stays where it is.** `SQLAlchemyJobStore`
-    saves a job's callable as text, its module's path and its name, and imports that path again
-    when it loads the job. Moving the file, or renaming the runner, would leave every job a saved
-    job store holds unloadable: the host's own after an update, and the scheduler's database in
-    every saved test-mode state (core_specification.md, "Saving a state and returning to it"). So
-    while core's other services are grouped into topic folders, this one stays at
-    `core/services/scheduler_service.py` (#283), and a move fails here before it lands."""
+    **The path is pinned.** `SQLAlchemyJobStore` saves a job's callable as text, its module's path
+    and its name, and imports that path again when it loads the job. Moving the file, or renaming
+    the runner, leaves every job a saved job store holds unloadable: the host's own after an
+    update, and the scheduler's database in every saved test-mode state (core_specification.md,
+    "Saving a state and returning to it"). The scheduler moved to the framework's `jobs/` while no
+    league ran the bot (#544), when no saved job store mattered; a later move fails here before it
+    lands."""
     import pickle
     import sqlite3
 
