@@ -273,7 +273,7 @@ concerns the machinery alone (the bot starting, a timed event falling due, a mod
 is the framework's. What this section says of core declaring and calling a hook holds for the
 framework's moments as well. Where something in core has to let the modules act (a round's
 amendment judged, a round amended or its timed work armed again,
-a round's timing windows read, a round, a division or a season cancelled, a round's results made
+a round's timed work read as leads, a round, a division or a season cancelled, a round's results made
 final, placements confirmed, a season's approval saved, a season's configuration confirmed, a review
 gathering its lines, the placements review gathering each division's lines, a division's channel
 faults read, a channel's uses read as a command sets it, the factory reset gathering the channels
@@ -308,14 +308,16 @@ the builder makes and each module's wiring signs its own up on, never a registry
 level for the life of the process, as nothing is wired in after the bot starts (see "Services stay
 attached to the bot"). **A module's switch read is a keyed hook:** one reader for each module, keyed
 by the module's name, which the module's own work may also call; core asks for it by that name
-(`is_<module>_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
+(`is_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
 image module, the module's own name for the rest. The framework's module service holds the keyed
 hook and asks it by the key alone (`ModuleService.is_enabled`, as the start-up sweep does to pass a
-disabled module over), and names no module; the named readers (`is_<module>_enabled`) are core's,
-which names the modules, so a module added later adds its reader to core as well as signing up, and
-core knows its name for its switch and nothing more. A module that never signed up is a fault in the
+disabled module over), and names no module, and keeps no reader for any: core asks by the module's
+name, which it already holds, a module asks for its own switch by a key constant of its own, and a
+module asking another's, where the dependency table allows it, asks by that module's name as a
+literal and never imports its constant. A module added later signs its switch up and nothing more;
+core knows its name for the switch and nothing more. A module that never signed up is a fault in the
 bot's assembly, and asking for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which
 no reader that stands aside takes for an answer: each lets that type through by name and stands
 aside from any other fault (one stated exception, `ImageDrawing.aspect_attaches_files`, is named
@@ -1033,36 +1035,43 @@ of adding a second (the `_round_job_suffix` docstring in core's round jobs). The
 timers, the job store and the one runner every job names, and arms a job at the id, kind and moment
 it is handed (`arm_at`, `run_now`, `arm_daily`, `arm_every`), lists the jobs it holds (`jobs`) and
 removes one (`remove`); it names no round, module or kind of job. It alone imports APScheduler, so
-that the library's conventions hold for every job. A round's timed work is armed by the round-arming
-functions of core's round jobs (`RoundJobs`), through those calls, and `RoundJobs` is handed to the
-services that arm or cancel a round's jobs by the builder, a module's wiring or a cog. Each reads
-when the round's events fall from `round_event_moments`, but for the clean-ups. Every clean-up is
-armed at the moment `clean_up_moment` gives, and `round_event_moments` places both clean-ups by it
-too. `schedule_round` arms a round's forecasts and, through `schedule_result_submission_jobs`, its
-results submission; that function arms only the submission, and a season's approval and an amendment
-also call it on its own. `schedule_all_rounds` arms a season's rounds through `schedule_round`, and
-`schedule_attendance_round` a round's check-in. An arming function that skips a job whose moment has
-passed judges it against the `now` it is handed ("The time is always passed in"). Beside them,
-`run_result_submission_now` runs at once the submission of a round whose moment has passed. Only
-three changes call them: a season's approval, the amendment of a round (`round_amend_change`), and
-the re-arming of a round whose timed work a refused cancellation took, a change of its own
-(`round_rearm_change`, `season.round.rearm`) built from the amendment's steps. The arming step those
-two share calls `run_result_submission_now` for a round still to be run whose moment has passed,
-save under test mode. Every path arms through these functions. A restart arms nothing, the job store
+that the library's conventions hold for every job. A round's timed work is armed by core's round jobs (`RoundJobs`), through those calls, and
+`RoundJobs` is handed to the services that arm or cancel a round's jobs by the builder, a module's
+wiring or a cog. **Each module lists what it wants set and core arms it:** a module answers with
+`RoundLead` records, each the kind its timer is stored under, its offset from the round's moment,
+its label and a few marks, which name no module, and `RoundJobs.arm_leads` arms each under the id,
+moment, name and key every round's timer has, the clean-up's moment being the one figure
+`clean_up_moment` gives. A module builds its leads, and its own reads of the same moments
+(its recovery, its amendment's rules, its test-mode steps), from one function of its own, so its
+catch-up and core's arming cannot drift apart. `arm_leads` only arms, judging a lead armed while
+ahead against the `now` it is handed ("The time is always passed in"); `run_lead_now` runs at once
+a lead whose moment has passed. Which leads are run at once, and which core drops where test mode
+leaves them to `/test-mode advance`, are marks on a lead, never a check of its kind, and core's
+rule of when test mode leaves one (`results_left_to_advance`) is core's own. Results answers its
+submission as a lead for every round, whatever its switch, since it is the round's one way off Not
+run. Only three changes arm leads: a season's approval, the amendment of a round
+(`round_amend_change`), and the re-arming of a round whose timed work a refused cancellation took,
+a change of its own (`round_rearm_change`, `season.round.rearm`) built from the amendment's steps.
+The arming step those two share runs at once the lead marked so of a round still to be run whose
+moment has passed, save under test mode. Every path arms through these calls. **Core names no kind
+of a round's timer:** each module signs its kinds up with `RoundJobs` at build, each with the phase
+`/test-mode advance` numbers it by, and `RoundJobs` knows a job is a round's, and which phase it is,
+by that register alone. Results signs its kind up with no advance phase, since the advance reads
+its phase from the round's state. A restart arms nothing, the job store
 keeping the jobs and the start-up sweep catching up those missed (above), and neither does test
 mode, whose advance brings forward work already armed or found due in the database. A round's
-next-day clean-ups, which its weather and its attendance arming both owe, are armed with them: the
-forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`. **In the amendment
-and the re-arming of a round still to be run, whether a module's work is armed, and with what, is
-that module's answer through `round_armed`**: each module hands back its steps and the jobs it owes,
-and the arming step makes the scheduler's calls with what each hands back, so that core holds no
-module's rule about which jobs a moved round still to be run owes. What a module keeps from its part
+next-day clean-ups, which its weather and its attendance arming both owe, are leads of their
+modules, armed with the rest. **In the amendment and the re-arming of a round still to be run,
+whether a module's work is armed, and with what, is that module's answer through `round_armed`**:
+each module hands back its steps and the leads it owes, less any phase it draws at once, and the
+arming step arms what each hands back, so that core holds no module's rule about which jobs a moved
+round still to be run owes. What a module keeps from its part
 of the amendment's judgement, its own windows included, core stores as it is given and hands the
 merged record back to every module, each reading only its own, reading it for none itself: core
-names no module's windows. `schedule_round_cleanups` arms either or both on their own, and the
-re-arming calls it alone for a round raced, or ended cancelled because every session was entered as
-not held; core makes that call from the modules' switches, the clean-up's delay being the one shared
-delay, so no module's window is read.
+names no module's windows. The re-arming of a round raced, or ended cancelled because every session was
+entered as not held, arms the clean-up leads alone: core asks the modules for their leads and arms
+those marked as clean-ups, and a module that is off answers none, so core reads no module's switch
+and no module's window.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
@@ -1721,8 +1730,9 @@ later on its own.
   directly in its body, or sits directly in the body of a `for` loop, is in a place by its shape;
   `CATCH_ALLS_ALLOWED` names for good the failure paths of place 1, the stated exceptions, place 2's
   task of its own for each item, place 3's guards around reporting and writing a log line, the
-  fourth place's hand-off across a thread, and the fifth and sixth places' handlers), and a save
-  outside a queued change. The job check and the check of cogs handling their own errors are
+  fourth place's hand-off across a thread, and the fifth and sixth places' handlers), a file of
+  core naming a kind of a round's timer (a weather phase or clean-up, a check-in timer, results'
+  submission, in a timer's place and not in a docstring), and a save outside a queued change. The job check and the check of cogs handling their own errors are
   absolute, with no list of breaches left to grow, and the log channel's check holds its nine places
   for good; every other check lists today's breaches, each under the work that removes it. The check
   of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls,
@@ -1735,6 +1745,8 @@ later on its own.
   assignment to `row_factory` or `isolation_level`, and a PRAGMA, ATTACH or temporary table
   (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set up
   a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
+- **`tests/framework/test_module_service.py`** checks that the framework's module service names no
+  module (`test_the_module_service_names_no_module`).
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
   that the bot is imported from one place: the installed package, never through `src`. The schema's
