@@ -354,6 +354,25 @@ async def test_the_event_error_handler_never_raises(log_channel, caplog):
     assert records[0].exc_info[1] is error
 
 
+# ── Timed jobs and background work (#453) ─────────────────────────────────
+
+
+@pytest.mark.xfail(strict=True, reason="#453: there is no log-channel line for a failed timed job")
+def test_a_job_failure_line_names_the_job_and_the_kind_of_fault():
+    """A timed job or background task that fails has no member to name: its line names the job
+    and the exception's type, as the event line does, and says the detail is in the host's log.
+    Never the exception's message."""
+    from leaguebot.framework.utils.interaction_errors import job_failure_line
+
+    line = job_failure_line("log line retry", KeyError("secret detail"))
+
+    assert line == (
+        "❌ The bot's timed job `log line retry` failed — KeyError. "
+        "The details are in the host's log."
+    )
+    assert "secret detail" not in line
+
+
 # ── A command that undoes itself says what became of the change (#442) ────
 
 
