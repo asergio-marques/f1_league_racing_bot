@@ -80,16 +80,6 @@ def sign_up_to_test_mode_flushed(bot: "LeagueBot") -> None:
     bot.test_mode_flushed.subscribe(forecast_changes.test_mode_flushed_on)
 
 
-def sign_up_to_round_windows(bot: "LeagueBot") -> None:
-    """Sign weather's window up to the hook a round's timing windows read declares. It checks its own
-    switch."""
-    from leaguebot.weather.services import weather_config_service
-
-    bot.round_windows_read.subscribe(partial(
-        weather_config_service.round_window, bot.module_service, bot.db_path
-    ))
-
-
 def sign_up_to_round_leads(bot: "LeagueBot") -> None:
     """Sign weather's forecasts up to the hook a round's leads are read through. It checks its own
     switch."""

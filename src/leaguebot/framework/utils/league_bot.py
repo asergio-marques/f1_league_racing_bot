@@ -115,13 +115,6 @@ class LeagueBot(commands.Bot):
     preview_sources: PreviewSources
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService
-    #: The moment a round's timing windows are read (the season's approval and review, and the
-    #: amendment of a round): each module signs up a function handing back its own window, or
-    #: nothing where its module is off, handed whether the round is being *amended*. The builder
-    #: makes it and signs them up, so that core's approval reads them without importing attendance
-    #: or weather (architecture.md, "A hook core declares is a list of subscribers");
-    #: `read_round_windows` gathers what they hand back.
-    round_windows_read: AwaitedHook
     #: The moment the timers a round wants set are read (the season's approval): each module signs
     #: up a function handing back the `RoundLead` records of its own timers, handed nothing, and
     #: core arms them (`RoundJobs.arm_leads`) under its own naming, so that it names no module's

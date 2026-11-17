@@ -99,10 +99,6 @@ def _reading_windows(**kwargs) -> SeasonCog:
     return cog
 
 
-#: Why the windows tests fail until the cog reads the modules' leads.
-_LEADS_NOT_READ = "#544: the cog reads the modules' windows, not their leads"
-
-
 def _quoted(leads) -> list[tuple[str, str]]:
     """The leads the approval's date check quotes, as it quotes them: label and wording."""
     return [(lead.check_label, lead.check_wording) for lead in leads if lead.check_label]
@@ -223,7 +219,6 @@ def test_both_faults_name_the_command_that_fixes_them():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_a_league_running_neither_module_has_no_windows():
     """Nothing to be inside, so nothing can be refused for it — a league running only the
     results module must not be blocked by windows it does not have."""
@@ -235,7 +230,6 @@ async def test_a_league_running_neither_module_has_no_windows():
     assert _quoted(leads) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_the_weather_windows_are_read_when_the_module_is_on():
     cog = _reading_windows(weather_enabled=True)
 
@@ -249,7 +243,6 @@ async def test_the_weather_windows_are_read_when_the_module_is_on():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_one_module_on_leaves_the_other_s_windows_absent():
     """The two are independent, and a league running attendance without weather must not
     be judged against phase horizons it never configured."""
@@ -275,7 +268,6 @@ async def test_a_disabled_module_s_configuration_is_not_even_read():
     weather_read.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_LEADS_NOT_READ)
 async def test_the_windows_reflect_what_the_league_configured():
     """A league that shortened its notice to two days is judged against two, not against
     the packaged default — which is the point of reading them at all."""

@@ -1,8 +1,8 @@
-"""What attendance gives core's hooks: its deletes, its part of a round's window and of a review.
+"""What attendance gives core's hooks: its deletes, its leads for a round and its part of a review.
 
 Core declares the hooks and attendance signs up to them in its wiring (architecture.md, "How
 modules and core fit together"). Each delete clears attendance's own rows on the connection core's
-delete was handed and commits nothing; the readers give core attendance's lead times, its section
+delete was handed and commits nothing; the readers give core attendance's leads for a round, its lead times, its section
 of a season's review and the channel lines the placements review shows.
 """
 
@@ -95,17 +95,6 @@ async def bot_packed_on(db: aiosqlite.Connection) -> None:
 
 
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
-
-
-async def round_window(
-    attendance: AttendanceService, modules: "ModuleService"
-) -> AttendanceWindows | None:
-    """Attendance's part of a round's timing windows read: its three lead times, or None where
-    the module is off, since a league without attendance has no check-in to lose or to be inside
-    the window of. The subscriber to the hook; the amendment's judgement reads the lead times
-    through `lead_times` itself where it is asked outside a save, and on the save's connection
-    inside one."""
-    return await lead_times(attendance, modules)
 
 
 async def round_leads(

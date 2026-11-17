@@ -25,7 +25,7 @@ from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.cancellations.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.modules.image_drawing import Held
 from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
-from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_windows
+from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_leads
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.seasons.review_sections import (
     Review,
@@ -316,17 +316,16 @@ class SeasonCog(commands.Cog):
         return ["**Image output**", *lines, ""]
 
     async def _approval_windows(self):
-        """The lead times the enabled modules configure, read once for a whole season.
-
-        Returns ``(attendance, weather)``, either of them None where that module is off.
+        """The leads the enabled modules answer, read once for a whole season: the windows the
+        date faults are judged against, as a flat list.
 
         Read once rather than per division: the date faults are judged a division at a time,
-        and a league with eight of them would otherwise pay eight times over for two configs
+        and a league with eight of them would otherwise pay eight times over for configs
         that cannot have changed in between. They are read through the bot's hook
-        (`LeagueBot.round_windows_read`, signed up to by the modules in the builder), so that the
-        change queue's check of the approval reads the same windows without a cog.
+        (`LeagueBot.round_leads_read`, signed up to by the modules in the builder), so that the
+        change queue's check of the approval reads the same leads without a cog.
         """
-        return await read_round_windows(self.bot.round_windows_read)
+        return await read_round_leads(self.bot.round_leads_read)
 
     def _calendar_fault_lines(self, fault) -> list[str]:
         """One division's date faults, as the error lines posted with its calendar.
@@ -579,9 +578,9 @@ class SeasonCog(commands.Cog):
         # in for each is carried with it (posted only where Discord refuses the file).
         draws_calendar, draws_lineup = await self._review_picture_gates()
 
-        # The lead times both date faults are judged against, read once for the season
+        # The leads both date faults are judged against, read once for the season
         # and reused by every division's calendar below.
-        _att_windows, _wx_windows = await self._approval_windows()
+        _leads = await self._approval_windows()
         # Raised by any division whose calendar holds a round already run, or one already
         # inside a configured window. Collected rather than acted on in the loop, because
         # the Approve button is decided once for the whole season after it.
@@ -626,8 +625,7 @@ class SeasonCog(commands.Cog):
                 calendar_faults(
                     rounds_db,
                     now=self.bot.change_queue.now(),
-                    attendance=_att_windows,
-                    weather=_wx_windows,
+                    leads=_leads,
                 )
             )
             calendar_faults_found.extend(fault_lines)

@@ -63,7 +63,6 @@ def test_setup_hook_is_the_bot_types_one_behaviour():
     assert own == ["setup_hook"]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the bot declares round_windows_read, not round_leads_read")
 def test_the_leads_hook_is_declared_and_made_by_the_builder():
     """The season cog reads the enabled modules' leads through `bot.round_leads_read`, the hook
     `LeagueBot` declares and the builder makes, so that core imports neither attendance nor

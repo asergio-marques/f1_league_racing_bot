@@ -8,14 +8,18 @@ configured distance *before* the round: the check-in call five days out, the las
 day out, the check-in deadline two hours out, the three weather phases at their own
 horizons. Approve a season late enough and some of those moments are already behind you.
 
-Unchecked, what happens then is silent and different for each module. `schedule_attendance_round`
-skips a past-dated job and logs a line nobody reads, so the round asks nobody whether they are
-racing, distributes no reserves, and is recorded afterwards as perfect attendance for the whole
-division. The weather jobs are armed regardless and, having no lateness limit, a past-dated one fires at
-once: a phase whose horizon had passed would be drawn the moment the season is approved.
+Unchecked, what happens then is silent and different for each module. The check-in's jobs are
+armed only while ahead (`RoundLead.ahead_only`) and a past-dated one is skipped with a line nobody
+reads, so the round asks nobody whether they are racing, distributes no reserves, and is recorded
+afterwards as perfect attendance for the whole division. The weather jobs are armed regardless and,
+having no lateness limit, a past-dated one fires at once: a phase whose horizon had passed would be
+drawn the moment the season is approved.
 
-This module is the check that makes both unreachable from approval. It computes nothing and
-decides nothing about what to do; it reports which windows have passed, and
+This module is the check that makes both unreachable from approval. It judges the *leads* the
+enabled modules answer (`RoundLead`): a lead that carries the date check's label and wording is a
+window, and any other (a clean-up, the result submission) is never judged. A module that is off
+answers none, so contributes no window. It computes nothing and decides nothing about what to do;
+it reports which windows have passed, and
 `season_review_workflows.approve_season` refuses on the answer. The league's remedy is to move
 the round or shorten the window, and that is a choice only they can make.
 
@@ -38,24 +42,25 @@ manager sixty things where two would do, and runs a season built wholly in the p
 2000-character limit.
 
 **The threshold is ``fire_at <= now``** — a window whose moment is exactly now counts as
-elapsed. That is precisely the complement of `schedule_attendance_round`'s own
-``if fire_at > now``, so the gate and the attendance scheduler cannot disagree about a single
-round: nothing this module reports would have been scheduled, and nothing it passes over would
-have been skipped. For the weather phases, whose jobs have no lateness limit, a moment exactly
+elapsed. That is precisely the complement of `RoundJobs.arm_leads`' own
+``fire_at <= now`` skip of a lead armed only while ahead, so the gate and the arming cannot
+disagree about a single round: nothing this module reports would have been scheduled, and nothing
+it passes over would have been skipped. For the weather phases, whose jobs have no lateness limit, a moment exactly
 now is refused all the same, rather than armed to fire at once. `test_a_window_exactly
-_now_is_overdue` pins the check-in's half. The offsets are not worked out here: they come from
-`round_event_moments`, which the scheduler's arming reads too, so the two cannot drift apart.
+_now_is_overdue` pins the check-in's half. The offsets are not worked out here: they are
+the leads' own, which the scheduler's arming reads too, so the two cannot drift apart.
 
 Pure by design: no database, no Discord, and ``now`` passed in rather than read from the
 wall clock, so the tests can pin a date and a moment together.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
-from leaguebot.core.models.round import AttendanceWindows, Round, RoundStatus, WeatherWindows
-from leaguebot.core.services.rounds.round_moments import as_utc, round_event_moments
+from leaguebot.core.models.round import Round, RoundLead, RoundStatus
+from leaguebot.core.services.rounds.round_moments import as_utc
 
 
 @dataclass(frozen=True)
@@ -79,21 +84,21 @@ def overdue_windows(
     rounds: list[tuple[str, Round]],
     *,
     now: datetime,
-    attendance: AttendanceWindows | None = None,
-    weather: WeatherWindows | None = None,
+    leads: Sequence[RoundLead] = (),
 ) -> list[OverdueWindow]:
     """Report every configured window of *rounds* that has already elapsed at *now*.
 
     Args:
         rounds:     ``(division_name, round)`` pairs, in any order.
         now:        The moment to judge against. Required, and never the wall clock.
-        attendance: The check-in lead times, or None where the module is disabled.
-        weather:    The forecast horizons, or None where the module is disabled.
+        leads:      The leads the enabled modules answer, in the order they answered them. Only
+                    those that carry the date check's label and wording are windows; a disabled
+                    module answered none.
 
     Returns:
         One entry per elapsed window, sorted by division name, then round number, then the
         moment the window was due. Empty when every window is still ahead, and empty when
-        both modules are disabled, which leaves no windows to check at all.
+        no module is enabled, which leaves no windows to check at all.
 
         That second emptiness is not a verdict that the season is fine. A round's own moment
         is not a window and is not judged here — `calendar_faults` judges it, whatever the
@@ -110,33 +115,12 @@ def overdue_windows(
             continue
 
         scheduled_at = rnd.scheduled_at
-        moments = round_event_moments(scheduled_at, weather=weather, attendance=attendance)
-        windows: list[tuple[str, str, datetime]] = []
-
-        if attendance is not None:
-            windows.append(("Check-in call", _days(attendance.notice_days), moments["rsvp_notice"]))
-            # Absent from the moments where the last notice is 0 hours: no last notice at all.
-            if "rsvp_last_notice" in moments:
-                windows.append((
-                    "Check-in last notice",
-                    _hours(attendance.last_notice_hours),
-                    moments["rsvp_last_notice"],
-                ))
-            # Zero means the deadline is the round's own start time — the documented
-            # meaning of the setting, not an absent window.
-            windows.append((
-                "Check-in deadline",
-                _hours(attendance.deadline_hours) if attendance.deadline_hours > 0
-                else "at the round",
-                moments["rsvp_deadline"],
-            ))
-
-        if weather is not None:
-            windows.append(("Weather Phase 1", _days(weather.phase_1_days), moments["weather_p1"]))
-            windows.append(("Weather Phase 2", _days(weather.phase_2_days), moments["weather_p2"]))
-            windows.append((
-                "Weather Phase 3", _hours(weather.phase_3_hours), moments["weather_p3"]
-            ))
+        at = scheduled_at.astimezone(timezone.utc)
+        windows = [
+            (each.check_label, each.check_wording, at + each.offset)
+            for each in leads
+            if each.check_label is not None and each.check_wording is not None
+        ]
 
         for label, lead, fire_at in windows:
             if fire_at <= now:
@@ -178,16 +162,14 @@ def calendar_faults(
     rounds: list[Round],
     *,
     now: datetime,
-    attendance: AttendanceWindows | None = None,
-    weather: WeatherWindows | None = None,
+    leads: Sequence[RoundLead] = (),
 ) -> CalendarFault | None:
     """Reduce one division's calendar to the two rounds that bound what is wrong with it.
 
     Args:
         rounds:     One division's rounds, in any order.
         now:        The moment to judge against. Required, and never the wall clock.
-        attendance: The check-in lead times, or None where the module is disabled.
-        weather:    The forecast horizons, or None where the module is disabled.
+        leads:      The leads the enabled modules answer (see `overdue_windows`).
 
     Returns:
         The division's fault, or None where its calendar is clean.
@@ -220,7 +202,7 @@ def calendar_faults(
     # of this one division, under a name it never shows, because only the reduction below is
     # shown. Sharing it is what keeps the offsets in one place and under one drift guard.
     windows = overdue_windows(
-        [("", rnd) for rnd in live], now=now, attendance=attendance, weather=weather
+        [("", rnd) for rnd in live], now=now, leads=leads
     )
     latest_window = None
     if windows:
@@ -239,11 +221,3 @@ def calendar_faults(
     if latest_past is None and latest_window is None:
         return None
     return CalendarFault(latest_past=latest_past, latest_window=latest_window)
-
-
-def _days(count: int) -> str:
-    return f"{count} day{'' if count == 1 else 's'} before"
-
-
-def _hours(count: int) -> str:
-    return f"{count} hour{'' if count == 1 else 's'} before"

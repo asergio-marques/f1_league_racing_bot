@@ -52,16 +52,6 @@ def sign_up_round_kinds(bot: "LeagueBot") -> None:
     bot.round_jobs.sign_up_kinds(ROUND_KINDS)
 
 
-def sign_up_to_round_windows(bot: "LeagueBot") -> None:
-    """Sign attendance's window up to the hook a round's timing windows read declares. It checks
-    its own switch."""
-    from leaguebot.attendance.services.hooks import attendance_hooks
-
-    bot.round_windows_read.subscribe(partial(
-        attendance_hooks.round_window, bot.attendance_service, bot.module_service
-    ))
-
-
 def sign_up_to_round_leads(bot: "LeagueBot") -> None:
     """Sign attendance's check-in up to the hook a round's leads are read through. It checks its
     own switch."""

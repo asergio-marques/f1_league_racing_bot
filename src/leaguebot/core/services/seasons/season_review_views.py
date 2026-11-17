@@ -128,7 +128,7 @@ class ApproveView(LeagueView):
         change_queue: ChangeQueue,
         scheduler_service: SchedulerService,
         output_router: OutputRouter,
-        round_windows_read: AwaitedHook,
+        round_leads_read: AwaitedHook,
         confirmation_refused: AwaitedHook,
         configuration_faults_read: AwaitedHook,
         driver_names_read: AwaitedHook,
@@ -147,7 +147,7 @@ class ApproveView(LeagueView):
         self._change_queue = change_queue
         self._scheduler_service = scheduler_service
         self._output_router = output_router
-        self._round_windows_read = round_windows_read
+        self._round_leads_read = round_leads_read
         self._confirmation_refused = confirmation_refused
         self._configuration_faults_read = configuration_faults_read
         self._driver_names_read = driver_names_read
@@ -375,7 +375,7 @@ class ApproveView(LeagueView):
                 change_queue=self._change_queue,
                 scheduler_service=self._scheduler_service,
                 output_router=self._output_router,
-                round_windows_read=self._round_windows_read,
+                round_leads_read=self._round_leads_read,
                 confirmation_refused=self._confirmation_refused,
                 driver_names_read=self._driver_names_read,
                 division_channel_faults_read=self._division_channel_faults_read,

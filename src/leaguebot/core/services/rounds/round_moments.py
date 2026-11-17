@@ -7,8 +7,8 @@ and the amendment's rules all read `round_event_moments`, so for them the rules 
 a last notice of 0 hours is no last notice, a deadline of 0 hours is the round's own moment, and a
 moment stored without a zone is UTC.
 
-Pure by design: no database, no clock, no scheduler; `read_round_windows` only gathers what the
-modules' subscribers to the windows hook hand back. The two window types `round_event_moments`
+Pure by design: no database, no clock, no scheduler; `read_round_leads` only gathers what the
+modules' subscribers to the leads hook hand back. The two window types `round_event_moments`
 reads, and the kind names its keys match (`ROUND_JOB_KINDS`), are plain data and live in
 `core.models.round`, which imports no service.
 """
@@ -37,21 +37,6 @@ def hours_before(count: int) -> str:
     """*count* hours ahead of a round as the approval's date check words it: "1 hour before",
     "2 hours before"."""
     return f"{count} hour{'' if count == 1 else 's'} before"
-
-
-async def read_round_windows(
-    windows_read: AwaitedHook,
-) -> tuple[AttendanceWindows | None, WeatherWindows | None]:
-    """The lead times the modules configure, as `(attendance, weather)`, the way
-    `round_event_moments` and the judges take them: each hands back its window or nothing.
-
-    Every module signed up to the hook checks its own switch and hands nothing where it is off,
-    so that a window is there only for a module that is on.
-    """
-    handed = await windows_read.call()
-    attendance = next((each for each in handed if isinstance(each, AttendanceWindows)), None)
-    weather = next((each for each in handed if isinstance(each, WeatherWindows)), None)
-    return attendance, weather
 
 
 async def read_round_leads(leads_read: AwaitedHook) -> tuple[RoundLead, ...]:

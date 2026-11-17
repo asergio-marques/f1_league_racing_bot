@@ -195,13 +195,10 @@ def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
-    """Make the hooks a round's timing windows and its leads are read through, and sign each
-    module up to them, in the order core gathers them: for the windows, attendance's then
-    weather's, each handed whether the round is being amended and checking its own switch; for the
-    leads, results' submission, which answers whatever its switch."""
-    bot.round_windows_read = AwaitedHook()
-    attendance_wiring.sign_up_to_round_windows(bot)
-    weather_wiring.sign_up_to_round_windows(bot)
+    """Make the hook a round's leads are read through, and sign each module up to it, in the order
+    core gathers them: attendance's check-in, then weather's forecasts, then results' submission,
+    which answers whatever its switch (the others each check their own), so that the approval's
+    date check names the windows in that order."""
     bot.round_leads_read = AwaitedHook()
     attendance_wiring.sign_up_to_round_leads(bot)
     weather_wiring.sign_up_to_round_leads(bot)
@@ -545,7 +542,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             change_queue=bot.change_queue,
             scheduler_service=bot.scheduler_service,
             output_router=bot.output_router,
-            round_windows_read=bot.round_windows_read,
+            round_leads_read=bot.round_leads_read,
             confirmation_refused=bot.confirmation_refused,
             configuration_faults_read=bot.configuration_faults_read,
             driver_names_read=bot.driver_names_read,
@@ -804,7 +801,6 @@ def register_change_types(bot: LeagueBot) -> None:
             lineups=bot.lineup_poster,
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
-            round_windows_read=bot.round_windows_read,
             round_leads_read=bot.round_leads_read,
             placements_confirmed=bot.placements_confirmed,
             placements_confirmed_steps=bot.placements_confirmed_steps,

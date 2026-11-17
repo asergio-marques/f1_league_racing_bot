@@ -50,7 +50,7 @@ from leaguebot.core.services.seasons.mid_season_confirm_change import (
 )
 from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.framework.services.posting.output_router import OutputRouter
-from leaguebot.core.services.rounds.round_moments import read_round_windows
+from leaguebot.core.services.rounds.round_moments import read_round_leads
 from leaguebot.framework.services.jobs.scheduler import SchedulerService
 from leaguebot.core.services.seasons.season_approval_change import (
     ALREADY_BEING_APPROVED,
@@ -513,7 +513,7 @@ async def approve_season(
     change_queue: ChangeQueue,
     scheduler_service: SchedulerService,
     output_router: OutputRouter,
-    round_windows_read: AwaitedHook,
+    round_leads_read: AwaitedHook,
     confirmation_refused: AwaitedHook,
     driver_names_read: AwaitedHook,
     division_channel_faults_read: AwaitedHook,
@@ -675,13 +675,11 @@ async def approve_season(
     # elsewhere — it seeds points configurations so a test season passes that
     # requirement — but a test season that loses its check-ins misreports attendance
     # exactly as a real one does, and is a worse thing to be testing against.
-    _att_windows, _wx_windows = await read_round_windows(round_windows_read)
     _dates = approval_checks.date_refusal(
         divisions,
         div_rounds,
         now=now(),
-        attendance=_att_windows,
-        weather=_wx_windows,
+        leads=await read_round_leads(round_leads_read),
     )
     if _dates is not None:
         await refuse(interaction, _dates.reply, what=what, reason=_dates.reason)

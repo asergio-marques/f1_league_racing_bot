@@ -70,14 +70,6 @@ async def round_leads(modules: "ModuleService", db_path: str) -> tuple[RoundLead
     return forecast_leads(await windows_read(db_path))
 
 
-async def round_window(modules: "ModuleService", db_path: str) -> WeatherWindows | None:
-    """Weather's part of a round's timing windows read: its three horizons, or None where the
-    module is off."""
-    if not await modules.is_weather_enabled():
-        return None
-    return await windows_read(db_path)
-
-
 async def review_section(
     modules: "ModuleService",
     db_path: str,

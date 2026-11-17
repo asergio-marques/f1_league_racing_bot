@@ -34,9 +34,6 @@ from leaguebot.core.services.seasons.approval_window_service import calendar_fau
 #: every host and in every year.
 NOW = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
 
-#: Why the tests judging leads fail until the date check takes them.
-LEADS_NOT_JUDGED = "#544: the approval's date check takes the modules' windows, not their leads"
-
 
 def _lead(kind, offset, label, check_label=None, check_wording=None, **marks):
     """A lead, imported where it is made, so that this file collects before `RoundLead` exists."""
@@ -110,7 +107,6 @@ def _labels(found) -> list[str]:
 # ── The two reported faults ───────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_an_elapsed_check_in_notice_is_reported():
     """#121: round 1 is three days away and the check-in notice is five days.
 
@@ -129,7 +125,6 @@ def test_an_elapsed_check_in_notice_is_reported():
     assert overdue.lead == "5 days before"
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_an_elapsed_phase_1_deadline_is_reported():
     """#122: the same season, against the default five-day Phase 1 horizon."""
     found = overdue_windows(
@@ -140,7 +135,6 @@ def test_an_elapsed_phase_1_deadline_is_reported():
     assert next(w for w in found if w.label == "Weather Phase 1").fire_at == NOW - timedelta(days=2)
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_both_modules_are_reported_from_one_call():
     """One check covers both, which is what #121 and #122 each ask for."""
     found = overdue_windows(
@@ -155,7 +149,6 @@ def test_both_modules_are_reported_from_one_call():
 # ── The season that is fine ───────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_beyond_every_window_is_clean():
     """The ordinary case. The gate must not refuse a season it has no business refusing."""
     found = overdue_windows(
@@ -167,7 +160,6 @@ def test_a_round_beyond_every_window_is_clean():
     assert found == []
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_disabled_module_contributes_no_windows():
     """A module that is off has no lead times to miss, so it cannot refuse a season."""
     past_round = [("Premier", _round(days_out=3))]
@@ -178,7 +170,6 @@ def test_a_disabled_module_contributes_no_windows():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_no_rounds_at_all_is_clean():
     found = overdue_windows(
         [], now=NOW, leads=(*_check_in(), *_forecasts())
@@ -190,7 +181,6 @@ def test_no_rounds_at_all_is_clean():
 # ── The settings whose zero means something particular ────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_deadline_of_zero_is_the_round_itself():
     """Zero does not disable the deadline — it puts it at the round's own start time, where its
     lead falls with no offset, and the refusal quotes the wording attendance gives it."""
@@ -214,7 +204,6 @@ def test_a_deadline_of_zero_is_the_round_itself():
 # ── The rounds and the boundary ───────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_cancelled_round_is_not_reported():
     """A cancelled round has no scheduled work left to lose.
 
@@ -232,7 +221,6 @@ def test_a_cancelled_round_is_not_reported():
     assert found == []
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_window_exactly_now_is_overdue():
     """The ``fire_at <= now`` boundary the module docstring pins.
 
@@ -247,7 +235,6 @@ def test_a_window_exactly_now_is_overdue():
     assert call.fire_at == NOW
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_past_round_reports_every_window():
     """A round wholly behind us has missed all six, and the manager is told all six: its two
     clean-ups and its result submission carry no date check's wording and are never judged."""
@@ -263,7 +250,6 @@ def test_a_past_round_reports_every_window():
 # ── Determinism and drift ─────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_report_is_ordered_deterministically():
     """Never the order the divisions came back in.
 
@@ -291,7 +277,6 @@ def test_the_report_is_ordered_deterministically():
     assert premier_1 == sorted(premier_1)
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_each_window_falls_at_its_lead_s_offset_from_the_round():
     """The approval judges each lead at the moment `RoundJobs.arm_leads` arms it, the round's
     moment plus the lead's offset, so the gate cannot disagree with the jobs it judges. A round a
@@ -331,7 +316,6 @@ def _faults(rounds, *, leads=(), now=NOW):
     return calendar_faults(rounds, now=now, leads=leads)
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_season_wholly_in_the_past_is_a_fault_with_no_modules_at_all():
     """#181, reduced to the arithmetic underneath it.
 
@@ -345,7 +329,6 @@ def test_a_season_wholly_in_the_past_is_a_fault_with_no_modules_at_all():
     assert fault.latest_window is None
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_latest_past_round_is_named_and_not_the_first():
     """The last one bounds the calendar. Naming round 1 would understate what must move."""
     rounds = [_round(days_out=d, number=n) for n, d in ((1, -30), (2, -20), (3, -10), (4, 30))]
@@ -355,7 +338,6 @@ def test_the_latest_past_round_is_named_and_not_the_first():
     assert fault.latest_past.round_number == 3
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_later_round_inside_a_window_is_named_as_well():
     """Two findings, because they are two different things to fix.
 
@@ -370,7 +352,6 @@ def test_a_later_round_inside_a_window_is_named_as_well():
     assert fault.latest_window.label == "Check-in call"
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_already_run_is_not_also_named_for_its_windows():
     """The suppression rule. A round behind us has missed all six of its windows.
 
@@ -385,7 +366,6 @@ def test_a_round_already_run_is_not_also_named_for_its_windows():
     assert fault.latest_window is None
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_furthest_overdue_window_of_that_round_is_the_one_named():
     """Clearing the earliest-due window clears the rest, so it sets how far the round moves.
 
@@ -401,7 +381,6 @@ def test_the_furthest_overdue_window_of_that_round_is_the_one_named():
     assert fault.latest_window.label in {"Check-in call", "Weather Phase 1"}
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_healthy_calendar_is_no_fault_at_all():
     """The gate must not stand in the way of an ordinary season."""
     rounds = [_round(days_out=d, number=n) for n, d in ((1, 30), (2, 37), (3, 44))]
@@ -409,12 +388,10 @@ def test_a_healthy_calendar_is_no_fault_at_all():
     assert _faults(rounds, leads=(*_check_in(), *_forecasts())) is None
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_no_rounds_at_all_is_no_fault():
     assert _faults([], leads=_check_in()) is None
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_exactly_now_has_already_run():
     """``scheduled_at <= now``, the threshold `judge_amendment` refuses a backwards move on.
 
@@ -427,7 +404,6 @@ def test_a_round_exactly_now_has_already_run():
     assert fault.latest_past.scheduled_at == NOW
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_cancelled_round_is_no_fault_however_far_behind():
     """Refusing a season over one would leave a league unable to approve at all until they
     deleted a round they may well want to keep a record of."""
@@ -439,14 +415,12 @@ def test_a_cancelled_round_is_no_fault_however_far_behind():
     assert _faults(rounds, leads=(*_check_in(), *_forecasts())) is None
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_division_of_nothing_but_cancelled_rounds_is_no_fault():
     cancelled = _round(days_out=-30, status=RoundStatus.CANCELLED.value)
 
     assert _faults([cancelled]) is None
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
     """Never the order a host's database handed them back in.
 
@@ -475,12 +449,10 @@ def _lines_for(rounds, *, leads=()):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_healthy_calendar_carries_no_lines():
     assert _lines_for([_round(days_out=30)], leads=_check_in()) == []
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_the_past_round_line_names_the_round_and_the_remedy():
     lines = _lines_for([_round(days_out=-5, number=3)])
 
@@ -490,7 +462,6 @@ def test_the_past_round_line_names_the_round_and_the_remedy():
     assert "/round amend" in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_windowed_round_adds_a_second_line_naming_its_window():
     lines = _lines_for(
         [_round(days_out=-1, number=1), _round(days_out=3, number=2)],
@@ -503,7 +474,6 @@ def test_a_windowed_round_adds_a_second_line_naming_its_window():
     assert "5 days before" in lines[1]
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_round_already_run_yields_one_line_and_not_two():
     """The suppression rule, seen from the message rather than the verdict."""
     lines = _lines_for(
@@ -514,7 +484,6 @@ def test_a_round_already_run_yields_one_line_and_not_two():
     assert "already inside" not in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=LEADS_NOT_JUDGED)
 def test_a_window_alone_yields_the_window_line_alone():
     lines = _lines_for([_round(days_out=3)], leads=_check_in())
 

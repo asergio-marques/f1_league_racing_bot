@@ -23,7 +23,7 @@ import discord
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.division import Division
-from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
+from leaguebot.core.models.round import Round, RoundLead
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
@@ -66,20 +66,20 @@ def date_refusal(
     rounds_by_division: dict[int, list[Any]],
     *,
     now: datetime,
-    attendance: AttendanceWindows | None,
-    weather: WeatherWindows | None,
+    leads: Sequence[RoundLead],
 ) -> DatesRefusal | None:
     """The refusal for a season whose calendar holds a round already run or inside a window, or
     None where every division's calendar is clean (Gate 2d).
 
     **Both confirmations of a season's placements ask this**: the press, and the change queue's
     check as the approval comes up to run, where the clock has moved on. One bullet per division,
-    and at most two findings within it. Each division's rounds are judged by `calendar_faults`.
+    and at most two findings within it. Each division's rounds are judged by `calendar_faults`,
+    against the *leads* the enabled modules answer (`round_leads_read`).
     """
     problems: list[str] = []
     for division in divisions:
         fault = calendar_faults(
-            rounds_by_division[division.id], now=now, attendance=attendance, weather=weather
+            rounds_by_division[division.id], now=now, leads=leads
         )
         if fault is None:
             continue

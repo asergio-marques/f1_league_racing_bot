@@ -59,7 +59,6 @@ from leaguebot.framework.models.change import (
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.rounds.round_moments import (
     read_round_leads,
-    read_round_windows,
     results_left_to_advance,
 )
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
@@ -287,7 +286,6 @@ def season_approval_change(
     lineups: "LineupPoster",
     roles: "TeamRoleService",
     drawing: "ImageDrawing",
-    round_windows_read: AwaitedHook,
     round_leads_read: AwaitedHook,
     placements_confirmed: AwaitedHook,
     placements_confirmed_steps: Hook,
@@ -303,8 +301,8 @@ def season_approval_change(
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
     *round_jobs* (which arms each round's jobs), the *lineups* poster (which posts the lineups) and the team-role service
     *roles* (which gives the drivers their roles), the image module's own drawing (*drawing*),
-    *round_windows_read* (the hook the enabled modules' windows are read through),
-    *round_leads_read* (the hook the modules' timers for a round are read through),
+    *round_leads_read* (the hook the modules' timers for a round are read through, which the
+    approval's date check and its arming both read),
     *placements_confirmed* (the hook each module's opening post is planned through, called
     inside the save for each division in turn, on the save's connection) and
     *placements_confirmed_steps* (each module's step definitions for its own opening post, by
@@ -350,9 +348,8 @@ def season_approval_change(
         # What the fingerprint does not cover: the clock, the server and the host.
         divisions = await seasons.get_divisions(season_id)
         rounds = {each.id: await seasons.get_division_rounds(each.id) for each in divisions}
-        attendance, weather = await read_round_windows(round_windows_read)
         dates = approval_checks.date_refusal(
-            divisions, rounds, now=now(), attendance=attendance, weather=weather
+            divisions, rounds, now=now(), leads=await read_round_leads(round_leads_read)
         )
         if dates is not None:
             return Verdict.refuse(dates.reply, dates.reason)
@@ -525,38 +522,17 @@ def season_approval_change(
             for division in divisions
             for each in await seasons.get_division_rounds(division.id)
         ]
-        attendance, weather = await read_round_windows(round_windows_read)
         server = await config.get_server_config()
         leads = await read_round_leads(round_leads_read)
         if results_left_to_advance(
             test_mode=server is not None and server.test_mode_active,
-            results_on=await modules.is_results_enabled(),
-            weather_on=weather is not None,
+            results_on=await modules.is_enabled("results"),
+            weather_on=await modules.is_enabled("weather"),
         ):
             leads = tuple(lead for lead in leads if not lead.left_to_advance)
         for each in rounds:
             number, tier = meta[each.division_id]
             round_jobs.arm_leads(each, leads, number, tier, now())
-        if weather is not None:
-            round_jobs.schedule_all_rounds(
-                rounds,
-                division_meta=meta,
-                phase_1_days=weather.phase_1_days,
-                phase_2_days=weather.phase_2_days,
-                phase_3_hours=weather.phase_3_hours,
-            )
-        if attendance is not None:
-            for each in rounds:
-                number, tier = meta[each.division_id]
-                round_jobs.schedule_attendance_round(
-                    each,
-                    season_number=number,
-                    division_tier=tier,
-                    notice_days=attendance.notice_days,
-                    last_notice_hours=attendance.last_notice_hours,
-                    deadline_hours=attendance.deadline_hours,
-                    now=now(),
-                )
         return StepResult(result={"rounds": len(rounds)})
 
     async def post_batch_notice(ctx: StepContext) -> StepResult:
