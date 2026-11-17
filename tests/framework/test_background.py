@@ -80,7 +80,7 @@ async def test_a_cancelled_task_is_neither_logged_nor_reported(caplog):
         await asyncio.Event().wait()
 
     with caplog.at_level(logging.WARNING):
-        task = start_background(work(), name="factory reset clean-up", report=report)
+        task = start_background(work(), name="signup reason lapse", report=report)
         await asyncio.sleep(0)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
