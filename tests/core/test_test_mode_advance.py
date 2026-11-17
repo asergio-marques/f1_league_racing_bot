@@ -861,8 +861,16 @@ CHECK_IN_WHAT = {
     9: "taking down the check-in a day after the round of round 3 in **Division 1**",
 }
 
-#: Each check-in step's reply where the change queue drops it as not due, by its phase.
-CHECK_IN_NOT_DUE = {
+#: Each step advance asks of the change queue and can find dropped as not due: its phase, its
+#: kind, and the name its reply gives it. A round's start (4) opens its results submission (#555).
+NOT_DUE_STEPS = [
+    pytest.param(4, "results.submission.open", "result submission", id="round start"),
+    *CHECK_IN_STEPS,
+]
+
+#: Each step's reply where the change queue drops it as not due, by its phase.
+NOT_DUE_REPLY = {
+    4: "⏩ The result submission of **Division 1** — **Round 3** was not due.",
     5: "📨 The **RSVP notice** for **Division 1** — **Round 3** was not due.",
     6: "⏰ The **RSVP last-notice** for **Division 1** — **Round 3** was not due.",
     7: "🏁 The **RSVP deadline** for **Division 1** — **Round 3** was not due.",
@@ -897,12 +905,14 @@ async def test_advancing_a_check_in_step_replies_on_the_change_queue(
             mocks[name].assert_not_awaited()
 
 
-@pytest.mark.parametrize("phase,kind,label", CHECK_IN_STEPS)
-async def test_a_check_in_step_the_queue_drops_says_it_was_not_due(tmp_path, phase, kind, label):
-    """Round 3 of Division 1's check-in call (5), last notice (6), deadline (7) or clean-up (9)
-    is next, and the change queue drops the step's ask as not due. Advance asks for it once and
-    replies that it was not due, naming the step, the division and the round, and not that it
-    is on the change queue; it writes nothing to the log channel, as the step did nothing."""
+@pytest.mark.parametrize("phase,kind,label", NOT_DUE_STEPS)
+async def test_a_step_the_queue_drops_says_it_was_not_due(tmp_path, phase, kind, label):
+    """Round 3 of Division 1's start (4), check-in call (5), last notice (6), deadline (7) or
+    clean-up (9) is next, and the change queue drops the step's ask as not due: for a round's
+    start, the round was cancelled or deleted, or its submission opened, after advance chose the
+    step. Advance asks for it once and replies that it was not due, naming the step, the division
+    and the round, and not that it is on the change queue; it writes nothing to the log channel,
+    as the step did nothing (core specification, "Test mode")."""
     cog = _make_cog(await _make_db(tmp_path))
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction = _interaction()
@@ -911,7 +921,7 @@ async def test_a_check_in_step_the_queue_drops_says_it_was_not_due(tmp_path, pha
 
     [(asked_kind, payload, _what, _origin)] = _asked(cog)
     assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
-    assert _replied(interaction) == CHECK_IN_NOT_DUE[phase]
+    assert _replied(interaction) == NOT_DUE_REPLY[phase]
     assert _log_lines(cog) == []
 
 
