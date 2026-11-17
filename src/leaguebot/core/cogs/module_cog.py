@@ -369,16 +369,6 @@ class ModuleCog(commands.Cog):
         if await self._refuse_missing_dependency(interaction, "results"):
             return
 
-        # Block if ACTIVE season exists (FR-003)
-        active_season = await self.bot.season_service.get_confirmed_season()
-        if active_season is not None:
-            await refuse(
-                interaction,
-                "❌ Results & Standings module cannot be enabled once a season's placements are confirmed.",
-                what=describe(interaction),
-            )
-            return
-
         # The switch is results' own change on the queue, whose check refuses "already enabled":
         # this asks for it and does nothing else.
         await self.bot.change_queue.ask(
@@ -440,16 +430,6 @@ class ModuleCog(commands.Cog):
     ) -> None:
         # Guard: the dependency table's needs must be enabled first
         if await self._refuse_missing_dependency(interaction, "attendance"):
-            return
-
-        # Guard: no ACTIVE season
-        active_season = await self.bot.season_service.get_confirmed_season()
-        if active_season is not None:
-            await refuse(
-                interaction,
-                "❌ Attendance module cannot be enabled once a season's placements are confirmed.",
-                what=describe(interaction),
-            )
             return
 
         # The switch is attendance's own change on the queue, whose check refuses "already

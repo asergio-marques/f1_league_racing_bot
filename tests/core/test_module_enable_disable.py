@@ -410,26 +410,6 @@ async def test_a_results_enable_whose_sweep_cannot_be_armed_leaves_results_on_an
     assert await stopped_job(league.db_path) is None
 
 
-async def test_results_cannot_be_enabled_mid_season(tmp_path):
-    """FR-003. It changes how a round is scored, so the remaining rounds would be scored
-    by different rules than the ones already run. Refused at once: nothing is queued and nothing
-    audited, and the refusal reaches the log channel as one line in the standard form."""
-    from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said, log_lines
-
-    league, cog = await _league(tmp_path)
-    await _confirm_a_season(league.db_path)
-    asked = _asked(league, "enable")
-
-    await cog._enable_results(asked)
-
-    refusal = "Results & Standings module cannot be enabled once a season's placements are confirmed."
-    assert last_said(asked) == f"❌ {refusal}"
-    assert await change_rows(league.db_path) == []
-    assert await _audit(league.db_path) == []
-    assert await log_lines(league) == [_refused_line(refusal)]
-
-
 async def test_enabling_results_twice_does_no_work(tmp_path):
     """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
     channel as one line in the standard form."""
@@ -541,44 +521,6 @@ async def test_enabling_attendance_writes_the_packaged_defaults(tmp_path):
     assert (row["no_rsvp_penalty"], row["absent_penalty"], row["no_show_penalty"]) == (1, 1, 1)
     assert row["autoreserve_threshold"] is None
     assert row["autosack_threshold"] is None
-
-
-async def test_attendance_cannot_be_enabled_mid_season(tmp_path):
-    """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
-    channel as one line in the standard form."""
-    from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said, log_lines
-
-    league, cog = await _league(tmp_path, "results")
-    await _confirm_a_season(league.db_path)
-    asked = _asked(league, "enable")
-
-    await cog._enable_attendance(asked)
-
-    refusal = "Attendance module cannot be enabled once a season's placements are confirmed."
-    assert last_said(asked) == f"❌ {refusal}"
-    assert await change_rows(league.db_path) == []
-    assert await _audit(league.db_path) == []
-    assert await log_lines(league) == [_refused_line(refusal)]
-
-
-async def test_the_results_dependency_is_checked_before_the_season(tmp_path):
-    """Within attendance's own handler, a league with neither in place is told about the
-    dependency, which is the thing they have to fix first — being told about the season would
-    send them the wrong way. Through `/module enable` itself, a season whose placements are
-    confirmed is refused first by the stage check every module shares
-    (`test_module_stage_gates.py`), before this handler is reached."""
-    from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said
-
-    league, cog = await _league(tmp_path)
-    await _confirm_a_season(league.db_path)
-    asked = _asked(league, "enable")
-
-    await cog._enable_attendance(asked)
-
-    assert last_said(asked) == NEEDS_RESULTS
-    assert await change_rows(league.db_path) == []
 
 
 async def test_the_dependency_table_decides_whether_attendance_may_be_enabled(tmp_path, monkeypatch):
@@ -959,9 +901,10 @@ async def _stage(db_path: str, stage: str, status: str) -> None:
 #: stage check standing in front of it otherwise. Weather's "already enabled", refused by its
 #: change on the queue, is pinned by `test_enabling_weather_twice_does_no_work`; images' the same
 #: way, by `test_enabling_twice_does_no_work`; signup's by
-#: `test_module_disable_paths.py::test_enabling_signup_twice_does_no_work`. Results' and attendance's refusals (the dependency,
-#: the season and "already enabled") are each pinned on the league's bot, with the real queue, by
-#: their own tests above.
+#: `test_module_disable_paths.py::test_enabling_signup_twice_does_no_work`. Results' and attendance's own refusals (the dependency
+#: and "already enabled") are each pinned on the league's bot, with the real queue, by their own
+#: tests above; the season refuses them, as every module, only through the command's stage check
+#: (`test_module_stage_gates.py::test_no_module_is_enabled_once_placements_are_confirmed`).
 MODULE_REFUSALS = [
     pytest.param("enable", "weather", {"season": "confirmed"}, None, "cannot be enabled once",
                  id="enable-once-placements-are-confirmed"),
