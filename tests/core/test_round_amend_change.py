@@ -57,6 +57,7 @@ from tests.support.season_league import (
     ongoing_league,
     posted_forecast,
     profile_id,
+    leads_armed,
     round_id,
     run_at_once,
 )
@@ -66,6 +67,9 @@ from tests.support.mentions import NOBODY, notified
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 HORIZONS = (5, 2, 2)
+
+#: Why the tests reading weather's leads armed fail until weather answers its forecasts as leads.
+WEATHER_LEADS_NOT_ARMED = "#544: weather answers its forecasts as no leads yet"
 AMENDED = "✅ Round amended successfully."
 ACK = (
     "⏳ Amending round 3 in **Pro**. This message will be updated when it is done; if it takes "
@@ -1205,9 +1209,9 @@ async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_m
     """Weather on, horizons 5 days, 2 days, 2 hours; Pro's round 3 is a mystery round 90 days
     out, its first horizon days ahead. It is brought forward to three days out, inside that
     horizon; the save stops and a league admin discards it. The round stands at its old moment,
-    its first horizon still ahead, so it is armed again with its forecasts (`schedule_round`, which
-    arms its mystery notice and its results submission), not its results submission alone, and the
-    reply says its timed work was armed again."""
+    its first horizon still ahead, so it is armed again with its forecasts (its mystery notice
+    among them) and its results submission, not its results submission alone, and the reply says
+    its timed work was armed again."""
     league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
     await league.write("UPDATE rounds SET format = 'MYSTERY' WHERE id = ?", R3)
     before = await _moment(league)
@@ -2070,7 +2074,7 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
     assert await stopped_job(league.db_path) is None
     assert await _status(league) == "NOT_RUN"
     assert league.armed == []
-    assert league.bot.round_jobs.run_result_submission_now.call_args_list == []
+    assert run_at_once(league.bot.round_jobs) == []
 
 
 async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to_test_mode_advance(
@@ -2091,7 +2095,7 @@ async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to
     assert (await _change(league))["state"] == "DONE"
     assert await _moment(league) == _when(league, days=150)
     assert league.armed == []
-    assert league.bot.round_jobs.run_result_submission_now.call_args_list == []
+    assert run_at_once(league.bot.round_jobs) == []
 
 
 async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes_the_results_job_down(
@@ -2116,9 +2120,10 @@ async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes
 
     taken_down = league.bot.round_jobs.cancel_round.call_args_list
     assert call(R3, only=frozenset({"results"})) in taken_down
-    assert league.bot.round_jobs.run_result_submission_now.call_args_list == []
+    assert run_at_once(league.bot.round_jobs) == []
 
 
+@pytest.mark.xfail(strict=True, reason=WEATHER_LEADS_NOT_ARMED)
 async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
     """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3, its Phase 1 never drawn, is
     brought forward to four days, twenty-three hours and fifty-eight minutes out: its Phase 1
@@ -2131,8 +2136,10 @@ async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
     await run_queue(league.bot)
 
     assert (await _change(league))["state"] == "DONE"
-    [armed] = league.bot.round_jobs.schedule_round.call_args_list
-    assert armed.kwargs.get("skip_phases") == frozenset({1})
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert sorted(lead.kind for lead in armed["leads"] if lead.kind.startswith("weather_p")) == [
+        "weather_p2", "weather_p3",
+    ]
     assert phases.ran == [(1, R3)]
 
 
@@ -2149,6 +2156,7 @@ async def _passed_while_the_save_stood_stopped(league: Any, **after: float) -> N
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no lead run at once yet (run_lead_now)")
 async def test_a_passed_round_s_results_submission_is_run_at_once_after_it_is_armed(tmp_path):
     """As a round whose moment passed while its save stood stopped (ten minutes past it, the save
     discarded): its results submission is armed with the round first and run at once after,
@@ -2158,9 +2166,8 @@ async def test_a_passed_round_s_results_submission_is_run_at_once_after_it_is_ar
     await _passed_while_the_save_stood_stopped(league, hours=2, minutes=15)
 
     names = [call[0] for call in league.bot.round_jobs.method_calls
-             if call[0] in ("schedule_round", "schedule_result_submission_jobs",
-                            "run_result_submission_now")]
-    assert names == ["schedule_result_submission_jobs", "run_result_submission_now"]
+             if call[0] in ("arm_leads", "run_lead_now")]
+    assert names == ["arm_leads", "run_lead_now"]
 
 
 async def test_a_check_in_deadline_whose_reserves_were_distributed_is_not_run_again(
@@ -2710,7 +2717,8 @@ async def _with_its_notice_posted(league: Any, *, days: float) -> int:
 
 
 @pytest.mark.parametrize("weather_on", [
-    pytest.param(True, id="weather on"),
+    pytest.param(True, id="weather on",
+                 marks=pytest.mark.xfail(strict=True, reason=WEATHER_LEADS_NOT_ARMED)),
     pytest.param(False, id="weather switched off since the notice"),
 ])
 async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down(
@@ -2733,8 +2741,7 @@ async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_th
     if not weather_on:
         await league.write("UPDATE server_configs SET weather_module_enabled = 0")
     armed_before = len(league.armed)
-    forecasts_armed = league.bot.round_jobs.schedule_round
-    forecasts_armed_before = len(forecasts_armed.call_args_list)
+    forecasts_armed_before = len(leads_armed(league.bot.round_jobs))
 
     press = await _amended(league, format="NORMAL", track="Silverstone Circuit")
     await run_queue(league.bot)
@@ -2748,13 +2755,17 @@ async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_th
     assert not any("Invalidated" in text for text in league.texts(PRO_CH.forecast))
     sent = [mid for kind, mid in after if kind == "send"]
     armed = [which for which, _ in league.armed[armed_before:]]
-    forecast_arming = forecasts_armed.call_args_list[forecasts_armed_before:]
+    forecast_arming = [
+        each for each in leads_armed(league.bot.round_jobs)[forecasts_armed_before:]
+        if any(lead.kind.startswith("weather_p") for lead in each["leads"])
+    ]
     if weather_on:
         assert len(sent) == 1
         assert await _forecasts(league) == {1: sent[0]}
         assert armed.count("weather") == 1
         [arming] = forecast_arming
-        assert arming.kwargs.get("skip_phases") == frozenset({1})
+        assert sorted(lead.kind for lead in arming["leads"]
+                      if lead.kind.startswith("weather_p")) == ["weather_p2", "weather_p3"]
     else:
         assert sent == []
         assert await _forecasts(league) == {}
@@ -3034,37 +3045,46 @@ async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, s
     )
 
 
-# ── Core arms what each module's arming answer hands back (#287) ───────────────────────────
+# ── Core arms what each module's arming answer hands back (#287, #544) ─────────────────────
 #
 # Whether a module's timed work is armed again, and with what, is that module's answer through
-# `round_armed`: a `RoundArming` carrying the steps it plans and its jobs, `ForecastJobs` for the
-# forecasts and `CheckInJobs` for the check-in. Core's arming makes the scheduler's calls, in
-# today's order, from what it is handed.
+# `round_armed`: a `RoundArming` carrying the steps it plans and its jobs, the leads it wants set
+# for the round (`RoundLead`). Core arms them under its own naming, and arms nothing of its own.
 
 
+def _lead(kind: str, offset: timedelta, label: str, **marks: Any) -> Any:
+    """A lead, imported where it is made, so that this file collects before `RoundLead` exists."""
+    from leaguebot.core.models.round import RoundLead
+
+    return RoundLead(kind=kind, offset=offset, label=label, **marks)
+
+
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_core_arms_what_a_module_s_arming_answer_hands_back(tmp_path):
     """Weather and attendance both off. In place of the modules' own answers, one module answers
-    the round armed again with forecast jobs at horizons of 4 days, 1 day and 3 hours, its Phase 2
-    to be skipped, and another with check-in jobs at 6 days, 12 hours and 1 hour. Pro's round 3 is
-    moved to 60 days out. The round's forecasts are armed once, at those horizons and skipping
-    Phase 2; its check-in once, at those lead times; and its results submission is not armed on
-    its own, the forecasts' arming carrying it as today."""
+    the round armed again with forecast leads 4 days and 3 hours before the round and a clean-up a
+    day after, its Phase 2 left out as drawn at once, and another with check-in leads 6 days,
+    12 hours and 1 hour before it and a clean-up a day after. Pro's round 3 is moved to 60 days
+    out. The round is armed once, against the queue's clock, with exactly those leads, the first
+    module's then the second's, and nothing else: no result submission of core's own."""
     league = await ongoing_league(tmp_path)
     from leaguebot.core.models.amendment import RoundArming
-    from leaguebot.core.models.round import (
-        AttendanceWindows,
-        CheckInJobs,
-        ForecastJobs,
-        WeatherWindows,
-    )
+    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
 
-    forecasts = RoundArming(steps=(), jobs=ForecastJobs(
-        windows=WeatherWindows(phase_1_days=4, phase_2_days=1, phase_3_hours=3),
-        skip_phases=frozenset({2}),
-    ))
-    check_in = RoundArming(steps=(), jobs=CheckInJobs(
-        windows=AttendanceWindows(notice_days=6, last_notice_hours=12, deadline_hours=1),
-    ))
+    forecast_leads = (
+        _lead("weather_p1", -timedelta(days=4), "Weather P1"),
+        _lead("weather_p3", -timedelta(hours=3), "Weather P3"),
+        _lead("cleanup", POST_RACE_CLEANUP_DELAY, "Forecast cleanup", clean_up=True),
+    )
+    check_in_leads = (
+        _lead("rsvp_notice", -timedelta(days=6), "RSVP notice", ahead_only=True),
+        _lead("rsvp_last_notice", -timedelta(hours=12), "RSVP last-notice", ahead_only=True),
+        _lead("rsvp_deadline", -timedelta(hours=1), "RSVP deadline", ahead_only=True),
+        _lead("rsvp_cleanup", POST_RACE_CLEANUP_DELAY, "RSVP cleanup", ahead_only=True,
+              clean_up=True),
+    )
+    forecasts = RoundArming(steps=(), jobs=forecast_leads)
+    check_in = RoundArming(steps=(), jobs=check_in_leads)
 
     async def _forecasts(*_args: Any, **_kwargs: Any) -> Any:
         return forecasts
@@ -3079,40 +3099,29 @@ async def test_core_arms_what_a_module_s_arming_answer_hands_back(tmp_path):
 
     await run_queue(league.bot)
 
-    round_jobs = league.bot.round_jobs
     assert (await _change(league))["state"] == "DONE"
-    [armed] = round_jobs.schedule_round.call_args_list
-    assert armed.args[0].id == R3
-    assert {key: armed.kwargs[key] for key in
-            ("phase_1_days", "phase_2_days", "phase_3_hours", "skip_phases")} == {
-        "phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3, "skip_phases": frozenset({2}),
-    }
-    [called] = round_jobs.schedule_attendance_round.call_args_list
-    assert called.args[0].id == R3
-    assert {key: called.kwargs[key] for key in
-            ("notice_days", "last_notice_hours", "deadline_hours")} == {
-        "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,
-    }
-    assert round_jobs.schedule_result_submission_jobs.call_args_list == []
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert armed["rnd"].id == R3
+    assert list(armed["leads"]) == [*forecast_leads, *check_in_leads]
+    assert armed["now"] == league.clock.now
 
 
-async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp_path):
-    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, but no module answers
-    the round armed again. Pro's round 3 is moved to 60 days out. Neither its forecasts nor its
-    check-in are armed; its results submission is armed, once, for round 3 alone, so that the
-    round still opens its submission and can finish."""
+@pytest.mark.xfail(strict=True, reason="#544: core still arms the result submission itself")
+async def test_with_no_module_signed_up_nothing_is_armed(tmp_path):
+    """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, but no module, results
+    included, answers the round armed again. Pro's round 3 is moved to 60 days out. The amendment
+    finishes, and nothing is armed for the round, not even a result submission: core arms only
+    what the modules hand back."""
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
     league.bot.round_armed._subscribers.clear()
     await _amended(league, scheduled_at=_at(league, days=60))
 
     await run_queue(league.bot)
 
-    round_jobs = league.bot.round_jobs
     assert (await _change(league))["state"] == "DONE"
-    assert round_jobs.schedule_round.call_args_list == []
-    assert round_jobs.schedule_attendance_round.call_args_list == []
-    [armed] = round_jobs.schedule_result_submission_jobs.call_args_list
-    assert [rnd.id for rnd in armed.args[0]] == [R3]
+    assert league.armed == []
+    assert [lead for each in leads_armed(league.bot.round_jobs) for lead in each["leads"]] == []
+    assert run_at_once(league.bot.round_jobs) == []
 
 
 # ── Each module keeps its own windows (#287, T7) ───────────────────────────────────────────
@@ -3149,6 +3158,7 @@ async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
                    for value in (*asked["args"], *asked["kwargs"].values()))
 
 
+@pytest.mark.xfail(strict=True, reason="#544: weather and attendance answer no leads yet")
 async def test_an_amendment_stopped_across_the_update_reads_each_module_s_windows_afresh(tmp_path):
     """Weather and attendance both on, horizons 5 days, 2 days, 2 hours, check-in lead times
     5 days, 24 hours, 2 hours. Pro's round 3 is moved to 60 days out, and the amendment stops at
@@ -3156,8 +3166,8 @@ async def test_an_amendment_stopped_across_the_update_reads_each_module_s_window
     under `windows`, by name. The league then sets its horizons to 4 days, 1 day, 3 hours and its
     check-in to 6 days, 12 hours, 1 hour, and the save is retried. The amendment finishes,
     nothing raising: neither module finds a window of its own in the record, so each reads its
-    windows afresh, and the round is armed once for its forecasts and once for its check-in, at
-    the lead times the league has now."""
+    windows afresh, and the round is armed once, its forecasts and its check-in at the lead times
+    the league has now, with its result submission at the round."""
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
     await _amended(league, scheduled_at=_at(league, days=60))
     with _renumbering_fails():
@@ -3180,14 +3190,14 @@ async def test_an_amendment_stopped_across_the_update_reads_each_module_s_window
     await retry_job(league.bot)
     await run_queue(league.bot)
 
-    round_jobs = league.bot.round_jobs
     assert await stopped_job(league.db_path) is None
     assert (await _change(league))["state"] == "DONE"
-    [armed] = round_jobs.schedule_round.call_args_list
-    assert {key: armed.kwargs[key] for key in ("phase_1_days", "phase_2_days", "phase_3_hours")} \
-        == {"phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3}
-    [called] = round_jobs.schedule_attendance_round.call_args_list
-    assert {key: called.kwargs[key] for key in
-            ("notice_days", "last_notice_hours", "deadline_hours")} == {
-        "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,
+    [armed] = leads_armed(league.bot.round_jobs)
+    offsets = {lead.kind: lead.offset for lead in armed["leads"] if not lead.clean_up}
+    assert offsets == {
+        "weather_p1": -timedelta(days=4), "weather_p2": -timedelta(days=1),
+        "weather_p3": -timedelta(hours=3),
+        "rsvp_notice": -timedelta(days=6), "rsvp_last_notice": -timedelta(hours=12),
+        "rsvp_deadline": -timedelta(hours=1),
+        "results": timedelta(0),
     }

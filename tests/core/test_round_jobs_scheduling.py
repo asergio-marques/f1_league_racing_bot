@@ -113,26 +113,6 @@ def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late
     assert added.kwargs["misfire_grace_time"] is None
 
 
-def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
-    """A phase an amendment draws at once, its horizon passed by less than the misfire grace, is
-    left out of the round's timers, which would otherwise draw it a second time; the other
-    phases, the clean-up and the results submission are armed as ever, the third phase two
-    hours before the round's start, the clean-up a day after it and the submission at it."""
-    service = _service()
-
-    _round_jobs(service).schedule_round(
-        _round(21, number=3), season_number=7, division_tier=1, skip_phases=frozenset({1, 2})
-    )
-
-    assert [c.kwargs["id"] for c in _added(service)] == [
-        "weather_p3_s7_d1_r3_id21", "cleanup_s7_d1_r3_id21", "results_s7_d1_r3_id21",
-    ]
-    start = _round().scheduled_at
-    assert [c.kwargs["trigger"].run_date for c in _added(service)] == [
-        start - timedelta(hours=2), start + POST_RACE_CLEANUP_DELAY, start,
-    ]
-
-
 # ---------------------------------------------------------------------------
 # The check-in cleanup (#425)
 # ---------------------------------------------------------------------------

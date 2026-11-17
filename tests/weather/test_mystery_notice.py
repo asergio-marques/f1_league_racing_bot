@@ -2,7 +2,7 @@
 
 Covers NFR-003 cases:
   1. mystery_notice_message() exact content (FR-003)
-  2. schedule_round for MYSTERY schedules weather phase jobs (FR-001)
+  2. a MYSTERY round's forecast leads arm weather phase jobs as any round's do (FR-001)
   3. cancel_round removes all round jobs via kwargs lookup (FR-002)
   4. the notice, asked of the change queue, posts to the forecast channel with no role tag,
      and nothing where the round is no longer a mystery round, is gone or weather is off
@@ -13,14 +13,14 @@ framework's scheduler.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
 
 from leaguebot.weather.utils.message_builder import mystery_notice_message
 from leaguebot.core.models.round import Round, RoundFormat
-from tests.support.round_jobs import round_jobs_over
+from tests.support.round_jobs import forecast_leads, round_jobs_over, submission_lead
 
 
 # ---------------------------------------------------------------------------
@@ -123,42 +123,55 @@ def _future_round(round_id: int, fmt: RoundFormat) -> Round:
 
 
 # ---------------------------------------------------------------------------
-# 2. schedule_round schedules weather phase jobs for MYSTERY (FR-001)
+# 2. a mystery round's forecast leads arm its weather phase jobs (FR-001)
 # ---------------------------------------------------------------------------
+
+def _arm_mystery(svc, round_id: int = 42, season: int = 1, tier: int = 1) -> None:
+    """A mystery round armed with weather's packaged forecast leads and results' submission, a
+    month before it."""
+    rnd = _mystery_round(round_id)
+    _round_jobs(svc).arm_leads(rnd, (*forecast_leads(), submission_lead()), season, tier,
+                               rnd.scheduled_at - timedelta(days=30))
+
 
 class TestScheduleRoundMystery:
 
+    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_schedules_exactly_five_jobs(self):
         # All rounds (including MYSTERY) schedule 5 jobs:
         # weather_p1, weather_p2, weather_p3, cleanup, results
         svc = _make_scheduler_no_db()
-        _round_jobs(svc).schedule_round(_mystery_round(), season_number=1, division_tier=1)
+        _arm_mystery(svc)
         assert svc._scheduler.add_job.call_count == 5
 
+    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_no_legacy_mystery_r_job(self):
         svc = _make_scheduler_no_db()
-        _round_jobs(svc).schedule_round(_mystery_round(), season_number=1, division_tier=1)
+        _arm_mystery(svc)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert not any(jid.startswith("mystery_r") for jid in job_ids)
 
+    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_all_three_weather_phase_jobs_created(self):
         svc = _make_scheduler_no_db()
-        _round_jobs(svc).schedule_round(_mystery_round(), season_number=1, division_tier=1)
+        _arm_mystery(svc)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert any("weather_p1" in jid for jid in job_ids)
         assert any("weather_p2" in jid for jid in job_ids)
         assert any("weather_p3" in jid for jid in job_ids)
 
+    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_round_id_in_kwargs_for_all_jobs(self):
         """Every job of a mystery round is stored with the round's id as its key."""
         svc = _make_scheduler_no_db()
-        _round_jobs(svc).schedule_round(_mystery_round(round_id=42), season_number=1, division_tier=1)
+        _arm_mystery(svc, 42)
         for call in svc._scheduler.add_job.call_args_list:
             assert call.kwargs["kwargs"]["key"] == 42
 
+    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_job_ids_follow_new_format(self):
         svc = _make_scheduler_no_db()
-        _round_jobs(svc).schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
+        _arm_mystery(svc, 42, season=3, tier=2)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         # weather_p1 replaces the old mystery_r job; weather reads the format when it fires.
         # Format: <event>_s{season}_d{tier}_r{round_number}_id{round_id}. The round id is the

@@ -34,6 +34,7 @@ from tests.support.season_league import (
     PRO,
     ongoing_league,
     posted_forecast,
+    leads_armed,
     round_id,
     run_at_once,
 )
@@ -309,6 +310,12 @@ async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path,
 # ── A round already raced ───────────────────────────────────────────────────────────
 
 
+#: Why a clean-ups-only re-arming's tests fail until core arms the modules' clean-up leads.
+_NO_CLEAN_UP_LEADS = ("#544: a clean-ups-only re-arm reads the modules' switches by name and "
+                      "arms no clean-up leads yet")
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_CLEAN_UP_LEADS)
 async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
@@ -324,9 +331,29 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     assert await stopped_job(league.db_path) is None
     assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
     assert league.armed == [("cleanups", [R3])]
-    arming = league.bot.round_jobs.schedule_round_cleanups
-    assert arming.call_args.kwargs["now"] == league.clock.now
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert sorted(lead.kind for lead in armed["leads"]) == ["cleanup", "rsvp_cleanup"]
+    assert armed["now"] == league.clock.now
     assert run_at_once(league.bot.round_jobs) == []
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_CLEAN_UP_LEADS)
+async def test_a_switched_off_module_adds_no_clean_up_to_a_raced_round_s_re_arming(tmp_path):
+    """Weather off and attendance on. Pro's round 3 was raced two hours ago and awaits its report
+    verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
+    check-in's clean-up alone: weather, being off, answers nothing, and core reads no module's
+    switch of its own."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await league.write("UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", R3)
+    await _place(league, hours=-2)
+
+    assert await _ask_rearm(league, cleanups_only=True) is not None
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert armed["rnd"].id == R3
+    assert [lead.kind for lead in armed["leads"]] == ["rsvp_cleanup"]
 
 
 async def test_a_raced_round_s_clean_ups_already_due_run_at_once(tmp_path):

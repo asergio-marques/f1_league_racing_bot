@@ -72,8 +72,33 @@ def _a_round() -> Any:
     return SimpleNamespace(id=_ROUND_ID, division_id=11, round_number=3, scheduled_at=start)
 
 
-def _arm_round(round_jobs: Any, rnd: Any) -> None:
-    round_jobs.schedule_round(rnd, season_number=7, division_tier=1)
+#: Why a case arming a forecast's or a clean-up's lead fails until core arms leads.
+_NO_LEADS = "#544: core has no RoundLead nor RoundJobs.arm_leads yet"
+
+
+def _lead(kind: str) -> Any:
+    """The lead a module answers for a round's *kind* of job, with its packaged settings: weather's
+    three phases 5 days, 2 days and 2 hours before the round and its clean-up a day after, armed
+    whatever the hour, and the check-in's clean-up a day after, armed only while ahead."""
+    from leaguebot.core.models.round import RoundLead
+    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
+
+    return {
+        "weather_p1": RoundLead(kind="weather_p1", offset=-timedelta(days=5), label="Weather P1"),
+        "weather_p2": RoundLead(kind="weather_p2", offset=-timedelta(days=2), label="Weather P2"),
+        "weather_p3": RoundLead(kind="weather_p3", offset=-timedelta(hours=2), label="Weather P3"),
+        "cleanup": RoundLead(kind="cleanup", offset=POST_RACE_CLEANUP_DELAY,
+                             label="Forecast cleanup", clean_up=True),
+        "rsvp_cleanup": RoundLead(kind="rsvp_cleanup", offset=POST_RACE_CLEANUP_DELAY,
+                                  label="RSVP cleanup", ahead_only=True, clean_up=True),
+    }[kind]
+
+
+def _arm_lead(kind: str) -> Any:
+    """The arming of a round's *kind* of job alone, through core's arming of leads."""
+    def _arm(round_jobs: Any, rnd: Any) -> None:
+        round_jobs.arm_leads(rnd, (_lead(kind),), 7, 1, _now())
+    return _arm
 
 
 def _arm_check_in(round_jobs: Any, rnd: Any) -> None:
@@ -81,10 +106,6 @@ def _arm_check_in(round_jobs: Any, rnd: Any) -> None:
         rnd, season_number=7, division_tier=1, notice_days=5, last_notice_hours=24,
         deadline_hours=2, now=_now(),
     )
-
-
-def _arm_cleanups(round_jobs: Any, rnd: Any) -> None:
-    round_jobs.schedule_round_cleanups(rnd, season_number=7, division_tier=1, now=_now())
 
 
 def _submission() -> Any:
@@ -107,14 +128,14 @@ def _arm_results_now(round_jobs: Any, rnd: Any) -> None:
 #: Every kind of round job, with the call of core's round jobs that arms it and the id it is
 #: stored under. A round job's kind is its id's prefix and its key the round id.
 EVERY_ROUND_JOB = [
-    pytest.param("weather_p1", _arm_round, f"weather_p1{_ROUND_SUFFIX}",
-                 id="weather_p1-schedule_round"),
-    pytest.param("weather_p2", _arm_round, f"weather_p2{_ROUND_SUFFIX}",
-                 id="weather_p2-schedule_round"),
-    pytest.param("weather_p3", _arm_round, f"weather_p3{_ROUND_SUFFIX}",
-                 id="weather_p3-schedule_round"),
-    pytest.param("cleanup", _arm_round, f"cleanup{_ROUND_SUFFIX}", id="cleanup-schedule_round"),
-    pytest.param("results", _arm_round, f"results{_ROUND_SUFFIX}", id="results-schedule_round"),
+    pytest.param("weather_p1", _arm_lead("weather_p1"), f"weather_p1{_ROUND_SUFFIX}",
+                 id="weather_p1-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+    pytest.param("weather_p2", _arm_lead("weather_p2"), f"weather_p2{_ROUND_SUFFIX}",
+                 id="weather_p2-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+    pytest.param("weather_p3", _arm_lead("weather_p3"), f"weather_p3{_ROUND_SUFFIX}",
+                 id="weather_p3-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+    pytest.param("cleanup", _arm_lead("cleanup"), f"cleanup{_ROUND_SUFFIX}",
+                 id="cleanup-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
     pytest.param("results", _arm_results_only, f"results{_ROUND_SUFFIX}",
                  id="results-arm_leads",
                  marks=pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")),
@@ -129,10 +150,6 @@ EVERY_ROUND_JOB = [
                  id="rsvp_deadline-schedule_attendance_round"),
     pytest.param("rsvp_cleanup", _arm_check_in, f"rsvp_cleanup{_ROUND_SUFFIX}",
                  id="rsvp_cleanup-schedule_attendance_round"),
-    pytest.param("cleanup", _arm_cleanups, f"cleanup{_ROUND_SUFFIX}",
-                 id="cleanup-schedule_round_cleanups"),
-    pytest.param("rsvp_cleanup", _arm_cleanups, f"rsvp_cleanup{_ROUND_SUFFIX}",
-                 id="rsvp_cleanup-schedule_round_cleanups"),
 ]
 
 

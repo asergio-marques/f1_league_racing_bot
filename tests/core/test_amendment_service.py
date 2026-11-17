@@ -445,28 +445,32 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#544: weather answers its forecasts as no leads yet")
 async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
-    `schedule_round` falls back to the packaged 5 / 2 / 2 when it is not told otherwise, and the
+    The arming once fell back to the packaged 5 / 2 / 2 when it was not told otherwise, and the
     amendment never told it — so a league running 7 / 3 / 4 had the defaults quietly restored
     every time it moved a round, and the phases fired at moments nobody had chosen. It also put
     the amendment at odds with itself once the rules began reading the configured horizons: a
-    phase would be judged at seven days and armed at five.
+    phase would be judged at seven days and armed at five. Weather now answers its own leads,
+    and core keeps no horizons of its own.
 
-    Weather on, the league's horizons 7 / 3 / 4; Am's round 3 has its track amended.
+    Weather on, the league's horizons 7 / 3 / 4; Am's round 3 has its track amended. The round is
+    armed once, its three phases 7 days, 3 days and 4 hours before it.
     """
     league = await ongoing_league(tmp_path, weather=True, horizons=(7, 3, 4))
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, track=SILVERSTONE)
 
-    schedule_round = league.bot.round_jobs.schedule_round
-    schedule_round.assert_called_once()
-    kwargs = schedule_round.call_args.kwargs
-    assert kwargs["phase_1_days"] == 7
-    assert kwargs["phase_2_days"] == 3
-    assert kwargs["phase_3_hours"] == 4
+    [armed] = leads_armed(league.bot.round_jobs)
+    phases = {lead.kind: lead.offset for lead in armed["leads"] if lead.kind.startswith("weather_p")}
+    assert phases == {
+        "weather_p1": -timedelta(days=7),
+        "weather_p2": -timedelta(days=3),
+        "weather_p3": -timedelta(hours=4),
+    }
 
 
 # ---------------------------------------------------------------------------

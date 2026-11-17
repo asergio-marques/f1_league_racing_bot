@@ -27,3 +27,32 @@ def round_jobs_over(scheduler: Any, db_path: str) -> Any:
     round_jobs = RoundJobs(scheduler, db_path)
     round_jobs.sign_up_kinds(ROUND_KINDS)
     return round_jobs
+
+
+def forecast_leads(phase_1_days: int = 5, phase_2_days: int = 2, phase_3_hours: int = 2) -> tuple[Any, ...]:
+    """Weather's leads for a round at the given horizons, as it hands core to arm them: its three
+    phases before the round and its clean-up a day after, each armed whatever the hour. Without
+    the date check's wording, which arming does not read."""
+    from datetime import timedelta
+
+    from leaguebot.core.models.round import RoundLead
+    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
+
+    return (
+        RoundLead(kind="weather_p1", offset=-timedelta(days=phase_1_days), label="Weather P1"),
+        RoundLead(kind="weather_p2", offset=-timedelta(days=phase_2_days), label="Weather P2"),
+        RoundLead(kind="weather_p3", offset=-timedelta(hours=phase_3_hours), label="Weather P3"),
+        RoundLead(kind="cleanup", offset=POST_RACE_CLEANUP_DELAY, label="Forecast cleanup",
+                  clean_up=True),
+    )
+
+
+def submission_lead() -> Any:
+    """Results' lead for a round's submission, at the round's moment, run at once where that has
+    passed and left to `/test-mode advance` where core says so."""
+    from datetime import timedelta
+
+    from leaguebot.core.models.round import RoundLead
+
+    return RoundLead(kind="results", offset=timedelta(0), label="Result submission",
+                     run_at_once=True, left_to_advance=True)

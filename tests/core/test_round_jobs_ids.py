@@ -166,7 +166,7 @@ def _service(jobs: list) -> SchedulerService:
 def _round_jobs(jobs: list):
     """Core's round jobs over a scheduler whose store lists *jobs*, built as the builder builds
     them."""
-    from tests.support.round_jobs import round_jobs_over
+    from tests.support.round_jobs import forecast_leads, round_jobs_over, submission_lead
 
     return round_jobs_over(_service(jobs), "/tmp/not-read.db")
 
@@ -382,6 +382,7 @@ def _round_at(round_id: int, round_number: int):
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
 def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     """Two rounds that swap numbers must never share a job ID.
 
@@ -401,11 +402,14 @@ def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
 
     # Round 105 was fifth and is amended to fall fourth; the renumbering then makes round 104
     # the fifth. Both are scheduled as number 5, at different times in their lives.
-    round_jobs.schedule_round(_round_at(105, 5), season_number=1, division_tier=1)
+    leads = (*forecast_leads(), submission_lead())
+    first_round = _round_at(105, 5)
+    round_jobs.arm_leads(first_round, leads, 1, 1, first_round.scheduled_at - timedelta(days=30))
     first = {c.kwargs["id"] for c in svc._scheduler.add_job.call_args_list}
 
     svc._scheduler.add_job.reset_mock()
-    round_jobs.schedule_round(_round_at(104, 5), season_number=1, division_tier=1)
+    second_round = _round_at(104, 5)
+    round_jobs.arm_leads(second_round, leads, 1, 1, second_round.scheduled_at - timedelta(days=30))
     second = {c.kwargs["id"] for c in svc._scheduler.add_job.call_args_list}
 
     assert first and second
