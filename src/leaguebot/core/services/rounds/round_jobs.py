@@ -34,7 +34,7 @@ from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_
 from leaguebot.framework.db.database import get_connection
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService, StoredJob
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService, StoredJob
 
 log = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     import aiosqlite
     from leaguebot.framework.utils.hooks import AwaitedHook, Hook
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 log = logging.getLogger(__name__)
 

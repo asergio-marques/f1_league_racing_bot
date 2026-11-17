@@ -36,7 +36,7 @@ def _dispose(service: Any) -> None:
 def services(tmp_path, monkeypatch):
     """Build a scheduler on one league database and one job store, as the bot does at each start;
     every one is stopped and its job store closed once the test has run."""
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
     made: list[Any] = []
@@ -132,7 +132,7 @@ async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_
     is the one runner a one-off timer runs through, and its kind and the round id are its
     keywords. Fired with them, the runner calls that kind's handler alone, once, with the round
     id."""
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
 
     service = services()

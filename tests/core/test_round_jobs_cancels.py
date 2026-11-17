@@ -34,9 +34,9 @@ from unittest.mock import MagicMock
 import pytest
 from apscheduler.jobstores.base import JobLookupError
 
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
-LOGGER = "leaguebot.core.services.scheduler_service"
+LOGGER = "leaguebot.framework.services.jobs.scheduler"
 
 #: Each cancel of core's round jobs, and the arguments it is called with. A job the store lists
 #: carries round 5 as its key and the season-end prefix, so every cancel that walks the store

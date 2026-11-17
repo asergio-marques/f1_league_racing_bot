@@ -230,9 +230,6 @@ CORE_LEAGUE_RULE_FOLDERS = frozenset(
 CORE_SERVICES_LOOSE = frozenset({"__init__.py"})
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: the scheduler service still sits loose in core's services"
-)
 def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules():
     """Core's services are grouped by topic into packages, each a league rule's, so that a later
     review of what core holds can move a whole folder rather than sort its files again
@@ -253,7 +250,6 @@ def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules()
 FRAMEWORK_SERVICE_FOLDERS = frozenset({"queue", "posting", "switches", "jobs"})
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the framework has no jobs/ folder yet")
 def test_the_framework_s_services_sit_in_its_topic_folders():
     """The framework's services are grouped by topic into packages as core's are, with none loose
     (architecture.md, "How the code is laid out"). Every named folder is there, none other is, and

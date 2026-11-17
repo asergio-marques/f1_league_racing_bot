@@ -567,7 +567,7 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
     another round's, and this round's forecasts, stay queued.
     """
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)

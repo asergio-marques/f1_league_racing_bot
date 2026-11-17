@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 
-import leaguebot.core.services.scheduler_service as scheduler_module
-from leaguebot.core.services.scheduler_service import SchedulerService
+import leaguebot.framework.services.jobs.scheduler as scheduler_module
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 
 def _dispose(service: Any) -> None:

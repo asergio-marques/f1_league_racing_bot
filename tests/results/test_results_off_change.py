@@ -968,7 +968,7 @@ async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
     league manager confirms `/module disable results` and the queue carries it out: the switch-off
     is done, and the scheduler holds no amendment sweep, as turning results on had set up
     (architecture.md, "Each module turns itself on and off")."""
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.results.services.round_amendment.amendment_writes import (
         AMENDMENT_SWEEP_JOB_ID,
         schedule_amendment_sweep,

@@ -69,7 +69,7 @@ class TestMysteryNoticeMessage:
 
 def _make_scheduler_no_db():
     """Instantiate SchedulerService bypassing __init__ (no real APScheduler needed)."""
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     svc = SchedulerService.__new__(SchedulerService)
     svc._db_path = ":memory:"
     mock_sched = MagicMock()

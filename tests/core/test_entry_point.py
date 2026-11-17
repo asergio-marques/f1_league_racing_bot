@@ -40,7 +40,7 @@ def test_read_settings(environ, db_path, jobstore_path):
     """`read_settings` reads the token, the database and the job store from a plain mapping,
     resolving the job store once; with no `BOT_TOKEN` it raises `MissingBotToken`, naming it."""
     from leaguebot.__main__ import MissingBotToken, read_settings
-    from leaguebot.core.services.scheduler_service import default_jobstore_path
+    from leaguebot.framework.services.jobs.scheduler import default_jobstore_path
 
     if db_path is None:
         with pytest.raises(MissingBotToken, match="BOT_TOKEN"):

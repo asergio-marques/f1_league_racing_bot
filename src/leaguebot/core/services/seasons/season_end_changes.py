@@ -126,7 +126,7 @@ from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 __all__ = [

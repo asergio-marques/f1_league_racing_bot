@@ -58,7 +58,7 @@ import aiosqlite
 import discord
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 from leaguebot.core.services.drivers.division_seating import (
     active_season_driver_ids as assigned_driver_ids,
 )

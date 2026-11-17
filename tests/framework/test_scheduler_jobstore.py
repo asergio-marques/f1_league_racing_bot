@@ -18,7 +18,7 @@ import sqlite3
 
 import pytest
 
-from leaguebot.core.services.scheduler_service import (
+from leaguebot.framework.services.jobs.scheduler import (
     SchedulerService,
     default_jobstore_path,
     prepare_jobstore,

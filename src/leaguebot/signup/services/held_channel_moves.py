@@ -40,7 +40,7 @@ from leaguebot.signup.services.wizard_changes import delete_signup_channel
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 

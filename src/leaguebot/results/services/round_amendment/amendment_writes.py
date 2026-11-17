@@ -33,7 +33,7 @@ from leaguebot.results.services.submission.result_submission_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview

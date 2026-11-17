@@ -77,7 +77,7 @@ if TYPE_CHECKING:
 
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import ImageRenderService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService

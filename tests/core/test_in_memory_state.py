@@ -127,7 +127,7 @@ ARRIVING_EXEMPT = {
 EXEMPT = {
     # The timer kinds' callables the builder registers at start-up: the bot's wiring, not the
     # league's data (#439).
-    ("core/services/scheduler_service.py", "_timer_callbacks"),
+    ("framework/services/jobs/scheduler.py", "_timer_callbacks"),
     # The module switch readers the builder signs up once at start-up: the bot's wiring, not the
     # league's data.
     ("framework/services/switches/module_service.py", "_switch_readers"),

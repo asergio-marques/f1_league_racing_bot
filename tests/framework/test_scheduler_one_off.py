@@ -49,7 +49,7 @@ def _dispose(service: Any) -> None:
 def services(tmp_path, monkeypatch):
     """Build scheduler services on one league database and one job store, as the bot does at each
     start; every one is stopped and its job store closed once the test has run."""
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
     made: list[Any] = []
@@ -386,10 +386,6 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, 
 RUNNER_REFERENCE = "leaguebot.framework.services.jobs.scheduler:_one_off_timer_job"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#544: the scheduler has no generic calls yet, and is not yet the framework's",
-)
 async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(services):
     """Every way the scheduler arms a job is used, a one-off timer's included, on a paused
     scheduler; every job is then read back as the job store's file holds it, and each names the

@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.test_mode.test_mode_service import AdvanceSteps
     from leaguebot.core.services.seasons.season_service import SeasonService

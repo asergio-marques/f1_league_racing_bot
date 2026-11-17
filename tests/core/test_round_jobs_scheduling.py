@@ -31,9 +31,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import leaguebot.core.services.scheduler_service as scheduler_module
+import leaguebot.framework.services.jobs.scheduler as scheduler_module
 from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 
 @pytest.fixture(autouse=True)

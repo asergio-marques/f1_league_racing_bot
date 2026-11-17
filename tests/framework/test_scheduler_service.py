@@ -43,7 +43,7 @@ async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_w
     """An admin's command schedules the signup close and is answered. When the job runs, the log
     channel refuses its line: the job finds no interaction it answers, the admin is sent nothing,
     and the host's log alone records the failure."""
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
     from leaguebot.framework.utils.answering import answering_now
     from leaguebot.framework.utils.league_server import admits
 

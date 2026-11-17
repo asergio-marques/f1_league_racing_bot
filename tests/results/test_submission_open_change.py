@@ -384,7 +384,7 @@ async def _fire_job(league: SeasonLeague, monkeypatch: Any, round_: int = ROUND_
     runner swallows a handler's fault, so one that raises is raised again here."""
     from types import SimpleNamespace
 
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     handlers = {
         call.args[0]: call.args[1]

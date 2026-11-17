@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 #: A standing job's id, kept through the clearing as a module asks.
 KEPT_JOB_ID = "standing_daily"

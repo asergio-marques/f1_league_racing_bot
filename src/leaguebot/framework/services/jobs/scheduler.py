@@ -19,9 +19,8 @@ that also carries hundreds of `aiosqlite` readers, those writes contended with t
 traffic they were stalling. Given its own file the contention is gone, and the remaining
 stall is one small write to an uncontended database.
 
-**This file stays at `core/services/`, outside the topic folders, and its module path is pinned.**
-The job store pickles each timed job with the path of the runner it calls
-(`leaguebot.core.services.scheduler_service`), so moving the file would leave every job stored
+**This file's module path is pinned.** The job store pickles each timed job with the path of the
+runner it calls (`leaguebot.framework.services.jobs.scheduler`), so moving the file would leave every job stored
 before the move, and the state test mode keeps, unable to load.
 `test_every_stored_job_names_the_runner_by_its_pinned_module_path` holds it.
 """

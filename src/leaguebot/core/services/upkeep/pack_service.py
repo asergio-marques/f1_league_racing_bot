@@ -65,7 +65,7 @@ from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 log = logging.getLogger(__name__)
 

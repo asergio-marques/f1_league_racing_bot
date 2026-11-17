@@ -100,7 +100,7 @@ from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)

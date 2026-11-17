@@ -21,9 +21,9 @@ from unittest.mock import MagicMock
 import pytest
 from apscheduler.jobstores.base import JobLookupError
 
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
-LOGGER = "leaguebot.core.services.scheduler_service"
+LOGGER = "leaguebot.framework.services.jobs.scheduler"
 
 #: Each of the scheduler's removals and the arguments it is called with.
 REMOVALS = [
@@ -100,7 +100,7 @@ async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.framework.db.database import run_migrations
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)

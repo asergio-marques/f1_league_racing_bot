@@ -530,7 +530,7 @@ def test_no_background_task_is_started_and_dropped():
 
 # ── 6. Nothing reaches past the scheduler service ───────────────────────────────────────────
 
-SCHEDULER_SERVICE = "core/services/scheduler_service.py"
+SCHEDULER_SERVICE = "framework/services/jobs/scheduler.py"
 
 
 def _scheduler_reached_around() -> Counter[tuple[str, str]]:
@@ -841,7 +841,7 @@ def test_the_private_names_check_sees_a_private_method_through_the_bot_s_service
 
     assert _private_names_in(sample, "signup/services/sample_service.py") == Counter({
         ("signup/services/sample_service.py",
-         "leaguebot.core.services.scheduler_service.SchedulerService._scheduler"): 5,
+         "leaguebot.framework.services.jobs.scheduler.SchedulerService._scheduler"): 5,
     })
 
 
@@ -879,16 +879,16 @@ def test_the_private_names_check_leaves_an_unresolvable_receiver_alone():
 
 
 def test_the_private_names_check_leaves_a_module_s_own_private_name_alone():
-    """A private name used inside its own module is the module's business: core reaching core's
-    scheduler service's private attribute, through the bot or an annotation, is not counted."""
+    """A private name used inside its own module is the module's business: the framework reaching
+    the framework's scheduler's private attribute, through the bot or an annotation, is not counted."""
     sample = (
-        "from leaguebot.core.services.scheduler_service import SchedulerService\n"
+        "from leaguebot.framework.services.jobs.scheduler import SchedulerService\n"
         "async def handler(bot, scheduler: SchedulerService):\n"
         "    bot.scheduler_service._scheduler.get_job('x')\n"
         "    scheduler._scheduler.get_job('x')\n"
     )
 
-    assert _private_names_in(sample, "core/services/sample_service.py") == Counter()
+    assert _private_names_in(sample, "framework/services/sample_service.py") == Counter()
 
 
 # ── 9. Only the router writes the log channel ───────────────────────────────────────────────
@@ -2197,7 +2197,7 @@ CONNECTIONS_OF_THEIR_OWN = {
         "writes the scheduler's empty file on a connection of its own",
     ("core/services/upkeep/factory_reset_service.py", "_self_contained"):
         "takes a backup copy out of WAL on a connection of its own",
-    ("core/services/scheduler_service.py", "prepare_jobstore"):
+    ("framework/services/jobs/scheduler.py", "prepare_jobstore"):
         "sets the scheduler's job store to WAL on a connection of its own",
 }
 
@@ -3105,7 +3105,7 @@ CATCH_ALLS_ALLOWED = {
     ("framework/utils/log_lines.py", "name_of_member"):
         "place 3, around naming a member in a line: one who cannot be looked up is named by mention "
         "alone",
-    ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
+    ("framework/services/jobs/scheduler.py", "SchedulerService._remove_job"):
         "a stated exception: every cancel is a clean-up, so a job that will not go is logged and "
         "left",
     ("results/services/points/points_amendment_faults.py", "approval_faults"):
@@ -3268,7 +3268,7 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("framework/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("framework/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("framework/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
-    ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
+    ("framework/services/jobs/scheduler.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
 }
 

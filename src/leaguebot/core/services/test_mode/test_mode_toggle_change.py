@@ -85,7 +85,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 TEST_MODE_TOGGLE = "core.test_mode_toggle"
 

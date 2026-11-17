@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.framework.services.switches.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 KIND_PREFIX = "signup.close_time."

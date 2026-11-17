@@ -23,8 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.core.services import scheduler_service
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs import scheduler as scheduler_service
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 LOGGER = scheduler_service.__name__
 
@@ -112,7 +112,7 @@ async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
     """Started, because a stopped scheduler queues `add_job` and applies
     `replace_existing` only when it flushes -- so a stopped one shows two pending jobs
     under one id and would pass this test for the wrong reason."""
-    from leaguebot.core.services import scheduler_service as m
+    from leaguebot.framework.services.jobs import scheduler as m
 
     schedule_portrait_refresh, _cancel = _image_job()
     _db_path, build = workspace

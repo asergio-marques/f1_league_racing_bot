@@ -25,8 +25,8 @@ import logging
 
 import pytest
 
-import leaguebot.core.services.scheduler_service as scheduler_service
-from leaguebot.core.services.scheduler_service import SchedulerService
+import leaguebot.framework.services.jobs.scheduler as scheduler_service
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 ROUND_ID = 21
 

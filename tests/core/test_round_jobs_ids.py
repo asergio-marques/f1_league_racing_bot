@@ -39,7 +39,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 SERVER_ID = 10408
 

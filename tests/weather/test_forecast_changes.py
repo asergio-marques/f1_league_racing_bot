@@ -1083,7 +1083,7 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
     from types import SimpleNamespace
 
     from leaguebot.__main__ import register_scheduler_callbacks
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
     from leaguebot.core.services.rounds import round_jobs
     from leaguebot.core.services.test_mode import test_mode_service
 
@@ -1509,7 +1509,7 @@ def _round_jobs(service: Any, db_path: str) -> Any:
 def scheduler(tmp_path, monkeypatch):
     """Build the real scheduler service on a league's database and a job store of its own, as the
     bot does at its start; it is stopped and its job store closed once the test has run."""
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
     made: list[Any] = []

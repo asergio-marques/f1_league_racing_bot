@@ -48,7 +48,7 @@ ALL_PREFIXES = WEATHER_PREFIXES + RESULTS_PREFIXES + ATTENDANCE_PREFIXES
 
 def _make_scheduler(db_path: str):
     """A SchedulerService over *db_path* with a mock APScheduler in place of a real one."""
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
     svc = SchedulerService.__new__(SchedulerService)
     svc._db_path = db_path

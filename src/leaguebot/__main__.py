@@ -72,7 +72,7 @@ class Settings:
     """What the host's environment sets, read once by :func:`read_settings` and handed on.
 
     ``jobstore_path`` is the scheduler's job store, kept apart from the league database on
-    purpose (see the module docstring in ``core/services/scheduler_service.py``).
+    purpose (see the module docstring in ``framework/services/jobs/scheduler.py``).
     """
 
     token: str = field(repr=False)
@@ -90,7 +90,7 @@ def read_settings(environ: Mapping[str, str]) -> Settings:
     (``tests/repository/test_suite_needs_no_dotenv.py``). INKSCAPE, a module's own host setting, is
     not one of these: the image module reads it when it renders.
     """
-    from leaguebot.core.services.scheduler_service import default_jobstore_path
+    from leaguebot.framework.services.jobs.scheduler import default_jobstore_path
 
     token = environ.get("BOT_TOKEN")
     if not token:
@@ -1025,7 +1025,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.framework.services.posting.output_router import OutputRouter
 
     bot = create_bot()

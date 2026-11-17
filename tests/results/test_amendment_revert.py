@@ -553,7 +553,7 @@ async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
     `amendment_sweep`: the job stands under `amend_sweep`, its callable is the scheduler's one
     runner and its kind is its keyword; fired, the runner calls that handler once, with nothing.
     """
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
     from leaguebot.results.services.round_amendment.amendment_writes import (
         schedule_amendment_sweep,
     )
@@ -592,7 +592,7 @@ def test_cancelling_the_sweep_removes_it_and_tolerates_a_second_call(tmp_path, m
     """Results arms its sweep on a scheduler, then cancels it twice, as turning results off
     twice would: the scheduler holds no `amend_sweep` job, and the second cancel, finding none,
     is not an error."""
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
     from leaguebot.results.services.round_amendment.amendment_writes import (
         cancel_amendment_sweep,
         schedule_amendment_sweep,

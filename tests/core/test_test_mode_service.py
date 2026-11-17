@@ -12,7 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import read_scheduled_at
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
