@@ -46,6 +46,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from leaguebot.framework.utils.interaction_errors import job_failure_line
 from leaguebot.framework.utils.job_runner import Report, run_job
 
 log = logging.getLogger(__name__)
@@ -103,8 +104,11 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
         if inspect.isawaitable(outcome):
             await outcome
 
+    def line(_name: str, error: BaseException) -> str:
+        return job_failure_line(kind, error, key=key)
+
     name = kind if key is None else f"{kind} (key {key})"
-    await run_job(name, work, report=_GLOBAL_SERVICE._report)
+    await run_job(name, work, report=_GLOBAL_SERVICE._report, line=line)
 
 
 @dataclass(frozen=True)

@@ -107,15 +107,17 @@ def event_failure_line(event: str, error: BaseException) -> str:
     )
 
 
-def job_failure_line(job: str, error: BaseException) -> str:
+def job_failure_line(job: str, error: BaseException, *, key: int | str | None = None) -> str:
     """The log channel's line for the timed job or background task *job* that failed with *error*.
 
-    The failure line's shape, with no member to name: a job has none. *job* is the kind of the
-    job with its key, labelled as a key, where it has one (`rsvp_notice (key 12)`). Timed jobs and
-    the bot's own background work read alike, as "timed job".
+    The failure line's shape, with no member to name: a job has none. *job* is the kind of the job
+    or the name of the work; *key*, where the job has one, follows it labelled as a key, outside
+    the code span (`rsvp_notice` (key 12)). Timed jobs and the bot's own background work read
+    alike, as "timed job".
     """
+    named = f"`{job}`" if key is None else f"`{job}` (key {key})"
     return (
-        f"❌ The bot's timed job `{job}` failed — "
+        f"❌ The bot's timed job {named} failed — "
         f"{type(error).__name__}. The details are in the host's log."
     )
 
