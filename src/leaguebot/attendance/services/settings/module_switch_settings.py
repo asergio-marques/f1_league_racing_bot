@@ -16,9 +16,11 @@ back as they were (Principle X.6), pinned by
 `tests/core/test_module_enable_disable.py::test_re_enabling_attendance_keeps_the_league_s_settings`.
 
 **The switch-off is one save: `AttendanceService.switch_off_on` and the audit entry.** That
-method lowers the flag and clears every division's check-in and attendance channel bindings —
-stale bindings the module would otherwise post into the moment it came back on, against a season
-that had moved on — while keeping the settings row, on the connection the save is handed. The
+method lowers the flag and keeps the settings row and every division's check-in and attendance
+channels, so the module comes back as it was left (Principle X.6); it clears only each
+division's attendance-sheet message id, which is not configuration. It runs on the connection
+the save is handed, which is why `attendance_division_config` stays among the table's declared
+`writes`. The
 cascade from turning Results & Standings off calls the same method on its own save's connection
 (`results_off_change.py`), so the plain disable and the cascade leave attendance in the same
 state either way.
@@ -142,8 +144,8 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
 
 def module_off_attendance(*, modules: "ModuleService", attendance: "AttendanceService") -> Setting:
     """`module.off:attendance`: `AttendanceService.switch_off_on` and the audit entry, in one
-    save. It keeps the settings row and clears the division channel bindings, as the cascade
-    from turning Results & Standings off does through the same method."""
+    save. It keeps the settings row and the division channels and clears only the sheet message
+    ids, as the cascade from turning Results & Standings off does through the same method."""
 
     async def check(ctx: CheckContext) -> Verdict:
         if not await modules.is_enabled(SWITCH_KEY):

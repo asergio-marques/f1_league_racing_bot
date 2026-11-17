@@ -40,11 +40,6 @@ async def db_path(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: switching attendance off still deletes every division's check-in and "
-    "attendance channels rather than keeping them and clearing only the sheet's message id",
-)
 async def test_attendance_switches_off_on_a_handed_connection(db_path):
     """Its flag down, its settings row and every division's check-in and attendance channels
     kept, and only each division's attendance-sheet message id cleared (a message id is not

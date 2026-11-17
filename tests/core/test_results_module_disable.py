@@ -756,11 +756,6 @@ async def test_the_cascade_disables_attendance_and_says_what_it_keeps(tmp_path):
     assert "cleared" not in replied
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: attendance taken down with results loses its division channels, and comes "
-    "back with the packaged settings",
-)
 async def test_attendance_taken_down_with_results_comes_back_as_it_was(tmp_path):
     """The issue's reproduction (#449), through the cascade: a league whose attendance went off
     with Results & Standings, and which switches both back on, finds its check-in notice and its

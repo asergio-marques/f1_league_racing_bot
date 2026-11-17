@@ -294,10 +294,6 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
     assert any("/module disable" in text for text in beneath)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: the cascade still deletes attendance's division channels",
-)
 async def test_confirming_disables_both_and_names_both(tmp_path):
     """Both modules go off, attendance keeping its per-division channels for when it is switched
     back on (#449), and the reply names both."""

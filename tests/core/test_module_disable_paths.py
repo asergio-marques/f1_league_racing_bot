@@ -295,11 +295,6 @@ async def test_disabling_attendance_clears_the_flag(tmp_path):
     assert await log_lines(league) == [f"{NAMED} | /module disable attendance | Success"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: switching attendance off still deletes every division's check-in and "
-    "attendance channels",
-)
 async def test_disabling_attendance_keeps_its_division_channels(tmp_path):
     """Principle X rule 6: a disabled module keeps its configuration, the channels it names
     included, so a league switching attendance back on finds each division's check-in channel
