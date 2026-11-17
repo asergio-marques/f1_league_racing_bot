@@ -526,14 +526,16 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
 
 @pytest.mark.xfail(strict=True, reason=_NO_CHECK_IN_LEADS)
 async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tmp_path):
-    """A disabled module produces nothing, a scheduled job included: attendance off, Am's round 3
-    moved from 90 to 100 days out is armed once, its leads holding no check-in."""
-    league = await ongoing_league(tmp_path, attendance=False)
+    """A disabled module produces nothing, a scheduled job included: attendance off and weather
+    on, Am's round 3 moved from 90 to 100 days out is armed once, its leads holding weather's
+    forecasts and no check-in."""
+    league = await ongoing_league(tmp_path, attendance=False, weather=True)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
     [armed] = leads_armed(league.bot.round_jobs)
+    assert any(lead.kind.startswith("weather_p") for lead in armed["leads"])
     assert not [lead.kind for lead in armed["leads"] if lead.kind.startswith("rsvp_")]
 
 
