@@ -134,15 +134,16 @@ def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(
     workspace, caplog
 ):
     """The refresh is armed for 03:00 and cancelled twice: it is gone, and the second cancel,
-    finding it already gone, neither raises nor logs a warning."""
+    finding it already gone, neither raises nor logs a warning, and both say no refresh stands,
+    so an absent job is never reported as one that could not be removed."""
     schedule_portrait_refresh, cancel_portrait_refresh = _image_job()
     _db_path, build = workspace
     service = build()
     schedule_portrait_refresh(service, "03:00")
 
     with caplog.at_level(logging.WARNING, logger=LOGGER):
-        cancel_portrait_refresh(service)
-        cancel_portrait_refresh(service)  # never scheduled is not an error
+        assert cancel_portrait_refresh(service) is True
+        assert cancel_portrait_refresh(service) is True  # already gone is not an error
 
     assert service._scheduler.get_job("pfp_daily") is None
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
