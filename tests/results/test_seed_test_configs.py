@@ -22,6 +22,8 @@ names it created and the audit entries its writes recorded, as results' part of 
 """
 from __future__ import annotations
 
+import json
+
 import aiosqlite
 import pytest
 
@@ -142,6 +144,54 @@ async def test_the_configs_are_attached_to_the_season(db_path, season_id):
     names = await season_points_service.get_attached_config_names(db_path, season_id)
 
     assert sorted(names) == ["Half Points", "Standard"]
+
+
+def _audited(audits) -> list[tuple[str, str, str]]:
+    """Audit entries as (type, from, to), the values as sorted JSON, in a stable order."""
+    return sorted(
+        (a.change_type, json.dumps(a.old_value, sort_keys=True),
+         json.dumps(a.new_value, sort_keys=True))
+        for a in audits
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="#547: the seeding records no audit entry yet")
+async def test_seeding_records_an_audit_entry_for_each_creation_its_points_and_its_attachment(
+    db_path, season_id
+):
+    """The server holds no points configuration, and the season is in setup. Seeding hands back,
+    for each of "Standard" and "Half Points", the entries `/results config` records: one
+    POINTS_CONFIG_ADD from nothing to the name, one POINTS_CONFIG_SESSION_SET for every position of
+    every session from no points to the points it pays, one POINTS_CONFIG_FL_SET from no bonus to
+    the bonus and its limit, and one POINTS_CONFIG_ATTACH naming the season, from not attached to
+    attached: 58 entries in all, and nothing else."""
+    part = await _seed(db_path, season_id)
+
+    expected = []
+    for name in ("Standard", "Half Points"):
+        entries, fastest_laps = await points_config_service.get_config_entries(db_path, name)
+        expected.append(("POINTS_CONFIG_ADD", {}, {"config": name}))
+        for e in entries:
+            position = {"config": name, "session_type": e.session_type.value,
+                        "position": e.position}
+            expected.append(("POINTS_CONFIG_SESSION_SET", {**position, "points": None},
+                             {**position, "points": e.points}))
+        for f in fastest_laps:
+            session = {"config": name, "session_type": f.session_type.value}
+            expected.append((
+                "POINTS_CONFIG_FL_SET",
+                {**session, "fl_points": None, "fl_position_limit": None},
+                {**session, "fl_points": f.fl_points, "fl_position_limit": f.fl_position_limit},
+            ))
+        link = {"season_id": season_id, "config": name}
+        expected.append(("POINTS_CONFIG_ATTACH", {**link, "attached": False},
+                         {**link, "attached": True}))
+
+    assert len(part.audits) == 58
+    assert _audited(part.audits) == sorted(
+        (kind, json.dumps(old, sort_keys=True), json.dumps(new, sort_keys=True))
+        for kind, old, new in expected
+    )
 
 
 async def _points_store(db_path) -> dict[str, list[tuple]]:
