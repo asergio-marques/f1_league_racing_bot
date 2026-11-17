@@ -917,6 +917,61 @@ async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     assert starts == [()]
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the builder hands the scheduler no report to the log "
+                                       "channel")
+async def test_a_timed_job_s_failure_line_is_kept_when_the_log_channel_refuses_it(
+        tmp_path, monkeypatch, caplog):
+    """The bot `build` makes, its league set up and its log channel refusing every post (Missing
+    Access). A timer of the kind `a_kind` is armed for the key 12 on its scheduler, started
+    paused, and the kind's handler raises when the job fires: the timed job's ❌ line, naming the
+    kind, the key and the kind of fault, is kept for the log channel in `pending_messages`, one
+    row, to be delivered later like any line; and no member is warned, there being none to tell
+    (core specification, "The record of what changed")."""
+    import discord
+    from unittest.mock import AsyncMock, MagicMock
+
+    from leaguebot.framework.db.database import get_connection
+    from leaguebot.framework.services.jobs import scheduler as scheduler_module
+    from tests.support.change_queue import LOG_CHANNEL_ID, http_error, seed_server
+
+    monkeypatch.setattr(scheduler_module, "_GLOBAL_SERVICE", None)
+    bot = await built_bot(tmp_path, now=_NOW)
+    await seed_server(bot.db_path)
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock(side_effect=http_error(discord.Forbidden, status=403,
+                                                     text="Missing Access"))
+    monkeypatch.setattr(bot, "get_channel", lambda _id: channel)
+
+    async def _fails(_key: object) -> None:
+        raise RuntimeError("the handler broke")
+
+    service = bot.scheduler_service
+    service.register_timer("a_kind", _fails)
+    service.start(paused=True)
+    try:
+        service.arm_once("a_kind", 12, _NOW + timedelta(days=3650))
+        job = service._scheduler.get_job("once:a_kind:12")
+        assert job is not None
+        with caplog.at_level("WARNING"):
+            await job.func(*job.args, **job.kwargs)  # must not raise
+    finally:
+        service._scheduler.shutdown(wait=False)
+        service._scheduler._jobstores["default"].engine.dispose()
+
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute("SELECT channel_id, content FROM pending_messages")
+        rows = [tuple(row) for row in await cursor.fetchall()]
+    [(channel_id, content)] = rows
+    assert channel_id == LOG_CHANNEL_ID
+    assert content.startswith("❌ The bot's timed job `a_kind")
+    assert "(key 12)" in content
+    assert "RuntimeError" in content
+    assert "the handler broke" not in content
+    assert any(
+        "no member's interaction can be told" in record.getMessage() for record in caplog.records
+    )
+
+
 #: Core's own start-up steps by name, in the order the builder signs them up to `bot.starting`.
 _CORE_STEPS = ["expired review prompts", "hub"]
 
