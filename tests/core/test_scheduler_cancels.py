@@ -13,7 +13,8 @@ removes nothing and a division's or a season's cancellation stands as it was (#4
 A round's cancels, `cancel_round`, `cancel_rounds` and `cancel_season_end`, and
 `schedule_round_cleanups` are core's round jobs' (`RoundJobs`, #544), over the framework's
 scheduler. The scheduler's own removals, one job, every job and a one-off timer, are pinned in
-`tests/framework/test_scheduler_removals.py`.
+`tests/framework/test_scheduler_removals.py`. Image's cancel of its daily portrait refresh, handed
+the scheduler, holds to the same rule.
 
 `schedule_round_cleanups` arms a raced round's two clean-ups alone, the forecast's and the
 check-in's, a day after its start: what a cancellation refused after its unarming gives back to a
@@ -35,22 +36,27 @@ LOGGER = "leaguebot.core.services.scheduler_service"
 #: Why a round's cancel fails until core's round jobs exist.
 NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's cancels are still the scheduler's"
 
-#: Each cancel method, the arguments it is called with, and whether it is core's round jobs'
-#: rather than the scheduler's. A job the store lists carries round 5 as its key and the
-#: season-end prefix, so every method that walks the store finds it.
+#: Why image's cancel of its refresh fails until image has one of its own.
+NO_PORTRAIT_JOB = "#544: image has no portrait refresh of its own; the scheduler still cancels it"
+
+#: Each cancel, the arguments it is called with, and its owner: core's round jobs, or image's
+#: portrait services, handed the scheduler. A job the store lists carries round 5 as its key and
+#: the season-end prefix, so every cancel that walks the store finds it.
 CANCELS = [
-    ("cancel_round", (5,), True),
-    ("cancel_season_end", (), True),
-    ("cancel_portrait_refresh", (), False),
-    ("cancel_rounds", ([5],), True),
+    ("cancel_round", (5,), "round_jobs"),
+    ("cancel_season_end", (), "round_jobs"),
+    ("cancel_portrait_refresh", (), "image"),
+    ("cancel_rounds", ([5],), "round_jobs"),
 ]
 
 CANCEL_CASES = [
     pytest.param(
-        name, args, of_round_jobs, id=name,
-        marks=[pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)] if of_round_jobs else [],
+        name, args, owner, id=name,
+        marks=pytest.mark.xfail(
+            strict=True, reason=NO_ROUND_JOBS if owner == "round_jobs" else NO_PORTRAIT_JOB
+        ),
     )
-    for name, args, of_round_jobs in CANCELS
+    for name, args, owner in CANCELS
 ]
 
 #: The cases again, for a test where the method finds the job by its round.
@@ -72,31 +78,34 @@ def _round_jobs(service: SchedulerService):
     return RoundJobs(service, "/tmp/not-read.db")
 
 
-def _owner(service: SchedulerService, of_round_jobs: bool):
-    """The object that offers the cancel: core's round jobs, or the scheduler itself."""
-    return _round_jobs(service) if of_round_jobs else service
+def _owner(service: SchedulerService, owner: str):
+    """What offers the cancel: core's round jobs, or image's portrait services handed
+    *service*."""
+    if owner == "round_jobs":
+        return _round_jobs(service)
+    from leaguebot.image.services.portraits import driver_portrait_service as image
+
+    return SimpleNamespace(cancel_portrait_refresh=lambda: image.cancel_portrait_refresh(service))
 
 
 def _job(job_id: str):
     return SimpleNamespace(id=job_id, kwargs={"kind": "results", "key": 5}, next_run_time=None)
 
 
-@pytest.mark.parametrize("cancel, args, of_round_jobs", CANCEL_CASES)
-def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args, of_round_jobs):
+@pytest.mark.parametrize("cancel, args, owner", CANCEL_CASES)
+def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args, owner):
     """Fired or never armed: nothing raises and nothing is logged."""
     service = _service([_job("season_end_gone")])
     service._scheduler.remove_job = MagicMock(side_effect=JobLookupError("season_end_gone"))
 
     with caplog.at_level(logging.WARNING, logger=LOGGER):
-        getattr(_owner(service, of_round_jobs), cancel)(*args)
+        getattr(_owner(service, owner), cancel)(*args)
 
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
-@pytest.mark.parametrize("cancel, args, of_round_jobs", CANCEL_CASES_FOUND_BY_ROUND)
-def test_a_cancel_logs_the_traceback_of_any_other_failure(
-    caplog, cancel, args, of_round_jobs
-):
+@pytest.mark.parametrize("cancel, args, owner", CANCEL_CASES_FOUND_BY_ROUND)
+def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args, owner):
     """A job store that cannot be written is a real fault: a warning carrying the error and
     its traceback, and still no raise."""
     service = _service([_job("season_end_broken")])
@@ -104,7 +113,7 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(
     service._scheduler.remove_job = MagicMock(side_effect=error)
 
     with caplog.at_level(logging.WARNING, logger=LOGGER):
-        getattr(_owner(service, of_round_jobs), cancel)(*args)  # must not raise
+        getattr(_owner(service, owner), cancel)(*args)  # must not raise
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings, "the fault was not logged"
