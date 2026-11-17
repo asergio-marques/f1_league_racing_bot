@@ -125,6 +125,13 @@ posted by the router's `post_notice`, after the stop's save and never on the log
 each pass of the worker, while `notice_message_id` is empty. `strip_view` takes the buttons off
 once the job clears.
 
+A notice that has landed whose save of `notice_message_id` failed is kept in memory
+(`_unsaved_notices`), and only that save is tried again: the notice is not posted again, and the
+admins are not mentioned again. Meanwhile the notice's buttons work and it counts as standing, and
+it loses its buttons when its stop clears, as a recorded one does. The memory is lost at a restart:
+a restart before the save lands posts the notice again and mentions the admins again, and the first
+notice's buttons are refused as those of a notice of no stop and stay on it (accepted).
+
 **A restart leaves a stopped job stopped.** `start()` clears its `next_try_at`, so that only Retry
 or Discard moves the queue, and writes one line saying so. A change cut off by the stop, with no job
 failed, carries on from its first job not done. Where recording a stop itself fails, nothing is
@@ -2145,7 +2152,11 @@ class ChangeQueue:
         log channel with its Retry and Discard buttons, and keep where it landed on the job.
 
         Never raises: where the post fails the stop stands (the router has told the member), the
-        attempt is noted and `_post_missing_notices` tries again on its schedule. The notice goes
+        attempt is noted and `_post_missing_notices` tries again on its schedule. A notice that
+        lands but whose save fails is kept in `_unsaved_notices`, and the schedule then tries only
+        the save, through here again, posting nothing and mentioning no one. A restart forgets
+        that memory, so the notice is posted again, the admins mentioned again and the first
+        notice's buttons left refused and on (accepted). The notice goes
         through the router's `post_notice`, which never puts it on the log lines' retry queue, as
         that would send it again without its buttons. The queue's own telling, of an outcome, a
         stop or a press, never undoes what it tells: the stop stands.
@@ -2190,7 +2201,8 @@ class ChangeQueue:
         stop notice stands (one that has landed, saved or not, on a job still stopped), so that a
         burst of conversations notifies them once. Asked only of a notice that has not landed, so a
         re-post, which is the first landing where the first post was refused, mentions them and
-        the hour and restart lines, which are not notices, mention nobody.
+        a retried save, the hour and restart lines, which are not notices, mention nobody. An unsaved
+        notice (`_unsaved_notices`) of a stopped job stands, saved or not.
         """
         config = await self._config.get_server_config()
         role = None if config is None else config.league_admin_role_id
@@ -2210,9 +2222,10 @@ class ChangeQueue:
         return None if standing is not None else role
 
     async def _post_missing_notices(self, lane: str | None = None) -> None:
-        """Post again the stop notice of every stopped job whose notice has not landed, where it
-        is due: at start-up and at the end of each pass of a lane's worker, no more often than the
-        retry marks (`_notice_due`) and hourly once they are spent.
+        """Post again the stop notice of every stopped job whose notice is not saved, where it
+        is due (a job whose notice landed but is not saved has only its save tried again, through
+        `_post_notice`): at start-up and at the end of each pass of a lane's worker, no more often
+        than the retry marks (`_notice_due`) and hourly once they are spent.
 
         On *lane*, that lane's alone, the caller holding its lock; without one, every lane's, which
         only the start does, before any lane has a task."""
