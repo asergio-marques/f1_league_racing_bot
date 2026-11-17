@@ -15,7 +15,7 @@ are not called, and it reaches the caller as a direct call's would: the caller's
 `Hook` takes plain subscribers. `AwaitedHook` takes awaited ones, for a moment whose subscribers
 read or write the database. Where core holds a connection open at the moment (the save's, where
 the moment falls inside one), `call` hands it, and the subscribers read and write on it; the
-windows hook, whose subscribers open their own, hands none. Its `call` is a coroutine.
+round leads hook, whose subscribers open their own, hands none. Its `call` is a coroutine.
 
 `StartingHook` is not this type. It holds core's own start-up steps, signed up by name, then each
 module's, signed up as one function giving that module's named steps in its own order, under the

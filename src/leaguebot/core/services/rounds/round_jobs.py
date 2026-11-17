@@ -241,7 +241,7 @@ class RoundJobs:
         where it is given (`cancel_round`).
 
         It is for a module's switch-off, which takes its own kinds from every round that has them
-        to take and nothing else: weather's passes `WEATHER_JOB_KINDS`. A completed or cancelled
+        to take and nothing else: weather's passes its own kinds. A completed or cancelled
         season's rounds are left alone.
         """
         async with get_connection(self._db_path) as db:
@@ -256,7 +256,7 @@ class RoundJobs:
             self.cancel_round(row[0], only=only)
 
     def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:
-        """Return the un-fired weather and check-in jobs for the given round IDs.
+        """Return the un-fired jobs of the kinds that have a phase, for the given round IDs.
 
         Used by the test-mode advance command to determine what the scheduler has
         actually queued — so advance only fires events that a live season would
@@ -267,9 +267,12 @@ class RoundJobs:
           - ``round_id``     — round this job belongs to
           - ``phase_number`` — 1/2/3 = the weather phases, 5/6/7 = the check-in call, its
             last notice and its deadline, 8/9 = the forecast and the check-in cleanups a day
-            after the round. A mystery round's notice is armed as ``weather_p1`` and so
-            comes back as 1, which ``get_next_pending_phase`` then reads as the notice — this
+            after the round. A job's phase is the one its module signed its kind up with
+            (`sign_up_kinds`); a mystery round's notice is armed as Phase 1's kind and so comes
+            back as 1, which ``get_next_pending_phase`` then reads as the notice — this
             method knows nothing of formats. 0 never occurs here.
+          - ``kind``         — the kind the job is stored under, which test mode hands back to
+            the module's step for it
           - ``next_run_time``— datetime when the job is scheduled to fire
 
         Result submission and season-end jobs are excluded, so 4 never occurs either. Jobs
@@ -315,9 +318,9 @@ class RoundJobs:
         A job is found by its round and its event type, the way ``cancel_round`` finds one: the
         round id the job is keyed by, which is the round's own key whatever numbers its ID
         carries (`_round_of`), and the type `_job_event_type` reads off the ID. A caller asks
-        ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up: an ID
-        built elsewhere can take a shape no job has, and so find none. A mystery round's notice
-        is armed as ``weather_p1`` and is found under that type.
+        ``(round_id, kind) in queued`` and never rebuilds an ID to look one up: an ID
+        built elsewhere can take a shape no job has, and so find none. A job is found under the
+        kind its module armed it as, whatever the round's format.
 
         A paused job (``next_run_time is None``) will not fire and is left out, as is one whose
         ID carries no round suffix.
