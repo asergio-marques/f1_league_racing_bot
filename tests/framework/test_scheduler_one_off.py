@@ -320,9 +320,6 @@ async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_
 # Every job the scheduler arms runs through the one runner (#283, S7a)
 # ---------------------------------------------------------------------------
 
-#: Why each generic-call case here fails until the scheduler has its generic calls.
-NO_GENERIC_CALLS = "#544: the scheduler has no generic arming calls yet"
-
 #: A moment a month away, so that no job armed for it is due.
 _LATER = datetime(2031, 3, 9, 14, 30, tzinfo=timezone.utc)
 
@@ -351,14 +348,10 @@ def _arm_every(service: Any) -> None:
 #: handed (None: a standing job, whose handler is handed nothing).
 EVERY_ARMING = [
     pytest.param(_arm_once, "once:a_kind:9", 9, id="arm_once"),
-    pytest.param(_arm_at, "a_job_at", 9, id="arm_at",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
-    pytest.param(_run_now, "a_job_now", 9, id="run_now",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
-    pytest.param(_arm_daily, "a_job_daily", None, id="arm_daily",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
-    pytest.param(_arm_every, "a_job_every", None, id="arm_every",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
+    pytest.param(_arm_at, "a_job_at", 9, id="arm_at"),
+    pytest.param(_run_now, "a_job_now", 9, id="run_now"),
+    pytest.param(_arm_daily, "a_job_daily", None, id="arm_daily"),
+    pytest.param(_arm_every, "a_job_every", None, id="arm_every"),
 ]
 
 

@@ -35,6 +35,7 @@ import os
 import re
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from collections.abc import Collection, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, Callable
@@ -199,6 +200,18 @@ AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
 AMENDMENT_SWEEP_MINUTES = 5
 
 
+@dataclass(frozen=True)
+class StoredJob:
+    """One job the store holds, as `SchedulerService.jobs` lists it: its id, the kind whose handler
+    it runs, the key that handler is handed (None for a standing job) and when it next runs (None
+    for a job that is paused)."""
+
+    job_id: str
+    kind: str | None
+    key: int | str | None
+    next_run: datetime | None
+
+
 def default_jobstore_path(db_path: str) -> str:
     """Where the job store lives when nothing names it: `scheduler.db` beside *db_path*.
 
@@ -297,6 +310,107 @@ class SchedulerService:
             kwargs={"kind": kind, "key": key},
         )
         log.info("Armed the %s timer for %s at %s", kind, key, run_at.isoformat())
+
+    def arm_at(
+        self, job_id: str, kind: str, key: int | str, run_at: datetime, name: str
+    ) -> None:
+        """Arm the job *job_id* to run the handler of *kind* with *key* at *run_at* (aware, UTC).
+
+        The scheduler names no kind of job: its caller hands the id, the kind and the key. A job
+        armed again under the same id replaces the earlier, and is armed with no lateness limit
+        (`misfire_grace_time=None`), as `arm_once` is.
+        """
+        self._scheduler.add_job(
+            _one_off_timer_job,
+            trigger=DateTrigger(run_date=run_at, timezone="UTC"),
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=None,
+            name=name,
+            kwargs={"kind": kind, "key": key},
+        )
+        log.info("Scheduled %s at %s", job_id, run_at.isoformat())
+
+    def run_now(self, job_id: str, kind: str, key: int | str, name: str) -> None:
+        """Run the handler of *kind* with *key* at once, as the job *job_id* would at its moment.
+
+        The job replaces one of the same id, and is armed with no trigger, which APScheduler runs
+        at once, and with no lateness limit, so that a restart before it runs still runs it.
+        """
+        self._scheduler.add_job(
+            _one_off_timer_job,
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=None,
+            name=name,
+            kwargs={"kind": kind, "key": key},
+        )
+        log.info("Running %s at once", job_id)
+
+    def arm_daily(self, job_id: str, kind: str, hour: int, minute: int, name: str) -> None:
+        """Arm the standing job *job_id* to run the handler of *kind*, handed nothing, every day
+        at *hour*:*minute* UTC.
+
+        **A recurring trigger, and deliberately so.** A standing instruction is not an event, and
+        re-arming it from inside its own callback would put the survival of the schedule at the
+        mercy of the job body: a run that raised would silently be the last. A ``CronTrigger`` is
+        re-armed by APScheduler itself and outlives a failing run. The time is read as UTC: a
+        stored local time would need a zone stored with it and would drift against daylight saving.
+        It is armed with no lateness limit (``misfire_grace_time=None``), so that what becomes of a
+        run missed while the bot was down is the handler's to judge. A job armed again under the
+        same id replaces the earlier.
+        """
+        self._scheduler.add_job(
+            _one_off_timer_job,
+            trigger=CronTrigger(hour=hour, minute=minute, timezone="UTC"),
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=None,
+            name=name,
+            kwargs={"kind": kind},
+        )
+        log.info("Scheduled %s at %02d:%02d UTC daily", job_id, hour, minute)
+
+    def arm_every(self, job_id: str, kind: str, minutes: int, name: str) -> None:
+        """Arm the standing job *job_id* to run the handler of *kind*, handed nothing, every
+        *minutes* minutes.
+
+        An ``IntervalTrigger`` for the reason `arm_daily` gives for its cron one. It is armed
+        with no lateness limit (``misfire_grace_time=None``), so a run due while the bot was down
+        is made when it is back. A job armed again under the same id replaces the earlier, so a
+        restart re-arms rather than duplicates it.
+        """
+        self._scheduler.add_job(
+            _one_off_timer_job,
+            trigger=IntervalTrigger(minutes=minutes),
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=None,
+            name=name,
+            kwargs={"kind": kind},
+        )
+        log.info("Scheduled %s every %d minutes", job_id, minutes)
+
+    def jobs(self) -> list[StoredJob]:
+        """Every job the store holds, by its id, kind, key and next run: the one way to look at
+        what stands without reaching past the scheduler. Raises where the store cannot be read."""
+        return [
+            StoredJob(
+                job_id=job.id,
+                kind=job.kwargs.get("kind"),
+                key=job.kwargs.get("key"),
+                next_run=getattr(job, "next_run_time", None),
+            )
+            for job in self._scheduler.get_jobs()
+        ]
+
+    def remove(self, job_id: str) -> bool:
+        """Remove *job_id* and say whether it went; never raises (see the class docstring).
+
+        A job already gone is passed over in silence, and a store fault is logged and passed over,
+        both answering False, as `_remove_job` does: this is its public form.
+        """
+        return self._remove_job(job_id)
 
     def disarm(self, kind: str, key: int | str) -> None:
         """Take away the one-off timer of *kind* for *key*, if it stands."""
