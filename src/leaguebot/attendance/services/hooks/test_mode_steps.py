@@ -39,7 +39,6 @@ from leaguebot.attendance.services.settings.module_switch_settings import attend
 from leaguebot.framework.db.database import get_connection, tuple_rows_in
 from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (
-    PHASE_KINDS,
     ActiveRound,
     ModuleSteps,
     PendingStep,
@@ -133,7 +132,7 @@ async def pending_steps(
 
     def add(rid: int, phase: int) -> None:
         if (rid, phase) not in in_hand:
-            pending.append(PendingStep(rid, phase, PHASE_KINDS[phase]))
+            pending.append(PendingStep(rid, phase, _CHECK_IN_EVENTS[phase]))
 
     for rid in round_ids:
         call = calls.get(rid)

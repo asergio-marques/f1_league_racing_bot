@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.core.models.round import ROUND_JOB_PHASES, read_scheduled_at
+from leaguebot.core.models.round import read_scheduled_at
 from leaguebot.framework.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
@@ -96,13 +96,6 @@ class ModuleSteps:
 
     pending: list[PendingStep]
     passed_over: list[PendingStep] = field(default_factory=list)
-
-
-#: The kind of round job each phase number is armed under: `weather_p1` for the mystery notice
-#: (0) too, which weather's step tells from Phase 1 by the round's format.
-PHASE_KINDS = {phase: kind for kind, phase in ROUND_JOB_PHASES.items()} | {
-    0: "weather_p1", 4: "results",
-}
 
 
 #: A step's place among those of its round, by phase number: the notice or Phase 1 (0, 1), the

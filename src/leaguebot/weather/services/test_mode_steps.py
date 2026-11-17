@@ -35,7 +35,6 @@ from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP
 from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (
     PASSED_OVER,
-    PHASE_KINDS,
     ActiveRound,
     ModuleSteps,
     PendingStep,
@@ -47,6 +46,12 @@ from leaguebot.weather.services.round_phases import PhasesDrawn, phases_drawn_on
 
 #: The step that takes the forecasts of Phases 1 to 3 down, a day after the round.
 CLEAN_UP_PHASE = 8
+
+#: The kind of round job each of weather's steps is armed under. A mystery round's notice (0) is
+#: armed as `weather_p1`, which its step tells from Phase 1 by the round's format.
+_STEP_KINDS = {
+    0: "weather_p1", 1: "weather_p1", 2: "weather_p2", 3: "weather_p3", CLEAN_UP_PHASE: "cleanup",
+}
 
 
 async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
@@ -94,10 +99,10 @@ async def pending_steps(
             if (rnd.round_id, phase) in forecasts_in_hand:
                 continue
             (passed_over if raced else pending).append(
-                PendingStep(rnd.round_id, phase, PHASE_KINDS[phase])
+                PendingStep(rnd.round_id, phase, _STEP_KINDS[phase])
             )
         if rnd.round_id in standing and rnd.round_id not in clean_ups_in_hand:
-            pending.append(PendingStep(rnd.round_id, CLEAN_UP_PHASE, PHASE_KINDS[CLEAN_UP_PHASE]))
+            pending.append(PendingStep(rnd.round_id, CLEAN_UP_PHASE, _STEP_KINDS[CLEAN_UP_PHASE]))
     return ModuleSteps(pending=pending, passed_over=passed_over)
 
 
