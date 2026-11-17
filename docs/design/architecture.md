@@ -1034,9 +1034,9 @@ timers, the job store and the one runner every job names, and arms a job at the 
 it is handed (`arm_at`, `run_now`, `arm_daily`, `arm_every`), lists the jobs it holds (`jobs`) and
 removes one (`remove`); it names no round, module or kind of job. It alone imports APScheduler, so
 that the library's conventions hold for every job. A round's timed work is armed by
-the round-arming functions of core's round jobs (`RoundJobs`), through those calls, and the builder
-hands `RoundJobs` to the services that arm or cancel a round's jobs. Each reads when the round's
-events fall from `round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
+the round-arming functions of core's round jobs (`RoundJobs`), through those calls, and `RoundJobs` is
+handed to the services that arm or cancel a round's jobs by the builder, a module's wiring or a cog.
+Each reads when the round's events fall from `round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
 `clean_up_moment` gives, and `round_event_moments` places both clean-ups by it too. `schedule_round`
 arms a round's forecasts and, through `schedule_result_submission_jobs`, its results submission;
 that function arms only the submission, and a season's approval and an amendment also call it on its

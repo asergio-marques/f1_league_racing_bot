@@ -444,8 +444,8 @@ A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and resta
 arms and cancels a round's jobs, removes any stale season-end job, and reads test mode's pending jobs
 and queued events, through the scheduler's generic calls. A round's job is named from the round's id and its
 kind (`_round_job_suffix`). The services that arm or cancel a round's jobs are handed it by the
-builder; the cogs, the wirings and the builder alone read `bot.round_jobs`. It is handed the
-database path as well as the scheduler, to read the rounds it cancels for (`cancel_live_rounds`,
+builder, a module's wiring or a cog; the cogs, the wirings and the builder alone read `bot.round_jobs`.
+It is handed the database path as well as the scheduler, to read the rounds it cancels for (`cancel_live_rounds`,
 which weather's switch-off asks for its own kinds), and holds the scheduler under a name other than
 `_scheduler`, so that nothing reaches past it. A module's own standing job (image's daily portrait
 refresh, results' amendment sweep) is armed by a function of that module's, through the same calls.
