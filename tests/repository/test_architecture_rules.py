@@ -3101,6 +3101,12 @@ CATCH_ALLS_ALLOWED = {
     ("framework/services/posting/output_router.py", "OutputRouter._enqueue_if_configured"):
         "place 3, around keeping for retry a log line that could not be posted, the router's own "
         "containment",
+    ("framework/services/posting/retry_service.py", "attempt_delivery"):
+        "place 3, around writing a line to the log channel: a line that cannot be delivered stays "
+        "kept and counted for the next try",
+    ("framework/services/posting/retry_service.py", "_post_own_line"):
+        "place 3, around writing the worker's own line to the log channel: one that cannot be "
+        "posted falls back to the host's log",
     ("framework/services/posting/output_router.py", "OutputRouter.strip_view"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
@@ -3269,8 +3275,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("framework/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
-    ("framework/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
 }
 
 
