@@ -7,18 +7,26 @@ The one recurring trigger among the bot's jobs besides the amendment sweep. Ever
 one-shot DateTrigger, so these pin the departure deliberately: a later reader finding a CronTrigger
 should find a test saying it is meant.
 
+Cancelling is a clean-up, as every cancel of a job is (#442): a refresh already gone is passed over
+in silence, and any other fault is logged as a warning with its traceback, and neither raises.
+These were cases of the scheduler's cancel tests in `tests/core/test_scheduler_cancels.py`.
+
 Every test here tears its files down, sidecars included: the suite also runs on `windows-latest`,
 where a job store left connected cannot be deleted.
 """
 
 from __future__ import annotations
 
+import logging
 import os
+from unittest.mock import MagicMock
 
 import pytest
 
 from leaguebot.core.services import scheduler_service
 from leaguebot.core.services.scheduler_service import SchedulerService
+
+LOGGER = scheduler_service.__name__
 
 #: Why each test here fails until image arms its own refresh.
 NO_PORTRAIT_JOB = "#544: image has no portrait refresh of its own; the scheduler still arms it"
@@ -129,13 +137,37 @@ async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
 
 
 @pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)
-def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(workspace):
+def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(
+    workspace, caplog
+):
+    """The refresh is armed for 03:00 and cancelled twice: it is gone, and the second cancel,
+    finding it already gone, neither raises nor logs a warning."""
     schedule_portrait_refresh, cancel_portrait_refresh = _image_job()
     _db_path, build = workspace
     service = build()
     schedule_portrait_refresh(service, "03:00")
 
-    cancel_portrait_refresh(service)
-    cancel_portrait_refresh(service)  # never scheduled is not an error
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        cancel_portrait_refresh(service)
+        cancel_portrait_refresh(service)  # never scheduled is not an error
 
     assert service._scheduler.get_job("pfp_daily") is None
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)
+def test_cancelling_the_refresh_logs_the_traceback_of_any_other_failure(caplog):
+    """The job store cannot be written when the refresh is cancelled: a warning carrying the
+    error and its traceback is logged, and the cancel still does not raise."""
+    _schedule, cancel_portrait_refresh = _image_job()
+    service = SchedulerService.__new__(SchedulerService)
+    service._scheduler = MagicMock()
+    error = RuntimeError("the job store is locked")
+    service._scheduler.remove_job = MagicMock(side_effect=error)
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        cancel_portrait_refresh(service)  # must not raise
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings, "the fault was not logged"
+    assert any(r.exc_info and r.exc_info[1] is error for r in warnings)
