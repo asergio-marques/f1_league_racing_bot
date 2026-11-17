@@ -3562,3 +3562,133 @@ def test_a_module_s_wiring_keeps_the_entry_point_s_rules(path):
         _sample("async def handler(bot):\n    await bot.change_queue.ask('kind', {})\n", path)
     ) == Counter()
     assert _wall_clock_reads_among(_sample("def handler():\n    datetime.now()\n", path)) == Counter()
+
+
+# ── 19. Core names no kind of a round's timer ───────────────────────────────────────────────
+
+#: A kind of a round's timer that only a module arms, in any string of core's: weather's phases
+#: (`weather_p1` to `weather_p3`) and attendance's check-in timers (`rsvp_notice` and the rest).
+_MODULE_TIMER_KIND = re.compile(r"(?<![A-Za-z0-9_])(?:weather_p|rsvp_)")
+
+#: The kinds of a round's timer that are ordinary words besides, weather's forecast clean-up and
+#: results' submission: counted only in a timer's place (`_in_a_timer_s_place`).
+_WORD_TIMER_KINDS = frozenset({"cleanup", "results"})
+
+#: The keyword arguments that name a timer's kind: the kind a timer is armed under, and the kinds
+#: a round's cancellation is limited to.
+_KIND_ARGUMENTS = frozenset({"kind", "kinds", "only"})
+
+#: Why core still names the modules' timer kinds: until each module hands core its own leads.
+CORE_NAMES_TIMER_KINDS = "#544: core still names the modules' round timer kinds"
+
+
+def _name_of(node: ast.AST) -> str:
+    """The name *node* reads, lower-cased: ``x`` for a name, ``y`` for ``a.y``, a call's name for a
+    call (`_call_name`), or ``""``."""
+    if isinstance(node, ast.Name):
+        return node.id.lower()
+    if isinstance(node, ast.Attribute):
+        return node.attr.lower()
+    if isinstance(node, ast.Call):
+        return _call_name(node).lower()
+    return ""
+
+
+def _in_a_timer_s_place(constant: ast.Constant, parents: dict[ast.AST, ast.AST]) -> bool:
+    """Whether *constant*, one of `_WORD_TIMER_KINDS`, stands where a timer's kind does: whole in a
+    job's id (``"results_s7_d1_r3_id21"``) or at its head (``f"results{suffix}"``); in a keyword
+    argument naming a kind (`_KIND_ARGUMENTS`); compared with something named for a kind
+    (``kind == "results"``); in what is bound to a name of kinds or phases (``PHASE_KINDS = {4:
+    "results"}``); or as the key of something named for moments (``moments["results"]``). A
+    module's name handed to its switch (``is_enabled("results")``) is none of these."""
+    value = constant.value
+    if value.startswith(("results_s", "cleanup_s")):
+        return True
+    parent = parents.get(constant)
+    if (isinstance(parent, ast.JoinedStr) and parent.values[0] is constant
+            and len(parent.values) > 1 and isinstance(parent.values[1], ast.FormattedValue)):
+        return True
+    node: ast.AST = constant
+    while node in parents and not isinstance(node, ast.stmt):
+        child, node = node, parents[node]
+        if isinstance(node, ast.keyword) and node.arg in _KIND_ARGUMENTS:
+            return True
+        if isinstance(node, ast.Compare) and any(
+            "kind" in _name_of(side) for side in (node.left, *node.comparators)
+        ):
+            return True
+        if isinstance(node, ast.Subscript) and child is node.slice and "moment" in _name_of(node.value):
+            return True
+    if isinstance(node, (ast.Assign, ast.AnnAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return any(word in _name_of(target) for target in targets for word in ("kind", "phase"))
+    return False
+
+
+def _timer_kinds_in_core_among(sources) -> Counter[tuple[str, str]]:
+    """The strings in core naming a kind of a round's timer, among *sources*, each ``(file, parsed
+    tree)``, counted by file and function: any naming one of weather's or attendance's
+    (`_MODULE_TIMER_KIND`), and `cleanup` or `results` where it stands in a timer's place
+    (`_in_a_timer_s_place`). A docstring is prose and not counted."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, tree in sources:
+        if _module_of(path) != "core":
+            continue
+        owners = _owners(tree)
+        docstrings = _docstrings(tree)
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) \
+                    or id(node) in docstrings:
+                continue
+            if _MODULE_TIMER_KIND.search(node.value) or (
+                (node.value in _WORD_TIMER_KINDS or node.value.startswith(("results_s", "cleanup_s")))
+                and _in_a_timer_s_place(node, parents)
+            ):
+                found[(path, owners.get(node, "<module>"))] += 1
+    return found
+
+
+@pytest.mark.xfail(strict=True, reason=CORE_NAMES_TIMER_KINDS)
+def test_core_names_no_kind_of_a_round_s_timer():
+    """Each module hands core the leads it wants set for a round, each with the kind its timer is
+    stored under, and core arms them under its own naming (architecture.md, "Timed work and
+    restarts"), so no file of core names a kind of a round's timer: neither weather's phases and
+    clean-up nor attendance's check-in timers nor results' submission, whether to arm one, to cancel
+    by it, to place its moment or to map test mode's phases."""
+    _check("core names no kind of a round's timer", _timer_kinds_in_core_among(_sources()), {})
+
+
+@pytest.mark.parametrize(
+    ("source", "path", "counted"),
+    [
+        pytest.param("def arm(timers):\n    timers.arm_at(job_id='x', kind='results')\n",
+                     "core/services/rounds/round_jobs.py", 1, id="a kind armed"),
+        pytest.param("def job_id(suffix):\n    return f'cleanup{suffix}'\n",
+                     "core/services/rounds/round_jobs.py", 1, id="the head of a job's id"),
+        pytest.param("def unarm(jobs, rid):\n    jobs.cancel_round(rid, only=frozenset({'results'}))\n",
+                     "core/services/rounds/round_amend_change.py", 1, id="a cancellation by kind"),
+        pytest.param("def due(job):\n    return job.kind == 'cleanup'\n",
+                     "core/services/test_mode/test_mode_service.py", 1, id="a kind compared"),
+        pytest.param("PHASE_KINDS = {0: 'weather_p1', 4: 'results'}\n",
+                     "core/services/test_mode/test_mode_service.py", 2, id="a map of phases"),
+        pytest.param("def at(moments):\n    return moments['results']\n",
+                     "core/services/rounds/round_moments.py", 1, id="a moment by kind"),
+        pytest.param("def phase(n):\n    return f'weather_p{n}', 'rsvp_notice'\n",
+                     "core/services/rounds/round_jobs.py", 2, id="a module's kind anywhere"),
+        pytest.param("async def on(modules, db):\n    return await modules.is_enabled_on(db, 'results')\n",
+                     "core/services/rounds/round_jobs.py", 0, id="a module's switch by name"),
+        pytest.param("def arm():\n    '''Arms weather_p1 and the cleanup.'''\n",
+                     "core/services/rounds/round_jobs.py", 0, id="a docstring"),
+        pytest.param("def arm(timers):\n    timers.arm_at(job_id='x', kind='weather_p1')\n",
+                     "weather/services/forecast_leads.py", 0, id="a module's own file"),
+    ],
+)
+def test_the_timer_kind_check_counts_a_kind_in_a_timer_s_place_and_leaves_a_module_s_name(
+    source, path, counted
+):
+    """In a file of core, a string naming a kind of a round's timer is counted where it stands as
+    one: armed, at the head of a job's id, cancelled by, compared with a kind, mapped from a phase,
+    or the key of a moment; weather's and attendance's kinds wherever they stand. `results` handed
+    to a module's switch, a docstring, and a module's own file are not counted."""
+    assert sum(_timer_kinds_in_core_among([(path, ast.parse(source))]).values()) == counted
