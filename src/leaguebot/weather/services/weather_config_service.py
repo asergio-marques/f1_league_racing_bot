@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.round import RoundLead
@@ -23,9 +24,6 @@ from leaguebot.weather.services.forecast_leads import forecast_leads
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
-
-#: The key weather's switch is asked by.
-SWITCH_KEY = "weather"
 
 _DEFAULTS = WeatherPipelineConfig()  # default field values only
 
@@ -82,7 +80,7 @@ async def review_section(
 
     Subscribed to core's `review_sections_read`. Reads only.
     """
-    if not await modules.is_weather_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await get_weather_pipeline_config(db_path)
     return ReviewSection(

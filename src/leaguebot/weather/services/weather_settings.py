@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.settings.channel_registry_service import (
@@ -80,7 +81,7 @@ def deadline_setting(*, modules: "ModuleService", seasons: "SeasonService") -> S
         column = str(ctx.payload["column"])
         value = int(ctx.payload["value"])
         _command, phase, unit, _short = _PHASES[column]
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(_CONFIRMED)
@@ -137,7 +138,7 @@ def forecast_channel_setting(
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         season = await seasons.get_setup_or_active_season()
         if season is None:

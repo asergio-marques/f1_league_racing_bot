@@ -15,6 +15,7 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.image.services.render.image_drawing import as_image_drawing
 
 if TYPE_CHECKING:
@@ -25,11 +26,11 @@ if TYPE_CHECKING:
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign weather up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_weather_enabled` asks it by."""
+    """Sign weather up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
     from leaguebot.weather.services.draw_guard import weather_enabled_on
 
-    modules.register_switch("weather", weather_enabled_on)
+    modules.register_switch(SWITCH_KEY, weather_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:
@@ -114,7 +115,7 @@ def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
     async def judged(*handed: Any, **context: Any) -> AmendmentPart:
         outside_a_save = handed[0] is None
         windows = await weather_config_service.windows_read(bot.db_path) if outside_a_save else None
-        weather_on = await bot.module_service.is_weather_enabled() if outside_a_save else None
+        weather_on = await bot.module_service.is_enabled(SWITCH_KEY) if outside_a_save else None
         return await forecast_amendment.amendment_judged(
             *handed, db_path=bot.db_path, windows=windows, weather_on=weather_on, **context,
         )

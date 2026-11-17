@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
@@ -84,7 +85,7 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
     """
 
     async def check(_ctx: CheckContext) -> Verdict:
-        if await modules.is_weather_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Weather module is already enabled.")
         if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
@@ -179,7 +180,7 @@ def module_off_weather(*, modules: "ModuleService", round_jobs: "RoundJobs") -> 
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Weather module is already disabled.")
         if await modules_frozen_for_completion(ctx.db_path):
             return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)

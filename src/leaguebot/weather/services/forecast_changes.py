@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
@@ -983,7 +984,7 @@ def amendment_steps(
         return named_now(seasons, text)
 
     async def weather_on(_ctx: StepContext) -> bool:
-        return await modules.is_weather_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe_forecast_delete(ctx: StepContext) -> str:
         if ctx.step_payload.get("clean_up"):
@@ -1056,7 +1057,7 @@ def amendment_steps(
         race still ahead and the round no mystery round. A job before it can stop and be retried
         after the race, and a forecast for a round already raced is no forecast (owner,
         2026-10-09)."""
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:

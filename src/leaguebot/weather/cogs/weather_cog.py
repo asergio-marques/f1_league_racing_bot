@@ -13,6 +13,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.framework.utils.interaction_errors import describe
@@ -48,7 +49,7 @@ class WeatherCog(commands.Cog):
         The refusal is recorded in the log channel, as every refusal of a command that changes
         something is. A command that changes nothing (`record=False`) answers and records nothing.
         """
-        if await self.bot.module_service.is_weather_enabled():
+        if await self.bot.module_service.is_enabled(SWITCH_KEY):
             return True
         reply = NOT_ENABLED
         if record:
@@ -177,7 +178,7 @@ class WeatherCog(commands.Cog):
         acknowledgement is the command's response, so nothing is deferred; the queue writes the
         channel and its audit entry in one save and answers and logs after it.
         """
-        if not await self.bot.module_service.is_weather_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, NOT_ENABLED, what=describe(interaction))
             return
 
