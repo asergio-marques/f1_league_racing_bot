@@ -36,7 +36,7 @@ left, nor go on changing a server it has. The audit entry shares it too: every p
 effect is recorded, and a refused one records nothing.
 
 **The framework's tables are reached through the framework.** The queue's job a pack would wait
-on is read with `queue_records.pending_job_on`, the record of the messages the bot posted is
+on is read with `queue_records.pending_job_on`, the log lines still waiting for delivery are
 cleared with `retry_service.clear_pending_on`, and the audit entry is written by
 `audit_service.record_change_on`, each on the pack's one connection and so in its one
 transaction. The pack holds no SQL of its own against `queued_changes`, `queued_change_steps`,
