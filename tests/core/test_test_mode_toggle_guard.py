@@ -380,9 +380,6 @@ class TestTheSeasonsStage:
         assert await _flag(db_path) is False
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#547: the toggle does not read a part's names and audit entries yet"
-)
 async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db_path):
     """Three parts are signed up to test mode turned on in place of results', in this order: one
     hands back that it created "Sprint Ladder", with the audit entry of its creation, the next that

@@ -10,6 +10,7 @@ import aiosqlite
 from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection, sole_row
 from leaguebot.framework.models.change import AuditRecord
+from leaguebot.core.models.test_mode import TestModePart
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.framework.services.queue.setting_change import Saved
@@ -723,7 +724,7 @@ _FEATURE_RACE_HALF = {1: 15, 2: 13, 3: 11, 4: 9, 5: 7, 6: 5, 7: 4, 8: 3, 9: 2, 1
 
 # ─── Test mode's seeded configurations ──────────────────────────────────────
 
-async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> list[str]:
+async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> TestModePart:
     """Idempotently create "Standard" and "Half Points" and attach them to *season_id*, on *db*,
     committing nothing: results' part of test mode turned on, run whether or not the results
     module is on, as the core specification's test mode section says without a condition.
@@ -731,7 +732,8 @@ async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> list
     Seeds only where the server holds no points configuration of any name and none is attached
     to *season_id*; where it holds one, it creates, changes and attaches nothing.
 
-    Returns the names of the configurations newly created (empty where it seeded nothing).
+    Returns the names of the configurations newly created and the audit entries of its writes,
+    both empty where it seeded nothing.
     """
     cursor = await db.execute(
         "SELECT EXISTS (SELECT 1 FROM points_config_store) "
@@ -739,7 +741,7 @@ async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> list
         (season_id,),
     )
     if (await sole_row(cursor))[0]:
-        return []
+        return TestModePart()
 
     created: list[str] = []
 
@@ -779,7 +781,7 @@ async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> list
         if newly_created:
             created.append(config_name)
 
-    return created
+    return TestModePart(seeded=tuple(created))
 
 
 async def _ensure_single_test_config_on(

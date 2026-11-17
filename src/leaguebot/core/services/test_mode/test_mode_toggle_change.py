@@ -15,7 +15,9 @@ driver and while it is on the signup and placement paths refuse real drivers out
 
 **Turning test mode on is one SAVE**: the flag, the modules' part through the hook for test mode
 turned on (results seeds its points configurations), handed the save's own connection and the
-live season's id, and the `TEST_MODE_SET` audit entry, stamped by the queue's clock.
+live season's id and answering the names it seeded and the audit entries of its writes, and the
+audit trail: the `TEST_MODE_SET` entry first, then each part's entries in the order the parts
+signed up, all stamped by the queue's clock.
 
 **Turning it off is one SAVE too**: the flag and every fake driver (`switch_test_mode_off_on`, as
 a season's end does it), each module deleting its own rows of them through the delete hook, and the
@@ -53,6 +55,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.models.test_mode import TestModePart
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -169,11 +172,14 @@ def _save(
             )
         await db.execute("UPDATE server_configs SET test_mode_active = 1")
         live = await live_season_stage_on(db)
-        handed_back = await test_mode_turned_on.call(db, live[0]) if live is not None else []
+        parts: list[TestModePart] = (
+            await test_mode_turned_on.call(db, live[0]) if live is not None else []
+        )
         return StepResult(
-            result={"outcome": ON, "seeded": [name for names in handed_back for name in names]},
+            result={"outcome": ON, "seeded": [name for part in parts for name in part.seeded]},
             audits=(
                 AuditRecord(AUDIT_TYPE, {"test_mode_active": False}, {"test_mode_active": True}),
+                *(audit for part in parts for audit in part.audits),
             ),
         )
 

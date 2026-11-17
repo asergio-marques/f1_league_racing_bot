@@ -72,9 +72,6 @@ async def season_id(db_path):
         return cursor.lastrowid
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#547: the seeding does not hand back a part naming what it created yet"
-)
 async def test_both_configs_are_created(db_path, season_id):
     part = await _seed(db_path, season_id)
 
@@ -248,10 +245,6 @@ async def _seeded_already(db_path, season_id):
     await _seed(db_path, season_id)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#547: seeding still writes beside, or over, a configuration the server holds",
-)
 @pytest.mark.parametrize(
     "holding",
     [
