@@ -475,14 +475,15 @@ they serve are `architecture.md`'s, "Timed work and restarts"; what follows is c
   ahead, a clean-up, left to `/test-mode advance`, run at once by an amendment, and the words the
   approval's date check quotes). It names no module.
 - **`arm_leads`** gives each lead the id, name and key a round's timer has always had and arms it,
-  nothing more. Running a lead at once (`run_lead_now`) and taking down what an earlier arming left
-  stay in the amendment's arming step, chosen by a lead's marks, never by its kind.
+  nothing more. Running a lead at once (`run_lead_now`), or under test mode taking down the job
+  just armed for a moment already past, stays in the amendment's arming step, chosen by a lead's
+  marks, never by its kind.
 - **The approval** reads every module's leads through `read_round_leads` and arms them for every
   round. **The amendment and re-arming** take them from each module's `round_armed`, a
   `RoundArming`, and a round already raced, or ended not held, is armed its clean-up leads alone,
-  from the same read.
+  from the approval's read (`read_round_leads`).
 - **`results_left_to_advance`** is core's one rule for whether test mode leaves the submission to
-  the advance, and drops the leads marked as left to it.
+  the advance; where it does, the approval and the amendment drop the leads marked as left to it.
 - **`sign_up_kinds`** is where a module signs its round kinds up at build; `RoundJobs` knows a job
   is a round's, and which phase it is, by that register alone.
 - **`clean_up_moment`** is core's one shared next-day figure; every other moment is the module's
