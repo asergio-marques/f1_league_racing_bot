@@ -132,11 +132,6 @@ def test_the_season_warning_says_it_cannot_be_switched_back():
     assert "cannot be switched back on until" in warning
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: the warning still says every division's check-in and attendance channels "
-    "will be cleared",
-)
 def test_the_cascade_is_announced_in_its_own_right():
     """The silent half of issue #114, and what attendance keeps (#449): its settings and its
     channels stand for when it is switched back on."""
@@ -736,10 +731,6 @@ async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: the cascade's reply still says attendance's channels have been cleared",
-)
 async def test_the_cascade_disables_attendance_and_says_what_it_keeps(tmp_path):
     """Its settings and its channels survive (#449), so a league re-enabling it later does not
     have to configure it again, and the reply says so rather than that anything was cleared."""

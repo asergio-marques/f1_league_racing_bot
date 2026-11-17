@@ -1087,11 +1087,6 @@ async def test_a_switch_off_asked_while_results_is_on_and_run_once_it_is_off_is_
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#449: the cascade still deletes attendance's division channels, and its reply says "
-    "they have been cleared",
-)
 async def test_the_cascade_lands_in_the_switch_off_s_save(tmp_path):
     seeded = await _seed(tmp_path, attendance=True)
     bot = _league(seeded.db_path)

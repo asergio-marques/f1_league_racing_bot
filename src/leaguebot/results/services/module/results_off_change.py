@@ -91,8 +91,8 @@ SWITCHED_OFF_THEN_FAULTED = (
     "posted — delete them by hand."
 )
 _CASCADE_REPLY = (
-    "✅ Attendance module disabled with it. Its per-division check-in and attendance channels "
-    "have been cleared; its timings, penalties and thresholds are kept."
+    "✅ Attendance module disabled with it. Its settings and its per-division check-in and "
+    "attendance channels are kept."
 )
 #: The refusal where the dependency table would now take a module with results that the league
 #: was not warned of, read again as the change starts.
