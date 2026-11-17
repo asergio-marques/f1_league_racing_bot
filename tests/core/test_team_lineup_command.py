@@ -334,7 +334,9 @@ _NOTICE = "a fallback flag stood in for Zara's"
 _NOTICES_LINK = "https://discord.test/4242/7"
 
 
-@pytest.mark.parametrize("asked", ["private", "public", "refused_after", "unlinked"])
+@pytest.mark.parametrize(
+    "asked", ["private", "public", "refused_after", "refused_after_public", "unlinked"]
+)
 async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_link(
     tmp_path, asked,
 ):
@@ -346,7 +348,9 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     names the picture (`lineup — Division 1`) and linked to the log channel's message holding it
     (image spec, Lineup; Constitution XIV.4: no notice in a channel the drivers read). Where
     Division 2 is then refused (the template is missing a field), no picture is sent, and the
-    manager is told the refusal and, seen by them alone, the notice already logged, linked. Where
+    manager is told the refusal and, seen by them alone, the notice already logged, linked; asked
+    for publicly, the refusal goes alone in the first follow-up, which keeps the public deferral's
+    visibility, and the notice in a later follow-up of its own, seen by the manager alone. Where
     the log channel would not take the notice, which costs the link and nothing else
     (Constitution XIV.4; image spec, Errors), the picture is still sent privately and the
     follow-up still lists the notice under its label, with no link."""
@@ -358,7 +362,8 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
         division_1["log_link"] = _NOTICES_LINK
     divisions = [_division(11, "Division 1", 1)]
     by_division = {11: division_1}
-    if asked == "refused_after":
+    refused = asked.startswith("refused_after")
+    if refused:
         divisions.append(_division(12, "Division 2", 2))
         by_division[12] = {"problem": _PROBLEM}
     drawing = LineupDrawingStub(by_division=by_division)
@@ -367,7 +372,7 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     )
     interaction = _interaction()
 
-    await _lineup(cog, interaction, public=asked == "public")
+    await _lineup(cog, interaction, public=asked.endswith("public"))
 
     label = (
         f"  **lineup — Division 1** ([see them in the log]({_NOTICES_LINK}))\n"
@@ -384,9 +389,15 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     assert told[0].kwargs["ephemeral"] is True
     assert "files" not in told[0].kwargs
     pictures = [call for call in calls if "files" in call.kwargs]
-    if asked == "refused_after":
+    if refused:
         assert pictures == [], calls
         assert any(f"❌ {_PROBLEM}" in _content(call) for call in calls), calls
+        if asked == "refused_after_public":
+            interaction.response.defer.assert_awaited_once_with(ephemeral=False)
+            assert _content(calls[0]) == (
+                f"❌ {_PROBLEM}\n_Lineup for **Division 2** was not drawn._"
+            ), calls
+            assert calls.index(told[0]) > 0, calls
         return
     if not linked:
         assert not any("see them in the log" in _content(call) for call in calls), calls
