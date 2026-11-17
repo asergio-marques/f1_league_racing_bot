@@ -196,3 +196,136 @@ table owners have it.
 | SQLite's busy timeout is five seconds, sized for the longest legitimate write; an autocomplete asks for a shorter one (`AUTOCOMPLETE_TIMEOUT_SECONDS`) | `framework/db/database.py`, `_BUSY_TIMEOUT_SECONDS` | `test_connections_carry_an_explicit_busy_timeout` |
 | The database runs in WAL with `synchronous` left at FULL, durability chosen over speed | `_enable_wal` | `test_migrations_leave_the_database_in_wal_mode`, `test_connections_keep_full_durability` |
 | Four idle connections are kept to be lent again | `_IDLE_CONNECTIONS_KEPT` | `test_no_more_than_four_idle_connections_are_kept` |
+
+---
+
+## Timed work and restarts
+
+Answers to `architecture.md`, "Timed work and restarts". What each kind of job does when missed is
+the core specification's ("When the bot stops"); a round's timers are armed by core's `RoundJobs`
+(`core.md`, "The scheduler, and core's round jobs").
+
+### The scheduler
+
+`SchedulerService` (`framework/services/jobs/scheduler.py`) is the one place a job is armed, found
+or removed, and the only file that imports APScheduler. It names no round, module or kind of job:
+it arms a job at the id, kind and moment it is handed, through its generic calls (`arm_at`,
+`run_now`, `arm_daily`, `arm_every`, `jobs` and `remove`). **Its job store is a SQLite file of its
+own**, apart from the league's database, for the reason its module docstring gives: the store
+writes synchronously on the event loop's thread.
+
+Every job runs through one module-level callable, `_one_off_timer_job`, which looks up the handler
+signed up for the job's kind (`register_timer`, a keyed hook) and hands it the job's key: a round's
+id, a one-off timer's key, or nothing for a standing job. A kind with no handler is passed over with
+a warning. **A job runs in an empty context** (`_JobScheduler`), so it can never take an
+interaction for its own
+(`test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn`).
+A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and restarts").
+
+### Start-up
+
+When Discord first reports the bot ready, `start_up` (`framework/services/jobs/start_up.py`) runs
+once per process, as the sweep of everything that came due while the bot was stopped. What runs
+before it, from reading the settings to connecting, is the entry point's (`core.md`, "Start-up").
+
+- **It starts the scheduler paused**, so the job store can be read while no job runs, and resumes
+  it last, in a `finally`, so a queue that fails to start does not hold the jobs paused.
+- **It runs core's own steps, then turns to each module in turn.** Inside the queue's `sweeping()`
+  it runs core's steps in the order they signed up, one at a time. Then, for each module in sign-up
+  order, it reads the module's switch (`ModuleService.is_enabled`, by the switch key), passes the
+  module over, with a line in the host's log, where it is off, save for any step the module marks
+  `runs_while_off`, which runs whatever the switch says, and otherwise runs the module's own steps
+  in the module's own order. A module marks a step so only where it finishes work the module
+  announced while on. Each enabled module catches up its own missed events in its turn: no pass
+  interleaves the events of different modules by time (`architecture.md`, "Timed work and
+  restarts"). *Rejected:* one list of every module's steps in core's hands, which ran a disabled
+  module's recoveries and left the order of the modules' steps among themselves to the builder.
+- **Each step, each switch read, each module's list of steps and the queue's start is contained**:
+  one that raises is logged with its traceback and reported to the log channel by one line
+  (`start_up_failure_line`), and the rest carry on, the module's later steps included. Where the
+  error carries `rounds_called` (the protocol `RoundsFailed`, `framework/models/recovery.py`: each
+  round a step failed for, named as core names it), the line names them, and never asks for a
+  module's own error type, so each module's `RecoveryFailed` is its own; an error carrying none is a
+  step that failed as a whole, and its line names no round. A module whose switch or list cannot be
+  read is passed over; a switch not signed up is a fault in the assembly and is reported, never read
+  as off.
+- **The hold is released when the sweep has asked its own**, on leaving `sweeping()`, and again in
+  an outer `finally`, so a scheduler that cannot start does not leave every request waiting for the
+  rest of the run.
+- **The queue's start follows the sweep.** `ChangeQueue.start` registers the stop notice's view,
+  leaves every stopped job stopped, delivers lines never tried, posts any stop notice that never
+  landed, and starts the dispatcher.
+- **A guard of its own** makes a second ready, after a network drop, run nothing.
+
+Each is pinned by a test in `tests/framework/test_start_up.py`; `ChangeQueue.start`'s docstring
+says what the queue's start does. Which steps are signed up, and in what order, is `core.md`'s
+("Start-up").
+
+| Constraint | Stated in | Pinned by |
+|---|---|---|
+| The scheduler starts paused and is resumed last, so a restart's take-down of a review comes before its timer | `framework/services/jobs/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
+| The queue is held from before the bot connects until the sweep has asked its own, and released whatever the sweep does | `ChangeQueue.hold`, `release` and `sweeping`, `start_up`'s docstring | `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`, `test_the_sweep_releases_held_requests_before_the_queue_starts` |
+| A held typed answer counts as waiting, so a second is turned away | `turn_waiting`, `ChangeQueue.held_turn_channels` | `test_a_second_message_typed_while_the_first_is_held_is_turned_away` |
+
+The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
+function"): it is `RetryCog.retry_loop` (`framework/cogs/retry_cog.py`), started by
+`LeagueBot.setup_hook` (`test_login_starts_the_retry_loop_once`).
+
+---
+
+## Posting to Discord
+
+Answers to `architecture.md`, "Posting to Discord", which lays out the four handlers and their
+files (`notice_handler`, `standing_post_handler`, `owned_channel_handler` and the log writer,
+`OutputRouter`). What core posts through them is `core.md`'s ("Posting to Discord").
+
+A replaced standing post is deleted by a job after the new one, built by `standing_posts`
+(`replaced`, `delete_replaced_step`), which also removes a copy a failed `record` left
+(`remove_kept`). Its docstring holds the shape.
+
+**The log writer contains its own faults**, as `architecture.md` ("Posting to Discord") has it:
+in `OutputRouter._read_config`, `_try_send` and `_enqueue_if_configured`
+(`test_a_database_fault_reading_the_log_channel_is_contained`). `log_destination` alone raises,
+being a query rather than a line posted (its docstring). A line the log channel failed to take
+waits in `pending_messages` until the retry loop delivers it (`retry_service`).
+
+**A log line's mentions are wrapped by the router**
+(`test_every_mention_in_a_log_line_is_written_as_code`). The stop notice's mention is decided by
+`ChangeQueue._admins_to_notify`.
+
+**The framework's posts off the queue** are `architecture.md`'s exceptions ("Every post is made in a
+job"), in `OutputRouter`, `ChangeQueue._update_reply` and `typed_turns`. A handler's post made
+outside a job is refused (`posts_in_a_job`, raising `PostedOutsideAJob`,
+`framework/utils/in_a_job.py`).
+
+---
+
+## Errors and failures
+
+Answers to `architecture.md`, "Errors and failures", which names each failure path and every
+stated exception; each docstring there named carries its reason.
+
+| Starting point | The code |
+|---|---|
+| A command, button or form | `LeagueCommandTree.on_error`, `LeagueView.on_error`, `LeagueModal.on_error` (`framework/utils/league_server.py`), each calling `report_failure` (`framework/utils/interaction_errors.py`) |
+| A Discord event | `on_event_error` (`framework/utils/league_server.py`), attached by the builder with `setattr` |
+| An autocomplete | `bounded_autocomplete` (`framework/utils/autocomplete.py`) |
+| A change | `ChangeQueue._start` and `_run_step`, leading to `_stop`, or to `on_fault` or `on_check_fault` where the type gives one |
+| A scheduled job | `_one_off_timer_job` (`framework/services/jobs/scheduler.py`), which logs a handler's fault on the host |
+| A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each contained and reported to the log channel by `start_up_failure_line` |
+| The retry loop | `RetryCog.retry_loop` and `retry_service.attempt_delivery` |
+
+`report_failure` never raises: its reply and its line are each tried on their own. Its docstring
+gives the reason for the reply's words. The tree steps aside for a command with its own error
+handler (`test_a_command_with_its_own_error_handler_is_left_alone`). `on_event_error` drops the
+listener's own arguments, which can hold a member's message, and never raises
+(`test_the_event_error_handler_never_raises`).
+
+**The framework's refusal and fault types**, each caught by name:
+
+| Type | Where | What it is |
+|---|---|---|
+| `Refused` | `framework/models/refusal.py` | a refusal whose text the member reads; subclasses `ValueError` |
+| `SwitchNotSignedUp` | `framework/services/switches/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
+| `StepFailedOnDiscord` | `framework/models/change.py` | a step's failure on Discord, carrying what the job keeps and a clause for the stop notice |
+| `GuildUnavailable` | `framework/models/change.py` | the league's server missing from the cache: a failure on Discord's side |
