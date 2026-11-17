@@ -29,8 +29,8 @@ of these grounds, and report which of them it survives:
   a single-league bot on a Pi with one maintainer? Does it import a framework, a layer or an
   abstraction with one implementation where something smaller would do?
 - **Conflict.** Does it contradict a decision already recorded in CLAUDE.md, a "decided"
-  docstring, a test pinning a trade-off, `docs/design/architecture.md` or
-  `docs/design/core.md`? A finding that overrules a recorded decision is refuted as a
+  docstring, a test pinning a trade-off, `docs/design/architecture.md`,
+  `docs/design/framework.md` or `docs/design/core.md`? A finding that overrules a recorded decision is refuted as a
   finding. It may survive only as a *finding for the architecture*, for the user to decide.
 - **Ownership.** Is it assigned to the pass that owns those files under `classify()` in
   `tools/coverage_by_module.py`? Where an open issue on the Architecture & design milestone

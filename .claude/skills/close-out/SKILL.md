@@ -14,7 +14,7 @@ documents carry the project's knowledge, and all of them go stale silently:
 | `docs/wip-specs/*.md` | **The source of truth for rules.** What the bot shall do. | The author, and every future session |
 | `README.md` | **What a league sees.** Commands, behaviour, authoring conventions. | League admins and managers |
 | `docs/how-to/*.md` | **The order to do a job in.** One guide per module, plus the core bot. Becoming the source of truth on behaviour and how to use it. | A league manager setting the bot up |
-| `docs/design/*.md` | **Why the code is shaped as it is.** One file per module: the structure, what was rejected, and the trade-offs. Source for intent, never for detail — where it and the code disagree about what the code *does*, the code wins and the file is corrected. It restates no functional rule, citing the wip-spec instead. | Whoever changes that module next |
+| `docs/design/*.md` | **Why the code is shaped as it is.** One file per module, and `framework.md` for the machinery under `framework/`: the structure, what was rejected, and the trade-offs. Source for intent, never for detail — where it and the code disagree about what the code *does*, the code wins and the file is corrected. It restates no functional rule, citing the wip-spec instead. | Whoever changes that module next |
 
 `specs/NNN-*/` is **derived** — spec-kit's own output for one increment. Never hand-maintain
 it, and never copy a rule into it that belongs in a wip-spec.
@@ -129,7 +129,7 @@ league-facing guide changed.
    you changed, not just for the place you expect the text to be.
 3. **Did the change alter the shape of a module?** A new service, a table, a different place
    where work is scheduled or a responsibility moved between layers goes in
-   `docs/design/<module>.md`. A decision that constrains one function belongs in that
+   `docs/design/<module>.md`, or `docs/design/framework.md` for the framework. A decision that constrains one function belongs in that
    function's docstring, pinned by a named test where a later reader might tune it away —
    both, not either. A change inside the shape that already stands needs neither.
 4. **Does any how-to guide claim anything that is no longer true?** Grep all of
