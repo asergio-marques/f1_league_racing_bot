@@ -266,6 +266,88 @@ def test_a_round_s_forecast_and_check_in_come_down_together():
 
 
 # ---------------------------------------------------------------------------
+# Arming a round's leads (#544)
+# ---------------------------------------------------------------------------
+#
+# Each module answers with the leads it wants set for a round (`RoundLead`), and core arms them
+# under its own naming (`RoundJobs.arm_leads`): the id, moment, name and key every round job has
+# always carried.
+
+def _lead(kind, offset, label, **marks):
+    from leaguebot.core.models.round import RoundLead
+
+    return RoundLead(kind=kind, offset=offset, label=label, **marks)
+
+
+@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
+def test_each_lead_is_armed_under_the_round_s_id_moment_and_name():
+    """A round (id 21, number 3, season 7, tier 1) on 1 March 2026 at 18:00 is handed four leads
+    with `now` a month before it: weather's first phase 5 days before, the forecast clean-up a
+    day after, the result submission at the start and the check-in's last notice 24 hours before.
+    Each is armed under ``<kind>_s7_d1_r3_id21``, at its moment, named ``<label> s7 d1 r3``,
+    handed its kind and the round id as its key, replacing any job of its id, with no lateness
+    limit."""
+    service = _service()
+    start = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
+    leads = (
+        _lead("weather_p1", -timedelta(days=5), "Weather P1"),
+        _lead("cleanup", POST_RACE_CLEANUP_DELAY, "Forecast cleanup", clean_up=True),
+        _lead("results", timedelta(0), "Result submission", run_at_once=True,
+              left_to_advance=True),
+        _lead("rsvp_last_notice", -timedelta(hours=24), "RSVP last-notice", ahead_only=True),
+    )
+
+    _round_jobs(service).arm_leads(
+        _round_starting(start), leads, 7, 1, start - timedelta(days=30)
+    )
+
+    armed = [(c.kwargs["id"], c.kwargs["trigger"].run_date, c.kwargs["name"], c.kwargs["kwargs"],
+              c.kwargs["replace_existing"], c.kwargs["misfire_grace_time"])
+             for c in _added(service)]
+    assert armed == [
+        ("weather_p1_s7_d1_r3_id21", start - timedelta(days=5), "Weather P1 s7 d1 r3",
+         {"kind": "weather_p1", "key": 21}, True, None),
+        ("cleanup_s7_d1_r3_id21", start + POST_RACE_CLEANUP_DELAY, "Forecast cleanup s7 d1 r3",
+         {"kind": "cleanup", "key": 21}, True, None),
+        ("results_s7_d1_r3_id21", start, "Result submission s7 d1 r3",
+         {"kind": "results", "key": 21}, True, None),
+        ("rsvp_last_notice_s7_d1_r3_id21", start - timedelta(hours=24),
+         "RSVP last-notice s7 d1 r3", {"kind": "rsvp_last_notice", "key": 21}, True, None),
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
+def test_a_lead_armed_only_while_ahead_is_left_out_once_its_moment_has_passed():
+    """A round on 1 March 2099 at 18:00, still to come by the wall clock, is handed its leads
+    with `now` two days after its start. The check-in's call and clean-up, armed only while
+    still ahead, are left out; the third forecast phase and the forecast clean-up, armed whatever
+    the hour, are armed at their past moments; and the result submission, marked to run at once,
+    is only armed at its moment, `arm_leads` running nothing itself."""
+    service = _service()
+    start = datetime(2099, 3, 1, 18, tzinfo=timezone.utc)
+    leads = (
+        _lead("rsvp_notice", -timedelta(days=5), "RSVP notice", ahead_only=True),
+        _lead("weather_p3", -timedelta(hours=2), "Weather P3"),
+        _lead("cleanup", POST_RACE_CLEANUP_DELAY, "Forecast cleanup", clean_up=True),
+        _lead("rsvp_cleanup", POST_RACE_CLEANUP_DELAY, "RSVP cleanup", ahead_only=True,
+              clean_up=True),
+        _lead("results", timedelta(0), "Result submission", run_at_once=True,
+              left_to_advance=True),
+    )
+
+    _round_jobs(service).arm_leads(
+        _round_starting(start), leads, 7, 1, start + timedelta(days=2)
+    )
+
+    armed = {c.kwargs["id"]: c.kwargs["trigger"].run_date for c in _added(service)}
+    assert armed == {
+        "weather_p3_s7_d1_r3_id21": start - timedelta(hours=2),
+        "cleanup_s7_d1_r3_id21": start + POST_RACE_CLEANUP_DELAY,
+        "results_s7_d1_r3_id21": start,
+    }
+
+
+# ---------------------------------------------------------------------------
 # The season end
 # ---------------------------------------------------------------------------
 
