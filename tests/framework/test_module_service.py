@@ -39,14 +39,14 @@ def _modules(db_path: str):
 # ---------------------------------------------------------------------------
 
 
-#: Every optional module, by the name its switch is asked by (`is_<name>_enabled`).
+#: Every optional module, by the key its switch is asked by (`is_enabled(<key>)`).
 MODULES = ["weather", "signup", "results", "attendance", "images"]
 
 
 @pytest.mark.parametrize("module", MODULES)
 async def test_a_module_is_off_by_default(db_path, module):
     svc = _modules(db_path)
-    assert await getattr(svc, f"is_{module}_enabled")() is False
+    assert await svc.is_enabled(module) is False
 
 
 @pytest.mark.parametrize("module", MODULES)
@@ -101,7 +101,7 @@ async def test_a_switch_no_module_signed_up_for_is_an_error_not_off(db_path):
 
     assert issubclass(SwitchNotSignedUp, LookupError)
     with pytest.raises(SwitchNotSignedUp, match="images"):
-        await ModuleService(db_path).is_images_enabled()
+        await ModuleService(db_path).is_enabled("images")
 
 
 async def test_a_switch_asked_on_a_held_connection_reads_on_that_connection(db_path):
@@ -115,4 +115,50 @@ async def test_a_switch_asked_on_a_held_connection_reads_on_that_connection(db_p
         await db.execute("UPDATE server_configs SET signup_module_enabled = 1")
         assert await svc.is_enabled_on(db, "signup") is True
         await db.rollback()
-    assert await svc.is_signup_enabled() is False
+    assert await svc.is_enabled("signup") is False
+
+
+def _words_in_code(tree) -> set[str]:
+    """Every word the code of *tree* names: the parts of each name it defines or reads, and each
+    word of each string it holds, its docstrings left out, which may cite a module by way of
+    example."""
+    import ast
+    import re
+
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.body and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    }
+    words: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            words.update(node.name.lower().split("_"))
+        elif isinstance(node, ast.Name):
+            words.update(node.id.lower().split("_"))
+        elif isinstance(node, ast.Attribute):
+            words.update(node.attr.lower().split("_"))
+        elif isinstance(node, ast.arg):
+            words.update(node.arg.lower().split("_"))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
+            words.update(re.findall(r"[a-z]+", node.value.lower()))
+    return words
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#544: the module service still has a switch reader named for each module"
+)
+def test_the_module_service_names_no_module():
+    """The framework's switch service knows no module: a module is the key a caller hands
+    `is_enabled`, and the service keeps no reader named for one (architecture.md, "How modules and
+    core fit together"). Its code names none of the five modules' keys, in a name or in a string."""
+    import ast
+    import inspect
+
+    from leaguebot.framework.services.switches import module_service
+
+    named = _words_in_code(ast.parse(inspect.getsource(module_service))) & set(MODULES)
+
+    assert named == set(), f"the module service names {sorted(named)}"

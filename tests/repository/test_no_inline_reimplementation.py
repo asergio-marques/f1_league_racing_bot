@@ -9,9 +9,9 @@ months behind exactly that, in a file named after it.
 The shape this refuses is the one a reader is least likely to notice, because it does not
 announce itself with a helper or a comment::
 
-    if await bot.module_service.is_weather_enabled():   # the condition under test
-        bot.scheduler_service.schedule_all_rounds(rounds)   # ... performed by the test
-    bot.scheduler_service.schedule_all_rounds.assert_called_once_with(rounds)
+    if await bot.module_service.is_enabled("weather"):   # the condition under test
+        bot.scheduler_service.arm_leads(rnd, leads)   # ... performed by the test
+    bot.scheduler_service.arm_leads.assert_called_once_with(rnd, leads)
 
 That asserts `if True:` calls what follows it. The real branch in `_do_approve` is
 three-way and carries the weather pipeline's horizons, none of which the copy reaches —
@@ -149,18 +149,18 @@ def test_the_detector_recognises_the_shape_it_refuses():
     it exists to catch, one level up.
     """
     src_names = _src_function_names()
-    assert "is_weather_enabled" in src_names, "the sample below must name a real function"
+    assert "is_enabled" in src_names, "the sample below must name a real function"
 
     sample = (
         "async def test_sample():\n"
-        "    if await bot.module_service.is_weather_enabled():\n"
-        "        bot.scheduler_service.schedule_all_rounds(rounds)\n"
-        "    bot.scheduler_service.schedule_all_rounds.assert_called_once()\n"
+        "    if await bot.module_service.is_enabled('weather'):\n"
+        "        bot.scheduler_service.arm_leads(rnd, leads)\n"
+        "    bot.scheduler_service.arm_leads.assert_called_once()\n"
     )
     tree = ast.parse(sample)
     branch = next(node for node in ast.walk(tree) if isinstance(node, ast.If))
 
-    assert _called_names(branch.test) & src_names == {"is_weather_enabled"}
+    assert _called_names(branch.test) & src_names == {"is_enabled"}
     body = ast.get_source_segment(sample, branch.body[0]) or ""
     assert not body.strip().startswith(_INSPECTING)
 
@@ -170,7 +170,7 @@ def test_an_asserting_branch_is_left_alone():
     src_names = _src_function_names()
     sample = (
         "async def test_sample():\n"
-        "    if await service.is_weather_enabled():\n"
+        "    if await service.is_enabled('weather'):\n"
         "        assert forecast_channel_is_set\n"
     )
     tree = ast.parse(sample)
