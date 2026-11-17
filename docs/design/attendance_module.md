@@ -371,7 +371,7 @@ Answers to `architecture.md`, "Timed work and restarts".
 ### The four timers
 
 A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_deadline` and
-`rsvp_cleanup`, armed by core's scheduler service (`schedule_attendance_round`, and
+`rsvp_cleanup`, armed by core's round jobs (`RoundJobs.schedule_attendance_round`, and
 `schedule_round_cleanups` for the next-day clean-up) from the three lead times attendance's
 `round_window` hook, on `round_windows_read`, hands core. Attendance registers a callback for each
 kind (`register_timer`); a callback asks the matching change, as the bot's, and the change's check
@@ -639,7 +639,7 @@ Each is stated where it lives and pinned by the test named.
 | The earlier call comes down only after the new one is posted and recorded | `check_in_call`'s docstring | `test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_after_it` |
 | A round is owed one call, however many are asked at once | `check_in_call_change`'s docstring | `test_two_calls_posted_at_once_for_one_round_post_one` |
 | `distribute` and `mark_cleared` cannot be discarded | `would_never_be_placed` and `would_lose_the_answers`, the readers of what a drop would leave | `test_placing_the_reserves_cannot_be_discarded`, `test_marking_the_check_in_over_cannot_be_discarded` |
-| The four timers are armed with no lateness limit, and the handlers judge lateness | `schedule_attendance_round`'s docstring | `test_a_check_in_timer_is_armed_with_no_lateness_limit` |
+| The four timers are armed with no lateness limit, and the handlers judge lateness | `RoundJobs.schedule_attendance_round`'s docstring | `test_a_check_in_timer_is_armed_with_no_lateness_limit` |
 | A missed last notice is sent late, while the deadline is ahead | `_notice_not_due`'s docstring | `test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back` |
 | A last notice asked before its late call posts waits behind the call | `_notice_not_due`'s docstring | `test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the_call_stands` |
 | Under test mode lateness is judged at the ask only | `left_to_advance`'s docstring | `test_a_timer_fired_on_time_under_test_mode_is_posted_however_late_the_queue_starts_it` |

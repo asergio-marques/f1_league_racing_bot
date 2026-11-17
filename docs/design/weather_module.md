@@ -81,7 +81,7 @@ turns itself on and off" has a module keep it. `draw_guard.weather_enabled_on` r
 connection, and the reader weather registers with `ModuleService` is that function
 (`wiring.register_switch`). A job's check and a draw read it themselves. Switching
 off is a save of the flag and an audit entry, then an `After` step that removes the season's weather
-timers (`SchedulerService.cancel_all_weather`): the flag is read by every job's check, so a job that
+timers (`cancel_all_weather`, in `module_switch_settings`, which asks core's `RoundJobs.cancel_live_rounds` for the live season's rounds' jobs of `WEATHER_JOB_KINDS`): the flag is read by every job's check, so a job that
 fires in between is dropped, which is why the removal can follow the flag
 (`module_switch_settings`' docstring, `tests/weather/test_weather_module_gate.py`). What a
 switch-off keeps is the weather specification's opening rules.
@@ -275,7 +275,7 @@ A round, division or season called off posts weather's note through `cancellatio
 its own on the queue, as the weather specification's "Changes to a round after generation" asks. A
 channel never set is a line saying so; a channel set and gone, or a send Discord refuses, stops the
 queue for Retry. A round called off has its weather timers removed by core's cancellation
-(`SchedulerService.cancel_round`), and a timer that still fires asks a change its check drops.
+(`RoundJobs.cancel_round`), and a timer that still fires asks a change its check drops.
 
 ### What must be all or nothing
 
@@ -295,7 +295,7 @@ Answers to `architecture.md`, "Timed work and restarts".
 ### The kinds, and their arming
 
 Weather has four kinds of timer: `weather_p1`, `weather_p2`, `weather_p3` and `cleanup`. A mystery
-round's `weather_p1` is its notice and its two others do nothing. Core's scheduler service arms them
+round's `weather_p1` is its notice and its two others do nothing. Core's round jobs (`RoundJobs`) arm them
 (`schedule_round`, and `schedule_round_cleanups` for the clean-up alone) from the horizons weather
 hands core and the moments `round_event_moments` places. **All four are armed with no lateness
 limit** (`misfire_grace_time=None`), so a timer missed while the bot was down fires once it is back,
@@ -523,7 +523,7 @@ Each is stated where it lives and pinned by the test named.
 | A phase has one standing draw | the schema's partial unique index | `test_a_second_standing_draw_for_one_phase_is_refused` |
 | A draw and its calculation line are one save | `forecast_changes`' module docstring | `test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted` |
 | The horizons are the league's own, and no fixed moment is named | `phase1_service`'s docstring | `test_the_league_s_own_horizons_are_used_not_the_packaged_ones` |
-| The four timers have no lateness limit; the work's own check judges lateness | architecture.md's "Timed work and restarts", and `SchedulerService.schedule_round`'s docstring (under `skip_phases`) | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
+| The four timers have no lateness limit; the work's own check judges lateness | architecture.md's "Timed work and restarts", and `RoundJobs.schedule_round`'s docstring (under `skip_phases`) | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
 | A recovery judges every moment at the queue's clock | `forecast_recovery`'s docstring | `test_the_missed_phases_catch_up_reads_the_queue_s_clock` |
 | A failed recovery stops none of the other rounds and is reported once | `forecast_recovery`'s docstring | `test_one_round_failing_its_recovery_stops_none_of_the_others` |
 | A phase the amendment draws at once is skipped by its timer | `ForecastJobs`' docstring | `test_core_arms_what_a_module_s_arming_answer_hands_back` |

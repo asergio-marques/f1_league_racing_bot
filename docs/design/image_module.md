@@ -221,7 +221,10 @@ Answers to `architecture.md`, "Timed work and restarts".
 
 Image has one timed job, the daily portrait refresh, the standing job at a time of day that
 `architecture.md` allows ("Timed work and restarts"), armed by
-`SchedulerService.schedule_portrait_refresh`.
+`schedule_portrait_refresh` (`driver_portrait_service`), a plain function handed the scheduler, which
+arms it through the scheduler's `arm_daily` and disarms it, with `cancel_portrait_refresh`, through
+`remove`. The pack keeps the job because image's subscriber of `bot_packed` hands back its id
+(`PORTRAIT_REFRESH_JOB_ID`).
 
 The handler, `run_daily_refresh` (`driver_portrait_service`), is signed up by the wiring and handed
 the queue's moment. It reads the module's switch as it fires and does nothing while the module is

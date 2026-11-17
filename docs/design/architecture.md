@@ -1029,8 +1029,12 @@ asks is when its work is not due (the host's log says so).
 
 **Jobs are made only through the framework's scheduler.** Nothing else arms, finds or removes a job.
 A round's job is named from the round and the event, so arming it again replaces the old one instead
-of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
-work is armed by the round-arming functions, through the scheduler. Each reads when the round's
+of adding a second (the `_round_job_suffix` docstring in core's round jobs). The scheduler holds the
+timers, the job store and the one runner every job names, and arms a job at the id, kind and moment
+it is handed (`arm_at`, `run_now`, `arm_daily`, `arm_every`), lists the jobs it holds (`jobs`) and
+removes one (`remove`); it names no round, module or kind of job. A round's timed work is armed by
+the round-arming functions of core's round jobs (`RoundJobs`), through those calls, and the builder
+hands `RoundJobs` to the services that arm or cancel a round's jobs. Each reads when the round's
 events fall from `round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
 `clean_up_moment` gives, and `round_event_moments` places both clean-ups by it too. `schedule_round`
 arms a round's forecasts and, through `schedule_result_submission_jobs`, its results submission;
@@ -1062,12 +1066,16 @@ delay, so no module's window is read.
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
 results' sweep that undoes an abandoned amendment is. Its module arms it at start-up, replacing
-itself, and it is armed with no lateness limit.
+itself, through the scheduler's `arm_every`, with a function of its own, and it is armed with no
+lateness limit.
 
 **A standing job at a time of day is a cron job its module arms and disarms with its switch.** It
 is the shape of a refresh that is not tied to any round, as the image module's daily portrait
 refresh is: armed at start-up where its module is on and at the moment the module is switched
-on, and removed when the module is switched off. It is armed with no lateness limit, so the
+on, and removed when the module is switched off, by functions of its module's through the
+scheduler's `arm_daily` and `remove`. When the bot is packed, the job survives because the module's
+subscriber of `bot_packed` hands back its id, and the pack keeps the ids every part hands back, so
+that core names no module's job. It is armed with no lateness limit, so the
 scheduler never skips or runs it on its own account, and its handler judges a run missed for
 itself, against the moment the job was due and the `now` it is handed, and skips it, as the core
 specification's "When the bot stops" has it.
@@ -1077,7 +1085,7 @@ something must happen a set time after a job (a season review's, a correction's 
 amendment's five minutes running out, a signup left unanswered for a day, a held signup channel's
 24 hours, the review channel's lock warning taken down after eight seconds), a job of its own,
 after the one whose record saved the row the timer is keyed to, arms a one-off timer through the
-scheduler service (`SchedulerService.arm_once`, named from its kind and its row, so that arming it
+scheduler (`SchedulerService.arm_once`, named from its kind and its row, so that arming it
 again replaces it). It is armed with no lateness limit, so one missed while the bot was down fires
 when it starts. The builder, or the module's wiring it calls, registers each kind's callback before
 the scheduler starts (`register_timer`). When the timer fires, its callback reads the row again and
@@ -1172,7 +1180,7 @@ decides it, and that decision is asked of the queue as a change like any other.
 in one: it does not read a module's due moments, interleave one module's events with another's or
 decide what becomes of a missed one. Each module writes the handler for every kind of timed job it
 has, signed up by the builder, or the module's wiring it calls, with the kind as it registers the
-kind with the scheduler service, and its start-up steps, offered by its wiring. The handler holds
+kind with the scheduler, and its start-up steps, offered by its wiring. The handler holds
 its module's logic, what becomes of a missed event included; neither the entry point nor a module's
 wiring holds the module's rules in it. What an earlier step changed is seen by a later one's change
 when the queue runs it, not by the later step.

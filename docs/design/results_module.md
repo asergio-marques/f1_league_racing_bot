@@ -395,7 +395,7 @@ session") and the core specification's ("When the bot stops").
 
 ### The round's `results` job
 
-Core arms each round's `results` job (`SchedulerService.schedule_result_submission_jobs`, `core.md`,
+Core arms each round's `results` job (`RoundJobs.schedule_result_submission_jobs`, `core.md`,
 "Core's own timed events") with no lateness limit, so a job whose moment passes while the bot is
 down fires once it is back. Its handler, which the wiring registers, is `ask_round_start`
 (`results/services/submission/round_start.py`), and results' start-up catch-up calls the same
@@ -420,7 +420,7 @@ so the two judge "before the bot came up" by one value (`ask_round_start`'s docs
 
 The amendment sweep is a standing sweep (`architecture.md`, "A standing sweep is an interval job
 that re-reads its rows each time it runs"): an `IntervalTrigger` every `AMENDMENT_SWEEP_MINUTES`,
-armed with no lateness limit by `SchedulerService.schedule_amendment_sweep`, whose handler,
+armed with no lateness limit by `schedule_amendment_sweep` (`amendment_writes`, a plain function handed the scheduler, which arms it through `arm_every`), whose handler,
 `amendment_writes.sweep_expired_amendments`, reads every amendment's deadline against the `now` it
 is handed and asks `results.amend.lapse` for each past it. **It is a sweep and not one timer per
 amendment** because an amendment is left abandoned by no event the bot sees, and it is an interval
@@ -430,7 +430,7 @@ job rather than one that re-arms itself because a sweep that raised would then b
 stage of the amendment is in hand, stopped included, so the next run asks again.
 
 It is armed in results' start-up turn (`arm_amendment_sweep`) and by the switch-on's `After` step,
-and removed by the switch-off's `disarm_sweep`, as a switch-off undoes what the switch-on set up
+and removed by the switch-off's `disarm_sweep`, which calls `cancel_amendment_sweep` handed through results' wiring, as a switch-off undoes what the switch-on set up
 (`results_off_change`'s docstring; `test_turning_results_off_removes_the_amendment_sweep`).
 
 ### The lapse and the lock's clear
@@ -729,7 +729,7 @@ Each is stated where it lives and pinned by the test named.
 | A posting's chunks are the ids recorded; nothing that follows it is deleted | `_send_chunked`, `_delete_posting` | `test_nothing_that_merely_follows_the_posting_is_deleted`, `test_a_posting_that_fails_part_way_takes_its_first_chunks_down` |
 | The opening re-judges the round as it comes up to run; nothing holds it back | `ask_round_start`, `submission_changes`' docstring | `test_a_round_whose_amendment_stopped_across_the_restart_moves_its_start_ahead_is_not_opened`, `test_the_late_job_and_the_catch_up_both_firing_open_the_round_once` |
 | Under test mode a start that passed before the bot came up is left to the advance | `ask_round_start` | `test_under_test_mode_a_missed_round_start_is_left_to_the_advance` |
-| The amendment sweep is a standing interval job, not a timer per amendment nor one that re-arms itself | `SchedulerService.schedule_amendment_sweep` | `test_the_sweep_is_scheduled_as_a_standing_job`, `test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback` |
+| The amendment sweep is a standing interval job, not a timer per amendment nor one that re-arms itself | `amendment_writes.schedule_amendment_sweep` | `test_the_sweep_is_scheduled_as_a_standing_job`, `test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback` |
 | Turning results off removes the sweep turning it on arms | `results_off_change`'s docstring | `test_turning_results_off_removes_the_amendment_sweep` |
 | Amendments are recovered before submissions, and missed starts after both | the comments in `wiring.start_up_steps` | `test_the_builder_orders_the_start_up_steps` |
 | A failed recovery stops none of the other rounds and is reported once | `recover_orphaned_submission_channels`, `RecoveryFailed` | `test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are` |
