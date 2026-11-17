@@ -200,6 +200,10 @@ async def test_each_division_s_module_channels_follow_its_own_in_the_modules_ord
         id="cached, a needed permission missing",
     ),
     pytest.param(
+        "cached", ("send_messages",), True, ("UNUSABLE", ("Send Messages",)),
+        id="cached, cannot send",
+    ),
+    pytest.param(
         "cached", ("embed_links",), True, ("PRESENT", ()),
         id="cached, a permission not needed missing",
     ),
@@ -212,7 +216,8 @@ async def test_each_division_s_module_channels_follow_its_own_in_the_modules_ord
 async def test_channel_presence_answers_only_what_discord_proves(found, denied, member, answer):
     """Channel 100 is judged against what a channel needs to be reposted in: View Channel, Send
     Messages and Read Message History. Found in the cache, or fetched, with every one held it is
-    there; lacking Read Message History it is unusable, named by what it lacks, and lacking only
+    there; lacking Read Message History, or Send Messages though it can see the channel, it is
+    unusable, named by what it lacks, and lacking only
     Embed Links, which is not needed, it is there. A fetch Discord answers not found proves it
     gone, and one Discord refuses the bot proves it unusable, lacking View Channel. Anything else
     is not an answer: a server error, or a server whose bot member cannot be read, raises."""
