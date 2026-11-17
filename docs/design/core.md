@@ -54,7 +54,7 @@ framework's writers (`record_change_on`, `record_system_change_on`), each handed
 values, which the writer encodes as JSON with sorted keys, so no core site chooses an encoding of its
 own; the queue's records (`pending_job_on`, `in_hand_on`, `step_done_at_on`) and the retry queue
 (`clear_pending_on`, `pending_channel_ids_on`) answer what core asks of the queue, on the connection
-it is handed. The repository's checks of a table's owner hold none of this as a listed breach.
+it is handed.
 
 **A season keeps two states.** `status` is the coarse one, `stage` the lifecycle's, and the
 database keeps them in step: the `seasons_stage_*` triggers fill `stage` from `status`, carry it
