@@ -2110,6 +2110,26 @@ async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to
     assert run_at_once(league.bot.round_jobs) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
+async def test_under_test_mode_with_weather_on_an_amended_round_is_armed_with_its_result_submission(
+    tmp_path,
+):
+    """Test mode on, results on, weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is
+    moved to a hundred and fifty days out, and the amendment goes through. The exception that
+    leaves a test season's submissions to `/test-mode advance` holds only with weather off (core
+    specification, "Amending and cancelling a round"): the round is armed again with its forecasts
+    and its results submission together, and nothing is run at once."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await league.set_test_mode(True)
+    await _amended(league, scheduled_at=_at(league, days=150))
+
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    assert league.armed == [("weather", [R3])]
+    assert run_at_once(league.bot.round_jobs) == []
+
+
 async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes_the_results_job_down(
     tmp_path,
 ):
