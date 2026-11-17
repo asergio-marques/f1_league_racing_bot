@@ -1041,7 +1041,7 @@ async def _closed(league: Any) -> dict[int, int]:
     return {row["round_id"]: row["closed"] for row in rows}
 
 
-@pytest.mark.parametrize("when", ["at ask", "at run"])
+@pytest.mark.parametrize("when", ["at ask", pytest.param("at run")])
 async def test_a_division_with_a_round_whose_submission_has_accepted_results_is_refused_naming_the_round(
     tmp_path, when,
 ):

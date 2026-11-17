@@ -313,7 +313,7 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
 
 @pytest.mark.parametrize("fault_in", [
-    "arming the round's jobs",
+    pytest.param("arming the round's jobs"),
     "re-running a phase",
 ])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(

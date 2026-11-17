@@ -105,7 +105,7 @@ ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_foreca
             "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
 #: The case of a job discarded under a name of the test's own (`rename_module_job`).
-_RENAMED = "discarded under another name"
+_RENAMED = pytest.param("discarded under another name")
 #: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
 _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 
@@ -756,7 +756,10 @@ async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
-@pytest.mark.parametrize("status", sorted(s.value for s in RoundStatus))
+@pytest.mark.parametrize("status", [
+    pytest.param(s) if s in ("AWAITING_RESULTS", "NOT_RUN") else s
+    for s in sorted(s.value for s in RoundStatus)
+])
 async def test_every_cancellable_state_is_cancelled_and_no_other(tmp_path, status):
     league = await ongoing_league(tmp_path)
     if status == "AWAITING_RESULTS":
@@ -1439,7 +1442,7 @@ async def test_a_round_whose_open_submission_has_accepted_nothing_is_cancelled_a
 
 
 @pytest.mark.parametrize("session_status", ["ACTIVE", "CANCELLED"])
-@pytest.mark.parametrize("when", ["at ask", "at run"])
+@pytest.mark.parametrize("when", ["at ask", pytest.param("at run")])
 async def test_a_round_whose_submission_has_accepted_a_session_is_refused(
     tmp_path, when, session_status,
 ):
@@ -1577,7 +1580,7 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its
 _STOOD_IN_THE_WAY = "❌ Cannot cancel Round 3 — a module of the test's own stands in the way."
 
 
-@pytest.mark.parametrize("where", ["asked", "in the save"])
+@pytest.mark.parametrize("where", ["asked", pytest.param("in the save")])
 async def test_a_subscriber_s_refusal_stops_the_cancellation_in_the_check_and_the_save_writing_nothing(
     tmp_path, where,
 ):

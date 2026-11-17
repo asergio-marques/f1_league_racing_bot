@@ -843,7 +843,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
     assert 8002 not in league.channel(PRO_CH.forecast).messages
 
 
-@pytest.mark.parametrize("stopped", ["judge", "unarm"])
+@pytest.mark.parametrize("stopped", ["judge", pytest.param("unarm")])
 async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_timed_work(
     tmp_path, stopped, monkeypatch,
 ):
