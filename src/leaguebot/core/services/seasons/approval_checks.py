@@ -23,7 +23,7 @@ from typing import Any, TypeVar
 import discord
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.core.models.channel_needs import VIEW, Needs
+from leaguebot.core.models.channel_needs import ATTACH, EMBED, SEND, VIEW, Needs
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round, RoundLead
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
@@ -219,6 +219,63 @@ async def channel_fault(
     return None
 
 
+async def core_channel_needs(drawing: ImageDrawing) -> dict[str, Needs]:
+    """What core's two division channels, `lineup` and `calendar`, need of the bot: the lineup,
+    an embed or a picture, View Channel, Send Messages and Embed Links, and the calendar, text or
+    a picture, View Channel and Send Messages. Each also needs Attach Files where the image module
+    answers that the picture could attach a file (`calendar_attaches_files`,
+    `lineup_attaches_files`), which core asks of it rather than read its configuration."""
+    lineup_attaches = await drawing.lineup_attaches_files()
+    calendar_attaches = await drawing.calendar_attaches_files()
+    return {
+        "lineup": (VIEW, SEND, EMBED) + ((ATTACH,) if lineup_attaches else ()),
+        "calendar": (VIEW, SEND) + ((ATTACH,) if calendar_attaches else ()),
+    }
+
+
+async def core_division_channel_faults(
+    db_path: str,
+    drawing: ImageDrawing,
+    *,
+    divisions: Mapping[int, str],
+    guild: Any = None,
+) -> dict[int, list[str]]:
+    """Each of *divisions*' lineup and calendar channels, in that order, that is not set, not on
+    the *guild* or lacking a permission its use needs (`core_channel_needs`), by division id.
+
+    Core's own subscriber of `division_channel_faults_read`, signed up before every module's so
+    that a division's lines read core's first. The divisions handed are those the confirmation
+    judges (id to name), so a cancelled division is passed over. A division with no fault is
+    given an empty list. With no *guild*, only whether each channel is set is judged. Reads only.
+    """
+    if not divisions:
+        return {}
+    needs = await core_channel_needs(drawing)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, lineup_channel_id, calendar_channel_id FROM divisions "
+            f"WHERE id IN ({', '.join('?' * len(divisions))})",
+            tuple(divisions),
+        )
+        rows = {row["id"]: row for row in await cursor.fetchall()}
+    found: dict[int, list[str]] = {}
+    for division_id, name in divisions.items():
+        row = rows.get(division_id)
+        lines: list[str] = []
+        for column, label, setting in (
+            ("lineup_channel_id", "lineup channel", "lineup"),
+            ("calendar_channel_id", "calendar channel", "calendar"),
+        ):
+            fault = await channel_fault(
+                guild, name, None if row is None else row[column], label,
+                f"/division {setting}-channel", needs[setting],
+            )
+            if fault:
+                lines.append(fault)
+        found[division_id] = lines
+    return found
+
+
 async def division_channel_faults(
     db_path: str,
     season_id: int,
@@ -226,26 +283,30 @@ async def division_channel_faults(
     *,
     division_channel_faults_read: AwaitedHook,
 ) -> list[str]:
-    """Every channel a division of the season posts to that is not set, or not on the server.
+    """Every channel a division of the season posts to that is not set, not on the server, or
+    lacking a permission its use needs.
 
     **Both confirmations ask this**: the first, and the one mid-season. Nothing
     clears a channel's id when Discord deletes the channel, and no module can be enabled
     once a season is under way, so mid-season every channel is still *set*; the question
-    worth asking is whether it is still *there*. Asked at both, so the two cannot come to
-    disagree about what a division needs.
+    worth asking is whether it is still *there*, and whether the bot can still use it. Asked at
+    both, so the two cannot come to disagree about what a division needs.
 
     A channel is looked for in the cache and then fetched, a fetch answering NotFound
-    being the one proof it is gone. Any other failure is **not** a fault: a check that
-    could not tell must not be what refuses a season. With no *guild*, only whether each
-    channel is set is judged. A cancelled division posts nothing and is passed over.
+    being the one proof it is gone (`channel_presence`). Any other failure is **not** a fault: a
+    check that could not tell must not be what refuses a season. With no *guild*, only whether
+    each channel is set is judged. A cancelled division posts nothing and is passed over.
 
-    Core names the lineup and calendar channels, which every season needs; each module names
-    its own through *division_channel_faults_read*, its switch asked of itself. A division's
-    lines read in tier order: its own, then the modules' in the order they signed up.
+    **Every channel is named through *division_channel_faults_read*, core's own too** (the
+    lineup's and the calendar's, `core_division_channel_faults`): core's needs ask the image
+    module whether a picture could attach a file, so they are built where that is awaited, and
+    this function holds no list of channels, so that the two confirmations, which reach it
+    unchanged, cannot disagree about one. A division's lines read in the order the parts signed
+    up: core's own, then the modules'.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, name, lineup_channel_id, calendar_channel_id FROM divisions "
+            "SELECT id, name FROM divisions "
             "WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
             (season_id,),
         )
@@ -255,18 +316,6 @@ async def division_channel_faults(
     handed = await division_channel_faults_read.call(divisions=divisions, guild=guild)
     faults: list[str] = []
     for row in rows:
-        for fault in (
-            await channel_fault(
-                guild, row["name"], row["lineup_channel_id"], "lineup channel",
-                "/division lineup-channel",
-            ),
-            await channel_fault(
-                guild, row["name"], row["calendar_channel_id"], "calendar channel",
-                "/division calendar-channel",
-            ),
-        ):
-            if fault:
-                faults.append(fault)
         for module_lines in handed:
             faults.extend(module_lines.get(row["id"], []))
     return faults

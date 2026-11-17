@@ -966,6 +966,16 @@ class ImageDrawing:
         except SwitchNotSignedUp:
             return False  # a stated exception: the job's own gate raises it, see the docstring
 
+    async def calendar_attaches_files(self) -> bool:
+        """Whether the calendar could cause a file to be attached to a posting: the answer
+        `aspect_attaches_files` gives for the `calendar` aspect, for core's channel checks."""
+        return await self.aspect_attaches_files(CALENDAR_ASPECT)
+
+    async def lineup_attaches_files(self) -> bool:
+        """Whether the lineup could cause a file to be attached to a posting: the answer
+        `aspect_attaches_files` gives for the `lineup` aspect, for core's channel checks."""
+        return await self.aspect_attaches_files("lineup")
+
     async def calendar_wanted(self) -> bool:
         """Whether this league conveys its calendar as a picture: both the module and the
         `calendar` aspect must be on (`aspect_wanted`)."""

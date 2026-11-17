@@ -363,13 +363,20 @@ def _sign_up_to_setting_channels_read(bot: LeagueBot) -> None:
 
 
 def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
-    """Make the hook a division's channel faults are read through, and sign each module's part up
-    to it: the lines naming that module's own channels not set or not on the server, by division,
-    handed the divisions judged and the server. Weather and results are handed the module service
-    and the database, attendance its service and the module service, each asking its own switch;
-    they sign up in the order a division's lines read. The builder hands it to the placements
-    review and the confirmations (architecture.md, "How modules and core fit together")."""
+    """Make the hook a division's channel faults are read through, and sign core's part and each
+    module's up to it: the lines naming that part's own channels not set, not on the server or
+    missing a permission they need, by division, handed the divisions judged and the server.
+    Core's part (the lineup and calendar channels) is handed the database and the image module's
+    drawing, weather and results the module service and the database, attendance its service and
+    the module service, each module asking its own switch; they sign up in the order a division's
+    lines read, core's first. The builder hands it to the placements review and the confirmations
+    (architecture.md, "How modules and core fit together")."""
+    from leaguebot.core.services.seasons import approval_checks
+
     bot.division_channel_faults_read = AwaitedHook()
+    bot.division_channel_faults_read.subscribe(
+        partial(approval_checks.core_division_channel_faults, bot.db_path, bot.image_drawing)
+    )
     weather_wiring.sign_up_to_division_channel_faults_read(bot)
     results_wiring.sign_up_to_division_channel_faults_read(bot)
     attendance_wiring.sign_up_to_division_channel_faults_read(bot)

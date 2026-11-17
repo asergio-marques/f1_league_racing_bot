@@ -21,11 +21,6 @@ from tests.support.switches import answer_switch
 SERVER_ID = 22071
 SEASON_ID = 7
 
-#: Why a test is expected to fail until #449's slice 2a is built.
-NOT_JUDGED_BY_NEEDS = (
-    "#449: a channel is not yet judged by the permissions its use needs"
-)
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -98,12 +93,9 @@ def _faults_bot(db_path, modules):
 @pytest.mark.parametrize("pro_lineup", [
     "deleted",
     "cannot be told",
-    pytest.param("unusable", marks=pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)),
+    "unusable",
     "no picture to attach",
-    pytest.param(
-        "no picture can be attached",
-        marks=pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS),
-    ),
+    "no picture can be attached",
 ])
 async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
