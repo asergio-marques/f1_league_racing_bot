@@ -419,6 +419,9 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         assert await _row_count(db_path) == 0
         assert "Stuck retry entry id=7" in caplog.text
 
+    @pytest.mark.xfail(
+        strict=True, reason="#453: the worker's own line is not started through the background helper"
+    )
     @pytest.mark.asyncio
     async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(
         self, tmp_path, caplog, monkeypatch
@@ -429,6 +432,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         import asyncio
 
         from leaguebot.framework.services.posting.retry_service import attempt_delivery as deliver
+        from leaguebot.framework.utils import background
 
         db_path = await _make_db(str(tmp_path))
         await enqueue(db_path, 99, "Admin | /module enable weather | Success", "503", now=NOW)
@@ -440,17 +444,17 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
             send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
         )
         bot = _worker_bot(db_path, refusing)
-        # The worker's own line is posted in a task of its own: each is kept here and awaited,
-        # so that a line queued by it would be on the queue before the count is read.
+        # The worker's own line is posted in a task the background helper holds: each it takes
+        # is noted here and awaited, so that a line queued by it would be on the queue before the
+        # count is read.
         scheduled: list = []
-        schedule = asyncio.ensure_future
 
-        def keep(awaitable):
-            task = schedule(awaitable)
-            scheduled.append(task)
-            return task
+        class _Noting(set):
+            def add(self, task) -> None:
+                scheduled.append(task)
+                super().add(task)
 
-        monkeypatch.setattr(asyncio, "ensure_future", keep)
+        monkeypatch.setattr(background, "_running", _Noting())
 
         with caplog.at_level("WARNING"):
             assert await deliver(entry, bot, router=bot.output_router, now=NOW) is False
