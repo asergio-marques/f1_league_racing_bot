@@ -788,7 +788,6 @@ async def test_a_daily_refresh_that_fires_hours_after_its_time_is_skipped(
     assert await _rows(path) == {}
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the daily refresh swallows its own failure")
 async def test_a_daily_refresh_that_fails_raises_to_its_runner(tmp_path):
     """The image module is on, against a migrated database, so the switch reads; the image
     configuration cannot be read. The refresh raises that fault rather than swallowing it, so the
