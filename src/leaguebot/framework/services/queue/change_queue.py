@@ -984,9 +984,8 @@ class ChangeQueue:
         on a failure stays stopped: its `next_try_at` is cleared, so that after a restart only
         Retry or Discard moves the queue, and one line says so. Every log line saved and never
         tried, which the stop came between the save and the delivery of, is delivered, with no
-        interaction to tell if it fails. The stop notice of a job that never landed is posted
-        again, and the view of its buttons is registered, so that a notice posted before the
-        restart still works.
+        interaction to tell if it fails. Any stop notice not saved is posted again, and the view of
+        its buttons is registered, so that a notice posted before the restart still works.
         """
         if self._task is not None and not self._task.done():
             return
@@ -1007,8 +1006,8 @@ class ChangeQueue:
         self, *, without_notice: bool = False, lane: str | None = None
     ) -> list[tuple[aiosqlite.Row, list[aiosqlite.Row], aiosqlite.Row]]:
         """Every job the queue is stopped at, in job order, each with its change and the change's
-        steps; with *without_notice*, only those whose stop notice has not landed, and with
-        *lane*, only those on that lane."""
+        steps; with *without_notice*, only those whose stop notice is not saved (not landed, or
+        landed with its save failed), and with *lane*, only those on that lane."""
         missing = " AND s.notice_message_id IS NULL" if without_notice else ""
         on_lane = "" if lane is None else " AND c.lane = ?"
         async with get_connection(self._db_path) as db:
@@ -2179,7 +2178,7 @@ class ChangeQueue:
                 self._unsaved_notices[job_id] = landed
             await self._keep_notice(job_id, *landed)
             self._unsaved_notices.pop(job_id, None)
-        except Exception:  # noqa: BLE001 — the stop stands; the notice is posted again
+        except Exception:  # noqa: BLE001 — the stop stands; the notice, or its save, is tried again
             log.error("could not post the stop notice of job %s (change %s)", job_id,
                       change["id"], exc_info=True)
 
@@ -2200,9 +2199,9 @@ class ChangeQueue:
         A league stop always mentions them; a conversation's only where no other conversation's
         stop notice stands (one that has landed, saved or not, on a job still stopped), so that a
         burst of conversations notifies them once. Asked only of a notice that has not landed, so a
-        re-post, which is the first landing where the first post was refused, mentions them and
-        a retried save, the hour and restart lines, which are not notices, mention nobody. An unsaved
-        notice (`_unsaved_notices`) of a stopped job stands, saved or not.
+        re-post, which is the first landing where the first post was refused, mentions them. A
+        notice that has landed but whose save failed (`_unsaved_notices`) stands, as a saved one
+        does. A retried save, like the hour's and the restart's lines, mentions nobody.
         """
         config = await self._config.get_server_config()
         role = None if config is None else config.league_admin_role_id
