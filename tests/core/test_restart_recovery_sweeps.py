@@ -254,19 +254,42 @@ async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_pat
     assert "Feature Race" in "\n".join(detail), detail
 
 
-async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_path):
+_REBUILT_RACING = (
+    "  Amendment channel being deleted; nothing needed putting back. If the amendment had not "
+    "been approved, re-run /results rounds amend. If it had, its channels may be "
+    "part-rebuilt: run /results rounds sync and /results standings sync."
+)
+_REBUILT_PENDING = (
+    "  Amendment channel being deleted; nothing needed putting back. If the amendment had not "
+    "been approved, re-run /results rounds amend. If it had, its channels may be "
+    "part-rebuilt: amend the round again with /results rounds amend — every division of this "
+    "season is done, so the sync commands are closed and the amendment is what reposts."
+)
+
+
+@pytest.mark.parametrize(
+    ("stage", "rebuilt"),
+    [("ONGOING", _REBUILT_RACING), ("PENDING_COMPLETION", _REBUILT_PENDING)],
+    ids=["raced", "pending-completion"],
+)
+async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_path, stage, rebuilt):
     """Alex started `/results rounds amend` of round 3 (Pro); at the restart there is nothing to
     put back, so the bot cannot tell whether the corrections were never entered or the
     amendment had been approved. One line names Alex and says a restart ended it — never
     "lapsed" — with both cases, and what to run in each, beneath it: for the first, the command
-    the manager now types; for the second, the two syncs. A manager with four sessions amended
-    over an evening needs to know which one went, so the line names the round and its division,
-    as every record names them (#482), and the session beneath.
+    the manager now types; for the second, a command that is actually open at the season's stage
+    (results specification, standings): the two syncs while the season is raced, and amending
+    the round again once it is pending completion, when both syncs are refused (#470). A manager
+    with four sessions amended over an evening needs to know which one went, so the line names
+    the round and its division, as every record names them (#482), and the session beneath.
 
     The log must not claim a round was put back when nothing was reverted: an amendment approved
-    and rebuilding the channels when the bot stopped needs the sync commands, not a reassurance.
+    and rebuilding the channels when the bot stopped needs a repost, not a reassurance.
     The row is closed with its channel's deletion."""
     league = await _amend_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE seasons SET stage = ?", (stage,))
+        await db.commit()
 
     await _restart_and_run(league)
 
@@ -277,11 +300,7 @@ async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_p
         "was ended by a restart"
     ) in head
     assert "lapsed" not in line
-    assert (
-        "  Amendment channel being deleted; nothing needed putting back. If the amendment had not "
-        "been approved, re-run /results rounds amend. If it had, its channels may be "
-        "part-rebuilt: run /results rounds sync and /results standings sync."
-    ) in line.splitlines()
+    assert rebuilt in line.splitlines()
     assert "Feature Race" in line
     assert "put back as it was" not in line
     row = await _amend_row(league)

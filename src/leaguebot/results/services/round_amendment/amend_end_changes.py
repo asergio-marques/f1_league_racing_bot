@@ -78,6 +78,8 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.seasons.season_lifecycle_service import season_stage_on
 from leaguebot.core.services.seasons.season_service import round_facts_on, rounds_called
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.log_lines import abandoned_line, name_of_member
@@ -320,7 +322,9 @@ async def recover_orphaned_amend_channels(bot: LeagueBot, *, queue: ChangeQueue)
     - Where there was **nothing to put back**, the corrections were either never entered or had
       already been approved and were being rebuilt when the bot stopped, and the row cannot say
       which. That is not a lapse, so the line is a neutral one — who started it, that a restart
-      ended it — with the explanation of both cases and what to run in each beneath it.
+      ended it — with the explanation of both cases and what to run in each beneath it. For the
+      second, that is the two syncs while the season is raced, and amending the round again once
+      it is pending completion, when both syncs are closed.
 
     An amendment whose stage is in hand on the queue, stopped included, is finished by the queue
     ("Leave it while stuck"), and one whose lapse is already in hand from an earlier restart is
@@ -484,10 +488,14 @@ def amend_lapse_change(
             (now().isoformat(), amend_id),
         )
         what = f"`/{COMMAND}` of round {facts.round_number} ({facts.division_name})"
+        # Read in this save, so that a rerun of `record_lapse` after a stop words its line the
+        # same: the repost a restart's line names depends on the season's stage (#470).
+        stage = await season_stage_on(db, facts.season_id)
         return StepResult(
             result={
                 "reverted": reverted, "what": what, "sessions": _sessions_of(row),
                 "season_number": facts.season_number,
+                "pending_completion": stage == SeasonStage.PENDING_COMPLETION,
             },
             then=(PlannedStep(RECORD_LAPSE), PlannedStep(DELETE_CHANNEL, delete)),
         )
@@ -507,14 +515,22 @@ def amend_lapse_change(
         if cause == RESTART and not reverted:
             # Nothing to put back means one of two things, and the row cannot say which: the
             # corrected results were never entered, or the amendment had been approved and its
-            # channels were being rebuilt when the bot stopped (#345).
+            # channels were being rebuilt when the bot stopped (#345). The second case names a
+            # command open at the season's stage (results specification, standings): the two
+            # syncs while it is raced, the amendment again once it is pending completion (#470).
+            rebuilt = (
+                "amend the round again with /results rounds amend — every division of this "
+                "season is done, so the sync commands are closed and the amendment is what "
+                "reposts."
+                if result.get("pending_completion")
+                else "run /results rounds sync and /results standings sync."
+            )
             line = (
                 f"ℹ️ {what}, started by {named}, was ended by a restart\n"
                 f"  Sessions: {shown}\n"
                 "  Amendment channel being deleted; nothing needed putting back. If the "
                 "amendment had not been approved, re-run /results rounds amend. If it had, "
-                "its channels may be part-rebuilt: run /results rounds sync and "
-                "/results standings sync."
+                f"its channels may be part-rebuilt: {rebuilt}"
             )
         elif cause == RESTART:
             line = abandoned_line(named, what, lapsed=True, detail=(
