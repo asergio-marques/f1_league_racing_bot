@@ -17,8 +17,7 @@ import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.upkeep.pack_service import KEPT_JOBS, PackRefused, pack
-from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
+from leaguebot.core.services.upkeep.pack_service import PackRefused, pack
 from tests.support.pack_hook import pack_hook
 from tests.support.review_prompts import store_review_prompt
 
@@ -288,14 +287,49 @@ async def test_pack_clears_the_message_ids_the_bot_edits_by(db_path):
 
 
 async def test_pack_clears_the_scheduled_work_but_the_portrait_refresh(db_path):
+    """Every module signed up to the pack as the builder signs them up: the scheduled work is
+    cleared but for image's daily portrait refresh (`pfp_daily`), the one job a module hands back
+    to keep, and the pack reports the jobs cleared."""
     await _seed(db_path)
     scheduler = _scheduler()
 
     result = await pack(db_path, scheduler, bot_packed=pack_hook(), now=NOW, **ACTOR)
 
-    scheduler.cancel_all.assert_called_once_with(keep=KEPT_JOBS)
-    assert KEPT_JOBS == frozenset({PORTRAIT_REFRESH_JOB_ID})
+    scheduler.cancel_all.assert_called_once()
+    assert frozenset(scheduler.cancel_all.call_args.kwargs["keep"]) == frozenset({"pfp_daily"})
     assert result.scheduled_jobs == 3
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#544: the pack keeps a job list of its own, not the jobs the parts hand back",
+)
+async def test_the_pack_keeps_every_job_each_part_hands_back(db_path):
+    """Two parts signed up to the pack each hand back a job of their own to keep, one of them
+    two: the pack clears the scheduled work but the three, the union of what the parts handed
+    back rather than the last answer, and keeps no job no part named."""
+    from leaguebot.core.services.upkeep.pack_service import KEPT_JOB_IDS
+    from leaguebot.framework.utils.hooks import AwaitedHook
+
+    await _seed(db_path)
+    scheduler = _scheduler()
+    hook = AwaitedHook()
+
+    async def _first(db):
+        return {KEPT_JOB_IDS: frozenset({"a_standing_job", "another_standing_job"})}
+
+    async def _second(db):
+        return {KEPT_JOB_IDS: frozenset({"a_third_standing_job"})}
+
+    hook.subscribe(_first)
+    hook.subscribe(_second)
+
+    await pack(db_path, scheduler, bot_packed=hook, now=NOW, **ACTOR)
+
+    scheduler.cancel_all.assert_called_once()
+    assert frozenset(scheduler.cancel_all.call_args.kwargs["keep"]) == frozenset(
+        {"a_standing_job", "another_standing_job", "a_third_standing_job"}
+    )
 
 
 async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
