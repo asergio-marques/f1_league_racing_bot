@@ -552,7 +552,6 @@ async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_bu
             if row["name"] == "post"] == [True, True, True]
 
 
-@pytest.mark.xfail(strict=True, reason=UNRECORDED)
 async def test_a_stop_notice_whose_message_cannot_be_recorded_is_not_posted_again(env, caplog):
     """A stop notice lands in the log channel, but a database fault refuses to record which
     message it is: the fault is logged on the host and the stop stands. At the one-minute try the

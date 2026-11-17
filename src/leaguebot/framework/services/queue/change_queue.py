@@ -392,6 +392,10 @@ class ChangeQueue:
         # When each stopped job's notice was last attempted, for the job whose notice has not
         # landed: the schedule of its re-posting. Lost at a restart, which posts it at once.
         self._notice_tried: dict[int, datetime] = {}
+        # A stop notice that has landed in the log channel but whose message could not be saved
+        # on its job, by job id: the channel and the message. Posted again would be a second
+        # notice, so the save is tried again instead. Lost at a restart; see `_post_notice`.
+        self._unsaved_notices: dict[int, tuple[int, int]] = {}
         # A job a Retry has made due, with who pressed it and when its next try stood before: a
         # Retry that fails writes its own line and leaves the schedule as it was.
         self._retrying: dict[int, tuple[str, str | None]] = {}
@@ -1074,6 +1078,7 @@ class ChangeQueue:
         the changes they belong to."""
         self._held.clear()
         self._notice_tried.clear()
+        self._unsaved_notices.clear()
         self._retrying.clear()
 
     async def stop(self) -> None:
@@ -2138,17 +2143,22 @@ class ChangeQueue:
         """
         self._notice_tried[job_id] = self._clock()
         try:
-            admins = await self._admins_to_notify(change["lane"])
-            message = await self._router.post_notice(
-                stop_line(job_id, job, change["what"], self._named(change), fault,
-                          change["lane"], admins=admins),
-                QueueStopView(self),
-                interaction=self._answerable(change),
-                mention_role=admins,
-            )
-            if message is None:
-                return
-            await self._keep_notice(job_id, message.channel.id, message.id)
+            landed = self._unsaved_notices.get(job_id)
+            if landed is None:
+                admins = await self._admins_to_notify(change["lane"])
+                message = await self._router.post_notice(
+                    stop_line(job_id, job, change["what"], self._named(change), fault,
+                              change["lane"], admins=admins),
+                    QueueStopView(self),
+                    interaction=self._answerable(change),
+                    mention_role=admins,
+                )
+                if message is None:
+                    return
+                landed = (message.channel.id, message.id)
+                self._unsaved_notices[job_id] = landed
+            await self._keep_notice(job_id, *landed)
+            self._unsaved_notices.pop(job_id, None)
         except Exception:  # noqa: BLE001 — the stop stands; the notice is posted again
             log.error("could not post the stop notice of job %s (change %s)", job_id,
                       change["id"], exc_info=True)
