@@ -1,4 +1,4 @@
-"""Round model, and the plain data that places a round's timed events: its job kinds and windows."""
+"""Round model, and `RoundLead`, the plain record a module hands core for each of a round's timers."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone

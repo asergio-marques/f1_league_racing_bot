@@ -192,7 +192,7 @@ class RoundJobs:
         Args:
             only: When given, restricts the removal to jobs whose event type — as
                 `_job_event_type` reads it off the job ID — is in the set.  Callers
-                cancelling a *round* want the default, which takes all nine of its jobs; a
+                cancelling a *round* want the default, which takes every one of its jobs; a
                 caller switching **one module** off wants that module's prefixes and nothing
                 else, or it takes the other modules' work down with it. The filter reads the ID's
                 prefix, which is the kind the job is stored with, so it never has to guess a job's

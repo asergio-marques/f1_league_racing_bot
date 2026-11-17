@@ -115,7 +115,8 @@ class LeagueBot(commands.Bot):
     preview_sources: PreviewSources
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService
-    #: The moment the timers a round wants set are read (the season's approval): each module signs
+    #: The moment the timers a round wants set are read (the season's approval, for its date check
+    #: and its arming; the season review; and a clean-ups-only re-arm): each module signs
     #: up a function handing back the `RoundLead` records of its own timers, handed nothing, and
     #: core arms them (`RoundJobs.arm_leads`) under its own naming, so that it names no module's
     #: kind of timer. The builder makes it and signs them up in the order core reads them;
