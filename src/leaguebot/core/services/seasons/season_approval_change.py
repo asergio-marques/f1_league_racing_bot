@@ -47,6 +47,7 @@ from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     AuditRecord,
     ChangeOrigin,
+    DrawnNotices,
     FollowOn,
     GuildUnavailable,
     PlannedStep,
@@ -78,6 +79,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
+    drawn_notices_of,
 )
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
@@ -90,7 +92,7 @@ from leaguebot.core.services.seasons.season_service import (
 from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.seasons.season_lifecycle_service import kept_line
 from leaguebot.framework.utils.league_server import league_guild
-from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import drawn_notices_section, refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService
@@ -704,11 +706,9 @@ def season_approval_change(
             f"(ID: {applied.get('season_id', ctx.payload['season_id'])})"
         )
         text += approval_checks.not_done_section(_left(ctx, steps, told=False))
-        notices = _calendar_notices(ctx)
-        if notices:
-            text += "\n\n⚠️ **Calendar images**\n" + "\n".join(
-                f"  • {line}" for line in notices
-            )
+        section = drawn_notices_section(_drawn_notices(ctx))
+        if section:
+            text += "\n\n" + section
         return text
 
     def doing(payload: dict[str, Any]) -> str:
@@ -869,15 +869,11 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
     return lines
 
 
-def _calendar_notices(ctx: OutcomeContext) -> list[str]:
-    """The reply's "Calendar images" section: the notices a calendar's drawing carried, one per
-    division. A calendar fallen back to text is not reported here — that is the posting's own
-    log line — and the notices themselves are a line of the posting's job, in the log channel, so
-    this reply carries them without the approval logging them again (Constitution XIV.4, "where
-    each is reported", "how they are reported")."""
-    return [
-        f"{(view.result or {})['division']}: {detail}"
-        for view in ctx.steps
-        if view.name == POST_CALENDAR and not _discarded(view)
-        for detail in (view.result or {}).get("notices") or []
-    ]
+def _drawn_notices(ctx: OutcomeContext) -> tuple[DrawnNotices, ...]:
+    """The notices of the pictures the approval drew, for the reply's one "Image notices" section:
+    each division's calendar, labelled and linked as its posting job's own log line is. A picture
+    fallen back to text is not reported here — that is the posting's own log line — and the
+    notices themselves are a line of the posting's job, in the log channel, so this reply carries
+    them without the approval logging them again (Constitution XIV.4, "where each is reported",
+    "how they are reported")."""
+    return drawn_notices_of(ctx.steps, POST_CALENDAR)
