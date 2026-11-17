@@ -408,6 +408,11 @@ def advance_step(queue: ChangeQueue, db_path: str) -> AdvanceStep:
     reads the round's actual status rather than always saying "penalty review". The round's results
     job is already down by then (`run_advance_step`): a refusal means the submission is open, so
     the job has run.
+
+    **Where the queue drops the opening as not due, it replies so and records nothing** (core
+    specification, "Test mode"), as a check-in step does: the round was cancelled or deleted, or its
+    submission opened, between advance choosing the step and the queue checking it, which waits out
+    a held queue first, so the check above can be stale by then.
     """
 
     async def step(entry: PhaseEntry) -> AdvanceOutcome:
@@ -428,13 +433,17 @@ def advance_step(queue: ChangeQueue, db_path: str) -> AdvanceStep:
                 f"progress. Please submit results in the submission channel before advancing."
             )
         try:
-            await queue.ask(
+            change = await queue.ask(
                 KIND, {"round_id": entry["round_id"]},
                 what=f"opening round {number}'s results submission in {division}",
                 origin=ChangeOrigin.BOT,
             )
         except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
             raise AdvanceStepFailed("the round start") from exc
+        if change is None:
+            return AdvanceOutcome.not_due(
+                f"⏩ The result submission of **{division}** — **Round {number}** was not due."
+            )
         return AdvanceOutcome.asked(
             f"⏩ The result submission of **{division}** — **Round {number}** "
             f"(**{entry['track_name']}**) is on the change queue: its submission channel "

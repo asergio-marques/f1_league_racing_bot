@@ -864,10 +864,7 @@ CHECK_IN_WHAT = {
 #: Each step advance asks of the change queue and can find dropped as not due: its phase, its
 #: kind, and the name its reply gives it. A round's start (4) opens its results submission (#555).
 NOT_DUE_STEPS = [
-    pytest.param(
-        4, "results.submission.open", "result submission", id="round start",
-        marks=pytest.mark.xfail(strict=True, reason="#555: advance says a dropped opening is queued"),
-    ),
+    pytest.param(4, "results.submission.open", "result submission", id="round start"),
     *CHECK_IN_STEPS,
 ]
 
