@@ -156,7 +156,8 @@ it only to place it; the rules governing it belong to its own specification.
 ### Modules
 - Five modules shall be available, each specified in its own document: signup, results and standings, attendance, weather, and image generation.
 - Every module shall be disabled upon a server until a league admin enables it. A bot with no module enabled holds a calendar and nothing more.
-- The rules governing a module — what enabling it requires, what disabling it clears, and what it depends upon — belong to that module's specification.
+- The rules governing a module — what enabling it requires, what disabling it stops, and what it depends upon — belong to that module's specification.
+- Disabling a module shall keep every setting of it, the channels and roles it names included, and enabling it again shall find them as they stood. Only a module that has never been enabled starts from its packaged values. Decided 2026-09-25 (#282).
 - A disabled module shall produce nothing. While a module is disabled the bot shall neither compute, record nor post any of that module's output, whatever the path arrives at it — a scheduled job, a restart, or a command that amends work arranged while the module was still enabled.
     - Nothing done while a module was disabled shall be recorded as that module's work, so that enabling the module later does not find its work already done.
 - Disabling a module shall stop that module's work and no other's. Scheduled work belonging to a module that remains enabled shall continue for every round still to come, and shall be cancelled only by its own module being disabled, by the round or season it belongs to ending, or by a pack or a factory reset. Where a module's specification states that another module depends upon it, disabling it shall disable the dependent module too, and that cascade shall be reported.

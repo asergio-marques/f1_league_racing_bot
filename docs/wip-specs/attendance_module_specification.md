@@ -9,6 +9,7 @@
     - A check-in call already posted shall not be withdrawn, but its buttons shall record no further answer.
     - The attendance sheet standing in each division shall not be taken down. Decided 2026-11-13.
     - The season's scheduled work shall not be destroyed by the disabling, so that nothing is lost that only confirming a season's placements could create again.
+- Disabling the attendance module shall keep its settings and each division's check-in and attendance channels, whether it is disabled directly or with the results & standings module, and enabling it again shall find them as they stood. Only the first time it is enabled shall it start from the values given below. Decided 2026-09-25 (#282).
 - Attendance module activation status shall be displayed in the configuration review and the placements review.
 - This module must work with the fake driver rosters used in test mode.
 
