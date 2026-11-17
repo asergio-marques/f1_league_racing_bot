@@ -353,6 +353,7 @@ season through `active_season_driver_ids`.
 |---|---|
 | `drivers_deleted` | `discard_portraits`: the portraits of accounts no longer drawn |
 | `fingerprint_areas_read` | `fingerprint_areas`: image's configuration, toggles and tier colours |
+| `bot_packed` | `bot_packed_on`: hands back the daily refresh's job id under `KEPT_JOB_IDS`, so the pack keeps it |
 | `starting` | the `portrait refresh job` step, under image's switch key |
 
 ---
