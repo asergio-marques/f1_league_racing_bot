@@ -657,13 +657,14 @@ def calendar_sync_change(seasons: "SeasonService", drawing: ImageDrawing) -> Cha
                 f"⛔ The calendar for **{name}** was not posted: a league admin discarded it. "
                 f"The previous calendar still stands; run `/division calendar-sync` again."
             )
+        section = drawn_notices_section(drawn_notices_of(ctx.steps, POST_CALENDAR))
         rejected = rejection(ctx)
         if rejected is not None:
-            return rejected
+            # A refused render can still have noted things, which are in the log all the same.
+            return f"{rejected}\n\n{section}" if section else rejected
         result = (posted.result if posted is not None else None) or {}
         drawn = "image" if result.get("posted_as_image") else "text"
         lines = [f"✅ Calendar for **{name}** reposted as {drawn}."]
-        section = drawn_notices_section(drawn_notices_of(ctx.steps, POST_CALENDAR))
         if section:
             lines.extend(("", section))
         return "\n".join(lines) + not_deleted(ctx)
