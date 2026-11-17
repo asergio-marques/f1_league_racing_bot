@@ -130,7 +130,6 @@ EVERY_ROUND_JOB = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 @pytest.mark.parametrize("kind, arm, job_id", EVERY_ROUND_JOB)
 async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_id):
     """Every kind of round job is signed up with a handler of its own, and core's round jobs arm
@@ -166,7 +165,6 @@ async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_
     assert calls == {kind: [(_ROUND_ID,)]}
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back(services):
     """Round 3 of division tier 1 in season 7 (id 21) starts 20 hours from now, its last notice
     24 hours before the race and its deadline 2 hours before. Its check-in timers were armed six

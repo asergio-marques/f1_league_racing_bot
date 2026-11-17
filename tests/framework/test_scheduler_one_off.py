@@ -33,9 +33,6 @@ from tests.support.change_queue import (
     stopped_job,
 )
 
-#: Why a test fails until the scheduler is handed a report to the log channel.
-NOT_YET = "#453: the scheduler takes no report to the log channel"
-
 
 def _dispose(service: Any) -> None:
     """Stop the scheduler and close the job store's connections, so its file can be deleted."""
@@ -81,7 +78,6 @@ async def _settle() -> None:
         await asyncio.sleep(0.01)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_one_off_timer_is_armed_with_no_lateness_limit(services):
     """A lock warning's clear is armed for an hour from now: the scheduler holds one job for it,
     and that job has no lateness limit."""
@@ -95,7 +91,6 @@ async def test_a_one_off_timer_is_armed_with_no_lateness_limit(services):
     assert job.misfire_grace_time is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_one_off_timer_hands_its_key_to_the_callback_the_builder_registered(services):
     """Two kinds are registered, and a timer of one is armed a moment from now for the message
     77: when it fires, its kind's callback alone is called, handed 77."""
@@ -121,7 +116,6 @@ async def test_a_one_off_timer_hands_its_key_to_the_callback_the_builder_registe
     assert handed == {"review_lock_clear": [77], "amend_lapse": []}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_one_off_timer_armed_again_for_the_same_key_replaces_the_earlier(services):
     """An amendment's five minutes are armed, then armed again for a later prompt: one timer
     stands for that amendment, at the later time. A timer of another kind for the same key, and
@@ -146,7 +140,6 @@ async def test_a_one_off_timer_armed_again_for_the_same_key_replaces_the_earlier
     assert sorted(job.trigger.run_date for job in service._scheduler.get_jobs()) == [first, first]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_timer_and_a_job_say_when_they_are_due(services):
     """A held channel's deletion is armed for an hour from now: the scheduler says when the timer
     is due by its kind and key, and when the job under its id is, and says nothing of a timer
@@ -168,7 +161,6 @@ async def test_a_timer_and_a_job_say_when_they_are_due(services):
     assert service.timer_due("signup_channel_delete", "6101") is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_one_off_timer_missed_while_the_bot_was_down_fires_at_start(services):
     """A correction's five minutes were armed, and the bot went down before they ran out and
     stayed down two hours past them. When the bot starts again and the builder registers the
@@ -194,7 +186,6 @@ async def test_a_one_off_timer_missed_while_the_bot_was_down_fires_at_start(serv
     assert handed == [4343]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(services):
     """A correction's five minutes ran out two hours ago, while the bot was down. Started again
     paused, as start-up starts it, the scheduler can read the timer from its job store but does
@@ -226,7 +217,6 @@ async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(se
     assert handed == [4343]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_backup_taken_during_start_up_leaves_the_scheduler_paused(services):
     """A correction's timer fell due while the bot was down, and start-up holds the scheduler
     paused while its steps run. A backup taken meanwhile pauses the scheduler around its copy
@@ -259,7 +249,6 @@ async def test_a_backup_taken_during_start_up_leaves_the_scheduler_paused(servic
     assert handed == [4343]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_path):
     """A round's review channel, 707, holds a lock warning whose clear is armed. The league lane
     is stopped at a change of its own. When the timer fires, the callback the builder registered
@@ -369,7 +358,6 @@ EVERY_ARMING = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("arm, job_id, key", EVERY_ARMING)
 async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, key):
     """A job of the kind `a_kind` is armed on a paused scheduler, and the kind's handler raises
@@ -415,7 +403,6 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, 
 RUNNER_REFERENCE = "leaguebot.framework.services.jobs.scheduler:_one_off_timer_job"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(services):
     """Every way the scheduler arms a job is used, a one-off timer's included, on a paused
     scheduler; every job is then read back as the job store's file holds it, and each names the

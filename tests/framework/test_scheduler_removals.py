@@ -93,7 +93,6 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
         assert result == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     """`has_job` answers whether a job is armed and not yet fired, read of a real job store: the
     signup close timer, armed a day ahead, stands until it is disarmed, and a job never armed

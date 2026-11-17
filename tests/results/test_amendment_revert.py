@@ -548,7 +548,6 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     assert [call[0] for call in scheduler.method_calls] == ["arm_every"]
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
     """Results arms its sweep on a paused scheduler, with a handler signed up for the kind
     `amendment_sweep`: the job stands under `amend_sweep`, its callable is the scheduler's one
@@ -586,7 +585,6 @@ async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
         service._scheduler._jobstores["default"].engine.dispose()
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_cancelling_the_sweep_removes_it_and_tolerates_a_second_call(tmp_path, monkeypatch):
     """Results arms its sweep on a scheduler, then cancels it twice, as turning results off
     twice would: the scheduler holds no `amend_sweep` job, and the second cancel, finding none,

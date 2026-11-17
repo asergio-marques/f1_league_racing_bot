@@ -1059,14 +1059,15 @@ async def build(settings: Settings) -> LeagueBot:
     bot.config_service = ConfigService(settings.db_path)
     bot.league_settings = bot.config_service
     bot.season_service = SeasonService(settings.db_path)
-    bot.scheduler_service = SchedulerService(
-        settings.db_path, settings.jobstore_path
-    )
-    bot.round_jobs = RoundJobs(bot.scheduler_service, settings.db_path)
     bot.output_router = OutputRouter(
         bot, bot.league_settings, retry_db_path=settings.db_path,
         now=lambda: bot.change_queue.now(),
     )
+    # The scheduler reports a timed job that failed to the log channel, so the router is built first.
+    bot.scheduler_service = SchedulerService(
+        settings.db_path, settings.jobstore_path, report=bot.output_router.post_log
+    )
+    bot.round_jobs = RoundJobs(bot.scheduler_service, settings.db_path)
     # The queue is handed the router, and is started by start-up, after the recoveries.
     from leaguebot.framework.services.queue.change_queue import ChangeQueue
 

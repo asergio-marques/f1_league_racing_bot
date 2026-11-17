@@ -51,7 +51,6 @@ def test_starting_makes_the_service_the_one_jobs_reach():
     service._scheduler.start.assert_called_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_constructing_a_service_does_not_redirect_running_jobs(tmp_path):
     """Only `start` sets the global — a second service built for a reset or a test must not
     take jobs from the one already running."""

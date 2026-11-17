@@ -69,7 +69,6 @@ def workspace(tmp_path):
     _remove_database(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_the_jobstore_defaults_to_its_own_file_beside_the_database(workspace):
     db_path, build = workspace
 
@@ -84,7 +83,6 @@ def test_the_jobstore_defaults_to_its_own_file_beside_the_database(workspace):
     assert os.path.abspath(service.jobstore_path) != os.path.abspath(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_an_explicit_jobstore_path_is_honoured(workspace, tmp_path):
     _db_path, build = workspace
     chosen = str(tmp_path / "elsewhere" / "jobs.db")
@@ -95,7 +93,6 @@ def test_an_explicit_jobstore_path_is_honoured(workspace, tmp_path):
     assert os.path.exists(chosen), "the file should be created ready for the job store"
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_the_jobstore_file_is_in_wal_mode(workspace):
     """Layer 1 only reaches the league database; this file needs WAL in its own right."""
     _db_path, build = workspace
@@ -110,7 +107,6 @@ def test_the_jobstore_file_is_in_wal_mode(workspace):
     assert mode.lower() == "wal"
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_the_jobstore_keeps_full_durability(workspace):
     """FULL here too: a scheduled job lost to a power cut is worse than a slower commit.
 

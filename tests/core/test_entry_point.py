@@ -917,8 +917,6 @@ async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     assert starts == [()]
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the builder hands the scheduler no report to the log "
-                                       "channel")
 async def test_a_timed_job_s_failure_line_is_kept_when_the_log_channel_refuses_it(
         tmp_path, monkeypatch, caplog):
     """The bot `build` makes, its league set up and its log channel refusing every post (Missing

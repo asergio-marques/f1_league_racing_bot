@@ -3272,7 +3272,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("framework/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("framework/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("framework/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
-    ("framework/services/jobs/scheduler.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
 }
 

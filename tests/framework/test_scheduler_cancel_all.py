@@ -34,7 +34,6 @@ def _arm_standing_job(service: SchedulerService) -> None:
     service._scheduler.add_job(_noop, "interval", hours=24, id=KEPT_JOB_ID)
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_every_job_goes_but_those_kept(tmp_path):
     service = SchedulerService(str(tmp_path / "bot.db"), report=AsyncMock())
     try:
@@ -54,7 +53,6 @@ async def test_every_job_goes_but_those_kept(tmp_path):
         _dispose(service)
 
 
-@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_nothing_kept_leaves_no_job(tmp_path):
     service = SchedulerService(str(tmp_path / "bot.db"), report=AsyncMock())
     try:
