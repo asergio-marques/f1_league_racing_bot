@@ -809,6 +809,10 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     assert str(raised.value) == fault
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#550: a review's reply lists no notices of the pictures it drew, nor links to them",
+)
 @pytest.mark.parametrize("outcome", ["posted", "refused-then-retried", "lineup-not-drawn"])
 async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
         posting, monkeypatch, tmp_path, outcome):
@@ -828,7 +832,13 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     Where the lineup is not drawn, the image module draws it with its notice and then will not
     draw it (its template has no rows): the lineup's text goes out in its place and the queue does
     not stop. Its notice is still held once, naming the lineup and Pro, beside the job's "Picture
-    not drawn" line for the lineup, never lost with the picture."""
+    not drawn" line for the lineup, never lost with the picture.
+
+    In every case Alex's reply ends in one "Image notices" section listing each picture's notice
+    under the picture's name, "Pro calendar" and "Pro lineup", linked to the log channel's message
+    holding it (Constitution XIV.4; image spec, render notices). Where both pictures were posted,
+    the reply opens "✅ Review posted." and the section follows; where the lineup was not drawn,
+    the fault block comes first and the section after it."""
     from leaguebot.core.services.modules.image_drawing import LineupPicture
     from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
     from tests.support.change_queue import queued_log_lines
@@ -893,6 +903,19 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
         assert len(not_drawn_lines) == 1, logged
         assert "lineup" in not_drawn_lines[0].lower(), not_drawn_lines[0]
         assert "the template has no rows" in not_drawn_lines[0], not_drawn_lines[0]
+    told = updated_reply(interaction)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    for notice, name in ((calendar_notice, "Pro calendar"), (lineup_notice, "Pro lineup")):
+        [held] = [n for n, line in enumerate(posting.bot.log_channel.sent, 1) if notice in line]
+        assert (
+            f"  **{name}** ([see them in the log](https://discord.test/{held}))\n"
+            f"  • {notice}"
+        ) in told, told
+    if not_drawn:
+        assert told.index("⛔ **A graphic could not be drawn for this review.**") < told.index(
+            "\n\n⚠️ **Image notices**\n"), told
+    else:
+        assert "✅ Review posted.\n\n⚠️ **Image notices**\n" in told, told
 
 
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
