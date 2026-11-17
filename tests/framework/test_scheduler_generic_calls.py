@@ -16,6 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -40,7 +41,9 @@ async def service(tmp_path, monkeypatch):
     """A scheduler started paused on its own job store, so that nothing it holds fires; it is
     stopped and its job store closed once the test has run."""
     monkeypatch.setattr(scheduler_module, "_GLOBAL_SERVICE", None)
-    built = SchedulerService(str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"))
+    built = SchedulerService(
+        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"), report=AsyncMock()
+    )
     built.start(paused=True)
     yield built
     _dispose(built)
@@ -109,6 +112,7 @@ EVERY_ARMING_CALL = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 @pytest.mark.parametrize("arm, job_id, key, trigger_is", EVERY_ARMING_CALL)
 async def test_a_generic_call_arms_one_job_under_the_id_kind_and_key_handed(
     service, arm, job_id, key, trigger_is
@@ -143,6 +147,7 @@ async def test_a_generic_call_arms_one_job_under_the_id_kind_and_key_handed(
     assert calls == [() if key is None else (key,)]
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_jobs_lists_each_stored_job_s_id_kind_key_and_next_run(service):
     """One job is armed at a moment for key 9, and one standing daily job: `jobs()` lists both,
     each by its id, its kind, its key (None for the standing job) and when it next runs."""
@@ -156,6 +161,7 @@ async def test_jobs_lists_each_stored_job_s_id_kind_key_and_next_run(service):
     assert listed[("b_job", "b_kind", None)] is not None
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_remove_takes_the_job_away_and_says_whether_it_went(service):
     """A job armed under an id is removed: `remove` says it went and the job is gone; asked
     again for that id, and for an id nothing was armed under, it says nothing went."""
@@ -167,6 +173,7 @@ async def test_remove_takes_the_job_away_and_says_whether_it_went(service):
     assert service.remove("never_armed") is False
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_remove_logs_a_store_fault_and_says_nothing_went(service, caplog, monkeypatch):
     """The job store fails, other than for a job already gone, as a job is removed: `remove`
     raises nothing, says nothing went, and logs a warning with the fault's traceback."""

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -66,7 +66,7 @@ def workspace(tmp_path):
     made: list[SchedulerService] = []
 
     def build() -> SchedulerService:
-        service = SchedulerService(db_path)
+        service = SchedulerService(db_path, report=AsyncMock())
         made.append(service)
         return service
 
@@ -78,6 +78,7 @@ def workspace(tmp_path):
     _remove_database(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     from apscheduler.triggers.cron import CronTrigger
 
@@ -96,6 +97,7 @@ def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     assert job.kwargs in ({"kind": "portrait_refresh"}, {"kind": "portrait_refresh", "key": None})
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
     # The league is told the zone when it names the time; a stored local time would need a
     # zone stored with it and would drift against daylight saving twice a year.
@@ -108,6 +110,7 @@ def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
     assert str(service._scheduler.get_job("pfp_daily").trigger.timezone) == "UTC"
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
     """Started, because a stopped scheduler queues `add_job` and applies
     `replace_existing` only when it flushes -- so a stopped one shows two pending jobs
@@ -130,6 +133,7 @@ async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
         m._GLOBAL_SERVICE = None
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(
     workspace, caplog
 ):

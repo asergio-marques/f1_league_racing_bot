@@ -37,6 +37,7 @@ def _dispose(service) -> None:
         pass
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn(
     tmp_path, monkeypatch, caplog
 ):
@@ -57,7 +58,9 @@ async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_w
     interaction = member_interaction(bot, created_at=datetime.now(timezone.utc))
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
-    service = scheduler_service.SchedulerService(db_path, str(tmp_path / "jobs.db"))
+    service = scheduler_service.SchedulerService(
+        db_path, str(tmp_path / "jobs.db"), report=AsyncMock()
+    )
     found: list[object] = []
     ran = asyncio.Event()
 

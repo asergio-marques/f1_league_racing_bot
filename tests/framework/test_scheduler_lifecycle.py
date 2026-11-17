@@ -12,7 +12,7 @@ them, in `tests/core/test_round_jobs_cancels.py`.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -51,13 +51,14 @@ def test_starting_makes_the_service_the_one_jobs_reach():
     service._scheduler.start.assert_called_once()
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 def test_constructing_a_service_does_not_redirect_running_jobs(tmp_path):
     """Only `start` sets the global — a second service built for a reset or a test must not
     take jobs from the one already running."""
     running = _service()
     running.start()
 
-    second = SchedulerService(str(tmp_path / "bot.db"))
+    second = SchedulerService(str(tmp_path / "bot.db"), report=AsyncMock())
     try:
         assert scheduler_module._GLOBAL_SERVICE is running
     finally:

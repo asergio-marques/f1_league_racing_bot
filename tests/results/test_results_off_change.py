@@ -962,6 +962,7 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
     """Results is on, and the standing sweep that undoes an amendment nobody carried through is
     armed on the bot's scheduler, as turning results on and each start of the bot arm it. The
@@ -976,7 +977,7 @@ async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
 
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
-    scheduler = SchedulerService(seeded.db_path, str(tmp_path / "jobs.db"))
+    scheduler = SchedulerService(seeded.db_path, str(tmp_path / "jobs.db"), report=AsyncMock())
     try:
         bot.scheduler_service = scheduler
         # The change types again, as the builder registers them for this scheduler.

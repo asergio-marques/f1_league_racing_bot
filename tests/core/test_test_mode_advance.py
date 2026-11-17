@@ -557,6 +557,7 @@ async def _noop(kind: str, key: int) -> None:
     return None
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens(tmp_path):
     """A weather-enabled season carries a real future-dated results job; left armed it
     would open a second submission channel after advance had already opened one.
@@ -571,7 +572,7 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
 
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    service = SchedulerService(str(tmp_path / "jobs.db"))
+    service = SchedulerService(str(tmp_path / "jobs.db"), report=AsyncMock())
     try:
         round_jobs = round_jobs_over(service, db_path)
         service.start()

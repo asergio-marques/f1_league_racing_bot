@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from apscheduler.jobstores.base import JobLookupError
@@ -93,6 +93,7 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
         assert result == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     """`has_job` answers whether a job is armed and not yet fired, read of a real job store: the
     signup close timer, armed a day ahead, stands until it is disarmed, and a job never armed
@@ -105,7 +106,7 @@ async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
-    service = SchedulerService(db_path, str(tmp_path / "jobs.db"))
+    service = SchedulerService(db_path, str(tmp_path / "jobs.db"), report=AsyncMock())
     service.start()
     try:
         fire_at = datetime.now(timezone.utc) + timedelta(days=1)

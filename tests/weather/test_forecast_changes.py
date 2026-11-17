@@ -1076,6 +1076,7 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, round_format, 
 
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkeypatch):
     """Round 3 is a mystery round, and every kind is signed up as the builder signs it up. The
     scheduler's runner fired for `weather_p1`, `weather_p2` and `weather_p3` of round 3, as its
@@ -1089,7 +1090,9 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
     from leaguebot.core.services.test_mode import test_mode_service
 
     league = await _league(tmp_path, mystery=True)
-    service = scheduler_service.SchedulerService(league.db_path, str(tmp_path / "jobs.db"))
+    service = scheduler_service.SchedulerService(
+        league.db_path, str(tmp_path / "jobs.db"), report=AsyncMock()
+    )
     # The bot's own advance steps, which the builder signs each kind's step up on beside its
     # timer.
     steps = {"advance_steps": test_mode_service.AdvanceSteps()}
@@ -1516,7 +1519,9 @@ def scheduler(tmp_path, monkeypatch):
     made: list[Any] = []
 
     def build(db_path: str) -> Any:
-        service = scheduler_service.SchedulerService(db_path, str(tmp_path / "jobs.db"))
+        service = scheduler_service.SchedulerService(
+            db_path, str(tmp_path / "jobs.db"), report=AsyncMock()
+        )
         made.append(service)
         return service
 
@@ -1570,6 +1575,7 @@ def _round_3(when: Any) -> Any:
     return SimpleNamespace(id=ROUND, division_id=PRO, round_number=3, scheduled_at=when)
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once(
     tmp_path, scheduler,
 ):
@@ -1608,6 +1614,7 @@ async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_on
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason="#453: the scheduler takes no report to the log channel")
 async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_path, scheduler):
     """Round 3 was raced 25 hours ago, and its Phase 3 forecast (9303) still stands: its clean-up
     fell due an hour ago while the bot was down. The bot comes back: weather's start-up step for
