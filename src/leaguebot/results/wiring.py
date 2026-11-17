@@ -251,12 +251,17 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
-    """Sign results' lines naming its own channels not set or not on the server up to the hook a
-    division's channel faults are read through, handed the module service and the database."""
+    """Sign results' lines naming its own channels not set, not on the server or missing a
+    permission they need up to the hook a division's channel faults are read through, handed the
+    module service, the database and the image module's drawing, which says whether a picture
+    could attach a file."""
     from leaguebot.results.services.module import division_channels
 
     bot.division_channel_faults_read.subscribe(
-        partial(division_channels.division_channel_faults, bot.module_service, bot.db_path)
+        partial(
+            division_channels.division_channel_faults, bot.module_service, bot.db_path,
+            drawing=as_image_drawing(bot.image_drawing),
+        )
     )
 
 

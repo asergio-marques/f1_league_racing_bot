@@ -26,11 +26,6 @@ from tests.support.switches import answer_switch
 SERVER_ID = 9808
 DIVISION_ID = 11
 
-#: Why a test is expected to fail until #449's slice 2a is built.
-NOT_JUDGED_BY_NEEDS = (
-    "#449: results does not yet judge its channels by the permissions their use needs"
-)
-
 CHANNEL_SETTERS = [
     (set_division_results_channel, "results_channel_id"),
     (set_division_standings_channel, "standings_channel_id"),
@@ -197,7 +192,6 @@ async def test_a_results_channel_already_held_is_left_unwritten(tmp_path, setter
     assert _as_text(replaced) == "700001"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)
 async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_path):
     """Division 11's results channel 120 is set, its standings channel 121 gone from the server and
     the server cannot say whether its verdicts channel 122 is there; Am has none of the three.

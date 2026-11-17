@@ -26,6 +26,7 @@ import aiosqlite
 
 from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
+from leaguebot.core.models.channel_needs import ATTACH, READ_HISTORY, SEND, VIEW, Needs
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
@@ -35,6 +36,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 #: Results' three channels, in the order a division's lines read: the column that holds it, what a
 #: league calls it, the command that sets it, and what the review shows where it is not set.
@@ -216,15 +218,45 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> Disc
     return DiscordTargets(created=tuple(sorted(created)), channels=tuple(sorted(found)))
 
 
+async def channel_needs(drawing: "ImageDrawing") -> dict[str, Needs]:
+    """What results' three channels, `results`, `standings` and `verdicts`, need of the bot: the
+    one source of it within results, read by the faults a season's confirmation names and by the
+    gate before a repost, which attendance's recalculation reads for the verdicts channel too.
+
+    Each is posted in, and reposted: the bot finds what it posted last and takes it down, which
+    needs View Channel, Send Messages and Read Message History (`manage_messages` is deliberately
+    absent: the bot deletes only its own posts, which needs no permission). Each also needs Attach
+    Files where the image module answers that its pictures could attach a file
+    (`aspect_attaches_files`, a question the module answers by its switches and not by the state of
+    a template): `results` for results, `standings` for standings, and `verdicts` or
+    `verdict_banner` for the verdicts channel, where attendance's sanction cards go as well.
+    """
+    reposted: Needs = (VIEW, SEND, READ_HISTORY)
+
+    async def attaches(*aspects: str) -> Needs:
+        for aspect in aspects:
+            if await drawing.aspect_attaches_files(aspect):
+                return reposted + (ATTACH,)
+        return reposted
+
+    return {
+        "results": await attaches("results"),
+        "standings": await attaches("standings"),
+        "verdicts": await attaches("verdicts", "verdict_banner"),
+    }
+
+
 async def division_channel_faults(
     modules: "ModuleService",
     db_path: str,
     *,
+    drawing: "ImageDrawing",
     divisions: Mapping[int, str],
     guild: Any = None,
 ) -> dict[int, list[str]]:
-    """Each division's results, standings and verdicts channels, in that order, that are not set
-    or not on the *guild*, by division id; nothing where the results module is off.
+    """Each division's results, standings and verdicts channels, in that order, that are not set,
+    not on the *guild* or lacking a permission their use needs (`channel_needs`, asked of the
+    *drawing*), by division id; nothing where the results module is off.
 
     Subscribed to core's `division_channel_faults_read`, which hands the divisions the
     confirmation judges (id to name) and the server. A division with no fault is given an empty
@@ -233,13 +265,16 @@ async def division_channel_faults(
     if not await modules.is_enabled(SWITCH_KEY):
         return {}
     channels = await _channels_of(db_path)
+    needs = await channel_needs(drawing)
+    setting_of = dict(_SETTINGS)
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         row = channels.get(division_id)
         lines: list[str] = []
         for column, label, command, _unset in _CHANNELS:
             fault = await channel_fault(
-                guild, name, row[column] if row is not None else None, label, command
+                guild, name, row[column] if row is not None else None, label, command,
+                needs[setting_of[column]],
             )
             if fault:
                 lines.append(fault)

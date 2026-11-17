@@ -32,11 +32,6 @@ SERVER_ID = 22070
 SEASON_ID = 7
 USER_ID = 42
 
-#: Why a test is expected to fail until #449's slice 2a is built.
-NOT_JUDGED_BY_NEEDS = (
-    "#449: a channel is not yet judged by the permissions its use needs"
-)
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -222,7 +217,6 @@ async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_
     assert f"**Pro** has no {label} — `{command}`." in channels
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)
 async def test_a_channel_deleted_or_unusable_is_named_with_its_command(db_path):
     """Nothing clears a channel's id when Discord deletes it, so mid-season every channel is
     still set — whether it is still there is the question worth asking (#374). Nor does anything
