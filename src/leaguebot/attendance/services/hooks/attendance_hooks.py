@@ -2,8 +2,8 @@
 
 Core declares the hooks and attendance signs up to them in its wiring (architecture.md, "How
 modules and core fit together"). Each delete clears attendance's own rows on the connection core's
-delete was handed and commits nothing; the readers give core attendance's leads for a round, its lead times, its section
-of a season's review and the channel lines the placements review shows.
+delete was handed and commits nothing; the readers give core attendance's leads for a round, its
+lead times, its section of a season's review and the channel lines the placements review shows.
 """
 
 from __future__ import annotations
