@@ -1,6 +1,26 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-11-17 — v14.16.0 → v14.16.1: PATCH — Principle X, rule 6: which module keeps a shared channel, and an unusable kept channel fails the enable (issue #449)]
+  Version change    : 14.16.0 → 14.16.1
+  Bump rationale    : PATCH: the wording of a rule amended on this same branch (v14.16.0) is
+                      corrected to what the owner decided on 2026-11-17, before any league ran
+                      under it. "Taken while the module was disabled" becomes "holds when the
+                      module is re-enabled", so that of two modules disabled with one channel the
+                      first re-enabled keeps it; and a kept channel the bot can no longer see or
+                      post in, as its module needs, is named among the checks that cannot be made.
+
+  Modified sections :
+    - Principle X, rule 6 (Module configuration isolation) — its middle sentence, as above.
+      Rule 2 is unchanged.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Documents to follow (#449 slice 2): docs/wip-specs/core_specification.md "### Channels" and
+                      "### Modules".
+  Deferred / TODO   : none.
+
 [2026-11-17 — v14.15.1 → v14.16.0: MINOR — Principle X, rules 3 and 6: a disabled module keeps its configuration, and re-enabling checks what it names (issue #449)]
   Version change    : 14.15.1 → 14.16.0
   Bump rationale    : MINOR, sized by how much it matters (the owner, 2026-11-17): what the image
@@ -6149,11 +6169,13 @@ The following rules MUST hold for every optional module:
    configuration, the channels and roles it names included, and MUST clear only the
    module-enabled flag; re-enabling MUST restore that configuration as it stood, but for what
    the check below finds. On re-enabling, each kept channel and role MUST be checked against the
-   server. Each that no longer exists, or that another setting took while the module was
-   disabled (a kept channel yields to another setting while its module is off), MUST be named to
-   the league with the command that sets it again, and one taken by another setting is cleared
-   from the module. The check is a step of the enable: one that cannot be made fails the enable,
-   which rule 2 rolls back. A message id or a scheduled job is not configuration: rules 3 and 4
+   server. Each that no longer exists, or that another setting holds when the module is
+   re-enabled (a kept channel yields to any other setting while its module is disabled, so that
+   of two modules disabled with one channel, the first re-enabled keeps it), MUST be named to the
+   league with the command that sets it again, and one another setting holds is cleared from the
+   module. The check is a step of the enable: one that cannot be made, a kept channel the bot can
+   no longer see or post in as its module needs among them, fails the enable, which rule 2 rolls
+   back. A message id or a scheduled job is not configuration: rules 3 and 4
    govern them.
 
    **Rationale for keeping configuration**: Switching a module off to diagnose a fault must
@@ -9104,4 +9126,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.16.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-17
+**Version**: 14.16.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-17
