@@ -368,8 +368,9 @@ the core specification's ("When the bot stops").
 
 ### Core's round jobs
 
-The scheduler a round's jobs are armed on, its one runner and its job store, is the framework's
-(`framework.md`, "The scheduler").
+The scheduler a round's jobs are armed on, its one callable, `_one_off_timer_job`, which runs each
+handler through the job runner, and its job store, is the framework's (`framework.md`, "The
+scheduler").
 
 `RoundJobs` (`core/services/rounds/round_jobs.py`, on the bot as `round_jobs`) is core's side: it
 arms and cancels a round's jobs, removes any stale season-end job, and reads test mode's pending
@@ -632,8 +633,8 @@ stated exception, core's among them; each docstring there named carries its reas
 | The slash-command sync at start-up | `on_ready`, which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
 
 The framework's failure paths, a command, button or form, a Discord event, an autocomplete, a
-change, a scheduled job, the start-up sweep and the retry loop, and the log writer's containment of
-its own faults, are `framework.md`'s ("Errors and failures").
+change, a scheduled job, a background task, the start-up sweep and the retry loop, and the log
+writer's containment of its own faults, are `framework.md`'s ("Errors and failures").
 
 **Core's refusal and fault types**, each caught by name; the framework's, `Refused` among them,
 are `framework.md`'s:

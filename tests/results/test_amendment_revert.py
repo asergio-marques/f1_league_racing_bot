@@ -560,7 +560,7 @@ async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
     service = scheduler_service.SchedulerService(
-        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db")
+        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"), report=AsyncMock()
     )
     calls: list[tuple] = []
 
@@ -597,7 +597,7 @@ async def test_cancelling_the_sweep_removes_it_and_tolerates_a_second_call(tmp_p
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
     service = scheduler_service.SchedulerService(
-        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db")
+        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"), report=AsyncMock()
     )
     try:
         service.start(paused=True)

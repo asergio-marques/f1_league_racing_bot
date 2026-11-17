@@ -127,6 +127,9 @@ ARRIVING_EXEMPT = {
     # ask is saved or refused: it dies with the waiting ask, as `_trying`'s entries do with their
     # job, and holds no league state (#440, C4).
     ("framework/services/queue/change_queue.py", "_held_turns"): "#440 C4",
+    # The background helper's running tasks, each dropped as it ends: tasks, not league state.
+    # A signup reason's lapse it holds is still cancelled by `clear_pending_reasons` (#453).
+    ("framework/utils/background.py", "_running"): "#453",
 }
 
 #: Stores that hold no league state, and why.
@@ -154,9 +157,6 @@ EXEMPT = {
     # The change types the builder registers at start-up: the bot's wiring, not the league's
     # data (#439).
     ("framework/services/queue/change_queue.py", "_types"),
-    # The log-channel warnings being sent to members, each task dropping itself when done
-    # (#439).
-    ("framework/services/posting/output_router.py", "_tasks"),
     # The interactions whose member has been warned that the log channel failed, by id; each
     # lapses with its interaction's 14 minutes (#439).
     ("framework/services/posting/output_router.py", "_warned"),

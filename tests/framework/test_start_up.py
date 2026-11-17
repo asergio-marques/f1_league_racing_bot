@@ -560,7 +560,10 @@ async def test_a_review_prompt_recovery_that_cannot_read_the_database_fails_its_
         await record.start_up(module, bot.starting)
 
     assert "hub" in record.calls
-    errors = [r for r in caplog.records if r.name == _MODULE and r.levelno >= logging.ERROR]
-    assert [r.getMessage() for r in errors] == ["Start-up step 'expired review prompts' failed"]
+    # The step runs through the job runner, which writes the failure under its own logger and
+    # words: the record is the one that names the step.
+    errors = [r for r in caplog.records
+              if r.levelno >= logging.ERROR and "expired review prompts" in r.getMessage()]
+    assert len(errors) == 1, [r.getMessage() for r in caplog.records]
     [error] = errors
     assert error.exc_info is not None and issubclass(error.exc_info[0], sqlite3.Error)

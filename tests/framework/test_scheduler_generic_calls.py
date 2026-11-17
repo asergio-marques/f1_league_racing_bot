@@ -16,6 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -40,7 +41,9 @@ async def service(tmp_path, monkeypatch):
     """A scheduler started paused on its own job store, so that nothing it holds fires; it is
     stopped and its job store closed once the test has run."""
     monkeypatch.setattr(scheduler_module, "_GLOBAL_SERVICE", None)
-    built = SchedulerService(str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"))
+    built = SchedulerService(
+        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"), report=AsyncMock()
+    )
     built.start(paused=True)
     yield built
     _dispose(built)

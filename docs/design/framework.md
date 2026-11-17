@@ -49,7 +49,8 @@ reads it (`league_settings.py`) and a log line waiting to be delivered (`pending
 
 **The framework's helpers** (`framework/utils/`) are the bot's type (`league_bot.py`), the
 one-league claim and the base classes of the command tree, views and modals (`league_server.py`),
-the hook types (`hooks.py`), the failure paths (`interaction_errors.py`, `answering.py`), the
+the hook types (`hooks.py`), the failure paths (`interaction_errors.py`, `answering.py`, the job
+runner `job_runner.py`), the helper that starts background work and holds it (`background.py`), the
 standard log lines (`log_lines.py`), a member as the log channel names them (`member_names.py`),
 the log filters, `bounded_autocomplete` (`autocomplete.py`), the guard that refuses a post made
 outside a job (`in_a_job.py`), the wait for the catch-up after a restart (`catch_up_gate.py`), the
@@ -225,9 +226,14 @@ writes synchronously on the event loop's thread.
 
 Every job runs through one module-level callable, `_one_off_timer_job`, which looks up the handler
 signed up for the job's kind (`register_timer`, a keyed hook) and hands it the job's key: a round's
-id, a one-off timer's key, or nothing for a standing job. A kind with no handler is passed over with
-a warning. **A job runs in an empty context** (`_JobScheduler`), so it can never take an
-interaction for its own
+id, a one-off timer's key, or nothing for a standing job. **It runs the handler through the job
+runner** (`run_job`, named for the kind and the key), handing it the service's `report`, the log
+channel's `post_log`, which the builder gives the service and which the service holds for its life,
+so that a handler that fails before it asks for its change is reported by one line. Two things
+share the name of a runner here, and are kept apart: `_one_off_timer_job` is the callable the job
+store pins, and the job runner is what it calls. A kind with no handler is passed over with a
+warning, and so is a service not yet started: a fault in the bot's assembly, not in a job. **A job
+runs in an empty context** (`_JobScheduler`), so it can never take an interaction for its own
 (`test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn`).
 A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and restarts").
 
@@ -274,7 +280,7 @@ says what the queue's start does. Which steps are signed up, and in what order, 
 | The scheduler starts paused and is resumed last, so a start-up step's work is asked before any timer that would act on the same thing can fire | `framework/services/jobs/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
 | The queue is held from before the bot connects until the sweep has asked its own, and released whatever the sweep does | `ChangeQueue.hold`, `release` and `sweeping`, `start_up`'s docstring | `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`, `test_the_sweep_releases_held_requests_before_the_queue_starts` |
 | A held typed answer counts as waiting, so a second is turned away | `turn_waiting`, `ChangeQueue.held_turn_channels` | `test_a_second_message_typed_while_the_first_is_held_is_turned_away` |
-| The job runner's module path is pinned, since the job store keeps the path of the callable each job runs | `framework/services/jobs/scheduler.py`'s docstring | `test_every_stored_job_names_the_runner_by_its_pinned_module_path` |
+| The module path of the callable every job runs is pinned (`_one_off_timer_job`), since the job store keeps it | `framework/services/jobs/scheduler.py`'s docstring | `test_every_stored_job_names_the_runner_by_its_pinned_module_path` |
 
 The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
 function"): it is `RetryCog.retry_loop` (`framework/cogs/retry_cog.py`), started by
@@ -327,9 +333,29 @@ stated exception; each docstring there named carries its reason.
 | A Discord event | `on_event_error` (`framework/utils/league_server.py`), attached by the builder with `setattr` |
 | An autocomplete | `bounded_autocomplete` (`framework/utils/autocomplete.py`) |
 | A change | `ChangeQueue._start` and `_run_step`, leading to `_stop`, or to `on_fault` or `on_check_fault` where the type gives one |
-| A scheduled job | `_one_off_timer_job` (`framework/services/jobs/scheduler.py`), which logs a handler's fault on the host |
-| A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each contained and reported to the log channel by `start_up_failure_line` |
-| The retry loop | `RetryCog.retry_loop` and `retry_service.attempt_delivery` |
+| A scheduled job | `_one_off_timer_job` (`framework/services/jobs/scheduler.py`), running the handler through `run_job` (`framework/utils/job_runner.py`), which logs the fault on the host and reports it to the log channel by `job_failure_line` |
+| A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each run through `run_job` and reported to the log channel by `start_up_failure_line` |
+| The retry loop | `RetryCog.retry_loop`, running each cycle through `run_job` with a report that never queues, and `retry_service.attempt_delivery` |
+| A background task | `start_background` (`framework/utils/background.py`), running the work through `run_job`, with a report unless the log channel is what failed or a line of the work's own closes it |
+
+**The job runner never raises**: a fault in its report is logged on the host and dropped, since
+the fault may be the one the report would write to, and a cancellation is no failure and passes
+through (`test_a_report_that_raises_is_logged_and_the_runner_still_does_not_raise`). A caller gives
+it no report where the work's own failure is what the log channel just refused (the router's member
+warnings, the retry worker's own line), or where a line of its own closes the work (the factory
+reset's clean-up). `start_background` holds each task in a set of its own until it ends, for the
+reason `architecture.md` gives ("Background work is started through one helper"), and a task
+cancelled is neither logged nor reported (`test_a_started_task_is_held_until_it_ends`,
+`test_a_cancelled_task_is_neither_logged_nor_reported`).
+
+**The retry loop guards each kept line in its own try**, as the core specification's "When the bot
+stops" requires of a line that faults, so that one line's database fault neither stops the lines
+after it nor the loop (`test_one_entry_that_raises_does_not_stop_the_rest_or_the_loop`). A cycle's
+fault, whole or for some lines, goes through `run_job` with a report that posts through
+`post_own_line` and never queues; the ids of the lines that faulted stay in the host's log. The
+catches of `attempt_delivery` and of `_post_own_line` (which `post_own_line` calls) are place 3's
+(`architecture.md`, "Errors and failures"): a line that cannot be delivered stays kept and counted
+for the next try, and the worker's own line falls back to the host's log.
 
 `report_failure` never raises: its reply and its line are each tried on their own. Its docstring
 gives the reason for the reply's words. The tree steps aside for a command with its own error

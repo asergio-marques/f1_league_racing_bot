@@ -42,6 +42,7 @@ from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
 from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
+from leaguebot.framework.utils.background import start_background
 from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import (
     DRIVER_ROLE_STANDS_FOR,
@@ -656,7 +657,9 @@ class BotCog(commands.Cog):
         async def close(ending: str, detail: str) -> None:
             await self._post_closing_line(log_channel, who, ending, detail)
 
-        self._clean_up = asyncio.create_task(
+        # With no report: the league's database has been wiped and the clean-up's own closing
+        # line is the one line it leaves, so a fault it does not catch goes to the host's log.
+        self._clean_up = start_background(
             _clean_up(
                 interaction.guild,
                 bot_user_id,
@@ -664,7 +667,8 @@ class BotCog(commands.Cog):
                 report,
                 close,
                 now=self.bot.change_queue.now(),
-            )
+            ),
+            name="factory reset clean-up",
         )
 
     async def _post_closing_line(

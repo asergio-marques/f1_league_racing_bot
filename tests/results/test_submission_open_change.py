@@ -399,7 +399,9 @@ async def _fire_job(league: SeasonLeague, monkeypatch: Any, round_: int = ROUND_
             faults.append(fault)
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE",
-                        SimpleNamespace(_timer_callbacks={"results": _handler}))
+                        SimpleNamespace(
+        _timer_callbacks={"results": _handler}, _report=AsyncMock(),
+    ))
     await scheduler_service._one_off_timer_job("results", round_)
     if faults:
         raise faults[0]

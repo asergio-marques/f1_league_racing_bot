@@ -46,6 +46,9 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from leaguebot.framework.utils.interaction_errors import job_failure_line
+from leaguebot.framework.utils.job_runner import Report, run_job
+
 log = logging.getLogger(__name__)
 
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
@@ -79,10 +82,14 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
     Looks up the handler the builder registered for *kind* (`SchedulerService.register_timer`)
     and awaits it, handed *key* (the round id of a round's job, the key of a one-off timer), which
     reads its row again and asks its change. A standing job (the amendment sweep) is armed with no
-    key, and its handler is handed nothing. A kind with no handler is passed over with a warning, and a handler that raises is logged with
-    its traceback, naming the kind and the key: a job's fault belongs to its host's log, and
-    nothing reaches APScheduler, so a standing job outlives one bad run. Core holds no module's
-    rule about what a job does, only which handler is asked.
+    key, and its handler is handed nothing. A kind with no handler is passed over with a warning
+    in the host's log, as is a fired job with no service: both are a fault in the bot's assembly
+    at start. A handler that raises runs through the job runner (`framework.utils.job_runner`,
+    "the one job runner"), which logs the traceback naming the kind and the key and writes one
+    line to the log channel through the service's report; nothing reaches APScheduler, so a
+    standing job outlives one bad run. This callable is the scheduler's own, pinned for the job
+    store; the job runner is what it runs the handler through. Core holds no module's rule about
+    what a job does, only which handler is asked.
     """
     if _GLOBAL_SERVICE is None:
         log.warning("_one_off_timer_job %s fired but _GLOBAL_SERVICE is None — skipping", kind)
@@ -91,12 +98,17 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
     if handler is None:
         log.warning("_one_off_timer_job: no handler registered for %s — skipping", kind)
         return
-    try:
+
+    async def work() -> None:
         outcome = handler() if key is None else handler(key)
         if inspect.isawaitable(outcome):
             await outcome
-    except Exception:  # noqa: BLE001 — one job's fault must not reach the scheduler
-        log.exception("_one_off_timer_job: the %s job for %s failed", kind, key)
+
+    def line(_name: str, error: BaseException) -> str:
+        return job_failure_line(kind, error, key=key)
+
+    name = kind if key is None else f"{kind} (key {key})"
+    await run_job(name, work, report=_GLOBAL_SERVICE._report, line=line)
 
 
 @dataclass(frozen=True)
@@ -162,7 +174,13 @@ class SchedulerService:
     the jobs that went. A cancel that first lists the store (`cancel_all`) does raise where that
     cannot be read, before it removes anything."""
 
-    def __init__(self, db_path: str, jobstore_path: str | None = None) -> None:
+    def __init__(
+        self, db_path: str, jobstore_path: str | None = None, *, report: Report
+    ) -> None:
+        """*report* is the log channel's `post_log`, awaited with the line for a timed job that
+        failed (`_one_off_timer_job`). It is required, so the builder cannot leave a failing job
+        silent, and held for the life of the service."""
+        self._report = report
         self._db_path = db_path
         self._jobstore_path = jobstore_path or default_jobstore_path(db_path)
         prepare_jobstore(self._jobstore_path)

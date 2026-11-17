@@ -6,6 +6,9 @@ it arms it, is the module's (#544), and the scheduler names none.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
+
+import pytest
 
 from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
@@ -32,7 +35,7 @@ def _arm_standing_job(service: SchedulerService) -> None:
 
 
 async def test_every_job_goes_but_those_kept(tmp_path):
-    service = SchedulerService(str(tmp_path / "bot.db"))
+    service = SchedulerService(str(tmp_path / "bot.db"), report=AsyncMock())
     try:
         service.start()
         later = (datetime.now(timezone.utc) + timedelta(days=3)).replace(tzinfo=None)
@@ -51,7 +54,7 @@ async def test_every_job_goes_but_those_kept(tmp_path):
 
 
 async def test_nothing_kept_leaves_no_job(tmp_path):
-    service = SchedulerService(str(tmp_path / "bot.db"))
+    service = SchedulerService(str(tmp_path / "bot.db"), report=AsyncMock())
     try:
         service.start()
         later = (datetime.now(timezone.utc) + timedelta(days=3)).replace(tzinfo=None)

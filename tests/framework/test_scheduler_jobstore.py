@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -56,7 +57,7 @@ def workspace(tmp_path):
     made: list[SchedulerService] = []
 
     def build(jobstore_path: str | None = None) -> SchedulerService:
-        service = SchedulerService(db_path, jobstore_path)
+        service = SchedulerService(db_path, jobstore_path, report=AsyncMock())
         made.append(service)
         return service
 

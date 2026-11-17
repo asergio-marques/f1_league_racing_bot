@@ -12,7 +12,7 @@ them, in `tests/core/test_round_jobs_cancels.py`.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -57,7 +57,7 @@ def test_constructing_a_service_does_not_redirect_running_jobs(tmp_path):
     running = _service()
     running.start()
 
-    second = SchedulerService(str(tmp_path / "bot.db"))
+    second = SchedulerService(str(tmp_path / "bot.db"), report=AsyncMock())
     try:
         assert scheduler_module._GLOBAL_SERVICE is running
     finally:

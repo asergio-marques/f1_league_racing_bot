@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -66,7 +66,7 @@ def workspace(tmp_path):
     made: list[SchedulerService] = []
 
     def build() -> SchedulerService:
-        service = SchedulerService(db_path)
+        service = SchedulerService(db_path, report=AsyncMock())
         made.append(service)
         return service
 

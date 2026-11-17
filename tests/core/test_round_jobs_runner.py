@@ -16,6 +16,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -43,7 +44,7 @@ def services(tmp_path, monkeypatch):
 
     def build() -> Any:
         service = scheduler_service.SchedulerService(
-            str(tmp_path / "bot.db"), str(tmp_path / "jobs.db")
+            str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"), report=AsyncMock()
         )
         made.append(service)
         return service

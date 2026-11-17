@@ -976,7 +976,7 @@ async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
 
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
-    scheduler = SchedulerService(seeded.db_path, str(tmp_path / "jobs.db"))
+    scheduler = SchedulerService(seeded.db_path, str(tmp_path / "jobs.db"), report=AsyncMock())
     try:
         bot.scheduler_service = scheduler
         # The change types again, as the builder registers them for this scheduler.

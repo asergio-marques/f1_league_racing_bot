@@ -40,6 +40,7 @@ import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.pending_message import PendingMessage
+from leaguebot.framework.utils.background import start_background
 from leaguebot.utils.messages import discord_ts
 
 if TYPE_CHECKING:
@@ -235,6 +236,11 @@ async def attempt_delivery(
     On failure: if retry_count >= RETRY_WARN_THRESHOLD a warning is posted to
     the log channel; then mark_failed is called to increment the counter.
     The warning fires every cycle once the threshold is crossed.
+
+    **Its three catch-alls are place 3** of the architecture's catch-all rule (around writing a
+    line to the log channel): a log channel that cannot be read, found or written to fails the
+    delivery, which is logged with its traceback and stays kept and counted for the next try
+    (FR-009). The tries themselves are the worker's, a loop of its own.
     """
     import discord
 
@@ -342,11 +348,17 @@ async def attempt_delivery(
 def _safe_post_log(router: "OutputRouter", message: str) -> None:
     """Schedule a fire-and-forget post of the worker's own *message* (`_post_own_line`).
 
-    Uses asyncio.ensure_future so the caller does not need to await it.
+    Started through `start_background`, which holds the task until it ends, so the caller need not
+    await it and the line is never collected part-way. No *report*: `_post_own_line` never raises,
+    and the log channel is what a failure of it would report to.
     """
-    import asyncio
+    start_background(_post_own_line(router, message), name="retry worker line")
 
-    asyncio.ensure_future(_post_own_line(router, message))
+
+async def post_own_line(router: "OutputRouter", message: str) -> None:
+    """Post one of the worker's own lines by the path that never queues it (`_post_own_line`):
+    the retry loop's report of a cycle that failed. Never raises."""
+    await _post_own_line(router, message)
 
 
 async def _post_own_line(router: "OutputRouter", message: str) -> None:
@@ -359,6 +371,10 @@ async def _post_own_line(router: "OutputRouter", message: str) -> None:
     on every cycle, each of them a stuck row of its own, for as long as the channel stayed
     unreachable. A line that cannot be posted, or written before the bot is set up, goes to the
     host's log at WARNING instead. Never raises.
+
+    **Its catch-all is place 3** of the architecture's catch-all rule (around writing a line to the
+    log channel): the worker's own line is the one it falls back to the host's log for, since the
+    log channel is what failed.
     """
     try:
         channel = await router.log_destination()

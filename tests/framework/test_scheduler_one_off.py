@@ -18,6 +18,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -48,15 +49,17 @@ def _dispose(service: Any) -> None:
 @pytest.fixture
 def services(tmp_path, monkeypatch):
     """Build scheduler services on one league database and one job store, as the bot does at each
-    start; every one is stopped and its job store closed once the test has run."""
+    start, each handed *report* (a fresh `AsyncMock` where none is given) as its report to the log
+    channel; every one is stopped and its job store closed once the test has run."""
     from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
     made: list[Any] = []
 
-    def build() -> Any:
+    def build(report: Any = None) -> Any:
         service = scheduler_service.SchedulerService(
-            str(tmp_path / "bot.db"), str(tmp_path / "jobs.db")
+            str(tmp_path / "bot.db"), str(tmp_path / "jobs.db"),
+            report=report if report is not None else AsyncMock(),
         )
         made.append(service)
         return service
@@ -359,8 +362,11 @@ EVERY_ARMING = [
 async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, key):
     """A job of the kind `a_kind` is armed on a paused scheduler, and the kind's handler raises
     when the job fires: the fault is logged at ERROR with its traceback, naming the kind and the
-    key, and nothing is raised to the scheduler."""
-    service = services()
+    key, and nothing is raised to the scheduler. The service's report to the log channel is
+    awaited once, with the timed job's failure line: it names the kind, the key labelled as a key
+    where the job has one, and the kind of fault, never its message (#453)."""
+    report = AsyncMock()
+    service = services(report=report)
 
     async def _fails(*_args: Any) -> None:
         raise RuntimeError("the handler broke")
@@ -380,6 +386,17 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, 
     assert "a_kind" in record.getMessage()
     if key is not None:
         assert str(key) in record.getMessage()
+
+    report.assert_awaited_once()
+    [line] = report.await_args.args
+    assert line.startswith("❌ The bot's timed job ")
+    assert "a_kind" in line
+    assert "RuntimeError" in line
+    assert "the handler broke" not in line
+    if key is None:
+        assert "(key" not in line
+    else:
+        assert f"(key {key})" in line
 
 
 #: The one runner, as the job store saves it for every job: its module's path and its name.

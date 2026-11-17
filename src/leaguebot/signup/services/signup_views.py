@@ -24,6 +24,7 @@ import discord
 from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
+from leaguebot.framework.utils.background import start_background
 from leaguebot.framework.utils.interaction_errors import report_failure
 from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
 from leaguebot.framework.utils.league_server import (
@@ -50,11 +51,12 @@ log = logging.getLogger(__name__)
 #
 # **A pending reason lapses after five minutes** (`_REASON_LAPSE_SECONDS`), and nothing is done:
 # the manager is told, one lapse line is written, and the signup still awaits review. The
-# lapse is an asyncio task kept in the entry under "lapse" — never a bare `create_task`, whose
-# reference the loop does not hold, and never an APScheduler job, which would outlive a restart
-# that drops the entry. It acts only while its own entry is the one pending, so a later press
-# that has put another in its place is left to its own five minutes; a reason that arrives takes
-# the entry and cancels the task. A restart drops a pending reason unrecorded: the store is in
+# lapse is a task started through `start_background` and kept in the entry under "lapse" — never a
+# bare `create_task`, whose reference the loop does not hold, and never an APScheduler job, which
+# would outlive a restart that drops the entry. A fault in it is logged and written to the log
+# channel as one line, through the router's `post_log`. It acts only while its own entry is the
+# one pending, so a later press that has put another in its place is left to its own five minutes;
+# a reason that arrives takes the entry and cancels the task. A restart drops a pending reason unrecorded: the store is in
 # memory, and the press that began it has been logged. `clear_pending_reasons` drops every entry
 # and cancels every lapse, so a pack or a factory reset leaves none to fire into a changed league.
 _PENDING_REASONS: dict[tuple[int, int], dict] = {}
@@ -359,7 +361,11 @@ class AdminReviewView(LeagueView):
         )
         # Started last, so the lapse's line can never come before the press's own.
         if _PENDING_REASONS.get(key) is entry:
-            entry["lapse"] = asyncio.create_task(_lapse_pending_reason(key, entry))
+            entry["lapse"] = start_background(
+                _lapse_pending_reason(key, entry),
+                name="signup reason lapse",
+                report=self._router.post_log,
+            )
 
     @discord.ui.button(label="Request Changes", style=discord.ButtonStyle.secondary, custom_id="admin_request_changes")
     async def request_changes_button(

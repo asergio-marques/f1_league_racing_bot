@@ -51,8 +51,6 @@ PASS = {
     "weather": "#287",
     "image": "#288",
 }
-#: One failure path for timed jobs, events and background tasks.
-BACKGROUND_FAILURES = "#453"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -517,9 +515,7 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
-    ("framework/services/posting/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
-}
+KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_no_background_task_is_started_and_dropped():
@@ -3084,6 +3080,10 @@ CATCH_ALLS_ALLOWED = {
     ("image/utils/svg_document.py", "_contained"):
         "place 4, around work run in a worker thread: the error is handed back as plain text and "
         "raised again on the loop, so that nothing parsed leaves the thread with it",
+    ("framework/utils/job_runner.py", "run_job"):
+        "place 1, the failure path of timed work: the traceback goes to the host's log and one "
+        "line to the log channel, the runner never raising; and place 3, around reporting that "
+        "failure, where the report itself might fail",
     ("framework/utils/interaction_errors.py", "report_failure"):
         "place 3, around reporting a failure, where the report itself might fail",
     ("framework/utils/league_server.py", "on_event_error"):
@@ -3097,6 +3097,12 @@ CATCH_ALLS_ALLOWED = {
     ("framework/services/posting/output_router.py", "OutputRouter._enqueue_if_configured"):
         "place 3, around keeping for retry a log line that could not be posted, the router's own "
         "containment",
+    ("framework/services/posting/retry_service.py", "attempt_delivery"):
+        "place 3, around writing a line to the log channel: a line that cannot be delivered stays "
+        "kept and counted for the next try",
+    ("framework/services/posting/retry_service.py", "_post_own_line"):
+        "place 3, around writing the worker's own line to the log channel: one that cannot be "
+        "posted falls back to the host's log",
     ("framework/services/posting/output_router.py", "OutputRouter.strip_view"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
@@ -3265,11 +3271,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("framework/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("framework/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
-    ("framework/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
-    ("framework/services/jobs/scheduler.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
-    ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
 }
 
 

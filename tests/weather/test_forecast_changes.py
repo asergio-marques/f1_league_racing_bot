@@ -1089,7 +1089,9 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
     from leaguebot.core.services.test_mode import test_mode_service
 
     league = await _league(tmp_path, mystery=True)
-    service = scheduler_service.SchedulerService(league.db_path, str(tmp_path / "jobs.db"))
+    service = scheduler_service.SchedulerService(
+        league.db_path, str(tmp_path / "jobs.db"), report=AsyncMock()
+    )
     # The bot's own advance steps, which the builder signs each kind's step up on beside its
     # timer.
     steps = {"advance_steps": test_mode_service.AdvanceSteps()}
@@ -1516,7 +1518,9 @@ def scheduler(tmp_path, monkeypatch):
     made: list[Any] = []
 
     def build(db_path: str) -> Any:
-        service = scheduler_service.SchedulerService(db_path, str(tmp_path / "jobs.db"))
+        service = scheduler_service.SchedulerService(
+            db_path, str(tmp_path / "jobs.db"), report=AsyncMock()
+        )
         made.append(service)
         return service
 

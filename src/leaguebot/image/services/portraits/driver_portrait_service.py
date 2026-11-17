@@ -454,58 +454,57 @@ async def run_daily_refresh(bot: LeagueBot, images: ImageConfigService, *, now: 
     time of day it is due at (`MISSED_AFTER`), skipping it, since the job is armed with no
     lateness limit of its own.
 
-    Never raises. It is an APScheduler job, and an exception here would be logged into a void
-    the league never reads.
+    It has no catch-all: a fault in it as a whole (the switch, the configuration, the roster)
+    reaches the job runner the scheduler runs it through, which logs it and writes the timed job's
+    line to the log channel (`docs/design/architecture.md`, "Errors and failures"). A single
+    portrait that cannot be fetched or written is `refresh_portraits`' to pass over, and reaches
+    the host's log alone.
     """
-    try:
-        if not await images_are_on(bot.db_path):
-            return 0
-        config = await images.get_config()
-        if config is None or not getattr(config, "use_pfp", False):
-            return 0
-        if not getattr(config, "pfp_daily", False):
-            return 0
-        time_of_day = getattr(config, "pfp_daily_time", None)
-        if time_of_day and _fired_late(now, str(time_of_day)):
-            log.info("driver portraits: the daily refresh fired late and is skipped")
-            return 0
-
-        from leaguebot.framework.utils.league_server import league_guild
-
-        guild = await league_guild(bot)
-        if guild is None:
-            log.warning("driver portraits: the league's server is not reachable")
-            return 0
-
-        from leaguebot.image.services.render.image_render_service import resolve_configured_directories
-
-        directories, _faults = resolve_configured_directories(
-            config,
-            (("driver", "driver_image_directory"),),
-            image_type="driver_portraits",
-        )
-        directory = directories.get("driver")
-        if directory is None:
-            return 0
-
-        members = []
-        for user_id in await assigned_driver_ids(bot.db_path):
-            member = guild.get_member(int(user_id))
-            if member is not None:
-                members.append(member)
-        if not members:
-            return 0
-
-        return await refresh_portraits(
-            bot.db_path,
-            members,
-            directory,
-            aspect=await off_the_loop(portrait_aspect, config),
-            budget_seconds=None,
-        )
-    except Exception:  # noqa: BLE001 -- a scheduled job that raises is a job that stops
-        log.warning("driver portraits: the daily refresh failed", exc_info=True)
+    if not await images_are_on(bot.db_path):
         return 0
+    config = await images.get_config()
+    if config is None or not getattr(config, "use_pfp", False):
+        return 0
+    if not getattr(config, "pfp_daily", False):
+        return 0
+    time_of_day = getattr(config, "pfp_daily_time", None)
+    if time_of_day and _fired_late(now, str(time_of_day)):
+        log.info("driver portraits: the daily refresh fired late and is skipped")
+        return 0
+
+    from leaguebot.framework.utils.league_server import league_guild
+
+    guild = await league_guild(bot)
+    if guild is None:
+        log.warning("driver portraits: the league's server is not reachable")
+        return 0
+
+    from leaguebot.image.services.render.image_render_service import resolve_configured_directories
+
+    directories, _faults = resolve_configured_directories(
+        config,
+        (("driver", "driver_image_directory"),),
+        image_type="driver_portraits",
+    )
+    directory = directories.get("driver")
+    if directory is None:
+        return 0
+
+    members = []
+    for user_id in await assigned_driver_ids(bot.db_path):
+        member = guild.get_member(int(user_id))
+        if member is not None:
+            members.append(member)
+    if not members:
+        return 0
+
+    return await refresh_portraits(
+        bot.db_path,
+        members,
+        directory,
+        aspect=await off_the_loop(portrait_aspect, config),
+        budget_seconds=None,
+    )
 
 
 async def refresh_before_render(

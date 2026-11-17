@@ -1032,7 +1032,7 @@ asks is when its work is not due (the host's log says so).
 **Jobs are made only through the framework's scheduler.** Nothing else arms, finds or removes a job.
 A round's job is named from the round and the event, so arming it again replaces the old one instead
 of adding a second (the `_round_job_suffix` docstring in core's round jobs). The scheduler holds the
-timers, the job store and the one runner every job names, and arms a job at the id, kind and moment
+timers, the job store and the one callable every job names, and arms a job at the id, kind and moment
 it is handed (`arm_at`, `run_now`, `arm_daily`, `arm_every`), lists the jobs it holds (`jobs`) and
 removes one (`remove`); it names no round, module or kind of job. It alone imports APScheduler, so
 that the library's conventions hold for every job. A round's timed work is armed by core's round
@@ -1485,12 +1485,15 @@ stated exceptions below them:
    points amendment's save is (the results specification's "Changing points system mid-season");
 3. around reporting a failure or a refusal, or writing a line to the log channel, where that itself
    might fail:
-   keeping a line for retry (`OutputRouter._enqueue_if_configured`), recording a refusal already
-   answered (`log_lines.record_refusal`) and naming a member in a line (`log_lines.name_of_member`)
-   are this place's too, a line that can be neither posted nor kept being logged on the host and
-   dropped, a refusal's record that fails not being answered a second time, and a member who cannot
-   be looked up being named by mention alone, because a line to the log channel must not fail the
-   work it records (their docstrings say so);
+   keeping a line for retry (`OutputRouter._enqueue_if_configured`), the retry worker's tries to
+   deliver a kept line and to post its own (`retry_service.attempt_delivery`, `_post_own_line`: a
+   line that cannot be delivered stays kept and counted for the next try, and the worker's own line
+   falls back to the host's log), recording a refusal already answered (`log_lines.record_refusal`)
+   and naming a member in a line (`log_lines.name_of_member`) are this place's too, a line that can
+   be neither posted nor kept being logged on the host and dropped, a refusal's record that fails
+   not being answered a second time, and a member who cannot be looked up being named by mention
+   alone, because a line to the log channel must not fail the work it records (their docstrings say
+   so);
 4. around a clean-up that then raises the error again, or around work run in another thread whose
    error is handed back across the thread and raised again, afresh, on the loop that waited for it
    (`off_the_loop`, in `image/utils/svg_document.py`, whose worker catches what the function raises

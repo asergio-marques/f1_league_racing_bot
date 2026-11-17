@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from apscheduler.jobstores.base import JobLookupError
@@ -105,7 +105,7 @@ async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
-    service = SchedulerService(db_path, str(tmp_path / "jobs.db"))
+    service = SchedulerService(db_path, str(tmp_path / "jobs.db"), report=AsyncMock())
     service.start()
     try:
         fire_at = datetime.now(timezone.utc) + timedelta(days=1)

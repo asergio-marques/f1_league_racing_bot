@@ -10,6 +10,7 @@ is for.
 """
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -31,6 +32,17 @@ def _retry_cog():
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     return RetryCog(bot)
+
+
+def _log_channel(cog):
+    """Give the cog's router a log channel that takes every line, and return that channel and the
+    router's `post_log`, which a line the worker writes of its own reaches with `channel=` named:
+    the path that never queues it (`retry_service._post_own_line`)."""
+    channel = MagicMock()
+    router = cog._bot.output_router
+    router.log_destination = AsyncMock(return_value=channel)
+    router.post_log = AsyncMock(return_value=MagicMock())
+    return channel, router.post_log
 
 
 def _pending(entries, error=None):
@@ -69,10 +81,51 @@ async def test_an_empty_queue_does_nothing():
 
 async def test_a_database_it_cannot_read_does_not_kill_the_worker(caplog):
     """The loop is long-lived. An exception escaping here would stop the task for good,
-    and nothing would retry anything again until the bot was restarted."""
-    cog = _retry_cog()
+    and nothing would retry anything again until the bot was restarted. The kept lines cannot be
+    read: the fault reaches the host's log with its traceback, and one line, the timed job's
+    failure line for `log line retry`, goes to the log channel by the path that never queues it
+    (#453), so a cycle that keeps failing never queues a line of its own."""
+    from leaguebot.framework.utils.interaction_errors import job_failure_line
 
-    with _pending(None, error=RuntimeError("database is locked")), caplog.at_level("ERROR"):
+    cog = _retry_cog()
+    channel, post_log = _log_channel(cog)
+    error = RuntimeError("database is locked")
+
+    with _pending(None, error=error), caplog.at_level("ERROR"):
         await cog.retry_loop()
 
-    assert "failed to load pending messages" in caplog.text
+    assert any(r.exc_info and r.exc_info[1] is error for r in caplog.records)
+    post_log.assert_awaited_once_with(job_failure_line("log line retry", error), channel=channel)
+
+
+async def test_one_entry_that_raises_does_not_stop_the_rest_or_the_loop(caplog):
+    """Three kept lines, 101, 102 and 103, are due a retry; the database is locked as the first
+    two are tried, so trying each of them raises `sqlite3.OperationalError`. The third is still
+    tried, each fault reaches the host's log with its traceback, and the loop raises nothing, so
+    it runs again in five minutes. One line goes to the log channel for the cycle, by the path
+    that never queues it: it names the kind of fault and how many kept lines faulted, never the
+    fault's message nor the lines' ids, which the host's log alone holds (#453)."""
+    cog = _retry_cog()
+    cog._bot.change_queue.now = MagicMock(return_value=NOW)
+    channel, post_log = _log_channel(cog)
+    entries = [MagicMock(id=101), MagicMock(id=102), MagicMock(id=103)]
+    errors = [sqlite3.OperationalError("database is locked") for _ in range(2)]
+
+    with _pending(entries), patch(
+        "leaguebot.framework.cogs.retry_cog.attempt_delivery",
+        new=AsyncMock(side_effect=[*errors, None]),
+    ) as attempt, caplog.at_level("ERROR"):
+        await cog.retry_loop()  # must not raise
+
+    assert [c.args[0] for c in attempt.await_args_list] == entries
+    logged = [r.exc_info[1] for r in caplog.records if r.exc_info]
+    assert all(any(found is error for found in logged) for error in errors)
+    assert "101" in caplog.text and "102" in caplog.text
+    post_log.assert_awaited_once()
+    [line] = post_log.await_args.args
+    assert post_log.await_args.kwargs == {"channel": channel}
+    assert line.startswith("❌")
+    assert "OperationalError" in line
+    assert "2 kept lines" in line
+    assert "database is locked" not in line
+    assert "101" not in line and "102" not in line
