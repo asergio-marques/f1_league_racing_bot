@@ -27,6 +27,7 @@ build-backend = "setuptools.build_meta"
 name = "leaguebot"
 version = "0.0.0"
 description = "A Discord bot for F1 game league racing"
+requires-python = ">=3.12"
 
 [tool.setuptools.packages.find]
 where = ["src"]
