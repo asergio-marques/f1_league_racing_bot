@@ -1032,7 +1032,7 @@ asks is when its work is not due (the host's log says so).
 **Jobs are made only through the framework's scheduler.** Nothing else arms, finds or removes a job.
 A round's job is named from the round and the event, so arming it again replaces the old one instead
 of adding a second (the `_round_job_suffix` docstring in core's round jobs). The scheduler holds the
-timers, the job store and the one runner every job names, and arms a job at the id, kind and moment
+timers, the job store and the one callable every job names, and arms a job at the id, kind and moment
 it is handed (`arm_at`, `run_now`, `arm_daily`, `arm_every`), lists the jobs it holds (`jobs`) and
 removes one (`remove`); it names no round, module or kind of job. It alone imports APScheduler, so
 that the library's conventions hold for every job. A round's timed work is armed by core's round
