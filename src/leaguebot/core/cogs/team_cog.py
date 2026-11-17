@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.drivers.lineup_command import lineups_for_command
 from leaguebot.core.services.drivers.team_changes import (
     TEAM_ADD,
     TEAM_MODIFY,
@@ -407,55 +408,38 @@ class TeamCog(commands.Cog):
 
         # ── The graphic replaces the textual output where configured (FR-026) ──
         #
-        # One image per division, honouring `public`, drawn through core's drawing protocol
-        # as a command's output. These are command output and **not** the lineup of record:
-        # nothing is written to `lineup_message_id` and the lineup channel is untouched
-        # (FR-028). A fatal error rejects rather than falling back — the caller is the one
-        # person able to fix the template (Constitution XIV.7). The drawing has already
-        # reported any notices to the log channel, headed with the division, so this command
-        # never posts them a second time.
-        if await self.bot.image_drawing.lineup_wanted():
-            drawn_paths: list = []
-            # One `finally` around the whole batch, because a rejection part way through, or
-            # a fault that leaves the command, abandons every picture drawn before it — the
-            # divisions already rendered are never sent, and without this their files would
-            # be the one leak no posting path accounts for. `discord.File` is opened only once
-            # every division has drawn clean, and closed again before this hands the paths to
-            # `discard_picture`, so no render is unlinked while its handle is still open — the
-            # model `calendar_post_service.replace_calendar_message` and
-            # `LineupPoster._refresh_lineup_post` both set.
-            try:
-                for div in all_divisions:
-                    picture = await self.bot.image_drawing.draw_lineup_for_command(
-                        interaction.guild, div.id
-                    )
-                    if picture.path is not None:
-                        drawn_paths.append(picture.path)
-                    if picture.problem is not None:
-                        await interaction.followup.send(
-                            f"❌ {picture.problem}\n"
-                            f"_Lineup for **{div.name}** was not drawn._",
-                            ephemeral=True,
-                        )
-                        return
+        # One image per division, honouring `public`. Which divisions are drawn, the refusal
+        # rather than a fall back to text, and the release of every picture drawn are
+        # `lineups_for_command`'s; the replies are the command's. `discord.File` is opened only
+        # once every division has drawn clean, and closed again before the block hands the paths
+        # back to be released, so no render is unlinked while its handle is still open — the
+        # model `calendar_post_service.replace_calendar_message` and
+        # `LineupPoster._refresh_lineup_post` both set.
+        async with lineups_for_command(
+            self.bot.image_drawing, interaction.guild, all_divisions
+        ) as lineups:
+            if lineups.problem is not None:
+                await interaction.followup.send(
+                    f"❌ {lineups.problem}\n"
+                    f"_Lineup for **{lineups.refused}** was not drawn._",
+                    ephemeral=True,
+                )
+                return
 
-                if drawn_paths:
-                    files = [
-                        discord.File(str(path), filename=path.name)
-                        for path in drawn_paths
-                    ]
-                    try:
-                        text = "\n".join(f"**{div.name}**" for div in all_divisions)
-                        await interaction.followup.send(
-                            text, files=files, ephemeral=not public
-                        )
-                        return
-                    finally:
-                        for attachment in files:
-                            attachment.close()
-            finally:
-                for path in drawn_paths:
-                    self.bot.image_drawing.discard_picture(path)
+            if lineups.paths:
+                files = [
+                    discord.File(str(path), filename=path.name)
+                    for path in lineups.paths
+                ]
+                try:
+                    text = "\n".join(f"**{div.name}**" for div in all_divisions)
+                    await interaction.followup.send(
+                        text, files=files, ephemeral=not public
+                    )
+                    return
+                finally:
+                    for attachment in files:
+                        attachment.close()
 
         lines: list[str] = []
         for div in all_divisions:

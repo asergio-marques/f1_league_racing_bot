@@ -17,9 +17,9 @@ league a second lineup post every time somebody ran the command.
 **A rejected graphic refuses rather than falling back to text.** The caller is the one person
 able to fix the template, so silently drawing text instead would hide a broken template from
 the only person who could put it right (Constitution XIV.7). `test_a_rejected_graphic_refuses_
-rather_than_falling_back` holds that, and `test_team_cog.py`'s `TestTeamLineupDiscardsItsPictures`
-holds the matching resource rule: every file already drawn in the batch is discarded when a later
-division rejects, which is the one leak no posting path accounts for.
+rather_than_falling_back` holds the reply, and `test_lineup_command.py` the rule itself and the
+matching resource rule: every file already drawn in the batch is discarded when a later division
+rejects, which is the one leak no posting path accounts for.
 
 **The text path draws every seat, filled or empty.** An empty seat is information — it is where
 a manager can place somebody — so it is listed as empty rather than omitted, and the seats are
@@ -307,11 +307,11 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
-async def test_a_drawing_that_fails_fails_the_command_and_releases_what_it_drew(tmp_path):
+async def test_a_drawing_that_fails_fails_the_command(tmp_path):
     """The league draws its lineup across two divisions: Division 1's is drawn, and drawing
     Division 2's raises (the database cannot be read). The error is not caught and worded by the
-    command: it leaves the command, for the bot's failure reply and log line to report, and the
-    picture already drawn for Division 1 is still handed back to release. Nothing is sent."""
+    command: it leaves the command, for the bot's failure reply and log line to report. Nothing is
+    sent. That the picture already drawn is released is `test_lineup_command.py`'s."""
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     drawing = LineupDrawingStub(
@@ -327,8 +327,6 @@ async def test_a_drawing_that_fails_fails_the_command_and_releases_what_it_drew(
     with pytest.raises(RuntimeError, match="database is locked"):
         await _lineup(cog, interaction)
 
-    assert drawing.drawn_for_command == [11, 12]
-    assert drawing.discarded == [png]
     interaction.followup.send.assert_not_awaited()
 
 

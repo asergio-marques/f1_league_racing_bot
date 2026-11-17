@@ -148,15 +148,13 @@ class TestTeamList:
 
 
 # ---------------------------------------------------------------------------
-# /team lineup — the batch abandons its pictures on a rejection
+# /team lineup — the pictures of several divisions go out together
 #
-# The one leak no per-send cleanup would catch: a division rejected part way through
-# returns immediately, and every picture drawn for the divisions before it is never sent.
-# There is no sweeper behind this, so the `finally` around the batch is the only thing
-# that hands them back to the drawing to release.
+# Which divisions are drawn, the refusal and the release of every picture drawn are
+# `lineups_for_command`'s, tested in `test_lineup_command.py`; the reply is the command's.
 # ---------------------------------------------------------------------------
 
-class TestTeamLineupDiscardsItsPictures:
+class TestTeamLineupSendsItsPictures:
     @staticmethod
     def _artifact(tmp_path, div_id):
         directory = tmp_path / f"f1bot_render_lineup{div_id}"
@@ -182,32 +180,9 @@ class TestTeamLineupDiscardsItsPictures:
         bot.image_drawing = drawing
         return TeamCog(bot), bot
 
-    async def test_a_rejection_part_way_through_leaves_no_picture_behind(self, tmp_path):
-        """Two divisions: Division 1's lineup is drawn, and Division 2's cannot be. The
-        command refuses, and the picture drawn for Division 1, never sent, is handed back to
-        the drawing to release."""
-        from tests.support.lineup_drawing import LineupDrawingStub
-
-        divisions = [self._division(1, 1), self._division(2, 2)]
-        drawn = self._artifact(tmp_path, 1)
-        drawing = LineupDrawingStub(
-            by_division={1: {"picture": drawn}, 2: {"problem": "the template is at fault"}}
-        )
-        cog, _bot = self._cog_and_bot(divisions, drawing)
-
-        interaction = _make_interaction()
-        await _unwrap(cog.team_lineup)(cog, interaction, division=None, public=False)
-
-        assert drawing.drawn_for_command == [1, 2]
-        assert drawing.discarded == [drawn], (
-            "a picture drawn before the rejection was abandoned and never released"
-        )
-        assert "was not drawn" in interaction.followup.send.await_args.args[0]
-
-    async def test_the_pictures_are_gone_once_the_batch_has_posted(self, tmp_path):
+    async def test_the_pictures_of_every_division_go_out_in_one_message(self, tmp_path):
         """Two divisions, both drawn: the two pictures go out in one message, which names each
-        division in bold on a line of its own, and each picture is handed back to the drawing to
-        release once it has been sent."""
+        division in bold on a line of its own."""
         from tests.support.lineup_drawing import LineupDrawingStub
 
         divisions = [self._division(1, 1), self._division(2, 2)]
@@ -222,5 +197,6 @@ class TestTeamLineupDiscardsItsPictures:
 
         interaction.followup.send.assert_awaited_once()
         assert interaction.followup.send.await_args.args[0] == "**Division 1**\n**Division 2**"
-        assert len(interaction.followup.send.await_args.kwargs["files"]) == 2
-        assert drawing.discarded == pngs
+        assert [each.filename for each in interaction.followup.send.await_args.kwargs["files"]] == [
+            "lineup_template.png", "lineup_template.png"
+        ]
