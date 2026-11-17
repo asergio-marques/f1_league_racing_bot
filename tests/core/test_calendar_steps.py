@@ -452,10 +452,6 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     assert _notices_told(league) in told, told
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#550: a round's cancellation, retried, lists no notices of the calendar it posted",
-)
 async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retried(
     tmp_path, monkeypatch,
 ):

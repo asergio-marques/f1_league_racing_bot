@@ -137,6 +137,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
+    drawn_notices_of,
 )
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.seasons.season_end_changes import (
@@ -180,7 +181,7 @@ from leaguebot.core.services.seasons.season_service import (
 )
 from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
-from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import drawn_notices_section, refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
@@ -436,6 +437,16 @@ _EMPTY = StepView(name="", payload={}, result=None, done=False)
 def _view(ctx: OutcomeContext, name: str) -> StepView:
     """The last job named *name*, or an empty view where the change has none."""
     return next((view for view in reversed(ctx.steps) if view.name == name), _EMPTY)
+
+
+def _calendar_notices(ctx: OutcomeContext) -> str:
+    """The "Image notices" section a reply ends in for the calendars the cancellation drew again,
+    each linked to the log message holding its notices, with the blank line that parts it from
+    the reply; "" where none was drawn with a notice. The notices are a line of the posting job's
+    own, in the log channel, so the reply carries them without logging them again (Constitution
+    XIV.4)."""
+    section = drawn_notices_section(drawn_notices_of(ctx.steps, POST_CALENDAR))
+    return "\n\n" + section if section else ""
 
 
 def _discarded(view: StepView) -> bool:
@@ -929,6 +940,7 @@ def round_cancel_change(
         return (
             f"✅ Round **{words['number']}** in **{words['division']}** cancelled."
             + notices.failure_lines(not_notified(ctx))
+            + _calendar_notices(ctx)
         )
 
     steps: dict[str, Step] = {
