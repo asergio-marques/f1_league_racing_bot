@@ -84,12 +84,18 @@ class CheckContext:
 
 @dataclass(frozen=True)
 class StepView:
-    """A step as an outcome reads it: its payload, its result and whether it is done."""
+    """A step as an outcome reads it: its payload, its result and whether it is done.
+
+    *log_link* is the link to the log message holding the line the job named as the one to link to
+    (`StepResult.linked`), where that line was delivered by the save of the job's last try. It is
+    held in the queue's memory with the reply it feeds and never saved: after a restart it is None
+    here, as it is where the log channel refused the line or the job named none."""
 
     name: str
     payload: dict[str, Any]
     result: dict[str, Any] | None
     done: bool
+    log_link: str | None = None
 
 
 @dataclass(frozen=True)

@@ -126,6 +126,10 @@ class StepResult:
 
     `result` is kept with the step; `audits` and `lines` are written in the same save; `then` are
     steps inserted after this one; `follow_ons` are changes asked for.
+
+    `linked` is the index in `lines` of the one line a reply may point the member at (the notices
+    of a picture the step drew): once the lines are delivered, the change's outcome reads the link
+    to the message holding it as `StepView.log_link`. None where no line is named.
     """
 
     result: dict[str, Any] = field(default_factory=dict)
@@ -133,6 +137,7 @@ class StepResult:
     lines: tuple[str, ...] = ()
     then: tuple[PlannedStep, ...] = ()
     follow_ons: tuple[FollowOn, ...] = ()
+    linked: int | None = None
 
 
 #: The key under which a post job keeps, in the result of the stop it raises, the lines its picture

@@ -709,7 +709,6 @@ async def test_a_log_line_that_cannot_be_delivered_is_left_for_the_retry_loop(en
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason="#550: a step cannot name the line an outcome links to")
 async def test_a_log_line_too_long_for_one_message_is_delivered_in_parts(env):
     """A record too long for one message is divided across as many as it needs, as
     `chunk_message` divides it, and nothing is left waiting on a retry. Named by its job, it is
@@ -738,7 +737,6 @@ async def test_a_log_line_too_long_for_one_message_is_delivered_in_parts(env):
     assert seen["link"] == f"https://discord.test/{first}"
 
 
-@pytest.mark.xfail(strict=True, reason="#550: an outcome cannot link to the line its job named")
 @pytest.mark.parametrize("case", ["delivered", "refused", "none named"])
 async def test_an_outcome_links_to_the_line_its_job_named(env, case):
     """A job names the one of its lines its outcome may link to, here the second: delivered, the

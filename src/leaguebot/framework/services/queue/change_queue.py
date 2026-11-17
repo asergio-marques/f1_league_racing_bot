@@ -285,7 +285,12 @@ class _Held:
     change that asked for it: the same reply, to add a note to and never to update, as of
     *acknowledged*. A reply *kept* is one the change that was acknowledged with it has finished
     with, held for the later change of kind and key *keep_for* (`ChangeQueue.keep_reply`); the
-    change that takes it over is updated through it as of *acknowledged*."""
+    change that takes it over is updated through it as of *acknowledged*.
+
+    *log_links* keeps, against the id of each job of the change, the link to the log message
+    holding the line the job named (`StepResult.linked`), for the outcome to read as
+    `StepView.log_link`. Memory alone, like the reply it feeds: a restart loses both, and no table
+    carries it. It is keyed by job and stays with a reply kept for a later change."""
 
     interaction: discord.Interaction
     message: discord.WebhookMessage | None
@@ -295,6 +300,17 @@ class _Held:
     acknowledged: datetime | None = None
     keep_for: tuple[str, str] | None = None
     kept: bool = False
+    log_links: dict[int, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _Saved:
+    """What a step's save queued: the *ids* of its log lines, for delivery once it commits, and
+    the id of the one the job named to link to (`StepResult.linked`), None where there is none or
+    it was not queued."""
+
+    ids: list[int]
+    linked: int | None = None
 
 
 #: The queue's own tables: a conversation lane's save may always write them, since the job's mark,
@@ -1756,6 +1772,7 @@ class ChangeQueue:
     def _context_fields(
         self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row] | tuple[aiosqlite.Row, ...]
     ) -> dict[str, Any]:
+        held = self._held.get(change["id"])
         return {
             "bot": self._bot,
             "db_path": self._db_path,
@@ -1772,6 +1789,7 @@ class ChangeQueue:
                     json.loads(row["payload"]),
                     json.loads(row["result"]) if row["result"] else None,
                     row["done_at"] is not None,
+                    None if held is None else held.log_links.get(row["id"]),
                 )
                 for row in step_rows
             ),
@@ -1949,13 +1967,20 @@ class ChangeQueue:
         return await self._delivered(change, saved, row)
 
     async def _delivered(
-        self, change: aiosqlite.Row, saved: list[int] | None, row: aiosqlite.Row
+        self, change: aiosqlite.Row, saved: _Saved | None, row: aiosqlite.Row
     ) -> bool:
-        """Deliver the lines the save of the job *row* wrote, and take the buttons off its stop
-        notice where it had one; False where the save was not made."""
+        """Deliver the lines the save of the job *row* wrote, keep the link to the one it named
+        for the outcome (`_Held.log_links`), and take the buttons off its stop notice where it
+        had one; False where the save was not made."""
         if saved is None:
             return False
-        await self._router.deliver_queued(saved, interaction=self._answerable(change))
+        links = await self._router.deliver_queued(saved.ids, interaction=self._answerable(change))
+        held = self._held.get(change["id"])
+        # A router stood in for by a mock hands back no mapping: no link, and the reply still goes.
+        if held is not None and saved.linked is not None and isinstance(links, dict):
+            link = links.get(saved.linked)
+            if link is not None:
+                held.log_links[row["id"]] = link
         await self._strip_notice(row)
         return True
 
@@ -2558,14 +2583,15 @@ class ChangeQueue:
     async def _save_result(
         self, db: aiosqlite.Connection, change: aiosqlite.Row, row: aiosqlite.Row,
         result: StepResult, stopped_as: str | None,
-    ) -> list[int] | None:
+    ) -> _Saved | None:
         """Write the step's mark, audits and lines on *db*, without committing.
 
         *stopped_as* names the job where it had been stopped and so goes through at last (or is
         found no longer due and dropped), which adds the line saying so, saved with the mark; it is formed beforehand, since nothing
         but the connection is awaited in a save.
 
-        Returns the ids of the lines queued, or None where the mark updated no row: the change
+        Returns the ids of the lines queued, and the id of the one `result.linked` names, or None
+        where the mark updated no row: the change
         was removed under the worker (by a pack, or a factory reset), so nothing of the step is
         saved and the host's log says so.
         """
@@ -2585,6 +2611,7 @@ class ChangeQueue:
         for audit in result.audits:
             await self._audit(db, change, audit)
         ids: list[int] = []
+        linked_id: int | None = None
         lines = list(result.lines)
         if stopped_as is not None:
             lines.append(
@@ -2593,14 +2620,16 @@ class ChangeQueue:
                 if (result.result or {}).get("dropped")
                 else went_through_line(row["id"], stopped_as, change["lane"])
             )
-        for line in lines:
+        for index, line in enumerate(lines):
             line_id = await self._router.queue_log_on(db, line)
             if line_id is not None:
                 ids.append(line_id)
+                if index == result.linked:
+                    linked_id = line_id
         await self._plan_steps(db, change, row, result.then)
         for follow_on in result.follow_ons:
             await self._ask_on(db, change, follow_on)
-        return ids
+        return _Saved(ids, linked_id)
 
     @staticmethod
     async def _plan_steps(
