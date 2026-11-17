@@ -41,8 +41,11 @@ from tests.support.image_cog_doubles import (
     logged,
     said,
 )
-from tests.support.settings_league import audit_rows, settings_league
+from tests.support.settings_league import audit_rows, portrait_refresh_times, settings_league
 from tests.support.undecorate import undecorate
+
+#: Why a test fails until image arms its daily portrait refresh itself.
+NOT_ARMED_BY_IMAGE = "#544: image does not yet arm its daily refresh through the generic arm_daily"
 
 
 
@@ -569,6 +572,7 @@ async def test_a_success_records_one_line_naming_its_own_command(
     _audited_by_the_member(await audit_rows(league.db_path))
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_confirming_daily_portraits_records_one_line_naming_the_command(tmp_path):
     """The Confirm's line names `/images use-pfp daily-toggle`, the command that opened the
     form, with the time set beneath, once the daily job is armed."""
@@ -585,7 +589,7 @@ async def test_confirming_daily_portraits_records_one_line_naming_the_command(tm
     await view.confirm.callback(interaction(None, bot=league.bot))
     await run_queue(league.bot)
 
-    league.scheduler.schedule_portrait_refresh.assert_called_once()
+    assert len(portrait_refresh_times(league.scheduler)) == 1
     details = assert_one_line(league.bot, "images use-pfp daily-toggle")
     assert _carries(details, ("19:00",)), details
     _audited_by_the_member(await audit_rows(league.db_path))

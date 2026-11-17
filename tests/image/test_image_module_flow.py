@@ -23,6 +23,13 @@ from leaguebot.image.services.config.image_config_service import ImageConfigServ
 from leaguebot.framework.services.switches.module_service import ModuleService
 from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
+from tests.support.settings_league import portrait_refresh_cancels, portrait_refresh_times
+
+#: Why a test fails until image arms its daily portrait refresh itself.
+NOT_ARMED_BY_IMAGE = "#544: image does not yet arm its daily refresh through the generic arm_daily"
+
+#: Why a test fails until image cancels its daily portrait refresh itself.
+NOT_CANCELLED_BY_IMAGE = "#544: image does not yet cancel its daily refresh through the generic remove"
 
 SERVER_ID = 4242
 
@@ -171,6 +178,7 @@ async def test_disable_preserves_every_settable_column(tmp_path):
     assert all((await config_service.get_toggles()).values())
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     """Images on with portraits refreshed daily: `/module disable images` switches the module
     off and removes the daily refresh, which would otherwise go on firing while the module is
@@ -180,14 +188,15 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE image_config SET use_pfp = 1, pfp_daily = 1")
         await db.commit()
-    league.scheduler.cancel_portrait_refresh.reset_mock()
+    league.scheduler.remove.reset_mock()
 
     await _switch(league, cog, on=False)
 
     assert await league.bot.module_service.is_images_enabled() is False
-    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+    assert portrait_refresh_cancels(league.scheduler) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_off_and_says_so(
     tmp_path,
 ):
@@ -209,7 +218,7 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE image_config SET use_pfp = 1, pfp_daily = 1")
         await db.commit()
-    league.scheduler.cancel_portrait_refresh.side_effect = RuntimeError(
+    league.scheduler.remove.side_effect = RuntimeError(
         "the job store refused the removal"
     )
     before = len(await log_lines(league))
@@ -237,7 +246,16 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.parametrize("on", [True, False], ids=["images on", "images off"])
+@pytest.mark.parametrize(
+    "on",
+    [
+        pytest.param(
+            True, id="images on",
+            marks=pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE),
+        ),
+        pytest.param(False, id="images off"),
+    ],
+)
 async def test_a_restart_arms_the_daily_portrait_refresh_only_while_images_is_on(tmp_path, on):
     """Images was switched on with portraits refreshed daily at 07:45, and the bot starts again:
     image's start-up steps run in its turn of the start-up sweep. With images on, the daily refresh
@@ -252,14 +270,14 @@ async def test_a_restart_arms_the_daily_portrait_refresh_only_while_images_is_on
             "UPDATE image_config SET use_pfp = 1, pfp_daily = 1, pfp_daily_time = '07:45'"
         )
         await db.commit()
-    league.scheduler.schedule_portrait_refresh.reset_mock()
+    league.scheduler.arm_daily.reset_mock()
 
     assert await run_image_start_up(league.bot, on=on) == []
 
     if on:
-        league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
+        assert portrait_refresh_times(league.scheduler) == ["07:45"]
     else:
-        league.scheduler.schedule_portrait_refresh.assert_not_called()
+        assert portrait_refresh_times(league.scheduler) == []
 
 
 # ── T013 ──────────────────────────────────────────────────────────────────

@@ -32,6 +32,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.settings_league import portrait_refresh_times
+
+#: Why a test fails until image arms its daily portrait refresh itself.
+NOT_ARMED_BY_IMAGE = "#544: image does not yet arm its daily refresh through the generic arm_daily"
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +141,7 @@ async def _portrait_bot(tmp_path, *, use_pfp: int, pfp_daily: int):
     return bot
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
     """The job is recurring and its store survives a restart; this re-adds it at start-up at the
     time the league has stored, replacing whatever the store kept."""
@@ -146,7 +151,7 @@ async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
 
     await recover_portrait_refresh_job(bot)
 
-    bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with("04:30")
+    assert portrait_refresh_times(bot.scheduler_service) == ["04:30"]
 
 
 @pytest.mark.parametrize("use_pfp,pfp_daily", [(0, 1), (1, 0)])
@@ -157,9 +162,10 @@ async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use
 
     await recover_portrait_refresh_job(bot)
 
-    bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
+    assert portrait_refresh_times(bot.scheduler_service) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_a_refresh_that_cannot_be_armed_is_reported_by_the_start_up_sweep(tmp_path):
     """The league asks for portraits refreshed daily at 04:30, and the scheduler refuses the job
     as the bot starts again. Image's start-up steps run in its turn of the real start-up sweep,
@@ -169,11 +175,11 @@ async def test_a_refresh_that_cannot_be_armed_is_reported_by_the_start_up_sweep(
     from tests.support.start_up_sweep import run_image_start_up
 
     bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
-    bot.scheduler_service.schedule_portrait_refresh.side_effect = ValueError("bad time")
+    bot.scheduler_service.arm_daily.side_effect = ValueError("bad time")
 
     lines = await run_image_start_up(bot, on=True)
 
-    bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with("04:30")
+    assert portrait_refresh_times(bot.scheduler_service) == ["04:30"]
     assert len(lines) == 1, lines
 
 

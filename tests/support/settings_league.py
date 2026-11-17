@@ -4,8 +4,9 @@
 gives it `league_bot`'s bot: the one the entry point's `build` makes, with the services the
 settings of results, weather and images are handed by the builder: a real `ModuleService`,
 `SeasonService`, `ImageConfigService`, `ImageValidityService` and `ImageRenderService`. Its scheduler is a double whose
-`schedule_portrait_refresh`, `cancel_portrait_refresh` and `cancel_all_weather` record their
-calls. The modules named in *modules* are on (results, weather and images by default), the image
+generic daily arming (`arm_daily`), removal (`remove`) and `cancel_all_weather` record their calls;
+`portrait_refresh_times` and `portrait_refresh_cancels` read image's daily refresh from them.
+The modules named in *modules* are on (results, weather and images by default), the image
 module holding its default configuration where it is on, and the real queue is attached with "now"
 pinned, every change type the builder registers registered.
 
@@ -51,15 +52,43 @@ class SettingsLeague:
 
 
 def scheduler_double(*, fails: bool = False) -> MagicMock:
-    """A scheduler service whose portrait job calls are recorded; with *fails*, each raises.
-    Its removal of every weather job (`cancel_all_weather`) is recorded too, and never raises
-    unless a test sets it to."""
+    """A scheduler service whose generic daily arming (`arm_daily`) and removal (`remove`) are
+    recorded, as image arms and cancels its daily portrait refresh through them; with *fails*,
+    each raises, as a job store refusing the job would. Its removal of every weather job
+    (`cancel_all_weather`) is recorded too, and never raises unless a test sets it to."""
     double = MagicMock()
     error = RuntimeError("scheduler unavailable") if fails else None
-    double.schedule_portrait_refresh = MagicMock(side_effect=error)
-    double.cancel_portrait_refresh = MagicMock(side_effect=error)
+    double.arm_daily = MagicMock(side_effect=error)
+    double.remove = MagicMock(side_effect=error)
     double.cancel_all_weather = AsyncMock(return_value=None)
     return double
+
+
+#: The id image's daily portrait refresh is stored under.
+PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
+
+
+def _argument(call: Any, name: str, index: int) -> Any:
+    """The argument *name* of a recorded call, handed by keyword or at *index*."""
+    return call.kwargs[name] if name in call.kwargs else call.args[index]
+
+
+def portrait_refresh_times(scheduler: Any) -> list[str]:
+    """Each time of day, as ``HH:MM`` UTC, at which the scheduler double was asked to arm image's
+    daily portrait refresh, in the order asked."""
+    return [
+        f"{int(_argument(call, 'hour', 2)):02d}:{int(_argument(call, 'minute', 3)):02d}"
+        for call in scheduler.arm_daily.call_args_list
+        if _argument(call, "job_id", 0) == PORTRAIT_REFRESH_JOB_ID
+    ]
+
+
+def portrait_refresh_cancels(scheduler: Any) -> int:
+    """How many times the scheduler double was asked to remove image's daily portrait refresh."""
+    return sum(
+        1 for call in scheduler.remove.call_args_list
+        if _argument(call, "job_id", 0) == PORTRAIT_REFRESH_JOB_ID
+    )
 
 
 async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,

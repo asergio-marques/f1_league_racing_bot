@@ -149,11 +149,12 @@ def assert_one_line(bot: MagicMock, command: str, outcome: str = "Success") -> l
 
 
 def scheduler(*, fails: bool = False) -> MagicMock:
-    """The scheduler service: `schedule_portrait_refresh` raises where *fails*, as a job store
-    refusing the job would; `cancel_portrait_refresh` never raises."""
+    """The scheduler service: its generic daily arming (`arm_daily`), through which image arms
+    its daily portrait refresh, raises where *fails*, as a job store refusing the job would; its
+    removal (`remove`) never raises."""
     double = MagicMock()
-    double.schedule_portrait_refresh = MagicMock(
+    double.arm_daily = MagicMock(
         side_effect=RuntimeError("the job store refused the job") if fails else None
     )
-    double.cancel_portrait_refresh = MagicMock()
+    double.remove = MagicMock()
     return double
