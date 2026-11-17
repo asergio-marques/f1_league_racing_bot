@@ -171,11 +171,6 @@ class TestTimingInvariantLastNotAboveDeadlineRejected:
 import discord  # noqa: E402
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
-#: Why a case is expected to fail until #449's slice 2a is built.
-VERDICTS_NOT_JUDGED_BY_NEEDS = (
-    "#449: the recalculation's check never asks Attach Files of the verdicts channel"
-)
-
 
 async def _seed_attendance_season(
     tmp_path,
@@ -371,14 +366,8 @@ async def test_recalculation_faults_says_nothing_about_an_absent_guild(tmp_path)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("aspect, autosack, label", [
     pytest.param("attendance", None, "attendance channel", id="attendance sheet"),
-    pytest.param(
-        "verdict_banner", 3, "verdicts channel", id="verdict banner",
-        marks=pytest.mark.xfail(strict=True, reason=VERDICTS_NOT_JUDGED_BY_NEEDS),
-    ),
-    pytest.param(
-        "verdicts", 3, "verdicts channel", id="verdict picture",
-        marks=pytest.mark.xfail(strict=True, reason=VERDICTS_NOT_JUDGED_BY_NEEDS),
-    ),
+    pytest.param("verdict_banner", 3, "verdicts channel", id="verdict banner"),
+    pytest.param("verdicts", 3, "verdicts channel", id="verdict picture"),
 ])
 async def test_recalculation_faults_wants_attach_files_only_with_graphics(
     tmp_path, aspect, autosack, label

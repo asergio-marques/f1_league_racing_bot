@@ -218,7 +218,7 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> Disc
     return DiscordTargets(created=tuple(sorted(created)), channels=tuple(sorted(found)))
 
 
-async def channel_needs(drawing: "ImageDrawing") -> dict[str, Needs]:
+async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
     """What results' three channels, `results`, `standings` and `verdicts`, need of the bot: the
     one source of it within results, read by the faults a season's confirmation names and by the
     gate before a repost, which attendance's recalculation reads for the verdicts channel too.
@@ -229,13 +229,14 @@ async def channel_needs(drawing: "ImageDrawing") -> dict[str, Needs]:
     Files where the image module answers that its pictures could attach a file
     (`aspect_attaches_files`, a question the module answers by its switches and not by the state of
     a template): `results` for results, `standings` for standings, and `verdicts` or
-    `verdict_banner` for the verdicts channel, where attendance's sanction cards go as well.
+    `verdict_banner` for the verdicts channel, where attendance's sanction cards go as well. With
+    no *drawing*, nothing is drawn and no channel needs Attach Files.
     """
     reposted: Needs = (VIEW, SEND, READ_HISTORY)
 
     async def attaches(*aspects: str) -> Needs:
         for aspect in aspects:
-            if await drawing.aspect_attaches_files(aspect):
+            if drawing is not None and await drawing.aspect_attaches_files(aspect):
                 return reposted + (ATTACH,)
         return reposted
 
