@@ -235,7 +235,8 @@ function of `check_in_recovery`, handed the bot and its queue, and every `now` a
 hook is handed is the queue's clock (`bot.change_queue.now`).
 
 `attendance/models/` holds plain data: the dataclasses of four of its tables, the names of the
-check-in's four kinds of change, and `RecoveryFailed` (below, "Errors and failures").
+check-in's four kinds of change, `RecoveryFailed` (below, "Errors and failures"), and `SWITCH_KEY`
+(`switch.py`), the key attendance's switch is read by.
 
 ---
 
@@ -371,18 +372,19 @@ Answers to `architecture.md`, "Timed work and restarts".
 ### The four timers
 
 A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_deadline` and
-`rsvp_cleanup`, answered by attendance to core as `RoundLead` records (`check_in_leads`, built from the league's
-three lead times and read through `attendance_hooks.round_leads`, on `round_leads_read`) and armed
-by core's round jobs (`RoundJobs.arm_leads`, the next-day clean-up alone where a round is armed for
-its clean-ups only). Attendance signs the four kinds up with core's round jobs at build, each with
-the phase `/test-mode advance` numbers it by (5, 6, 7 and 9), and its own reads of the same moments
-(recovery, its amendment rules, its test-mode steps) take them from `check_in_moments`, which
-places the same leads, so they cannot drift from core's arming. Attendance registers a callback for each
-kind (`register_timer`); a callback asks the matching change, as the bot's, and the change's check
-reads the round again, so a timer that fires after its work was changed does nothing. All four are
-armed with no lateness limit, each only while its moment is ahead of the queue's
-clock (the lead's `ahead_only` mark; the restart's catch-up takes one already past), and each
-handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
+`rsvp_cleanup`, answered by attendance to core as `RoundLead` records (`check_in_leads`, built from
+the league's three lead times and read through `attendance_hooks.round_leads`, on
+`round_leads_read`) and armed by core's round jobs (`RoundJobs.arm_leads`, the next-day clean-up
+alone where a round is armed for its clean-ups only). Attendance signs the four kinds up with core's
+round jobs at build, each with the phase `/test-mode advance` numbers it by (5, 6, 7 and 9), from
+the map its test-mode steps hold (`ADVANCE_KINDS`), and its own reads of the same moments (recovery,
+its amendment rules, its test-mode steps) take them from `check_in_moments`, which places the same
+leads, so they cannot drift from core's arming. Attendance registers a callback for each kind
+(`register_timer`); a callback asks the matching change, as the bot's, and the change's check reads
+the round again, so a timer that fires after its work was changed does nothing. All four are armed
+with no lateness limit, each only while its moment is ahead of the queue's clock (the lead's
+`ahead_only` mark; the restart's catch-up takes one already past), and each handler judges lateness
+itself (`architecture.md`, "Timed work and restarts"). Pinned by
 `test_each_lead_is_armed_under_the_round_s_id_moment_and_name` and
 `test_a_lead_armed_only_while_ahead_is_left_out_once_its_moment_has_passed`.
 

@@ -180,7 +180,7 @@ beside the configurations it amends. The table names a service by its file.
 
 | Folder | Services | Chiefly writes |
 |---|---|---|
-| `submission/` | `submission_changes` (a round's opening, the restart of a first paste cut short, a round whose every session is cancelled, and the closing of its channel), `submission_turn_change` (each paste a turn, for a submission and a resubmission, and the configuration's choice), `submission_steps` (the channel made and the lines posted in a dialogue), `resubmission_changes` (the resubmission started and its swap), `result_submission_service` (the submission's state, a session's save, the swap's writer, the configuration picker, the cancellation refusal and the round called off), `paste_reading` (a paste read and judged), `round_start` (what a round's start asks), `submission_recovery` and `review_recovery` (what a restart does to an open submission) | `round_submission_channels`, `resubmission_drafts`, `session_results` and the driver rows |
+| `submission/` | `submission_changes` (a round's opening, the restart of a first paste cut short, a round whose every session is cancelled, and the closing of its channel), `submission_turn_change` (each paste a turn, for a submission and a resubmission, and the configuration's choice), `submission_steps` (the channel made and the lines posted in a dialogue), `resubmission_changes` (the resubmission started and its swap), `result_submission_service` (the submission's state, a session's save, the swap's writer, the configuration picker, the cancellation refusal and the round called off), `paste_reading` (a paste read and judged), `round_start` (what a round's start asks, and the submission's lead, which it answers on the leads read and on `round_armed`), `submission_recovery` and `review_recovery` (what a restart does to an open submission) | `round_submission_channels`, `resubmission_drafts`, `session_results` and the driver rows |
 | `review/` | `review_open_change` (the review opened, its prompt put up, the appeals prompt put back, a stale review closed), `review_stage_change` (a staging), `review_confirm_change` (the approval question), `review_lock_change` (the locked channel's warning), `report_approval_change` and `appeals_approval_change` (the two approvals), `review_posting` (every posting job a review plans), `review_verdicts` (the verdict, sheet and sanction jobs), `review_changes` (what holds a round or a division), `review_prompts` (the prompts and the appeal records), `review_state` (what a review holds, and the store above), `penalty_service` (a penalty validated and applied), `verdict_records` (the verdict join), `verdict_announcement_service` (a verdict or a card posted, the banners' records, and the sanction's wording, which results hands the verdict's drawing), `penalty_wizard`, `penalty_review_views`, `appeals_review_views` (the review's buttons and forms) | `penalty_records`, `appeal_records`, `verdict_banner_messages`, `review_lock_warnings` |
 | `round_amendment/` | `amend_changes` (the amendment opened), `amend_turn_change` (each paste a turn, stage one recorded, the channel closed), `amend_end_changes` (the cancel, the lapse, the lapse's timer and the restart's recovery), `amendment_stage_changes` (the two stages approved), `amendment_writes` (the snapshot, the rewrite, the revert, the holds and the sweep), `amend_views` (Cancel Amendment) | `round_amend_channels`, `amend_drafts` |
 | `points/` | `points_config_service` (the league's configurations), `points_settings` (`/results config` and the reserves toggle as settings), `points_paste` (a points table pasted at once), `season_points_service` (attaching, the season's copy, validation, the staged install), `amendment_mode_service` and `amendment_settings` (the amendment mode and its settings), `points_amendment_change` (its approval), `points_amendment_faults` (what stops its publication), `scoring` (points applied to a session's rows) | the points tables, the season's copy and the modification store |
@@ -227,7 +227,8 @@ docstring says), `points_ordering` (the ordering rule, held once for its four ca
 `tyre_compound` (the compounds a session's rows name, which the image module's preview takes through
 `PreviewSources`) and `xml_import`. `results/models/` holds plain data: a session's result, a points
 configuration, a standings snapshot, the amendment mode's state, `PointsChanged` (what a points
-amendment's approval changed) and `RecoveryFailed` (below, "Errors and failures").
+amendment's approval changed), `RecoveryFailed` (below, "Errors and failures"), and `SWITCH_KEY`
+(`switch.py`), the key results' switch is read by.
 
 ---
 
@@ -407,7 +408,7 @@ the late job and the catch-up, in either order, ask once
 
 **Results answers the submission for every round, whatever its switch,** on the leads read and on
 the round armed again, since it is the round's one way off Not run and its handler moves a round on
-where results is off. The lead carries two marks, which are all core reads of it: that an amendment
+where results is off. Two of the lead's marks are set: that an amendment
 runs it at once where the round's moment passed while the round was still Not run, and that test
 mode leaves it to `/test-mode advance` where core's rule says so (`results_left_to_advance`).
 Results signs its kind up with core's round jobs with no advance phase, so that the pending read

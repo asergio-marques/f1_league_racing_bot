@@ -273,7 +273,8 @@ several modules join, `register_change_types` (which registers the three timers 
 holds no rule and no database code: each start-up step stands for a function of the services.
 
 `signup/models/signup_module.py` holds plain data: `WizardState`, the configuration, the settings, a
-slot, the configuration snapshot, a signup record and a wizard record.
+slot, the configuration snapshot, a signup record and a wizard record; `signup/models/switch.py`
+holds `SWITCH_KEY`, the key signup's switch is read by.
 
 ---
 

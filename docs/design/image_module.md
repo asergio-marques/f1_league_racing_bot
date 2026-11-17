@@ -114,7 +114,8 @@ only when called (`aspect_status`'s module docstring).
 
 ### Models and utilities
 
-`image/models/` holds plain data. `image_module` holds the configuration as read (`ImageConfig`),
+`image/models/` holds plain data. `switch` holds `SWITCH_KEY`, the key image's switch is read by
+(`"images"`). `image_module` holds the configuration as read (`ImageConfig`),
 the render's and the validity check's outcomes (`RenderOutcome`, `ValidityReport`), whose shapes
 Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus` and the validity
 layers' numbers. `image_constants` holds the static maps: the nine

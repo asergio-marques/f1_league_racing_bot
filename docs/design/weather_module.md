@@ -193,7 +193,8 @@ check. `view` checks the switch, reads the horizons and replies, asking nothing 
 
 `wiring.py` is weather's part of the builder, as `architecture.md`'s "How the code is laid out"
 describes a module's wiring. The models are plain data:
-`PhaseResultStatus` and `Drawn` (`forecast.py`), `WeatherPipelineConfig` and `RecoveryFailed`. The
+`PhaseResultStatus` and `Drawn` (`forecast.py`), `WeatherPipelineConfig`, `RecoveryFailed` and
+`SWITCH_KEY` (`switch.py`), the key weather's switch is read by. The
 utils are plain helpers: `math_utils` makes the random draws, and `message_builder` composes a
 forecast's words.
 
@@ -301,11 +302,12 @@ Weather has four kinds of timer: `weather_p1`, `weather_p2`, `weather_p3` and `c
 round's `weather_p1` is its notice and its two others do nothing. Weather answers them to core as
 `RoundLead` records (`forecast_leads`, built from the league's own horizons), and core's round jobs
 (`RoundJobs.arm_leads`) arm them, the clean-up alone where a round is armed for its clean-ups only.
-Weather signs the kinds up with core's round jobs at build, each with the phase `/test-mode
-advance` numbers it by (1, 2, 3 and 8), from the same `WEATHER_JOB_KINDS` its switch-off cancels
-by, so that the two cannot drift. **All four are armed with no lateness limit** (`misfire_grace_time=None`), so a timer missed while the bot was down fires once it
-is back, as the core specification's "When the bot stops" requires, and the work's own check decides
-whether it is still due. Pinned by
+Weather signs the kinds up with core's round jobs at build, each with the phase `/test-mode advance`
+numbers it by (1, 2, 3 and 8), from the map its test-mode steps hold (`ADVANCE_KINDS`), and refuses
+at build a set of kinds that is not the `WEATHER_JOB_KINDS` its switch-off cancels by, so that none
+of the three can drift. **All four are armed with no lateness limit** (`misfire_grace_time=None`),
+so a timer missed while the bot was down fires once it is back, as the core specification's "When
+the bot stops" requires, and the work's own check decides whether it is still due. Pinned by
 `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` and
 `test_a_past_dated_forecast_clean_up_armed_again_takes_down_once`.
 
@@ -357,10 +359,10 @@ is. Pinned by `test_one_round_failing_its_recovery_stops_none_of_the_others`,
 ### One shared delay for the clean-up
 
 The clean-up of a round falls when the weather specification's "Supersession and cleanup" says, a
-delay `clean_up_moment` holds once
-(`POST_RACE_CLEANUP_DELAY`, core's), for the forecast's clean-up and attendance's check-in clean-up
-alike, and for the timer, the restart and the amendment's arming of each, since each module builds
-its clean-up lead from it. Pinned for the forecast's restart step by `test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock`.
+delay `clean_up_moment` holds once (`POST_RACE_CLEANUP_DELAY`, core's), for the forecast's clean-up
+and attendance's check-in clean-up alike, and for the timer, the restart and the amendment's arming
+of each, since each module builds its clean-up lead from it. Pinned for the forecast's restart step
+by `test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock`.
 
 ---
 
