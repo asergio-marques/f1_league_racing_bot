@@ -15,10 +15,11 @@ config that was fully populated. Nothing about a seeded config should differ fro
 hand-built one once it exists.
 
 They are seeded only on a server holding no points configuration at all, of any name, attached or
-not, and the season links none (decided 2026-11-17, #547): a server holding one has it seeded nothing, changed nothing and
-attached nothing, so a league's own "Standard" or "Half Points" is never rewritten with the test
-ladder. Seeding writes through the audited writers `/results config` uses, and hands back the
-names it created and the audit entries its writes recorded, as results' part of test mode.
+not, and the season links none (decided 2026-11-17, #547): a server holding one has it seeded
+nothing, changed nothing and attached nothing, so a league's own "Standard" or "Half Points" is
+never rewritten with the test ladder. Seeding writes through the audited writers
+`/results config` uses, and hands back the names it created and the audit entries its writes
+recorded, as results' part of test mode.
 """
 from __future__ import annotations
 
