@@ -14,13 +14,14 @@ runs whatever the modules, so without it a round never leaves NOT_RUN and its se
 completed. The three RSVP jobs are the more permanent: only the confirmation of placements creates
 them, and it cannot be run again on an active season.
 
-These tests hold the cancel to the weather prefixes, hold the round sweep that must not
-narrow with it, and pin the unfiltered default the round- and season-level cancels rely on.
+These tests hold the cancel to the weather prefixes, and hold the round sweep that must not
+narrow with it.
 
 Weather's switch-off cancels its forecast jobs through a function of weather's own,
 `cancel_all_weather`, handed core's round jobs (`RoundJobs`, #544): it asks them to cancel the
 weather kinds of every round of the live season, and holds no SQL on core's tables. A round's
-cancel, filtered or not, is core's round jobs' (`cancel_round`), over the framework's scheduler.
+cancel, filtered or not, is core's round jobs' (`cancel_round`), pinned in
+`tests/core/test_scheduler_cancels.py`.
 """
 from __future__ import annotations
 
@@ -200,42 +201,3 @@ async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
     removed = await _disable_weather(tmp_path, _jobs)
 
     assert "legacy_phase_job" not in removed
-
-
-# ---------------------------------------------------------------------------
-# The unfiltered default, which the round- and season-level cancels rely on
-# ---------------------------------------------------------------------------
-
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
-async def test_cancel_round_without_a_filter_still_removes_every_job(tmp_path):
-    """`/season cancel`, `/round cancel`, reset and amend all cancel a *round* and want
-    all nine of its jobs gone.  The new keyword must not have changed that."""
-    db_path = os.path.join(str(tmp_path), "test.db")
-    await _seed(db_path)
-    svc = _make_scheduler(db_path)
-    svc._scheduler.get_jobs.return_value = _round_jobs(11, season=1, tier=1, rnum=1)
-
-    _core_round_jobs(svc, db_path).cancel_round(11)
-
-    removed = [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
-    assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in ALL_PREFIXES}
-
-
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
-async def test_cancel_round_with_a_filter_spares_other_rounds(tmp_path):
-    """The filter narrows by job kind, never by round: a job of the same kind on another
-    round is still left alone."""
-    db_path = os.path.join(str(tmp_path), "test.db")
-    await _seed(db_path)
-    svc = _make_scheduler(db_path)
-    from leaguebot.core.models.round import WEATHER_JOB_KINDS
-
-    svc._scheduler.get_jobs.return_value = (
-        _round_jobs(11, season=1, tier=1, rnum=1)
-        + _round_jobs(12, season=1, tier=1, rnum=2)
-    )
-
-    _core_round_jobs(svc, db_path).cancel_round(11, only=WEATHER_JOB_KINDS)
-
-    removed = [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
-    assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in WEATHER_PREFIXES}

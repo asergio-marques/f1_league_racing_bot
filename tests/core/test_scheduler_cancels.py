@@ -6,6 +6,11 @@ passed over in silence. Anything else — a job store that cannot be read or wri
 fault, and it is logged as a warning with its traceback. Neither raises, because the callers are
 teardown lists where one job that will not go must not stop the rest.
 
+`cancel_round` takes every job of the round, all nine kinds, unless it is handed the kinds to take
+(`only=`): a module switched off takes its own kinds and leaves the others' work, and the filter
+narrows by kind, never by round. The round- and season-level cancels rely on the default (#117).
+These two were in the weather switch-off's tests, `tests/weather/test_weather_disable_scope.py`.
+
 `cancel_rounds` takes the timed work of several rounds, and the season-end job when asked, in one
 pass: it lists the store once, before it removes anything, so a store that cannot be listed
 removes nothing and a division's or a season's cancellation stands as it was (#439, slice 8).
@@ -228,3 +233,50 @@ def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     for call in armed.values():
         assert call.kwargs["trigger"].run_date == start + POST_RACE_CLEANUP_DELAY
         assert call.kwargs["replace_existing"] is True
+
+
+#: The nine job kinds a round carries, and the four of them that are weather's.
+WEATHER_PREFIXES = ("weather_p1", "weather_p2", "weather_p3", "cleanup")
+ALL_PREFIXES = WEATHER_PREFIXES + (
+    "results", "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup",
+)
+
+
+def _every_job_of(round_id: int, *, season: int, tier: int, rnum: int):
+    """All nine jobs a round carries, as the store holds them: each named by its kind and the
+    round's suffix, with the kind and the round id as its key."""
+    suffix = f"_s{season}_d{tier}_r{rnum}"
+    return [
+        SimpleNamespace(
+            id=f"{prefix}{suffix}", kwargs={"kind": prefix, "key": round_id}, next_run_time=None
+        )
+        for prefix in ALL_PREFIXES
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
+def test_cancel_round_without_a_filter_still_removes_every_job():
+    """`/season cancel`, `/round cancel`, reset and amend all cancel a *round* and want
+    all nine of its jobs gone.  The new keyword must not have changed that."""
+    service = _service(_every_job_of(11, season=1, tier=1, rnum=1))
+
+    _round_jobs(service).cancel_round(11)
+
+    removed = [c.args[0] for c in service._scheduler.remove_job.call_args_list]
+    assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in ALL_PREFIXES}
+
+
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
+def test_cancel_round_with_a_filter_spares_other_rounds():
+    """The filter narrows by job kind, never by round: a job of the same kind on another
+    round is still left alone."""
+    from leaguebot.core.models.round import WEATHER_JOB_KINDS
+
+    service = _service(
+        _every_job_of(11, season=1, tier=1, rnum=1) + _every_job_of(12, season=1, tier=1, rnum=2)
+    )
+
+    _round_jobs(service).cancel_round(11, only=WEATHER_JOB_KINDS)
+
+    removed = [c.args[0] for c in service._scheduler.remove_job.call_args_list]
+    assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in WEATHER_PREFIXES}
