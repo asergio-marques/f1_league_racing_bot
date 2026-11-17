@@ -310,9 +310,10 @@ tells it — a message posted, a member leaving, the connection made — fails, 
 the host's log."* It is kept and delivered later like any line. A timed job or the bot's own
 background work that fails, with no member to answer, is reported the same way: *"❌ The bot's
 timed job `rsvp_notice` (key 12) failed — KeyError. The details are in the host's log."* A job that
-repeats runs again at its next time. A round of retrying the lines the log channel refused that fails, whole or for some of the
-lines, is reported by one such line; if the log channel refuses that line it is not kept, and the
-host's log alone records it. One line failing never stops the others being retried.
+repeats runs again at its next time. A round of retrying the lines the log channel refused that
+fails, whole or for some of the lines, is reported by one such line; if the log channel refuses
+that line it is not kept, and the host's log alone records it. One line failing never stops the
+others being retried.
 
 **When the log channel cannot take a line,** the line is kept and delivered later, and you are
 told, by a reply only you can see, *"⚠️ Failed to write to log channel … Please check bot
