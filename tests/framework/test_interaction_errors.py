@@ -360,7 +360,8 @@ async def test_the_event_error_handler_never_raises(log_channel, caplog):
 def test_a_job_failure_line_names_the_job_and_the_kind_of_fault():
     """A timed job or background task that fails has no member to name: its line names the job
     and the exception's type, as the event line does, and says the detail is in the host's log.
-    Never the exception's message."""
+    Never the exception's message. A job with a key names it after the kind, labelled as a key
+    and outside the code span, the form the README quotes."""
     from leaguebot.framework.utils.interaction_errors import job_failure_line
 
     line = job_failure_line("log line retry", KeyError("secret detail"))
@@ -370,6 +371,13 @@ def test_a_job_failure_line_names_the_job_and_the_kind_of_fault():
         "The details are in the host's log."
     )
     assert "secret detail" not in line
+
+    keyed = job_failure_line("rsvp_notice", KeyError("secret detail"), key=12)
+
+    assert keyed == (
+        "❌ The bot's timed job `rsvp_notice` (key 12) failed — KeyError. "
+        "The details are in the host's log."
+    )
 
 
 # ── A command that undoes itself says what became of the change (#442) ────
