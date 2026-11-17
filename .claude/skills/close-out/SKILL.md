@@ -129,9 +129,10 @@ league-facing guide changed.
    you changed, not just for the place you expect the text to be.
 3. **Did the change alter the shape of a module?** A new service, a table, a different place
    where work is scheduled or a responsibility moved between layers goes in
-   `docs/design/<module>.md`, or `docs/design/framework.md` for the framework. A decision that constrains one function belongs in that
-   function's docstring, pinned by a named test where a later reader might tune it away —
-   both, not either. A change inside the shape that already stands needs neither.
+   `docs/design/<module>.md`, or `docs/design/framework.md` for the framework. A decision
+   that constrains one function belongs in that function's docstring, pinned by a named test
+   where a later reader might tune it away — both, not either. A change inside the shape
+   that already stands needs neither.
 4. **Does any how-to guide claim anything that is no longer true?** Grep all of
    `docs/how-to/` for the command, setting or behaviour you changed — a guide other than the
    obvious one often mentions it in passing, and a module's guide can be stale about a
