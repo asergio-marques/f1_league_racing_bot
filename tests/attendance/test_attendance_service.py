@@ -435,7 +435,10 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
 
     On a server where the bot lacks Embed Links in both of Pro's channels, the RSVP channel, where
     the check-in call is posted as an embed, is named with what it lacks; the attendance channel,
-    which needs no embed, is not."""
+    which needs no embed, is not. Where the bot lacks Attach Files in the RSVP channel and Read
+    Message History in the attendance channel, which a repost of the sheet needs, the attendance
+    channel is named for it; the RSVP channel is named for Attach Files only with check-in pictures
+    on."""
     from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
@@ -450,11 +453,12 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
         )
         await db.commit()
 
-    async def faults(on: bool, guild) -> dict[int, list[str]]:
+    async def faults(on: bool, guild, *pictures: str) -> dict[int, list[str]]:
         modules = MagicMock()
         answer_switch(modules, "attendance", on)
         found = await division_channel_faults(
-            AttendanceService(db_path), modules, drawing=answer_attachments(MagicMock()),
+            AttendanceService(db_path), modules,
+            drawing=answer_attachments(MagicMock(), *pictures),
             divisions={10: "Pro", 11: "Am"}, guild=guild,
         )
         return {division_id: lines for division_id, lines in found.items() if lines}
@@ -473,6 +477,20 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
         10: [
             "**Pro**'s RSVP channel is missing permissions the bot needs there: Embed Links — "
             "give the bot them, or `/attendance channel rsvp`."
+        ],
+        **am,
+    }
+    lacking = server_holding(unusable={130: ("attach_files",), 131: ("read_message_history",)})
+    no_history = (
+        "**Pro**'s attendance channel is missing permissions the bot needs there: "
+        "Read Message History — give the bot them, or `/attendance channel attendance`."
+    )
+    assert await faults(True, lacking) == {10: [no_history], **am}
+    assert await faults(True, lacking, "rsvp") == {
+        10: [
+            "**Pro**'s RSVP channel is missing permissions the bot needs there: Attach Files — "
+            "give the bot them, or `/attendance channel rsvp`.",
+            no_history,
         ],
         **am,
     }

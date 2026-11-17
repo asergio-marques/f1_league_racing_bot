@@ -99,6 +99,11 @@ def _faults_bot(db_path, modules):
     "deleted",
     "cannot be told",
     pytest.param("unusable", marks=pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)),
+    "no picture to attach",
+    pytest.param(
+        "no picture can be attached",
+        marks=pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS),
+    ),
 ])
 async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
@@ -106,16 +111,22 @@ async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     nothing of the cancelled division. Where Discord cannot say whether channel 100 is there (a
     server error), it is taken as there: a check that could not tell does not refuse a season.
     Where channel 100 is there but the bot lacks Embed Links in it, which a lineup needs, Pro's
-    lineup channel is named with the permission it lacks. Core's part and each module's are asked
-    through the hook the builder signs them up to, and each module, being off, names none."""
+    lineup channel is named with the permission it lacks. Where the bot lacks Attach Files there,
+    Pro's lineup channel is named for it only with lineup pictures on, a lineup otherwise
+    attaching nothing. Core's part and each module's are asked through the hook the builder signs
+    them up to, and each module, being off, names none."""
     from tests.support.review_workflows import run_check
 
     guild = {
         "deleted": _guild(gone=(100,)),
         "cannot be told": _guild(unreadable=(100,)),
         "unusable": _guild(unusable={100: ("embed_links",)}),
+        "no picture to attach": _guild(unusable={100: ("attach_files",)}),
+        "no picture can be attached": _guild(unusable={100: ("attach_files",)}),
     }[pro_lineup]
     bot = _faults_bot(db_path, _modules())
+    if pro_lineup == "no picture can be attached":
+        answer_attachments(bot.image_drawing, "lineup")
 
     faults = await run_check("division_channel_faults", bot, db_path, SEASON_ID, guild)
 
@@ -126,6 +137,11 @@ async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
         "cannot be told": [],
         "unusable": [
             "**Pro**'s lineup channel is missing permissions the bot needs there: Embed Links — "
+            "give the bot them, or `/division lineup-channel`."
+        ],
+        "no picture to attach": [],
+        "no picture can be attached": [
+            "**Pro**'s lineup channel is missing permissions the bot needs there: Attach Files — "
             "give the bot them, or `/division lineup-channel`."
         ],
     }[pro_lineup]
