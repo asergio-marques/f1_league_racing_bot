@@ -556,6 +556,28 @@ async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untou
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+@pytest.mark.xfail(strict=True, reason="#453: a lapse that faults reaches nobody")
+async def test_a_reason_lapse_that_fails_is_reported(tmp_path, monkeypatch):
+    """Manager 77 presses Reject on Kimi's panel and types no reason; when the five minutes run
+    out, writing the lapse's line faults unexpectedly. One ❌ line in the log channel names the
+    job and the kind of fault and says the details are in the host's log, never the fault's
+    message; the lapse's own task ends without raising."""
+    monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
+    monkeypatch.setattr(
+        arc, "record_abandoned", AsyncMock(side_effect=RuntimeError("secret detail"))
+    )
+    league = await _league(tmp_path)
+
+    await _press(league, "reject_button")
+    await _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["lapse"]
+
+    failed = [line for line in _lines(league) if line.startswith("❌")]
+    assert len(failed) == 1, _lines(league)
+    assert failed[0].startswith("❌ The bot's timed job `"), failed[0]
+    assert failed[0].endswith(" failed — RuntimeError. The details are in the host's log."), failed[0]
+    assert "secret detail" not in failed[0]
+
+
 async def test_a_reason_given_in_time_cancels_the_lapse(tmp_path):
     """The reason takes the entry and cancels its lapse, so no lapse follows the rejection:
     the rejection is asked of the queue, and once it runs no lapse line or lapse reply is
