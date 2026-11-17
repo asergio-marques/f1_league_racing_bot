@@ -425,6 +425,8 @@ The bot posts nothing to a channel you have not named. Two channels are yours to
 
 They are set **per division**, so a league with three divisions sets three of each. Each answers at once ("⏳ Setting the lineup channel for **Pro** to #pro-lineup. …") and updates that reply once it has run. It is judged again as it starts — a division deleted, a season ended or a channel taken by another job meanwhile refuses it then — and a division renamed meanwhile still gets its channel.
 
+The bot needs permissions in each channel, and a channel can take away what the server gave it. The lineup channel needs View Channel, Send Messages and Embed Links, and the calendar channel View Channel and Send Messages; either also needs Attach Files while its picture is on. Each module's guide names what its own channels need.
+
 The other six belong to modules, and each is set by its module's own command. Set the ones whose module you turned on in step 2:
 
 | Command | Needs this module | Carries |
@@ -436,7 +438,7 @@ The other six belong to modules, and each is set by its module's own command. Se
 | `/attendance channel rsvp` | `attendance` | Check-in calls |
 | `/attendance channel attendance` | `attendance` | The attendance sheet |
 
-**Confirming placements will refuse a season that is missing any of these** — the calendar and lineup channels for every division, and the six for every enabled module — so it is cheaper to do them all now than to discover it at step 12. A channel set and since deleted from the server counts as missing, and confirming a mid-season window's placements checks them all again.
+**Confirming placements will refuse a season that is missing any of these** — the calendar and lineup channels for every division, and the six for every enabled module — so it is cheaper to do them all now than to discover it at step 12. A channel set and since deleted from the server counts as missing, and so does one the bot can no longer see or post in, or has lost a permission it needs in: it is named with the permission it lacks ("**Pro**'s lineup channel is missing permissions the bot needs there: Embed Links"), and you give the bot the permission back or set another channel. Confirming a mid-season window's placements checks them all again.
 
 > **A channel can be repointed at any stage of the season.** If one is deleted mid-season, run the same command with its replacement; nothing about the season has to be undone. Every one of the eight commands runs even while the queue is stopped at a job — that job stays stopped — so a post stopped for want of its channel is put right by setting the channel and then pressing Retry on its notice. The channels belong to that season: once it ends they no longer count, and the next season's divisions are given their own.
 
@@ -533,7 +535,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 | A division has no rounds at all | Add one, or delete the division |
 | Two rounds in a division share a date and time | Reschedule one |
 | A team's shorthand cannot be used | The team list is fixed once the configuration is confirmed, so only `/season abort` and configuring the season again clears it. `/season config-review` refuses such a shorthand, so a season rarely gets this far with one |
-| A division is missing a channel it posts to — its calendar or lineup channel, or one an enabled module needs — or one has been deleted from the server | Step 9 — the message names the division, the channel and the command |
+| A division is missing a channel it posts to — its calendar or lineup channel, or one an enabled module needs — or one has been deleted from the server, or the bot lacks a permission it needs in one | Step 9 — the message names the division, the channel, the command and any permission missing |
 | A signup is unsettled | Step 10 |
 
 **And more, depending on what you turned on** — every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
