@@ -191,7 +191,7 @@ async def channel_fault(
     value,
     label: str,
     command: str,
-    needs: Needs = (VIEW,),
+    needs: Needs,
 ) -> str | None:
     """The line saying a division's channel is not set, no longer on the *guild*, or missing
     permissions the bot needs there, or None where it is fine: the one wording every module's

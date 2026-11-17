@@ -171,10 +171,6 @@ class TestTimingInvariantLastNotAboveDeadlineRejected:
 import discord  # noqa: E402
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
-#: Why a test is expected to fail until #449's slice 2a is built.
-NOT_JUDGED_BY_NEEDS = (
-    "#449: attendance does not yet judge its channels by the permissions their use needs"
-)
 #: Why a case is expected to fail until #449's slice 2a is built.
 VERDICTS_NOT_JUDGED_BY_NEEDS = (
     "#449: the recalculation's check never asks Attach Files of the verdicts channel"
@@ -426,7 +422,6 @@ async def test_recalculation_faults_wants_attach_files_only_with_graphics(
     assert label in faults[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)
 async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_path):
     """Pro's RSVP channel 130 is gone from the server and its attendance channel 131 is there;
     Am has neither. Attendance on names Pro's RSVP channel as gone and both of Am's as missing,

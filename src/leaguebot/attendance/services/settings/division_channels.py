@@ -15,15 +15,20 @@ value back as an integer.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
+from leaguebot.core.models.channel_needs import ATTACH, EMBED, READ_HISTORY, SEND, VIEW, Needs
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     DiscordTargets,
     channel_ids_in,
 )
+
+if TYPE_CHECKING:
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 
 async def set_rsvp_channel(
@@ -124,3 +129,28 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> Disc
             "rsvp_embed_messages.channel_id",
         )
     return DiscordTargets(created=(), channels=tuple(sorted(found)))
+
+
+async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
+    """What the check-in call's channel, `rsvp`, and the attendance sheet's, `attendance`, need of
+    the bot: the one source of it within attendance, read by the faults a season's confirmation
+    names and by the gate before a recalculation.
+
+    The check-in call is an embed posted in the channel, so it needs View Channel, Send Messages
+    and Embed Links. The sheet is reposted, which finds what the bot posted last and takes it
+    down, so it needs View Channel, Send Messages and Read Message History, and no embed: it is
+    text or a picture. Each also needs Attach Files where the image module answers that its
+    pictures could attach a file (`aspect_attaches_files`, a question it answers by its switches
+    and not by the state of a template): `rsvp` for the call, `attendance` for the sheet. With no
+    *drawing*, nothing is drawn and no channel needs Attach Files.
+    """
+
+    async def attaches(aspect: str) -> Needs:
+        if drawing is not None and await drawing.aspect_attaches_files(aspect):
+            return (ATTACH,)
+        return ()
+
+    return {
+        "rsvp": (VIEW, SEND, EMBED) + await attaches("rsvp"),
+        "attendance": (VIEW, SEND, READ_HISTORY) + await attaches("attendance"),
+    }

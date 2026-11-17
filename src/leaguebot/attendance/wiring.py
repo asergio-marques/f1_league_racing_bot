@@ -234,13 +234,16 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
-    """Sign attendance's lines naming its own channels not set or not on the server up to the hook
-    a division's channel faults are read through, handed its service and the module service."""
+    """Sign attendance's lines naming its own channels not set, not on the server or missing a
+    permission they need up to the hook a division's channel faults are read through, handed its
+    service, the module service and the image module's drawing, which says whether a picture could
+    attach a file."""
     from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.division_channel_faults_read.subscribe(
         partial(
-            attendance_hooks.division_channel_faults, bot.attendance_service, bot.module_service
+            attendance_hooks.division_channel_faults, bot.attendance_service, bot.module_service,
+            drawing=as_image_drawing(bot.image_drawing),
         )
     )
 
