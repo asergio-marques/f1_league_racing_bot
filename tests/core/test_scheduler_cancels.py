@@ -1,12 +1,10 @@
 """Removing a scheduled job: "already gone" is the aim, and any other fault is kept (#442).
 
-Every cancellation the scheduler service offers is a clean-up. A job that has already fired, or
+Every cancellation of a round's jobs is a clean-up. A job that has already fired, or
 was never armed, is the ordinary case, and APScheduler says so with `JobLookupError`: that is
 passed over in silence. Anything else — a job store that cannot be read or written — is a real
 fault, and it is logged as a warning with its traceback. Neither raises, because the callers are
 teardown lists where one job that will not go must not stop the rest.
-
-`cancel_all` counts only the jobs that actually went.
 
 `cancel_rounds` takes the timed work of several rounds, and the season-end job when asked, in one
 pass: it lists the store once, before it removes anything, so a store that cannot be listed
@@ -14,7 +12,8 @@ removes nothing and a division's or a season's cancellation stands as it was (#4
 
 A round's cancels, `cancel_round`, `cancel_rounds` and `cancel_season_end`, and
 `schedule_round_cleanups` are core's round jobs' (`RoundJobs`, #544), over the framework's
-scheduler; the rest are the scheduler's own.
+scheduler. The scheduler's own removals, one job, every job and a one-off timer, are pinned in
+`tests/framework/test_scheduler_removals.py`.
 
 `schedule_round_cleanups` arms a raced round's two clean-ups alone, the forecast's and the
 check-in's, a day after its start: what a cancellation refused after its unarming gives back to a
@@ -40,14 +39,10 @@ NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's cancels are still th
 #: rather than the scheduler's. A job the store lists carries round 5 as its key and the
 #: season-end prefix, so every method that walks the store finds it.
 CANCELS = [
-    ("cancel_job", ("wizard_inactivity_101",), False),
-    ("cancel_all", (), False),
     ("cancel_round", (5,), True),
     ("cancel_season_end", (), True),
     ("cancel_portrait_refresh", (), False),
     ("cancel_rounds", ([5],), True),
-    # A wizard's timer, which the signup switch-off disarms whether or not it has fired.
-    ("disarm", ("signup_inactivity", "101"), False),
 ]
 
 CANCEL_CASES = [
@@ -88,24 +83,14 @@ def _job(job_id: str):
 
 @pytest.mark.parametrize("cancel, args, of_round_jobs", CANCEL_CASES)
 def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args, of_round_jobs):
-    """Fired or never armed: nothing raises and nothing is logged. `cancel_all`, given two
-    jobs of which one is already gone, counts only the one that went."""
-    jobs = [_job("season_end_gone"), _job("season_end_kept")]
-    service = _service(jobs if cancel == "cancel_all" else jobs[:1])
-
-    def _remove(job_id):
-        if cancel == "cancel_all" and job_id == "season_end_kept":
-            return None
-        raise JobLookupError(job_id)
-
-    service._scheduler.remove_job = MagicMock(side_effect=_remove)
+    """Fired or never armed: nothing raises and nothing is logged."""
+    service = _service([_job("season_end_gone")])
+    service._scheduler.remove_job = MagicMock(side_effect=JobLookupError("season_end_gone"))
 
     with caplog.at_level(logging.WARNING, logger=LOGGER):
-        result = getattr(_owner(service, of_round_jobs), cancel)(*args)
+        getattr(_owner(service, of_round_jobs), cancel)(*args)
 
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
-    if cancel == "cancel_all":
-        assert result == 1
 
 
 @pytest.mark.parametrize("cancel, args, of_round_jobs", CANCEL_CASES_FOUND_BY_ROUND)
@@ -113,26 +98,17 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(
     caplog, cancel, args, of_round_jobs
 ):
     """A job store that cannot be written is a real fault: a warning carrying the error and
-    its traceback, and still no raise. `cancel_all` goes on to the next job and counts it."""
-    jobs = [_job("season_end_broken"), _job("season_end_kept")]
-    service = _service(jobs if cancel == "cancel_all" else jobs[:1])
+    its traceback, and still no raise."""
+    service = _service([_job("season_end_broken")])
     error = RuntimeError("the job store is locked")
-
-    def _remove(job_id):
-        if cancel == "cancel_all" and job_id == "season_end_kept":
-            return None
-        raise error
-
-    service._scheduler.remove_job = MagicMock(side_effect=_remove)
+    service._scheduler.remove_job = MagicMock(side_effect=error)
 
     with caplog.at_level(logging.WARNING, logger=LOGGER):
-        result = getattr(_owner(service, of_round_jobs), cancel)(*args)  # must not raise
+        getattr(_owner(service, of_round_jobs), cancel)(*args)  # must not raise
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings, "the fault was not logged"
     assert any(r.exc_info and r.exc_info[1] is error for r in warnings)
-    if cancel == "cancel_all":
-        assert result == 1
 
 
 def _round_job(job_id: str, round_id: int):
@@ -262,31 +238,3 @@ def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     for call in armed.values():
         assert call.kwargs["trigger"].run_date == start + POST_RACE_CLEANUP_DELAY
         assert call.kwargs["replace_existing"] is True
-
-
-async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
-    """`has_job` answers whether a job is armed and not yet fired, read of a real job store: the
-    signup close timer, armed a day ahead, stands until it is disarmed, and a job never armed
-    does not."""
-    from datetime import datetime, timedelta, timezone
-
-    from leaguebot.framework.db.database import run_migrations
-    from leaguebot.core.services import scheduler_service
-
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
-    service = SchedulerService(db_path, str(tmp_path / "jobs.db"))
-    service.start()
-    try:
-        fire_at = datetime.now(timezone.utc) + timedelta(days=1)
-        service.arm_once("signup.close_timer", 1, fire_at)
-
-        assert service.has_job("once:signup.close_timer:1") is True
-        assert service.has_job("wizard_channel_delete_102") is False
-
-        service.disarm("signup.close_timer", 1)
-        assert service.has_job("once:signup.close_timer:1") is False
-    finally:
-        service._scheduler.shutdown(wait=False)
-        service._scheduler._jobstores["default"].engine.dispose()
