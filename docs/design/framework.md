@@ -169,8 +169,7 @@ its record and a fault's ending in `change_types`', each pinned by a test in
   before the reply that points at it. A restart loses it with the reply it feeds, and a log channel
   that refuses costs the link alone. An outcome lists the notices through `drawn_notices_of` and
   `drawn_notices_section`, so every reply words them alike. *Rejected:* saving the link with the job,
-  a column for a reply that cannot outlive the restart; and each change type reading its own
-  result keys, which would word the section once per change type
+  a column for a reply that cannot outlive the restart
   (`test_an_outcome_links_to_the_line_its_job_named`).
 
 The stop notice's buttons are one persistent view, `QueueStopView`, registered as the queue
