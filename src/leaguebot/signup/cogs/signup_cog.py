@@ -30,6 +30,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
@@ -276,7 +277,7 @@ class SignupCog(commands.Cog):
         change nothing and record nothing. A command run in a DM never gets this far: the
         tier guard has sent it to the host log.
         """
-        if await self.bot.module_service.is_signup_enabled():
+        if await self.bot.module_service.is_enabled(SWITCH_KEY):
             return True
         reply = "⛔ Signup module is not enabled. Use `/module enable signup` first."
         if record:

@@ -29,11 +29,12 @@ log = logging.getLogger(__name__)
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign signup up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_signup_enabled` asks it by."""
+    """Sign signup up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.signup.models.switch import SWITCH_KEY
     from leaguebot.signup.services.signup_module_service import signup_enabled_on
 
-    modules.register_switch("signup", signup_enabled_on)
+    modules.register_switch(SWITCH_KEY, signup_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:

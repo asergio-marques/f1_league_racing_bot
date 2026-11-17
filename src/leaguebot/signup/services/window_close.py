@@ -19,6 +19,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.framework.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
@@ -79,7 +80,7 @@ async def close_signups_unattended(
     nothing (the core specification, Modules), and a window not open needs no close, so both
     ask for nothing.
     """
-    if not await module_service.is_signup_enabled():
+    if not await module_service.is_enabled(SWITCH_KEY):
         return
     cfg = await signup_module_service.get_config()
     if cfg is None or not cfg.signups_open:

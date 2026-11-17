@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection, inserted_id
 from leaguebot.framework.models.change import PlannedStep
 from leaguebot.core.models.driver_names import SignupName, SignupNames
@@ -1228,7 +1229,7 @@ async def review_section(
     channel it shows beside the module's line in its Modules section, where signup has a
     configuration; the configuration review shows none. Reads only.
     """
-    if not await modules.is_signup_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await service.get_config()
     settings = await service.get_settings()

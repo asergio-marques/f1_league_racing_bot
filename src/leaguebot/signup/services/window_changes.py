@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.framework.models.change import (
     AuditRecord,
@@ -170,7 +171,7 @@ def window_open_change(
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_signup_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         server_cfg = await config.get_server_config()
         if server_cfg is not None and server_cfg.test_mode_active:
@@ -534,7 +535,7 @@ def season_end_close_step(
         return await returning.run(db, ctx)
 
     async def window_stands(_ctx: StepContext) -> bool:
-        if not await modules().is_signup_enabled():
+        if not await modules().is_enabled(SWITCH_KEY):
             return False
         config = await signup_module_service().get_config()
         return config is not None and config.signups_open

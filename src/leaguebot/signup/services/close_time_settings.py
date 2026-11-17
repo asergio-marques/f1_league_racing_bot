@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
@@ -112,7 +113,7 @@ def close_time_settings(
 
     async def open_window(ctx: CheckContext) -> tuple[str | None, str | None]:
         """The refusal of a module off or a window not open, and the close time stored."""
-        if not await modules.is_signup_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return NOT_ENABLED, None
         cfg = await signup.get_config()
         if cfg is None or not cfg.signups_open:

@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
@@ -232,7 +233,7 @@ def start_change(
             )
         # A Sign Up button the close could not delete stays pressable after the window shut.
         cfg = await signup().get_config()
-        if not await modules.is_signup_enabled() or (cfg is not None and not cfg.signups_open):
+        if not await modules.is_enabled(SWITCH_KEY) or (cfg is not None and not cfg.signups_open):
             return Verdict.refuse("⛔ Signups are closed.")
         if cfg is None:
             return Verdict.refuse("❌ Signup module is not configured. Contact an admin.")

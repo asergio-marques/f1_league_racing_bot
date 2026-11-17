@@ -89,6 +89,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
@@ -885,7 +886,7 @@ def lapse_change(
 
     async def check(ctx: CheckContext) -> Verdict:
         user_id = str(ctx.payload["user_id"])
-        if not await modules.is_signup_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.not_due("the signup module is off")
         profile = await drivers().get_profile(user_id)
         if profile is None or profile.current_state != DriverState.AWAITING_CORRECTION_PARAMETER:

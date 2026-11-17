@@ -30,6 +30,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.models.refusal import Refused
 from leaguebot.framework.services.queue.change_types import CheckContext
@@ -154,7 +155,7 @@ async def open_to_change(
 
     A setting that repairs what the league cannot do without passes *repairing*, which says
     whether the change is a repair now: a fixed configuration then does not refuse it."""
-    if not await modules.is_signup_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return NOT_ENABLED
     season_number = await configuration_fixed(db_path)
     if season_number is not None and not (repairing is not None and await repairing()):
