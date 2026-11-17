@@ -244,6 +244,16 @@ async def _seeded_already(db_path, season_id):
     await _seed(db_path, season_id)
 
 
+async def _a_dangling_link(db_path, season_id):
+    """The season links "League Ladder", which the server does not hold."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, 'League Ladder')",
+            (season_id,),
+        )
+        await db.commit()
+
+
 @pytest.mark.parametrize(
     "holding",
     [
@@ -251,6 +261,7 @@ async def _seeded_already(db_path, season_id):
         pytest.param(_another_name_attached, id="another_name_attached"),
         pytest.param(_the_leagues_own_standard, id="the_leagues_own_standard"),
         pytest.param(_seeded_already, id="seeded_already"),
+        pytest.param(_a_dangling_link, id="a_dangling_link"),
     ],
 )
 async def test_a_server_holding_any_points_configuration_is_seeded_nothing(
@@ -261,7 +272,8 @@ async def test_a_server_holding_any_points_configuration_is_seeded_nothing(
     1 point for fastest lap down to 10th) not attached to the season; or attached to it; or the
     league's own "Standard" (a feature race paying 20 down to 1 point to 20th, 1 point for fastest
     lap down to 20th) not attached; or the "Standard" and "Half Points" test mode seeded before,
-    attached. Seeding again creates nothing and records nothing, every configuration keeps every
+    attached; or holds none, but the season links "League Ladder", which the server does not hold.
+    Seeding again creates nothing and records nothing, every configuration keeps every
     point and fastest-lap bonus it had, and no season gains or loses a configuration."""
     await holding(db_path, season_id)
     before = await _points_store(db_path)
