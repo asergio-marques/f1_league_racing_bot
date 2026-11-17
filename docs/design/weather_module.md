@@ -465,13 +465,24 @@ round's facts and its division (`round_facts_on`, `division_on`), a round's sess
 Weather needs no other module (no entry in `NEEDS`). Of the image module it asks the forecast's
 graphic (`ImageDrawing.attach_forecast`, on the drawing the wiring hands the post job) and the
 discarding of a drawn attachment (`ImageDrawing.discard_attachment`, handed to `post_phase_message`
-beside the picture), and builds the model image declares for it (`image.models.forecast_values`); it
+beside the picture), and, for the faults a confirmation names, whether the forecast could attach a
+file (`ImageDrawing.aspect_attaches_files`), and builds the model image declares for it (`image.models.forecast_values`); it
 uses no other module. The image module reads none of weather's tables: weather hands it the words,
 composed as the text composes them (`forecast_changes.forecast_values`), in a model image declares
 (`ForecastValues`: the phase's description, the likelihood of rain as text, and each session's
 label, weather type, slots and the summary of its slots, in the order they are run), so that image
 imports no other module and holds no second copy of weather's wording. For `/images test`, image
 composes sample words of its own.
+
+### What the forecast channel needs of the bot
+
+`forecast_channel.channel_needs` states it, the one source of it within weather: View Channel and
+Send Messages, as a forecast is posted as text, and Attach Files where the drawing answers that the
+weather pictures could attach one. Neither Embed Links nor Read Message History is asked, a forecast
+being no embed and never reposted. `division_channel_faults` asks it of the drawing the wiring hands
+it and judges the channel by it (`approval_checks.channel_fault`, `architecture.md`, "Errors and
+failures", and `core.md`, "Services, and what each owns"), so weather holds no permission list of
+the channel's beside it.
 
 ### The forecast provider
 

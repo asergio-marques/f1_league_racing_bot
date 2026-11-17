@@ -1543,18 +1543,24 @@ one that says otherwise below.
   review and confirmation that checks the names carries on with them unchecked: the check only keeps
   a team name from becoming a bad artwork filename.
 - Results' reader of an attendance switch (`points_amendment_faults.approval_faults`) and core's
-  reader of whether a channel is on the server (`approval_checks.channel_on_server`) stand aside,
-  reading the switch as off and the channel as present, because a reader that cannot answer must not
-  refuse an amendment or a season.
+  reader of whether a channel can be used as its posting needs (`approval_checks.judged_presence`,
+  which `channel_on_server` asks) stand aside, reading the switch as off and the channel as
+  present, because a reader that cannot answer must not refuse an amendment or a season. The strict
+  reader beneath it (`approval_checks.channel_presence`) answers only what Discord proves, a
+  channel found, gone, or found and lacking a permission its use needs, and raises on anything
+  else, so that a caller which can refuse for a check that could not be made is not forced to
+  treat it as passed.
 - The image module's gate (`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the
   weather forecast's, whose own gate is of the sixth place) answers that the league does not draw the
   aspect, with no line to the log channel, so the text goes out, because a gate that cannot be read
   must not lose a league its text. Its pre-flight question, whether the aspect attaches files
   (`ImageDrawing.aspect_attaches_files`, asked by the checks of results' reposting and attendance's
-  recalculation), answers no too, and is the one reader that takes a switch nobody signed up for as
-  an answer: it is asked by a command's pre-flight ahead of the jobs that draw, and the picture's
-  own gate, asked when the job draws, raises that fault there and stops the job, where a manager
-  sees it with the rest of the queue.
+  recalculation and by each module's judging of its channels at a confirmation, and
+  `calendar_attaches_files` and `lineup_attaches_files`, which core asks for its own two channels),
+  answers no too, and is the one reader that takes a switch nobody signed up for as an answer: it
+  is asked by a command's pre-flight ahead of the jobs that draw, and the picture's own gate, asked
+  when the job draws, raises that fault there and stops the job, where a manager sees it with the
+  rest of the queue.
 - The verdict picture's five readers of an optional field (the round's context, the driver's
   nationality and the names a mention stands for: `_round_context`, `_driver_nationality` and
   `_mention_names`, in `image_verdict_post.py`; the team's name and its shorthand:

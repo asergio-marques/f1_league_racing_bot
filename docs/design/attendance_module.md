@@ -572,6 +572,18 @@ with no placement row there is refused as not a member
 (`test_the_seat_read_through_core_judges_a_driver_as_the_old_join_did`,
 `test_both_seat_joins_read_the_drivers_core_s_reader_seats`).
 
+### What attendance's channels need of the bot
+
+`division_channels.channel_needs` states it, the one source of it within attendance. The check-in
+call's channel (`rsvp`) needs View Channel, Send Messages and Embed Links, the call being an embed.
+The attendance sheet's channel needs View Channel, Send Messages and Read Message History, the
+sheet being reposted, and no embed, being text or a picture. Each also needs Attach Files where the
+drawing answers that its pictures could attach one. The confirmation's faults
+(`attendance_hooks.division_channel_faults`) judge both channels by it, and the recalculation's gate
+judges the attendance channel by it and the verdicts channel by results' statement of its needs,
+where the sanction's picture goes, so a verdicts channel the bot cannot attach to is refused up
+front like one it cannot see.
+
 ### The dependency table and the image module
 
 Attendance needs results (`NEEDS`, `core.md`, "The dependency table"): the sanctions and the
@@ -581,8 +593,10 @@ image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet
 (`ImageDrawing.attendance_wanted` and `draw_attendance_sheet`), both on the drawing the wiring hands
 the post jobs, from what attendance hands it, the call's deadline included: attendance works it out
 (`derive_checkin_deadline`) and hands it in. The recalculation's check that the attendance channel
-can take a file asks the same drawing whether the aspect attaches files
-(`ImageDrawing.aspect_attaches_files`), which the cog reads off the bot. It also implements its
+can use what it is sent reads the module's stated needs (`division_channels.channel_needs`, below)
+and, for the verdicts channel, results' (`channel_needs` in `results.services.module`); both ask the
+same drawing whether the aspect attaches files (`ImageDrawing.aspect_attaches_files`), which the cog
+reads off the bot. It also implements its
 share of the image module's `PreviewSources`, the check-in deadline the previews draw, and the
 builder joins it with results' share and hands the whole in as `bot.preview_sources`.
 

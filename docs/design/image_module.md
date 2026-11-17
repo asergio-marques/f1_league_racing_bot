@@ -309,9 +309,12 @@ failures"); the forecast asks `_weather_gate`. Results asks the gate for each st
 before composing, and hands the drawing only the championships wanted. The `/images test` previews
 ask the module's switch alone.
 
-`aspect_attaches_files` answers the attachment checks of results' reposting and attendance's
-recalculation; why it does not ask template validity is its docstring's, pinned by
-`test_template_validity_is_deliberately_not_consulted`.
+`aspect_attaches_files` answers the attachment a channel's permissions are judged by: results'
+reposting, attendance's recalculation and each module's channels at a confirmation, each stating
+what its channel needs of the bot and asking the drawing only whether a picture could attach a
+file. `calendar_attaches_files` and `lineup_attaches_files` put the same question for core's two
+channels, which core asks through its protocol. Why it does not ask template validity is its
+docstring's, pinned by `test_template_validity_is_deliberately_not_consulted`.
 
 ### Commanded and scheduled
 

@@ -656,9 +656,22 @@ and hands in. A session's table and the two standings go through the standing-po
 picture Discord refuses goes out as its text in the same try. A verdict and the heading go through
 the notice handler (`send_notice`), and a picture Discord refuses stops the queue, so that the retry
 posts the text. What the drawing had to report comes back as lines of the job, in every case. The
-repost's check that a channel can take a file asks the drawing whether the aspect attaches files
-(`ImageDrawing.aspect_attaches_files`). A retry asks for no picture (above, "Pictures and their
+repost's check that a channel can use what it posts reads results' stated needs for the channel
+(`division_channels.channel_needs`, below) and so asks the drawing whether the aspect attaches
+files (`ImageDrawing.aspect_attaches_files`). A retry asks for no picture (above, "Pictures and their
 fallbacks").
+
+### What results' channels need of the bot
+
+`division_channels.channel_needs` states it, the one source of it within results: the results,
+standings and verdicts channels each need View Channel, Send Messages and Read Message History, the
+last because a repost finds what the bot posted last and takes it down, and Attach Files where the
+drawing answers that the channel's pictures could attach one (`results`, `standings`, and `verdicts`
+or `verdict_banner` for the verdicts channel, where attendance's sanction cards go too). The
+confirmation's faults (`division_channel_faults`) and the repost gate
+(`results_post_service.repost_channel_faults`) both read it, as does attendance's recalculation for
+the verdicts channel, so the gates judge a channel by one statement and cannot disagree about it.
+`manage_messages` is not asked: the bot deletes only its own posts.
 
 ### The `/results` group
 
