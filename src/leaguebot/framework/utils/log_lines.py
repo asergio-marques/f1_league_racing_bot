@@ -325,6 +325,13 @@ def drawn_notices_line(named: str, what: str, drawn: str, notices: Iterable[str]
     )
 
 
+def log_link(url: str) -> str:
+    """The words a reply uses to point the member at the log message holding what it summarises,
+    "([see them in the log](url))": the one wording for every reply that does, so a manager meets
+    it the same wherever a picture was drawn."""
+    return f"([see them in the log]({url}))"
+
+
 async def record_abandoned(
     bot: Any,
     member: int | discord.abc.User | None,
