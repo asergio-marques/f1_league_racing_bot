@@ -555,6 +555,29 @@ def test_nothing_reaches_past_the_scheduler_service():
     )
 
 
+def _apscheduler_imported() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if path == SCHEDULER_SERVICE:
+            continue
+        names = (
+            [node.module or ""] if isinstance(node, ast.ImportFrom)
+            else [alias.name for alias in node.names] if isinstance(node, ast.Import)
+            else []
+        )
+        found[(path, function)] += sum(
+            1 for name in names if name == "apscheduler" or name.startswith("apscheduler.")
+        )
+    return +found
+
+
+def test_nothing_but_the_scheduler_imports_apscheduler():
+    """Core's round jobs and each module's own jobs arm, list and remove them through the
+    scheduler's generic calls, and import no APScheduler, so the scheduler alone knows the library
+    and its conventions hold for every job (architecture.md, "Timed work and restarts")."""
+    _check("nothing but the scheduler imports APScheduler", _apscheduler_imported(), {})
+
+
 # ── 7. No job is armed with a lateness limit ────────────────────────────────────────────────
 
 

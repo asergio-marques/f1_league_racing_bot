@@ -221,32 +221,30 @@ def test_every_file_sits_in_a_folder_the_contracts_name():
     assert misplaced == []
 
 
-#: Core's services that are plumbing every module uses: none since the framework took them; the
-#: check is tightened once the scheduler leaves core too.
-CORE_PLUMBING_FOLDERS: frozenset[str] = frozenset()
-#: Core's services that hold a league rule of core's own, the hub and what core asks of the modules
-#: (`modules/`) among them.
+#: Core's services, by topic: each holds a league rule of core's own, the hub and what core asks of
+#: the modules (`modules/`) among them. Core holds no plumbing since the framework took it.
 CORE_LEAGUE_RULE_FOLDERS = frozenset(
     {"seasons", "cancellations", "rounds", "drivers", "settings", "test_mode", "upkeep", "modules"}
 )
-#: The files that sit directly in `core/services/`: the package's own, and the scheduler, whose
-#: path every saved job names (`test_every_stored_job_names_the_runner_by_its_pinned_module_path`).
-CORE_SERVICES_LOOSE = frozenset({"__init__.py", "scheduler_service.py"})
+#: The files that sit directly in `core/services/`: the package's own alone.
+CORE_SERVICES_LOOSE = frozenset({"__init__.py"})
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: the scheduler service still sits loose in core's services"
+)
 def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules():
-    """Core's services are grouped by topic into packages, and no folder holds both plumbing and a
-    league rule, so that a later review of what core holds can move a whole folder rather than
-    sort its files again (architecture.md, "How the code is laid out"). Every file of core's
-    services is in one of the named folders but the two that stay loose, and every named folder
-    is there."""
+    """Core's services are grouped by topic into packages, each a league rule's, so that a later
+    review of what core holds can move a whole folder rather than sort its files again
+    (architecture.md, "How the code is laid out"). Core holds no plumbing: every file of core's
+    services is in one of the named folders but the package's own, and every named folder is
+    there."""
     services = PACKAGE / "core" / "services"
     loose = sorted(path.name for path in services.glob("*.py") if path.name not in CORE_SERVICES_LOOSE)
     folders = {path.name for path in services.iterdir() if (path / "__init__.py").is_file()}
 
     assert loose == []
-    assert folders == CORE_PLUMBING_FOLDERS | CORE_LEAGUE_RULE_FOLDERS
-    assert not CORE_PLUMBING_FOLDERS & CORE_LEAGUE_RULE_FOLDERS
+    assert folders == CORE_LEAGUE_RULE_FOLDERS
 
 
 #: The framework's services, by topic (architecture.md, "How the code is laid out"): the change
@@ -255,18 +253,17 @@ def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules()
 FRAMEWORK_SERVICE_FOLDERS = frozenset({"queue", "posting", "switches", "jobs"})
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the framework has no jobs/ folder yet")
 def test_the_framework_s_services_sit_in_its_topic_folders():
     """The framework's services are grouped by topic into packages as core's are, with none loose
-    (architecture.md, "How the code is laid out"). The folders fill as the machinery moves out of
-    core, so each that is there is one of the named, and no file sits outside them."""
+    (architecture.md, "How the code is laid out"). Every named folder is there, none other is, and
+    no file sits outside them."""
     services = PACKAGE / "framework" / "services"
-    if not services.is_dir():
-        return
     loose = sorted(path.name for path in services.glob("*.py") if path.name != "__init__.py")
     folders = {path.name for path in services.iterdir() if (path / "__init__.py").is_file()}
 
     assert loose == []
-    assert folders <= FRAMEWORK_SERVICE_FOLDERS
+    assert folders == FRAMEWORK_SERVICE_FOLDERS
 
 
 def test_the_bot_s_type_names_the_services_for_the_type_checker_only():
