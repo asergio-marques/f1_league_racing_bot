@@ -58,6 +58,9 @@ PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 OLD_LINK = f"https://discord.test/{PRO_CALENDAR}/{CALENDAR_MESSAGE}"
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 async def _change(league: Any, kind: str) -> dict[str, Any]:
     rows = [row for row in await change_rows(league.db_path) if row["kind"] == kind]
     assert len(rows) == 1, rows
@@ -105,6 +108,7 @@ def _undeletable(league: Any, message_id: int) -> None:
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_new_calendar_is_posted_before_the_old_one_is_deleted_by_a_job_of_its_own(
     tmp_path,
 ):
@@ -126,6 +130,7 @@ async def test_the_new_calendar_is_posted_before_the_old_one_is_deleted_by_a_job
     assert delete["payload"]["message_id"] == CALENDAR_MESSAGE
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_calendar_post_refused_leaves_the_old_calendar_and_plans_no_delete(tmp_path):
     league = await ongoing_league(tmp_path)
     league.channel(PRO_CALENDAR).send_fails = http_error(
@@ -146,7 +151,7 @@ async def test_a_calendar_post_refused_leaves_the_old_calendar_and_plans_no_dele
 
 
 @pytest.mark.parametrize("occasion", [
-    pytest.param("round cancel", id="round cancel"),
+    pytest.param("round cancel", id="round cancel", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
     pytest.param("season approval", id="season approval"),
 ])
 async def test_an_old_calendar_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
@@ -183,6 +188,7 @@ async def test_an_old_calendar_discord_will_not_delete_stops_the_queue_and_once_
     assert len(league.texts(PRO_CALENDAR)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_stop_between_the_calendar_post_and_its_delete_deletes_the_old_one_on_restart(
     tmp_path,
 ):
@@ -202,6 +208,7 @@ async def test_a_stop_between_the_calendar_post_and_its_delete_deletes_the_old_o
         "delete_replaced") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_calendar_whose_id_could_not_be_saved_removes_the_copy_before_it_posts_again(
     tmp_path,
 ):
@@ -232,6 +239,7 @@ async def test_a_calendar_whose_id_could_not_be_saved_removes_the_copy_before_it
     assert await _calendar_id(league) == str(new)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_calendar_replaced_is_read_when_the_job_runs(tmp_path):
     """The division's calendar was posted again (6005) while the cancellation waited: its post
     deletes 6005, the calendar standing as it ran, and not the 6001 it held when asked."""
@@ -349,7 +357,7 @@ async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
     pytest.param(_approved, "the ✅ Approve button of `/season placements-review`",
                  ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
     pytest.param(_round_cancelled, "`/round cancel`", ("Pro",), POSTED_AS_TEXT,
-                 id="a round's cancellation"),
+                 id="a round's cancellation", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
     pytest.param(_round_not_held, "posting round 3's cancelled sessions", ("Pro",),
                  POSTED_AS_TEXT, id="results' round not held"),
     pytest.param(_season_cancelled, "`/season cancel`", ("Pro",),
@@ -387,6 +395,7 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
             assert words not in told, told
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     tmp_path, monkeypatch,
 ):
@@ -415,6 +424,7 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retried(
     tmp_path, monkeypatch,
 ):
@@ -448,6 +458,7 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
     assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_posted(
     tmp_path, monkeypatch,
 ):
@@ -467,6 +478,7 @@ async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_post
     assert not any("posted as text" in line for line in league.bot.log_channel.sent)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_calendar_the_league_does_not_draw_is_posted_as_text_with_no_line(
     tmp_path, monkeypatch,
 ):

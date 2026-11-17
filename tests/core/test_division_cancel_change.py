@@ -111,6 +111,9 @@ _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 async def _change(league: Any) -> dict[str, Any]:
     """The one cancellation of a division asked of the queue."""
     rows = [row for row in await cancellation_changes(league)
@@ -593,6 +596,7 @@ async def test_the_save_hands_the_division_to_the_notices_hook(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -603,6 +607,7 @@ async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     assert (await _jobs(league))[0]["name"] == "unarm"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_unarming_removes_the_division_s_rounds_in_one_pass(tmp_path):
     """Pro's four rounds lose their timed work in one call to the scheduler, handed every round
     of the division, read before anything is removed; no round is removed on its own and the
@@ -612,10 +617,10 @@ async def test_the_unarming_removes_the_division_s_rounds_in_one_pass(tmp_path):
 
     await _run_through(league, "unarm")
 
-    scheduler = league.bot.scheduler_service
-    scheduler.cancel_round.assert_not_called()
-    assert scheduler.cancel_rounds.call_count == 1
-    call = scheduler.cancel_rounds.call_args
+    round_jobs = league.bot.round_jobs
+    round_jobs.cancel_round.assert_not_called()
+    assert round_jobs.cancel_rounds.call_count == 1
+    call = round_jobs.cancel_rounds.call_args
     assert sorted(call.args[0]) == [round_id(PRO, n) for n in range(1, 5)]
     assert call.kwargs.get("season_end", False) is False
 
@@ -661,9 +666,10 @@ async def test_a_discarded_save_cancels_nothing(tmp_path):
     assert len(_success_lines(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.scheduler_service.cancel_rounds = MagicMock(
+    league.bot.round_jobs.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
     interaction = await _asked(league)
@@ -701,6 +707,7 @@ async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_
     assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s_then_calls_off_the_rest(
     tmp_path,
 ):
@@ -785,6 +792,7 @@ async def test_a_finished_division_is_refused_at_once(tmp_path):
     assert await _statuses(league) == before
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_division_that_finishes_while_its_cancellation_waits_is_refused_when_it_runs(
     tmp_path,
 ):
@@ -840,7 +848,7 @@ async def _amendment_in_hand(league: Any, how: str) -> int | None:
         await run_queue(league.bot)
         assert await _stopped_at(league) == "notify_checkin"
     else:
-        league.bot.scheduler_service.cancel_round = MagicMock(
+        league.bot.round_jobs.cancel_round = MagicMock(
             side_effect=RuntimeError("job store unavailable")
         )
     await amend_round(league, "Pro", 4, scheduled_at=await _a_day_later(league, R4))
@@ -853,6 +861,7 @@ async def _amendment_in_hand(league: Any, how: str) -> int | None:
     return next(step["id"] for step in steps if step["done_at"] is None)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("how", [
     pytest.param("waiting", id="waiting behind a stopped job"),
     pytest.param("stopped", id="stopped at its own job"),
@@ -924,6 +933,7 @@ async def _rearmings(league: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_again_only_the_rounds_still_to_be_run(
     tmp_path,
 ):
@@ -943,16 +953,16 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
         (league.clock.now - timedelta(minutes=10)).astimezone(timezone.utc).isoformat(), R4,
     )
     interaction = await _asked(league)
-    scheduler = league.bot.scheduler_service
-    unarming = (scheduler.cancel_round, scheduler.cancel_rounds)
-    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
-    scheduler.cancel_rounds = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    round_jobs = league.bot.round_jobs
+    unarming = (round_jobs.cancel_round, round_jobs.cancel_rounds)
+    round_jobs.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    round_jobs.cancel_rounds = MagicMock(side_effect=RuntimeError("the job store is locked"))
     await run_queue(league.bot)
     assert await _stopped_at(league) == "unarm"
     await accept_session(league, R3)
     before = await _statuses(league)
 
-    scheduler.cancel_round, scheduler.cancel_rounds = unarming
+    round_jobs.cancel_round, round_jobs.cancel_rounds = unarming
     await retry_job(league.bot)
 
     r1, r2 = round_id(PRO, 1), round_id(PRO, 2)
@@ -976,10 +986,11 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
     assert armed_whole == {R3, R4}
     assert not {rid for which, ids in league.armed if which == "cleanups" for rid in ids} & {
         R3, R4}
-    opened = scheduler.run_result_submission_now
+    opened = round_jobs.run_result_submission_now
     assert [call.args[0].id for call in opened.call_args_list] == [R4]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_the_clean_ups_of_a_round_that_ended_cancelled_as_not_held(
     tmp_path,
 ):
@@ -1040,7 +1051,7 @@ async def _closed(league: Any) -> dict[int, int]:
     return {row["round_id"]: row["closed"] for row in rows}
 
 
-@pytest.mark.parametrize("when", ["at ask", "at run"])
+@pytest.mark.parametrize("when", ["at ask", pytest.param("at run", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS))])
 async def test_a_division_with_a_round_whose_submission_has_accepted_results_is_refused_naming_the_round(
     tmp_path, when,
 ):

@@ -105,6 +105,7 @@ def _make_cog(
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
 
     bot.scheduler_service = MagicMock()
+    bot.round_jobs = MagicMock()
     bot.change_queue = MagicMock()
     # The change's id, as the queue gives it once the change is asked for.
     bot.change_queue.ask = AsyncMock(return_value=1)
@@ -203,7 +204,7 @@ async def test_cancelling_asks_the_queue_with_the_round(tmp_path):
     assert call.kwargs["interaction"] is interaction
     assert call.kwargs["what"] == "`/round cancel`"
     interaction.response.defer.assert_not_awaited()
-    cog.bot.scheduler_service.cancel_round.assert_not_called()
+    cog.bot.round_jobs.cancel_round.assert_not_called()
     cog.bot.season_service.cancel_round.assert_not_awaited()
 
 

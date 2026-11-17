@@ -539,17 +539,19 @@ def attendance_hook_double() -> Any:
 #: The season service is doubled only where a league gives one.
 _DOUBLED_AT_BUILD = {
     "scheduler": ("leaguebot.core.services.scheduler_service", "SchedulerService"),
+    "round_jobs": ("leaguebot.core.services.rounds.round_jobs", "RoundJobs"),
     "attendance_hook": ("leaguebot.attendance.services.hooks.attendance_after_review",
                         "AttendanceAfterReview"),
     "season_service": ("leaguebot.core.services.seasons.season_service", "SeasonService"),
 }
 
 
-async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: Any = None,
-                     attendance_hook_of: Any = None, season_service: Any = None,
-                     real_config: bool = False) -> Any:
+async def league_bot(db_path: str, *, scheduler: Any = None, round_jobs: Any = None,
+                     attendance_hook: Any = None, attendance_hook_of: Any = None,
+                     season_service: Any = None, real_config: bool = False) -> Any:
     """The bot of a test league on *db_path*, the Discord side `league_double` gives stubbed over
-    it, its scheduler *scheduler* (a bare double if None), its attendance hook
+    it, its scheduler *scheduler* (a bare double if None), core's round jobs *round_jobs* (a bare
+    double if None), its attendance hook
     *attendance_hook* (`attendance_hook_double`'s if None) and, where given, its season service
     *season_service*; its queue is attached by `league_queue`, once the league has set its own
     services (#283). With *real_config*, the league's config service reads the database, as a
@@ -564,13 +566,16 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
     The bot is the one the entry point's `build` makes, on settings for *db_path* (the job store
     `jobs.db` beside it), handed the doubles in place of the scheduler, attendance's hook and the
     season service as it builds them, so the change types it registers hold the doubles; every
-    other service is the builder's."""
+    other service is the builder's. The round jobs' double is the bot's `round_jobs` either way:
+    until core builds its round jobs (#544), there is no class to hand the double in place of,
+    and the bot is given it once built."""
     import importlib
     import os
     from contextlib import ExitStack
     from unittest.mock import patch
 
     scheduler = scheduler if scheduler is not None else MagicMock()
+    round_jobs = round_jobs if round_jobs is not None else MagicMock()
     if attendance_hook is None and attendance_hook_of is None:
         attendance_hook = attendance_hook_double()
     from leaguebot.__main__ import Settings, build
@@ -579,7 +584,7 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
                         jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
     import leaguebot.__main__ as entry_point
 
-    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook or attendance_hook_of,
+    doubles = {"scheduler": scheduler, "round_jobs": round_jobs, "attendance_hook": attendance_hook or attendance_hook_of,
                "season_service": season_service}
     with ExitStack() as stack:
         for key, (module_name, name) in _DOUBLED_AT_BUILD.items():
@@ -589,10 +594,15 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
             if key == "attendance_hook" and attendance_hook_of is not None:
                 made = MagicMock(side_effect=lambda bot, *_args, **_kwargs: attendance_hook_of(
                     bot, db_path))
-            stack.enter_context(patch.object(importlib.import_module(module_name), name, made))
+            try:
+                module = importlib.import_module(module_name)
+            except ModuleNotFoundError:  # #544: core's round jobs are not built yet
+                continue
+            stack.enter_context(patch.object(module, name, made))
             if hasattr(entry_point, name):
                 stack.enter_context(patch.object(entry_point, name, made))
         bot = await maybe_await(build(settings))
+    bot.round_jobs = round_jobs
     _stub_discord(bot, real_config=real_config)
     # A bot that has not logged in has no user of its own.
     bot._connection.user = MagicMock()

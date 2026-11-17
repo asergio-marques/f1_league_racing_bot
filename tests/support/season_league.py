@@ -19,7 +19,7 @@ view the builder's factory makes (`_approve_view_for`), as the queue's post job 
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
 the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
 them, attendance's settings through `_attendance`, and a real `SeasonCog` holds the season's setup
-in memory. The scheduler is a double recording each `schedule_*` call in `league.armed`. The
+in memory. Core's round jobs are a double recording each `schedule_*` call in `league.armed`. The
 league's server holds every channel above, the review's channel (610) among them, the roles above
 and the three drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer
 otherwise.
@@ -39,7 +39,7 @@ in memory. Pro's round 1 is FINAL (raced 30 days ago), round 2 AWAITING_REPORT_V
 days ago), rounds 3 and 4 NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check-in call stands
 in Pro's check-in channel (603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in
 `rsvp_embed_messages`), Lewis having accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
-(`CALENDAR_MESSAGE`). The scheduler double records each round `cancel_round` or `cancel_rounds` is
+(`CALENDAR_MESSAGE`). The round jobs' double records each round `cancel_round` or `cancel_rounds` is
 handed in `league.unarmed`, and gives the jobs it removed of each (`removed_jobs`), and a
 message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
 results submission for a round, its channel standing on the server; `cancel_round` and
@@ -49,7 +49,7 @@ results submission for a round, its channel standing on the server; `cancel_roun
 For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
 horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
 performed (`phases_done`, by round id), and the bot reads the amendment's windows as the builder has
-it read them: attendance's only where it is on, weather's always. The scheduler double records
+it read them: attendance's only where it is on, weather's always. The round jobs' double records
 `schedule_round` as weather's arming. `amend_round` runs `/round amend` as admin 77 and presses the
 Confirm it offered, giving the press; `amendment_changes` lists the amendments asked of the queue;
 `accept_session` saves a session's results as the wizard does on accepting them; `posted_forecast`
@@ -182,7 +182,7 @@ class SeasonLeague:
         self._role_doubles: dict[int, Any] = {}
         self.arming_fails: BaseException | None = None
         self.rasteriser_on = True
-        #: The round ids `scheduler.cancel_round` and `scheduler.cancel_rounds` were handed
+        #: The round ids `round_jobs.cancel_round` and `round_jobs.cancel_rounds` were handed
         #: (`ongoing_league`), in order.
         self.unarmed: list[int] = []
         #: Message ids Discord refuses to delete (`ongoing_league`'s check-in call).
@@ -223,13 +223,13 @@ class SeasonLeague:
         from leaguebot.framework.services.switches.module_service import ModuleService
 
         db_path = self.db_path
-        scheduler = MagicMock()
-        scheduler.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
-        scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
-        scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
-        self.bot = bot = await league_bot(db_path, scheduler=scheduler, real_config=True)
+        round_jobs = MagicMock()
+        round_jobs.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
+        round_jobs.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
+        round_jobs.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
+        round_jobs.schedule_round = MagicMock(side_effect=self._arm("weather"))
+        round_jobs.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
+        self.bot = bot = await league_bot(db_path, round_jobs=round_jobs, real_config=True)
         ids = [REVIEW_CHANNEL]
         for _name, _tier, _role, chans in DIVISIONS.values():
             ids += list(vars(chans).values())
@@ -884,8 +884,8 @@ async def ongoing_league(
         league.unarmed.extend(round_ids)
         return {rid: removed_jobs(rid) for rid in round_ids}
 
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_cancel_round)
-    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
+    league.bot.round_jobs.cancel_round = MagicMock(side_effect=_cancel_round)
+    league.bot.round_jobs.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
     if hasattr(league.cog, "_pending"):  # no setup held once approved, while the cog holds one
         league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
@@ -941,7 +941,7 @@ def attendance_from_the_database(league: SeasonLeague) -> None:
 
 
 def removed_jobs(rid: int) -> list[str]:
-    """The jobs `ongoing_league`'s scheduler double says it removed of round *rid*: its results
+    """The jobs `ongoing_league`'s round jobs' double says it removed of round *rid*: its results
     submission and its two clean-ups, as a cancellation's removal of its timed work gives them."""
     return [f"results_id{rid}", f"cleanup_id{rid}", f"rsvp_cleanup_id{rid}"]
 

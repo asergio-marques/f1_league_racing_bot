@@ -47,6 +47,9 @@ ACTOR = {
 # ---------------------------------------------------------------------------
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "amend_test.db")
@@ -312,7 +315,7 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
 
 @pytest.mark.parametrize("fault_in", [
-    "arming the round's jobs",
+    pytest.param("arming the round's jobs", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
     "re-running a phase",
 ])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
@@ -350,6 +353,7 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_amending_two_fields_amends_once(tmp_path, phases):
     """Amending a round's track and its date together is one amendment, not two.
 
@@ -443,6 +447,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
@@ -459,7 +464,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 
     await _amend(league, track=SILVERSTONE)
 
-    schedule_round = league.bot.scheduler_service.schedule_round
+    schedule_round = league.bot.round_jobs.schedule_round
     schedule_round.assert_called_once()
     kwargs = schedule_round.call_args.kwargs
     assert kwargs["phase_1_days"] == 7
@@ -472,6 +477,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_amending_a_round_rearms_its_check_in(tmp_path):
     """The reported defect: amending a round destroyed its check-in for good.
 
@@ -491,7 +497,7 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    arming = league.bot.scheduler_service.schedule_attendance_round
+    arming = league.bot.round_jobs.schedule_attendance_round
     arming.assert_called_once()
     kwargs = arming.call_args.kwargs
     # Armed against the league's own timings, and named for the right season and tier.
@@ -514,7 +520,7 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    league.bot.scheduler_service.schedule_attendance_round.assert_not_called()
+    league.bot.round_jobs.schedule_attendance_round.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -522,6 +528,7 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path):
     """`schedule_round` builds the weather jobs and the results job together.
 
@@ -537,12 +544,13 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    arming = league.bot.scheduler_service.schedule_result_submission_jobs
+    arming = league.bot.round_jobs.schedule_result_submission_jobs
     arming.assert_called_once()
     assert [r.id for r in arming.call_args.args[0]] == [AM_3]
     assert arming.call_args.kwargs["division_meta"] == {AM: (3, 2)}
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
     """With weather on, `schedule_round` has already created it — arming again would duplicate.
     Am's round 3 moved from 90 to 100 days out."""
@@ -551,8 +559,8 @@ async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    league.bot.scheduler_service.schedule_round.assert_called_once()
-    league.bot.scheduler_service.schedule_result_submission_jobs.assert_not_called()
+    league.bot.round_jobs.schedule_round.assert_called_once()
+    league.bot.round_jobs.schedule_result_submission_jobs.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

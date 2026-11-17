@@ -57,6 +57,9 @@ CANNOT_DISCARD = (
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 async def _ask_rearm(league: Any, rid: int = R3, number: int = 3, *,
                      cleanups_only: bool = False) -> int | None:
     """Ask, as the bot, for round *number* of Pro (id *rid*) to be armed again, as a refused
@@ -126,6 +129,7 @@ def phases(monkeypatch):
 # ── A round still to be run ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_re_arming_arms_the_round_as_it_stands_and_catches_up_the_phases_and_the_call_that_fell_due(
     tmp_path, phases, monkeypatch,
 ):
@@ -151,6 +155,7 @@ async def test_a_re_arming_arms_the_round_as_it_stands_and_catches_up_the_phases
     assert await _calls_posted(league) == [R3]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submission_at_once(
     tmp_path,
 ):
@@ -165,7 +170,7 @@ async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submi
 
     assert await stopped_job(league.db_path) is None
     assert ("results", [R3]) in league.armed
-    opened = league.bot.scheduler_service.run_result_submission_now
+    opened = league.bot.round_jobs.run_result_submission_now
     assert [call.args[0].id for call in opened.call_args_list] == [R3]
 
 
@@ -182,7 +187,7 @@ async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tm
 
     assert await stopped_job(league.db_path) is None
     assert ("results", [R3]) not in league.armed
-    league.bot.scheduler_service.run_result_submission_now.assert_not_called()
+    league.bot.round_jobs.run_result_submission_now.assert_not_called()
 
 
 @pytest.mark.parametrize("case", [
@@ -214,6 +219,7 @@ async def test_a_re_arming_whose_round_can_no_longer_be_cancelled_is_dropped(tmp
 # ── It cannot be discarded ──────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("job", [
     pytest.param("judge"),
     pytest.param("arm"),
@@ -254,6 +260,7 @@ async def test_the_re_arming_cannot_be_discarded(tmp_path, job, monkeypatch):
     assert league.armed == [("results", [R3])]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_re_arming_stopped_at_its_check_cannot_be_discarded_whole(tmp_path):
     """Pro's round 3's re-arming is asked; when it comes up, the rounds cannot be read, so its
     check fails and the queue stops on it before any job has run. A league admin's Discard, which
@@ -307,6 +314,7 @@ async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path,
 # ── A round already raced ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
@@ -322,9 +330,9 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     assert await stopped_job(league.db_path) is None
     assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
     assert league.armed == [("cleanups", [R3])]
-    arming = league.bot.scheduler_service.schedule_round_cleanups
+    arming = league.bot.round_jobs.schedule_round_cleanups
     assert arming.call_args.kwargs["now"] == league.clock.now
-    league.bot.scheduler_service.run_result_submission_now.assert_not_called()
+    league.bot.round_jobs.run_result_submission_now.assert_not_called()
 
 
 async def test_a_raced_round_s_clean_ups_already_due_run_at_once(tmp_path):

@@ -99,6 +99,9 @@ NOT_SAVED = (
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 async def _pressed(league: Any, **kwargs: Any) -> Any:
     """Press ✅ Approve, the press raising nothing."""
     press = await press_approve(league, **kwargs)
@@ -250,6 +253,7 @@ async def _league_for(tmp_path: Any, monkeypatch: Any, **kwargs: Any) -> Any:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calendars_and_sheets_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -882,17 +886,18 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
 @pytest.mark.parametrize(
     ("modules", "armed"),
     [
-        pytest.param({"weather": True}, ["weather"], id="weather on"),
+        pytest.param({"weather": True}, ["weather"], id="weather on", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
         pytest.param({"weather": False, "results": True}, ["results"],
-                     id="weather off and results on"),
+                     id="weather off and results on", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
         pytest.param({"weather": False, "results": True, "test_mode": True}, [],
                      id="weather off and results on under test mode"),
         pytest.param({"weather": False, "results": True, "attendance": True},
-                     ["results", "attendance"], id="weather off, results and attendance on"),
+                     ["results", "attendance"], id="weather off, results and attendance on",
+                     marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
         pytest.param({"weather": False, "results": False}, ["results"],
-                     id="weather and results off"),
+                     id="weather and results off", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
         pytest.param({"weather": False, "results": False, "test_mode": True}, ["results"],
-                     id="weather and results off under test mode"),
+                     id="weather and results off under test mode", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
     ],
 )
 async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
@@ -905,11 +910,12 @@ async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch
     await run_queue(league.bot)
 
     assert _armed(league) == {which: sorted(_all_rounds()) for which in armed}
-    check_in = league.bot.scheduler_service.schedule_attendance_round
+    check_in = league.bot.round_jobs.schedule_attendance_round
     assert {call.kwargs["now"] for call in check_in.call_args_list} <= {league.clock.now}
     assert (await _approval(league))["state"] == "DONE"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("test_mode", [False, True], ids=["test mode off", "test mode on"])
 async def test_a_season_with_weather_and_results_off_arms_a_result_submission_for_each_round(
     tmp_path, monkeypatch, test_mode,
@@ -920,7 +926,7 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
 
     await run_queue(league.bot)
 
-    arm = league.bot.scheduler_service.schedule_result_submission_jobs
+    arm = league.bot.round_jobs.schedule_result_submission_jobs
     assert arm.call_count == 1, league.armed
     assert league.armed == [("results", _all_rounds())]
     assert arm.call_args.kwargs["division_meta"] == {
@@ -928,6 +934,7 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
     }
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
     tmp_path, monkeypatch,
 ):
@@ -973,6 +980,7 @@ def _said_to(interaction: Any) -> list[str]:
     return [str(call.args[0] if call.args else call.kwargs.get("content", "")) for call in calls]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_every_round(
     tmp_path, monkeypatch,
 ):

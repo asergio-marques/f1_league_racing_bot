@@ -118,6 +118,9 @@ AMENDED = (
 )
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 def _accepted(number: int) -> str:
     return (f"❌ Cannot cancel the season — results have already been accepted in the submission "
             f"channel of round {number} of **Pro** (<#{SUBMISSION_CHANNEL}>), and cancelling "
@@ -377,7 +380,7 @@ def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
 
 
 def _unarming_fails(league: Any) -> None:
-    league.bot.scheduler_service.cancel_rounds = MagicMock(
+    league.bot.round_jobs.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
 
@@ -387,7 +390,7 @@ def _unarming_works(league: Any) -> None:
         league.unarmed.extend(round_ids)
         return {rid: removed_jobs(rid) for rid in round_ids}
 
-    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
+    league.bot.round_jobs.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
 
 
 async def _formers(league: Any, *user_ids: int) -> None:
@@ -783,6 +786,7 @@ REARMING_ROUNDS = (
 )
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_writing_nothing(
     tmp_path,
 ):
@@ -797,16 +801,16 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
     league = await ongoing_league(tmp_path, attendance=True)
     await _empty_submission(league)
     interaction = await _asked(league)
-    scheduler = league.bot.scheduler_service
-    unarming_one = scheduler.cancel_round
-    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    round_jobs = league.bot.round_jobs
+    unarming_one = round_jobs.cancel_round
+    round_jobs.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
     _unarming_fails(league)
     await run_queue(league.bot)
     assert await _stopped_at(league) == ("unarm", None)
     await accept_session(league, R3)
     before = await _rounds(league)
 
-    scheduler.cancel_round = unarming_one
+    round_jobs.cancel_round = unarming_one
     _unarming_works(league)
     await retry_job(league.bot)
 
@@ -834,13 +838,13 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
     armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
     assert armed_whole == set(still_to_run)
     assert {rid for which, ids in league.armed if which == "cleanups" for rid in ids} == set(raced)
-    assert not [call for call in league.bot.scheduler_service.method_calls
+    assert not [call for call in league.bot.round_jobs.method_calls
                 if call[0].startswith("schedule") and "season_end" in call[0]]
 
 
 @pytest.mark.parametrize("how", [
     pytest.param("waiting", id="waiting behind a stopped job"),
-    pytest.param("stopped", id="stopped at its own job"),
+    pytest.param("stopped", id="stopped at its own job", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
 ])
 async def test_a_second_cancellation_is_refused_at_once_naming_the_job(tmp_path, how):
     league = await ongoing_league(tmp_path)
@@ -1029,17 +1033,18 @@ async def test_the_save_hands_each_running_division_to_the_notices_hook(tmp_path
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
 
     await _run_through(league, "unarm")
     assert sorted(league.unarmed) == sorted(await _rounds(league))
-    scheduler = league.bot.scheduler_service
-    assert scheduler.cancel_rounds.call_count == 1
-    assert scheduler.cancel_rounds.call_args.kwargs.get("season_end") is True
-    scheduler.cancel_round.assert_not_called()
-    scheduler.cancel_season_end.assert_not_called()
+    round_jobs = league.bot.round_jobs
+    assert round_jobs.cancel_rounds.call_count == 1
+    assert round_jobs.cancel_rounds.call_args.kwargs.get("season_end") is True
+    round_jobs.cancel_round.assert_not_called()
+    round_jobs.cancel_season_end.assert_not_called()
     assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
 
     await run_queue(league.bot)
@@ -1047,6 +1052,7 @@ async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path
     assert await _status(league) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tmp_path):
     """Pro's and Am's rounds are all read before any timed work is removed, and then removed in
     one call to the scheduler with the season-end job, so a read that fails part-way removes
@@ -1061,15 +1067,15 @@ async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tm
         return await reading(division_id, *args, **kwargs)
 
     seasons.get_division_rounds = _read
-    scheduler = league.bot.scheduler_service
-    scheduler.cancel_round = MagicMock(
+    round_jobs = league.bot.round_jobs
+    round_jobs.cancel_round = MagicMock(
         side_effect=lambda round_id, **_: events.append(("remove", [round_id]))
     )
     def _cancel_rounds(round_ids: Any, **kwargs: Any) -> dict[int, list[str]]:
         events.append(("remove", sorted(round_ids), kwargs.get("season_end")))
         return {rid: removed_jobs(rid) for rid in round_ids}
 
-    scheduler.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
+    round_jobs.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
     await _asked(league)
     events.clear()
 
@@ -1081,7 +1087,7 @@ async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tm
         i for i, event in enumerate(events) if event[0] == "read"
     )
     assert {event[1] for event in events if event[0] == "read"} == {PRO, AM}
-    scheduler.cancel_season_end.assert_not_called()
+    round_jobs.cancel_season_end.assert_not_called()
 
 
 async def test_every_division_still_running_is_told_in_the_season_s_words(tmp_path):
@@ -1308,6 +1314,7 @@ async def test_the_roles_are_taken_back_after_the_notices(tmp_path):
         assert set(league.revoked[user_id]) == roles
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     _unarming_fails(league)
@@ -1327,6 +1334,7 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_first_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
     """The first save stops on a fault after every round's timed work came off. A league admin's
     Discard is refused, saying season 3's rounds would be left with no timed work; the queue stays

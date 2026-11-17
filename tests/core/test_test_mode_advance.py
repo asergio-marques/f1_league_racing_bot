@@ -75,6 +75,9 @@ _CHECK_IN_RUNNERS = ("run_rsvp_notice", "run_rsvp_last_notice", "run_rsvp_deadli
 # ---------------------------------------------------------------------------
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 async def _make_db(tmp_path, *, round_format: str = "NORMAL") -> str:
     """The league's database: Division 1's round 3 at Silverstone, of *round_format*."""
     db_path = os.path.join(str(tmp_path), "advance.db")
@@ -134,6 +137,7 @@ def _make_cog(db_path: str, *, test_mode: bool = True) -> _Cog:
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
     bot.scheduler_service = MagicMock()
+    bot.round_jobs = MagicMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.change_queue = MagicMock()
@@ -323,6 +327,7 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 # Each kind's own step
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("job_id", ["queued_job", None], ids=["from-the-job-store", "from-state"])
 @pytest.mark.parametrize(
     "phase_number",
@@ -344,7 +349,7 @@ async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_numb
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     order: list[str] = []
-    cog.bot.scheduler_service.cancel_round = MagicMock(
+    cog.bot.round_jobs.cancel_round = MagicMock(
         side_effect=lambda *_a, **_k: order.append("cancel")
     )
 
@@ -361,7 +366,7 @@ async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_numb
 
     stand_in.assert_awaited_once()
     assert stand_in.await_args.args[0] == entry
-    cog.bot.scheduler_service.cancel_round.assert_called_once_with(
+    cog.bot.round_jobs.cancel_round.assert_called_once_with(
         ROUND_ID, only=frozenset({kind})
     )
     cog.bot.scheduler_service.cancel_job.assert_not_called()
@@ -991,7 +996,7 @@ async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phas
                            round_, session)
     # The notice takes its timer's job down by round and kind; the league's double records a
     # round's jobs taken down by round alone.
-    league.bot.scheduler_service.cancel_round = MagicMock()
+    league.bot.round_jobs.cancel_round = MagicMock()
     cog = _Cog.__new__(_Cog)
     cog.bot = league.bot
     entry = {"phase_number": phase, "kind": KIND_OF_PHASE[phase],
@@ -1085,7 +1090,7 @@ async def test_an_advanced_forecast_cleanup_deletes_an_earlier_phase_still_stand
     raced = (league.clock.now - timedelta(days=1, hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
     await posted_forecast(league, round_, 2, 8002)
-    league.bot.scheduler_service.cancel_round = MagicMock()
+    league.bot.round_jobs.cancel_round = MagicMock()
     cog = _Cog.__new__(_Cog)
     cog.bot = league.bot
     entry = {"phase_number": 8, "kind": KIND_OF_PHASE[8],
@@ -1117,7 +1122,7 @@ async def test_an_advanced_forecast_cleanup_names_the_phase_it_deletes(tmp_path)
     raced = (league.clock.now - timedelta(days=1, hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
     await posted_forecast(league, round_, 2, 8002)
-    league.bot.scheduler_service.cancel_round = MagicMock()
+    league.bot.round_jobs.cancel_round = MagicMock()
     cog = _Cog.__new__(_Cog)
     cog.bot = league.bot
     interaction = _interaction()
@@ -1150,7 +1155,7 @@ async def test_an_advanced_mystery_notice_of_a_raced_round_says_it_was_not_due(t
     raced = (league.clock.now - timedelta(hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET format = 'MYSTERY', scheduled_at = ? WHERE id = ?",
                        raced, round_)
-    league.bot.scheduler_service.cancel_round = MagicMock()
+    league.bot.round_jobs.cancel_round = MagicMock()
     cog = _Cog.__new__(_Cog)
     cog.bot = league.bot
     interaction = _interaction()
@@ -1189,7 +1194,7 @@ async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_wa
     raced = (league.clock.now - timedelta(days=1, hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
     await league.write("DELETE FROM forecast_messages WHERE round_id = ?", round_)
-    league.bot.scheduler_service.cancel_round = MagicMock()
+    league.bot.round_jobs.cancel_round = MagicMock()
     cog = _Cog.__new__(_Cog)
     cog.bot = league.bot
     interaction = _interaction()
@@ -1333,7 +1338,7 @@ async def _ask_as_advance(league, phase_number: int, round_id: int, round_number
     await league.set_test_mode(True)
     # The step's job is taken down by round and kind; the league's double records a round's jobs
     # taken down by round alone.
-    league.bot.scheduler_service.cancel_round = MagicMock()
+    league.bot.round_jobs.cancel_round = MagicMock()
     cog = _Cog.__new__(_Cog)
     cog.bot = league.bot
     entry = {"phase_number": phase_number, "kind": KIND_OF_PHASE[phase_number],

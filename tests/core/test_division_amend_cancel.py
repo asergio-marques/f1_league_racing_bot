@@ -128,7 +128,8 @@ def _make_cog(
     bot.season_service.cancel_division = AsyncMock(return_value=None)
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.scheduler_service = MagicMock()
-    bot.scheduler_service.cancel_round = MagicMock(return_value=None)
+    bot.round_jobs = MagicMock()
+    bot.round_jobs.cancel_round = MagicMock(return_value=None)
     bot.change_queue = MagicMock()
     # The change's id, as the queue gives it once the change is asked for.
     bot.change_queue.ask = AsyncMock(return_value=1)
@@ -1355,8 +1356,8 @@ async def test_cancelling_asks_the_queue_with_the_division(tmp_path):
     call = cog.bot.change_queue.ask.await_args
     assert call.kwargs["interaction"] is interaction
     assert call.kwargs["what"] == "`/division cancel`"
-    cog.bot.scheduler_service.cancel_round.assert_not_called()
-    cog.bot.scheduler_service.cancel_rounds.assert_not_called()
+    cog.bot.round_jobs.cancel_round.assert_not_called()
+    cog.bot.round_jobs.cancel_rounds.assert_not_called()
     cog.bot.season_service.cancel_division.assert_not_awaited()
 
 

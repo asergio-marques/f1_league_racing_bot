@@ -49,6 +49,9 @@ PRO_RESULTS = DIVISIONS[PRO][3].results
 ROUND_3 = round_id(PRO, 3)
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 @pytest.fixture(autouse=True)
 def _no_panel_to_refresh(monkeypatch):
     """The hub has no panel here; turning results off refreshes it as a change of its own."""
@@ -114,7 +117,7 @@ async def _switch_results_off(league: SeasonLeague) -> Any:
 @pytest.mark.parametrize(
     "call_off",
     [
-        pytest.param(_round_called_off, id="round called off"),
+        pytest.param(_round_called_off, id="round called off", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
         pytest.param(_division_called_off, id="division called off"),
         pytest.param(_round_ended_not_held, id="round ended not held"),
     ],
@@ -134,6 +137,7 @@ async def test_turning_results_off_takes_down_the_called_off_note(tmp_path, call
     assert note not in league.channel(PRO_RESULTS).messages
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_called_off_note_discord_refuses_to_delete_stops_the_switch_off_and_is_linked(
     tmp_path,
 ):

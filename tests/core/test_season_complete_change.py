@@ -172,6 +172,9 @@ ALREADY = (
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
+NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
+
+
 async def _asked(league: Any) -> Any:
     interaction = await complete_season(league)
     assert not league.errors, league.errors
@@ -1184,10 +1187,11 @@ async def test_a_discarded_wind_down_completes_nothing(tmp_path):
     assert await _history(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_discarded_first_save_completes_nothing(tmp_path):
     league = await pending_completion_league(tmp_path)
     interaction = await _asked(league)
-    league.bot.scheduler_service.cancel_season_end = MagicMock(
+    league.bot.round_jobs.cancel_season_end = MagicMock(
         side_effect=RuntimeError("the job store could not be read")
     )
 
@@ -1545,15 +1549,16 @@ async def test_the_season_is_archived_audited_and_the_server_holds_no_active_sea
     assert await league.rows("SELECT * FROM server_configs") == config
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_season_end_job_left_by_an_older_version_is_removed(tmp_path):
     league = await pending_completion_league(tmp_path)
     await _asked(league)
     assert len(await season_end_changes(league, SEASON_COMPLETE_KIND)) == 1
-    league.bot.scheduler_service.cancel_season_end.assert_not_called()
+    league.bot.round_jobs.cancel_season_end.assert_not_called()
 
     await run_queue(league.bot)
 
-    league.bot.scheduler_service.cancel_season_end.assert_called_once()
+    league.bot.round_jobs.cancel_season_end.assert_called_once()
 
 
 async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_the_season_is_archived(
