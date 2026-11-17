@@ -441,7 +441,7 @@ way deliberately.
 **A stage boundary is tested through its handler, never through APScheduler's clock.** Seed the
 rows, call the handler with a fixed `now`, assert on what changed. What the scheduler is separately
 tested for is that the right job is armed with the right id at the right moment — a real job store
-in `tmp_path` and assertions over `get_jobs()`, as `test_round_jobs_ids.py` does — and that each
+in `tmp_path` and assertions over `get_jobs()`, as `test_round_jobs_runner.py` does — and that each
 module-level job callable survives its service or callback being absent, as
 `test_scheduler_job_callables.py` does. The two halves are tested apart because that is the only
 way to test either without a clock that runs.
