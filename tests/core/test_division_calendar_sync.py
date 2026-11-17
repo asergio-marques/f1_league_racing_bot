@@ -243,26 +243,32 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     ]
 
 
-@pytest.mark.parametrize("log_channel", ["takes", "refuses"])
+@pytest.mark.parametrize("case", ["takes", "refuses", "rejected"])
 async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(
-    tmp_path, log_channel,
+    tmp_path, case,
 ):
     """A calendar synced, drawn with a notice. The reply lists the notice under "Image notices",
     labelled as the log line names the picture, with a link to the log channel's message holding
     it (Constitution XIV.4; image spec, Calendar); a log channel that refuses the line costs the
-    link alone. The command's line in the log channel does not repeat the notice, the calendar's
-    posting job reporting it there once, among its own lines."""
+    link alone. Where the render also finds a fault it cannot draw past (the template has no
+    rows), nothing is posted and the reply says so with the problem, then lists the notice all the
+    same, linked, for the log holds it. The command's line in the log channel, its success or its
+    refusal, does not repeat the notice, the calendar's posting job reporting it there once, among
+    its own lines."""
     cog = await _make_cog()
-    if log_channel == "refuses":
+    if case == "refuses":
         cog.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
     interaction = _interaction()
+    problem = "the template has no rows" if case == "rejected" else None
 
-    await _sync(cog, interaction, posting=_posting(notices=["round 12 did not fit"]))
+    await _sync(
+        cog, interaction, posting=_posting(problem=problem, notices=["round 12 did not fit"])
+    )
 
     replied = _replied(interaction)
     assert "⚠️ **Image notices**" in replied
     assert "  • round 12 did not fit" in replied
-    if log_channel == "refuses":
+    if case == "refuses":
         assert "  **calendar — Pro**\n" in replied
         assert "see them in the log" not in replied
         return
@@ -272,8 +278,15 @@ async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_clo
         "  • round 12 did not fit"
     ) in replied
     logged = _logged(cog)[-1]
-    assert "| /division calendar-sync | Success" in logged
     assert "round 12 did not fit" not in logged
+    if case == "rejected":
+        outcome = _outcome(interaction)
+        refusal = "❌ The calendar for **Pro** was not posted — the template has no rows"
+        assert outcome.startswith(refusal)
+        assert outcome.index("⚠️ **Image notices**") > len(refusal)
+        assert "was not posted — the template has no rows" in logged
+        return
+    assert "| /division calendar-sync | Success" in logged
 
 
 async def test_a_server_with_no_season_is_refused(tmp_path):
