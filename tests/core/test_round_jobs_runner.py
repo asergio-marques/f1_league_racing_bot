@@ -77,28 +77,12 @@ _NO_LEADS = "#544: core has no RoundLead nor RoundJobs.arm_leads yet"
 
 
 def _lead(kind: str) -> Any:
-    """The lead a module answers for a round's *kind* of job, with its packaged settings: weather's
-    three phases 5 days, 2 days and 2 hours before the round and its clean-up a day after, armed
-    whatever the hour, and the check-in's call 5 days, last notice 24 hours and deadline 2 hours
-    before the round and its clean-up a day after, each armed only while ahead."""
-    from leaguebot.core.models.round import RoundLead
-    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
+    """The lead a module answers for a round's *kind* of job, with its packaged settings, taken
+    from the shared helpers: weather's three phases and clean-up, armed whatever the hour, and the
+    check-in's call, last notice, deadline and clean-up, each armed only while ahead."""
+    from tests.support.round_jobs import check_in_leads, forecast_leads
 
-    return {
-        "weather_p1": RoundLead(kind="weather_p1", offset=-timedelta(days=5), label="Weather P1"),
-        "weather_p2": RoundLead(kind="weather_p2", offset=-timedelta(days=2), label="Weather P2"),
-        "weather_p3": RoundLead(kind="weather_p3", offset=-timedelta(hours=2), label="Weather P3"),
-        "cleanup": RoundLead(kind="cleanup", offset=POST_RACE_CLEANUP_DELAY,
-                             label="Forecast cleanup", clean_up=True),
-        "rsvp_notice": RoundLead(kind="rsvp_notice", offset=-timedelta(days=5),
-                                 label="RSVP notice", ahead_only=True),
-        "rsvp_last_notice": RoundLead(kind="rsvp_last_notice", offset=-timedelta(hours=24),
-                                      label="RSVP last-notice", ahead_only=True),
-        "rsvp_deadline": RoundLead(kind="rsvp_deadline", offset=-timedelta(hours=2),
-                                   label="RSVP deadline", ahead_only=True),
-        "rsvp_cleanup": RoundLead(kind="rsvp_cleanup", offset=POST_RACE_CLEANUP_DELAY,
-                                  label="RSVP cleanup", ahead_only=True, clean_up=True),
-    }[kind]
+    return {lead.kind: lead for lead in (*forecast_leads(), *check_in_leads())}[kind]
 
 
 def _arm_lead(kind: str) -> Any:
@@ -109,12 +93,10 @@ def _arm_lead(kind: str) -> Any:
 
 
 def _submission() -> Any:
-    """Results' lead for a round's submission, as results answers it: at the round's moment, run
-    at once where that moment has passed, and left to `/test-mode advance` where core says so."""
-    from leaguebot.core.models.round import RoundLead
+    """Results' lead for a round's submission, as results answers it (the shared helper)."""
+    from tests.support.round_jobs import submission_lead
 
-    return RoundLead(kind="results", offset=timedelta(0), label="Result submission",
-                     run_at_once=True, left_to_advance=True)
+    return submission_lead()
 
 
 def _arm_results_only(round_jobs: Any, rnd: Any) -> None:
