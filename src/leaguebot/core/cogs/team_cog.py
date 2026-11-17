@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import discord
@@ -478,7 +478,7 @@ class TeamCog(commands.Cog):
                         await interaction.followup.send(
                             text, files=files, ephemeral=not public
                         )
-                        acknowledgement.standing = False
+                        acknowledgement.sent()
                         await self._tell_notices(interaction, section)
                         return
                     finally:
@@ -511,8 +511,14 @@ class TeamCog(commands.Cog):
                         lines.append(f"    Seat {seat_num}: {driver_str}")
             lines.append("")
 
-        acknowledgement.standing = False
-        await _send_long(interaction, "\n".join(lines).rstrip(), ephemeral=not public)
+        # The acknowledgement is gone only once the first message has gone out: where Discord
+        # refuses that one, the failure reply still has to be taken down first.
+        await _send_long(
+            interaction,
+            "\n".join(lines).rstrip(),
+            ephemeral=not public,
+            on_first_sent=acknowledgement.sent,
+        )
 
     # ------------------------------------------------------------------
     # /team reserve-role  — set or clear the role for the Reserve team
@@ -571,6 +577,10 @@ class _PublicAcknowledgement:
         self._interaction = interaction
         self.standing = standing
 
+    def sent(self) -> None:
+        """Note that a follow-up has gone out, so the acknowledgement is no longer standing."""
+        self.standing = False
+
     async def take_down(self) -> None:
         if not self.standing:
             return
@@ -585,17 +595,24 @@ class _PublicAcknowledgement:
                 log.warning("could not show the channel that the lineup was not shown", exc_info=True)
 
 
-async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: bool = True) -> None:
-    """Send potentially-long text, splitting into followup chunks if needed."""
-    if len(text) <= _MAX_MSG_LEN:
-        await interaction.followup.send(text, ephemeral=ephemeral)
-        return
-    chunks = []
-    while text:
-        chunks.append(text[:_MAX_MSG_LEN])
-        text = text[_MAX_MSG_LEN:]
-    for chunk in chunks:
+async def _send_long(
+    interaction: discord.Interaction,
+    text: str,
+    *,
+    ephemeral: bool = True,
+    on_first_sent: Callable[[], None] | None = None,
+) -> None:
+    """Send potentially-long text, splitting into followup chunks if needed.
+
+    `on_first_sent` is called once the first chunk has gone out, and not before.
+    """
+    chunks = [text]
+    if len(text) > _MAX_MSG_LEN:
+        chunks = [text[i:i + _MAX_MSG_LEN] for i in range(0, len(text), _MAX_MSG_LEN)]
+    for number, chunk in enumerate(chunks):
         await interaction.followup.send(chunk, ephemeral=ephemeral)
+        if number == 0 and on_first_sent is not None:
+            on_first_sent()
 
 
 # ---------------------------------------------------------------------------

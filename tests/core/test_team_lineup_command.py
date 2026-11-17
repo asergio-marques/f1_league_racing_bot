@@ -548,15 +548,6 @@ async def test_a_drawing_that_fails_fails_the_command(tmp_path):
     interaction.followup.send.assert_not_awaited()
 
 
-#: Why a public text lineup whose first message Discord refuses still fails: the acknowledgement
-#: is treated as gone before that message has gone out, so the failure reply is shown in the
-#: channel.
-_TEXT_SEND_REFUSED = (
-    "#550: a public text lineup whose first message is refused shows the failure reply in the "
-    "channel; the acknowledgement is treated as gone before anything went out"
-)
-
-
 @pytest.mark.parametrize(
     "refused",
     [
@@ -564,10 +555,7 @@ _TEXT_SEND_REFUSED = (
         "unknown_division",
         "no_divisions",
         "drawing_fails",
-        pytest.param(
-            "text_send_fails",
-            marks=pytest.mark.xfail(strict=True, reason=_TEXT_SEND_REFUSED),
-        ),
+        "text_send_fails",
     ],
 )
 async def test_a_public_lineup_refused_is_told_to_the_manager_alone(tmp_path, refused):
