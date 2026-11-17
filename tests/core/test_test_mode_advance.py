@@ -560,20 +560,24 @@ async def _noop(kind: str, key: int) -> None:
     return None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens(tmp_path):
     """A weather-enabled season carries a real future-dated results job; left armed it
     would open a second submission channel after advance had already opened one.
 
-    Against a real scheduler, with the job armed by the production path: advance once
-    cancelled `results_r{round_id}`, an ID no job has ever had, and a double on
+    Against core's round jobs over a real scheduler, with the job armed by the production path:
+    advance once cancelled `results_r{round_id}`, an ID no job has ever had, and a double on
     `cancel_job` held that as correct (issue #139). Only this round's results job goes —
     another round's, and this round's forecasts, stay queued.
     """
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.scheduler_service import SchedulerService
 
-    cog = _make_cog(await _make_db(tmp_path))
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
     service = SchedulerService(str(tmp_path / "jobs.db"))
     try:
+        round_jobs = RoundJobs(service, db_path)
         service.start()
         later = datetime.now(timezone.utc) + timedelta(days=3)
         rounds = [
@@ -584,13 +588,13 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
             )
             for round_id, number in ((ROUND_ID, 3), (ROUND_ID + 1, 4))
         ]
-        service.schedule_result_submission_jobs(rounds, division_meta={DIVISION_ID: (1, 1)})
+        round_jobs.schedule_result_submission_jobs(rounds, division_meta={DIVISION_ID: (1, 1)})
         weather_job = f"weather_p3_s1_d1_r3_id{ROUND_ID}"
         service._scheduler.add_job(
             _noop, "date", run_date=later, id=weather_job,
             kwargs={"kind": "weather_p3", "key": ROUND_ID},
         )
-        cog.bot.scheduler_service = service
+        cog.bot.round_jobs = round_jobs
 
         await _advance(cog, _interaction(), _entry(4, job_id=None))
 
@@ -741,11 +745,11 @@ async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tm
             (ROUND_ID, DIVISION_ID),
         )
         await db.commit()
-    scheduler = MagicMock()
-    scheduler.get_pending_advance_jobs = MagicMock(return_value=[])
+    round_jobs = MagicMock()
+    round_jobs.get_pending_advance_jobs = MagicMock(return_value=[])
 
     entry = await get_next_pending_phase(
-        db_path, scheduler, now=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        db_path, round_jobs, now=datetime(2026, 6, 2, tzinfo=timezone.utc),
         pending_steps_read=pending_steps_read(),
     )
 
@@ -1514,8 +1518,8 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
             (ROUND_ID, DIVISION_ID),
         )
         await db.commit()
-    scheduler = MagicMock()
-    scheduler.get_pending_advance_jobs = MagicMock(return_value=[
+    round_jobs = MagicMock()
+    round_jobs.get_pending_advance_jobs = MagicMock(return_value=[
         {"job_id": f"{prefix}_r{ROUND_ID}", "round_id": ROUND_ID, "phase_number": phase,
          "next_run_time": datetime(2026, 6, day, tzinfo=timezone.utc)}
         for prefix, phase, day in (("rsvp_deadline", 7, 1), ("cleanup", 8, 2),
@@ -1524,7 +1528,7 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
     now = datetime(2026, 6, 3, tzinfo=timezone.utc)
 
     entry = await get_next_pending_phase(
-        db_path, scheduler, now=now, pending_steps_read=pending_steps_read(),
+        db_path, round_jobs, now=now, pending_steps_read=pending_steps_read(),
     )
     assert entry is not None
     assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 8)
@@ -1533,7 +1537,7 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
         await db.execute("DELETE FROM forecast_messages WHERE round_id = ?", (ROUND_ID,))
         await db.commit()
     entry = await get_next_pending_phase(
-        db_path, scheduler, now=now, pending_steps_read=pending_steps_read(),
+        db_path, round_jobs, now=now, pending_steps_read=pending_steps_read(),
     )
     assert entry is not None
     assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 9)
@@ -1542,5 +1546,5 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
         await db.execute("DELETE FROM rsvp_embed_messages WHERE round_id = ?", (ROUND_ID,))
         await db.commit()
     assert await get_next_pending_phase(
-        db_path, scheduler, now=now, pending_steps_read=pending_steps_read(),
+        db_path, round_jobs, now=now, pending_steps_read=pending_steps_read(),
     ) is None
