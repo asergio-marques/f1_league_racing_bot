@@ -907,7 +907,7 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
 )
 async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
     """Each round's result submission is armed whatever the modules, save under test mode with
-    results on, where `/test-mode advance` opens it by hand (owner, "Fold them in"). A check-in
+    results on and weather off, where `/test-mode advance` opens it by hand (owner, "Fold them in"). A check-in
     is armed through attendance's leads against the queue's clock, never the wall clock, and only
     where attendance is on."""
     league = await _league_for(tmp_path, monkeypatch, **modules)

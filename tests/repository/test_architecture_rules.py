@@ -3432,7 +3432,7 @@ def _root_of_the_subscriber(expr: ast.expr) -> tuple[str, str] | None:
 
 def _sign_ups_among(nodes, bot: dict[str, str]) -> dict[str, set[str]]:
     """Each hook signed up among *nodes* of the entry point, by how its subscription reads it
-    (``bot.round_windows_read``), to the modules whose functions it signs up. A subscriber's module
+    (``bot.round_leads_read``), to the modules whose functions it signs up. A subscriber's module
     is the package it is imported from, the module of the bot's attribute it is read on (*bot*,
     attribute to module), or, for a loop's name, the modules of everything the loop runs over; a
     subscriber of core's, or one no module can be told for, names none."""

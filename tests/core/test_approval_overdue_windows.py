@@ -236,8 +236,8 @@ def test_a_cancelled_round_is_not_reported():
 def test_a_window_exactly_now_is_overdue():
     """The ``fire_at <= now`` boundary the module docstring pins.
 
-    It is the exact complement of `schedule_attendance_round`'s ``if fire_at > now``: a
-    window landing on this instant would not have been scheduled, so it must be reported.
+    It is the exact complement of `arm_leads` leaving out an ahead-only lead that is not still
+    ahead: a window landing on this instant would not have been armed, so it must be reported.
     """
     exactly = _round(days_out=5)  # notice window falls precisely on NOW
 
