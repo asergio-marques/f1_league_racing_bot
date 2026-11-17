@@ -1097,19 +1097,23 @@ class ImageDrawing:
 
         The command runs in no job, so its notices are reported to the log channel in one
         message before this returns, naming the lineup and the division, as well as handed
-        back for its own output. (`post_log` contains its own failures.)"""
+        back for its own output, with the link to that message (`LineupPicture.log_link`), or
+        None where no message was posted. (`post_log` contains its own failures.)"""
         division, outcome = await self._render_lineup(guild, division_id)
 
+        log_link: str | None = None
         if outcome.notices:
-            await self._post_log(
+            logged = await self._post_log(
                 ImageRenderService.format_notices(
                     outcome.notices, subject=f"lineup — {division.name}"
                 )
             )
+            jump_url = getattr(logged, "jump_url", None)
+            log_link = jump_url if isinstance(jump_url, str) and jump_url else None
         problem = outcome.problem.message("the lineup") if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
-        return LineupPicture(path=path, problem=problem, notices=notices)
+        return LineupPicture(path=path, problem=problem, notices=notices, log_link=log_link)
 
     async def draw_review_lineup(
         self, guild: Any, division_id: int, *, include_uncommitted: bool,

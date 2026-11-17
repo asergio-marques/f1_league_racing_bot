@@ -102,12 +102,14 @@ class LineupPicture:
     drawing's own words for what it survived. `draw_lineup` and `draw_review_lineup` write nothing
     to the log channel: the lineup of record and a review's are drawn inside a job, which records
     them among its own lines, once. `draw_lineup_for_command` runs in no job and reports them
-    itself.
+    itself, handing back *log_link*, the link to the log message holding them, or None where it
+    posted none.
     """
 
     path: Path | None
     problem: str | None
     notices: tuple[str, ...] = field(default_factory=tuple)
+    log_link: str | None = None
 
 
 class ImageDrawing(Protocol):
@@ -196,7 +198,8 @@ class ImageDrawing(Protocol):
         lineup of record: not written to the lineup of record. Hands back the picture
         drawn, or the problem naming why it could not be — worded for the command's own
         refusal rather than the text fallback's — and the notices it survived, which it has reported
-        to the log channel in one message, the command running in no job. A fault reading the division itself (the
+        to the log channel in one message, the command running in no job, with the link to that
+        message where one was posted. A fault reading the division itself (the
         database cannot be opened) is let out, for the command's own failure path to report,
         rather than turned into refusal words."""
 

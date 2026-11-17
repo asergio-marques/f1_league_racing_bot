@@ -232,10 +232,6 @@ def _two_lineup_notices():
 NOTICES_LINK = "https://discord.test/4242/7"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#550: the drawing for a command hands back no link to the message its notices are in",
-)
 @pytest.mark.parametrize("log_channel", ["takes", "refuses"])
 async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_channel_in_one_message(
     db_path, monkeypatch, log_channel,
