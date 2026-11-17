@@ -1032,7 +1032,8 @@ A round's job is named from the round and the event, so arming it again replaces
 of adding a second (the `_round_job_suffix` docstring in core's round jobs). The scheduler holds the
 timers, the job store and the one runner every job names, and arms a job at the id, kind and moment
 it is handed (`arm_at`, `run_now`, `arm_daily`, `arm_every`), lists the jobs it holds (`jobs`) and
-removes one (`remove`); it names no round, module or kind of job. A round's timed work is armed by
+removes one (`remove`); it names no round, module or kind of job. It alone imports APScheduler, so
+that the library's conventions hold for every job. A round's timed work is armed by
 the round-arming functions of core's round jobs (`RoundJobs`), through those calls, and the builder
 hands `RoundJobs` to the services that arm or cancel a round's jobs. Each reads when the round's
 events fall from `round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
@@ -1690,10 +1691,10 @@ later on its own.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside
   services, awaiting anything but the connection mid-save (in a function that opens it and in one
   handed it), cogs handling their own errors, catch-all handlers that lose the error details,
-  background tasks nobody keeps, code reaching past the framework's scheduler, the entry point
-  subscribing a module to a hook only that module joins (that module's wiring signs it up), jobs
-  armed with a lateness limit, private names used across modules, a new place naming the log
-  channel (the check lists the nine allowed, with their reasons), posting outside the handlers (the
+  background tasks nobody keeps, code reaching past the framework's scheduler, APScheduler imported
+  outside it, the entry point subscribing a module to a hook only that module joins (that module's
+  wiring signs it up), jobs armed with a lateness limit, private names used across modules, a new
+  place naming the log channel (the check lists the nine allowed, with their reasons), posting outside the handlers (the
   four handler files are passed over, `POSTING_ALLOWED`, as is a function named in
   `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated nor
   named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
