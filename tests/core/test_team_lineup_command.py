@@ -407,6 +407,62 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     assert _NOTICE not in picture.args[0] and "see them in the log" not in picture.args[0]
 
 
+@pytest.mark.parametrize("refused", [False, True], ids=["both_drawn", "division_2_refused"])
+async def test_a_notices_section_over_the_message_limit_is_sent_in_parts(tmp_path, refused):
+    """The league draws its lineup across two divisions, and each division's lineup is drawn with
+    twelve long notices (a fallback flag standing in for a driver's own), each division's reported
+    to the log channel in a message of its own, so that the notices section runs past the 2,000
+    characters one Discord message holds. Asked for publicly, with both divisions drawn or with
+    Division 2 then refused (the template is missing a field), the command does not fail: every
+    follow-up carrying the section holds at most 1,990 characters and is seen by the manager
+    alone, and together they carry every notice and both links to the log."""
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    notices = {
+        division: tuple(
+            f"Division {division} notice {n}: a fallback flag stood in for the driver's own, "
+            f"since the league's flag artwork names no country of that code"
+            for n in range(1, 13)
+        )
+        for division in (1, 2)
+    }
+    links = {division: f"https://discord.test/4242/{division}" for division in (1, 2)}
+    division_2 = {"picture": None if refused else png, "notices": notices[2], "log_link": links[2]}
+    if refused:
+        division_2["problem"] = _PROBLEM
+    drawing = LineupDrawingStub(by_division={
+        11: {"picture": png, "notices": notices[1], "log_link": links[1]},
+        12: division_2,
+    })
+    cog = _make_cog(
+        divisions=[_division(11, "Division 1", 1), _division(12, "Division 2", 2)],
+        teams=[_team("Alpha", 1, [(1, None, None)])],
+        drawing=drawing,
+    )
+    interaction = _interaction()
+
+    await _lineup(cog, interaction, public=True)
+
+    calls = interaction.followup.send.await_args_list
+    refusal = f"❌ {_PROBLEM}\n_Lineup for **Division 2** was not drawn._"
+    parts = [
+        call for call in calls
+        if "files" not in call.kwargs and str(call.args[0]) != refusal
+    ]
+    told = "\n".join(str(call.args[0]) for call in parts)
+    assert len(told) > 2000, told
+    assert told.startswith("⚠️ **Image notices**")
+    assert all(len(str(call.args[0])) <= 1990 for call in parts), calls
+    assert all(call.kwargs["ephemeral"] is True for call in parts), calls
+    for division in (1, 2):
+        assert f"([see them in the log]({links[division]}))" in told
+        for notice in notices[division]:
+            assert f"  • {notice}" in told
+    assert [str(call.args[0]) for call in calls if str(call.args[0]) == refusal] == (
+        [refusal] if refused else []
+    )
+
+
 async def test_a_drawing_that_fails_fails_the_command(tmp_path):
     """The league draws its lineup across two divisions: Division 1's is drawn, and drawing
     Division 2's raises (the database cannot be read). The error is not caught and worded by the
