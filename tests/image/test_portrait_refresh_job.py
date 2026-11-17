@@ -17,6 +17,7 @@ import os
 
 import pytest
 
+from leaguebot.core.services import scheduler_service
 from leaguebot.core.services.scheduler_service import SchedulerService
 
 #: Why each test here fails until image arms its own refresh.
@@ -87,7 +88,8 @@ def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     assert isinstance(job.trigger, CronTrigger)
     fields = {f.name: str(f) for f in job.trigger.fields}
     assert (fields["hour"], fields["minute"]) == ("3", "0")
-    assert job.kwargs == {"kind": "portrait_refresh"}
+    assert job.func is scheduler_service._one_off_timer_job
+    assert job.kwargs in ({"kind": "portrait_refresh"}, {"kind": "portrait_refresh", "key": None})
 
 
 @pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)

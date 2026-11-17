@@ -8,7 +8,7 @@ Its starting, pausing and shutting down are in `tests/framework/test_scheduler_l
 Issue #208. `schedule_all_rounds`, `schedule_result_submission_jobs`, the signup close timer and
 the season-end cancellation were uncovered. They are thin, and each has one property that matters
 more than its size suggests. What every job is stored with, and that each kind's handler is reached
-through the one runner, is pinned in `test_scheduler_one_off.py`.
+through the one runner, is pinned in `test_round_jobs_runner.py`.
 
 **A results-only league still gets its submission jobs.** `schedule_round` arms weather and
 results together; a league with results on and weather off never calls it, so

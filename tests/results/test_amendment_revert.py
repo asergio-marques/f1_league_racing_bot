@@ -544,6 +544,47 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     assert armed.kwargs["misfire_grace_time"] is None
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#544: results has no amendment sweep of its own; the scheduler still arms it",
+)
+async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
+    """Results arms its sweep on a paused scheduler, with a handler signed up for the kind
+    `amendment_sweep`: the job stands under `amend_sweep`, its callable is the scheduler's one
+    runner and its kind is its keyword; fired, the runner calls that handler once, with nothing.
+    """
+    from leaguebot.core.services import scheduler_service
+    from leaguebot.results.services.round_amendment.amendment_writes import (
+        schedule_amendment_sweep,
+    )
+
+    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
+    service = scheduler_service.SchedulerService(
+        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db")
+    )
+    calls: list[tuple] = []
+
+    async def _handler(*args) -> None:
+        calls.append(args)
+
+    try:
+        service.register_timer("amendment_sweep", _handler)
+        service.start(paused=True)
+        schedule_amendment_sweep(service)
+
+        job = service._scheduler.get_job("amend_sweep")
+        assert job is not None
+        assert job.func is scheduler_service._one_off_timer_job
+        assert job.kwargs in ({"kind": "amendment_sweep"}, {"kind": "amendment_sweep", "key": None})
+
+        await job.func(*job.args, **job.kwargs)
+
+        assert calls == [()]
+    finally:
+        service._scheduler.shutdown(wait=False)
+        service._scheduler._jobstores["default"].engine.dispose()
+
+
 async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
     """The stored deadline is UTC-aware, so comparing it with a naive *now* raises `TypeError`.
 

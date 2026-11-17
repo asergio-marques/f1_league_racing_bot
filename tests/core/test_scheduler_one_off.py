@@ -360,141 +360,63 @@ async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_
 # Every job the scheduler arms runs through the one runner (#283, S7a)
 # ---------------------------------------------------------------------------
 
-#: Pro's round 3 (id 21) of season 7, tier 1, a month away, so that no job of it is due.
-_ROUND_ID = 21
-_ROUND_SUFFIX = "_s7_d1_r3_id21"
+#: Why each generic-call case here fails until the scheduler has its generic calls.
+NO_GENERIC_CALLS = "#544: the scheduler has no generic arming calls yet"
+
+#: A moment a month away, so that no job armed for it is due.
+_LATER = datetime(2031, 3, 9, 14, 30, tzinfo=timezone.utc)
 
 
-def _a_round() -> Any:
-    from types import SimpleNamespace
-
-    start = _now().replace(microsecond=0) + timedelta(days=30)
-    return SimpleNamespace(id=_ROUND_ID, division_id=11, round_number=3, scheduled_at=start)
+def _arm_once(service: Any) -> None:
+    service.arm_once("a_kind", 9, _now() + timedelta(days=30))
 
 
-def _arm_round(service: Any, rnd: Any) -> None:
-    service.schedule_round(rnd, season_number=7, division_tier=1)
+def _arm_at(service: Any) -> None:
+    service.arm_at(job_id="a_job_at", kind="a_kind", key=9, run_at=_LATER, name="A job")
 
 
-def _arm_check_in(service: Any, rnd: Any) -> None:
-    service.schedule_attendance_round(
-        rnd, season_number=7, division_tier=1, notice_days=5, last_notice_hours=24,
-        deadline_hours=2, now=_now(),
-    )
+def _run_now(service: Any) -> None:
+    service.run_now(job_id="a_job_now", kind="a_kind", key=9, name="A job")
 
 
-def _arm_cleanups(service: Any, rnd: Any) -> None:
-    service.schedule_round_cleanups(rnd, season_number=7, division_tier=1, now=_now())
+def _arm_daily(service: Any) -> None:
+    service.arm_daily(job_id="a_job_daily", kind="a_kind", hour=6, minute=15, name="A job")
 
 
-def _arm_results_only(service: Any, rnd: Any) -> None:
-    service.schedule_result_submission_jobs([rnd], division_meta={11: (7, 1)})
+def _arm_every(service: Any) -> None:
+    service.arm_every(job_id="a_job_every", kind="a_kind", minutes=5, name="A job")
 
 
-def _arm_results_now(service: Any, rnd: Any) -> None:
-    service.run_result_submission_now(rnd, season_number=7, division_tier=1)
-
-
-def _arm_portrait_refresh(service: Any, _rnd: Any) -> None:
-    service.schedule_portrait_refresh("06:00")
-
-
-def _arm_amendment_sweep(service: Any, _rnd: Any) -> None:
-    service.schedule_amendment_sweep()
-
-
-#: Every kind the builder signs up for the scheduler's own jobs, with the method that arms it,
-#: the id it is stored under, and the key its handler is handed (None: a standing job, whose
-#: handler is handed nothing). A round's kind is its job id's prefix and its key the round id.
-EVERY_ARMED_KIND = [
-    pytest.param("weather_p1", _arm_round, f"weather_p1{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="weather_p1-schedule_round"),
-    pytest.param("weather_p2", _arm_round, f"weather_p2{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="weather_p2-schedule_round"),
-    pytest.param("weather_p3", _arm_round, f"weather_p3{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="weather_p3-schedule_round"),
-    pytest.param("cleanup", _arm_round, f"cleanup{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="cleanup-schedule_round"),
-    pytest.param("results", _arm_round, f"results{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="results-schedule_round"),
-    pytest.param("results", _arm_results_only, f"results{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="results-schedule_result_submission_jobs"),
-    pytest.param("results", _arm_results_now, f"results{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="results-run_result_submission_now"),
-    pytest.param("rsvp_notice", _arm_check_in, f"rsvp_notice{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_notice-schedule_attendance_round"),
-    pytest.param("rsvp_last_notice", _arm_check_in, f"rsvp_last_notice{_ROUND_SUFFIX}",
-                 _ROUND_ID, id="rsvp_last_notice-schedule_attendance_round"),
-    pytest.param("rsvp_deadline", _arm_check_in, f"rsvp_deadline{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_deadline-schedule_attendance_round"),
-    pytest.param("rsvp_cleanup", _arm_check_in, f"rsvp_cleanup{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_cleanup-schedule_attendance_round"),
-    pytest.param("cleanup", _arm_cleanups, f"cleanup{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="cleanup-schedule_round_cleanups"),
-    pytest.param("rsvp_cleanup", _arm_cleanups, f"rsvp_cleanup{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_cleanup-schedule_round_cleanups"),
-    pytest.param("portrait_refresh", _arm_portrait_refresh, "pfp_daily", None,
-                 id="portrait_refresh"),
-    pytest.param("amendment_sweep", _arm_amendment_sweep, "amend_sweep", None,
-                 id="amendment_sweep"),
+#: Every way the scheduler arms a job, the id the job is stored under, and the key its handler is
+#: handed (None: a standing job, whose handler is handed nothing).
+EVERY_ARMING = [
+    pytest.param(_arm_once, "once:a_kind:9", 9, id="arm_once"),
+    pytest.param(_arm_at, "a_job_at", 9, id="arm_at",
+                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
+    pytest.param(_run_now, "a_job_now", 9, id="run_now",
+                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
+    pytest.param(_arm_daily, "a_job_daily", None, id="arm_daily",
+                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
+    pytest.param(_arm_every, "a_job_every", None, id="arm_every",
+                 marks=pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)),
 ]
 
 
-def _stored(service: Any, arm: Any, job_id: str) -> Any:
-    """Arm the round's jobs (or the standing job) on a paused scheduler, and read back the job
-    stored under *job_id*, which nothing has fired."""
-    service.start(paused=True)
-    arm(service, _a_round())
-    job = service._scheduler.get_job(job_id)
-    assert job is not None, f"nothing is stored under {job_id}"
-    return job
-
-
-@pytest.mark.parametrize("kind, arm, job_id, key", EVERY_ARMED_KIND)
-async def test_every_kind_runs_through_one_runner(services, kind, arm, job_id, key):
-    """Every kind is signed up with a handler of its own, and the job is armed by its method:
-    the job stands under the id it has always had, its callable is the one runner a one-off
-    timer runs through, and it is stored as a one-off timer is, with its kind and its key as
-    keywords. Fired with them, the runner
-    calls that kind's handler alone, once, with the key (a standing job's with nothing)."""
-    from leaguebot.core.services import scheduler_service
-
-    service = services()
-    calls: dict[str, list[tuple[Any, ...]]] = {}
-
-    def _handler_of(name: str) -> Any:
-        async def _handler(*args: Any) -> None:
-            calls.setdefault(name, []).append(args)
-        return _handler
-
-    for each in {param.values[0] for param in EVERY_ARMED_KIND}:
-        service.register_timer(each, _handler_of(each))
-
-    job = _stored(service, arm, job_id)
-
-    assert job.func is scheduler_service._one_off_timer_job
-    assert job.args == ()
-    if key is None:
-        assert job.kwargs in ({"kind": kind}, {"kind": kind, "key": None})
-    else:
-        assert job.kwargs == {"kind": kind, "key": key}
-
-    await job.func(*job.args, **job.kwargs)
-
-    assert calls == {kind: [() if key is None else (key,)]}
-
-
-@pytest.mark.parametrize("kind, arm, job_id, key", EVERY_ARMED_KIND)
-async def test_a_failing_job_keeps_its_traceback(services, caplog, kind, arm, job_id, key):
-    """The kind's handler raises when its job fires: the fault is logged at ERROR with its
-    traceback, naming the kind and the key, and nothing is raised to the scheduler."""
+@pytest.mark.parametrize("arm, job_id, key", EVERY_ARMING)
+async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, key):
+    """A job of the kind `a_kind` is armed on a paused scheduler, and the kind's handler raises
+    when the job fires: the fault is logged at ERROR with its traceback, naming the kind and the
+    key, and nothing is raised to the scheduler."""
     service = services()
 
     async def _fails(*_args: Any) -> None:
         raise RuntimeError("the handler broke")
 
-    service.register_timer(kind, _fails)
-    job = _stored(service, arm, job_id)
+    service.register_timer("a_kind", _fails)
+    service.start(paused=True)
+    arm(service)
+    job = service._scheduler.get_job(job_id)
+    assert job is not None, f"nothing is stored under {job_id}"
 
     with caplog.at_level("ERROR"):
         await job.func(*job.args, **job.kwargs)  # must not raise
@@ -502,7 +424,7 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, kind, arm, jo
     [record] = [r for r in caplog.records if r.levelname == "ERROR"]
     assert record.exc_info is not None
     assert str(record.exc_info[1]) == "the handler broke"
-    assert kind in record.getMessage()
+    assert "a_kind" in record.getMessage()
     if key is not None:
         assert str(key) in record.getMessage()
 
@@ -511,6 +433,7 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, kind, arm, jo
 RUNNER_REFERENCE = "leaguebot.core.services.scheduler_service:_one_off_timer_job"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_GENERIC_CALLS)
 async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(services):
     """Every way the scheduler arms a job is used, a one-off timer's included, on a paused
     scheduler; every job is then read back as the job store's file holds it, and each names the
@@ -528,10 +451,8 @@ async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(servi
 
     service = services()
     service.start(paused=True)
-    rnd = _a_round()
-    for arm in dict.fromkeys(param.values[1] for param in EVERY_ARMED_KIND):
-        arm(service, rnd)
-    service.arm_once("review_lock_clear", 77, _now() + timedelta(hours=1))
+    for param in EVERY_ARMING:
+        param.values[0](service)
 
     connection = sqlite3.connect(service.jobstore_path)
     try:
@@ -542,6 +463,5 @@ async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(servi
     finally:
         connection.close()
 
-    expected = {param.values[2] for param in EVERY_ARMED_KIND} | {"once:review_lock_clear:77"}
-    assert expected <= set(stored)
+    assert {param.values[1] for param in EVERY_ARMING} <= set(stored)
     assert set(stored.values()) == {RUNNER_REFERENCE}
