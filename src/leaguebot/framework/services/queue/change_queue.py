@@ -2187,8 +2187,8 @@ class ChangeQueue:
         """The league admins' role, where a stop notice of *lane* is to mention it, else None.
 
         A league stop always mentions them; a conversation's only where no other conversation's
-        stop notice stands (one that has landed, on a job still stopped), so that a burst of
-        conversations notifies them once. Asked only of a notice that has not landed, so a
+        stop notice stands (one that has landed, saved or not, on a job still stopped), so that a
+        burst of conversations notifies them once. Asked only of a notice that has not landed, so a
         re-post, which is the first landing where the first post was refused, mentions them and
         the hour and restart lines, which are not notices, mention nobody.
         """
@@ -2196,13 +2196,15 @@ class ChangeQueue:
         role = None if config is None else config.league_admin_role_id
         if role is None or lane == LEAGUE_LANE:
             return role
+        unsaved = list(self._unsaved_notices)
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT 1 FROM queued_change_steps s JOIN queued_changes c ON c.id = s.change_id "
                 "WHERE s.done_at IS NULL AND s.failing_since IS NOT NULL "
-                "AND s.notice_message_id IS NOT NULL AND c.state IN ('QUEUED', 'RUNNING') "
+                f"AND (s.notice_message_id IS NOT NULL OR s.id IN ({','.join('?' * len(unsaved))})) "
+                "AND c.state IN ('QUEUED', 'RUNNING') "
                 "AND c.lane <> ? AND c.lane <> ? LIMIT 1",
-                (LEAGUE_LANE, lane),
+                (*unsaved, LEAGUE_LANE, lane),
             )
             standing = await cursor.fetchone()
         return None if standing is not None else role

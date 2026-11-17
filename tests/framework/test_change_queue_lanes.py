@@ -1505,9 +1505,7 @@ async def test_a_league_stop_notice_mentions_the_league_admin_role(env):
 
 @pytest.mark.parametrize("unrecorded", [
     pytest.param(False, id="recorded"),
-    pytest.param(True, id="not yet recorded", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#554: a stop notice whose message is not recorded does not count as standing")),
+    pytest.param(True, id="not yet recorded"),
 ])
 async def test_a_conversation_stop_notice_mentions_the_role_only_where_no_other_conversation_notice_stands(
     env, unrecorded
