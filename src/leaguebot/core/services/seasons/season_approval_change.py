@@ -94,7 +94,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 log = logging.getLogger(__name__)
@@ -279,7 +279,7 @@ def season_approval_change(
     modules: "ModuleService",
     config: "ConfigService",
     seasons: SeasonService,
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     lineups: "LineupPoster",
     roles: "TeamRoleService",
     drawing: "ImageDrawing",
@@ -296,7 +296,7 @@ def season_approval_change(
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
-    *scheduler*, the *lineups* poster (which posts the lineups) and the team-role service
+    *round_jobs* (which arms each round's jobs), the *lineups* poster (which posts the lineups) and the team-role service
     *roles* (which gives the drivers their roles), the image module's own drawing (*drawing*),
     *round_windows_read* (the hook the enabled modules' windows are read through),
     *placements_confirmed* (the hook each module's opening post is planned through, called
@@ -519,7 +519,7 @@ def season_approval_change(
         ]
         attendance, weather = await read_round_windows(round_windows_read)
         if weather is not None:
-            scheduler.schedule_all_rounds(
+            round_jobs.schedule_all_rounds(
                 rounds,
                 division_meta=meta,
                 phase_1_days=weather.phase_1_days,
@@ -534,11 +534,11 @@ def season_approval_change(
                 weather_on=False,
             )
             if not by_hand:
-                scheduler.schedule_result_submission_jobs(rounds, division_meta=meta)
+                round_jobs.schedule_result_submission_jobs(rounds, division_meta=meta)
         if attendance is not None:
             for each in rounds:
                 number, tier = meta[each.division_id]
-                scheduler.schedule_attendance_round(
+                round_jobs.schedule_attendance_round(
                     each,
                     season_number=number,
                     division_tier=tier,

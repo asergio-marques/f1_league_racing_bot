@@ -723,6 +723,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_complete_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             roles=bot.team_role_service,
             final_round_read=bot.final_round_read,
             season_standing_read=bot.season_standing_read,
@@ -744,6 +745,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_cancel_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
@@ -790,7 +792,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             config=bot.config_service,
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             lineups=bot.lineup_poster,
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
@@ -924,7 +926,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_amend_change(
             modules=bot.module_service,
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             amendment_judged=bot.amendment_judged,
@@ -938,7 +940,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_rearm_change(
             modules=bot.module_service,
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             amendment_judged=bot.amendment_judged,
@@ -951,7 +953,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         round_cancel_change(
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
@@ -964,7 +966,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         division_cancel_change(
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
@@ -1021,6 +1023,7 @@ async def build(settings: Settings) -> LeagueBot:
     """
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.framework.services.posting.output_router import OutputRouter
 
@@ -1052,6 +1055,7 @@ async def build(settings: Settings) -> LeagueBot:
     bot.scheduler_service = SchedulerService(
         settings.db_path, settings.jobstore_path
     )
+    bot.round_jobs = RoundJobs(bot.scheduler_service, settings.db_path)
     bot.output_router = OutputRouter(
         bot, bot.league_settings, retry_db_path=settings.db_path,
         now=lambda: bot.change_queue.now(),

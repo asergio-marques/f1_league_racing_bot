@@ -26,9 +26,6 @@ from tests.support.review_marks_hook import review_marks_read
 #: reading, so that the rounds seeded relative to it and the reads judging them agree.
 NOW = datetime.now(timezone.utc)
 
-#: Why each test that arms or reads a round's jobs fails until core's round jobs exist.
-NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's jobs are armed and read by the scheduler"
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -965,7 +962,6 @@ async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_p
     assert summary.index(_round_row(summary, 2)) < summary.index(_round_row(summary, 1))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_round_jobs) -> None:
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
@@ -980,7 +976,6 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_roun
     assert _round_row(summary, 3).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize(
     "round_id,event_type,cell",
     [
@@ -1063,7 +1058,6 @@ async def _mystery_round_armed(
     return db_path
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     tmp_path, paused_round_jobs
 ) -> None:
@@ -1079,7 +1073,6 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     assert result["kind"] == "weather_p1"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     tmp_path, paused_round_jobs
 ) -> None:
@@ -1097,7 +1090,6 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     assert result["phase_number"] == 4
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     tmp_path, paused_round_jobs
 ) -> None:
@@ -1140,7 +1132,6 @@ async def _last_notice_switched_off(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_round_jobs) -> None:
     db_path = str(tmp_path / "last_notice_off.db")
     await _last_notice_switched_off(db_path)

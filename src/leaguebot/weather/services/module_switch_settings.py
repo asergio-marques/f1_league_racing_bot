@@ -11,7 +11,7 @@ column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 **The switch-off removes the season's weather jobs after the save, not before**
 (`docs/design/architecture.md`, "How modules and core fit together"): the flag going down and its
 audit entry share one save, and only once that has run does an `After` step call
-`SchedulerService.cancel_all_weather`. Doing the jobs' removal after the flag rather than before is
+`RoundJobs.cancel_live_rounds`. Doing the jobs' removal after the flag rather than before is
 safe only because the flag is read by each weather change's check, which drops the job while it
 is off (core specification, "A disabled module shall produce nothing … a scheduled job"; pinned by
 `tests/weather/test_weather_module_gate.py`,
@@ -41,6 +41,7 @@ from leaguebot.framework.models.change import (
     module_on,
 )
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.core.models.round import WEATHER_JOB_KINDS
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
@@ -53,7 +54,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.framework.services.switches.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 #: The name of the step, after the switch-off's save, that removes the season's weather jobs.
@@ -117,7 +118,7 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
     )
 
 
-def _remove_jobs(scheduler: "SchedulerService") -> After:
+def _remove_jobs(round_jobs: "RoundJobs") -> After:
     """The step that removes the season's weather jobs once the flag is down.
 
     It may fail without holding up the queue: the switch-off stays saved, and the reply says the
@@ -125,7 +126,7 @@ def _remove_jobs(scheduler: "SchedulerService") -> After:
     """
 
     async def run(_ctx: StepContext) -> StepResult:
-        await scheduler.cancel_all_weather()
+        await round_jobs.cancel_live_rounds(only=WEATHER_JOB_KINDS)
         return StepResult()
 
     def fault_reply(_payload: dict[str, Any], reply: str) -> str:
@@ -137,7 +138,7 @@ def _remove_jobs(scheduler: "SchedulerService") -> After:
     return After(step=Step(REMOVE_JOBS, StepKind.ACT, run), fault_reply=fault_reply)
 
 
-def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService") -> Setting:
+def module_off_weather(*, modules: "ModuleService", round_jobs: "RoundJobs") -> Setting:
     """`module.off:weather`: lower the flag and write its audit entry in one save, then remove
     the season's weather jobs in a step of its own.
 
@@ -177,7 +178,7 @@ def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService
         save=save,
         reply=reply,
         writes=("server_configs",),
-        after={REMOVE_JOBS: _remove_jobs(scheduler), REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
+        after={REMOVE_JOBS: _remove_jobs(round_jobs), REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
     )
 
 

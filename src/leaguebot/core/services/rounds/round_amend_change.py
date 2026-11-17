@@ -94,7 +94,7 @@ from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 __all__ = [
@@ -194,7 +194,7 @@ def round_amend_change(
     *,
     modules: "ModuleService",
     seasons: "SeasonService",
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     amendment_judged: AwaitedHook,
@@ -209,13 +209,13 @@ def round_amend_change(
     *changes* being ``[[field, value]]`` (`payload_changes`). It names no season: a payload that
     does is read as holding every division of that season (`review_changes.division_job_in_hand`).
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
-    *scheduler*, *amendment_judged* (the hook each module's part of the judgement is asked
+    *round_jobs*, *amendment_judged* (the hook each module's part of the judgement is asked
     through, each reading its own windows), *round_amended* (the moment inside the save), *round_armed* and
     *round_clean_ups_due* (the moments the round is armed again, at which the modules plan their
     posts and their clean-ups) and the queue's clock *now*.
     """
     return _round_change(
-        rearm=False, modules=modules, seasons=seasons, scheduler=scheduler,
+        rearm=False, modules=modules, seasons=seasons, round_jobs=round_jobs,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
         amendment_judged=amendment_judged, round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
@@ -226,7 +226,7 @@ def round_rearm_change(
     *,
     modules: "ModuleService",
     seasons: "SeasonService",
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     amendment_judged: AwaitedHook,
@@ -244,7 +244,7 @@ def round_rearm_change(
     The bot asks it, on the league's lane, one for each round.
     """
     return _round_change(
-        rearm=True, modules=modules, seasons=seasons, scheduler=scheduler,
+        rearm=True, modules=modules, seasons=seasons, round_jobs=round_jobs,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
         amendment_judged=amendment_judged, round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
@@ -256,7 +256,7 @@ def _round_change(
     rearm: bool,
     modules: "ModuleService",
     seasons: "SeasonService",
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     amendment_judged: AwaitedHook,
@@ -372,7 +372,7 @@ def _round_change(
         return judged(ctx) is not None
 
     async def unarm(ctx: StepContext) -> StepResult:
-        scheduler.cancel_round(int(ctx.payload["round_id"]))
+        round_jobs.cancel_round(int(ctx.payload["round_id"]))
         return StepResult(result={"unarmed": True})
 
     async def apply_due(ctx: StepContext) -> bool:
@@ -507,7 +507,7 @@ def _round_change(
         The amendment can stand stopped for hours, at the save or before it, and a discard or a
         refusal arms the round again at its old moment: a timer armed for a moment already past
         would only fire late. So, judged at the queue's clock: a round still to be run
-        whose moment has passed has its results submission run at once through the scheduler,
+        whose moment has passed has its results submission run at once through the round jobs,
         and what each module owes is its own answer to the round armed again (`plan_posts`): the
         forecast phases due are drawn at once, and the call, where none stands and its check-in
         is not over, is posted where it has fallen due.
@@ -535,14 +535,14 @@ def _round_change(
         weather_on = await modules.is_weather_enabled()
         if rearm and ctx.payload.get("cleanups_only"):
             # A round raced, or ended cancelled as not held: only the clean-ups of a day after it
-            # are owed, armed through the scheduler and, where the day has come, run as the
+            # are owed, armed through the round jobs and, where the day has come, run as the
             # restart's catch-up runs them.
-            # Only the switch is read, by name, as the scheduler's `forecast=` and `check_in=`
+            # Only the switch is read, by name, as the round jobs' `forecast=` and `check_in=`
             # ask no lead time: the windows of the next-day clean-up are the one shared delay.
             check_in_on = await modules.is_attendance_enabled()
             planned = await plan_clean_ups(ctx, rnd, kept={})
             if weather_on or check_in_on:
-                scheduler.schedule_round_cleanups(
+                round_jobs.schedule_round_cleanups(
                     rnd, season_number=season_number, division_tier=tier,
                     forecast=weather_on, check_in=check_in_on, now=now(),
                 )
@@ -551,7 +551,7 @@ def _round_change(
         forecasts = next((each for each in jobs if isinstance(each, ForecastJobs)), None)
         check_in = next((each for each in jobs if isinstance(each, CheckInJobs)), None)
         if forecasts is not None:
-            scheduler.schedule_round(
+            round_jobs.schedule_round(
                 rnd,
                 season_number=season_number,
                 division_tier=tier,
@@ -573,11 +573,11 @@ def _round_change(
                 results_on=await modules.is_results_enabled(),
                 weather_on=weather_on,
             ):
-                scheduler.schedule_result_submission_jobs(
+                round_jobs.schedule_result_submission_jobs(
                     [rnd], division_meta={rnd.division_id: (season_number, tier)}
                 )
         if check_in is not None:
-            scheduler.schedule_attendance_round(
+            round_jobs.schedule_attendance_round(
                 rnd,
                 season_number=season_number,
                 division_tier=tier,
@@ -589,13 +589,13 @@ def _round_change(
         result_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)["results"]
         if rnd.status == RoundStatus.NOT_RUN.value and result_at <= now() and not found["test_mode"]:
             # After the arming above, whose job for this moment it replaces.
-            scheduler.run_result_submission_now(
+            round_jobs.run_result_submission_now(
                 rnd, season_number=season_number, division_tier=tier
             )
         elif rnd.status == RoundStatus.NOT_RUN.value and result_at <= now():
             # Test mode: the arming above made a job for a moment already past, which the
             # scheduler runs at once, so it comes down again and the advance opens the round.
-            scheduler.cancel_round(rnd.id, only=frozenset({"results"}))
+            round_jobs.cancel_round(rnd.id, only=frozenset({"results"}))
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
     async def plan_clean_ups(
@@ -616,7 +616,7 @@ def _round_change(
         check-in call taken down and posted again, its deadline run, each withdrawn forecast that
         was posted deleted, the notice that the forecasts no longer stand, each phase due drawn
         at once) and then the clean-ups due a day after the round (`plan_clean_ups`), and its
-        jobs, which `arm` hands the scheduler. Planned once the round is armed, which is where the
+        jobs, which `arm` hands the round jobs. Planned once the round is armed, which is where the
         amendment stood before them, but read before the timed work is scheduled; what the save
         withdraws, from what each module's part of it kept (`apply`), and only where it was saved.
 

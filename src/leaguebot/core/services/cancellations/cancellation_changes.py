@@ -183,6 +183,7 @@ from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
@@ -684,7 +685,7 @@ def _follow_steps(*, seasons: SeasonService, drawing: ImageDrawing) -> dict[str,
 def round_cancel_change(
     *,
     seasons: SeasonService,
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     drawing: ImageDrawing,
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
@@ -698,7 +699,7 @@ def round_cancel_change(
     The payload is ``{"round_id", "round_number", "track_name", "division_id", "division_name",
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
-    jobs' own payloads. The builder hands in the *seasons* service, the *scheduler*, the image
+    jobs' own payloads. The builder hands in the *seasons* service, core's round jobs (*round_jobs*), the image
     module's drawing (*drawing*), the hooks the modules sign up to (*cancellation_refused*,
     *rounds_called_off*, *cancellation_notices* and *cancellation_steps*, whose steps are
     registered), *amendment_in_hand* (the job a `/round amend` of a round of a division waits on,
@@ -774,7 +775,7 @@ def round_cancel_change(
         # removal stopped and discarded would be named as nothing done.
         number = await _round_number_now(ctx)
         round_id = int(ctx.payload["round_id"])
-        removed = scheduler.cancel_round(round_id)
+        removed = round_jobs.cancel_round(round_id)
         return StepResult(
             result={"unarmed": True, "round_number": number, "removed": {str(round_id): removed}}
         )
@@ -969,7 +970,7 @@ def round_cancel_change(
 def division_cancel_change(
     *,
     seasons: SeasonService,
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     drawing: ImageDrawing,
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
@@ -1051,7 +1052,7 @@ def division_cancel_change(
         round_ids = [
             each.id for each in await seasons.get_division_rounds(int(ctx.payload["division_id"]))
         ]
-        removed = scheduler.cancel_rounds(round_ids)
+        removed = round_jobs.cancel_rounds(round_ids)
         return StepResult(result={
             "unarmed": True, "removed": {str(round_id): jobs for round_id, jobs in removed.items()},
         })
@@ -1208,6 +1209,7 @@ def season_cancel_change(
     *,
     seasons: SeasonService,
     scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     roles: "TeamRoleService",
     drawing: ImageDrawing,
     cancellation_refused: AwaitedHook,
@@ -1229,7 +1231,8 @@ def season_cancel_change(
     """The change that cancels the season being raced; see the module.
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *seasons*
-    service, the *scheduler*, the the team-role service, *roles* (which takes back roles), the image
+    service, the *scheduler* (whose job store holds the saved test-mode state), core's round jobs
+    (*round_jobs*), the the team-role service, *roles* (which takes back roles), the image
     module's drawing (*drawing*), the hooks the modules sign up to (*cancellation_refused*,
     *rounds_called_off*, *cancellation_notices*, *rounds_made_final*, *cancellation_steps*,
     *season_end_refused*, *season_standing_read*, *season_end_closes*, *drivers_returned*,
@@ -1294,7 +1297,7 @@ def season_cancel_change(
             for division in await seasons.get_divisions(int(ctx.payload["season_id"]))
             for each in await seasons.get_division_rounds(division.id)
         ]
-        removed = scheduler.cancel_rounds(round_ids, season_end=True)
+        removed = round_jobs.cancel_rounds(round_ids, season_end=True)
         return StepResult(result={
             "unarmed": True, "removed": {str(round_id): jobs for round_id, jobs in removed.items()},
         })

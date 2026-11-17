@@ -75,8 +75,6 @@ _CHECK_IN_RUNNERS = ("run_rsvp_notice", "run_rsvp_last_notice", "run_rsvp_deadli
 # ---------------------------------------------------------------------------
 
 
-NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
-
 
 async def _make_db(tmp_path, *, round_format: str = "NORMAL") -> str:
     """The league's database: Division 1's round 3 at Silverstone, of *round_format*."""
@@ -327,7 +325,6 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 # Each kind's own step
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("job_id", ["queued_job", None], ids=["from-the-job-store", "from-state"])
 @pytest.mark.parametrize(
     "phase_number",
@@ -560,7 +557,6 @@ async def _noop(kind: str, key: int) -> None:
     return None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens(tmp_path):
     """A weather-enabled season carries a real future-dated results job; left armed it
     would open a second submission channel after advance had already opened one.

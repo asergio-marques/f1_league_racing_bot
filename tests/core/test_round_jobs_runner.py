@@ -19,9 +19,6 @@ from typing import Any
 
 import pytest
 
-#: Why each test here fails until core's round jobs exist.
-NO_ROUND_JOBS = "#544: core has no RoundJobs yet; the round scheduling is still the scheduler's"
-
 
 def _dispose(service: Any) -> None:
     """Stop the scheduler and close the job store's connections, so its file can be deleted."""
@@ -128,7 +125,6 @@ EVERY_ROUND_JOB = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("kind, arm, job_id", EVERY_ROUND_JOB)
 async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_id):
     """Every kind of round job is signed up with a handler of its own, and core's round jobs arm
@@ -164,7 +160,6 @@ async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_
     assert calls == {kind: [(_ROUND_ID,)]}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back(services):
     """Round 3 of division tier 1 in season 7 (id 21) starts 20 hours from now, its last notice
     24 hours before the race and its deadline 2 hours before. Its check-in timers were armed six

@@ -1084,6 +1084,7 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
 
     from leaguebot.__main__ import register_scheduler_callbacks
     from leaguebot.core.services import scheduler_service
+    from leaguebot.core.services.rounds import round_jobs
     from leaguebot.core.services.test_mode import test_mode_service
 
     league = await _league(tmp_path, mystery=True)
@@ -1101,7 +1102,7 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
         def _refused(*_args: Any, **_kwargs: Any) -> Any:
             raise AssertionError("the scheduler read the league database")
 
-        monkeypatch.setattr(scheduler_service, "get_connection", _refused)
+        monkeypatch.setattr(round_jobs, "get_connection", _refused)
 
         for kind in ("weather_p1", "weather_p2", "weather_p3"):
             await scheduler_service._one_off_timer_job(kind, ROUND)
@@ -1496,9 +1497,6 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
 #
 # The round's timers are armed by core's round jobs (`RoundJobs`, #544), over the real scheduler.
 
-#: Why the tests arming a round's timers fail until core's round jobs exist.
-NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's timers are still the scheduler's"
-
 
 def _round_jobs(service: Any, db_path: str) -> Any:
     """Core's round jobs over *service*, built as the builder builds them."""
@@ -1571,7 +1569,6 @@ def _round_3(when: Any) -> Any:
     return SimpleNamespace(id=ROUND, division_id=PRO, round_number=3, scheduled_at=when)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once(
     tmp_path, scheduler,
 ):
@@ -1608,7 +1605,6 @@ async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_on
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_path, scheduler):
     """Round 3 was raced 25 hours ago, and its Phase 3 forecast (9303) still stands: its clean-up
     fell due an hour ago while the bot was down. The bot comes back: weather's start-up step for

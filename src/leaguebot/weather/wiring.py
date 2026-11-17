@@ -289,7 +289,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_off_weather(modules=bot.module_service, scheduler=bot.scheduler_service)
+            module_off_weather(modules=bot.module_service, round_jobs=bot.round_jobs)
         )
     )
 

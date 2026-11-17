@@ -118,8 +118,6 @@ AMENDED = (
 )
 
 
-NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
-
 
 def _accepted(number: int) -> str:
     return (f"❌ Cannot cancel the season — results have already been accepted in the submission "
@@ -786,7 +784,6 @@ REARMING_ROUNDS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_writing_nothing(
     tmp_path,
 ):
@@ -844,7 +841,7 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
 
 @pytest.mark.parametrize("how", [
     pytest.param("waiting", id="waiting behind a stopped job"),
-    pytest.param("stopped", id="stopped at its own job", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
+    pytest.param("stopped", id="stopped at its own job"),
 ])
 async def test_a_second_cancellation_is_refused_at_once_naming_the_job(tmp_path, how):
     league = await ongoing_league(tmp_path)
@@ -1033,7 +1030,6 @@ async def test_the_save_hands_each_running_division_to_the_notices_hook(tmp_path
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -1052,7 +1048,6 @@ async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tmp_path):
     """Pro's and Am's rounds are all read before any timed work is removed, and then removed in
     one call to the scheduler with the season-end job, so a read that fails part-way removes
@@ -1314,7 +1309,6 @@ async def test_the_roles_are_taken_back_after_the_notices(tmp_path):
         assert set(league.revoked[user_id]) == roles
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     _unarming_fails(league)
@@ -1334,7 +1328,6 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_first_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
     """The first save stops on a fault after every round's timed work came off. A league admin's
     Discard is refused, saying season 3's rounds would be left with no timed work; the queue stays

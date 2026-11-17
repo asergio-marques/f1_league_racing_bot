@@ -43,9 +43,6 @@ from leaguebot.core.services.scheduler_service import SchedulerService
 
 SERVER_ID = 10408
 
-#: Why each test here fails until core's round jobs exist.
-NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's job ids and readers are the scheduler's"
-
 
 def _round_job_suffix(rnd, season_number: int, division_tier: int) -> str:
     """The suffix core's round jobs append to a round's job ids."""
@@ -70,7 +67,6 @@ def _round(round_id: int, round_number: int):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_the_suffix_carries_season_tier_number_and_id():
     """All four, in that order. The reader below parses this back apart."""
     assert _round_job_suffix(_round(42, 5), season_number=3, division_tier=2) == (
@@ -78,7 +74,6 @@ def test_the_suffix_carries_season_tier_number_and_id():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_two_rounds_that_swapped_numbers_keep_distinct_job_ids():
     """The regression this scheme exists for. After a renumbering, one round says `r5`
     from before and another says `r5` now — and with `replace_existing=True` on every
@@ -92,7 +87,6 @@ def test_two_rounds_that_swapped_numbers_keep_distinct_job_ids():
     assert "id43" in _round_job_suffix(current, 3, 2)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_stale_round_number_is_only_cosmetic():
     """A renumbering leaves the number wrong until the round is next scheduled. That is
     tolerated deliberately — the id is what the scheduler keys on."""
@@ -134,7 +128,6 @@ _ROUND_EVENT_TYPES = (
     ],
     ids=["current", "check-in", "written-before-the-round-id", "no-round", "unparseable"],
 )
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_the_event_type_is_the_id_less_its_round_suffix(job_id, event_type):
     """One reader for the whole scheme (#426). Every caller asking what a job is for reads it
     here — the review once built IDs of its own instead, in a shape no job has ever had, and
@@ -142,7 +135,6 @@ def test_the_event_type_is_the_id_less_its_round_suffix(job_id, event_type):
     assert _job_event_type(job_id) == event_type
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("event_type", _ROUND_EVENT_TYPES)
 def test_the_reader_undoes_the_writer(event_type):
     """Whatever `_round_job_suffix` appends, the reader takes off again, for all nine."""
@@ -179,7 +171,6 @@ def _round_jobs(jobs: list):
     return RoundJobs(_service(jobs), "/tmp/not-read.db")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_each_event_type_maps_to_its_phase_number():
     """The advance command fires events by phase number, so a prefix mapped wrongly would
     fire the wrong thing — a check-in deadline in place of a forecast."""
@@ -200,7 +191,6 @@ def test_each_event_type_maps_to_its_phase_number():
     assert [p["phase_number"] for p in pending] == [1, 2, 3, 5, 6, 7, 8, 9]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_jobs_are_returned_in_the_order_they_will_fire():
     """Advance replays a season in order; out of sequence it would post a deadline before
     the call it closes."""
@@ -216,7 +206,6 @@ def test_jobs_are_returned_in_the_order_they_will_fire():
     assert [p["phase_number"] for p in pending] == [1, 2, 3]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_paused_job_is_not_pending():
     """`next_run_time is None` means it will not fire, and advance must not claim it will."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -225,7 +214,6 @@ def test_a_paused_job_is_not_pending():
     assert _round_jobs(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_another_round_s_jobs_are_not_returned():
     suffix_mine = _round_job_suffix(_round(42, 5), 3, 2)
     suffix_theirs = _round_job_suffix(_round(43, 6), 3, 2)
@@ -239,7 +227,6 @@ def test_another_round_s_jobs_are_not_returned():
     assert [p["round_id"] for p in pending] == [42]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_season_end_jobs_are_excluded():
     """Not an event of any round, so advance must not replay it."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -253,7 +240,6 @@ def test_season_end_jobs_are_excluded():
     assert [p["phase_number"] for p in pending] == [1]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_both_cleanups_are_replayed_as_events_of_their_own():
     """A round's forecast and check-in come down a day after it, and advance fires both in
     their turn (decided 2026-09-24, #425), the forecast's first where they fall together."""
@@ -267,7 +253,6 @@ def test_both_cleanups_are_replayed_as_events_of_their_own():
     assert [p["phase_number"] for p in pending] == [8, 9]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_results_job_is_never_returned():
     """Result submission is found from database state instead, so that a past-dated job
     which already auto-fired can neither block the wizard nor open it twice. The docstring
@@ -280,7 +265,6 @@ def test_a_results_job_is_never_returned():
     assert [p["job_id"] for p in pending] == [f"weather_p1{suffix}"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_job_with_no_round_is_ignored():
     """The portrait refresh and the signup close timer are server-scoped and carry no
     round."""
@@ -289,7 +273,6 @@ def test_a_job_with_no_round_is_ignored():
     assert _round_jobs(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_job_whose_id_does_not_parse_is_ignored():
     """Rather than raising. A job from an older version of the bot must not stop the
     advance command working."""
@@ -298,7 +281,6 @@ def test_a_job_whose_id_does_not_parse_is_ignored():
     assert _round_jobs(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_every_queued_job_is_listed_by_its_round_and_event_type():
     """`get_queued_events_for_rounds` is the review summary's view and deliberately keeps the
     ones advance excludes — it answers "is a job queued", not "what will advance fire" (#426)."""
@@ -310,7 +292,6 @@ def test_every_queued_job_is_listed_by_its_round_and_event_type():
     assert queued == {(42, event_type) for event_type in _ROUND_EVENT_TYPES}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_paused_job_is_not_queued():
     """A paused job will not fire, and is no more worth reporting as queued than a missing one."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -319,7 +300,6 @@ def test_a_paused_job_is_not_queued():
     assert _round_jobs(jobs).get_queued_events_for_rounds({42}) == set()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
     """The season, tier and number in an ID are decoration, and two rounds may share them after a
     renumbering. The round a job belongs to is its `round_id` kwarg, which an ID written before
@@ -336,7 +316,6 @@ def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
     assert queued == {(42, "weather_p1"), (43, "weather_p1"), (42, "results")}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_job_whose_id_does_not_parse_is_not_listed():
     """Its type cannot be read, so it cannot stand for any step of the round."""
     jobs = [_job("something_odd", 42), _job("portrait_refresh", None)]
@@ -364,7 +343,6 @@ def _round_at(round_id: int, round_number: int):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     """Two rounds that swap numbers must never share a job ID.
 
@@ -398,7 +376,6 @@ def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_job_id_written_before_the_round_id_existed_still_reports_its_module():
     """The job store outlives a restart, so the old ID format is still in it.
 

@@ -14,7 +14,7 @@ no module and no cog: results' refusal of a round being amended reaches it throu
 **The jobs, in the order the core specification sets**, each of which stops the queue where it
 fails:
 
-1. `settle` (a save): the scheduler's season-end job removed, each division still marked Active
+1. `settle` (a save): the round jobs' season-end job removed, each division still marked Active
    brought up to date with its rounds, and the season, now in Pending completion, planned its jobs.
    A season still in one of the ongoing stages whose every division is done is wound down first
    (its `turn_down`, as the wind-down change does it) and settled again.
@@ -125,6 +125,7 @@ from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
@@ -456,6 +457,7 @@ def season_complete_change(
     *,
     seasons: "SeasonService",
     scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     roles: "TeamRoleService",
     final_round_read: AwaitedHook,
     season_standing_read: AwaitedHook,
@@ -475,7 +477,8 @@ def season_complete_change(
     """The change that completes the confirmed season; see the module.
 
     The builder hands in the *seasons* service (the season the check reads), the *scheduler* (whose
-    season-end job `settle` removes), the the team-role service, *roles* (which takes back roles), the hooks
+    job store holds the saved test-mode state), core's round jobs *round_jobs* (whose season-end job
+    cancel `settle` calls), the the team-role service, *roles* (which takes back roles), the hooks
     the modules sign up to (*final_round_read*, *season_standing_read*, *season_completed*,
     *season_completed_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
     *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
@@ -528,7 +531,7 @@ def season_complete_change(
         again = bool(ctx.step_payload.get("again"))
         if not again:
             # Nothing is due to end the season on its own any more.
-            scheduler.cancel_season_end()
+            round_jobs.cancel_season_end()
         cursor = await db.execute(
             "SELECT id FROM divisions WHERE season_id = ? AND status = 'ACTIVE' ORDER BY id",
             (season_id,),

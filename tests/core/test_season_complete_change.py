@@ -172,8 +172,6 @@ ALREADY = (
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
-NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
-
 
 async def _asked(league: Any) -> Any:
     interaction = await complete_season(league)
@@ -1187,7 +1185,6 @@ async def test_a_discarded_wind_down_completes_nothing(tmp_path):
     assert await _history(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_discarded_first_save_completes_nothing(tmp_path):
     league = await pending_completion_league(tmp_path)
     interaction = await _asked(league)
@@ -1549,7 +1546,6 @@ async def test_the_season_is_archived_audited_and_the_server_holds_no_active_sea
     assert await league.rows("SELECT * FROM server_configs") == config
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_season_end_job_left_by_an_older_version_is_removed(tmp_path):
     league = await pending_completion_league(tmp_path)
     await _asked(league)

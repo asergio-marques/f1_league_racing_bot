@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.test_mode.test_mode_service import AdvanceSteps
@@ -81,6 +82,10 @@ class LeagueBot(commands.Bot):
     league_settings: LeagueSettings
     season_service: SeasonService
     scheduler_service: SchedulerService
+    #: Core's round jobs, over `scheduler_service`: the one way a round's timed work is armed,
+    #: cancelled and read. Handed to every change and cog that does; only cogs, wirings and the
+    #: builder read this attribute.
+    round_jobs: RoundJobs
     output_router: OutputRouter
     change_queue: ChangeQueue
     driver_service: DriverService

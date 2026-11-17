@@ -38,9 +38,6 @@ from leaguebot.core.services.scheduler_service import SchedulerService
 
 LOGGER = "leaguebot.core.services.scheduler_service"
 
-#: Why a round's cancel fails until core's round jobs exist.
-NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's cancels are still the scheduler's"
-
 #: Each cancel of core's round jobs, and the arguments it is called with. A job the store lists
 #: carries round 5 as its key and the season-end prefix, so every cancel that walks the store
 #: finds it.
@@ -51,7 +48,7 @@ CANCELS = [
 ]
 
 CANCEL_CASES = [
-    pytest.param(name, args, id=name, marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS))
+    pytest.param(name, args, id=name)
     for name, args in CANCELS
 ]
 
@@ -122,7 +119,6 @@ _ONE_OFF_TIMER_KEYED_5 = SimpleNamespace(
 )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     """Rounds 5 and 6 each carry two jobs, round 7 one, a season-end job stands, and so does
     amendment 5's lapse timer, whose key is the same number as round 5's. Cancelling rounds 5
@@ -144,7 +140,6 @@ def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     assert service._scheduler.get_jobs.call_count == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_store_that_cannot_be_listed_removes_nothing():
     """The job store cannot be read when round 5's and round 6's timed work is to be removed:
     the fault is raised, so that the cancellation stops, and no job is removed."""
@@ -157,7 +152,6 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
     service._scheduler.remove_job.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_round_gives_the_jobs_it_removed():
     """Round 5 carries its results submission and its clean-up, round 6 its results
     submission, and amendment 5's lapse timer, whose key is the same number as round 5's,
@@ -176,7 +170,6 @@ def test_cancel_round_gives_the_jobs_it_removed():
     assert _ONE_OFF_TIMER_KEYED_5.id not in removed_ids
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_the_season_end():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
     season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
@@ -203,7 +196,6 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
     assert service._scheduler.get_jobs.call_count == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2020 at 14:00, long
     past by the wall clock, and its clean-ups are armed alone with `now` a month before it. Two
@@ -254,7 +246,6 @@ def _every_job_of(round_id: int, *, season: int, tier: int, rnum: int):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_round_without_a_filter_still_removes_every_job():
     """`/season cancel`, `/round cancel`, reset and amend all cancel a *round* and want
     all nine of its jobs gone.  The new keyword must not have changed that."""
@@ -266,7 +257,6 @@ def test_cancel_round_without_a_filter_still_removes_every_job():
     assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in ALL_PREFIXES}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_round_with_a_filter_spares_other_rounds():
     """The filter narrows by job kind, never by round: a job of the same kind on another
     round is still left alone."""

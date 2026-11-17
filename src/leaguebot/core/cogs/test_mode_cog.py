@@ -165,7 +165,7 @@ class TestModeCog(commands.Cog):
         # between two readings cannot leave a step both offered and named, or neither.
         run = await advance_next_step(
             self.bot.db_path,
-            self.bot.scheduler_service,
+            self.bot.round_jobs,
             now=self.bot.change_queue.now(),
             announce=functools.partial(self._announce_advance, interaction),
             pending_steps_read=self.bot.pending_steps_read,
@@ -283,7 +283,7 @@ class TestModeCog(commands.Cog):
 
         summary = await build_review_summary(
             self.bot.db_path,
-            self.bot.scheduler_service,
+            self.bot.round_jobs,
             now=self.bot.change_queue.now(),
             review_marks_read=self.bot.review_marks_read,
         )

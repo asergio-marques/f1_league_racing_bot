@@ -80,9 +80,6 @@ def _make_scheduler_no_db():
     return svc
 
 
-#: Why the round-job tests here fail until core's round jobs exist.
-NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's jobs are still the scheduler's"
-
 
 def _round_jobs(svc):
     """Core's round jobs over *svc*, built as the builder builds them."""
@@ -130,7 +127,6 @@ def _future_round(round_id: int, fmt: RoundFormat) -> Round:
 
 class TestScheduleRoundMystery:
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_schedules_exactly_five_jobs(self):
         # All rounds (including MYSTERY) schedule 5 jobs:
         # weather_p1, weather_p2, weather_p3, cleanup, results
@@ -138,14 +134,12 @@ class TestScheduleRoundMystery:
         _round_jobs(svc).schedule_round(_mystery_round(), season_number=1, division_tier=1)
         assert svc._scheduler.add_job.call_count == 5
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_no_legacy_mystery_r_job(self):
         svc = _make_scheduler_no_db()
         _round_jobs(svc).schedule_round(_mystery_round(), season_number=1, division_tier=1)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert not any(jid.startswith("mystery_r") for jid in job_ids)
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_all_three_weather_phase_jobs_created(self):
         svc = _make_scheduler_no_db()
         _round_jobs(svc).schedule_round(_mystery_round(), season_number=1, division_tier=1)
@@ -154,7 +148,6 @@ class TestScheduleRoundMystery:
         assert any("weather_p2" in jid for jid in job_ids)
         assert any("weather_p3" in jid for jid in job_ids)
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_round_id_in_kwargs_for_all_jobs(self):
         """Every job of a mystery round is stored with the round's id as its key."""
         svc = _make_scheduler_no_db()
@@ -162,7 +155,6 @@ class TestScheduleRoundMystery:
         for call in svc._scheduler.add_job.call_args_list:
             assert call.kwargs["kwargs"]["key"] == 42
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_job_ids_follow_new_format(self):
         svc = _make_scheduler_no_db()
         _round_jobs(svc).schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
@@ -196,14 +188,12 @@ class TestCancelRoundIncludesMystery:
         svc._scheduler.get_jobs.return_value = jobs
         return jobs
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_removes_all_round_jobs(self):
         svc = _make_scheduler_no_db()
         self._setup_round_jobs(svc, round_id=7)
         _round_jobs(svc).cancel_round(7)
         assert svc._scheduler.remove_job.call_count == 5
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_does_not_remove_other_round_jobs(self):
         svc = _make_scheduler_no_db()
         jobs = [
@@ -216,7 +206,6 @@ class TestCancelRoundIncludesMystery:
         assert "weather_p1_s1_d1_r1" in removed
         assert "weather_p1_s1_d1_r2" not in removed
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_no_jobs_removed_when_jobstore_empty(self):
         svc = _make_scheduler_no_db()
         svc._scheduler.get_jobs.return_value = []
@@ -235,7 +224,6 @@ NOW = datetime(2099, 5, 1, 14, 0, 0, tzinfo=timezone.utc)
 class TestScheduleAttendanceRoundMystery:
     """schedule_attendance_round must treat MYSTERY identically to all other formats."""
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     @pytest.mark.parametrize(
         "expected_id",
         [
@@ -259,7 +247,6 @@ class TestScheduleAttendanceRoundMystery:
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert expected_id in job_ids
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_mystery_creates_same_rsvp_job_count_as_normal(self):
         """MYSTERY and NORMAL round must produce identical RSVP job counts."""
         svc = _make_scheduler_no_db()
@@ -288,7 +275,6 @@ class TestScheduleAttendanceRoundMystery:
 
         assert mystery_count == normal_count
 
-    @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
     def test_mystery_no_last_notice_when_disabled(self):
         """When last_notice_hours=0, MYSTERY round gets notice, deadline and cleanup (3 jobs)."""
         svc = _make_scheduler_no_db()

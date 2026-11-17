@@ -102,8 +102,6 @@ NOT_POSTED = "ATTENDANCE | check-in call | NOT POSTED"
 # ── Recorders, patched before the league is built ──────────────────────────────────
 
 
-NO_ROUND_JOBS = "#544: no RoundJobs yet; the scheduler still arms and cancels a round's jobs"
-
 
 @pytest.fixture
 def phases(monkeypatch):
@@ -399,7 +397,6 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart(tmp_path):
     """Pro's round 3 moved past round 4. The queue is stopped once the save is made; after a
     restart the round is armed against its new moment, the rounds stand renumbered and one
@@ -418,7 +415,6 @@ async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_resta
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_timed_work_is_removed_before_the_save_and_armed_after_it(tmp_path):
     """The save fails: the queue stops at it with round 3's timed work already removed and
     nothing armed; once the save goes through on Retry, the round is armed."""
@@ -457,7 +453,6 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     """Round 3, ninety days out, moved a day later. The arming fails after the save, stopping
     the queue, and the bot restarts: the success line, saved with the amendment, stands once in
@@ -608,7 +603,6 @@ async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_stil
             f"hand (ids {CALL_MESSAGES[1]})") in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("meanwhile", [
     "the check-in deadline passes",
     "results entered",
@@ -660,7 +654,6 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_track_amendment_whose_first_forecast_is_posted_while_it_waits_is_refused(tmp_path):
     """Weather and attendance on; Pro's round 3 is three days out, its first forecast not yet
     drawn, and the queue is stopped at Am's round 3 cancellation. Pro's round 3 is moved to the Hungaroring and
@@ -690,7 +683,6 @@ async def test_a_track_amendment_whose_first_forecast_is_posted_while_it_waits_i
     assert len(_amend_refusals(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_is_refused_by_the_save(
     tmp_path, monkeypatch,
 ):
@@ -739,7 +731,6 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("stopped", ["apply", "unarm"])
 async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_deadline_passed_is_refused_by_the_save(
     tmp_path, reposts, stopped,
@@ -795,7 +786,6 @@ async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_dea
     assert reposts.posted == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
     """Pro's round 4 is moved a day later and confirmed while the queue is stopped; the round is
     deleted while the amendment waits. Once the queue goes on, the amendment is refused with
@@ -816,7 +806,6 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("weather, attendance", [
     pytest.param(True, True),
     pytest.param(True, False),
@@ -854,7 +843,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
     assert 8002 not in league.channel(PRO_CH.forecast).messages
 
 
-@pytest.mark.parametrize("stopped", ["judge", pytest.param("unarm", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS))])
+@pytest.mark.parametrize("stopped", ["judge", "unarm"])
 async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_timed_work(
     tmp_path, stopped, monkeypatch,
 ):
@@ -880,7 +869,6 @@ async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_ti
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_was(tmp_path):
     """The save fails and a league admin discards it: the round stands as it was, its numbers
     unchanged, and its timed work is armed again against its old moment."""
@@ -980,7 +968,6 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
     assert (await _numbers(league))[R3] == 4
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when_the_reply_is_made(
     tmp_path, monkeypatch,
 ):
@@ -1024,7 +1011,6 @@ async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when
     assert "round 3" not in _outcome(press)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_the_arming_cannot_be_discarded_and_once_retried_arms_the_round(tmp_path):
     """The arming fails and stops the queue. A league admin's Discard on it is refused,
     privately and with one line in the log channel; the queue stays stopped at the arming, and
@@ -1111,7 +1097,6 @@ async def test_a_module_turned_off_before_its_job_drops_it(tmp_path):
     assert NOT_DONE not in _outcome(press)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumbering(tmp_path):
     """Attendance on; the queue is stopped. Pro's round 3 is moved past round 4 and confirmed,
     then Pro's round 4 is cancelled, each ask blind to the other as two asks in the same instant
@@ -1142,7 +1127,6 @@ async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumber
     assert "\n  round: 3" in line and "round: 4" not in line
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled while the arming stood stopped"),
     pytest.param("results", id="results entered while the removal stood stopped"),
@@ -1196,7 +1180,6 @@ async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(t
         assert await _moment(league) != _when(league, days=91)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_submission(
     tmp_path,
 ):
@@ -1215,7 +1198,6 @@ async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_
     assert ("weather", [R3]) not in league.armed
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_mystery_notice(
     tmp_path,
 ):
@@ -1284,7 +1266,7 @@ async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_on
 
 @pytest.mark.parametrize("stopped", [
     pytest.param("apply", id="the save stopped"),
-    pytest.param("take_down_call", id="the take-down stopped after the arming", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
+    pytest.param("take_down_call", id="the take-down stopped after the arming"),
 ])
 async def test_a_call_that_fell_due_while_the_amendment_stood_stopped_is_posted_again(
     tmp_path, reposts, stopped,
@@ -1355,7 +1337,6 @@ async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_once_
     assert reposts.posted == [(R3, PRO)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_its_results_submission(
     tmp_path, ending,
@@ -2112,7 +2093,6 @@ async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to
     assert league.bot.round_jobs.run_result_submission_now.call_args_list == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes_the_results_job_down(
     tmp_path,
 ):
@@ -2138,7 +2118,6 @@ async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes
     assert league.bot.round_jobs.run_result_submission_now.call_args_list == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
     """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3, its Phase 1 never drawn, is
     brought forward to four days, twenty-three hours and fifty-eight minutes out: its Phase 1
@@ -2169,7 +2148,6 @@ async def _passed_while_the_save_stood_stopped(league: Any, **after: float) -> N
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_passed_round_s_results_submission_is_run_at_once_after_it_is_armed(tmp_path):
     """As a round whose moment passed while its save stood stopped (ten minutes past it, the save
     discarded): its results submission is armed with the round first and run at once after,
@@ -2731,7 +2709,7 @@ async def _with_its_notice_posted(league: Any, *, days: float) -> int:
 
 
 @pytest.mark.parametrize("weather_on", [
-    pytest.param(True, id="weather on", marks=pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)),
+    pytest.param(True, id="weather on"),
     pytest.param(False, id="weather switched off since the notice"),
 ])
 async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down(
@@ -3100,21 +3078,21 @@ async def test_core_arms_what_a_module_s_arming_answer_hands_back(tmp_path):
 
     await run_queue(league.bot)
 
-    scheduler = league.bot.scheduler_service
+    round_jobs = league.bot.round_jobs
     assert (await _change(league))["state"] == "DONE"
-    [armed] = scheduler.schedule_round.call_args_list
+    [armed] = round_jobs.schedule_round.call_args_list
     assert armed.args[0].id == R3
     assert {key: armed.kwargs[key] for key in
             ("phase_1_days", "phase_2_days", "phase_3_hours", "skip_phases")} == {
         "phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3, "skip_phases": frozenset({2}),
     }
-    [called] = scheduler.schedule_attendance_round.call_args_list
+    [called] = round_jobs.schedule_attendance_round.call_args_list
     assert called.args[0].id == R3
     assert {key: called.kwargs[key] for key in
             ("notice_days", "last_notice_hours", "deadline_hours")} == {
         "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,
     }
-    assert scheduler.schedule_result_submission_jobs.call_args_list == []
+    assert round_jobs.schedule_result_submission_jobs.call_args_list == []
 
 
 async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp_path):
@@ -3128,11 +3106,11 @@ async def test_with_no_module_signed_up_only_the_results_submission_is_armed(tmp
 
     await run_queue(league.bot)
 
-    scheduler = league.bot.scheduler_service
+    round_jobs = league.bot.round_jobs
     assert (await _change(league))["state"] == "DONE"
-    assert scheduler.schedule_round.call_args_list == []
-    assert scheduler.schedule_attendance_round.call_args_list == []
-    [armed] = scheduler.schedule_result_submission_jobs.call_args_list
+    assert round_jobs.schedule_round.call_args_list == []
+    assert round_jobs.schedule_attendance_round.call_args_list == []
+    [armed] = round_jobs.schedule_result_submission_jobs.call_args_list
     assert [rnd.id for rnd in armed.args[0]] == [R3]
 
 
@@ -3201,13 +3179,13 @@ async def test_an_amendment_stopped_across_the_update_reads_each_module_s_window
     await retry_job(league.bot)
     await run_queue(league.bot)
 
-    scheduler = league.bot.scheduler_service
+    round_jobs = league.bot.round_jobs
     assert await stopped_job(league.db_path) is None
     assert (await _change(league))["state"] == "DONE"
-    [armed] = scheduler.schedule_round.call_args_list
+    [armed] = round_jobs.schedule_round.call_args_list
     assert {key: armed.kwargs[key] for key in ("phase_1_days", "phase_2_days", "phase_3_hours")} \
         == {"phase_1_days": 4, "phase_2_days": 1, "phase_3_hours": 3}
-    [called] = scheduler.schedule_attendance_round.call_args_list
+    [called] = round_jobs.schedule_attendance_round.call_args_list
     assert {key: called.kwargs[key] for key in
             ("notice_days", "last_notice_hours", "deadline_hours")} == {
         "notice_days": 6, "last_notice_hours": 12, "deadline_hours": 1,

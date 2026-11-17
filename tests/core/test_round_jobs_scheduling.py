@@ -61,9 +61,6 @@ def _round(round_id=21, division_id=11, number=3):
     )
 
 
-#: Why each test here fails until core's round jobs exist.
-NO_ROUND_JOBS = "#544: core has no RoundJobs yet; the round scheduling is still the scheduler's"
-
 
 def _round_jobs(service):
     """Core's round jobs over *service*, built as the builder builds them."""
@@ -81,7 +78,6 @@ def _added(service) -> list:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_schedule_all_rounds_passes_each_rounds_own_division(monkeypatch):
     round_jobs = _round_jobs(_service())
     calls = []
@@ -99,7 +95,6 @@ def test_schedule_all_rounds_passes_each_rounds_own_division(monkeypatch):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_results_only_league_gets_a_submission_job_per_round():
     service = _service()
 
@@ -112,7 +107,6 @@ def test_a_results_only_league_gets_a_submission_job_per_round():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_the_submission_job_fires_at_the_round_start():
     service = _service()
 
@@ -122,7 +116,6 @@ def test_the_submission_job_fires_at_the_round_start():
     assert trigger.run_date == datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_the_submission_job_id_carries_the_round_id():
     """So renumbering cannot make one round's job overwrite another's."""
     service = _service()
@@ -136,7 +129,6 @@ def test_the_submission_job_id_carries_the_round_id():
     assert job["replace_existing"] is True
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late():
     """A round whose moment passed while its timed work stood removed (an amendment stopped on
     the change queue) has its results submission run at once: the round's own job, under its
@@ -154,7 +146,6 @@ def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late
     assert added.kwargs["misfire_grace_time"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
     """A phase an amendment draws at once, its horizon passed by less than the misfire grace, is
     left out of the round's timers, which would otherwise draw it a second time; the other
@@ -200,7 +191,6 @@ def _attendance_jobs(service, rnd, *, now: datetime) -> dict:
     return {c.kwargs["id"]: c for c in _added(service)}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
     """A round on 1 March 2020 at 18:00, long past by the wall clock, armed with `now` a month
     before it: its check-in clean-up is armed a day after its start, as are its call, last
@@ -219,7 +209,6 @@ def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_check_in_timer_is_armed_with_no_lateness_limit():
     """A round on 1 March 2026 at 18:00, armed with `now` a month before it: its call, last
     notice, deadline and clean-up are each armed with no lateness limit, so one due while the bot
@@ -237,7 +226,6 @@ def test_a_check_in_timer_is_armed_with_no_lateness_limit():
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_check_in_cleanup_already_due_is_not_armed():
     """The same rule as the attendance module's other three jobs: a moment gone by is skipped. A
     round on 1 March 2099 at 18:00, still to come by the wall clock, armed with `now` two days
@@ -250,7 +238,6 @@ def test_a_check_in_cleanup_already_due_is_not_armed():
     assert not [job_id for job_id in jobs if job_id.startswith("rsvp_")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_round_s_forecast_and_check_in_come_down_together():
     """A round on 1 March 2026 at 18:00 is armed in full, its forecast and its check-in (call 5
     days before, last notice 24 hours, deadline 2 hours), with `now` a month before it: every job
@@ -284,7 +271,6 @@ def test_a_round_s_forecast_and_check_in_come_down_together():
 
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancelling_the_season_end_removes_every_season_end_job_and_nothing_else():
     """A store written by an older version keyed the job by server, so the id is matched on
     its prefix."""

@@ -221,10 +221,6 @@ async def test_enabling_weather_is_audited(tmp_path):
     assert json.loads(entry["new_value"])["module"] == "weather"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#544: weather does not yet cancel its forecast jobs through core's round jobs",
-)
 async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     """Leaving them armed would post forecasts for a switched-off module. The switch-off lowers
     the flag and writes its audit entry in one save, and only then removes the season's weather
@@ -279,10 +275,6 @@ async def test_disabling_weather_is_audited(tmp_path):
     assert json.loads(entry["old_value"])["module"] == "weather"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#544: weather does not yet cancel its forecast jobs through core's round jobs",
-)
 async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off_and_says_so(
     tmp_path,
 ):
