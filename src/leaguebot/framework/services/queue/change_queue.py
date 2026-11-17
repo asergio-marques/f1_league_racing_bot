@@ -1567,10 +1567,7 @@ class ChangeQueue:
         if stopped and pending is not None:
             self._retrying.pop(pending["id"], None)
             await self._router.deliver_queued(ids, interaction=self._answerable(change))
-            if pending["notice_message_id"] is not None:
-                await self._router.strip_view(
-                    pending["notice_channel_id"], pending["notice_message_id"]
-                )
+            await self._strip_notice(pending)
 
     async def _refuse(
         self, change: aiosqlite.Row, verdict: Verdict, pending: aiosqlite.Row | None = None
@@ -1675,10 +1672,23 @@ class ChangeQueue:
         if pending is None or pending["failing_since"] is None:
             return
         self._retrying.pop(pending["id"], None)
-        if pending["notice_message_id"] is not None:
-            await self._router.strip_view(
-                pending["notice_channel_id"], pending["notice_message_id"]
-            )
+        await self._strip_notice(pending)
+
+    def _notice_of(self, row: aiosqlite.Row) -> tuple[int, int] | None:
+        """Where the stop notice of the job *row* is (channel id, message id), and forget the
+        queue's memory of it: the message saved on the job, else the one that has landed but whose
+        save failed (`_unsaved_notices`); None where the job has no notice. Called once the job's
+        stop has cleared, so that the notice loses its buttons whether or not its save landed."""
+        unsaved = self._unsaved_notices.pop(row["id"], None)
+        if row["notice_message_id"] is not None:
+            return (row["notice_channel_id"], row["notice_message_id"])
+        return unsaved
+
+    async def _strip_notice(self, row: aiosqlite.Row) -> None:
+        """Take the buttons off the stop notice of the job *row*, where it has one (`_notice_of`)."""
+        notice = self._notice_of(row)
+        if notice is not None:
+            await self._router.strip_view(*notice)
 
     async def _end(
         self,
@@ -1940,8 +1950,7 @@ class ChangeQueue:
         if saved is None:
             return False
         await self._router.deliver_queued(saved, interaction=self._answerable(change))
-        if row["notice_message_id"] is not None:
-            await self._router.strip_view(row["notice_channel_id"], row["notice_message_id"])
+        await self._strip_notice(row)
         return True
 
     async def _step_failed(
@@ -2414,8 +2423,7 @@ class ChangeQueue:
         self._retrying.pop(job["id"], None)
         await self._tell(interaction, f"🗑️ Job #{job['id']} ({name}) is discarded.")
         await self._router.deliver_queued(ids, interaction=interaction)
-        if job["notice_message_id"] is not None:
-            await self._router.strip_view(job["notice_channel_id"], job["notice_message_id"])
+        await self._strip_notice(job)
         if not started:
             await self._update_reply(
                 change,

@@ -62,8 +62,6 @@ ADMIN_NAMED = "Boss (`<@6161>`)"
 #: The line of a stopped job clearing without going through, its number, what it was and why
 #: filled in.
 CLEARED = "ℹ️ Job #{id} ({job}) no longer stops the queue: {why}. The queue runs on."
-#: Why a test of a stop notice whose message cannot be recorded fails until #554 is built.
-UNRECORDED = "#554: a stop notice whose message is not recorded is forgotten by the queue"
 
 
 def _manager() -> Any:
@@ -592,7 +590,6 @@ async def test_a_stop_notice_whose_message_cannot_be_recorded_is_not_posted_agai
 
 
 @pytest.mark.parametrize("action", ["retry", "discard"])
-@pytest.mark.xfail(strict=True, reason=UNRECORDED)
 async def test_the_buttons_of_a_stop_notice_whose_message_is_not_yet_recorded_work(env, action):
     """A database fault refuses, the whole time, to record which message the stop notice is. Retry
     pressed on that notice by a league manager, the job's fault gone, tries the job at once; Discard
@@ -629,7 +626,6 @@ async def test_the_buttons_of_a_stop_notice_whose_message_is_not_yet_recorded_wo
     "its change is no longer due",
     "its request is refused at its check",
 ])
-@pytest.mark.xfail(strict=True, reason=UNRECORDED)
 async def test_a_stop_notice_whose_message_is_not_yet_recorded_loses_its_buttons_when_its_stop_clears_at_a_try(env, way):
     """A database fault refuses, the whole time, to record which message the stop notice is. The
     queue stopped at a job that failed, at a bot change's check that refused it (the forecast
