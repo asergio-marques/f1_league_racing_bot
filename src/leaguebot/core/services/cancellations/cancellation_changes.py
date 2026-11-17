@@ -1187,7 +1187,11 @@ def division_cancel_change(
         refused = _refusal_of(ctx)
         if refused:
             return refused + _rearming_sentence(ctx)
-        return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
+        return (
+            f"✅ Division **{name}** cancelled."
+            + notices.failure_lines(not_notified(ctx))
+            + _calendar_notices(ctx)
+        )
 
     steps: dict[str, Step] = {
         **_follow_steps(seasons=seasons, drawing=drawing),
