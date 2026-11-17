@@ -15,7 +15,7 @@ config that was fully populated. Nothing about a seeded config should differ fro
 hand-built one once it exists.
 
 They are seeded only on a server holding no points configuration at all, of any name, attached or
-not (decided 2026-11-17, #547): a server holding one has it seeded nothing, changed nothing and
+not, and the season links none (decided 2026-11-17, #547): a server holding one has it seeded nothing, changed nothing and
 attached nothing, so a league's own "Standard" or "Half Points" is never rewritten with the test
 ladder. Seeding writes through the audited writers `/results config` uses, and hands back the
 names it created and the audit entries its writes recorded, as results' part of test mode.
@@ -273,7 +273,7 @@ async def test_a_server_holding_any_points_configuration_is_seeded_nothing(
     league's own "Standard" (a feature race paying 20 down to 1 point to 20th, 1 point for fastest
     lap down to 20th) not attached; or the "Standard" and "Half Points" test mode seeded before,
     attached; or holds none, but the season links "League Ladder", which the server does not hold.
-    Seeding again creates nothing and records nothing, every configuration keeps every
+    Seeding then creates nothing and records nothing, every configuration keeps every
     point and fastest-lap bonus it had, and no season gains or loses a configuration."""
     await holding(db_path, season_id)
     before = await _points_store(db_path)
