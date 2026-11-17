@@ -14,8 +14,9 @@ every kind the builder signs up, because a restart produces the first and an unr
 produces the second, and they are both ordinary rather than exceptional states.
 
 That a registered handler is called with the key its job was armed for, its kind's alone, and
-that a handler which raises is logged with its traceback, are pinned for every kind as its job is
-armed, in `test_scheduler_one_off.py`. What a mystery round's phases ask is weather's to decide,
+that a handler which raises is logged with its traceback, are pinned for every round kind as its
+job is armed, in `tests/core/test_round_jobs_runner.py`, and for the portrait refresh and the
+amendment sweep in image's and results' own tests. What a mystery round's phases ask is weather's to decide,
 and is pinned in `tests/weather/test_forecast_changes.py`.
 """
 from __future__ import annotations
