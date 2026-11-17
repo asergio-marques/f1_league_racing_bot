@@ -548,16 +548,36 @@ async def test_a_drawing_that_fails_fails_the_command(tmp_path):
     interaction.followup.send.assert_not_awaited()
 
 
+#: Why a public text lineup whose first message Discord refuses still fails: the acknowledgement
+#: is treated as gone before that message has gone out, so the failure reply is shown in the
+#: channel.
+_TEXT_SEND_REFUSED = (
+    "#550: a public text lineup whose first message is refused shows the failure reply in the "
+    "channel; the acknowledgement is treated as gone before anything went out"
+)
+
+
 @pytest.mark.parametrize(
-    "refused", ["no_season", "unknown_division", "no_divisions", "drawing_fails"]
+    "refused",
+    [
+        "no_season",
+        "unknown_division",
+        "no_divisions",
+        "drawing_fails",
+        pytest.param(
+            "text_send_fails",
+            marks=pytest.mark.xfail(strict=True, reason=_TEXT_SEND_REFUSED),
+        ),
+    ],
 )
 async def test_a_public_lineup_refused_is_told_to_the_manager_alone(tmp_path, refused):
     """A manager asks for the lineup publicly, and it cannot be shown: no season is being raced;
-    the division they named, Division 9, is not found; the season has no divisions; or the
-    league draws its lineup and drawing Division 1's raises (the database cannot be read), which
-    the bot answers with its standard failure reply. The public acknowledgement is deleted
-    before anything is sent, and the manager alone is told why, by that one message; the channel
-    is shown nothing (Constitution XIV.4: no problem in a channel the drivers read)."""
+    the division they named, Division 9, is not found; the season has no divisions; the league
+    draws its lineup and drawing Division 1's raises (the database cannot be read); or the league
+    does not draw its lineup and Discord refuses the first message of the text, which the bot
+    answers, in those last two, with its standard failure reply. The public acknowledgement is
+    deleted before anything is sent, and the manager alone is told why, by that one message; the
+    channel is shown nothing (Constitution XIV.4: no problem in a channel the drivers read)."""
     from leaguebot.framework.utils.interaction_errors import describe, report_failure
 
     division = None
@@ -571,19 +591,34 @@ async def test_a_public_lineup_refused_is_told_to_the_manager_alone(tmp_path, re
     elif refused == "no_divisions":
         cog = _make_cog(divisions=[])
         told = "No divisions found."
-    else:
+    elif refused == "drawing_fails":
         cog = _make_cog(
             teams=[_team("Alpha", 1, [(1, None, None)])],
             drawing=LineupDrawingStub(fault=RuntimeError("database is locked")),
         )
         told = None
+    else:
+        cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])])
+        told = None
     interaction = _interaction()
     interaction.command = SimpleNamespace(qualified_name="team lineup")
     interaction.client = SimpleNamespace(output_router=None)
+    if refused == "text_send_fails":
+        # Discord refuses the text's first message, which is then never shown.
+        send = interaction.followup.send.side_effect
+
+        async def _refuse_the_text(content=None, **kwargs) -> None:
+            if str(content).startswith("**Division 1**"):
+                raise discord.HTTPException(
+                    MagicMock(status=500, reason="Internal Server Error"), "Discord is down"
+                )
+            await send(content, **kwargs)
+
+        interaction.followup.send.side_effect = _refuse_the_text
 
     try:
         await _lineup(cog, interaction, division=division, public=True)
-    except RuntimeError as error:
+    except (RuntimeError, discord.HTTPException) as error:
         # As the command tree answers a command that fails.
         await report_failure(interaction, error, what=describe(interaction))
 
