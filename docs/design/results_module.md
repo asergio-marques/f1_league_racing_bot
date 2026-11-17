@@ -606,6 +606,8 @@ held or turns itself off, it hands core's writer the hook (`cancellation_notices
 | `review_sections_read` | `season_points_service.review_section` | results' section of a season review |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry and the factory reset |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | results' configuration in the season's fingerprint |
+| `round_leads_read` | `round_start.submission_leads` | answers the submission's lead for every round, whatever results' switch ("The round's `results` job") |
+| `round_armed` | `round_start.round_armed` | answers the submission's lead for an amended round, whatever results' switch |
 | `pending_steps_read`, `review_marks_read` | `test_mode_steps.pending_steps`, `review_marks` | a round's submission for `/test-mode advance` and its review |
 | `in_memory_state_cleared` | `review_state.clear_held_reviews` | the reviews held in memory |
 | the six delete and pack hooks | see "The database" | — |
