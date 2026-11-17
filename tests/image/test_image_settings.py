@@ -835,14 +835,30 @@ async def test_turning_portraits_off_removes_the_daily_job_after_the_save(tmp_pa
     assert last_said(asked) == "❌ **Discord profile pictures** disabled."
 
 
+def _remove_raises(scheduler) -> None:
+    scheduler.remove.side_effect = RuntimeError("the job store refused")
+
+
+def _remove_reports_the_job_still_there(scheduler) -> None:
+    # The framework's remove logs a store fault and reports nothing removed, and the job stands.
+    scheduler.remove.return_value = False
+    scheduler.has_job.return_value = True
+
+
 @pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
-async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(tmp_path):
-    """`/images use-pfp daily-toggle` turning daily updates off, the scheduler refusing to remove
-    the job: the setting stays off, the reply is the success followed by a note that the job
-    could not be removed and does nothing while the setting is off, the Success line and one
-    failure line are written, and `/images config time-format` asked behind it is saved."""
+@pytest.mark.parametrize(
+    "refuse", [_remove_raises, _remove_reports_the_job_still_there],
+    ids=["remove-raises", "remove-logs-and-the-job-stands"],
+)
+async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(tmp_path, refuse):
+    """`/images use-pfp daily-toggle` turning daily updates off, the scheduler failing to remove
+    the job, whether its removal raises or logs the fault and leaves the job standing (image
+    spec: the league is told the update could not be removed): the setting stays off, the reply
+    is the success followed by a note that the job could not be removed and does nothing while
+    the setting is off, the Success line and one failure line are written, and
+    `/images config time-format` asked behind it is saved."""
     league = await _league(tmp_path, **BOTH_UPDATES)
-    league.scheduler.remove.side_effect = RuntimeError("the job store refused")
+    refuse(league.scheduler)
 
     asked = await _slash("use_pfp_daily_toggle", "images use-pfp daily-toggle")(league)
     behind = await _time_format()(league)

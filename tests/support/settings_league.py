@@ -58,11 +58,13 @@ class SettingsLeague:
 def scheduler_double(*, fails: bool = False) -> MagicMock:
     """A scheduler service whose generic daily arming (`arm_daily`) and removal (`remove`) are
     recorded, as image arms and cancels its daily portrait refresh through them; with *fails*,
-    each raises, as a job store refusing the job would."""
+    each raises, as a job store refusing the job would. No job stands (`has_job` is false), so a
+    removal that finds nothing is not taken for one that failed."""
     double = MagicMock()
     error = RuntimeError("scheduler unavailable") if fails else None
     double.arm_daily = MagicMock(side_effect=error)
     double.remove = MagicMock(side_effect=error)
+    double.has_job = MagicMock(return_value=False)
     return double
 
 
