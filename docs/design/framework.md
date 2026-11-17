@@ -279,6 +279,13 @@ Answers to `architecture.md`, "Posting to Discord", which lays out the four hand
 files (`notice_handler`, `standing_post_handler`, `owned_channel_handler` and the log writer,
 `OutputRouter`). What core posts through them is `core.md`'s ("Posting to Discord").
 
+The framework posts two things of its own:
+
+| Post | Kind | Channel | Posted by | Found again by |
+|---|---|---|---|---|
+| A log line | log line | `server_configs.log_channel_id` | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
+| The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id` |
+
 A replaced standing post is deleted by a job after the new one, built by `standing_posts`
 (`replaced`, `delete_replaced_step`), which also removes a copy a failed `record` left
 (`remove_kept`). Its docstring holds the shape.
