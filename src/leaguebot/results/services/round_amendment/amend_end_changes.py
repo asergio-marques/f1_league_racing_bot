@@ -85,6 +85,7 @@ from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.results.models.recovery_failed import RecoveryFailed
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.publishing.results_post_service import PENDING_COMPLETION_REPOST
 from leaguebot.results.services.round_amendment import amendment_writes
 from leaguebot.results.services.round_amendment.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
 from leaguebot.results.services.round_amendment.amend_turn_change import (
@@ -519,9 +520,7 @@ def amend_lapse_change(
             # command open at the season's stage (results specification, standings): the two
             # syncs while it is raced, the amendment again once it is pending completion (#470).
             rebuilt = (
-                "amend the round again with /results rounds amend — every division of this "
-                "season is done, so the sync commands are closed and the amendment is what "
-                "reposts."
+                f"amend the round again with /results rounds amend — {PENDING_COMPLETION_REPOST}"
                 if result.get("pending_completion")
                 else "run /results rounds sync and /results standings sync."
             )

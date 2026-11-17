@@ -1687,6 +1687,15 @@ def merge_faults(*fault_lists: list[str]) -> list[str]:
     return merged
 
 
+#: Why amending the round again is the repost once a season is pending completion: the reason
+#: both `results_sync_hint` and a restart's amendment line give (results specification,
+#: standings), held once so that the two cannot drift.
+PENDING_COMPLETION_REPOST = (
+    "every division of this season is done, so the sync commands are closed and the amendment "
+    "is what reposts."
+)
+
+
 async def results_sync_hint(db_path: str, division_id: int) -> str:
     """The line telling a manager how to finish a repost that did not land (#237).
 
@@ -1710,8 +1719,7 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
     if stage == SeasonStage.PENDING_COMPLETION:
         return (
             f"Repair the cause, then amend the round again with `/results rounds amend "
-            f"division_name:{name}` — every division of this season is done, so the sync "
-            f"commands are closed and the amendment is what reposts."
+            f"division_name:{name}` — {PENDING_COMPLETION_REPOST}"
         )
     return (
         f"Repair the cause, then run `/results rounds sync division:{name}` and "
