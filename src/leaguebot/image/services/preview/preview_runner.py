@@ -18,6 +18,7 @@ from typing import Any
 import discord
 
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.log_lines import log_link
 from leaguebot.utils.messages import chunk_message
 from leaguebot.image.services.preview import image_preview_service
 from leaguebot.image.services.render import image_render_service
@@ -217,7 +218,7 @@ async def send_preview(
         heading = "⚠️ **Notices** — the render survived these:"
         jump_url = getattr(logged, "jump_url", None)
         if jump_url:
-            heading += f" ([see them in the log]({jump_url}))"
+            heading += f" {log_link(jump_url)}"
 
         lines.append("")
         lines.append(heading)

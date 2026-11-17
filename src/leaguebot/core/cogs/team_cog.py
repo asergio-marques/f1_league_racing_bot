@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import discord
@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.drivers.lineup_command import lineups_for_command
 from leaguebot.core.services.drivers.team_changes import (
     TEAM_ADD,
     TEAM_MODIFY,
@@ -26,7 +27,8 @@ from leaguebot.core.utils.channel_guard import league_admin_only, league_manager
 from leaguebot.framework.utils.interaction_errors import describe, describe_form
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import LeagueModal
-from leaguebot.framework.utils.log_lines import refuse
+from leaguebot.framework.utils.log_lines import drawn_notices_section, refuse
+from leaguebot.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -363,6 +365,16 @@ class TeamCog(commands.Cog):
     # /team lineup  — show placed drivers per team for the active season
     # ------------------------------------------------------------------
 
+    @staticmethod
+    async def _tell_notices(interaction: discord.Interaction, section: str) -> None:
+        """Tell the manager alone the notices of the pictures drawn, one follow-up for each part
+        Discord's message limit leaves: a lineup of several divisions can note more than one
+        message holds, and a failed send would cost the manager the notices and their link."""
+        if not section:
+            return
+        for part in chunk_message(section):
+            await interaction.followup.send(part, ephemeral=True)
+
     @team.command(
         name="lineup",
         description="Show the confirmed team lineups of the season being raced.",
@@ -380,11 +392,33 @@ class TeamCog(commands.Cog):
         public: bool = False,
     ) -> None:
         await interaction.response.defer(ephemeral=not public)
+        acknowledgement = _PublicAcknowledgement(interaction, standing=public)
+        try:
+            await self._show_lineup(interaction, division, public, acknowledgement)
+        except Exception:
+            # The command tree answers a fault with a reply the manager alone should see, which
+            # a standing public acknowledgement would show in the channel instead.
+            await acknowledgement.take_down()
+            raise
 
+    async def _show_lineup(
+        self,
+        interaction: discord.Interaction,
+        division: str | None,
+        public: bool,
+        acknowledgement: _PublicAcknowledgement,
+    ) -> None:
+        """Answer `/team lineup` once it is acknowledged.
+
+        Every refusal is sent to the manager alone, and so first takes down the public
+        acknowledgement (`_PublicAcknowledgement`), which would otherwise give the first
+        follow-up its own visibility and show the refusal in the channel (Constitution XIV.4).
+        """
         season = await self.bot.season_service.get_confirmed_season(
 
         )
         if season is None:
+            await acknowledgement.take_down()
             await interaction.followup.send("⛔ No season is being raced, so no lineup is confirmed.", ephemeral=True)
             return
 
@@ -396,66 +430,60 @@ class TeamCog(commands.Cog):
                 season.id, division
             )
             if result is None:
+                await acknowledgement.take_down()
                 await interaction.followup.send(f"⛔ Division `{division}` not found.", ephemeral=True)
                 return
             div_id, _ = result
             all_divisions = [d for d in all_divisions if d.id == div_id]
 
         if not all_divisions:
+            await acknowledgement.take_down()
             await interaction.followup.send("No divisions found.", ephemeral=True)
             return
 
         # ── The graphic replaces the textual output where configured (FR-026) ──
         #
-        # One image per division, honouring `public`, drawn through core's drawing protocol
-        # as a command's output. These are command output and **not** the lineup of record:
-        # nothing is written to `lineup_message_id` and the lineup channel is untouched
-        # (FR-028). A fatal error rejects rather than falling back — the caller is the one
-        # person able to fix the template (Constitution XIV.7). The drawing has already
-        # reported any notices to the log channel, headed with the division, so this command
-        # never posts them a second time.
-        if await self.bot.image_drawing.lineup_wanted():
-            drawn_paths: list = []
-            # One `finally` around the whole batch, because a rejection part way through, or
-            # a fault that leaves the command, abandons every picture drawn before it — the
-            # divisions already rendered are never sent, and without this their files would
-            # be the one leak no posting path accounts for. `discord.File` is opened only once
-            # every division has drawn clean, and closed again before this hands the paths to
-            # `discard_picture`, so no render is unlinked while its handle is still open — the
-            # model `calendar_post_service.replace_calendar_message` and
-            # `LineupPoster._refresh_lineup_post` both set.
-            try:
-                for div in all_divisions:
-                    picture = await self.bot.image_drawing.draw_lineup_for_command(
-                        interaction.guild, div.id
+        # One image per division, honouring `public`. Which divisions are drawn, the refusal
+        # rather than a fall back to text, and the release of every picture drawn are
+        # `lineups_for_command`'s; the replies are the command's. `discord.File` is opened only
+        # once every division has drawn clean, and closed again before the block hands the paths
+        # back to be released, so no render is unlinked while its handle is still open — the
+        # model `calendar_post_service.replace_calendar_message` and
+        # `LineupPoster._refresh_lineup_post` both set.
+        async with lineups_for_command(
+            self.bot.image_drawing, interaction.guild, all_divisions
+        ) as lineups:
+            if lineups.drawn:
+                # The notices are told to the manager alone, whatever `public` says: a channel
+                # the drivers read carries the picture and nothing else (Constitution XIV.4).
+                section = drawn_notices_section(lineups.notices)
+                if lineups.problem is not None:
+                    refusal = (
+                        f"❌ {lineups.problem}\n"
+                        f"_Lineup for **{lineups.refused}** was not drawn._"
                     )
-                    if picture.path is not None:
-                        drawn_paths.append(picture.path)
-                    if picture.problem is not None:
-                        await interaction.followup.send(
-                            f"❌ {picture.problem}\n"
-                            f"_Lineup for **{div.name}** was not drawn._",
-                            ephemeral=True,
-                        )
-                        return
+                    # The section is always a follow-up of its own, never carried in the refusal.
+                    await acknowledgement.take_down()
+                    await interaction.followup.send(refusal, ephemeral=True)
+                    await self._tell_notices(interaction, section)
+                    return
 
-                if drawn_paths:
+                if lineups.paths:
                     files = [
                         discord.File(str(path), filename=path.name)
-                        for path in drawn_paths
+                        for path in lineups.paths
                     ]
                     try:
                         text = "\n".join(f"**{div.name}**" for div in all_divisions)
                         await interaction.followup.send(
                             text, files=files, ephemeral=not public
                         )
+                        acknowledgement.sent()
+                        await self._tell_notices(interaction, section)
                         return
                     finally:
                         for attachment in files:
                             attachment.close()
-            finally:
-                for path in drawn_paths:
-                    self.bot.image_drawing.discard_picture(path)
 
         lines: list[str] = []
         for div in all_divisions:
@@ -483,7 +511,14 @@ class TeamCog(commands.Cog):
                         lines.append(f"    Seat {seat_num}: {driver_str}")
             lines.append("")
 
-        await _send_long(interaction, "\n".join(lines).rstrip(), ephemeral=not public)
+        # The acknowledgement is gone only once the first message has gone out: where Discord
+        # refuses that one, the failure reply still has to be taken down first.
+        await _send_long(
+            interaction,
+            "\n".join(lines).rstrip(),
+            ephemeral=not public,
+            on_first_sent=acknowledgement.sent,
+        )
 
     # ------------------------------------------------------------------
     # /team reserve-role  — set or clear the role for the Reserve team
@@ -523,17 +558,61 @@ class TeamCog(commands.Cog):
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: bool = True) -> None:
-    """Send potentially-long text, splitting into followup chunks if needed."""
-    if len(text) <= _MAX_MSG_LEN:
-        await interaction.followup.send(text, ephemeral=ephemeral)
-        return
-    chunks = []
-    while text:
-        chunks.append(text[:_MAX_MSG_LEN])
-        text = text[_MAX_MSG_LEN:]
-    for chunk in chunks:
+_NOT_SHOWN = "⛔ The lineup could not be shown."
+
+
+class _PublicAcknowledgement:
+    """The "thinking…" a public `/team lineup` shows until its first follow-up.
+
+    Discord gives the first follow-up after a deferral the deferral's visibility, whatever the
+    follow-up asks, so a refusal sent first would be shown in the channel the drivers read
+    (Constitution XIV.4). `take_down` deletes the acknowledgement while it stands, so that the next
+    follow-up is seen as it asks, by the manager alone. Where Discord refuses the deletion, the
+    channel is given one neutral line, naming no problem, as that first follow-up, and the refusal
+    follows privately all the same. `standing` is cleared once anything has been sent, after which
+    there is nothing to take down: deleting the original then would delete what was sent.
+    """
+
+    def __init__(self, interaction: discord.Interaction, *, standing: bool) -> None:
+        self._interaction = interaction
+        self.standing = standing
+
+    def sent(self) -> None:
+        """Note that a follow-up has gone out, so the acknowledgement is no longer standing."""
+        self.standing = False
+
+    async def take_down(self) -> None:
+        if not self.standing:
+            return
+        self.standing = False
+        try:
+            await self._interaction.delete_original_response()
+        except discord.HTTPException:
+            log.warning("could not delete the public acknowledgement of /team lineup", exc_info=True)
+            try:
+                await self._interaction.followup.send(_NOT_SHOWN, ephemeral=False)
+            except discord.HTTPException:
+                log.warning("could not show the channel that the lineup was not shown", exc_info=True)
+
+
+async def _send_long(
+    interaction: discord.Interaction,
+    text: str,
+    *,
+    ephemeral: bool = True,
+    on_first_sent: Callable[[], None] | None = None,
+) -> None:
+    """Send potentially-long text, splitting into followup chunks if needed.
+
+    `on_first_sent` is called once the first chunk has gone out, and not before.
+    """
+    chunks = [text]
+    if len(text) > _MAX_MSG_LEN:
+        chunks = [text[i:i + _MAX_MSG_LEN] for i in range(0, len(text), _MAX_MSG_LEN)]
+    for number, chunk in enumerate(chunks):
         await interaction.followup.send(chunk, ephemeral=ephemeral)
+        if number == 0 and on_first_sent is not None:
+            on_first_sent()
 
 
 # ---------------------------------------------------------------------------

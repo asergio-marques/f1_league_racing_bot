@@ -137,6 +137,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
+    drawn_notices_of,
 )
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.seasons.season_end_changes import (
@@ -180,7 +181,7 @@ from leaguebot.core.services.seasons.season_service import (
 )
 from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
-from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import drawn_notices_section, refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
@@ -436,6 +437,16 @@ _EMPTY = StepView(name="", payload={}, result=None, done=False)
 def _view(ctx: OutcomeContext, name: str) -> StepView:
     """The last job named *name*, or an empty view where the change has none."""
     return next((view for view in reversed(ctx.steps) if view.name == name), _EMPTY)
+
+
+def _calendar_notices(ctx: OutcomeContext) -> str:
+    """The "Image notices" section a reply ends in for the calendars the cancellation drew again,
+    each linked to the log message holding its notices, with the blank line that parts it from
+    the reply; "" where none was drawn with a notice. The notices are a line of the posting job's
+    own, in the log channel, so the reply carries them without logging them again (Constitution
+    XIV.4)."""
+    section = drawn_notices_section(drawn_notices_of(ctx.steps, POST_CALENDAR))
+    return "\n\n" + section if section else ""
 
 
 def _discarded(view: StepView) -> bool:
@@ -929,6 +940,7 @@ def round_cancel_change(
         return (
             f"✅ Round **{words['number']}** in **{words['division']}** cancelled."
             + notices.failure_lines(not_notified(ctx))
+            + _calendar_notices(ctx)
         )
 
     steps: dict[str, Step] = {
@@ -1175,7 +1187,11 @@ def division_cancel_change(
         refused = _refusal_of(ctx)
         if refused:
             return refused + _rearming_sentence(ctx)
-        return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
+        return (
+            f"✅ Division **{name}** cancelled."
+            + notices.failure_lines(not_notified(ctx))
+            + _calendar_notices(ctx)
+        )
 
     steps: dict[str, Step] = {
         **_follow_steps(seasons=seasons, drawing=drawing),
@@ -1513,8 +1529,10 @@ def season_cancel_change(
         if refused:
             return refused + _rearming_sentence(ctx)
         if not _season_ended(ctx):
-            return SEASON_END_DISCARDED.format(number=number) + notices.failure_lines(
-                not_notified(ctx)
+            return (
+                SEASON_END_DISCARDED.format(number=number)
+                + notices.failure_lines(not_notified(ctx))
+                + _calendar_notices(ctx)
             )
         return (
             SEASON_CANCELLED
@@ -1522,6 +1540,7 @@ def season_cancel_change(
             + not_done_reply(
                 shared_not_done(ctx, steps), discarded=anything_discarded(ctx)
             )
+            + _calendar_notices(ctx)
         )
 
     def describing(text: str) -> Callable[[StepContext], Awaitable[str]]:

@@ -510,23 +510,30 @@ async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
     assert sum(notices[1] in each for each in logged) == 1, logged
 
 
+@pytest.mark.parametrize("start", [
+    pytest.param(_lineup_asked, id="a lineup asked"),
+    pytest.param(_placements_approved, id="the placements approved"),
+])
 async def test_a_refused_lineup_s_notices_reach_the_log_once_when_it_is_retried(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, start,
 ):
-    """Pro's lineup asked of the queue, as a driver command asks it, and the drawing the builder
-    handed draws it as a PNG with two notices, Zara's flag and portrait each falling back. Pro's
-    lineup channel refuses every send, the picture and then the text, so the queue stops at the
-    posting job. The channel is let accept, and a Retry posts the lineup: the queue runs to the
-    end, and the log channel holds the two notices once, in one line naming the lineup and Pro,
-    never lost with the refused try."""
+    """Pro's lineup posted by a change (asked of the queue, as a driver command asks it, or by the
+    placements approved on `/season placements-review`), and the drawing the builder handed draws
+    it as a PNG with two notices, Zara's flag and portrait each falling back. Pro's lineup channel
+    refuses every send, the picture and then the text, so the queue stops at the posting job. The
+    channel is let accept, and a Retry posts the lineup: the queue runs to the end, and the log
+    channel holds the two notices once, in one line naming the lineup and Pro, never lost with the
+    refused try. Where the change has a reply, it still lists both notices under the lineup,
+    linked to that line's message (#550)."""
     from tests.support.change_queue import queued_log_lines
     from tests.support.lineup_drawing import LineupDrawingStub
 
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     notices = ("a fallback flag stood in for Zara's", "a fallback portrait stood in for Zara's")
-    league, _ = await _lineup_asked(
-        tmp_path, monkeypatch, LineupDrawingStub(picture=png, notices=notices)
+    league, asked = await start(
+        tmp_path, monkeypatch,
+        LineupDrawingStub(picture=png, by_division={PRO: {"notices": notices}}),
     )
     channel = league.channel(LINEUP[PRO])
     channel.fail_when = lambda _content, _kwargs: True
@@ -544,6 +551,14 @@ async def test_a_refused_lineup_s_notices_reach_the_log_once_when_it_is_retried(
     assert notices[1] in line and "lineup" in line.lower() and "Pro" in line, line
     refused = [line for line in logged if "Discord refused the picture" in line]
     assert len(refused) == 1 and "Lineup posted as text" in refused[0], logged
+    if asked is not None:
+        from tests.support.season_league import reply
+
+        held = league.bot.log_channel.sent.index(line) + 1
+        assert (
+            f"  **lineup — Pro** ([see them in the log](https://discord.test/{held}))\n"
+            f"  • {notices[0]}\n  • {notices[1]}"
+        ) in reply(asked), reply(asked)
 
 
 @pytest.mark.parametrize(("start", "member", "change", "divisions"), [

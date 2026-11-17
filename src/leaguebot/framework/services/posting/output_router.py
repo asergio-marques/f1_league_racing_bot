@@ -378,7 +378,7 @@ class OutputRouter:
 
     async def deliver_queued(
         self, ids: "Iterable[int]", *, interaction: "Optional[discord.Interaction]" = None
-    ) -> None:
+    ) -> dict[int, str]:
         """Send the lines :meth:`queue_log_on` wrote, once their save has been committed.
 
         Each is read again under the retry loop's lock, and one already gone (the loop delivered it
@@ -388,12 +388,17 @@ class OutputRouter:
         the log channel could not be read), and *interaction*, where given and still answerable, is
         told as :meth:`post_log` tells the member, once; with none, the failure is the host's log's
         alone. Never raises.
+
+        Returns the link (``jump_url``) of the **first** message each delivered line went out in,
+        keyed by the line's id, for a reply that points a manager at it; a line left to the retry
+        loop, or one whose message carries no link, has no entry.
         """
         from leaguebot.framework.services.posting import retry_service
 
+        links: dict[int, str] = {}
         db_path = self._retry_db_path
         if not db_path:
-            return
+            return links
         for entry_id in ids:
             # The channel the member is told about where the line, once read, is not delivered,
             # whatever stops it: the log channel as it is now, or the line's own where that
@@ -409,10 +414,13 @@ class OutputRouter:
                     current = await self.log_destination()
                     target = entry.channel_id if current is None else current
                     warn_about = target
-                    message, reason = await self._try_send(target, entry.content, "log", False)
+                    message, reason = await self._try_send(target, entry.content, "log", True)
                     if message is not None:
                         warn_about = None
                         await retry_service.mark_delivered(db_path, entry_id)
+                        link = getattr(message, "jump_url", None)
+                        if isinstance(link, str):
+                            links[entry_id] = link
                         continue
                     await retry_service.mark_failed(
                         db_path, entry_id, reason=reason, now=self._now()
@@ -421,6 +429,7 @@ class OutputRouter:
                 log.error("deliver_queued: could not deliver line id=%s", entry_id, exc_info=True)
             if warn_about is not None and interaction is not None:
                 await self._warn_member(warn_about, interaction)
+        return links
 
     @staticmethod
     def _as_log_line(content: str, *, keep_role: int | None = None) -> str:

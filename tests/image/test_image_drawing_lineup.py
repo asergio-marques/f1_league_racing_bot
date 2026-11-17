@@ -228,25 +228,36 @@ def _two_lineup_notices():
     ]
 
 
+#: The link Discord gives the log channel's message holding the notices, where it takes it.
+NOTICES_LINK = "https://discord.test/4242/7"
+
+
+@pytest.mark.parametrize("log_channel", ["takes", "refuses"])
 async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_channel_in_one_message(
-    db_path, monkeypatch,
+    db_path, monkeypatch, log_channel,
 ):
     """Pro's lineup drawn with two notices as `/team lineup`'s output, which runs in no job: the
     drawing itself reports them to the log channel, in one message headed with the lineup and the
-    division, and never to the lineup channel (Constitution XIV.4, "reported in one message")."""
+    division, and never to the lineup channel (Constitution XIV.4, "reported in one message").
+    It hands back the link to that message, for the command's reply to point to (image spec,
+    Lineup); where the log channel would not take it, and no message was posted, it hands back
+    no link."""
     _portraits_spied(monkeypatch)
     guild, channel, _ = _guild()
     drawing, _, post_log, _ = _drawing(
         db_path, outcome=NS(problem=None, notices=_two_lineup_notices(), png_paths=[])
     )
+    post_log.return_value = (MagicMock(jump_url=NOTICES_LINK) if log_channel == "takes"
+                             else None)
 
-    await drawing.draw_lineup_for_command(guild, DIVISION_ID)
+    picture = await drawing.draw_lineup_for_command(guild, DIVISION_ID)
 
     [call] = post_log.await_args_list
     assert call.args[0].startswith("Image render notices — lineup — Pro:\n"), call.args[0]
     assert "a fallback flag stood in for Zara's" in call.args[0]
     assert "a fallback portrait stood in for Zara's" in call.args[0]
     channel.send.assert_not_awaited()
+    assert picture.log_link == (NOTICES_LINK if log_channel == "takes" else None)
 
 
 #: The lineups drawn inside a change's job: the lineup of record (the lineup job's), and the lineup

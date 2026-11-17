@@ -40,7 +40,7 @@ from typing import Any
 
 import discord
 
-from leaguebot.framework.models.change import LEAGUE_LANE
+from leaguebot.framework.models.change import LEAGUE_LANE, DrawnNotices
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.member_names import interaction_member, member_named  # noqa: F401
 from leaguebot.utils.messages import chunk_message
@@ -323,6 +323,28 @@ def drawn_notices_line(named: str, what: str, drawn: str, notices: Iterable[str]
     return f"{named} | {what} | Image render notices — {drawn}:" + "".join(
         f"\n  • {each}" for each in notices
     )
+
+
+def log_link(url: str) -> str:
+    """The words a reply uses to point the member at the log message holding what it summarises,
+    "([see them in the log](url))": the one wording for every reply that does, so a manager meets
+    it the same wherever a picture was drawn."""
+    return f"([see them in the log]({url}))"
+
+
+def drawn_notices_section(groups: Iterable[DrawnNotices]) -> str:
+    """The section a reply ends with for the pictures its work drew with render notices: the
+    heading "⚠️ **Image notices**", then each picture under its label, with the `log_link` to the
+    log message holding them where there is one, and each notice beneath. "" where *groups*
+    is empty, so a caller adds it and its separating blank line only when there is something to
+    say (Constitution XIV.4: a command's output carries the notices of what it drew)."""
+    lines: list[str] = []
+    for group in groups:
+        lines.append(
+            f"  **{group.label}**" + (f" {log_link(group.link)}" if group.link else "")
+        )
+        lines.extend(f"  • {each}" for each in group.notices)
+    return "\n".join(["⚠️ **Image notices**", *lines]) if lines else ""
 
 
 async def record_abandoned(

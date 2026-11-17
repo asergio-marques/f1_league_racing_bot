@@ -188,7 +188,7 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     """Images on: Discord refuses the picture, drawn with one notice (round 12 not fitting), and
     the queue stops; Retry posts the textual calendar, drawing nothing again, and the log channel
     holds the notice once, in one line naming the calendar and Pro, never lost with the refused
-    try."""
+    try. The reply still lists it, linked to that message (#550)."""
     from tests.support.change_queue import queued_log_lines
 
     league = await ongoing_league(tmp_path, images=True)
@@ -215,6 +215,11 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     named = [line for line in logged if notice in line]
     assert len(named) == 1, logged
     assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+    held = league.bot.log_channel.sent.index(named[0]) + 1
+    assert (
+        f"  **calendar — Pro** ([see them in the log](https://discord.test/{held}))\n"
+        f"  • {notice}"
+    ) in _outcome(interaction)
 
 
 async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old_calendar_stands(

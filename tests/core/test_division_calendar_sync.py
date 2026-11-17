@@ -34,6 +34,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
@@ -41,6 +42,7 @@ from leaguebot.framework.db.database import run_migrations
 from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus
 from leaguebot.core.services.rounds.calendar_post_service import CalendarPosting
 from tests.support.change_queue import (
+    http_error,
     league_bot,
     league_queue,
     run_queue,
@@ -241,19 +243,50 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     ]
 
 
-async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(tmp_path):
-    """A calendar synced, drawn with a notice. The reply names the notice (Constitution XIV.4,
-    alongside a command's output); the command's line in the log channel does not repeat it,
-    the calendar's posting job reporting it there once, among its own lines."""
+@pytest.mark.parametrize("case", ["takes", "refuses", "rejected"])
+async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(
+    tmp_path, case,
+):
+    """A calendar synced, drawn with a notice. The reply lists the notice under "Image notices",
+    labelled as the log line names the picture, with a link to the log channel's message holding
+    it (Constitution XIV.4; image spec, Calendar); a log channel that refuses the line costs the
+    link alone. Where the render also finds a fault it cannot draw past (the template has no
+    rows), nothing is posted and the reply says so with the problem, then lists the notice all the
+    same, linked, for the log holds it. The command's line in the log channel, its success or its
+    refusal, does not repeat the notice, the calendar's posting job reporting it there once, among
+    its own lines."""
     cog = await _make_cog()
+    if case == "refuses":
+        cog.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
     interaction = _interaction()
+    problem = "the template has no rows" if case == "rejected" else None
 
-    await _sync(cog, interaction, posting=_posting(notices=["round 12 did not fit"]))
+    await _sync(
+        cog, interaction, posting=_posting(problem=problem, notices=["round 12 did not fit"])
+    )
 
-    assert "round 12 did not fit" in _replied(interaction)
+    replied = _replied(interaction)
+    assert "⚠️ **Image notices**" in replied
+    assert "  • round 12 did not fit" in replied
+    if case == "refuses":
+        assert "  **calendar — Pro**\n" in replied
+        assert "see them in the log" not in replied
+        return
+    held = next(n for n, line in enumerate(_logged(cog), 1) if "round 12 did not fit" in line)
+    assert (
+        f"  **calendar — Pro** ([see them in the log](https://discord.test/{held}))\n"
+        "  • round 12 did not fit"
+    ) in replied
     logged = _logged(cog)[-1]
-    assert "| /division calendar-sync | Success" in logged
     assert "round 12 did not fit" not in logged
+    if case == "rejected":
+        outcome = _outcome(interaction)
+        refusal = "❌ The calendar for **Pro** was not posted — the template has no rows"
+        assert outcome.startswith(refusal)
+        assert outcome.index("⚠️ **Image notices**") > len(refusal)
+        assert "was not posted — the template has no rows" in logged
+        return
+    assert "| /division calendar-sync | Success" in logged
 
 
 async def test_a_server_with_no_season_is_refused(tmp_path):

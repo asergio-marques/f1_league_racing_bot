@@ -51,7 +51,8 @@ reads it (`league_settings.py`) and a log line waiting to be delivered (`pending
 one-league claim and the base classes of the command tree, views and modals (`league_server.py`),
 the hook types (`hooks.py`), the failure paths (`interaction_errors.py`, `answering.py`, the job
 runner `job_runner.py`), the helper that starts background work and holds it (`background.py`), the
-standard log lines (`log_lines.py`), a member as the log channel names them (`member_names.py`),
+standard log lines, and the words a reply uses to link to a logged line and to list the notices
+of the pictures its work drew (`log_lines.py`), a member as the log channel names them (`member_names.py`),
 the log filters, `bounded_autocomplete` (`autocomplete.py`), the guard that refuses a post made
 outside a job (`in_a_job.py`), the wait for the catch-up after a restart (`catch_up_gate.py`), the
 channel cast (`channels.py`) and the path resolution that keeps a path inside the project
@@ -117,15 +118,19 @@ objects, which would reach into the queue's private state or be handed all of it
 docstring). What reads none of that state is out of the file.
 `framework/services/queue/change_types.py` holds the types a change is made of, `Step` and
 `ChangeType` with the contexts a check, a step, an outcome and the refusal and discard hooks are
-handed, and the decisions that govern them (a post's id saved with its mark, a step's four kinds, a
-job that ends on a fault); `framework/services/queue/queue_records.py` holds the bookkeeping over
+handed, `StepView` among them, and `drawn_notices_of`, which gathers the notices of the pictures a
+change's jobs drew for its outcome, and the decisions that govern them (a post's id saved with its
+mark, a step's four kinds, a job that ends on a fault); `framework/services/queue/queue_records.py` holds the bookkeeping over
 the queue's tables, what is in hand, what was ever asked, the job numbering and the emptying of a
 restored database, which a check, a recovery, a restore and a factory reset call without a queue.
 The queue file keeps the constants the class reads: `RETRY_AFTER`, the bot's own tries;
 `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated;
 `WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and `QUEUE_TABLES`. The plain
 data is in `framework/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`, `EDIT`), `Verdict`,
-`StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The engineering
+`StepResult`, `DrawnNotices` (one picture's notices, as a reply lists them), `DrawnKept` and
+`drawn_kept` (what a post job's earlier tries kept on their stops), `StepFailedOnDiscord`,
+`GuildUnavailable`, the lane names and the keys a job that drew puts on its result (`RESULT_NOTICES`,
+`RESULT_DRAWN`, `DRAWN_LINES`, `DRAWN_NOTICES`, `DRAWN_LINKED`). The engineering
 decisions that govern the queue are in its module docstring, and those that govern a step's kinds,
 its record and a fault's ending in `change_types`', each pinned by a test in
 `tests/framework/test_change_queue.py`, `test_change_queue_lanes.py` or
@@ -156,6 +161,16 @@ its record and a fault's ending in `change_types`', each pinned by a test in
 - **A kept reply is the same entry held in memory**, let go once it can no longer be updated.
   *Rejected:* a second table of replies (`ChangeQueue.keep_reply`'s docstring;
   `test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated`).
+- **A reply links to the log line its job named, from the queue's memory.** A job that drew a
+  picture names the one line of its result that holds the picture's notices (`StepResult.linked`);
+  once the job's save has committed and its lines are delivered (`OutputRouter.deliver_queued`
+  returns each delivered line's link), the queue keeps the link for the job on the change's held
+  reply (`_Held`) and hands it to the outcome as `StepView.log_link`, so the log message is written
+  before the reply that points at it. A restart loses it with the reply it feeds, and a log channel
+  that refuses costs the link alone. An outcome lists the notices through `drawn_notices_of` and
+  `drawn_notices_section`, so every reply words them alike. *Rejected:* saving the link with the job,
+  a column for a reply that cannot outlive the restart
+  (`test_an_outcome_links_to_the_line_its_job_named`).
 
 The stop notice's buttons are one persistent view, `QueueStopView`, registered as the queue
 starts. A message typed into a conversation's channel is answered through `typed_turns`. A line
@@ -298,7 +313,7 @@ The framework posts two things of its own:
 
 | Post | Kind | Channel | Posted by | Found again by |
 |---|---|---|---|---|
-| A log line | log line | the log channel the league's settings name (`LeagueSettings`) | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
+| A log line | log line | the log channel the league's settings name (`LeagueSettings`) | `OutputRouter.post_log`, or `queue_log_on` in a step's save, delivered with the link of each line handed back | `pending_messages`, until delivered |
 | The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id`, or the queue's memory until that save lands (lost at a restart) |
 
 A replaced standing post is deleted by a job after the new one, built by `standing_posts`
@@ -369,5 +384,5 @@ listener's own arguments, which can hold a member's message, and never raises
 |---|---|---|
 | `Refused` | `framework/models/refusal.py` | a refusal whose text the member reads; subclasses `ValueError` |
 | `SwitchNotSignedUp` | `framework/services/switches/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
-| `StepFailedOnDiscord` | `framework/models/change.py` | a step's failure on Discord, carrying what the job keeps and a clause for the stop notice |
+| `StepFailedOnDiscord` | `framework/models/change.py` | a step's failure on Discord, carrying what the job keeps (the lines a picture was drawn with, its notices and the index of the line holding them, for the try that posts) and a clause for the stop notice |
 | `GuildUnavailable` | `framework/models/change.py` | the league's server missing from the cache: a failure on Discord's side |

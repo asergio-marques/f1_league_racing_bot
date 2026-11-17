@@ -36,9 +36,12 @@ from leaguebot.framework.models.change import (
     PlannedStep,
     StepKind,
     StepFailedOnDiscord,
+    RESULT_DRAWN,
+    RESULT_NOTICES,
     StepResult,
     Verdict,
-    drawn_lines_kept,
+    DrawnKept,
+    drawn_kept,
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.framework.services.posting import standing_posts
@@ -49,6 +52,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
+    drawn_notices_of,
 )
 from leaguebot.core.services.modules.image_drawing import CalendarPicture, ImageDrawing
 from leaguebot.core.services.seasons.season_end_changes import SEASON_CANCEL
@@ -56,7 +60,9 @@ from leaguebot.framework.services.posting.standing_post_handler import post_stan
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import league_guild
-from leaguebot.framework.utils.log_lines import drawn_notices_line, refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import (
+    drawn_notices_line, drawn_notices_section, refusal_line, reply_reason,
+)
 from leaguebot.core.utils.season_gate import stage_refusal
 
 if TYPE_CHECKING:
@@ -395,6 +401,23 @@ def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str
     )
 
 
+def _drawn_as(division_name: str) -> str:
+    """What the calendar's log line, and the reply listing its notices, call the picture."""
+    return f"calendar — {division_name}"
+
+
+def _notices_index(
+    kept: DrawnKept, earlier: tuple[str, ...], notices: tuple[str, ...]
+) -> int | None:
+    """The index, among a `post_calendar` try's lines, of the one holding the calendar's notices:
+    the one an earlier try kept where it kept notices (a picture is drawn on the first try alone),
+    else this try's own, which comes first of its lines after those kept from before, and None
+    where the picture had no notices."""
+    if kept.notices:
+        return kept.linked
+    return len(earlier) if notices else None
+
+
 def _posting_lines(
     ctx: StepContext, division_name: str, posting: CalendarPosting, *, text_stands: bool
 ) -> tuple[str, ...]:
@@ -404,7 +427,7 @@ def _posting_lines(
     lines: tuple[str, ...] = ()
     if posting.notices:
         lines += (drawn_notices_line(
-            ctx.named, ctx.what, f"calendar — {division_name}", posting.notices
+            ctx.named, ctx.what, _drawn_as(division_name), posting.notices
         ),)
     if text_stands and posting.problem is not None:
         lines += (_fallen_back_to_text_line(ctx, division_name, str(posting.problem)),)
@@ -450,11 +473,14 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
     async def post_calendar(ctx: StepContext) -> StepResult:
         # What the picture said when it was drawn, on the first try, is kept with every stop that
         # follows, so that the try which posts hands it back, never lost with a refused post.
-        earlier = drawn_lines_kept(ctx.kept)
+        kept = drawn_kept(ctx.kept)
+        earlier = kept.lines
         try:
             await standing_posts.remove_kept(ctx.bot, ctx.kept)
         except StepFailedOnDiscord as stop:
-            raise stop.carrying(earlier) from stop.__cause__
+            raise stop.carrying(
+                earlier, notices=kept.notices, linked=kept.linked
+            ) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
@@ -489,10 +515,15 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             )
         except StepFailedOnDiscord as stop:
             refused = getattr(stop, POSTING_ATTRIBUTE, None)
-            raise stop.carrying(earlier + (
-                () if refused is None
-                else _posting_lines(ctx, division.name, refused, text_stands=True)
-            )) from stop.__cause__
+            drawn = () if refused is None else tuple(refused.notices)
+            raise stop.carrying(
+                earlier + (
+                    () if refused is None
+                    else _posting_lines(ctx, division.name, refused, text_stands=True)
+                ),
+                notices=kept.notices + drawn,
+                linked=_notices_index(kept, earlier, drawn),
+            ) from stop.__cause__
         lines = earlier + _posting_lines(
             ctx, division.name, posting, text_stands=posting.fell_back
         )
@@ -500,7 +531,8 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             result={
                 "division": division.name,
                 "problem": posting.problem,
-                "notices": list(posting.notices),
+                RESULT_NOTICES: [*kept.notices, *posting.notices],
+                RESULT_DRAWN: _drawn_as(division.name),
                 "rejected": posting.problem is not None and posting.message_id is None,
                 "posted_as_image": posting.posted_as_image,
                 "new": posting.message_id,
@@ -508,6 +540,7 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
                 "channel_id": posting.channel_id,
             },
             lines=lines,
+            linked=_notices_index(kept, earlier, tuple(posting.notices)),
             # A posting that put nothing up (a commanded render that failed) replaces nothing.
             then=standing_posts.replaced(
                 posting.channel_id, division.calendar_message_id, posting.message_id,
@@ -624,16 +657,16 @@ def calendar_sync_change(seasons: "SeasonService", drawing: ImageDrawing) -> Cha
                 f"⛔ The calendar for **{name}** was not posted: a league admin discarded it. "
                 f"The previous calendar still stands; run `/division calendar-sync` again."
             )
+        section = drawn_notices_section(drawn_notices_of(ctx.steps, POST_CALENDAR))
         rejected = rejection(ctx)
         if rejected is not None:
-            return rejected
+            # A refused render can still have noted things, which are in the log all the same.
+            return f"{rejected}\n\n{section}" if section else rejected
         result = (posted.result if posted is not None else None) or {}
         drawn = "image" if result.get("posted_as_image") else "text"
         lines = [f"✅ Calendar for **{name}** reposted as {drawn}."]
-        if result.get("notices"):
-            lines.append("")
-            lines.append("**Notices**")
-            lines.extend(f"  • {detail}" for detail in result["notices"])
+        if section:
+            lines.extend(("", section))
         return "\n".join(lines) + not_deleted(ctx)
 
     return ChangeType(

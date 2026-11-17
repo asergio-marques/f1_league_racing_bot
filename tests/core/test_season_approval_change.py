@@ -1116,13 +1116,21 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
 async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallback(
     tmp_path, monkeypatch,
 ):
-    """Season 3 approved with its calendars drawn as pictures: Pro's drawing fails, and Am's draws
-    with a notice. The reply ends in a "Calendar images" section naming Am's notice alone, and not
-    Pro's fallback, which is its job's own line (Constitution XIV.4). No line of the approval's
-    own in the log channel names the notice or the fallback: the drawing reports its notices
-    itself (`tests/image/test_image_drawing_calendar.py`), and the job its fallback."""
+    """Season 3 approved with its calendars and lineups drawn as pictures: Pro's calendar drawing
+    fails, Am's calendar draws with a notice, and Am's lineup draws with a notice of its own. The
+    reply ends in one "Image notices" section listing Am's calendar and Am's lineup, each labelled
+    as its log line names it and linked to the log channel's message holding its notice, and not
+    Pro's fallback, which is its job's own line (Constitution XIV.4; image spec, Calendar and
+    Lineup). No line of the approval's own in the log channel names a notice or the fallback: the
+    drawing reports its notices itself (`tests/image/test_image_drawing_calendar.py`), and the job
+    its fallback."""
+    from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
+
     league = await _league_for(tmp_path, monkeypatch, images=True)
     notice = "a fallback flag stood in for Monaco's"
+    lineup_notice = "a fallback portrait stood in for Charles's"
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     class _ProFails(CalendarDrawingStub):
         """Pro's drawing raises; Am's draws with the notice."""
@@ -1132,15 +1140,35 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
             return await super().draw_calendar(division, *args, **kwargs)
 
     draw_calendars_with(league.bot, monkeypatch, _ProFails(notices=(notice,)))
+    draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(
+        by_division={AM: {"picture": png, "notices": (lineup_notice,)}},
+    ))
     press = await _pressed(league)
 
     await run_queue(league.bot)
 
-    assert reply(press).endswith(f"\n\n⚠️ **Calendar images**\n  • Am: {notice}"), reply(press)
-    assert "the template has no rows" not in reply(press)
+    def _link(words: str, drawn: str) -> str:
+        [held] = [n for n, line in enumerate(_log_lines(league), 1)
+                  if words in line and drawn in line]
+        return f"https://discord.test/{held}"
+
+    told = reply(press)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    assert (
+        f"  **calendar — Am** ([see them in the log]({_link(notice, 'calendar — Am')}))\n"
+        f"  • {notice}"
+    ) in told, told
+    assert (
+        f"  **lineup — Am** ([see them in the log]({_link(lineup_notice, 'lineup — Am')}))\n"
+        f"  • {lineup_notice}"
+    ) in told, told
+    assert "Calendar images" not in told
+    assert "the template has no rows" not in told
+    assert "calendar — Pro" not in told
     assert not [line for line in _log_lines(league)
                 if "| /season placements-review |" in line
-                and (notice in line or "the template has no rows" in line)]
+                and (notice in line or lineup_notice in line or "the template has no rows" in line)]
 
 
 #: Each post retried: its job, its channel, the modules it needs, and where it reaches for its

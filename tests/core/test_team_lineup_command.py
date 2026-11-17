@@ -17,9 +17,9 @@ league a second lineup post every time somebody ran the command.
 **A rejected graphic refuses rather than falling back to text.** The caller is the one person
 able to fix the template, so silently drawing text instead would hide a broken template from
 the only person who could put it right (Constitution XIV.7). `test_a_rejected_graphic_refuses_
-rather_than_falling_back` holds that, and `test_team_cog.py`'s `TestTeamLineupDiscardsItsPictures`
-holds the matching resource rule: every file already drawn in the batch is discarded when a later
-division rejects, which is the one leak no posting path accounts for.
+rather_than_falling_back` holds the reply, and `test_lineup_command.py` the rule itself and the
+matching resource rule: every file already drawn in the batch is discarded when a later division
+rejects, which is the one leak no posting path accounts for.
 
 **The text path draws every seat, filled or empty.** An empty seat is information — it is where
 a manager can place somebody — so it is listed as empty rather than omitted, and the seats are
@@ -30,6 +30,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from leaguebot.core.cogs.team_cog import TeamCog
@@ -95,7 +96,16 @@ def _make_cog(
     return cog
 
 
-def _interaction(members: dict | None = None):
+def _interaction(members: dict | None = None, *, deletable: bool = True):
+    """A command's interaction, whose replies Discord shows as it does, in `shown`.
+
+    Each message the channel or the manager is shown is held as its text and whether it is seen
+    by the manager alone. Discord gives the first follow-up after a deferral, or an edit of the
+    deferred response, the deferral's visibility whatever the follow-up asks, so a public command
+    whose first follow-up asks to be private is still seen in the channel; once the deferred
+    response is deleted the next follow-up is seen as it asks. `deleted_after` counts the messages
+    shown before the deferred response was deleted, and stays None until it is. Where the
+    interaction is not *deletable*, Discord refuses the deletion."""
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
@@ -105,11 +115,40 @@ def _interaction(members: dict | None = None):
     guild = MagicMock()
     guild.get_member = MagicMock(side_effect=lambda uid: (members or {}).get(int(uid)))
     interaction.guild = guild
+    interaction.shown = []
+    interaction.deleted_after = None
+    deferred: dict[str, bool] = {}
+
+    async def _defer(*, ephemeral: bool = False, **_) -> None:
+        deferred["ephemeral"] = ephemeral
+        deferred["awaiting"] = True
+
+    def _visibility(asked: bool) -> bool:
+        if deferred.pop("awaiting", False):
+            return deferred["ephemeral"]
+        return asked
+
+    async def _send(content=None, *, ephemeral: bool = False, **_) -> None:
+        interaction.shown.append((str(content), _visibility(ephemeral)))
+
+    async def _edit(*, content=None, **_) -> None:
+        if interaction.deleted_after is not None:
+            raise discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Message")
+        interaction.shown.append((str(content), _visibility(deferred.get("ephemeral", False))))
+
+    async def _delete() -> None:
+        if not deletable:
+            raise discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+        deferred.pop("awaiting", None)
+        interaction.deleted_after = len(interaction.shown)
+
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock(side_effect=_send)
+    interaction.response.defer = AsyncMock(side_effect=_defer)
     interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
+    interaction.followup.send = AsyncMock(side_effect=_send)
+    interaction.edit_original_response = AsyncMock(side_effect=_edit)
+    interaction.delete_original_response = AsyncMock(side_effect=_delete)
     return interaction
 
 
@@ -250,39 +289,60 @@ async def test_asking_publicly_sends_publicly(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path):
-    """The league draws its lineup, and Division 1's lineup cannot be drawn: the template is
+_PROBLEM = "the lineup: `team_1` — Template is missing a field"
+
+
+@pytest.mark.parametrize("before_it_drawn", [False, True], ids=["alone", "after_a_drawn_division"])
+async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path, before_it_drawn):
+    """The league draws its lineup, and a division's lineup cannot be drawn: the template is
     missing a field. The manager is told why, by that one message alone, and nothing else is
     sent, the text least of all: the caller is the one person able to fix the template, so
     drawing text instead would hide a broken template from the only person who could put it
-    right. It is drawn as the command's output, never as the lineup of record."""
-    drawing = LineupDrawingStub(problem="the lineup: `team_1` — Template is missing a field")
-    cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing)
+    right. It is drawn as the command's output, never as the lineup of record. Where Division 1
+    drew before Division 2 was refused, its picture is not sent with the refusal, nor after it,
+    and is released."""
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    if before_it_drawn:
+        drawing = LineupDrawingStub(
+            by_division={11: {"picture": png}, 12: {"problem": _PROBLEM}}
+        )
+        divisions = [_division(11, "Division 1", 1), _division(12, "Division 2", 2)]
+        refused, drawn_for_command, discarded = "Division 2", [11, 12], [png]
+    else:
+        drawing = LineupDrawingStub(problem=_PROBLEM)
+        divisions = [_division(11, "Division 1", 1)]
+        refused, drawn_for_command, discarded = "Division 1", [11], []
+    cog = _make_cog(
+        divisions=divisions, teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing
+    )
     interaction = _interaction()
 
     await _lineup(cog, interaction)
 
     [call] = interaction.followup.send.await_args_list
     assert call.args[0] == (
-        "❌ the lineup: `team_1` — Template is missing a field\n"
-        "_Lineup for **Division 1** was not drawn._"
+        f"❌ {_PROBLEM}\n"
+        f"_Lineup for **{refused}** was not drawn._"
     )
     assert call.kwargs["ephemeral"] is True
-    assert drawing.drawn_for_command == [11]
+    assert "files" not in call.kwargs
+    assert drawing.drawn_for_command == drawn_for_command
     assert drawing.drawn == []
+    assert drawing.discarded == discarded
 
 
 @pytest.mark.parametrize("public", [False, True], ids=["private", "public"])
 async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
-    """The league draws its lineup, and Division 1's lineup is drawn, with a notice. The manager
+    """The league draws its lineup, and Division 1's lineup is drawn, with no notice. The manager
     is sent the picture in place of the text, under the division's name in bold, seen by them
-    alone unless they asked for it publicly; the picture is handed back to the drawing to release
-    once sent, its file already closed, so that the release can remove it; and the command itself
-    posts nothing to the log channel, because the drawing has already reported the notice
-    there."""
+    alone unless they asked for it publicly, and nothing besides it; the picture is handed back to
+    the drawing to release once sent, its file already closed, so that the release can remove it;
+    and the command itself posts nothing to the log channel, the drawing being the one to report
+    a picture's notices there."""
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    drawing = LineupDrawingStub(picture=png, notices=("a fallback flag stood in for Zara's",))
+    drawing = LineupDrawingStub(picture=png)
     cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing)
     interaction = _interaction()
     closed_when_released = []
@@ -307,11 +367,169 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
-async def test_a_drawing_that_fails_fails_the_command_and_releases_what_it_drew(tmp_path):
+#: What the drawing noted of Division 1's lineup, and the link to the log channel's message it
+#: reported the notice in.
+_NOTICE = "a fallback flag stood in for Zara's"
+_NOTICES_LINK = "https://discord.test/4242/7"
+
+
+#: The one line the channel is shown where Discord refuses to delete the acknowledgement.
+_NEUTRAL_LINE = "⛔ The lineup could not be shown."
+
+
+@pytest.mark.parametrize(
+    "asked",
+    [
+        "private",
+        "public",
+        "refused_after",
+        "refused_after_public",
+        "refused_after_public_undeletable",
+        "unlinked",
+    ],
+)
+async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_link(
+    tmp_path, asked,
+):
+    """The league draws its lineup, and Division 1's lineup is drawn with a notice, a fallback
+    flag standing in for Zara's, which the drawing reported to the log channel. Asked for
+    privately or publicly, the manager is sent the picture as asked, and the picture's post
+    carries neither the notice nor a link; the manager is also sent, seen by them alone whatever
+    `public` says, one follow-up listing the notice under "Image notices", labelled as the log line
+    names the picture (`lineup — Division 1`) and linked to the log channel's message holding it
+    (image spec, Lineup; Constitution XIV.4: no notice in a channel the drivers read). Where
+    Division 2 is then refused (the template is missing a field), no picture is sent, and the
+    manager is told the refusal and, seen by them alone, the notice already logged, linked. Asked
+    for publicly, the channel is shown neither: the public acknowledgement is deleted before
+    anything is sent, and the refusal and then the notice are each seen by the manager alone
+    (Constitution XIV.4; image spec, Errors); where Discord refuses to delete the acknowledgement,
+    the channel is shown one line naming no problem ("⛔ The lineup could not be shown.") and the
+    manager is still told the refusal and the notice privately. Where
+    the log channel would not take the notice, which costs the link and nothing else
+    (Constitution XIV.4; image spec, Errors), the picture is still sent privately and the
+    follow-up still lists the notice under its label, with no link."""
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    linked = asked != "unlinked"
+    division_1 = {"picture": png, "notices": (_NOTICE,)}
+    if linked:
+        division_1["log_link"] = _NOTICES_LINK
+    divisions = [_division(11, "Division 1", 1)]
+    by_division = {11: division_1}
+    refused = asked.startswith("refused_after")
+    if refused:
+        divisions.append(_division(12, "Division 2", 2))
+        by_division[12] = {"problem": _PROBLEM}
+    drawing = LineupDrawingStub(by_division=by_division)
+    cog = _make_cog(
+        divisions=divisions, teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing
+    )
+    interaction = _interaction(deletable=not asked.endswith("undeletable"))
+
+    await _lineup(cog, interaction, public="public" in asked)
+
+    label = (
+        f"  **lineup — Division 1** ([see them in the log]({_NOTICES_LINK}))\n"
+        if linked else "  **lineup — Division 1**\n"
+    )
+    section = f"⚠️ **Image notices**\n{label}  • {_NOTICE}"
+    calls = interaction.followup.send.await_args_list
+
+    def _content(call) -> str:
+        return str(call.args[0] if call.args else call.kwargs.get("content", ""))
+
+    told = [call for call in calls if section in _content(call)]
+    assert len(told) == 1, calls
+    assert told[0].kwargs["ephemeral"] is True
+    assert "files" not in told[0].kwargs
+    pictures = [call for call in calls if "files" in call.kwargs]
+    if refused:
+        assert pictures == [], calls
+        assert any(f"❌ {_PROBLEM}" in _content(call) for call in calls), calls
+        if "public" in asked:
+            interaction.response.defer.assert_awaited_once_with(ephemeral=False)
+            undeletable = asked.endswith("undeletable")
+            channel = [text for text, alone in interaction.shown if not alone]
+            assert channel == ([_NEUTRAL_LINE] if undeletable else []), interaction.shown
+            if not undeletable:
+                assert interaction.deleted_after == 0, interaction.shown
+            private = [text for text, alone in interaction.shown if alone]
+            assert private[0] == (
+                f"❌ {_PROBLEM}\n_Lineup for **Division 2** was not drawn._"
+            ), interaction.shown
+            assert [text for text in private[1:] if section in text] == [section], (
+                interaction.shown
+            )
+        return
+    if not linked:
+        assert not any("see them in the log" in _content(call) for call in calls), calls
+    [picture] = pictures
+    assert picture.args[0] == "**Division 1**"
+    assert picture.kwargs["ephemeral"] is (asked != "public")
+    assert _NOTICE not in picture.args[0] and "see them in the log" not in picture.args[0]
+
+
+@pytest.mark.parametrize("refused", [False, True], ids=["both_drawn", "division_2_refused"])
+async def test_a_notices_section_over_the_message_limit_is_sent_in_parts(tmp_path, refused):
+    """The league draws its lineup across two divisions, and each division's lineup is drawn with
+    twelve long notices (a fallback flag standing in for a driver's own), each division's reported
+    to the log channel in a message of its own, so that the notices section runs past the 2,000
+    characters one Discord message holds. Asked for publicly, with both divisions drawn or with
+    Division 2 then refused (the template is missing a field), the command does not fail: every
+    follow-up carrying the section holds at most 1,990 characters and is seen by the manager
+    alone, and together they carry every notice and both links to the log."""
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    notices = {
+        division: tuple(
+            f"Division {division} notice {n}: a fallback flag stood in for the driver's own, "
+            f"since the league's flag artwork names no country of that code"
+            for n in range(1, 13)
+        )
+        for division in (1, 2)
+    }
+    links = {division: f"https://discord.test/4242/{division}" for division in (1, 2)}
+    division_2 = {"picture": None if refused else png, "notices": notices[2], "log_link": links[2]}
+    if refused:
+        division_2["problem"] = _PROBLEM
+    drawing = LineupDrawingStub(by_division={
+        11: {"picture": png, "notices": notices[1], "log_link": links[1]},
+        12: division_2,
+    })
+    cog = _make_cog(
+        divisions=[_division(11, "Division 1", 1), _division(12, "Division 2", 2)],
+        teams=[_team("Alpha", 1, [(1, None, None)])],
+        drawing=drawing,
+    )
+    interaction = _interaction()
+
+    await _lineup(cog, interaction, public=True)
+
+    calls = interaction.followup.send.await_args_list
+    refusal = f"❌ {_PROBLEM}\n_Lineup for **Division 2** was not drawn._"
+    parts = [
+        call for call in calls
+        if "files" not in call.kwargs and str(call.args[0]) != refusal
+    ]
+    told = "\n".join(str(call.args[0]) for call in parts)
+    assert len(told) > 2000, told
+    assert told.startswith("⚠️ **Image notices**")
+    assert all(len(str(call.args[0])) <= 1990 for call in parts), calls
+    assert all(call.kwargs["ephemeral"] is True for call in parts), calls
+    for division in (1, 2):
+        assert f"([see them in the log]({links[division]}))" in told
+        for notice in notices[division]:
+            assert f"  • {notice}" in told
+    assert [str(call.args[0]) for call in calls if str(call.args[0]) == refusal] == (
+        [refusal] if refused else []
+    )
+
+
+async def test_a_drawing_that_fails_fails_the_command(tmp_path):
     """The league draws its lineup across two divisions: Division 1's is drawn, and drawing
     Division 2's raises (the database cannot be read). The error is not caught and worded by the
-    command: it leaves the command, for the bot's failure reply and log line to report, and the
-    picture already drawn for Division 1 is still handed back to release. Nothing is sent."""
+    command: it leaves the command, for the bot's failure reply and log line to report. Nothing is
+    sent. That the picture already drawn is released is `test_lineup_command.py`'s."""
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     drawing = LineupDrawingStub(
@@ -327,9 +545,79 @@ async def test_a_drawing_that_fails_fails_the_command_and_releases_what_it_drew(
     with pytest.raises(RuntimeError, match="database is locked"):
         await _lineup(cog, interaction)
 
-    assert drawing.drawn_for_command == [11, 12]
-    assert drawing.discarded == [png]
     interaction.followup.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "refused",
+    [
+        "no_season",
+        "unknown_division",
+        "no_divisions",
+        "drawing_fails",
+        pytest.param("text_send_fails"),
+    ],
+)
+async def test_a_public_lineup_refused_is_told_to_the_manager_alone(tmp_path, refused):
+    """A manager asks for the lineup publicly, and it cannot be shown: no season is being raced;
+    the division they named, Division 9, is not found; the season has no divisions; the league
+    draws its lineup and drawing Division 1's raises (the database cannot be read); or the league
+    does not draw its lineup and Discord refuses the first message of the text, which the bot
+    answers, in those last two, with its standard failure reply. The public acknowledgement is
+    deleted before anything is sent, and the manager alone is told why, by that one message; the
+    channel is shown nothing (Constitution XIV.4: no problem in a channel the drivers read)."""
+    from leaguebot.framework.utils.interaction_errors import describe, report_failure
+
+    division = None
+    if refused == "no_season":
+        cog = _make_cog(season=None)
+        told = "⛔ No season is being raced, so no lineup is confirmed."
+    elif refused == "unknown_division":
+        cog = _make_cog(resolve=None)
+        division = "Division 9"
+        told = "⛔ Division `Division 9` not found."
+    elif refused == "no_divisions":
+        cog = _make_cog(divisions=[])
+        told = "No divisions found."
+    elif refused == "drawing_fails":
+        cog = _make_cog(
+            teams=[_team("Alpha", 1, [(1, None, None)])],
+            drawing=LineupDrawingStub(fault=RuntimeError("database is locked")),
+        )
+        told = None
+    else:
+        cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])])
+        told = None
+    interaction = _interaction()
+    interaction.command = SimpleNamespace(qualified_name="team lineup")
+    interaction.client = SimpleNamespace(output_router=None)
+    if refused == "text_send_fails":
+        # Discord refuses the text's first message, which is then never shown.
+        send = interaction.followup.send.side_effect
+
+        async def _refuse_the_text(content=None, **kwargs) -> None:
+            if str(content).startswith("**Division 1**"):
+                raise discord.HTTPException(
+                    MagicMock(status=500, reason="Internal Server Error"), "Discord is down"
+                )
+            await send(content, **kwargs)
+
+        interaction.followup.send.side_effect = _refuse_the_text
+
+    try:
+        await _lineup(cog, interaction, division=division, public=True)
+    except (RuntimeError, discord.HTTPException) as error:
+        # As the command tree answers a command that fails.
+        await report_failure(interaction, error, what=describe(interaction))
+
+    interaction.response.defer.assert_awaited_once_with(ephemeral=False)
+    assert interaction.deleted_after == 0, interaction.shown
+    [(text, alone)] = interaction.shown
+    assert alone is True
+    if told is None:
+        assert text.startswith("❌ `/team lineup` stopped on a fault in the bot"), text
+    else:
+        assert text == told
 
 
 async def test_the_lineup_names_each_team_by_its_full_name():

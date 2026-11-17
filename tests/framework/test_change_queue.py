@@ -135,15 +135,19 @@ def _type(kind: str = "dummy", *, steps, check=None, outcome="✅ Done.", repeat
 
 
 def _act(name: str, record: list, *, fails: BaseException | None = None, result=None,
-         lines=(), audits=()) -> Any:
-    """An `ACT` step recording that it ran in *record*."""
+         lines=(), audits=(), linked: int | None = None) -> Any:
+    """An `ACT` step recording that it ran in *record*; *linked*, where given, names the one of
+    its *lines* an outcome may link to."""
     api = _api()
 
     async def _run(_ctx):
         record.append(name)
         if fails is not None:
             raise fails
-        return api.StepResult(result=result or {}, lines=tuple(lines), audits=tuple(audits))
+        named = {} if linked is None else {"linked": linked}
+        return api.StepResult(
+            result=result or {}, lines=tuple(lines), audits=tuple(audits), **named
+        )
 
     return api.Step(name, api.StepKind.ACT, _run)
 
@@ -707,10 +711,17 @@ async def test_a_log_line_that_cannot_be_delivered_is_left_for_the_retry_loop(en
 
 async def test_a_log_line_too_long_for_one_message_is_delivered_in_parts(env):
     """A record too long for one message is divided across as many as it needs, as
-    `chunk_message` divides it, and nothing is left waiting on a retry."""
+    `chunk_message` divides it, and nothing is left waiting on a retry. Named by its job, it is
+    linked to by the first of its parts (#550)."""
     links = [f"https://discord.com/channels/12408/300/{n:019d}" for n in range(100)]
     line = "Admin (<@4242>) | /dummy | Messages removed\n" + "\n".join(f"  {link}" for link in links)
-    _queue(env, _type(steps=[_act("a", [], lines=[line])]))
+    seen: dict[str, Any] = {}
+
+    def _outcome(ctx):
+        seen["link"] = ctx.steps[0].log_link
+        return "✅ Done."
+
+    _queue(env, _type(steps=[_act("a", [], lines=[line], linked=0)], outcome=_outcome))
 
     await _ask(env)
     await run_queue(env.bot)
@@ -722,6 +733,42 @@ async def test_a_log_line_too_long_for_one_message_is_delivered_in_parts(env):
     assert parts[0].startswith("Admin (`<@4242>`) | /dummy | Messages removed")
     assert [word for part in parts for word in part.split() if word.startswith("https://")] == links
     assert await queued_log_lines(env.db_path) == []
+    first = env.bot.log_channel.sent.index(parts[0]) + 1
+    assert seen["link"] == f"https://discord.test/{first}"
+
+
+@pytest.mark.parametrize("case", ["delivered", "refused", "none named"])
+async def test_an_outcome_links_to_the_line_its_job_named(env, case):
+    """A job names the one of its lines its outcome may link to, here the second: delivered, the
+    outcome reads the link to the message holding it; refused by the log channel, it reads no link
+    and the reply is still updated; with no line named, it reads none.
+
+    The link is held in memory alone, beside the reply it feeds, and is never saved: a restart
+    loses it with the acknowledgement it would have gone into, so no schema carries it."""
+    first = "Admin (<@4242>) | /dummy | first"
+    second = "Admin (<@4242>) | /dummy | second"
+    if case == "refused":
+        env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
+    seen: dict[str, Any] = {}
+
+    def _outcome(ctx):
+        seen["link"] = ctx.steps[0].log_link
+        return "✅ The dummy thing is done."
+
+    linked = None if case == "none named" else 1
+    _queue(env, _type(steps=[_act("a", [], lines=[first, second], linked=linked)],
+                      outcome=_outcome))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+
+    assert "✅ The dummy thing is done." in updated_reply(interaction)
+    if case == "delivered":
+        held = next(n for n, sent in enumerate(env.bot.log_channel.sent, 1) if "| second" in sent)
+        assert seen["link"] == f"https://discord.test/{held}"
+    else:
+        assert seen["link"] is None
 
 
 async def test_a_queued_line_the_log_channel_refuses_is_told_to_the_member_alone(env):
