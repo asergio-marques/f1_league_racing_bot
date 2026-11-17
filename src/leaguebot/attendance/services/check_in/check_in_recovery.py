@@ -27,16 +27,17 @@ sweep to report: nothing is caught up, and nothing says so but that line.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.attendance.models.attendance import CHECK_IN_DEADLINE
+from leaguebot.attendance.models.attendance import CHECK_IN_DEADLINE, AttendanceWindows
 from leaguebot.attendance.models.recovery_failed import RecoveryFailed
 from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
 from leaguebot.attendance.services.check_in.check_in_changes import (
     CheckInViewFactory,
 )
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_moments
 from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_in_clean_up
 from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
@@ -136,8 +137,11 @@ async def recover_missed_check_in_calls(bot: LeagueBot, *, queue: ChangeQueue) -
     for each in owed:
         if each.id in over:
             continue
-        due_at = each.scheduled_at - timedelta(days=notice_days)
-        deadline_at = each.scheduled_at - timedelta(hours=deadline_hours)
+        moments = check_in_moments(
+            each.scheduled_at, AttendanceWindows(notice_days, 0, deadline_hours)
+        )
+        due_at = moments["rsvp_notice"]
+        deadline_at = moments["rsvp_deadline"]
         if moment < due_at:
             continue
         # The change judges the deadline when it runs: it posts the call while the deadline is
@@ -213,7 +217,10 @@ async def recover_rsvp_views_and_deadlines(
         each for each in await rounds_of_ongoing_seasons(
             bot.db_path, {each.value for each in RoundStatus} - {RoundStatus.CANCELLED.value}
         )
-        if each.id in unrun and each.scheduled_at - timedelta(hours=deadline_hours) <= moment
+        if each.id in unrun
+        and check_in_moments(each.scheduled_at, AttendanceWindows(0, 0, deadline_hours))[
+            "rsvp_deadline"
+        ] <= moment
     ]
     in_hand = {int(each["round_id"]) for each in await unfinished(bot.db_path, [CHECK_IN_DEADLINE])}
 
