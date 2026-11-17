@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     maybe_await,
     member_interaction,
     queued_log_lines,
+    refuse_notice_records,
     restart_queue,
     retry_job,
     run_queue,
@@ -51,6 +52,7 @@ from tests.support.change_queue import (
     stopped_job,
     tier_member,
 )
+from tests.framework.test_change_queue_lanes import _pings_the_admins
 
 MANAGER = {"member_id": 5151, "display_name": "Manager", "name": "Manager#0001"}
 ADMIN = {"member_id": 6161, "display_name": "Boss", "name": "Boss#0001"}
@@ -60,6 +62,8 @@ ADMIN_NAMED = "Boss (`<@6161>`)"
 #: The line of a stopped job clearing without going through, its number, what it was and why
 #: filled in.
 CLEARED = "ℹ️ Job #{id} ({job}) no longer stops the queue: {why}. The queue runs on."
+#: Why a test of a stop notice whose message cannot be recorded fails until #554 is built.
+UNRECORDED = "#554: a stop notice whose message is not recorded is forgotten by the queue"
 
 
 def _manager() -> Any:
@@ -546,6 +550,69 @@ async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_bu
     assert _buttons(_notice(env, job)) == {"queue:retry", "queue:discard"}
     assert [row["notice_message_id"] is not None for row in await step_rows(env.db_path)
             if row["name"] == "post"] == [True, True, True]
+
+
+@pytest.mark.xfail(strict=True, reason=UNRECORDED)
+async def test_a_stop_notice_whose_message_cannot_be_recorded_is_not_posted_again(env, caplog):
+    """A stop notice lands in the log channel, but a database fault refuses to record which
+    message it is: the fault is logged on the host and the stop stands. At the next try the job
+    still fails and the record is saved: no second notice is posted, the league admins are
+    mentioned by the one notice alone, and the job is recorded as stopped at that notice."""
+    holder = {"fail": RuntimeError("boom")}
+    _queue(env, _type(steps=[_fails_while(holder, describe=_described("posting the dummy"))]))
+    await refuse_notice_records(env.db_path, True)
+
+    await _ask(env)
+    with caplog.at_level(logging.ERROR):
+        await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job["tries"] == 1 and job["notice_message_id"] is None
+    assert any(isinstance(r.exc_info[1], sqlite3.Error) for r in _host_errors(caplog))
+    stop = f"❌ The queue is stopped at job #{job['id']}"
+    [notice] = [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+    await refuse_notice_records(env.db_path, False)
+
+    await _try_at(env, 1)
+
+    job = await stopped_job(env.db_path)
+    assert job["tries"] == 2
+    assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)] == [notice]
+    assert len([call for call in env.bot.log_channel.send.await_args_list
+                if _pings_the_admins(call)]) == 1
+    assert job["notice_message_id"] == notice.id
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+
+@pytest.mark.parametrize("action", ["retry", "discard"])
+@pytest.mark.xfail(strict=True, reason=UNRECORDED)
+async def test_the_buttons_of_a_stop_notice_whose_message_is_not_yet_recorded_work(env, action):
+    """A database fault refuses, the whole time, to record which message the stop notice is. Retry
+    pressed on that notice by a league manager, the job's fault gone, tries the job at once; Discard
+    pressed on it by a league admin drops the job. Neither is refused: the presser is told so
+    privately, the change asked behind it runs, and the notice loses its buttons."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    await refuse_notice_records(env.db_path, True)
+    job = await _stop(env, holder, ran)
+    assert job["notice_message_id"] is None
+    [notice] = [m for m in env.bot.log_channel.posted
+                if m.content.startswith(f"❌ The queue is stopped at job #{job['id']}")]
+
+    if action == "retry":
+        holder["fail"] = None
+        interaction = await _press_on(env, "retry", notice.id, _manager())
+        told, tried = f"🔁 Job #{job['id']} (posting the dummy) is being tried again now.", ["post"]
+    else:
+        interaction = await _press_on(env, "discard", notice.id, _admin())
+        told, tried = f"🗑️ Job #{job['id']} (posting the dummy) is discarded.", []
+
+    assert told in _private(interaction)
+    assert not any(text.startswith("⛔") for text in _private(interaction))
+    assert await stopped_job(env.db_path) is None
+    assert ran == ["post", *tried, "after", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+    assert _buttons(notice) == set()
 
 
 # ---------------------------------------------------------------------------

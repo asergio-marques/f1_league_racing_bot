@@ -30,6 +30,7 @@ from tests.support.change_queue import (
     league_double,
     maybe_await,
     member_interaction,
+    refuse_notice_records,
     restart_queue,
     retry_job,
     run_queue,
@@ -1502,21 +1503,37 @@ async def test_a_league_stop_notice_mentions_the_league_admin_role(env):
     assert [_pings_the_admins(call) for call in notices[1:]] == [True, True]
 
 
-async def test_a_conversation_stop_notice_mentions_the_role_only_where_no_other_conversation_notice_stands(env):
+@pytest.mark.parametrize("unrecorded", [
+    pytest.param(False, id="recorded"),
+    pytest.param(True, id="not yet recorded", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#554: a stop notice whose message is not recorded does not count as standing")),
+])
+async def test_a_conversation_stop_notice_mentions_the_role_only_where_no_other_conversation_notice_stands(
+    env, unrecorded
+):
     """A league change stops first, its notice standing. A turn in channel 7 then stops: its notice
     mentions the league admins' role, as no other conversation's stop notice stands (the league's
     does not count). A turn in channel 8 stops while channel 7's stop stands: its notice mentions
-    nobody. Both are discarded, so no conversation's stop stands; a turn in channel 9 then stops,
-    and its notice mentions the role again."""
+    nobody. So also where a database fault refused to record which message channel 7's notice is:
+    a notice that has landed stands, recorded or not. Both are discarded from their notices, so no
+    conversation's stop stands; a turn in channel 9 then stops, and its notice mentions the role
+    again."""
     _queue(env, _type("turn", steps=[_failing()], lane=_in_channel),
            _type("dummy", steps=[_failing("league_post")]))
     await _ask(env, "dummy")
     await run_queue(env.bot)
     for channel in (7, 8):
+        refused = unrecorded and channel == 7
+        if refused:
+            await refuse_notice_records(env.db_path, True)
         await _ask(env, "turn", {"channel": channel})
         await run_queue(env.bot)
-    for job in [row for row in await step_rows(env.db_path) if row["name"] == "post"]:
-        await _press_on(env, job, "discard")
+        if refused:
+            assert (await _job(env, "post"))["notice_message_id"] is None
+            await refuse_notice_records(env.db_path, False)
+    for notice in [m for m in env.bot.log_channel.posted if "the turns in" in m.content.lower()]:
+        await _press_on(env, {"notice_message_id": notice.id}, "discard")
     await run_queue(env.bot)
     await _ask(env, "turn", {"channel": 9})
     await run_queue(env.bot)
