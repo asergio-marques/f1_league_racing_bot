@@ -5,13 +5,11 @@ dependency rules on the way *in*, this one covers what each module leaves behind
 — which differs per module, deliberately, and is the part a reader would be most tempted to
 make uniform.
 
-**The image module clears its flag and nothing else** — the Principle X.6 exception. No image
-configuration value names a Discord channel, role, message or scheduled job, so none can become
-a stale binding while the module is off (FR-004a). That is why there is no `--preserve-config`
-flag: nothing is cleared, so there is nothing to preserve (FR-004b). Every other module's
-disable *does* clear something, which is what makes this one worth pinning —
-`test_disabling_images_keeps_the_configuration` is the test a later reader tidying the three
-into one shape would break.
+**The image module clears its flag and nothing else**, as Principle X rule 6 asks of every
+module: a disabled module keeps its configuration (FR-004a). No image configuration value names a
+Discord channel, role, message or scheduled job, so re-enabling has nothing kept to check against
+the server. `test_disabling_images_keeps_the_configuration` is the test a later reader clearing
+a module's setup on the way out would break.
 
 **Attendance clears its division channel bindings.** Those *are* stale bindings: a channel id
 recorded against a division for a module that is off would have the bot posting into it the
@@ -177,10 +175,10 @@ async def test_disabling_images_clears_the_flag(tmp_path):
 
 
 async def test_disabling_images_keeps_the_configuration(tmp_path):
-    """The Principle X.6 exception, and the reason no `--preserve-config` flag exists. No
-    image config value names a channel, role, message or job, so none can go stale — a
-    reader making the three disables uniform would clear a league's whole image setup for
-    no reason. The reply says the configuration is kept and that every aspect reverts to text,
+    """Principle X rule 6: a disabled module keeps its configuration. No image config value
+    names a channel, role, message or job, so nothing kept needs checking on the way back in — a
+    reader clearing settings on the way out would wipe a league's whole image setup against
+    that rule. The reply says the configuration is kept and that every aspect reverts to text,
     which is what a league will actually notice, and it and the Success line keep today's
     words; `tests/image/test_image_module_flow.py` pins the configuration surviving."""
     from tests.support.settings_league import last_said, log_lines

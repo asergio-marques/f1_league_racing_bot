@@ -14,8 +14,8 @@ refusing would leave a league unable to set up the module they are trying to ins
 rasteriser *for*.
 
 **Re-enabling is lossless.** The configuration is created only where it is missing, so an
-existing configuration is left exactly as it was (FR-004a) — which is the other half of the
-disable clearing nothing; `tests/image/test_image_module_flow.py` pins both halves.
+existing configuration is left exactly as it was (FR-004a) — the other half of Principle X
+rule 6, under which the disable keeps the configuration and re-enabling finds it as it stood; `tests/image/test_image_module_flow.py` pins both halves.
 
 **Every aspect starts disabled.** A league enabling the module does not thereby start posting
 graphics; each output aspect is opted into separately, so enabling cannot surprise a division

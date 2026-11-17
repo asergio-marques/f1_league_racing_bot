@@ -464,8 +464,8 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         # The switch-off is image's own change on the queue: it lowers the flag and writes
-        # its audit entry in one save, deleting nothing and removing nothing (Principle X.6's
-        # exception, which image claims). This asks for it and does nothing else.
+        # its audit entry in one save, deleting nothing and removing nothing (Principle X rule 6:
+        # a disabled module keeps its configuration). This asks for it and does nothing else.
         await self.bot.change_queue.ask(
             module_off("images"),
             {},

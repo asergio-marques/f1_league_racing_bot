@@ -18,9 +18,9 @@ than at the check: refusing would leave a league unable to finish setting the mo
 waiting for Inkscape to be installed, which is exactly the case the notice exists to help with.
 
 **The switch-off is one save: the flag and the audit entry.** It deletes nothing and resets no
-toggle, which is the Principle X.6 exception for configuration that cannot go stale (FR-004a) — no
-image config value names a Discord channel, role or message, so none of those can become a stale
-binding while the module is off. The daily portrait job that `pfp_daily` arms is removed in a step
+toggle, as Principle X rule 6 asks of every module: a disabled module keeps its configuration
+(FR-004a). No image config value names a Discord channel, role or message, so the switch-on has
+nothing kept to check against the server. The daily portrait job that `pfp_daily` arms is removed in a step
 after that save, which may fail without holding up the queue, and the job reads the module's switch
 as it fires, so one left armed does nothing.
 
@@ -146,7 +146,7 @@ def module_on_images(
 def module_off_images(*, modules: "ModuleService", scheduler: "SchedulerService") -> Setting:
     """`module.off:images`: the flag lowered and the audit entry written, in one save, and the
     daily portrait job removed after it where the configuration has one. Nothing is deleted
-    (Principle X.6's exception, which image claims).
+    (Principle X rule 6: a disabled module keeps its configuration).
 
     **The check reads Pending completion again as the change starts,** as `results_off_change`'s
     already does: asked before the season reaches it, and run once a change waiting ahead of it
