@@ -11,7 +11,7 @@ column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 **The switch-off removes the season's weather jobs after the save, not before**
 (`docs/design/architecture.md`, "How modules and core fit together"): the flag going down and its
 audit entry share one save, and only once that has run does an `After` step call
-`RoundJobs.cancel_live_rounds`. Doing the jobs' removal after the flag rather than before is
+`cancel_all_weather`. Doing the jobs' removal after the flag rather than before is
 safe only because the flag is read by each weather change's check, which drops the job while it
 is off (core specification, "A disabled module shall produce nothing … a scheduled job"; pinned by
 `tests/weather/test_weather_module_gate.py`,
@@ -118,6 +118,36 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
     )
 
 
+async def cancel_all_weather(round_jobs: "RoundJobs") -> None:
+    """Cancel the weather module's jobs for every round in an active or set-up season.
+
+    Only the four jobs of `WEATHER_JOB_KINDS` are taken, by asking core's round jobs to cancel
+    those kinds of the live season's rounds (`RoundJobs.cancel_live_rounds`): weather holds no SQL
+    on core's tables. The other five a round carries belong to modules that are still switched
+    on and must survive:
+
+    * ``results`` is not only the results module's. The round's start (``results.submission.open``)
+      is the round's one clock-driven status transition, and it runs for every round whatever the
+      modules: with results off it simply closes the round as FINAL. Cancelled, the round never
+      leaves NOT_RUN, its division never finishes and its season can never be completed.
+    * ``rsvp_notice``, ``rsvp_last_notice``, ``rsvp_deadline`` and ``rsvp_cleanup`` are
+      attendance's, and nothing short of the confirmation of placements recreates them, which
+      cannot be run again on an active season, so cancelling them loses the season's check-ins for
+      good.
+
+    Do not widen this to a whole-round cancel: switching weather off would then silently stop
+    results collection and check-ins for the rest of the season while reporting that only weather
+    jobs had been cancelled. Leaving the ``results`` job in place is deliberate: removing it would
+    destroy the round-arrival transition of a league whose results module is on, which is the
+    defect above by another route.
+
+    The switch-off is the caller: the ``REMOVE_JOBS`` ``After`` step of `module_off_weather`, run
+    once the flag's save has gone through. It raises where the league database or the job store
+    cannot be read, before it removes anything.
+    """
+    await round_jobs.cancel_live_rounds(only=WEATHER_JOB_KINDS)
+
+
 def _remove_jobs(round_jobs: "RoundJobs") -> After:
     """The step that removes the season's weather jobs once the flag is down.
 
@@ -126,7 +156,7 @@ def _remove_jobs(round_jobs: "RoundJobs") -> After:
     """
 
     async def run(_ctx: StepContext) -> StepResult:
-        await round_jobs.cancel_live_rounds(only=WEATHER_JOB_KINDS)
+        await cancel_all_weather(round_jobs)
         return StepResult()
 
     def fault_reply(_payload: dict[str, Any], reply: str) -> str:

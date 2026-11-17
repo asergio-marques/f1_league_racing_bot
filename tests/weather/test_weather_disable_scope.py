@@ -35,11 +35,6 @@ from leaguebot.framework.db.database import get_connection, run_migrations
 
 SERVER_ID = 4242
 
-#: Why each test here fails until core's round jobs, and weather's cancel through them, exist.
-NO_ROUND_JOBS = (
-    "#544: core has no RoundJobs yet, and weather no cancel of its forecast jobs through them"
-)
-
 # The nine job kinds a round carries, split by the module that owns them.
 WEATHER_PREFIXES = ("weather_p1", "weather_p2", "weather_p3", "cleanup")
 RESULTS_PREFIXES = ("results",)
@@ -158,7 +153,6 @@ def _all_seeded_jobs(ids: dict[str, int]) -> list[MagicMock]:
 # What the disable must still do
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("live_status", ["ACTIVE", "SETUP"])
 async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_status):
     """Stated as a whole: four kinds × the two rounds in scope, and nothing else.
@@ -189,7 +183,6 @@ async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_
 # What it must not touch — issue #117
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
     """A job keyed to the round but not named by the round-scoped convention cannot have
     its owner read, so the filter leaves it rather than guessing."""
