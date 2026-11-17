@@ -633,8 +633,8 @@ stated exception, core's among them; each docstring there named carries its reas
 | The slash-command sync at start-up | `on_ready`, which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
 
 The framework's failure paths, a command, button or form, a Discord event, an autocomplete, a
-change, a scheduled job, a background task, the start-up sweep and the retry loop, and the log writer's containment of
-its own faults, are `framework.md`'s ("Errors and failures").
+change, a scheduled job, a background task, the start-up sweep and the retry loop, and the log
+writer's containment of its own faults, are `framework.md`'s ("Errors and failures").
 
 **Core's refusal and fault types**, each caught by name; the framework's, `Refused` among them,
 are `framework.md`'s:
