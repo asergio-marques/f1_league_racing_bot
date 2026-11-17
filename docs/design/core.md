@@ -467,27 +467,27 @@ start-up's step for expired review prompts, core's first, asks the take-down fir
 scheduler is paused until start-up ends.
 
 **A round's timed work is armed by three changes**: the season's approval (its `ARM` job), and the
-amendment and re-arming of a round (`round_amend_change`), through `RoundJobs.arm_leads`. **Each
-module lists what it wants set and core arms it**: a `RoundLead` (`core/models/round.py`) is a
-plain record of a timer's kind, its offset from the round's moment, its label and a few marks
-(whether it is armed only while ahead, whether it is a clean-up, whether test mode leaves it to
-`/test-mode advance`, whether an amendment runs it at once, and the words the approval's date check
-quotes of it), and it names no module. The season's approval reads every module's leads through
-`round_leads_read` and arms them for every round; the amendment and re-arming take them from each
-module's `round_armed`, a `RoundArming` of its steps and its leads, already less any phase the
-module draws at once. `arm_leads` gives each the id, name and key a round's timer has always had
-and arms it, nothing more: running a lead at once and taking down what an earlier arming left stay
-in the amendment's arming step, chosen by a lead's marks, never by its kind. Results answers its
-submission as a lead for every round, whatever its switch, since it is the round's one way off Not
-run; core alone decides, by `results_left_to_advance`, whether test mode leaves it to the advance.
-A round already raced, or ended not held, is armed its clean-up leads alone, which the modules
-answer through the same read: a module that is off answers none, and core reads no switch. The
-clean-ups' moment, `clean_up_moment`, is core's one shared figure; every other moment a module
-places from one function of its own (`forecast_leads`, `check_in_leads`), which its arming, its
-recovery and its amendment rules all read, so they cannot drift. Core names no module's kind: each
-module signs its kinds up with `RoundJobs` at build, each with the phase `/test-mode advance`
-numbers it by (`sign_up_kinds`), and `RoundJobs` knows a job is a round's, and which phase it is,
-by that register alone. The handlers for a round's kinds are the modules'.
+amendment and re-arming of a round (`round_amend_change`), through `RoundJobs.arm_leads`. The rules
+they serve are `architecture.md`'s, "Timed work and restarts"; what follows is core's own code.
+
+- **`RoundLead`** (`core/models/round.py`) is the plain record a module answers with: a timer's
+  kind, its offset from the round's moment, its label, and the marks core reads (armed only while
+  ahead, a clean-up, left to `/test-mode advance`, run at once by an amendment, and the words the
+  approval's date check quotes). It names no module.
+- **`arm_leads`** gives each lead the id, name and key a round's timer has always had and arms it,
+  nothing more. Running a lead at once (`run_lead_now`) and taking down what an earlier arming left
+  stay in the amendment's arming step, chosen by a lead's marks, never by its kind.
+- **The approval** reads every module's leads through `read_round_leads` and arms them for every
+  round. **The amendment and re-arming** take them from each module's `round_armed`, a
+  `RoundArming`, and a round already raced, or ended not held, is armed its clean-up leads alone,
+  from the same read.
+- **`results_left_to_advance`** is core's one rule for whether test mode leaves the submission to
+  the advance, and drops the leads marked as left to it.
+- **`sign_up_kinds`** is where a module signs its round kinds up at build; `RoundJobs` knows a job
+  is a round's, and which phase it is, by that register alone.
+- **`clean_up_moment`** is core's one shared next-day figure; every other moment is the module's
+  own function (`forecast_leads`, `check_in_leads`). Results' reason for answering every round is
+  in `results_module.md`, "Timed work and restarts".
 
 ### Start-up
 
