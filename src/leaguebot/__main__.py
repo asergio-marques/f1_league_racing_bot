@@ -140,7 +140,7 @@ class LeaguePreviewSources(ResultsPreviewSources):
 
 def register_module_switches(modules: "ModuleService") -> None:
     """Sign each module up with `ModuleService` for the reader of its own switch, keyed by the
-    name `is_<module>_enabled` asks it by."""
+    name `ModuleService.is_enabled` is asked by."""
 
     weather_wiring.register_switch(modules)
     signup_wiring.register_switch(modules)
