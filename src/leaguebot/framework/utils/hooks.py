@@ -1,5 +1,5 @@
-"""Core's hook: a list of subscribers, called in the order they signed up (architecture.md, "A hook
-core declares is a list of subscribers").
+"""The hook type core declares its hooks with: a list of subscribers, called in the order they
+signed up (architecture.md, "A hook core declares is a list of subscribers").
 
 A module signs a function up with `subscribe`; core, at the moment the hook stands for, makes
 one `call`, which hands every subscriber what the moment hands over and gathers what each hands

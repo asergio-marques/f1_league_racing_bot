@@ -1,4 +1,4 @@
-"""The notice handler: the one place core sends, edits and deletes a notice.
+"""The notice handler: the one place the bot sends, edits and deletes a notice.
 
 A notice is a message posted to say something to whoever is waiting in a channel. It is one of
 the output handlers (`docs/design/architecture.md`, "Posting to Discord"), and the handler sends
