@@ -301,17 +301,20 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the modules sign no round kinds up with core's round jobs at build yet")
 async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
     """Straight after `build`, every kind of a round's jobs (the three weather phases, the
-    forecast clean-up, the result submission and the four check-in jobs) has the step
-    `/test-mode advance` runs for it signed up on the bot's advance steps, which the builder
-    makes, by the module whose job it is."""
-    from leaguebot.core.models.round import ROUND_JOB_KINDS
+    forecast clean-up, the result submission and the four check-in jobs) is signed up with core's
+    round jobs by the module whose job it is, with its advance phase (weather's 1, 2, 3 and 8,
+    attendance's 5, 6, 7 and 9, results' none), and has the step `/test-mode advance` runs for it
+    signed up on the bot's advance steps, which the builder makes, by that module."""
+    from tests.support.round_jobs import ROUND_KINDS
 
     bot = await built_bot(tmp_path, now=_NOW)
 
+    assert dict(bot.round_jobs.kinds) == ROUND_KINDS
     missing = []
-    for kind in sorted(ROUND_JOB_KINDS):
+    for kind in sorted(bot.round_jobs.kinds):
         try:
             bot.advance_steps.step_for(kind)
         except LookupError:

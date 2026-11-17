@@ -61,9 +61,9 @@ def _make_scheduler(db_path: str):
 
 def _core_round_jobs(svc, db_path: str):
     """Core's round jobs over *svc*, built as the builder builds them."""
-    from leaguebot.core.services.rounds.round_jobs import RoundJobs
+    from tests.support.round_jobs import round_jobs_over
 
-    return RoundJobs(svc, db_path)
+    return round_jobs_over(svc, db_path)
 
 
 def _make_mock_job(job_id: str, round_id: int, *, kind: str | None = None) -> MagicMock:
@@ -153,6 +153,7 @@ def _all_seeded_jobs(ids: dict[str, int]) -> list[MagicMock]:
 # What the disable must still do
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 @pytest.mark.parametrize("live_status", ["ACTIVE", "SETUP"])
 async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_status):
     """Stated as a whole: four kinds × the two rounds in scope, and nothing else.
@@ -183,6 +184,7 @@ async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_
 # What it must not touch — issue #117
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
     """A job keyed to the round but not named by the round-scoped convention cannot have
     its owner read, so the filter leaves it rather than guessing."""
