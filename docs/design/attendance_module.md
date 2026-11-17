@@ -371,13 +371,20 @@ Answers to `architecture.md`, "Timed work and restarts".
 ### The four timers
 
 A round's check-in has four timers, `rsvp_notice`, `rsvp_last_notice`, `rsvp_deadline` and
-`rsvp_cleanup`, armed by core's round jobs (`RoundJobs.schedule_attendance_round`, and
-`schedule_round_cleanups` for the next-day clean-up) from the three lead times attendance's
-`round_window` hook, on `round_windows_read`, hands core. Attendance registers a callback for each
+`rsvp_cleanup`, answered by attendance to core as `RoundLead` records (`check_in_leads`, built from the league's
+three lead times and read through `attendance_hooks.round_leads`, on `round_leads_read`) and armed
+by core's round jobs (`RoundJobs.arm_leads`, the next-day clean-up alone where a round is armed for
+its clean-ups only). Attendance signs the four kinds up with core's round jobs at build, each with
+the phase `/test-mode advance` numbers it by (5, 6, 7 and 9), and its own reads of the same moments
+(recovery, its amendment rules, its test-mode steps) take them from `check_in_moments`, which
+places the same leads, so they cannot drift from core's arming. Attendance registers a callback for each
 kind (`register_timer`); a callback asks the matching change, as the bot's, and the change's check
 reads the round again, so a timer that fires after its work was changed does nothing. All four are
-armed with no lateness limit, and each handler judges lateness itself (`architecture.md`, "Timed
-work and restarts"). Pinned by `test_a_check_in_timer_is_armed_with_no_lateness_limit`.
+armed with no lateness limit, each only while its moment is ahead of the queue's
+clock (the lead's `ahead_only` mark; the restart's catch-up takes one already past), and each
+handler judges lateness itself (`architecture.md`, "Timed work and restarts"). Pinned by
+`test_each_lead_is_armed_under_the_round_s_id_moment_and_name` and
+`test_a_lead_armed_only_while_ahead_is_left_out_once_its_moment_has_passed`.
 
 What each does when its moment passed while the bot was down is the attendance specification's
 ("RSVP notices"); the table says which function judges it, and against which moment.
@@ -511,10 +518,10 @@ Attendance declares no hook of its own. Core declares them and attendance subscr
 | Hook | Attendance's function | What attendance does |
 |---|---|---|
 | `starting` | `wiring.start_up_steps` | its three start-up steps (above) |
-| `round_windows_read` | `attendance_hooks.round_window` | hands its three lead times, or none where the module is off; the season's approval and review read them, and an amendment does not |
+| `round_leads_read` | `attendance_hooks.round_leads` | hands its check-in leads, at the league's lead times, or none where the module is off; the season's approval arms them and its date check judges them, and a clean-ups-only re-arm arms the clean-up among them |
 | `review_sections_read` | `attendance_hooks.review_section` | its section of a season review |
 | `amendment_judged` | `check_in_amendment.amendment_judged` | attendance's part of judging a round's amendment: the deadline refusal, its two warnings, and the check-in it reopens, which it keeps for the amendment's save (`check_in_amendment_rules.judge_check_in` is pure). Core hands it no lead times: it reads its own (on the save's connection in a save, through its own reader outside one) and keeps them in its part as `attendance_windows`, which core keeps as `architecture.md`, "Timed work and restarts", has it and hands back to `round_armed` and to its steps (`windows_kept`), read afresh where the record holds none |
-| `round_amended`, `round_armed`, `round_clean_ups_due` | `check_in_amendment.round_amended_on`, `amendment_posts`, `amendment_clean_ups` | reopens the check-in inside the amendment's save; answers what the round's check-in is armed with (`CheckInJobs`, at the lead times its part kept, and only while attendance is on) and posts the call again; hands the clean-ups due |
+| `round_amended`, `round_armed`, `round_clean_ups_due` | `check_in_amendment.round_amended_on`, `amendment_posts`, `amendment_clean_ups` | reopens the check-in inside the amendment's save; answers the check-in leads the round is armed with (at the lead times its part kept, and only while attendance is on) and posts the call again; hands the clean-ups due |
 | `amendment_steps`, `amendment_step_failure` | `check_in_amendment.amendment_steps`, `check_in_failure` | the steps an amendment asks of the check-in, and its words for one left undone, so that core's outcome names none of them; the entry point signs the hook up, weather then attendance |
 | `rounds_called_off`, `cancellation_notices`, `cancellation_steps` | `take_down_called_off_on`, `notices_on`, `take_down_steps`, `read_check_in_steps`, `notify_checkin_steps` | takes down the calls, reads the check-in's record before they come down and plans its own notice |
 | `rounds_deleted`, `divisions_deleted`, `profiles_deleted`, `profiles_merged`, `bot_packed` | `attendance_hooks` | see "The database" |
@@ -639,7 +646,7 @@ Each is stated where it lives and pinned by the test named.
 | The earlier call comes down only after the new one is posted and recorded | `check_in_call`'s docstring | `test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_after_it` |
 | A round is owed one call, however many are asked at once | `check_in_call_change`'s docstring | `test_two_calls_posted_at_once_for_one_round_post_one` |
 | `distribute` and `mark_cleared` cannot be discarded | `would_never_be_placed` and `would_lose_the_answers`, the readers of what a drop would leave | `test_placing_the_reserves_cannot_be_discarded`, `test_marking_the_check_in_over_cannot_be_discarded` |
-| The four timers are armed with no lateness limit, and the handlers judge lateness | `RoundJobs.schedule_attendance_round`'s docstring | `test_a_check_in_timer_is_armed_with_no_lateness_limit` |
+| The four timers are armed with no lateness limit, and the handlers judge lateness | `check_in_leads`' module docstring | `test_each_lead_is_armed_under_the_round_s_id_moment_and_name` |
 | A missed last notice is sent late, while the deadline is ahead | `_notice_not_due`'s docstring | `test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back` |
 | A last notice asked before its late call posts waits behind the call | `_notice_not_due`'s docstring | `test_a_last_notice_asked_before_the_late_call_posts_is_posted_once_the_call_stands` |
 | Under test mode lateness is judged at the ask only | `left_to_advance`'s docstring | `test_a_timer_fired_on_time_under_test_mode_is_posted_however_late_the_queue_starts_it` |

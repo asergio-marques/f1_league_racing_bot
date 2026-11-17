@@ -297,10 +297,12 @@ Answers to `architecture.md`, "Timed work and restarts".
 ### The kinds, and their arming
 
 Weather has four kinds of timer: `weather_p1`, `weather_p2`, `weather_p3` and `cleanup`. A mystery
-round's `weather_p1` is its notice and its two others do nothing. Core's round jobs (`RoundJobs`)
-arm them (`schedule_round`, and `schedule_round_cleanups` for the clean-up alone) from the horizons
-weather hands core and the moments `round_event_moments` places. **All four are armed with no
-lateness limit** (`misfire_grace_time=None`), so a timer missed while the bot was down fires once it
+round's `weather_p1` is its notice and its two others do nothing. Weather answers them to core as
+`RoundLead` records (`forecast_leads`, built from the league's own horizons), and core's round jobs
+(`RoundJobs.arm_leads`) arm them, the clean-up alone where a round is armed for its clean-ups only.
+Weather signs the kinds up with core's round jobs at build, each with the phase `/test-mode
+advance` numbers it by (1, 2, 3 and 8), from the same `WEATHER_JOB_KINDS` its switch-off cancels
+by, so that the two cannot drift. **All four are armed with no lateness limit** (`misfire_grace_time=None`), so a timer missed while the bot was down fires once it
 is back, as the core specification's "When the bot stops" requires, and the work's own check decides
 whether it is still due. Pinned by
 `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` and
@@ -326,8 +328,9 @@ is asked once it starts, and every moment it judges is read at the queue's clock
 (`ChangeQueue.now`). Neither step reads the switch (`architecture.md`, "The sweep is core's own
 steps, then each enabled module's turn").
 
-The horizons are the league's own, placed by `round_event_moments` with the module's
-`WeatherWindows`, as the scheduler places them, and read once for a recovery, not once for each
+The horizons are the league's own, placed by `forecast_moments` with the module's
+`WeatherWindows`, which places the same leads `forecast_leads` hands core, so recovery and the
+arming cannot drift apart, and read once for a recovery, not once for each
 round. *Rejected:* judging a restart by the packaged 5 / 2 / 2, which would have one league see one
 set of timings on an enable and another on a restart (`recover_missed_phases`' docstring). A round
 is read through core's reader of the active season's rounds, and the clean-ups from weather's own
@@ -354,10 +357,9 @@ is. Pinned by `test_one_round_failing_its_recovery_stops_none_of_the_others`,
 
 The clean-up of a round falls when the weather specification's "Supersession and cleanup" says, a
 delay `clean_up_moment` holds once
-(`POST_RACE_CLEANUP_DELAY`), for the forecast's clean-up and attendance's check-in clean-up alike,
-and for the scheduler's timer, the restart and the amendment's arming of each. Pinned by
-`test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay`, and for the forecast's
-restart step by `test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock`.
+(`POST_RACE_CLEANUP_DELAY`, core's), for the forecast's clean-up and attendance's check-in clean-up
+alike, and for the timer, the restart and the amendment's arming of each, since each module builds
+its clean-up lead from it. Pinned for the forecast's restart step by `test_the_forecast_clean_up_catch_up_reads_the_queue_s_clock`.
 
 ---
 
@@ -411,11 +413,11 @@ together" has a module sign up, through `wiring.py`.
 | Hook | Weather's function | What weather does |
 |---|---|---|
 | `starting` | `wiring.start_up_steps` | its two start-up steps |
-| `round_windows_read` | `weather_config_service.round_window` | hands its three horizons, or none where the module is off |
+| `round_leads_read` | `weather_config_service.round_leads` | hands its forecast leads, at the league's own horizons, or none where the module is off; the season's approval arms them and its date check judges them, and a clean-ups-only re-arm arms the clean-up among them |
 | `phases_drawn_read` | `round_phases.phases_drawn` | says which phases of a round are drawn |
 | `amendment_judged` | `forecast_amendment.amendment_judged` | weather's part of judging a round's amendment: the two refusals for a forecast already drawn, its note, the phases it withdraws and its own horizons, all kept in the part |
 | `round_amended` | `phase_withdrawal.round_amended_on` | withdraws the phases, inside the amendment's save |
-| `round_armed` | `forecast_amendment.round_armed` | answers what the round's forecasts are armed with (`ForecastJobs`), and the steps owed |
+| `round_armed` | `forecast_amendment.round_armed` | answers the forecast leads the round is armed with, less the phases drawn at once, and the steps owed |
 | `round_clean_ups_due` | `forecast_changes.amendment_clean_ups` | the clean-ups due |
 | `amendment_steps`, `amendment_step_failure` | `forecast_changes.amendment_steps`, `forecast_failure` | the steps an amendment asks of weather, and its words for one left undone; the entry point signs the second up, weather then attendance |
 | `cancellation_notices`, `cancellation_steps` | `cancellation_notice` | its note |
@@ -440,10 +442,10 @@ and answers an `AmendmentPart`: the two refusals for a forecast already drawn, i
 raises nothing. What the note names is the weather specification's "Changes to a round after
 generation".
 
-When the round is armed again, weather answers `round_armed` with its steps and its `ForecastJobs`:
-the windows and `skip_phases`, the phases the amendment draws at once, whose timer, having no
-lateness limit, would otherwise draw them again. Core makes the scheduler's calls from the answers
-and holds no rule of weather's about which jobs a round owes.
+When the round is armed again, weather answers `round_armed` with its steps and its forecast leads,
+leaving out the phases the amendment draws at once, whose timer, having no lateness limit, would
+otherwise draw them again (`forecast_amendment.round_armed`). Core arms the leads and holds no rule
+of weather's about which jobs a round owes.
 
 ### What weather reads of others
 
@@ -525,10 +527,10 @@ Each is stated where it lives and pinned by the test named.
 | A phase has one standing draw | the schema's partial unique index | `test_a_second_standing_draw_for_one_phase_is_refused` |
 | A draw and its calculation line are one save | `forecast_changes`' module docstring | `test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted` |
 | The horizons are the league's own, and no fixed moment is named | `phase1_service`'s docstring | `test_the_league_s_own_horizons_are_used_not_the_packaged_ones` |
-| The four timers have no lateness limit; the work's own check judges lateness | architecture.md's "Timed work and restarts", and `RoundJobs.schedule_round`'s docstring (under `skip_phases`) | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
+| The four timers have no lateness limit; the work's own check judges lateness | architecture.md's "Timed work and restarts", and `forecast_leads`' module docstring | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
 | A recovery judges every moment at the queue's clock | `forecast_recovery`'s docstring | `test_the_missed_phases_catch_up_reads_the_queue_s_clock` |
 | A failed recovery stops none of the other rounds and is reported once | `forecast_recovery`'s docstring | `test_one_round_failing_its_recovery_stops_none_of_the_others` |
-| A phase the amendment draws at once is skipped by its timer | `ForecastJobs`' docstring | `test_core_arms_what_a_module_s_arming_answer_hands_back` |
+| A phase the amendment draws at once is skipped by its timer | `forecast_amendment.round_armed`'s docstring | `test_core_arms_what_a_module_s_arming_answer_hands_back` |
 | A mystery round's restart still posts its notice | `recover_missed_phases`' docstring | `test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts` |
 | A job that fires after the switch-off's flag is saved, before its timer is removed, does nothing | `module_switch_settings`' docstring | `test_phase_runner_produces_nothing_while_weather_is_disabled` |
 | The league's horizons are read once for a recovery, not once for each round | `recover_missed_phases`' docstring | `test_the_configuration_is_read_once` |

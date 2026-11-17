@@ -395,14 +395,23 @@ session") and the core specification's ("When the bot stops").
 
 ### The round's `results` job
 
-Core arms each round's `results` job (`RoundJobs.schedule_result_submission_jobs`, `core.md`,
-"Core's own timed events") with no lateness limit, so a job whose moment passes while the bot is
+Results answers each round's `results` job as a lead (`round_start.submission_lead`, at the
+round's own moment), and core arms it (`RoundJobs.arm_leads`, `core.md`, "Core's own timed events")
+with no lateness limit, so a job whose moment passes while the bot is
 down fires once it is back. Its handler, which the wiring registers, is `ask_round_start`
 (`results/services/submission/round_start.py`), and results' start-up catch-up calls the same
 function, so a job run on time and one caught up take one path. It reads the round again and asks
 `results.submission.open` only for a round still to be run whose opening is not already in hand, so
 the late job and the catch-up, in either order, ask once
 (`test_the_late_job_and_the_catch_up_both_firing_open_the_round_once`).
+
+**Results answers the submission for every round, whatever its switch,** on the leads read and on
+the round armed again, since it is the round's one way off Not run and its handler moves a round on
+where results is off. The lead carries two marks, which are all core reads of it: that an amendment
+runs it at once where the round's moment passed while the round was still Not run, and that test
+mode leaves it to `/test-mode advance` where core's rule says so (`results_left_to_advance`).
+Results signs its kind up with core's round jobs with no advance phase, so that the pending read
+leaves it out and phase 4 stays read from the round's state.
 
 **The opening's check judges the round still due as it comes up to run**: its start passed by the
 queue's clock, and the round still to be run. An amendment or a cancellation of the round in hand

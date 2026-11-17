@@ -467,16 +467,27 @@ start-up's step for expired review prompts, core's first, asks the take-down fir
 scheduler is paused until start-up ends.
 
 **A round's timed work is armed by three changes**: the season's approval (its `ARM` job), and the
-amendment and re-arming of a round (`round_amend_change`), through `RoundJobs`' arming functions.
-Each reads when a round's events fall from `round_event_moments`
-(`core/services/rounds/round_moments.py`), which is pure: no database, no clock, no scheduler. A
-cancellation removes a round's work (`RoundJobs.cancel_round`, `cancel_rounds`) before its save.
-Whether a module's work is armed, and with what, is that module's answer through `round_armed`, a
-`RoundArming` of its steps and its jobs (weather's `ForecastJobs`, attendance's `CheckInJobs`); the
-arming step makes `RoundJobs`' calls from them and arms the results submission whatever they answer.
-A round already raced, or ended not held, is armed its clean-ups alone, by
-`schedule_round_cleanups`, from the modules' switches. The handlers for a round's kinds are the
-modules'.
+amendment and re-arming of a round (`round_amend_change`), through `RoundJobs.arm_leads`. **Each
+module lists what it wants set and core arms it**: a `RoundLead` (`core/models/round.py`) is a
+plain record of a timer's kind, its offset from the round's moment, its label and a few marks
+(whether it is armed only while ahead, whether it is a clean-up, whether test mode leaves it to
+`/test-mode advance`, whether an amendment runs it at once, and the words the approval's date check
+quotes of it), and it names no module. The season's approval reads every module's leads through
+`round_leads_read` and arms them for every round; the amendment and re-arming take them from each
+module's `round_armed`, a `RoundArming` of its steps and its leads, already less any phase the
+module draws at once. `arm_leads` gives each the id, name and key a round's timer has always had
+and arms it, nothing more: running a lead at once and taking down what an earlier arming left stay
+in the amendment's arming step, chosen by a lead's marks, never by its kind. Results answers its
+submission as a lead for every round, whatever its switch, since it is the round's one way off Not
+run; core alone decides, by `results_left_to_advance`, whether test mode leaves it to the advance.
+A round already raced, or ended not held, is armed its clean-up leads alone, which the modules
+answer through the same read: a module that is off answers none, and core reads no switch. The
+clean-ups' moment, `clean_up_moment`, is core's one shared figure; every other moment a module
+places from one function of its own (`forecast_leads`, `check_in_leads`), which its arming, its
+recovery and its amendment rules all read, so they cannot drift. Core names no module's kind: each
+module signs its kinds up with `RoundJobs` at build, each with the phase `/test-mode advance`
+numbers it by (`sign_up_kinds`), and `RoundJobs` knows a job is a round's, and which phase it is,
+by that register alone. The handlers for a round's kinds are the modules'.
 
 ### Start-up
 
@@ -635,11 +646,11 @@ which each `_sign_up_to_*` docstring states where it matters.
 | Hook | Type | Subscribers | Core calls it in |
 |---|---|---|---|
 | `starting` | `StartingHook`, read rather than called | core's two steps, then signup, results, attendance, weather, image | `start_up` |
-| `round_windows_read` | A | attendance, weather | `round_moments.read_round_windows`, for the season's approval and review; an amendment reads no module's windows through it |
+| `round_leads_read` | A | attendance, weather, results | `round_moments.read_round_leads`, called with no arguments: for the season's approval (its date check and its arming), the review and a clean-ups-only re-arm; results answers whatever its switch |
 | `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn`, whose one caller is `/season status` |
 | `amendment_judged` | A | attendance, weather | `round_amend_change`, and `/round amend`'s confirmation (`round_cog`); handed no windows, each module reading and keeping its own |
 | `round_amended`, `round_clean_ups_due` | A | weather, attendance | `round_amend_change` |
-| `round_armed` | A | attendance, weather | `round_amend_change` |
+| `round_armed` | A | attendance, weather, results | `round_amend_change` |
 | `amendment_steps` | P | weather, attendance | `round_amend_change` |
 | `amendment_step_failure` | P | weather, attendance | `round_amend_change` |
 | `cancellation_refused` | A | results | `cancellation_changes` |
@@ -694,8 +705,9 @@ A keyed hook takes one function for each key. Each is an object the builder make
 | `AdvanceSteps.register_step` | the kind of a round's job | `register_scheduler_callbacks`, beside each kind's handler | `AdvanceStepFailed` (`test_advance_reports_a_kind_with_no_step_signed_up`) |
 | `HubOptions.register_option` | the option's key, part of the button's custom id | `register_hub_options`, which signs core's About | a press refused |
 
-`ModuleService` reads no module's table or column; `is_<module>_enabled` and `is_enabled_on` are
-the readers `architecture.md` names ("How modules and core fit together").
+`ModuleService` reads no module's table or column and names no module; `is_enabled` and
+`is_enabled_on` are the readers `architecture.md` names ("How modules and core fit together"), and
+core asks each by the module's name.
 
 ### The dependency table
 
