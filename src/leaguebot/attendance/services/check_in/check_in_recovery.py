@@ -37,9 +37,9 @@ from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_ca
 from leaguebot.attendance.services.check_in.check_in_changes import (
     CheckInViewFactory,
 )
-from leaguebot.attendance.services.check_in.check_in_leads import check_in_moments
 from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_in_clean_up
 from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_moments
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.attendance.services.hooks.test_mode_steps import check_ins_cleared
 from leaguebot.framework.db.database import get_connection
