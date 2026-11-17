@@ -419,9 +419,6 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         assert await _row_count(db_path) == 0
         assert "Stuck retry entry id=7" in caplog.text
 
-    @pytest.mark.xfail(
-        strict=True, reason="#453: the worker's own line is not started through the background helper"
-    )
     @pytest.mark.asyncio
     async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(
         self, tmp_path, caplog, monkeypatch

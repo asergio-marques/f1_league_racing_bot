@@ -51,8 +51,6 @@ PASS = {
     "weather": "#287",
     "image": "#288",
 }
-#: One failure path for timed jobs, events and background tasks.
-BACKGROUND_FAILURES = "#453"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -517,9 +515,7 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
-    ("framework/services/posting/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
-}
+KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_no_background_task_is_started_and_dropped():

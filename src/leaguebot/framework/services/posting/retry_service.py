@@ -40,6 +40,7 @@ import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.pending_message import PendingMessage
+from leaguebot.framework.utils.background import start_background
 from leaguebot.utils.messages import discord_ts
 
 if TYPE_CHECKING:
@@ -347,11 +348,11 @@ async def attempt_delivery(
 def _safe_post_log(router: "OutputRouter", message: str) -> None:
     """Schedule a fire-and-forget post of the worker's own *message* (`_post_own_line`).
 
-    Uses asyncio.ensure_future so the caller does not need to await it.
+    Started through `start_background`, which holds the task until it ends, so the caller need not
+    await it and the line is never collected part-way. No *report*: `_post_own_line` never raises,
+    and the log channel is what a failure of it would report to.
     """
-    import asyncio
-
-    asyncio.ensure_future(_post_own_line(router, message))
+    start_background(_post_own_line(router, message), name="retry worker line")
 
 
 async def post_own_line(router: "OutputRouter", message: str) -> None:
