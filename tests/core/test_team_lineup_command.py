@@ -30,6 +30,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from leaguebot.core.cogs.team_cog import TeamCog
@@ -95,7 +96,16 @@ def _make_cog(
     return cog
 
 
-def _interaction(members: dict | None = None):
+def _interaction(members: dict | None = None, *, deletable: bool = True):
+    """A command's interaction, whose replies Discord shows as it does, in `shown`.
+
+    Each message the channel or the manager is shown is held as its text and whether it is seen
+    by the manager alone. Discord gives the first follow-up after a deferral, or an edit of the
+    deferred response, the deferral's visibility whatever the follow-up asks, so a public command
+    whose first follow-up asks to be private is still seen in the channel; once the deferred
+    response is deleted the next follow-up is seen as it asks. `deleted_after` counts the messages
+    shown before the deferred response was deleted, and stays None until it is. Where the
+    interaction is not *deletable*, Discord refuses the deletion."""
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
@@ -105,11 +115,40 @@ def _interaction(members: dict | None = None):
     guild = MagicMock()
     guild.get_member = MagicMock(side_effect=lambda uid: (members or {}).get(int(uid)))
     interaction.guild = guild
+    interaction.shown = []
+    interaction.deleted_after = None
+    deferred: dict[str, bool] = {}
+
+    async def _defer(*, ephemeral: bool = False, **_) -> None:
+        deferred["ephemeral"] = ephemeral
+        deferred["awaiting"] = True
+
+    def _visibility(asked: bool) -> bool:
+        if deferred.pop("awaiting", False):
+            return deferred["ephemeral"]
+        return asked
+
+    async def _send(content=None, *, ephemeral: bool = False, **_) -> None:
+        interaction.shown.append((str(content), _visibility(ephemeral)))
+
+    async def _edit(*, content=None, **_) -> None:
+        if interaction.deleted_after is not None:
+            raise discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Message")
+        interaction.shown.append((str(content), _visibility(deferred.get("ephemeral", False))))
+
+    async def _delete() -> None:
+        if not deletable:
+            raise discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+        deferred.pop("awaiting", None)
+        interaction.deleted_after = len(interaction.shown)
+
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock(side_effect=_send)
+    interaction.response.defer = AsyncMock(side_effect=_defer)
     interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
+    interaction.followup.send = AsyncMock(side_effect=_send)
+    interaction.edit_original_response = AsyncMock(side_effect=_edit)
+    interaction.delete_original_response = AsyncMock(side_effect=_delete)
     return interaction
 
 
@@ -334,8 +373,32 @@ _NOTICE = "a fallback flag stood in for Zara's"
 _NOTICES_LINK = "https://discord.test/4242/7"
 
 
+#: Why a public `/team lineup` refused still fails: the refusal is the first follow-up after the
+#: public deferral, and so is shown in the channel.
+_REFUSAL_SHOWN_PUBLICLY = (
+    "#550: a public /team lineup's refusal is shown in the channel; the acknowledgement is not "
+    "deleted first"
+)
+#: The one line the channel is shown where Discord refuses to delete the acknowledgement.
+_NEUTRAL_LINE = "⛔ The lineup could not be shown."
+
+
 @pytest.mark.parametrize(
-    "asked", ["private", "public", "refused_after", "refused_after_public", "unlinked"]
+    "asked",
+    [
+        "private",
+        "public",
+        "refused_after",
+        pytest.param(
+            "refused_after_public",
+            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
+        ),
+        pytest.param(
+            "refused_after_public_undeletable",
+            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
+        ),
+        "unlinked",
+    ],
 )
 async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_link(
     tmp_path, asked,
@@ -348,9 +411,12 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     names the picture (`lineup — Division 1`) and linked to the log channel's message holding it
     (image spec, Lineup; Constitution XIV.4: no notice in a channel the drivers read). Where
     Division 2 is then refused (the template is missing a field), no picture is sent, and the
-    manager is told the refusal and, seen by them alone, the notice already logged, linked; asked
-    for publicly, the refusal goes alone in the first follow-up, which keeps the public deferral's
-    visibility, and the notice in a later follow-up of its own, seen by the manager alone. Where
+    manager is told the refusal and, seen by them alone, the notice already logged, linked. Asked
+    for publicly, the channel is shown neither: the public acknowledgement is deleted before
+    anything is sent, and the refusal and then the notice are each seen by the manager alone
+    (Constitution XIV.4; image spec, Errors); where Discord refuses to delete the acknowledgement,
+    the channel is shown one line naming no problem ("⛔ The lineup could not be shown.") and the
+    manager is still told the refusal and the notice privately. Where
     the log channel would not take the notice, which costs the link and nothing else
     (Constitution XIV.4; image spec, Errors), the picture is still sent privately and the
     follow-up still lists the notice under its label, with no link."""
@@ -372,7 +438,7 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     )
     interaction = _interaction()
 
-    await _lineup(cog, interaction, public=asked.endswith("public"))
+    await _lineup(cog, interaction, public="public" in asked)
 
     label = (
         f"  **lineup — Division 1** ([see them in the log]({_NOTICES_LINK}))\n"
@@ -392,12 +458,20 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     if refused:
         assert pictures == [], calls
         assert any(f"❌ {_PROBLEM}" in _content(call) for call in calls), calls
-        if asked == "refused_after_public":
+        if "public" in asked:
             interaction.response.defer.assert_awaited_once_with(ephemeral=False)
-            assert _content(calls[0]) == (
+            undeletable = asked.endswith("undeletable")
+            channel = [text for text, alone in interaction.shown if not alone]
+            assert channel == ([_NEUTRAL_LINE] if undeletable else []), interaction.shown
+            if not undeletable:
+                assert interaction.deleted_after == 0, interaction.shown
+            private = [text for text, alone in interaction.shown if alone]
+            assert private[0] == (
                 f"❌ {_PROBLEM}\n_Lineup for **Division 2** was not drawn._"
-            ), calls
-            assert calls.index(told[0]) > 0, calls
+            ), interaction.shown
+            assert [text for text in private[1:] if section in text] == [section], (
+                interaction.shown
+            )
         return
     if not linked:
         assert not any("see them in the log" in _content(call) for call in calls), calls
@@ -484,6 +558,71 @@ async def test_a_drawing_that_fails_fails_the_command(tmp_path):
         await _lineup(cog, interaction)
 
     interaction.followup.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "refused",
+    [
+        pytest.param(
+            "no_season", marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY)
+        ),
+        pytest.param(
+            "unknown_division",
+            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
+        ),
+        pytest.param(
+            "no_divisions", marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY)
+        ),
+        pytest.param(
+            "drawing_fails",
+            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
+        ),
+    ],
+)
+async def test_a_public_lineup_refused_is_told_to_the_manager_alone(tmp_path, refused):
+    """A manager asks for the lineup publicly, and it cannot be shown: no season is being raced;
+    the division they named, Division 9, is not found; the season has no divisions; or the
+    league draws its lineup and drawing Division 1's raises (the database cannot be read), which
+    the bot answers with its standard failure reply. The public acknowledgement is deleted
+    before anything is sent, and the manager alone is told why, by that one message; the channel
+    is shown nothing (Constitution XIV.4: no problem in a channel the drivers read)."""
+    from leaguebot.framework.utils.interaction_errors import describe, report_failure
+
+    division = None
+    if refused == "no_season":
+        cog = _make_cog(season=None)
+        told = "⛔ No season is being raced, so no lineup is confirmed."
+    elif refused == "unknown_division":
+        cog = _make_cog(resolve=None)
+        division = "Division 9"
+        told = "⛔ Division `Division 9` not found."
+    elif refused == "no_divisions":
+        cog = _make_cog(divisions=[])
+        told = "No divisions found."
+    else:
+        cog = _make_cog(
+            teams=[_team("Alpha", 1, [(1, None, None)])],
+            drawing=LineupDrawingStub(fault=RuntimeError("database is locked")),
+        )
+        told = None
+    interaction = _interaction()
+    interaction.command = SimpleNamespace(qualified_name="team lineup")
+    interaction.client = SimpleNamespace(output_router=None)
+
+    try:
+        await _lineup(cog, interaction, division=division, public=True)
+    except RuntimeError as error:
+        # As the command tree answers a command that fails.
+        await report_failure(interaction, error, what=describe(interaction))
+
+    interaction.response.defer.assert_awaited_once_with(ephemeral=False)
+    assert interaction.deleted_after == 0, interaction.shown
+    [(text, alone)] = interaction.shown
+    assert alone is True
+    if told is None:
+        assert text.startswith("❌ `/team lineup` stopped on a fault in the bot"), text
+    else:
+        assert text == told
 
 
 async def test_the_lineup_names_each_team_by_its_full_name():
