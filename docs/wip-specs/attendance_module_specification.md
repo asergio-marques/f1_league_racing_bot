@@ -22,9 +22,12 @@
 - <NEW COMMAND> An "attendance channel rsvp" command will be made available to league managers, which shall have as input a division name and a channel on which RSVP polls shall be posted by the bot.
     - If a RSVP channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's RSVP channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
+    - The RSVP channel shall be one the bot can post an embed in: View Channel, Send Messages and Embed Links, and Attach Files where the check-in call could be posted with a picture.
 - <NEW COMMAND> An "attendance channel attendance" command will be made available to league managers, which shall have as input a division name and a channel on which attendance for each one of the rounds will be posted by the bot.
     - If an attendance channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's attendance channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
+    - The attendance channel shall be one the bot can post in and take its own sheet down from: View Channel, Send Messages and Read Message History, and Attach Files where the attendance sheet could be posted as a picture.
+    - Confirming a season's placements shall name a division whose RSVP or attendance channel lacks a permission it needs, with what it lacks, as it names one that is gone.
 
 ### RSVP notices
 - <NEW COMMAND> An "attendance config rsvp-notice" command will be made available to league managers, which shall have as input an integer standing for a number of days. This command configures the number of days before a round at which point RSVP notices will be sent out too all drivers of a division to mark their attendance for that round.
@@ -203,7 +206,7 @@
 ### Resynchronising attendance
 - <NEW COMMAND> An "attendance sync" command shall be made available to league managers, which shall have as input a division name and a round number.
     - It shall be available only while the season is in one of the three ongoing stages, and only for a round whose penalties have been approved. It shall be refused otherwise, with nothing changed.
-    - It shall be refused, with nothing changed, where any channel the recalculation posts to cannot be reached, as the approval of an amendment is.
+    - It shall be refused, with nothing changed, where any channel the recalculation posts to cannot be reached, as the approval of an amendment is: its attendance channel and its verdicts channel are judged by the permissions each needs, Attach Files included where that channel's pictures are on.
     - It shall be refused, with nothing changed, while a round of the division has an amendment of its results open, naming the round being amended and its channel. The recalculation would otherwise read that amendment's corrections before they are approved, and its sheet and sanctions would stand were the amendment then abandoned. Decided 2026-09-21.
     - It shall be a change on the queue: acknowledged at once, naming what it is doing, and the acknowledgement updated with its reply. Decided 2026-11-12.
     - It shall recalculate the attendance of every round of the division from the one given onwards whose penalties have been approved, from their results, and apply the sanctions the latest of those rounds then owes, in one save that lands whole or not at all. Rounds before the one given shall be left alone. Decided 2026-11-12.
