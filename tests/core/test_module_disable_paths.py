@@ -11,9 +11,10 @@ Discord channel, role, message or scheduled job, so re-enabling has nothing kept
 the server. `test_disabling_images_keeps_the_configuration` is the test a later reader clearing
 a module's setup on the way out would break.
 
-**Attendance clears its division channel bindings.** Those *are* stale bindings: a channel id
-recorded against a division for a module that is off would have the bot posting into it the
-moment somebody turned the module back on, against a season that had moved on.
+**Attendance keeps its division channels too** (#449). Principle X rule 6 asks the same of it as
+of every module: a league switching it back on finds each division's check-in and attendance
+channels where it left them. Only each division's attendance-sheet message id goes, as a message
+id is not configuration.
 
 **Attendance can be disabled two ways, and the audit tells them apart.** A manager switching it
 off is `ATTENDANCE_MODULE_DISABLED`; attendance going off because Results & Standings did is
@@ -37,7 +38,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
@@ -61,7 +61,7 @@ NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
+async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "disable.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -74,22 +74,6 @@ async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
             "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 1)",
             (1,),
         )
-        if attendance_divisions:
-            await db.execute(
-                "INSERT INTO seasons (id, season_number, start_date, status) "
-                "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
-            )
-            for index in range(1, attendance_divisions + 1):
-                await db.execute(
-                    "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-                    "VALUES (?, 1, ?, ?, ?)",
-                    (index, f"Division {index}", index, 500 + index),
-                )
-                await db.execute(
-                    "INSERT INTO attendance_division_config "
-                    "(division_id, rsvp_channel_id) VALUES (?, ?)",
-                    (index, str(700000 + index)),
-                )
         await db.commit()
     return db_path
 
@@ -311,17 +295,27 @@ async def test_disabling_attendance_clears_the_flag(tmp_path):
     assert await log_lines(league) == [f"{NAMED} | /module disable attendance | Success"]
 
 
-async def test_disabling_attendance_clears_its_division_channels(tmp_path):
-    """Those are stale bindings: a channel recorded against a division for a module that
-    is off would have the bot posting into it the moment it came back on, against a season
-    that had moved along."""
+@pytest.mark.xfail(
+    strict=True,
+    reason="#449: switching attendance off still deletes every division's check-in and "
+    "attendance channels",
+)
+async def test_disabling_attendance_keeps_its_division_channels(tmp_path):
+    """Principle X rule 6: a disabled module keeps its configuration, the channels it names
+    included, so a league switching attendance back on finds each division's check-in channel
+    where it left it."""
     league, cog, asked = await _attendance_league(tmp_path, divisions=2)
-    assert await _division_configs(league.db_path) == 2
 
     await cog._disable_attendance(asked)
     await run_queue(league.bot)
 
-    assert await _division_configs(league.db_path) == 0
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute(
+            "SELECT division_id, rsvp_channel_id FROM attendance_division_config "
+            "ORDER BY division_id"
+        )
+        kept = [tuple(row) for row in await cursor.fetchall()]
+    assert kept == [(1, "700001"), (2, "700002")]
 
 
 async def test_disabling_attendance_twice_does_no_work(tmp_path):
@@ -393,35 +387,6 @@ async def test_a_cascade_is_audited_as_a_cascade(tmp_path):
     types = await _audit_types(db_path)
     assert types.count("ATTENDANCE_MODULE_CASCADE_DISABLED") == 1
     assert "ATTENDANCE_MODULE_DISABLED" not in types
-
-
-async def test_a_cascade_does_the_same_work(tmp_path):
-    """The cascade and the manual disable switch attendance off through the one call, so the
-    module ends up in the same state either way, or a cascade would leave stale bindings a
-    manual disable clears."""
-    db_path = await _make_db(tmp_path, attendance_divisions=2)
-
-    async with get_connection(db_path) as db:
-        assert await AttendanceService(db_path).switch_off_on(db) is True
-        await db.commit()
-
-    assert await _attendance_flag(db_path) == 0
-    assert await _division_configs(db_path) == 0
-
-
-async def test_a_cascade_runs_even_where_attendance_was_already_off(tmp_path):
-    """It skips the guard deliberately — clearing twice is harmless where refusing would leave
-    bindings behind — and says attendance was already off."""
-    db_path = await _make_db(tmp_path, attendance_divisions=1)
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE attendance_config SET module_enabled = 0")
-        await db.commit()
-
-    async with get_connection(db_path) as db:
-        assert await AttendanceService(db_path).switch_off_on(db) is False
-        await db.commit()
-
-    assert await _division_configs(db_path) == 0
 
 
 async def test_a_cascade_is_still_logged_to_the_league(tmp_path):

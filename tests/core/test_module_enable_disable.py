@@ -752,10 +752,15 @@ async def test_enabling_attendance_is_audited(tmp_path):
     ]
 
 
-async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path):
-    """Constitution X.6: re-enabling a module starts fresh. A league that set its own
-    windows, penalties and thresholds finds the packaged ones after turning the module off
-    and on again, through the commands themselves."""
+@pytest.mark.xfail(
+    strict=True,
+    reason="#449: switching attendance back on still writes the packaged defaults over the "
+    "league's own timings, penalties and thresholds",
+)
+async def test_re_enabling_attendance_keeps_the_league_s_settings(tmp_path):
+    """Principle X rule 6: a disabled module keeps its configuration, and re-enabling it restores
+    it as it stood. A league that set its own windows, penalties and thresholds finds them all
+    after turning the module off and on again, through the commands themselves."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from tests.support.change_queue import run_queue
 
@@ -777,10 +782,10 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
 
     cfg = await AttendanceService(league.db_path).get_config()
     assert cfg.module_enabled is True
-    assert (cfg.rsvp_notice_days, cfg.rsvp_last_notice_hours, cfg.rsvp_deadline_hours) == (5, 24, 2)
-    assert (cfg.no_rsvp_penalty, cfg.absent_penalty, cfg.no_show_penalty) == (1, 1, 1)
-    assert cfg.autoreserve_threshold is None
-    assert cfg.autosack_threshold is None
+    assert (cfg.rsvp_notice_days, cfg.rsvp_last_notice_hours, cfg.rsvp_deadline_hours) == (7, 48, 6)
+    assert (cfg.no_rsvp_penalty, cfg.absent_penalty, cfg.no_show_penalty) == (2, 3, 4)
+    assert cfg.autoreserve_threshold == 5
+    assert cfg.autosack_threshold == 9
 
 
 async def test_enabling_attendance_leaves_the_schema_s_own_defaults(tmp_path):

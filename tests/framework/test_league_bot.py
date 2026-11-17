@@ -300,8 +300,8 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
     the module's own (its check is the module's code) and may write only the tables holding the
     module's switch and, for images' switch-on, the configuration it creates where missing.
     Weather's switch is weather's column on the core table `server_configs`; images' is image's
-    own `image_config`; attendance's is `attendance_config`, its switch-off clearing the
-    division channels in `attendance_division_config` too (#283, S11d). Results' switch-on is
+    own `image_config`; attendance's is `attendance_config`, its switch-off clearing each
+    division's attendance-sheet message id in `attendance_division_config` too (#449). Results' switch-on is
     `results_module_config`; its switch-off is its own change already (`results_off_change`),
     whose tables are not declared, so only its owner is checked (*off_writes* None). Signup's
     switch-on is signup's column on `server_configs` and the configuration row it creates where

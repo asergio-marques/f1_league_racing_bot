@@ -40,19 +40,25 @@ async def db_path(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#449: switching attendance off still deletes every division's check-in and "
+    "attendance channels rather than keeping them and clearing only the sheet's message id",
+)
 async def test_attendance_switches_off_on_a_handed_connection(db_path):
-    """Its flag down and its per-division channels cleared, its settings row kept, all on the
-    caller's connection and saved only when the caller commits; it says whether attendance was
-    on."""
+    """Its flag down, its settings row and every division's check-in and attendance channels
+    kept, and only each division's attendance-sheet message id cleared (a message id is not
+    configuration, Principle X rule 6), all on the caller's connection and saved only when the
+    caller commits; it says whether attendance was on."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
         await db.executemany(
-            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
-            "VALUES (?, ?)",
-            [(10, "610"), (11, "611")],
+            "INSERT INTO attendance_division_config "
+            "(division_id, attendance_channel_id, attendance_message_id) VALUES (?, ?, ?)",
+            [(10, "610", "910"), (11, "611", None)],
         )
         await db.commit()
     svc = AttendanceService(db_path)
@@ -61,14 +67,18 @@ async def test_attendance_switches_off_on_a_handed_connection(db_path):
         assert await svc.switch_off_on(db) is True
         await db.rollback()
     assert (await svc.get_config()).module_enabled is True
-    assert await svc.get_division_config(10) is not None
+    pro = await svc.get_division_config(10)
+    assert pro is not None and pro.attendance_message_id == "910"
 
     async with get_connection(db_path) as db:
         assert await svc.switch_off_on(db) is True
         await db.commit()
     assert (await svc.get_config()).module_enabled is False
-    assert await svc.get_division_config(10) is None
-    assert await svc.get_division_config(11) is None
+    pro = await svc.get_division_config(10)
+    am = await svc.get_division_config(11)
+    assert pro is not None and am is not None
+    assert (pro.attendance_channel_id, pro.attendance_message_id) == ("610", None)
+    assert am.attendance_channel_id == "611"
 
     async with get_connection(db_path) as db:
         assert await svc.switch_off_on(db) is False
