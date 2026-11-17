@@ -52,7 +52,9 @@ import os
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
+import aiosqlite
 import discord
 
 from leaguebot.framework.db.database import get_connection
@@ -354,6 +356,61 @@ async def images_are_on(db_path: str) -> bool:
         return await images_enabled_on(db)
 
 
+#: The kind of the daily refresh's job, stored on it and signed up with the scheduler's
+#: `register_timer` by image's wiring.
+PORTRAIT_REFRESH_KIND = "portrait_refresh"
+
+#: One league, so one daily refresh: the job is named by what it does, not by a server.
+PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
+
+
+def schedule_portrait_refresh(scheduler: SchedulerService, time_of_day: str) -> None:
+    """Arm the league's daily driver-portrait refresh at *time_of_day* (``HH:MM``, read as UTC),
+    through the scheduler's generic daily call.
+
+    A recurring trigger, and deliberately so: the refresh is a standing instruction rather than
+    an event, and the scheduler re-arms it itself, so a run that raised is not the last. The time
+    is UTC because a stored local time would need a zone stored with it and would drift against
+    daylight saving; the league is told the zone when it names the time. The job has no lateness
+    limit, so that what becomes of a run missed while the bot was down is the refresh's to judge
+    (`run_daily_refresh` skips it). Naming a new time re-arms the job rather than duplicating it.
+    """
+    hour, _, minute = time_of_day.partition(":")
+    scheduler.arm_daily(
+        PORTRAIT_REFRESH_JOB_ID,
+        PORTRAIT_REFRESH_KIND,
+        int(hour),
+        int(minute),
+        "Daily driver portrait refresh",
+    )
+
+
+def cancel_portrait_refresh(scheduler: SchedulerService) -> bool:
+    """Remove the daily portrait refresh, and say whether it is gone: True where it was removed or
+    was not there, False where it stands still because the scheduler could not remove it.
+
+    It never raises, as every cancel of a job is a clean-up. The scheduler's removal logs a fault
+    and answers False, which is also what it answers for a job already gone; so a False is read
+    against whether the job stands, and only a job that stands is a failure.
+    """
+    if scheduler.remove(PORTRAIT_REFRESH_JOB_ID):
+        log.info("Removed %s", PORTRAIT_REFRESH_JOB_ID)
+        return True
+    return not scheduler.has_job(PORTRAIT_REFRESH_JOB_ID)
+
+
+async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
+    """Hand the pack the daily refresh's job id to keep armed, touching nothing in *db*.
+
+    The refresh is a standing instruction from an image setting the pack keeps, and it does
+    nothing while no server is claimed. Core names the key it reads the ids under
+    (`pack_service.KEPT_JOB_IDS`) and keeps the union of what the parts hand back.
+    """
+    from leaguebot.core.services.upkeep.pack_service import KEPT_JOB_IDS
+
+    return {KEPT_JOB_IDS: frozenset({PORTRAIT_REFRESH_JOB_ID})}
+
+
 async def rearm_daily_refresh(db_path: str, scheduler: SchedulerService) -> None:
     """Re-arm the daily refresh at start-up, at the time the league stored, where it has the
     refresh asked for (portraits on, daily on).
@@ -369,7 +426,7 @@ async def rearm_daily_refresh(db_path: str, scheduler: SchedulerService) -> None
         row = await cursor.fetchone()
     if row is None:
         return
-    scheduler.schedule_portrait_refresh(row["pfp_daily_time"])
+    schedule_portrait_refresh(scheduler, row["pfp_daily_time"])
 
 
 def _fired_late(now: datetime, time_of_day: str) -> bool:

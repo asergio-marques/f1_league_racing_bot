@@ -25,12 +25,6 @@ from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
 from tests.support.settings_league import portrait_refresh_cancels, portrait_refresh_times
 
-#: Why a test fails until image arms its daily portrait refresh itself.
-NOT_ARMED_BY_IMAGE = "#544: image does not yet arm its daily refresh through the generic arm_daily"
-
-#: Why a test fails until image cancels its daily portrait refresh itself.
-NOT_CANCELLED_BY_IMAGE = "#544: image does not yet cancel its daily refresh through the generic remove"
-
 SERVER_ID = 4242
 
 
@@ -178,7 +172,6 @@ async def test_disable_preserves_every_settable_column(tmp_path):
     assert all((await config_service.get_toggles()).values())
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     """Images on with portraits refreshed daily: `/module disable images` switches the module
     off and removes the daily refresh, which would otherwise go on firing while the module is
@@ -196,7 +189,6 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     assert portrait_refresh_cancels(league.scheduler) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_off_and_says_so(
     tmp_path,
 ):
@@ -251,7 +243,6 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
     [
         pytest.param(
             True, id="images on",
-            marks=pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE),
         ),
         pytest.param(False, id="images off"),
     ],

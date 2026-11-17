@@ -41,9 +41,6 @@ from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import MEMBER_ID
 from tests.support.settings_league import portrait_refresh_times
 
-#: Why a test fails until image arms its daily portrait refresh itself.
-NOT_ARMED_BY_IMAGE = "#544: image does not yet arm its daily refresh through the generic arm_daily"
-
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 #: The enable's reply where the host carries the rasteriser.
@@ -294,7 +291,6 @@ async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_o
     [
         pytest.param(
             1, 1, True, id="daily updates asked for",
-            marks=pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE),
         ),
         pytest.param(1, 0, False, id="daily updates not asked for"),
         pytest.param(0, 1, False, id="portraits off"),
@@ -323,7 +319,6 @@ async def test_enabling_arms_the_daily_portrait_refresh_where_the_configuration_
         assert portrait_refresh_times(league.scheduler) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_an_enable_that_cannot_arm_the_daily_refresh_leaves_the_module_on_as_one_failure(
     tmp_path,
 ):

@@ -65,6 +65,11 @@ from leaguebot.image.services.config.image_setting_advice import (
     measure_fastest_lap_contrast,
     toggle_enabled_lines,
 )
+from leaguebot.image.services.portraits.driver_portrait_service import (
+    PORTRAIT_REFRESH_JOB_ID,
+    cancel_portrait_refresh,
+    schedule_portrait_refresh,
+)
 from leaguebot.image.utils.svg_document import off_the_loop
 
 if TYPE_CHECKING:
@@ -812,7 +817,7 @@ def arm_daily(scheduler: "SchedulerService", command: Callable[[dict[str, Any]],
 
     async def run(ctx: StepContext) -> StepResult:
         kept = next((view.result or {} for view in ctx.steps if view.name == "save"), {})
-        scheduler.schedule_portrait_refresh(str(ctx.payload.get("time") or kept["daily_time"]))
+        schedule_portrait_refresh(scheduler, str(ctx.payload.get("time") or kept["daily_time"]))
         return StepResult()
 
     return After(
@@ -833,7 +838,8 @@ def disarm_daily(scheduler: "SchedulerService", *, not_removed: str = DAILY_JOB_
     """
 
     async def run(_ctx: StepContext) -> StepResult:
-        scheduler.cancel_portrait_refresh()
+        if not cancel_portrait_refresh(scheduler):
+            raise RuntimeError(f"the daily portrait job {PORTRAIT_REFRESH_JOB_ID} could not be removed")
         return StepResult()
 
     return After(

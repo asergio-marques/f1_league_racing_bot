@@ -300,10 +300,6 @@ async def test_pack_clears_the_scheduled_work_but_the_portrait_refresh(db_path):
     assert result.scheduled_jobs == 3
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#544: the pack keeps a job list of its own, not the jobs the parts hand back",
-)
 async def test_the_pack_keeps_every_job_each_part_hands_back(db_path):
     """Two parts signed up to the pack each hand back a job of their own to keep, one of them
     two: the pack clears the scheduled work but the three, the union of what the parts handed

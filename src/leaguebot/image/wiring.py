@@ -34,6 +34,14 @@ def sign_up(bot: "LeagueBot") -> None:
     sign_up_to_drivers_deleted(bot)
 
 
+def sign_up_to_pack(bot: "LeagueBot") -> None:
+    """Sign image's hand-back of the job it keeps armed up to the hook the bot packed declares:
+    the pack clears all scheduled work but what the parts hand back."""
+    from leaguebot.image.services.portraits import driver_portrait_service
+
+    bot.bot_packed.subscribe(driver_portrait_service.bot_packed_on)
+
+
 def sign_up_to_drivers_deleted(bot: "LeagueBot") -> None:
     """Sign image's discard of the portraits of the drivers deleted up to the hook a season's end
     declares for them, handed the database's path and its configuration service."""
@@ -93,11 +101,13 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     whether it was missed: the job has no lateness limit, and the refresh, handed the queue's
     moment, skips a run that fires late. It reads the bot when it fires."""
 
+    from leaguebot.image.services.portraits.driver_portrait_service import PORTRAIT_REFRESH_KIND
+
     async def _portrait_refresh_cb() -> None:
         from leaguebot.image.services.portraits.driver_portrait_service import run_daily_refresh
         await run_daily_refresh(bot, bot.image_config_service, now=bot.change_queue.now())
 
-    bot.scheduler_service.register_timer("portrait_refresh", _portrait_refresh_cb)
+    bot.scheduler_service.register_timer(PORTRAIT_REFRESH_KIND, _portrait_refresh_cb)
 
 
 def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":

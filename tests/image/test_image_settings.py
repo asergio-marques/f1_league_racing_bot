@@ -57,12 +57,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why a test fails until image arms its daily portrait refresh itself.
-NOT_ARMED_BY_IMAGE = "#544: image does not yet arm its daily refresh through the generic arm_daily"
-
-#: Why a test fails until image cancels its daily portrait refresh itself.
-NOT_CANCELLED_BY_IMAGE = "#544: image does not yet cancel its daily refresh through the generic remove"
-
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 #: What a daily job that cannot be armed says became of the change (image :132): stored, and
@@ -638,7 +632,6 @@ async def test_each_portrait_toggle_saves_with_its_audit_entry_and_line(tmp_path
     await _saves_with_record(tmp_path, CASES[route])
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_confirming_daily_portraits_saves_the_time_and_the_flag_in_one_save(tmp_path):
     """✅ Confirm on daily portrait updates at 04:30 UTC, portraits obtained from Discord: once
     run, the time and the flag are stored, with one `IMAGE_CONFIG_SET` entry holding both, the
@@ -732,7 +725,6 @@ async def test_an_output_whose_drawings_broke_meanwhile_is_refused_when_it_runs_
     assert "Calendar: the drawing file can't be found" in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_the_daily_job_is_armed_by_a_job_after_the_save(tmp_path):
     """✅ Confirm on daily updates at 04:30: the save stores the time and the flag without
     arming the job or writing the Success line; the job after it arms the job at 04:30 and
@@ -754,7 +746,6 @@ async def test_the_daily_job_is_armed_by_a_job_after_the_save(tmp_path):
 
 
 @pytest.mark.parametrize("route", ["confirm", "master-toggle"])
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lane_goes_on(
     tmp_path, route
 ):
@@ -791,7 +782,6 @@ async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lan
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_a_stop_after_daily_portraits_are_saved_arms_the_job_when_the_change_carries_on(
     tmp_path
 ):
@@ -816,7 +806,6 @@ async def test_a_stop_after_daily_portraits_are_saved_arms_the_job_when_the_chan
     assert [row["state"] for row in await change_rows(league.db_path)] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_turning_portraits_off_removes_the_daily_job_after_the_save(tmp_path):
     """`/images use-pfp toggle` turning portraits off, daily updates on: the save stores the
     switch without touching the daily job; the job after it removes the daily job, once, and
@@ -845,7 +834,6 @@ def _remove_reports_the_job_still_there(scheduler) -> None:
     scheduler.has_job.return_value = True
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 @pytest.mark.parametrize(
     "refuse", [_remove_raises, _remove_reports_the_job_still_there],
     ids=["remove-raises", "remove-logs-and-the-job-stands"],
@@ -875,7 +863,6 @@ async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(t
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_turning_portraits_off_when_the_daily_job_cannot_be_removed_says_so_and_the_lane_goes_on(
     tmp_path
 ):

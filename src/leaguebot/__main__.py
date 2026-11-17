@@ -317,6 +317,7 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     weather_wiring.sign_up_to_pack(bot)
     attendance_wiring.sign_up_to_pack(bot)
     results_wiring.sign_up_to_pack(bot)
+    image_wiring.sign_up_to_pack(bot)
 
 
 def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:

@@ -28,9 +28,6 @@ from leaguebot.core.services.scheduler_service import SchedulerService
 
 LOGGER = scheduler_service.__name__
 
-#: Why each test here fails until image arms its own refresh.
-NO_PORTRAIT_JOB = "#544: image has no portrait refresh of its own; the scheduler still arms it"
-
 
 def _image_job():
     """Image's arming and cancelling of its daily refresh, each handed the scheduler."""
@@ -81,7 +78,6 @@ def workspace(tmp_path):
     _remove_database(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)
 def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     from apscheduler.triggers.cron import CronTrigger
 
@@ -100,7 +96,6 @@ def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     assert job.kwargs in ({"kind": "portrait_refresh"}, {"kind": "portrait_refresh", "key": None})
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)
 def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
     # The league is told the zone when it names the time; a stored local time would need a
     # zone stored with it and would drift against daylight saving twice a year.
@@ -113,7 +108,6 @@ def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
     assert str(service._scheduler.get_job("pfp_daily").trigger.timezone) == "UTC"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)
 async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
     """Started, because a stopped scheduler queues `add_job` and applies
     `replace_existing` only when it flushes -- so a stopped one shows two pending jobs
@@ -136,7 +130,6 @@ async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
         m._GLOBAL_SERVICE = None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)
 def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(
     workspace, caplog
 ):
@@ -155,7 +148,6 @@ def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PORTRAIT_JOB)
 def test_cancelling_the_refresh_logs_the_traceback_of_any_other_failure(caplog):
     """The job store cannot be written when the refresh is cancelled: a warning carrying the
     error and its traceback is logged, and the cancel still does not raise."""

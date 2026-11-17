@@ -46,12 +46,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why a test fails until image arms its daily portrait refresh itself.
-NOT_ARMED_BY_IMAGE = "#544: image does not yet arm its daily refresh through the generic arm_daily"
-
-#: Why a test fails until image cancels its daily portrait refresh itself.
-NOT_CANCELLED_BY_IMAGE = "#544: image does not yet cancel its daily refresh through the generic remove"
-
 #: The command the confirmation belongs to, as its log lines name it.
 DAILY = "`/images use-pfp daily-toggle`"
 #: The portrait-time form, as its refusals name it.
@@ -194,7 +188,6 @@ async def test_the_master_toggle_enables_portraits(tmp_path):
     assert "enabled" in interaction.said[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_the_master_toggle_disables_portraits_and_stops_the_daily_job(tmp_path):
     cog, league = await _league(tmp_path, use_pfp=True, pfp_daily=True)
 
@@ -291,7 +284,6 @@ async def test_the_modal_says_the_time_is_utc(tmp_path):
     assert "UTC" in modal.time_of_day.label
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CANCELLED_BY_IMAGE)
 async def test_disabling_the_daily_job_needs_no_modal(tmp_path):
     cog, league = await _league(tmp_path, use_pfp=True, pfp_prerender=True, pfp_daily=True)
 
@@ -333,7 +325,6 @@ async def test_a_readable_time_asks_for_confirmation_before_committing(tmp_path)
     assert await _portraits(league) == {**PACKAGED, "use_pfp": 1}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_confirming_stores_the_time_enables_the_job_and_arms_it(tmp_path):
     """Confirm takes its buttons down, so the same confirmation cannot be pressed again, and is
     acknowledged; once run, the time and the flag are stored, the job armed, and the reply names
@@ -365,7 +356,6 @@ async def test_cancelling_the_confirmation_changes_nothing(tmp_path):
     assert portrait_refresh_times(league.scheduler) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_a_scheduler_failure_does_not_lose_the_setting(tmp_path):
     """The setting is stored first, so startup recovery arms the job on the next restart with the
     module on, or the module's next switch-on does; the member is told so as a failure, never as a success (F1), and the one line is the failure."""
@@ -439,7 +429,6 @@ async def test_an_ending_is_recorded_though_the_buttons_cannot_be_taken_down(end
 # ── The success is recorded only once the daily job is armed (F2) ────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_recorded(tmp_path):
     """Portraits switched on with daily updates standing at 07:45: acknowledged at once; when
     it runs, the daily job is re-armed at the standing time, no line has been written by the
@@ -458,7 +447,6 @@ async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_record
     assert_one_line(league.bot, "images use-pfp toggle")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_success(tmp_path):
     cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True)
     _fail_to_arm(league)
@@ -477,7 +465,6 @@ async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_suc
 # ── One save per confirmation (F10) ───────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ARMED_BY_IMAGE)
 async def test_a_second_press_of_confirm_saves_nothing_and_is_refused(tmp_path):
     """The first press is acknowledged and, once run, saves the daily setting with one audit
     entry and one success line; a second press of the same confirmation is refused at once,

@@ -75,7 +75,6 @@ _GLOBAL_SERVICE: "SchedulerService | None" = None
 
 #: The kinds of the standing and one-shot jobs no round owns, named for what they do. Each is
 #: signed up with `SchedulerService.register_timer`, and stored on its job as ``kind``.
-PORTRAIT_REFRESH_KIND = "portrait_refresh"
 AMENDMENT_SWEEP_KIND = "amendment_sweep"
 
 
@@ -85,9 +84,8 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
 
     Looks up the handler the builder registered for *kind* (`SchedulerService.register_timer`)
     and awaits it, handed *key* (the round id of a round's job, the key of a one-off timer), which
-    reads its row again and asks its change. A standing job (the portrait
-    refresh, the amendment sweep) is armed with no key, and its handler is handed nothing. A
-    kind with no handler is passed over with a warning, and a handler that raises is logged with
+    reads its row again and asks its change. A standing job (the amendment sweep) is armed with no
+    key, and its handler is handed nothing. A kind with no handler is passed over with a warning, and a handler that raises is logged with
     its traceback, naming the kind and the key: a job's fault belongs to its host's log, and
     nothing reaches APScheduler, so a standing job outlives one bad run. Core holds no module's
     rule about what a job does, only which handler is asked.
@@ -106,9 +104,6 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
     except Exception:  # noqa: BLE001 — one job's fault must not reach the scheduler
         log.exception("_one_off_timer_job: the %s job for %s failed", kind, key)
 
-
-#: One league, so one daily refresh: the job is named by what it does, not by a server.
-PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
 
 #: The standing sweep that undoes an amendment nobody approved.
 AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
@@ -429,9 +424,9 @@ class SchedulerService:
         """Remove every job but those whose ids are in *keep*, and return how many went.
 
         For `/bot pack` and `/bot factory-reset`, which clear all of the league's scheduled work at
-        once rather than round by round, and so reach the jobs no round owns — a wizard's inactivity and channel-delete jobs, a stale
-        season-end job. Pack keeps the daily portrait refresh: it is a standing instruction from a setting pack keeps, and does
-        nothing while no server is claimed.
+        once rather than round by round, and so reach the jobs no round owns — a wizard's inactivity
+        and channel-delete jobs, a stale season-end job. Pack keeps the jobs the modules hand it to
+        keep.
         """
         removed = 0
         for job in list(self._scheduler.get_jobs()):
@@ -443,48 +438,13 @@ class SchedulerService:
         return removed
 
     # ------------------------------------------------------------------
-    # Standing jobs: the daily portrait refresh and the amendment sweep
+    # Standing jobs: the amendment sweep
     # ------------------------------------------------------------------
-
-    def schedule_portrait_refresh(self, time_of_day: str) -> None:
-        """Schedule the league's daily driver-portrait refresh at *time_of_day* UTC.
-
-        **A recurring trigger, and deliberately so** (`schedule_amendment_sweep` is the other).
-        Every other job here is a one-shot ``DateTrigger`` arming a single event of a round or a
-        season, and that shape is right for those: each fires once and is done. This one is a
-        standing instruction rather than an event, and re-arming it from inside its own callback
-        would put the survival of the schedule at the mercy of the job body -- a refresh that
-        raised would silently be the last one. A ``CronTrigger`` is re-armed by APScheduler itself
-        and outlives a failing run.
-
-        *time_of_day* is ``HH:MM`` read as UTC, matching every other trigger in this service.
-        A stored local time would need a zone stored with it and would drift against daylight
-        saving twice a year; the league is told the zone when it names the time.
-
-        It is armed with no lateness limit (``misfire_grace_time=None``) as every standing job
-        here is, so that what becomes of a run missed while the bot was down is the handler's to
-        judge, not the scheduler's: the refresh skips it (core specification, "When the bot
-        stops").
-
-        ``replace_existing=True`` so that naming a new time re-arms rather than duplicates.
-        """
-        hour, _, minute = time_of_day.partition(":")
-        job_id = PORTRAIT_REFRESH_JOB_ID
-        self._scheduler.add_job(
-            _one_off_timer_job,
-            trigger=CronTrigger(hour=int(hour), minute=int(minute), timezone="UTC"),
-            id=job_id,
-            replace_existing=True,
-            misfire_grace_time=None,
-            name="Daily driver portrait refresh",
-            kwargs={"kind": PORTRAIT_REFRESH_KIND},
-        )
-        log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
 
     def schedule_amendment_sweep(self) -> None:
         """Arm the standing sweep that undoes an amendment nobody carried through.
 
-        An ``IntervalTrigger`` for the reason ``schedule_portrait_refresh`` gives for its cron
+        An ``IntervalTrigger`` for the reason ``arm_daily`` gives for its cron
         one: this is a standing instruction rather than an event, and re-arming it from inside
         its own callback would put the survival of the schedule at the mercy of the job body —
         a sweep that raised would silently be the last.
@@ -514,9 +474,3 @@ class SchedulerService:
         """Remove the standing sweep `schedule_amendment_sweep` arms (no-op where it is not armed),
         as turning results off undoes what turning it on set up."""
         self.cancel_job(AMENDMENT_SWEEP_JOB_ID)
-
-    def cancel_portrait_refresh(self) -> None:
-        """Remove the daily portrait refresh if it exists."""
-        job_id = PORTRAIT_REFRESH_JOB_ID
-        if self._remove_job(job_id):
-            log.info("Removed %s", job_id)
