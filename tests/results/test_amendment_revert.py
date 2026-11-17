@@ -489,59 +489,72 @@ async def test_a_round_with_no_deadline_is_not_swept(tmp_path):
 # ── The sweep is actually armed ────────────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: results has no arming of its amendment sweep of its own yet"
+)
 def test_the_sweep_is_scheduled_as_a_standing_job():
     """**A timeout nothing invokes is a promise the documentation would be lying about.**
 
     The revert machinery was written and tested before anything called it, so the half-hour
     deadline would never have fired and the README would have described behaviour the bot did
     not have. Pinned here rather than left to the startup tests, which do not look at what is
-    armed.
+    armed. Results arms the sweep itself, in its amendment services, and its start-up step calls
+    that arming.
     """
     import inspect
 
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.results.services.round_amendment import amendment_writes
 
-    source = inspect.getsource(scheduler_service)
-    assert "def schedule_amendment_sweep" in source
-    assert "IntervalTrigger" in source
+    assert "def schedule_amendment_sweep" in inspect.getsource(amendment_writes)
 
     from leaguebot.results import wiring
 
     arming = inspect.getsource(wiring.arm_amendment_sweep)
-    assert "schedule_amendment_sweep()" in arming
+    assert "schedule_amendment_sweep(" in arming
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: results does not yet hold the amendment sweep's interval"
+)
 def test_the_sweep_runs_often_enough_to_honour_the_deadline():
     """Sweeping less often than the deadline would let a lapsed amendment sit past it.
 
     Not exactly at the deadline — a round nobody is working on can wait a few minutes — but the
     interval has to be the smaller of the two or the timeout means nothing.
     """
-    from leaguebot.core.services.scheduler_service import AMENDMENT_SWEEP_MINUTES
+    from leaguebot.results.services.round_amendment.amendment_writes import (
+        AMENDMENT_SWEEP_MINUTES,
+    )
 
     assert AMENDMENT_SWEEP_MINUTES * 60 < AMENDMENT_STAGE_TIMEOUT_SECONDS
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: results does not yet arm its amendment sweep through arm_every"
+)
 def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     """A job that re-arms itself from inside its body stops for good the first time it raises.
 
-    The same reasoning `schedule_portrait_refresh` gives for using a cron trigger. The sweep is
-    armed with no lateness limit (`misfire_grace_time=None`), so one due while the bot was down
-    runs when it is back (architecture.md, "Timed work and restarts").
+    The same reasoning `schedule_portrait_refresh` gives for using a cron trigger. Results arms
+    the sweep once, through the scheduler's generic repeating call, under `amend_sweep` and the
+    kind `amendment_sweep`, every `AMENDMENT_SWEEP_MINUTES`: the scheduler re-arms it, and
+    results arms nothing else. That call arms with no lateness limit, so one due while the bot
+    was down runs when it is back (architecture.md, "Timed work and restarts").
     """
-    import inspect
+    from leaguebot.results.services.round_amendment.amendment_writes import (
+        AMENDMENT_SWEEP_MINUTES,
+        schedule_amendment_sweep,
+    )
 
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    scheduler = MagicMock()
+    schedule_amendment_sweep(scheduler)
 
-    service = SchedulerService.__new__(SchedulerService)
-    service._scheduler = MagicMock()
-    service.schedule_amendment_sweep()
-
-    [armed] = service._scheduler.add_job.call_args_list
-    job = inspect.getsource(armed.args[0])
-    assert "add_job" not in job
-    assert "except Exception" in job
-    assert armed.kwargs["misfire_grace_time"] is None
+    [armed] = scheduler.arm_every.call_args_list
+    named = dict(zip(("job_id", "kind", "minutes", "name"), armed.args)) | armed.kwargs
+    assert (named["job_id"], named["kind"], named["minutes"]) == (
+        "amend_sweep", "amendment_sweep", AMENDMENT_SWEEP_MINUTES,
+    )
+    assert [call[0] for call in scheduler.method_calls] == ["arm_every"]
 
 
 @pytest.mark.xfail(
@@ -580,6 +593,37 @@ async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
         await job.func(*job.args, **job.kwargs)
 
         assert calls == [()]
+    finally:
+        service._scheduler.shutdown(wait=False)
+        service._scheduler._jobstores["default"].engine.dispose()
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#544: results has no cancelling of its amendment sweep of its own yet"
+)
+def test_cancelling_the_sweep_removes_it_and_tolerates_a_second_call(tmp_path, monkeypatch):
+    """Results arms its sweep on a scheduler, then cancels it twice, as turning results off
+    twice would: the scheduler holds no `amend_sweep` job, and the second cancel, finding none,
+    is not an error."""
+    from leaguebot.core.services import scheduler_service
+    from leaguebot.results.services.round_amendment.amendment_writes import (
+        cancel_amendment_sweep,
+        schedule_amendment_sweep,
+    )
+
+    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
+    service = scheduler_service.SchedulerService(
+        str(tmp_path / "bot.db"), str(tmp_path / "jobs.db")
+    )
+    try:
+        service.start(paused=True)
+        schedule_amendment_sweep(service)
+        assert service._scheduler.get_job("amend_sweep") is not None
+
+        cancel_amendment_sweep(service)
+        cancel_amendment_sweep(service)
+
+        assert service._scheduler.get_job("amend_sweep") is None
     finally:
         service._scheduler.shutdown(wait=False)
         service._scheduler._jobstores["default"].engine.dispose()

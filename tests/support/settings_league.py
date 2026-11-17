@@ -83,6 +83,15 @@ def portrait_refresh_times(scheduler: Any) -> list[str]:
     ]
 
 
+def amendment_sweep_armings(scheduler: Any) -> int:
+    """How many times the scheduler double was asked to arm results' amendment sweep through its
+    generic repeating call (`arm_every`)."""
+    return sum(
+        1 for call in scheduler.arm_every.call_args_list
+        if _argument(call, "job_id", 0) == "amend_sweep"
+    )
+
+
 def portrait_refresh_cancels(scheduler: Any) -> int:
     """How many times the scheduler double was asked to remove image's daily portrait refresh."""
     return sum(

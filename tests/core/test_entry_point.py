@@ -890,6 +890,9 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 _RECOVERIES_GIVEN_THE_DATABASE_PATH = frozenset({"missed phases", "missed forecast clean-ups"})
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#544: results has no arming of its amendment sweep of its own yet"
+)
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read
@@ -922,7 +925,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     `closing_steps`, is handed the bot and its queue, whose clock judges each 24 hours; the held
     signup channels' catch-up, `recover_held_channels` in `closing_steps`, is handed the bot and
     its queue, whose clock judges each hold; the
-    amendment sweep arms the bot's scheduler's sweep; and each other
+    amendment sweep hands results' own arming of it the bot's scheduler; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
     service does not look the queue up on the bot; each of the others in its module's wiring, but
@@ -939,7 +942,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.core.services.modules import hub_service
-    from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.framework.utils.hooks import StartingHook
     from tests.support.review_prompts import store_review_prompt
 
@@ -959,8 +961,10 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
     monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
     monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
-    monkeypatch.setattr(SchedulerService, "schedule_amendment_sweep",
-                        scheduling("schedule_amendment_sweep"))
+    monkeypatch.setattr(
+        "leaguebot.results.services.round_amendment.amendment_writes.schedule_amendment_sweep",
+        scheduling("schedule_amendment_sweep"),
+    )
 
     signed_up: list[tuple] = []
     subscribe = StartingHook.subscribe
