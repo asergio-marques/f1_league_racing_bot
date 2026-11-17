@@ -147,9 +147,6 @@ def _words_in_code(tree) -> set[str]:
     return words
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: the module service still has a switch reader named for each module"
-)
 def test_the_module_service_names_no_module():
     """The framework's switch service knows no module: a module is the key a caller hands
     `is_enabled`, and the service keeps no reader named for one (architecture.md, "How modules and

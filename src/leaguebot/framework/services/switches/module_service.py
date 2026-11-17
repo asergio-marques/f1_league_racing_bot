@@ -1,12 +1,13 @@
-"""ModuleService — answers whether each optional module is on: weather, signup, results,
-attendance and images. Each module's flag is written by that module's own switch, a `Setting` on
-the change queue (`<module>/services/module_switch_settings.py`), never by this service.
+"""ModuleService — answers whether a module is on, by the key the module's switch is signed up
+under. Each module's flag is written by that module's own switch, a `Setting` on the change queue
+(`<module>/services/module_switch_settings.py`), never by this service.
 
-**A module's switch is asked of the module.** The service reads no module's table or column: each
-module signs up the reader of its own switch (`register_switch`, from the builder), and
-`is_<module>_enabled` hands that reader a connection to the league's database and gives back its
-answer. A module that never signed up is a fault in the bot's assembly, and asking for it raises
-`SwitchNotSignedUp`, a `LookupError`, naming it, rather than reading as off.
+**A module's switch is asked of the module.** The service reads no module's table or column, and
+names no module: each module signs up the reader of its own switch under a key of its own
+(`register_switch`, from the builder), and `is_enabled(key)` hands that reader a connection to the
+league's database and gives back its answer. A module that never signed up is a fault in the bot's
+assembly, and asking for it raises `SwitchNotSignedUp`, a `LookupError`, naming it, rather than
+reading as off.
 """
 from __future__ import annotations
 
@@ -56,18 +57,3 @@ class ModuleService:
         `SwitchNotSignedUp`, which the caller reports and never reads as off."""
         async with get_connection(self._db_path) as db:
             return await self.is_enabled_on(db, module)
-
-    async def is_weather_enabled(self) -> bool:
-        return await self.is_enabled("weather")
-
-    async def is_signup_enabled(self) -> bool:
-        return await self.is_enabled("signup")
-
-    async def is_results_enabled(self) -> bool:
-        return await self.is_enabled("results")
-
-    async def is_attendance_enabled(self) -> bool:
-        return await self.is_enabled("attendance")
-
-    async def is_images_enabled(self) -> bool:
-        return await self.is_enabled("images")
