@@ -158,16 +158,42 @@ class DrawnNotices:
     link: str | None = None
 
 
-#: The key under which a post job keeps, in the result of the stop it raises, the lines its picture
-#: was drawn with, so that the try after it hands them back with its own.
+#: The keys under which a post job keeps, in the result of the stop it raises, the lines its picture
+#: was drawn with, the notices the picture came back with, and the index among those lines of the
+#: one that holds the notices, so that the try after it hands them back with its own.
 DRAWN_LINES = "drawn_lines"
+DRAWN_NOTICES = "drawn_notices"
+DRAWN_LINKED = "drawn_linked"
+
+
+@dataclass(frozen=True)
+class DrawnKept:
+    """What a post job's earlier tries kept on their stops (`StepFailedOnDiscord.carrying`): the
+    *lines* a picture was drawn with, its *notices* and the index in *lines* of the one holding
+    them, None where the picture had none."""
+
+    lines: tuple[str, ...] = ()
+    notices: tuple[str, ...] = ()
+    linked: int | None = None
+
+
+def drawn_kept(kept: dict[str, Any] | None) -> DrawnKept:
+    """What a post job's earlier try kept on its stop (`StepFailedOnDiscord.carrying`), for the
+    try that follows to hand back once its post is made: a picture is drawn on the first try
+    alone, and what it had to say, its lines and its notices, must not be lost with a post
+    Discord refused."""
+    found = kept or {}
+    linked = found.get(DRAWN_LINKED)
+    return DrawnKept(
+        tuple(found.get(DRAWN_LINES) or ()),
+        tuple(found.get(DRAWN_NOTICES) or ()),
+        None if linked is None else int(linked),
+    )
 
 
 def drawn_lines_kept(kept: dict[str, Any] | None) -> tuple[str, ...]:
-    """The lines a post job's earlier try kept on its stop (`StepFailedOnDiscord.carrying`), for
-    the try that follows to hand back once its post is made: a picture is drawn on the first try
-    alone, and what it had to say must not be lost with a post Discord refused."""
-    return tuple((kept or {}).get(DRAWN_LINES) or ())
+    """The lines alone of what a post job's earlier try kept (`drawn_kept`)."""
+    return drawn_kept(kept).lines
 
 
 class StepFailedOnDiscord(Exception):
@@ -206,12 +232,25 @@ class StepFailedOnDiscord(Exception):
         self.notice = notice
         self.record = record
 
-    def carrying(self, lines: tuple[str, ...]) -> "StepFailedOnDiscord":
+    def carrying(
+        self,
+        lines: tuple[str, ...],
+        *,
+        notices: tuple[str, ...] = (),
+        linked: int | None = None,
+    ) -> "StepFailedOnDiscord":
         """Keep *lines*, the lines a picture drawn for the post came back with, in the result the
         stop saves (`DRAWN_LINES`), beside anything it already keeps; *self* is handed back so that
-        a step can raise it. A job whose picture said nothing keeps nothing more."""
+        a step can raise it. Where the picture had *notices*, they are kept with the index
+        *linked* of the line that holds them (`DRAWN_NOTICES`, `DRAWN_LINKED`), for the reply of
+        the try that posts. A job whose picture said nothing keeps nothing more."""
         if lines:
-            self.result = {**(self.result or {}), DRAWN_LINES: list(lines)}
+            kept: dict[str, Any] = {DRAWN_LINES: list(lines)}
+            if notices:
+                kept[DRAWN_NOTICES] = list(notices)
+                if linked is not None:
+                    kept[DRAWN_LINKED] = linked
+            self.result = {**(self.result or {}), **kept}
         return self
 
 

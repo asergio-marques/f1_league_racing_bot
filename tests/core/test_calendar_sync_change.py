@@ -184,7 +184,6 @@ async def test_a_calendar_sync_that_cannot_post_stops_the_queue_and_queues_nothi
     assert await _retried_posts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#550: a calendar retried as text drops its notices from the reply")
 async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     """Images on: Discord refuses the picture, drawn with one notice (round 12 not fitting), and
     the queue stops; Retry posts the textual calendar, drawing nothing again, and the log channel

@@ -40,7 +40,8 @@ from leaguebot.framework.models.change import (
     RESULT_NOTICES,
     StepResult,
     Verdict,
-    drawn_lines_kept,
+    DrawnKept,
+    drawn_kept,
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.framework.services.posting import standing_posts
@@ -405,6 +406,18 @@ def _drawn_as(division_name: str) -> str:
     return f"calendar — {division_name}"
 
 
+def _notices_index(
+    kept: DrawnKept, earlier: tuple[str, ...], notices: tuple[str, ...]
+) -> int | None:
+    """The index, among a `post_calendar` try's lines, of the one holding the calendar's notices:
+    the one an earlier try kept where it kept notices (a picture is drawn on the first try alone),
+    else this try's own, which comes first of its lines after those kept from before, and None
+    where the picture had no notices."""
+    if kept.notices:
+        return kept.linked
+    return len(earlier) if notices else None
+
+
 def _posting_lines(
     ctx: StepContext, division_name: str, posting: CalendarPosting, *, text_stands: bool
 ) -> tuple[str, ...]:
@@ -460,11 +473,14 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
     async def post_calendar(ctx: StepContext) -> StepResult:
         # What the picture said when it was drawn, on the first try, is kept with every stop that
         # follows, so that the try which posts hands it back, never lost with a refused post.
-        earlier = drawn_lines_kept(ctx.kept)
+        kept = drawn_kept(ctx.kept)
+        earlier = kept.lines
         try:
             await standing_posts.remove_kept(ctx.bot, ctx.kept)
         except StepFailedOnDiscord as stop:
-            raise stop.carrying(earlier) from stop.__cause__
+            raise stop.carrying(
+                earlier, notices=kept.notices, linked=kept.linked
+            ) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
@@ -499,10 +515,15 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             )
         except StepFailedOnDiscord as stop:
             refused = getattr(stop, POSTING_ATTRIBUTE, None)
-            raise stop.carrying(earlier + (
-                () if refused is None
-                else _posting_lines(ctx, division.name, refused, text_stands=True)
-            )) from stop.__cause__
+            drawn = () if refused is None else tuple(refused.notices)
+            raise stop.carrying(
+                earlier + (
+                    () if refused is None
+                    else _posting_lines(ctx, division.name, refused, text_stands=True)
+                ),
+                notices=kept.notices + drawn,
+                linked=_notices_index(kept, earlier, drawn),
+            ) from stop.__cause__
         lines = earlier + _posting_lines(
             ctx, division.name, posting, text_stands=posting.fell_back
         )
@@ -510,7 +531,7 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             result={
                 "division": division.name,
                 "problem": posting.problem,
-                RESULT_NOTICES: list(posting.notices),
+                RESULT_NOTICES: [*kept.notices, *posting.notices],
                 RESULT_DRAWN: _drawn_as(division.name),
                 "rejected": posting.problem is not None and posting.message_id is None,
                 "posted_as_image": posting.posted_as_image,
@@ -519,8 +540,7 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
                 "channel_id": posting.channel_id,
             },
             lines=lines,
-            # The notices line comes first of this try's own, after the lines kept from before.
-            linked=len(earlier) if posting.notices else None,
+            linked=_notices_index(kept, earlier, tuple(posting.notices)),
             # A posting that put nothing up (a commanded render that failed) replaces nothing.
             then=standing_posts.replaced(
                 posting.channel_id, division.calendar_message_id, posting.message_id,
