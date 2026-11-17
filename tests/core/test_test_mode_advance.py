@@ -557,7 +557,7 @@ async def _noop(kind: str, key: int) -> None:
     return None
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds (sign_up_kinds) and arm no leads (arm_leads) yet")
 async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens(tmp_path):
     """A weather-enabled season carries a real future-dated results job; left armed it
     would open a second submission channel after advance had already opened one.
@@ -585,7 +585,12 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
             )
             for round_id, number in ((ROUND_ID, 3), (ROUND_ID + 1, 4))
         ]
-        round_jobs.schedule_result_submission_jobs(rounds, division_meta={DIVISION_ID: (1, 1)})
+        from leaguebot.core.models.round import RoundLead
+
+        submission = RoundLead(kind="results", offset=timedelta(0), label="Result submission",
+                               run_at_once=True, left_to_advance=True)
+        for rnd in rounds:
+            round_jobs.arm_leads(rnd, (submission,), 1, 1, datetime.now(timezone.utc))
         weather_job = f"weather_p3_s1_d1_r3_id{ROUND_ID}"
         service._scheduler.add_job(
             _noop, "date", run_date=later, id=weather_job,

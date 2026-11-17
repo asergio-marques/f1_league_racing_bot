@@ -59,6 +59,7 @@ from tests.support.season_league import (
     TEST_DRIVER,
     DIVISIONS,
     approval_changes,
+    leads_armed,
     post_review,
     press_approve,
     reply,
@@ -911,6 +912,7 @@ async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch
     assert (await _approval(league))["state"] == "DONE"
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads), results answering for its submission")
 @pytest.mark.parametrize("test_mode", [False, True], ids=["test mode off", "test mode on"])
 async def test_a_season_with_weather_and_results_off_arms_a_result_submission_for_each_round(
     tmp_path, monkeypatch, test_mode,
@@ -921,12 +923,14 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
 
     await run_queue(league.bot)
 
-    arm = league.bot.round_jobs.schedule_result_submission_jobs
-    assert arm.call_count == 1, league.armed
-    assert league.armed == [("results", _all_rounds())]
-    assert arm.call_args.kwargs["division_meta"] == {
-        division: (SEASON_NUMBER, DIVISIONS[division][1]) for division in (PRO, AM)
-    }
+    armed = leads_armed(league.bot.round_jobs)
+    assert sorted(each["rnd"].id for each in armed) == sorted(_all_rounds()), league.armed
+    for each in armed:
+        assert [lead.kind for lead in each["leads"]] == ["results"]
+        assert (each["season_number"], each["division_tier"]) == (
+            SEASON_NUMBER, DIVISIONS[each["rnd"].division_id][1]
+        )
+    assert {each["now"] for each in armed} == {league.clock.now}
 
 
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
@@ -1001,7 +1005,7 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     league.arming_fails = None
     await retry_job(league.bot)
 
-    assert league.armed == [("results", _all_rounds())]
+    assert _armed(league) == {"results": sorted(_all_rounds())}
     assert await stopped_job(league.db_path) is None
     assert APPROVED in reply(press)
     assert "timed work was not armed" not in reply(press)

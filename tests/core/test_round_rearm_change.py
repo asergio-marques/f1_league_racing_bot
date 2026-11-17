@@ -35,6 +35,7 @@ from tests.support.season_league import (
     ongoing_league,
     posted_forecast,
     round_id,
+    run_at_once,
 )
 
 PRO_CH = DIVISIONS[PRO][3]
@@ -152,6 +153,7 @@ async def test_a_re_arming_arms_the_round_as_it_stands_and_catches_up_the_phases
     assert await _calls_posted(league) == [R3]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no lead run at once yet (run_lead_now)")
 async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submission_at_once(
     tmp_path,
 ):
@@ -166,8 +168,7 @@ async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submi
 
     assert await stopped_job(league.db_path) is None
     assert ("results", [R3]) in league.armed
-    opened = league.bot.round_jobs.run_result_submission_now
-    assert [call.args[0].id for call in opened.call_args_list] == [R3]
+    assert run_at_once(league.bot.round_jobs) == [(R3, "results")]
 
 
 async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tmp_path):
@@ -183,7 +184,7 @@ async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tm
 
     assert await stopped_job(league.db_path) is None
     assert ("results", [R3]) not in league.armed
-    league.bot.round_jobs.run_result_submission_now.assert_not_called()
+    assert run_at_once(league.bot.round_jobs) == []
 
 
 @pytest.mark.parametrize("case", [
@@ -325,7 +326,7 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     assert league.armed == [("cleanups", [R3])]
     arming = league.bot.round_jobs.schedule_round_cleanups
     assert arming.call_args.kwargs["now"] == league.clock.now
-    league.bot.round_jobs.run_result_submission_now.assert_not_called()
+    assert run_at_once(league.bot.round_jobs) == []
 
 
 async def test_a_raced_round_s_clean_ups_already_due_run_at_once(tmp_path):

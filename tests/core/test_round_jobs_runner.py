@@ -87,12 +87,21 @@ def _arm_cleanups(round_jobs: Any, rnd: Any) -> None:
     round_jobs.schedule_round_cleanups(rnd, season_number=7, division_tier=1, now=_now())
 
 
+def _submission() -> Any:
+    """Results' lead for a round's submission, as results answers it: at the round's moment, run
+    at once where that moment has passed, and left to `/test-mode advance` where core says so."""
+    from leaguebot.core.models.round import RoundLead
+
+    return RoundLead(kind="results", offset=timedelta(0), label="Result submission",
+                     run_at_once=True, left_to_advance=True)
+
+
 def _arm_results_only(round_jobs: Any, rnd: Any) -> None:
-    round_jobs.schedule_result_submission_jobs([rnd], division_meta={11: (7, 1)})
+    round_jobs.arm_leads(rnd, (_submission(),), 7, 1, _now())
 
 
 def _arm_results_now(round_jobs: Any, rnd: Any) -> None:
-    round_jobs.run_result_submission_now(rnd, season_number=7, division_tier=1)
+    round_jobs.run_lead_now(rnd, _submission(), 7, 1)
 
 
 #: Every kind of round job, with the call of core's round jobs that arms it and the id it is
@@ -107,9 +116,11 @@ EVERY_ROUND_JOB = [
     pytest.param("cleanup", _arm_round, f"cleanup{_ROUND_SUFFIX}", id="cleanup-schedule_round"),
     pytest.param("results", _arm_round, f"results{_ROUND_SUFFIX}", id="results-schedule_round"),
     pytest.param("results", _arm_results_only, f"results{_ROUND_SUFFIX}",
-                 id="results-schedule_result_submission_jobs"),
+                 id="results-arm_leads",
+                 marks=pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")),
     pytest.param("results", _arm_results_now, f"results{_ROUND_SUFFIX}",
-                 id="results-run_result_submission_now"),
+                 id="results-run_lead_now",
+                 marks=pytest.mark.xfail(strict=True, reason="#544: core runs no lead at once yet (run_lead_now)")),
     pytest.param("rsvp_notice", _arm_check_in, f"rsvp_notice{_ROUND_SUFFIX}",
                  id="rsvp_notice-schedule_attendance_round"),
     pytest.param("rsvp_last_notice", _arm_check_in, f"rsvp_last_notice{_ROUND_SUFFIX}",

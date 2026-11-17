@@ -58,6 +58,7 @@ from tests.support.season_league import (
     posted_forecast,
     profile_id,
     round_id,
+    run_at_once,
 )
 from tests.support.mentions import NOBODY, notified
 
@@ -1337,6 +1338,7 @@ async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_once_
     assert reposts.posted == [(R3, PRO)]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no lead run at once yet (run_lead_now)")
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_its_results_submission(
     tmp_path, ending,
@@ -1364,8 +1366,7 @@ async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_it
     assert await stopped_job(league.db_path) is None
     assert await _moment(league) == before
     assert await _status(league) == "NOT_RUN"
-    opened = league.bot.round_jobs.run_result_submission_now
-    assert [call.args[0].id for call in opened.call_args_list] == [R3]
+    assert run_at_once(league.bot.round_jobs) == [(R3, "results")]
 
 
 async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_run_once_it_is_discarded(

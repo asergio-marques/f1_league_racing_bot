@@ -63,6 +63,7 @@ from tests.support.season_league import (
     profile_id,
     reply,
     round_id,
+    run_at_once,
     seed_season_end,
 )
 
@@ -925,6 +926,7 @@ async def _rearmings(league: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no lead run at once yet (run_lead_now)")
 async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_again_only_the_rounds_still_to_be_run(
     tmp_path,
 ):
@@ -977,8 +979,7 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
     assert armed_whole == {R3, R4}
     assert not {rid for which, ids in league.armed if which == "cleanups" for rid in ids} & {
         R3, R4}
-    opened = round_jobs.run_result_submission_now
-    assert [call.args[0].id for call in opened.call_args_list] == [R4]
+    assert run_at_once(round_jobs) == [(R4, "results")]
 
 
 async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_the_clean_ups_of_a_round_that_ended_cancelled_as_not_held(

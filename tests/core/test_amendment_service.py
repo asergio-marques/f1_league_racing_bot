@@ -30,6 +30,7 @@ from tests.support.season_league import (
     ongoing_league,
     posted_forecast,
     profile_id,
+    leads_armed,
     round_id,
 )
 
@@ -523,37 +524,43 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads), results answering for its submission")
 async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path):
-    """`schedule_round` builds the weather jobs and the results job together.
+    """The result submission once came only with the weather jobs.
 
-    So with weather switched off it was never called, and the amendment's cancel took the
+    So with weather switched off it was never armed, and the amendment's cancel took the
     round's results job with nothing putting it back. That job is the round's one clock-driven
     status transition — without it the round never leaves NOT_RUN, its division never finishes,
-    and its season can never be completed.
+    and its season can never be completed. Results answers with its submission whatever the
+    modules.
 
-    Weather and attendance off; Am's round 3 (season 3, tier 2) moved from 90 to 100 days out.
+    Weather and attendance off; Am's round 3 (season 3, tier 2) moved from 90 to 100 days out:
+    the round is armed once, with results' submission alone, under season 3 and tier 2.
     """
     league = await ongoing_league(tmp_path)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    arming = league.bot.round_jobs.schedule_result_submission_jobs
-    arming.assert_called_once()
-    assert [r.id for r in arming.call_args.args[0]] == [AM_3]
-    assert arming.call_args.kwargs["division_meta"] == {AM: (3, 2)}
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert armed["rnd"].id == AM_3
+    assert [lead.kind for lead in armed["leads"]] == ["results"]
+    assert (armed["season_number"], armed["division_tier"]) == (3, 2)
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads), results answering for its submission")
 async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
-    """With weather on, `schedule_round` has already created it — arming again would duplicate.
-    Am's round 3 moved from 90 to 100 days out."""
+    """With weather on, the round's forecasts and its result submission are armed together, and
+    the submission once only: arming it again would duplicate. Am's round 3 moved from 90 to 100
+    days out is armed once, its leads holding one result submission."""
     league = await ongoing_league(tmp_path, weather=True)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    league.bot.round_jobs.schedule_round.assert_called_once()
-    league.bot.round_jobs.schedule_result_submission_jobs.assert_not_called()
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert [lead.kind for lead in armed["leads"]].count("results") == 1
+    assert league.armed == [("weather", [AM_3])]
 
 
 # ---------------------------------------------------------------------------

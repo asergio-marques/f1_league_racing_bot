@@ -19,7 +19,8 @@ view the builder's factory makes (`_approve_view_for`), as the queue's post job 
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
 the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
 them, attendance's settings through `_attendance`, and a real `SeasonCog` holds the season's setup
-in memory. Core's round jobs are a double recording each `schedule_*` call in `league.armed`. The
+in memory. Core's round jobs are a double recording each `schedule_*` and `arm_leads` call in
+`league.armed`; `run_at_once` reads what it was asked to run at once (`run_lead_now`). The
 league's server holds every channel above, the review's channel (610) among them, the roles above
 and the three drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer
 otherwise.
@@ -156,6 +157,45 @@ def round_id(division_id: int, number: int) -> int:
     return division_id * 10 + number
 
 
+def _armed_as(leads: tuple[Any, ...]) -> list[str]:
+    """What a round's *leads* arm, as `league.armed` names it: `"cleanups"` where every one is a
+    clean-up; otherwise `"weather"` for the forecasts with the result submission, `"forecasts"` for
+    forecasts armed without it (which no test expects), `"results"` for the submission alone, then
+    `"attendance"` for the check-in. A round handed no lead arms nothing."""
+    kinds = {lead.kind for lead in leads}
+    if not kinds:
+        return []
+    if all(lead.clean_up for lead in leads):
+        return ["cleanups"]
+    armed = []
+    if any(kind.startswith("weather_p") for kind in kinds):
+        armed.append("weather" if "results" in kinds else "forecasts")
+    elif "results" in kinds:
+        armed.append("results")
+    if any(kind.startswith("rsvp_") for kind in kinds):
+        armed.append("attendance")
+    return armed
+
+
+def leads_armed(round_jobs: Any) -> list[dict[str, Any]]:
+    """What core's round jobs double was handed to arm (`arm_leads`), call by call: the round
+    (``rnd``), its leads (``leads``), ``season_number``, ``division_tier`` and ``now``, whether
+    handed by position or by name."""
+    names = ("rnd", "leads", "season_number", "division_tier", "now")
+    return [{**dict(zip(names, call.args)), **call.kwargs}
+            for call in round_jobs.arm_leads.call_args_list]
+
+
+def run_at_once(round_jobs: Any) -> list[tuple[int, str]]:
+    """What core's round jobs double was asked to run at once (`run_lead_now`), in order: the
+    round's id and the kind of the lead run."""
+    runs = []
+    for call in round_jobs.run_lead_now.call_args_list:
+        handed = {**dict(zip(("rnd", "lead"), call.args)), **call.kwargs}
+        runs.append((handed["rnd"].id, handed["lead"].kind))
+    return runs
+
+
 def profile_id(user_id: int) -> int:
     return user_id - 60
 
@@ -170,8 +210,10 @@ class SeasonLeague:
         self.events: list[tuple[str, int, int]] = []
         #: Every exception a press raised, as the bot's error handler would have caught it.
         self.errors: list[BaseException] = []
-        #: Each `schedule_*` call: (which, the round ids it was handed). `"cleanups"` is a raced
-        #: round's two clean-ups armed alone (`schedule_round_cleanups`).
+        #: Each `schedule_*` call, and each round's leads armed (`arm_leads`), by the timed work
+        #: it arms: (which, the round ids it was handed). `"weather"` is the forecasts with the
+        #: result submission, `"results"` the submission alone, `"attendance"` the check-in, and
+        #: `"cleanups"` a raced round's clean-ups armed alone (`_armed_as`).
         self.armed: list[tuple[str, list[int]]] = []
         #: The roles each member was granted, in order.
         self.granted: dict[int, list[int]] = {}
@@ -229,6 +271,7 @@ class SeasonLeague:
         round_jobs.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
         round_jobs.schedule_round = MagicMock(side_effect=self._arm("weather"))
         round_jobs.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
+        round_jobs.arm_leads = MagicMock(side_effect=self._arm_leads)
         self.bot = bot = await league_bot(db_path, round_jobs=round_jobs, real_config=True)
         ids = [REVIEW_CHANNEL]
         for _name, _tier, _role, chans in DIVISIONS.values():
@@ -357,9 +400,28 @@ class SeasonLeague:
             if self.arming_fails is not None:
                 raise self.arming_fails
             handed = rounds if isinstance(rounds, (list, tuple)) else [rounds]
-            self.armed.append((which, [r.id for r in handed]))
+            self._note(which, [r.id for r in handed])
 
         return _record
+
+    def _arm_leads(self, rnd: Any, leads: Any = (), *_args: Any, **kwargs: Any) -> None:
+        """`arm_leads`' double: *rnd*'s *leads* noted as the timed work they arm (`_armed_as`)."""
+        if self.arming_fails is not None:
+            raise self.arming_fails
+        for which in _armed_as(tuple(kwargs.get("leads", leads))):
+            self._note(which, [rnd.id])
+
+    def _note(self, which: str, round_ids: list[int]) -> None:
+        """*which* noted armed for *round_ids*. A result submission armed for rounds whose
+        forecasts are armed already is theirs (`"weather"` arms both), whichever is armed first."""
+        if which == "results" and any(
+            each == "weather" and set(round_ids) <= set(ids) for each, ids in self.armed
+        ):
+            return
+        if which == "weather":
+            self.armed[:] = [(each, ids) for each, ids in self.armed
+                             if not (each == "results" and set(ids) <= set(round_ids))]
+        self.armed.append((which, round_ids))
 
     async def _attendance(self) -> Any:
         async with get_connection(self.db_path) as db:

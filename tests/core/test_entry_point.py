@@ -348,6 +348,14 @@ _WINDOWS_PARTS = (
 )
 
 
+#: Each module's subscriber to a round's leads read (`round_leads_read`), as the module names it,
+#: and what the test calls it, in the order the builder signs them up.
+_LEADS_PARTS = (
+    ("leaguebot.results.services.submission.round_start", "submission_leads",
+     "results' submission"),
+)
+
+
 #: Each module's part of a round amended, as the module names it: the moment's hook on the bot,
 #: the module, the subscriber, and what the test calls it, in the order the builder signs them up.
 _AMENDMENT_PARTS = (
@@ -363,6 +371,8 @@ _AMENDMENT_PARTS = (
      "attendance's posts"),
     ("round_armed", "leaguebot.weather.services.forecast_amendment", "round_armed",
      "weather's posts"),
+    ("round_armed", "leaguebot.results.services.submission.round_start", "round_armed",
+     "results' submission"),
     ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
      "weather's clean-ups"),
     ("round_clean_ups_due", "leaguebot.attendance.services.check_in.check_in_amendment",
@@ -503,6 +513,7 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: the builder makes no round_leads_read hook, and results answers neither it nor round_armed yet")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -515,11 +526,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     module plans, results' deletion of a submission channel, attendance's take-down of a call,
     attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
     forecast note and results' results note. A round's timing windows read: attendance's window,
-    then weather's, each handed whether the round is being amended. A round amended: as it is judged,
+    then weather's, each handed whether the round is being amended. A round's leads read: results'
+    submission. A round amended: as it is judged,
     attendance's judgement of its check-in, then weather's of its forecasts; inside the
     save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's reopening
-    of its check-in; as the round is armed again, the posts each owes, attendance's then weather's,
-    then the clean-ups due a day after the round, weather's then attendance's; the steps each
+    of its check-in; as the round is armed again, the posts and timers each owes, attendance's then
+    weather's then results' submission, then the clean-ups due a day after the round, weather's then attendance's; the steps each
     defines, weather's then attendance's, under the names the amendment gives them today; and the
     words an outcome gives a step that was not done, weather's for a forecast, then attendance's
     for its check-in. A season's end: what
@@ -576,7 +588,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
             cancellation_handed.append(args)
         monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
                             raising=False)
-    for module_name, name, part in _WINDOWS_PARTS:
+    for module_name, name, part in (*_WINDOWS_PARTS, *_LEADS_PARTS):
         async def window_spy(*_args, part=part, **_kwargs):
             called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, window_spy,
@@ -651,6 +663,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     called.clear()
     await bot.round_windows_read.call()
     assert called == ["attendance's window", "weather's window"]
+    called.clear()
+    await bot.round_leads_read.call()
+    assert called == [part for _module, _name, part in _LEADS_PARTS]
     for hook in ("amendment_judged", "round_amended", "round_armed", "round_clean_ups_due"):
         called.clear()
         await getattr(bot, hook).call(None, 0)
@@ -819,6 +834,31 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
         AttendanceWindows(*_ATTENDANCE_SET) if attendance_on else None,
         WeatherWindows(*_WEATHER_SET) if weather_on else None,
     )
+
+
+@pytest.mark.xfail(strict=True, reason="#544: the builder makes no round_leads_read hook, nor does results answer it yet")
+@pytest.mark.parametrize("results_on", [False, True], ids=["results off", "results on"])
+async def test_results_answers_its_submission_lead_whether_on_or_off(tmp_path, results_on):
+    """A league with weather and attendance off and results on or off. Asked for a round's leads
+    through the hook the builder makes (`round_leads_read`), results alone answers, on or off: one
+    lead, its submission, stored as `results`, at the round's own moment (no offset), named
+    "Result submission", run at once where its moment has passed and left to `/test-mode advance`
+    where core says so, armed whatever the hour, no clean-up, and quoted by no date check."""
+    from leaguebot.core.models.round import RoundLead
+    from tests.support.change_queue import seed_server
+    from tests.support.season_league import set_module_flag
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    await seed_server(bot.db_path)
+    for name, on in (("weather", False), ("attendance", False), ("results", results_on)):
+        await set_module_flag(bot.db_path, name, on)
+
+    handed = await bot.round_leads_read.call()
+
+    assert [lead for leads in handed for lead in leads or ()] == [
+        RoundLead(kind="results", offset=timedelta(0), label="Result submission",
+                  run_at_once=True, left_to_advance=True)
+    ]
 
 
 async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):

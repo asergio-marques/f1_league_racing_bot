@@ -5,16 +5,15 @@ same ids, names and moments as the scheduler armed them before it.
 
 Its starting, pausing and shutting down are in `tests/framework/test_scheduler_lifecycle.py`.
 
-Issue #208. `schedule_all_rounds`, `schedule_result_submission_jobs`, the signup close timer and
-the season-end cancellation were uncovered. They are thin, and each has one property that matters
-more than its size suggests. What every job is stored with, and that each kind's handler is reached
-through the one runner, is pinned in `test_round_jobs_runner.py`.
+Issue #208. `schedule_all_rounds`, the signup close timer and the season-end cancellation were
+uncovered. They are thin, and each has one property that matters more than its size suggests. What
+every job is stored with, and that each kind's handler is reached through the one runner, is pinned
+in `test_round_jobs_runner.py`.
 
-**A results-only league still gets its submission jobs.** `schedule_round` arms weather and
-results together; a league with results on and weather off never calls it, so
-`schedule_result_submission_jobs` arms the submission alone, at the round's start time, under
-the same id-suffix rule every round job uses — the round id is in it, so renumbering cannot
-make one round's job overwrite another's.
+**Every lead is armed under the round's id.** Each module hands core the leads it wants set for a
+round, results its submission among them, and `arm_leads` arms each under the same id-suffix rule
+every round job uses — the round id is in it, so renumbering cannot make one round's job overwrite
+another's.
 
 **Re-arming the signup timer replaces it.** A manager who changes the close time must not end
 up with two closes, and the job id is per server for that reason.
@@ -95,49 +94,17 @@ def test_schedule_all_rounds_passes_each_rounds_own_division(monkeypatch):
     ]
 
 
-def test_a_results_only_league_gets_a_submission_job_per_round():
-    service = _service()
-
-    _round_jobs(service).schedule_result_submission_jobs(
-        [_round(21), _round(22, number=4)], division_meta={11: (7, 1)}
-    )
-
-    assert [c.kwargs["id"] for c in _added(service)] == [
-        "results_s7_d1_r3_id21", "results_s7_d1_r4_id22",
-    ]
-
-
-def test_the_submission_job_fires_at_the_round_start():
-    service = _service()
-
-    _round_jobs(service).schedule_result_submission_jobs([_round()], division_meta={11: (7, 1)})
-
-    trigger = _added(service)[0].kwargs["trigger"]
-    assert trigger.run_date == datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
-
-
-def test_the_submission_job_id_carries_the_round_id():
-    """So renumbering cannot make one round's job overwrite another's."""
-    service = _service()
-
-    _round_jobs(service).schedule_result_submission_jobs(
-        [_round(21, number=3)], division_meta={11: (7, 1)}
-    )
-
-    job = _added(service)[0].kwargs
-    assert job["id"] == "results_s7_d1_r3_id21"
-    assert job["replace_existing"] is True
-
-
+@pytest.mark.xfail(strict=True, reason="#544: core runs no lead at once yet (run_lead_now)")
 def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late():
     """A round whose moment passed while its timed work stood removed (an amendment stopped on
-    the change queue) has its results submission run at once: the round's own job, under its
-    id, armed with no trigger, which APScheduler runs at once, and with no lateness limit."""
+    the change queue) has its results submission, the lead marked to run at once, run at once:
+    the round's own job, under its id, armed with no trigger, which APScheduler runs at once,
+    and with no lateness limit."""
     service = _service()
+    lead = _lead("results", timedelta(0), "Result submission", run_at_once=True,
+                 left_to_advance=True)
 
-    _round_jobs(service).run_result_submission_now(
-        _round(21, number=3), season_number=7, division_tier=1
-    )
+    _round_jobs(service).run_lead_now(_round(21, number=3), lead, 7, 1)
 
     [added] = _added(service)
     assert added.kwargs.get("trigger") is None
