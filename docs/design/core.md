@@ -147,6 +147,9 @@ then deletes its own, and the caller commits. The builder makes these hooks in
 | `profiles_merged` | attendance, results | `DriverService._merge` |
 | `bot_packed` | signup, weather, attendance, results, image | `pack_service.pack` |
 
+A part may also hand the pack back the ids of the jobs it keeps (`KEPT_JOB_IDS`), as image's does
+for its daily portrait refresh; the pack keeps their union.
+
 `test_every_delete_leaves_no_orphan` fills one row in every table and runs each kind of delete
 against it; `test_a_merge_leaves_nothing_naming_the_driver_absorbed` does the same for a merge.
 
@@ -429,8 +432,9 @@ the core specification's ("When the bot stops").
 
 `SchedulerService` (`framework/services/jobs/scheduler.py`, the framework's) is the one place a job
 is armed, found or removed, and names no round, module or kind of job: it arms a job at the id,
-kind and moment it is handed. **Its job store is a SQLite file of its own**, apart from the league's database, for the
-reason its module docstring gives: the store writes synchronously on the event loop's thread.
+kind and moment it is handed. **Its job store is a SQLite file of its own**, apart from the
+league's database, for the reason its module docstring gives: the store writes synchronously on
+the event loop's thread.
 
 Every job runs through one module-level callable, `_one_off_timer_job`, which looks up the handler
 the builder registered for the job's kind (`register_timer`) and hands it the job's key: a round's
@@ -441,14 +445,15 @@ interaction for its own
 A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and restarts").
 
 `RoundJobs` (`core/services/rounds/round_jobs.py`, on the bot as `round_jobs`) is core's side: it
-arms and cancels a round's jobs, removes any stale season-end job, and reads test mode's pending jobs
-and queued events, through the scheduler's generic calls. A round's job is named from the round's id and its
-kind (`_round_job_suffix`). The services that arm or cancel a round's jobs are handed it by the
-builder, a module's wiring or a cog; the cogs, the wirings and the builder alone read `bot.round_jobs`.
-It is handed the database path as well as the scheduler, to read the rounds it cancels for (`cancel_live_rounds`,
-which weather's switch-off asks for its own kinds), and holds the scheduler under a name other than
-`_scheduler`, so that nothing reaches past it. A module's own standing job (image's daily portrait
-refresh, results' amendment sweep) is armed by a function of that module's, through the same calls.
+arms and cancels a round's jobs, removes any stale season-end job, and reads test mode's pending
+jobs and queued events, through the scheduler's generic calls. A round's job is named from the
+round's id and its kind (`_round_job_suffix`). The services that arm or cancel a round's jobs are
+handed it by the builder, a module's wiring or a cog; the cogs, the wirings and the builder alone
+read `bot.round_jobs`. It is handed the database path as well as the scheduler, to read the rounds
+it cancels for (`cancel_live_rounds`, which weather's switch-off asks for its own kinds). It holds
+the scheduler under a name other than `_scheduler`, which the check that nothing reaches past the
+scheduler reads as a reach wherever it appears outside the scheduler. A module's own standing job
+is its module's (`architecture.md`, "Timed work and restarts").
 
 ### Core's own timed events
 
@@ -462,22 +467,23 @@ start-up's step for expired review prompts, core's first, asks the take-down fir
 scheduler is paused until start-up ends.
 
 **A round's timed work is armed by three changes**: the season's approval (its `ARM` job), and the
-amendment and re-arming of a round (`round_amend_change`), through `RoundJobs`' arming
-functions. Each reads when a round's events fall from `round_event_moments`
+amendment and re-arming of a round (`round_amend_change`), through `RoundJobs`' arming functions.
+Each reads when a round's events fall from `round_event_moments`
 (`core/services/rounds/round_moments.py`), which is pure: no database, no clock, no scheduler. A
-cancellation removes a round's work (`RoundJobs.cancel_round`, `cancel_rounds`) before its save. Whether a
-module's work is armed, and with what, is that module's answer through `round_armed`, a `RoundArming`
-of its steps and its jobs (weather's `ForecastJobs`, attendance's `CheckInJobs`); the arming step
-makes the scheduler's calls from them and arms the results submission whatever they answer. A round
-already raced, or ended not held, is armed its clean-ups alone, by `schedule_round_cleanups`, from the
-modules' switches. The handlers for a round's kinds are the modules'.
+cancellation removes a round's work (`RoundJobs.cancel_round`, `cancel_rounds`) before its save.
+Whether a module's work is armed, and with what, is that module's answer through `round_armed`, a
+`RoundArming` of its steps and its jobs (weather's `ForecastJobs`, attendance's `CheckInJobs`); the
+arming step makes `RoundJobs`' calls from them and arms the results submission whatever they answer.
+A round already raced, or ended not held, is armed its clean-ups alone, by
+`schedule_round_cleanups`, from the modules' switches. The handlers for a round's kinds are the
+modules'.
 
 ### Start-up
 
 `main()` reads the settings, swaps in a staged restore, applies the migrations, builds the bot and
 connects it, in that order (`test_migrations_run_before_the_bot_connects`). When Discord first
-reports the bot ready, `start_up` (`framework/services/jobs/start_up.py`) runs once per process, as the
-sweep of everything that came due while the bot was stopped:
+reports the bot ready, `start_up` (`framework/services/jobs/start_up.py`) runs once per process,
+as the sweep of everything that came due while the bot was stopped:
 
 - **It starts the scheduler paused**, so the job store can be read while no job runs, and resumes
   it last, in a `finally`, so a queue that fails to start does not hold the jobs paused.

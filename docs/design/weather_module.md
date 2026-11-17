@@ -81,7 +81,9 @@ turns itself on and off" has a module keep it. `draw_guard.weather_enabled_on` r
 connection, and the reader weather registers with `ModuleService` is that function
 (`wiring.register_switch`). A job's check and a draw read it themselves. Switching
 off is a save of the flag and an audit entry, then an `After` step that removes the season's weather
-timers (`cancel_all_weather`, in `module_switch_settings`, which asks core's `RoundJobs.cancel_live_rounds` for the live season's rounds' jobs of `WEATHER_JOB_KINDS`): the flag is read by every job's check, so a job that
+timers (`cancel_all_weather`, in `module_switch_settings`, which asks core's
+`RoundJobs.cancel_live_rounds` for the jobs of `WEATHER_JOB_KINDS` of the rounds of every season
+being set up or running): the flag is read by every job's check, so a job that
 fires in between is dropped, which is why the removal can follow the flag
 (`module_switch_settings`' docstring, `tests/weather/test_weather_module_gate.py`). What a
 switch-off keeps is the weather specification's opening rules.
@@ -295,12 +297,12 @@ Answers to `architecture.md`, "Timed work and restarts".
 ### The kinds, and their arming
 
 Weather has four kinds of timer: `weather_p1`, `weather_p2`, `weather_p3` and `cleanup`. A mystery
-round's `weather_p1` is its notice and its two others do nothing. Core's round jobs (`RoundJobs`) arm them
-(`schedule_round`, and `schedule_round_cleanups` for the clean-up alone) from the horizons weather
-hands core and the moments `round_event_moments` places. **All four are armed with no lateness
-limit** (`misfire_grace_time=None`), so a timer missed while the bot was down fires once it is back,
-as the core specification's "When the bot stops" requires, and the work's own check decides whether
-it is still due. Pinned by
+round's `weather_p1` is its notice and its two others do nothing. Core's round jobs (`RoundJobs`)
+arm them (`schedule_round`, and `schedule_round_cleanups` for the clean-up alone) from the horizons
+weather hands core and the moments `round_event_moments` places. **All four are armed with no
+lateness limit** (`misfire_grace_time=None`), so a timer missed while the bot was down fires once it
+is back, as the core specification's "When the bot stops" requires, and the work's own check decides
+whether it is still due. Pinned by
 `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` and
 `test_a_past_dated_forecast_clean_up_armed_again_takes_down_once`.
 

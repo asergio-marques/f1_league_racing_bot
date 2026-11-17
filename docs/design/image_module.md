@@ -165,9 +165,10 @@ report `configuration_report`'s, each handed what it reads rather than looking i
 ### The wiring
 
 `image/wiring.py` is image's part of the builder (`architecture.md`): it signs image's switch reader
-up with `ModuleService`, its portrait discard to `drivers_deleted` and its fingerprint area to
-`fingerprint_areas_read`, registers its change types and the handler of its one timed job, and names
-its one start-up step. It holds no rule of image's and no database code.
+up with `ModuleService`, its portrait discard to `drivers_deleted`, its fingerprint area to
+`fingerprint_areas_read` and its kept job to `bot_packed`, registers its change types and the
+handler of its one timed job, and names its one start-up step. It holds no rule of image's and no
+database code.
 
 ---
 
@@ -220,10 +221,10 @@ rendered file").
 Answers to `architecture.md`, "Timed work and restarts".
 
 Image has one timed job, the daily portrait refresh, the standing job at a time of day that
-`architecture.md` allows ("Timed work and restarts"), armed by
-`schedule_portrait_refresh` (`driver_portrait_service`), a plain function handed the scheduler, which
-arms it through the scheduler's `arm_daily` and disarms it, with `cancel_portrait_refresh`, through
-`remove`. The pack keeps the job because image's subscriber of `bot_packed` hands back its id
+`architecture.md` allows ("Timed work and restarts"), armed by `schedule_portrait_refresh`
+(`driver_portrait_service`), a plain function handed the scheduler, which arms it through the
+scheduler's `arm_daily` and disarms it, with `cancel_portrait_refresh`, through `remove`. The pack
+keeps the job because image's subscriber of `bot_packed` hands back its id
 (`PORTRAIT_REFRESH_JOB_ID`).
 
 The handler, `run_daily_refresh` (`driver_portrait_service`), is signed up by the wiring and handed
