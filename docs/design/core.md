@@ -749,7 +749,9 @@ What test mode is, and what it allows, are the core specification's ("Test mode"
 
 **The switch is a change of its own**, `core.test_mode_toggle`, carrying the state it sets rather
 than a flip. Turning it on is one save: the flag, the modules' part through `test_mode_turned_on`,
-and the audit entries: its own, then those the modules' part hands back in a `TestModePart` (the names it seeded and the audit entries of its writes, declared by core as `AmendmentPart` is). Turning it off is one save too (`switch_test_mode_off_on`), deleting every fake
+and the audit entries, its own first and then those the modules' part hands back in a
+`TestModePart` (the names it seeded and the audit entries of its writes, declared by core as
+`AmendmentPart` is). Turning it off is one save too (`switch_test_mode_off_on`), deleting every fake
 driver through `delete_driver_profiles`, followed by the jobs the modules hand back through `test_mode_flushed`
 to clear what test mode posted, and the deletion of the saved backup. A season's end switches it off in its own `end` save. Whether a
 real driver stands in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a
