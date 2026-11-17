@@ -1,7 +1,7 @@
 """Round model, and the plain data that places a round's timed events: its job kinds and windows."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 class RoundFormat(str, Enum):
@@ -183,3 +183,34 @@ class CheckInJobs:
     the lead times its call, its last notice and its deadline fall at."""
 
     windows: AttendanceWindows
+
+
+@dataclass(frozen=True)
+class RoundLead:
+    """One timer a module wants set for a round, as a plain record core arms under its own naming.
+
+    A module answers with the leads it wants and core arms them (`RoundJobs.arm_leads`), so the
+    record names no module and no kind of its own: *kind* is what the module's timer is stored
+    under, *offset* is its moment from the round's (negative for before it) and *label* heads the
+    timer's name ("Weather P1" in ``Weather P1 s7 d1 r3``).
+
+    *ahead_only* arms the timer only while its moment is still ahead of now; otherwise it is armed
+    whatever the hour. *clean_up* marks one that takes a round's posts down, the only kind a
+    clean-ups-only re-arm sets. *left_to_advance* marks one core drops where test mode leaves it
+    to `/test-mode advance` (`results_left_to_advance`), and *run_at_once* one an amendment runs
+    at once where the round's moment has passed while it was still Not run.
+
+    *check_label* and *check_wording* are what the approval's date check quotes of a window that
+    falls before the round ("Check-in call", "5 days before"); a lead with neither is never
+    judged.
+    """
+
+    kind: str
+    offset: timedelta
+    label: str
+    ahead_only: bool = False
+    clean_up: bool = False
+    left_to_advance: bool = False
+    run_at_once: bool = False
+    check_label: str | None = None
+    check_wording: str | None = None

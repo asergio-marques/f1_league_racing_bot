@@ -381,7 +381,6 @@ def _round_at(round_id: int, round_number: int):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
 def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     """Two rounds that swap numbers must never share a job ID.
 

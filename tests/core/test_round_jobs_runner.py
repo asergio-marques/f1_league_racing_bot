@@ -72,10 +72,6 @@ def _a_round() -> Any:
     return SimpleNamespace(id=_ROUND_ID, division_id=11, round_number=3, scheduled_at=start)
 
 
-#: Why a case arming a forecast's or a check-in's lead fails until core arms leads.
-_NO_LEADS = "#544: core has no RoundLead nor RoundJobs.arm_leads yet"
-
-
 def _lead(kind: str) -> Any:
     """The lead a module answers for a round's *kind* of job, with its packaged settings, taken
     from the shared helpers: weather's three phases and clean-up, armed whatever the hour, and the
@@ -111,27 +107,25 @@ def _arm_results_now(round_jobs: Any, rnd: Any) -> None:
 #: stored under. A round job's kind is its id's prefix and its key the round id.
 EVERY_ROUND_JOB = [
     pytest.param("weather_p1", _arm_lead("weather_p1"), f"weather_p1{_ROUND_SUFFIX}",
-                 id="weather_p1-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="weather_p1-arm_leads"),
     pytest.param("weather_p2", _arm_lead("weather_p2"), f"weather_p2{_ROUND_SUFFIX}",
-                 id="weather_p2-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="weather_p2-arm_leads"),
     pytest.param("weather_p3", _arm_lead("weather_p3"), f"weather_p3{_ROUND_SUFFIX}",
-                 id="weather_p3-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="weather_p3-arm_leads"),
     pytest.param("cleanup", _arm_lead("cleanup"), f"cleanup{_ROUND_SUFFIX}",
-                 id="cleanup-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="cleanup-arm_leads"),
     pytest.param("results", _arm_results_only, f"results{_ROUND_SUFFIX}",
-                 id="results-arm_leads",
-                 marks=pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")),
+                 id="results-arm_leads"),
     pytest.param("results", _arm_results_now, f"results{_ROUND_SUFFIX}",
-                 id="results-run_lead_now",
-                 marks=pytest.mark.xfail(strict=True, reason="#544: core runs no lead at once yet (run_lead_now)")),
+                 id="results-run_lead_now"),
     pytest.param("rsvp_notice", _arm_lead("rsvp_notice"), f"rsvp_notice{_ROUND_SUFFIX}",
-                 id="rsvp_notice-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="rsvp_notice-arm_leads"),
     pytest.param("rsvp_last_notice", _arm_lead("rsvp_last_notice"), f"rsvp_last_notice{_ROUND_SUFFIX}",
-                 id="rsvp_last_notice-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="rsvp_last_notice-arm_leads"),
     pytest.param("rsvp_deadline", _arm_lead("rsvp_deadline"), f"rsvp_deadline{_ROUND_SUFFIX}",
-                 id="rsvp_deadline-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="rsvp_deadline-arm_leads"),
     pytest.param("rsvp_cleanup", _arm_lead("rsvp_cleanup"), f"rsvp_cleanup{_ROUND_SUFFIX}",
-                 id="rsvp_cleanup-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+                 id="rsvp_cleanup-arm_leads"),
 ]
 
 
@@ -170,7 +164,6 @@ async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_
     assert calls == {kind: [(_ROUND_ID,)]}
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_LEADS)
 async def test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back(services):
     """Round 3 of division tier 1 in season 7 (id 21) starts 20 hours from now, its last notice
     24 hours before the race and its deadline 2 hours before. Its check-in timers were armed six

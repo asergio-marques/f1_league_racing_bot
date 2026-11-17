@@ -77,7 +77,6 @@ def _added(service) -> list:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core runs no lead at once yet (run_lead_now)")
 def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late():
     """A round whose moment passed while its timed work stood removed (an amendment stopped on
     the change queue) has its results submission, the lead marked to run at once, run at once:
@@ -114,7 +113,6 @@ def _round_starting(start: datetime) -> SimpleNamespace:
     return SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start)
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
 def test_each_lead_is_armed_under_the_round_s_id_moment_and_name():
     """A round (id 21, number 3, season 7, tier 1) on 1 March 2026 at 18:00 is handed four leads
     with `now` a month before it: weather's first phase 5 days before, the forecast clean-up a
@@ -151,7 +149,6 @@ def test_each_lead_is_armed_under_the_round_s_id_moment_and_name():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
 def test_a_lead_armed_only_while_ahead_is_left_out_once_its_moment_has_passed():
     """A round on 1 March 2099 at 18:00, still to come by the wall clock, is handed its leads
     with `now` two days after its start. The check-in's call and clean-up, armed only while

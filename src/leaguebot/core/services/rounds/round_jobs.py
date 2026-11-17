@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Collection, Iterable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from leaguebot.core.models.round import (
@@ -28,6 +28,7 @@ from leaguebot.core.models.round import (
     ROUND_JOB_PHASES,
     AttendanceWindows,
     Round,
+    RoundLead,
     WeatherWindows,
 )
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
@@ -108,6 +109,62 @@ class RoundJobs:
     def __init__(self, scheduler: "SchedulerService", db_path: str) -> None:
         self._timers = scheduler
         self._db_path = db_path
+
+    def arm_leads(
+        self,
+        rnd: Round,
+        leads: Iterable[RoundLead],
+        season_number: int,
+        division_tier: int,
+        now: datetime,
+    ) -> None:
+        """Arm each of *leads* for *rnd*, under the id, moment, name and key a round's job carries.
+
+        A lead's timer is stored as ``<kind>_s{season_number}_d{division_tier}_r{round_number}_id{round_id}``
+        (`_round_job_suffix`), fires at the round's moment plus the lead's offset, is named
+        ``<label> s{season_number} d{division_tier} r{round_number}`` and is handed its kind and the
+        round id as its key. It replaces a job of the same id, so arming an amended round again is
+        safe. A lead marked to be armed only while ahead is left out once its moment is not ahead of
+        *now* (the queue's clock, never the wall's); any other is armed whatever the hour.
+
+        No timer has a lateness limit (`misfire_grace_time=None`): one whose moment passed while the
+        bot was down fires once it is back, and its handler judges what late means (a last notice is
+        sent late while the deadline is ahead, a result submission decides what becomes of a late
+        round), so the arming never has to.
+
+        This only arms. Running a lead at once (`run_lead_now`), taking down what a round's earlier
+        arming left, and dropping a lead test mode leaves to the advance are the caller's, and the
+        marks on a lead are how it chooses them.
+        """
+        suffix = _round_job_suffix(rnd, season_number, division_tier)
+        at = rnd.scheduled_at.astimezone(timezone.utc)
+        for lead in leads:
+            fire_at = at + lead.offset
+            job_id = f"{lead.kind}{suffix}"
+            if lead.ahead_only and fire_at <= now:
+                log.info("Skipping %s — fire time %s is in the past", job_id, fire_at.isoformat())
+                continue
+            self._timers.arm_at(
+                job_id=job_id, kind=lead.kind, key=rnd.id, run_at=fire_at,
+                name=f"{lead.label} s{season_number} d{division_tier} r{rnd.round_number}",
+            )
+
+    def run_lead_now(
+        self, rnd: Round, lead: RoundLead, season_number: int, division_tier: int
+    ) -> None:
+        """Run *lead*'s timer for *rnd* at once, as its own job would have at its moment.
+
+        For a round whose moment passed while its timed work stood removed, as an amendment
+        stopped on the change queue leaves it: the job armed again against that moment lies in the
+        past, and where the lead is the round's one way off Not run it is run now rather than left
+        to the scheduler's next wake. It replaces that job under the same id, run at once by the
+        scheduler, and with no lateness limit, so that a restart before it runs still runs it.
+        """
+        job_id = f"{lead.kind}{_round_job_suffix(rnd, season_number, division_tier)}"
+        self._timers.run_now(
+            job_id=job_id, kind=lead.kind, key=rnd.id,
+            name=f"{lead.label} s{season_number} d{division_tier} r{rnd.round_number}",
+        )
 
     def schedule_round(
         self,
