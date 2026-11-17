@@ -86,8 +86,8 @@ def _make_cog(
     )
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
 
-    bot.scheduler_service = MagicMock()
-    bot.scheduler_service.cancel_all_weather = AsyncMock(return_value=None)
+    bot.round_jobs = MagicMock()
+    bot.round_jobs.cancel_live_rounds = AsyncMock(return_value=None)
 
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -221,6 +221,10 @@ async def test_enabling_weather_is_audited(tmp_path):
     assert json.loads(entry["new_value"])["module"] == "weather"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#544: weather does not yet cancel its forecast jobs through core's round jobs",
+)
 async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     """Leaving them armed would post forecasts for a switched-off module. The switch-off lowers
     the flag and writes its audit entry in one save, and only then removes the season's weather
@@ -228,7 +232,7 @@ async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     has been touched yet; once the change has run, the jobs are removed once, the reply says so,
     and the Success line is written."""
     from tests.support.change_queue import acknowledgement, run_queue
-    from tests.support.settings_league import last_said, log_lines
+    from tests.support.settings_league import last_said, log_lines, weather_job_cancels
 
     league, cog = await _weather_league(tmp_path, on=True)
     asked = _asked(league, "disable")
@@ -239,10 +243,10 @@ async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     await run_queue(league.bot, steps=1)
     assert await _weather_flag(league.db_path) == 0
     assert [entry["change_type"] for entry in await _audit(league.db_path)] == ["MODULE_DISABLE"]
-    league.scheduler.cancel_all_weather.assert_not_awaited()
+    assert weather_job_cancels(league.round_jobs) == 0
 
     await run_queue(league.bot)
-    league.scheduler.cancel_all_weather.assert_awaited_once_with()
+    assert weather_job_cancels(league.round_jobs) == 1
     assert last_said(asked) == (
         "✅ Weather module disabled. All scheduled weather jobs have been cancelled."
     )
@@ -258,7 +262,7 @@ async def test_disabling_weather_twice_does_no_work(tmp_path):
     await cog._disable_weather(asked)
 
     assert "already disabled" in last_said(asked)
-    league.scheduler.cancel_all_weather.assert_not_awaited()
+    league.round_jobs.cancel_live_rounds.assert_not_awaited()
     assert await _audit(league.db_path) == []
 
 
@@ -275,10 +279,14 @@ async def test_disabling_weather_is_audited(tmp_path):
     assert json.loads(entry["old_value"])["module"] == "weather"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#544: weather does not yet cancel its forecast jobs through core's round jobs",
+)
 async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off_and_says_so(
     tmp_path,
 ):
-    """The scheduler refuses to remove the season's weather jobs: the module stays off with its
+    """Core's round jobs refuse to remove the season's weather jobs: the module stays off with its
     audit entry, the reply says it is off but its jobs could not be removed and do nothing while
     it is off, never that they were cancelled, the Success line and one failure line are written,
     and no job is left stopped on the queue."""
@@ -286,7 +294,7 @@ async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off
     from tests.support.settings_league import last_said, log_lines
 
     league, cog = await _weather_league(tmp_path, on=True)
-    league.scheduler.cancel_all_weather.side_effect = RuntimeError("the job store refused")
+    league.round_jobs.cancel_live_rounds.side_effect = RuntimeError("the job store refused")
     asked = _asked(league, "disable")
 
     await cog._disable_weather(asked)

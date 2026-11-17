@@ -16,6 +16,11 @@ them, and it cannot be run again on an active season.
 
 These tests hold the cancel to the weather prefixes, hold the round sweep that must not
 narrow with it, and pin the unfiltered default the round- and season-level cancels rely on.
+
+Weather's switch-off cancels its forecast jobs through a function of weather's own,
+`cancel_all_weather`, handed core's round jobs (`RoundJobs`, #544): it asks them to cancel the
+weather kinds of every round of the live season, and holds no SQL on core's tables. A round's
+cancel, filtered or not, is core's round jobs' (`cancel_round`), over the framework's scheduler.
 """
 from __future__ import annotations
 
@@ -28,6 +33,11 @@ import pytest
 from leaguebot.framework.db.database import get_connection, run_migrations
 
 SERVER_ID = 4242
+
+#: Why each test here fails until core's round jobs, and weather's cancel through them, exist.
+NO_ROUND_JOBS = (
+    "#544: core has no RoundJobs yet, and weather no cancel of its forecast jobs through them"
+)
 
 # The nine job kinds a round carries, split by the module that owns them.
 WEATHER_PREFIXES = ("weather_p1", "weather_p2", "weather_p3", "cleanup")
@@ -51,6 +61,13 @@ def _make_scheduler(db_path: str):
     mock_sched.get_jobs = MagicMock(return_value=[])
     svc._scheduler = mock_sched
     return svc
+
+
+def _core_round_jobs(svc, db_path: str):
+    """Core's round jobs over *svc*, built as the builder builds them."""
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
+
+    return RoundJobs(svc, db_path)
 
 
 def _make_mock_job(job_id: str, round_id: int, *, kind: str | None = None) -> MagicMock:
@@ -115,13 +132,16 @@ async def _seed(db_path: str, *, live_status: str = "ACTIVE") -> dict[str, int]:
 
 
 async def _disable_weather(tmp_path, jobs_for, *, live_status: str = "ACTIVE") -> list[str]:
-    """Seed, load the scheduler with *jobs_for* (round ids → jobs), run the cancel, and
-    return the job IDs it removed."""
+    """Seed, load the scheduler with *jobs_for* (round ids → jobs), run weather's cancel of its
+    forecast jobs, handed core's round jobs over the scheduler, and return the job IDs it
+    removed."""
+    from leaguebot.weather.services.module_switch_settings import cancel_all_weather
+
     db_path = os.path.join(str(tmp_path), "test.db")
     ids = await _seed(db_path, live_status=live_status)
     svc = _make_scheduler(db_path)
     svc._scheduler.get_jobs.return_value = jobs_for(ids)
-    await svc.cancel_all_weather()
+    await cancel_all_weather(_core_round_jobs(svc, db_path))
     return [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
 
 
@@ -137,6 +157,7 @@ def _all_seeded_jobs(ids: dict[str, int]) -> list[MagicMock]:
 # What the disable must still do
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 @pytest.mark.parametrize("live_status", ["ACTIVE", "SETUP"])
 async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_status):
     """Stated as a whole: four kinds × the two rounds in scope, and nothing else.
@@ -148,7 +169,10 @@ async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_
     What it must not touch is #117. Results collection, and with it the round's own arrival
     transition, survives switching weather off. So do the check-in call, its reminder, its
     deadline and its cleanup: nothing short of the confirmation of placements would put them
-    back."""
+    back.
+
+    Weather's own cancel does it, handed core's round jobs: the jobs go through them, not
+    through a cancel the scheduler holds."""
     removed = await _disable_weather(tmp_path, _all_seeded_jobs, live_status=live_status)
 
     expected = {
@@ -164,6 +188,7 @@ async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_
 # What it must not touch — issue #117
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
     """A job keyed to the round but not named by the round-scoped convention cannot have
     its owner read, so the filter leaves it rather than guessing."""
@@ -181,6 +206,7 @@ async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
 # The unfiltered default, which the round- and season-level cancels rely on
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_cancel_round_without_a_filter_still_removes_every_job(tmp_path):
     """`/season cancel`, `/round cancel`, reset and amend all cancel a *round* and want
     all nine of its jobs gone.  The new keyword must not have changed that."""
@@ -189,26 +215,27 @@ async def test_cancel_round_without_a_filter_still_removes_every_job(tmp_path):
     svc = _make_scheduler(db_path)
     svc._scheduler.get_jobs.return_value = _round_jobs(11, season=1, tier=1, rnum=1)
 
-    svc.cancel_round(11)
+    _core_round_jobs(svc, db_path).cancel_round(11)
 
     removed = [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
     assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in ALL_PREFIXES}
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_cancel_round_with_a_filter_spares_other_rounds(tmp_path):
     """The filter narrows by job kind, never by round: a job of the same kind on another
     round is still left alone."""
     db_path = os.path.join(str(tmp_path), "test.db")
     await _seed(db_path)
     svc = _make_scheduler(db_path)
-    from leaguebot.core.services.scheduler_service import _WEATHER_JOB_PREFIXES
+    from leaguebot.core.models.round import WEATHER_JOB_KINDS
 
     svc._scheduler.get_jobs.return_value = (
         _round_jobs(11, season=1, tier=1, rnum=1)
         + _round_jobs(12, season=1, tier=1, rnum=2)
     )
 
-    svc.cancel_round(11, only=_WEATHER_JOB_PREFIXES)
+    _core_round_jobs(svc, db_path).cancel_round(11, only=WEATHER_JOB_KINDS)
 
     removed = [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
     assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in WEATHER_PREFIXES}

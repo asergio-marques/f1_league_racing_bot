@@ -4,8 +4,10 @@
 gives it `league_bot`'s bot: the one the entry point's `build` makes, with the services the
 settings of results, weather and images are handed by the builder: a real `ModuleService`,
 `SeasonService`, `ImageConfigService`, `ImageValidityService` and `ImageRenderService`. Its scheduler is a double whose
-generic daily arming (`arm_daily`), removal (`remove`) and `cancel_all_weather` record their calls;
+generic daily arming (`arm_daily`) and removal (`remove`) record their calls;
 `portrait_refresh_times` and `portrait_refresh_cancels` read image's daily refresh from them.
+Core's round jobs are a double too, whose cancel of the live season's rounds' jobs
+(`cancel_live_rounds`) records its calls; `weather_job_cancels` reads weather's from it.
 The modules named in *modules* are on (results, weather and images by default), the image
 module holding its default configuration where it is on, and the real queue is attached with "now"
 pinned, every change type the builder registers registered.
@@ -44,24 +46,44 @@ MODULES = ("results", "weather", "images")
 
 @dataclass
 class SettingsLeague:
-    """The bot, its database, and the scheduler double the image settings are handed."""
+    """The bot, its database, the scheduler double the image settings are handed, and the round
+    jobs' double weather's switch-off is handed."""
 
     bot: Any
     db_path: str
     scheduler: Any
+    round_jobs: Any = None
 
 
 def scheduler_double(*, fails: bool = False) -> MagicMock:
     """A scheduler service whose generic daily arming (`arm_daily`) and removal (`remove`) are
     recorded, as image arms and cancels its daily portrait refresh through them; with *fails*,
-    each raises, as a job store refusing the job would. Its removal of every weather job
-    (`cancel_all_weather`) is recorded too, and never raises unless a test sets it to."""
+    each raises, as a job store refusing the job would."""
     double = MagicMock()
     error = RuntimeError("scheduler unavailable") if fails else None
     double.arm_daily = MagicMock(side_effect=error)
     double.remove = MagicMock(side_effect=error)
-    double.cancel_all_weather = AsyncMock(return_value=None)
     return double
+
+
+def round_jobs_double() -> MagicMock:
+    """Core's round jobs, whose cancel of the live season's rounds' jobs (`cancel_live_rounds`),
+    as weather's switch-off asks it for weather's kinds, is recorded, and never raises unless a
+    test sets it to."""
+    double = MagicMock()
+    double.cancel_live_rounds = AsyncMock(return_value=None)
+    return double
+
+
+def weather_job_cancels(round_jobs: Any) -> int:
+    """How many times core's round jobs' double was asked to cancel the live season's rounds'
+    weather jobs, and those alone."""
+    from leaguebot.core.models.round import WEATHER_JOB_KINDS
+
+    return sum(
+        1 for call in round_jobs.cancel_live_rounds.await_args_list
+        if frozenset(_argument(call, "only", 0)) == WEATHER_JOB_KINDS
+    )
 
 
 #: The id image's daily portrait refresh is stored under.
@@ -111,12 +133,12 @@ async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
     db_path = os.path.join(str(tmp_path), "settings.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = await league_bot(db_path, scheduler=scheduler_double())
+    bot = await league_bot(db_path, scheduler=scheduler_double(), round_jobs=round_jobs_double())
     await switch(bot, modules, on=True)
     if "images" in modules:
         await saves.create_image_defaults(db_path)
     league_queue(bot, db_path, now=now)
-    return SettingsLeague(bot, db_path, bot.scheduler_service)
+    return SettingsLeague(bot, db_path, bot.scheduler_service, bot.round_jobs)
 
 
 async def switch(bot: Any, modules: tuple[str, ...], *, on: bool) -> None:

@@ -1493,6 +1493,19 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
 # ---------------------------------------------------------------------------
 # A timer missed while the bot was down, firing beside the restart's own ask
 # ---------------------------------------------------------------------------
+#
+# The round's timers are armed by core's round jobs (`RoundJobs`, #544), over the real scheduler.
+
+#: Why the tests arming a round's timers fail until core's round jobs exist.
+NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's timers are still the scheduler's"
+
+
+def _round_jobs(service: Any, db_path: str) -> Any:
+    """Core's round jobs over *service*, built as the builder builds them."""
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
+
+    return RoundJobs(service, db_path)
+
 
 @pytest.fixture
 def scheduler(tmp_path, monkeypatch):
@@ -1558,6 +1571,7 @@ def _round_3(when: Any) -> Any:
     return SimpleNamespace(id=ROUND, division_id=PRO, round_number=3, scheduled_at=when)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once(
     tmp_path, scheduler,
 ):
@@ -1577,7 +1591,9 @@ async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_on
     service = scheduler(league.db_path)
     fired = _weather_timers(league, service)
     service.start(paused=True)
-    service.schedule_round(_round_3(race), season_number=3, division_tier=1)
+    _round_jobs(service, league.db_path).schedule_round(
+        _round_3(race), season_number=3, division_tier=1
+    )
 
     await dict(start_up_steps(league.bot))["missed phases"]()
     await run_queue(league.bot)
@@ -1592,6 +1608,7 @@ async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_on
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_path, scheduler):
     """Round 3 was raced 25 hours ago, and its Phase 3 forecast (9303) still stands: its clean-up
     fell due an hour ago while the bot was down. The bot comes back: weather's start-up step for
@@ -1613,8 +1630,9 @@ async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_pa
 
     await dict(start_up_steps(league.bot))["missed forecast clean-ups"]()
     await run_queue(league.bot)
-    service.schedule_round_cleanups(_round_3(race), season_number=3, division_tier=1,
-                                    now=league.clock.now, check_in=False)
+    _round_jobs(service, league.db_path).schedule_round_cleanups(
+        _round_3(race), season_number=3, division_tier=1, now=league.clock.now, check_in=False
+    )
     service.resume()
     await _until_fired(fired, 1)
     await run_queue(league.bot)
