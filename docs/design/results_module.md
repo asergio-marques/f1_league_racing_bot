@@ -603,7 +603,7 @@ held or turns itself off, it hands core's writer the hook (`cancellation_notices
 | `season_standing_read` | `season_standings_posts.season_standing_on` | reads a driver's standing for the season's history |
 | `season_end_refused` | `amendment_writes.season_end_refusal` | refuses a season's end while a round is being amended |
 | `divisions_raced_read` | `results_purge_service.divisions_raced_on` | reads the divisions a driver's accounts raced in |
-| `test_mode_turned_on` | `season_points_service.seed_test_configs_on` | seeds the test configurations on a server holding none, whatever results' switch, through the writers `/results config` uses, and hands back the names and the audit entries as a `TestModePart` |
+| `test_mode_turned_on` | `season_points_service.seed_test_configs_on` | seeds the test configurations where the core specification's "Entering and leaving it" says, whatever results' switch, through the writers `/results config` uses, and hands back the names and the audit entries as a `TestModePart` |
 | `review_sections_read` | `season_points_service.review_section` | results' section of a season review |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry and the factory reset |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | results' configuration in the season's fingerprint |
