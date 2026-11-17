@@ -555,9 +555,11 @@ async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_bu
 @pytest.mark.xfail(strict=True, reason=UNRECORDED)
 async def test_a_stop_notice_whose_message_cannot_be_recorded_is_not_posted_again(env, caplog):
     """A stop notice lands in the log channel, but a database fault refuses to record which
-    message it is: the fault is logged on the host and the stop stands. At the next try the job
-    still fails and the record is saved: no second notice is posted, the league admins are
-    mentioned by the one notice alone, and the job is recorded as stopped at that notice."""
+    message it is: the fault is logged on the host and the stop stands. At the one-minute try the
+    job still fails and the fault still refuses the record: no second notice is posted, the league
+    admins are mentioned by the one notice alone, and the record is still unsaved. The fault is
+    lifted, and at the five-minute try the job still fails and the record is saved: still the one
+    notice and the one mention, and the job is recorded as stopped at that notice."""
     holder = {"fail": RuntimeError("boom")}
     _queue(env, _type(steps=[_fails_while(holder, describe=_described("posting the dummy"))]))
     await refuse_notice_records(env.db_path, True)
@@ -571,15 +573,21 @@ async def test_a_stop_notice_whose_message_cannot_be_recorded_is_not_posted_agai
     assert any(isinstance(r.exc_info[1], sqlite3.Error) for r in _host_errors(caplog))
     stop = f"❌ The queue is stopped at job #{job['id']}"
     [notice] = [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+
+    async def _one_notice_after_try(at: float, tries: int) -> dict:
+        await _try_at(env, at)
+        job = await stopped_job(env.db_path)
+        assert job["tries"] == tries
+        assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)] == [notice]
+        assert len([call for call in env.bot.log_channel.send.await_args_list
+                    if _pings_the_admins(call)]) == 1
+        return job
+
+    job = await _one_notice_after_try(1, 2)
+    assert job["notice_message_id"] is None
     await refuse_notice_records(env.db_path, False)
 
-    await _try_at(env, 1)
-
-    job = await stopped_job(env.db_path)
-    assert job["tries"] == 2
-    assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)] == [notice]
-    assert len([call for call in env.bot.log_channel.send.await_args_list
-                if _pings_the_admins(call)]) == 1
+    job = await _one_notice_after_try(5, 3)
     assert job["notice_message_id"] == notice.id
     assert _buttons(notice) == {"queue:retry", "queue:discard"}
 
