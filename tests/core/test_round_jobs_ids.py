@@ -165,7 +165,7 @@ def _service(jobs: list) -> SchedulerService:
 def _round_jobs(jobs: list):
     """Core's round jobs over a scheduler whose store lists *jobs*, built as the builder builds
     them."""
-    from tests.support.round_jobs import forecast_leads, round_jobs_over, submission_lead
+    from tests.support.round_jobs import round_jobs_over
 
     return round_jobs_over(_service(jobs), "/tmp/not-read.db")
 
@@ -393,6 +393,7 @@ def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     with nothing reporting it.
     """
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
+    from tests.support.round_jobs import forecast_leads, submission_lead
 
     svc = SchedulerService.__new__(SchedulerService)
     svc._scheduler = MagicMock()
