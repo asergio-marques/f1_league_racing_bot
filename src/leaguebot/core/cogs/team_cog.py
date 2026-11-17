@@ -418,28 +418,29 @@ class TeamCog(commands.Cog):
         async with lineups_for_command(
             self.bot.image_drawing, interaction.guild, all_divisions
         ) as lineups:
-            if lineups.problem is not None:
-                await interaction.followup.send(
-                    f"❌ {lineups.problem}\n"
-                    f"_Lineup for **{lineups.refused}** was not drawn._",
-                    ephemeral=True,
-                )
-                return
-
-            if lineups.paths:
-                files = [
-                    discord.File(str(path), filename=path.name)
-                    for path in lineups.paths
-                ]
-                try:
-                    text = "\n".join(f"**{div.name}**" for div in all_divisions)
+            if lineups.drawn:
+                if lineups.problem is not None:
                     await interaction.followup.send(
-                        text, files=files, ephemeral=not public
+                        f"❌ {lineups.problem}\n"
+                        f"_Lineup for **{lineups.refused}** was not drawn._",
+                        ephemeral=True,
                     )
                     return
-                finally:
-                    for attachment in files:
-                        attachment.close()
+
+                if lineups.paths:
+                    files = [
+                        discord.File(str(path), filename=path.name)
+                        for path in lineups.paths
+                    ]
+                    try:
+                        text = "\n".join(f"**{div.name}**" for div in all_divisions)
+                        await interaction.followup.send(
+                            text, files=files, ephemeral=not public
+                        )
+                        return
+                    finally:
+                        for attachment in files:
+                            attachment.close()
 
         lines: list[str] = []
         for div in all_divisions:
