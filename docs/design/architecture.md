@@ -787,7 +787,9 @@ stop nobody yet holds the role to clear.
   specification asks for. No command writes them itself, but for `/bot pack` and the factory reset
   (above). A log line is put on the log line's own retry queue in the same save as the step it
   records (`OutputRouter.queue_log_on`), so a stop cannot lose it, and is delivered once the save
-  has committed (`OutputRouter.deliver_queued`), under the lock the retry loop shares, so the queue
+  has committed (`OutputRouter.deliver_queued`, which hands back the link of each line delivered, for a
+  reply to point at the notices of a picture its work drew; a refused try of a post keeps them with
+  its lines for the try that posts), under the lock the retry loop shares, so the queue
   and the retry loop never both send it. The queue is handed the router and writes through it, not
   through the bot, since a service does not use the bot to look up other services (above).
 

@@ -255,7 +255,8 @@ picture that was due was not drawn is headed by the aspect's own name (each post
 `*_TOGGLE_NAME`, the weather forecast's written in place), and its notices by what was drawn ("Image
 render notices — …", `ImageRenderService.format_notices`). The one drawing that writes its own
 notices, the lineup a command draws, is `ImageDrawing.draw_lineup_for_command`, through the log
-writer the builder hands it. The `/images test` previews write their notices through the writer the
+writer the builder hands it, and it hands back the link to the message it logs, for the command to
+tell its manager the notices with (`LineupPicture.log_link`). The `/images test` previews write their notices through the writer the
 runner is handed (`preview_runner`), naming what was drawn.
 
 ---
