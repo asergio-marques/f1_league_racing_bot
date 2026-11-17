@@ -293,7 +293,7 @@ The framework posts two things of its own:
 | Post | Kind | Channel | Posted by | Found again by |
 |---|---|---|---|---|
 | A log line | log line | the log channel the league's settings name (`LeagueSettings`) | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
-| The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id` |
+| The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id`, or the queue's memory until that save lands |
 
 A replaced standing post is deleted by a job after the new one, built by `standing_posts`
 (`replaced`, `delete_replaced_step`), which also removes a copy a failed `record` left
