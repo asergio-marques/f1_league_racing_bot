@@ -686,7 +686,7 @@ exception, results' among them.
 |---|---|
 | A command, button or form | the base classes and `report_failure`; no cog or view of results' has an error handler. The cog catches by name only what it turns into a refusal (`ConfigNotFoundError`, `UnicodeDecodeError`), and `points_settings.run_xml_import` an `XmlImportError`; a lapsed confirmation's buttons that cannot be taken down are logged as a warning, the lapse recorded all the same |
 | A change | its check refuses a member's request and drops the bot's where the work is no longer due; a job that fails stops its lane, with the stop notice, Retry and Discard |
-| A timed job | the scheduler's job runner (`core.md`, "Errors and failures"); the sweep catches each lapse it cannot ask, logs it on the host and goes on, so one amendment stuck stops none of the rest |
+| A timed job | the scheduler's job runner (`framework.md`, "Errors and failures"); the sweep catches each lapse it cannot ask, logs it on the host and goes on, so one amendment stuck stops none of the rest |
 | A start-up step | `RecoveryFailed`, raised once a recovery has gone through every round, which the start-up sweep reports in one line |
 | A picture | the fallback to text and its line, above |
 

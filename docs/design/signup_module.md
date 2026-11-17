@@ -618,7 +618,7 @@ Answers to `architecture.md`, "Errors and failures".
 | A command, button or form | the base classes and `report_failure`; a refusal is `refuse`, one reply and one line |
 | A change | its check refuses a member's request and drops the bot's where the work is no longer due; a job that fails stops its lane, with Retry and Discard |
 | A timed job | the scheduler's job runner: each callback asks its change |
-| A start-up step | the sweep's containment (`core.md`, "Start-up"); inside `recover_gone_channels` and `recover_correction_timeouts`, one driver's ask failing stops none of the others, while `recover_held_channels`' loop over the holds and `recover_wizards`' over the expiries catch nothing |
+| A start-up step | the sweep's containment (`framework.md`, "Start-up"); inside `recover_gone_channels` and `recover_correction_timeouts`, one driver's ask failing stops none of the others, while `recover_held_channels`' loop over the holds and `recover_wizards`' over the expiries catch nothing |
 
 **Refusals are raised and caught by name.** A setting's save raises the framework's `Refused` where
 what its check judged has gone (`NOT_CONFIGURED`, a slot no longer there); a driver's transition the
