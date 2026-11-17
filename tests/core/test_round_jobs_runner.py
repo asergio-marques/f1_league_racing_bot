@@ -3,7 +3,8 @@
 `RoundJobs` arms a round's forecasts, check-in, clean-ups and results submission through the
 framework's scheduler, under the ids each job has always had. Each is stored as a one-off timer is:
 its callable is the one runner, and its kind and the round id are its keywords, so that the
-runner calls the kind's handler with the round.
+runner calls the kind's handler with the round. Armed with no lateness limit, a round's job
+missed while the bot was down runs when it starts again.
 
 What the runner does with a handler that raises is the scheduler's, and is pinned for each of its
 generic calls in `tests/framework/test_scheduler_one_off.py`. These tests use the real
@@ -11,6 +12,7 @@ generic calls in `tests/framework/test_scheduler_one_off.py`. These tests use th
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -56,6 +58,11 @@ def services(tmp_path, monkeypatch):
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def _settle() -> None:
+    for _ in range(10):
+        await asyncio.sleep(0.01)
 
 
 #: Pro's round 3 (id 21) of season 7, tier 1, a month away, so that no job of it is due.
@@ -155,3 +162,44 @@ async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_
     await job.func(*job.args, **job.kwargs)
 
     assert calls == {kind: [(_ROUND_ID,)]}
+
+
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
+async def test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back(services):
+    """Round 3 of division tier 1 in season 7 (id 21) starts 20 hours from now, its last notice
+    24 hours before the race and its deadline 2 hours before. Its check-in timers were armed six
+    days before the race, and the bot went down; its last notice fell due four hours ago while
+    it was down, the deadline still ahead. When the bot starts again and attendance registers
+    its timers, the last notice's timer fires, handed round 21, so its notice is asked for and
+    sent late rather than dropped."""
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
+
+    start = _now() + timedelta(hours=20)
+    before = services()
+    before._scheduler.start(paused=True)
+    RoundJobs(before, before._db_path).schedule_attendance_round(
+        SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start),
+        season_number=7, division_tier=1, notice_days=5, last_notice_hours=24,
+        deadline_hours=2, now=start - timedelta(days=6),
+    )
+    _dispose(before)
+
+    after = services()
+    handed: list[tuple[str, Any]] = []
+    fired = asyncio.Event()
+
+    def _timer(kind: str) -> Any:
+        async def _fire(key: Any) -> None:
+            handed.append((kind, key))
+            if kind == "rsvp_last_notice":
+                fired.set()
+        return _fire
+
+    for kind in ("rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup"):
+        after.register_timer(kind, _timer(kind))
+    after.start()
+    await asyncio.wait_for(fired.wait(), 5)
+    await _settle()
+
+    assert handed.count(("rsvp_last_notice", 21)) == 1
+    assert ("rsvp_deadline", 21) not in handed
