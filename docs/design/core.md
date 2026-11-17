@@ -159,8 +159,8 @@ against it; `test_a_merge_leaves_nothing_naming_the_driver_absorbed` does the sa
 
 Answers to `architecture.md`, "How the code is laid out". Core's code sits in `core/cogs/`,
 `core/services/`, `core/models/` and `core/utils/`. The machinery it runs on, the database code, the
-change queue, posting, the module switches, the retry loop's cog, the bot's type, the hook types
-and the failure paths, is the framework's (`framework/`), whose design is `framework.md`'s; this file
+change queue, posting, the module switches, the retry loop's cog, the bot's type, the hook types and
+the failure paths, is the framework's (`framework/`), whose design is `framework.md`'s; this file
 names it only where core's own code rests on it.
 
 ### Services, and what each owns
@@ -215,10 +215,10 @@ core's own listings (`formatting.py`), readers of what a league types (`input_va
 `round_import.py`, `roster_import.py`), the asset slug (`asset_slug.py`) and the nationalities a
 driver may give (`nationality_data.py`). The bot's type, the one-league claim and the base classes,
 the hook types, the failure paths, the standard log lines, `bounded_autocomplete` and the posting
-guard are the framework's helpers (`framework/utils/`, `framework.md`). The helpers that know nothing of the bot,
-reading a typed time, the time zones, the version and the fitting of text to Discord's limits, are
-the `utils` layer's (`architecture.md`, "How the code is laid out"), and the rendering of a date for
-a graphic is the image module's.
+guard are the framework's helpers (`framework/utils/`, `framework.md`). The helpers that know
+nothing of the bot, reading a typed time, the time zones, the version and the fitting of text to
+Discord's limits, are the `utils` layer's (`architecture.md`, "How the code is laid out"), and the
+rendering of a date for a graphic is the image module's.
 
 **The database code** is the framework's (`framework.md`, "The database").
 
@@ -500,9 +500,9 @@ and the calendar's in `post_division_calendar`, whose `commanded` parameter tell
 asked for from one that was not (`test_an_uncommanded_posting_falls_back_to_the_text`). The lineup's
 and the calendar's post job ask for text on every try after the first (`as_text`).
 
-**Who a post may mention is stated where it is sent** (`architecture.md`, "Posting to Discord");
-who that is, is the core specification's ("The record of what changed", "How a change is
-carried out"). `post_cancellation_notice` and `post_cancellation_message` post with the mentions their caller, a
+**Who a post may mention is stated where it is sent** (`architecture.md`, "Posting to Discord"); who
+that is, is the core specification's ("The record of what changed", "How a change is carried out").
+`post_cancellation_notice` and `post_cancellation_message` post with the mentions their caller, a
 module's notice job, hands them.
 
 **Core's posts off the queue** are `architecture.md`'s exceptions ("Every post is made in a
