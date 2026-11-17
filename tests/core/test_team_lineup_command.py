@@ -338,7 +338,7 @@ _NOTICES_LINK = "https://discord.test/4242/7"
     strict=True,
     reason="#550: /team lineup tells the manager no notices of the lineups it drew, nor the link",
 )
-@pytest.mark.parametrize("asked", ["private", "public", "refused_after"])
+@pytest.mark.parametrize("asked", ["private", "public", "refused_after", "unlinked"])
 async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_link(
     tmp_path, asked,
 ):
@@ -350,10 +350,16 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     names the picture (`lineup — Division 1`) and linked to the log channel's message holding it
     (image spec, Lineup; Constitution XIV.4: no notice in a channel the drivers read). Where
     Division 2 is then refused (the template is missing a field), no picture is sent, and the
-    manager is told the refusal and, seen by them alone, the notice already logged, linked."""
+    manager is told the refusal and, seen by them alone, the notice already logged, linked. Where
+    the log channel would not take the notice, which costs the link and nothing else
+    (Constitution XIV.4; image spec, Errors), the picture is still sent privately and the
+    follow-up still lists the notice under its label, with no link."""
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    division_1 = {"picture": png, "notices": (_NOTICE,), "log_link": _NOTICES_LINK}
+    linked = asked != "unlinked"
+    division_1 = {"picture": png, "notices": (_NOTICE,)}
+    if linked:
+        division_1["log_link"] = _NOTICES_LINK
     divisions = [_division(11, "Division 1", 1)]
     by_division = {11: division_1}
     if asked == "refused_after":
@@ -367,11 +373,11 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
 
     await _lineup(cog, interaction, public=asked == "public")
 
-    section = (
-        "⚠️ **Image notices**\n"
+    label = (
         f"  **lineup — Division 1** ([see them in the log]({_NOTICES_LINK}))\n"
-        f"  • {_NOTICE}"
+        if linked else "  **lineup — Division 1**\n"
     )
+    section = f"⚠️ **Image notices**\n{label}  • {_NOTICE}"
     calls = interaction.followup.send.await_args_list
 
     def _content(call) -> str:
@@ -386,9 +392,11 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
         assert pictures == [], calls
         assert any(f"❌ {_PROBLEM}" in _content(call) for call in calls), calls
         return
+    if not linked:
+        assert not any("see them in the log" in _content(call) for call in calls), calls
     [picture] = pictures
     assert picture.args[0] == "**Division 1**"
-    assert picture.kwargs["ephemeral"] is (asked == "private")
+    assert picture.kwargs["ephemeral"] is (asked != "public")
     assert _NOTICE not in picture.args[0] and "see them in the log" not in picture.args[0]
 
 
