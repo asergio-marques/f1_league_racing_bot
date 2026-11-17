@@ -72,14 +72,15 @@ def _a_round() -> Any:
     return SimpleNamespace(id=_ROUND_ID, division_id=11, round_number=3, scheduled_at=start)
 
 
-#: Why a case arming a forecast's or a clean-up's lead fails until core arms leads.
+#: Why a case arming a forecast's or a check-in's lead fails until core arms leads.
 _NO_LEADS = "#544: core has no RoundLead nor RoundJobs.arm_leads yet"
 
 
 def _lead(kind: str) -> Any:
     """The lead a module answers for a round's *kind* of job, with its packaged settings: weather's
     three phases 5 days, 2 days and 2 hours before the round and its clean-up a day after, armed
-    whatever the hour, and the check-in's clean-up a day after, armed only while ahead."""
+    whatever the hour, and the check-in's call 5 days, last notice 24 hours and deadline 2 hours
+    before the round and its clean-up a day after, each armed only while ahead."""
     from leaguebot.core.models.round import RoundLead
     from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
 
@@ -89,6 +90,12 @@ def _lead(kind: str) -> Any:
         "weather_p3": RoundLead(kind="weather_p3", offset=-timedelta(hours=2), label="Weather P3"),
         "cleanup": RoundLead(kind="cleanup", offset=POST_RACE_CLEANUP_DELAY,
                              label="Forecast cleanup", clean_up=True),
+        "rsvp_notice": RoundLead(kind="rsvp_notice", offset=-timedelta(days=5),
+                                 label="RSVP notice", ahead_only=True),
+        "rsvp_last_notice": RoundLead(kind="rsvp_last_notice", offset=-timedelta(hours=24),
+                                      label="RSVP last-notice", ahead_only=True),
+        "rsvp_deadline": RoundLead(kind="rsvp_deadline", offset=-timedelta(hours=2),
+                                   label="RSVP deadline", ahead_only=True),
         "rsvp_cleanup": RoundLead(kind="rsvp_cleanup", offset=POST_RACE_CLEANUP_DELAY,
                                   label="RSVP cleanup", ahead_only=True, clean_up=True),
     }[kind]
@@ -99,13 +106,6 @@ def _arm_lead(kind: str) -> Any:
     def _arm(round_jobs: Any, rnd: Any) -> None:
         round_jobs.arm_leads(rnd, (_lead(kind),), 7, 1, _now())
     return _arm
-
-
-def _arm_check_in(round_jobs: Any, rnd: Any) -> None:
-    round_jobs.schedule_attendance_round(
-        rnd, season_number=7, division_tier=1, notice_days=5, last_notice_hours=24,
-        deadline_hours=2, now=_now(),
-    )
 
 
 def _submission() -> Any:
@@ -142,14 +142,14 @@ EVERY_ROUND_JOB = [
     pytest.param("results", _arm_results_now, f"results{_ROUND_SUFFIX}",
                  id="results-run_lead_now",
                  marks=pytest.mark.xfail(strict=True, reason="#544: core runs no lead at once yet (run_lead_now)")),
-    pytest.param("rsvp_notice", _arm_check_in, f"rsvp_notice{_ROUND_SUFFIX}",
-                 id="rsvp_notice-schedule_attendance_round"),
-    pytest.param("rsvp_last_notice", _arm_check_in, f"rsvp_last_notice{_ROUND_SUFFIX}",
-                 id="rsvp_last_notice-schedule_attendance_round"),
-    pytest.param("rsvp_deadline", _arm_check_in, f"rsvp_deadline{_ROUND_SUFFIX}",
-                 id="rsvp_deadline-schedule_attendance_round"),
-    pytest.param("rsvp_cleanup", _arm_check_in, f"rsvp_cleanup{_ROUND_SUFFIX}",
-                 id="rsvp_cleanup-schedule_attendance_round"),
+    pytest.param("rsvp_notice", _arm_lead("rsvp_notice"), f"rsvp_notice{_ROUND_SUFFIX}",
+                 id="rsvp_notice-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+    pytest.param("rsvp_last_notice", _arm_lead("rsvp_last_notice"), f"rsvp_last_notice{_ROUND_SUFFIX}",
+                 id="rsvp_last_notice-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+    pytest.param("rsvp_deadline", _arm_lead("rsvp_deadline"), f"rsvp_deadline{_ROUND_SUFFIX}",
+                 id="rsvp_deadline-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
+    pytest.param("rsvp_cleanup", _arm_lead("rsvp_cleanup"), f"rsvp_cleanup{_ROUND_SUFFIX}",
+                 id="rsvp_cleanup-arm_leads", marks=pytest.mark.xfail(strict=True, reason=_NO_LEADS)),
 ]
 
 
@@ -188,22 +188,24 @@ async def test_every_round_job_runs_through_one_runner(services, kind, arm, job_
     assert calls == {kind: [(_ROUND_ID,)]}
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_LEADS)
 async def test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back(services):
     """Round 3 of division tier 1 in season 7 (id 21) starts 20 hours from now, its last notice
     24 hours before the race and its deadline 2 hours before. Its check-in timers were armed six
     days before the race, and the bot went down; its last notice fell due four hours ago while
     it was down, the deadline still ahead. When the bot starts again and attendance registers
     its timers, the last notice's timer fires, handed round 21, so its notice is asked for and
-    sent late rather than dropped."""
+    sent late rather than dropped. The timers are armed from attendance's packaged check-in leads
+    (5 days, 24 hours, 2 hours) through core's arming of leads."""
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
+    from tests.support.round_jobs import check_in_leads
 
     start = _now() + timedelta(hours=20)
     before = services()
     before._scheduler.start(paused=True)
-    RoundJobs(before, before._db_path).schedule_attendance_round(
+    RoundJobs(before, before._db_path).arm_leads(
         SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start),
-        season_number=7, division_tier=1, notice_days=5, last_notice_hours=24,
-        deadline_hours=2, now=start - timedelta(days=6),
+        check_in_leads(), 7, 1, start - timedelta(days=6),
     )
     _dispose(before)
 

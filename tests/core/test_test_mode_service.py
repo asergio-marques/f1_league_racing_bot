@@ -898,24 +898,22 @@ async def _arm(
     attendance: bool = True,
     last_notice_hours: int = 24,
 ) -> None:
-    """Arm *round_ids* as approval arms them, with core's round jobs' `schedule_*` writers, the
-    check-in against `NOW`, by which the rounds are placed."""
+    """Arm *round_ids* as approval arms them, through core's round jobs' `arm_leads`, against
+    `NOW`, by which the rounds are placed: weather's packaged forecast leads and results'
+    submission where *weather*, and attendance's check-in leads (5 days, *last_notice_hours*,
+    2 hours) where *attendance*."""
+    from tests.support.round_jobs import check_in_leads, forecast_leads, submission_lead
+
     season_service = SeasonService(db_path)
     for round_id in round_ids:
         rnd = await season_service.get_round(round_id)
         assert rnd is not None
+        leads: tuple[Any, ...] = ()
         if weather:
-            round_jobs.schedule_round(rnd, season_number=1, division_tier=rnd.division_id)
+            leads += (*forecast_leads(), submission_lead())
         if attendance:
-            round_jobs.schedule_attendance_round(
-                rnd,
-                season_number=1,
-                division_tier=rnd.division_id,
-                notice_days=5,
-                last_notice_hours=last_notice_hours,
-                deadline_hours=2,
-                now=NOW,
-            )
+            leads += check_in_leads(last_notice_hours=last_notice_hours)
+        round_jobs.arm_leads(rnd, leads, 1, rnd.division_id, NOW)
 
 
 async def _season_armed_as_approval_arms_it(tmp_path, round_jobs: Any) -> str:
@@ -962,7 +960,7 @@ async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_p
     assert summary.index(_round_row(summary, 2)) < summary.index(_round_row(summary, 1))
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds (sign_up_kinds) nor arm leads (arm_leads) yet")
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_round_jobs) -> None:
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
@@ -996,7 +994,7 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_roun
         "check-in-cleanup", "mystery-notice",
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds (sign_up_kinds) nor arm leads (arm_leads) yet")
 async def test_a_job_taken_from_the_store_reads_as_missing(
     tmp_path, paused_round_jobs, round_id, event_type, cell
 ) -> None:
@@ -1060,7 +1058,7 @@ async def _mystery_round_armed(
     return db_path
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds (sign_up_kinds) nor arm leads (arm_leads) yet")
 async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     tmp_path, paused_round_jobs
 ) -> None:
@@ -1076,7 +1074,7 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     assert result["kind"] == "weather_p1"
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds (sign_up_kinds) nor arm leads (arm_leads) yet")
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     tmp_path, paused_round_jobs
 ) -> None:
@@ -1094,7 +1092,7 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     assert result["phase_number"] == 4
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds (sign_up_kinds) nor arm leads (arm_leads) yet")
 async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     tmp_path, paused_round_jobs
 ) -> None:
@@ -1137,7 +1135,7 @@ async def _last_notice_switched_off(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
+@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds (sign_up_kinds) nor arm leads (arm_leads) yet")
 async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_round_jobs) -> None:
     db_path = str(tmp_path / "last_notice_off.db")
     await _last_notice_switched_off(db_path)

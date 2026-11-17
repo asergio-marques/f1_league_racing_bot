@@ -102,8 +102,7 @@ def test_a_stale_round_number_is_only_cosmetic():
 # Reading the identifier back
 # ---------------------------------------------------------------------------
 
-#: Every event type a round's jobs are armed under, by `schedule_round` and
-#: `schedule_attendance_round`.
+#: Every event type a round's jobs are armed under, from the modules' leads (`arm_leads`).
 _ROUND_EVENT_TYPES = (
     "weather_p1",
     "weather_p2",

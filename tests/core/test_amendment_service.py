@@ -478,49 +478,59 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+#: Why the check-in amendment tests fail until attendance answers its leads and core arms them.
+_NO_CHECK_IN_LEADS = "#544: attendance answers its check-in as no leads yet, nor core arms them (arm_leads)"
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_CHECK_IN_LEADS)
 async def test_amending_a_round_rearms_its_check_in(tmp_path):
     """The reported defect: amending a round destroyed its check-in for good.
 
     Cancelling the round takes all eight of its jobs, the check-in call, its reminder and its
-    deadline included, and only the weather ones were ever put back. Nothing else arms them —
-    `schedule_attendance_round` is called from the confirmation of placements and nowhere else, and that
-    cannot be run again on an active season. So the round asked nobody whether they were racing,
+    deadline included, and only the weather ones were ever put back. Nothing else armed them —
+    the check-in was armed from the confirmation of placements and nowhere else, and that cannot
+    be run again on an active season. So the round asked nobody whether they were racing,
     opened no attendance records, charged nobody, and read afterwards as perfect attendance for
     the entire division, with nothing anywhere reporting it.
 
     Attendance on, at the league's timings (call 5 days out, last notice 24 hours, deadline 2
-    hours); Am's round 3 (season 3, tier 2) is moved from 90 to 100 days out. The check-in is
-    armed against the queue's clock, never the wall clock.
+    hours); Am's round 3 (season 3, tier 2) is moved from 90 to 100 days out. The round is armed
+    once, as amended, under season 3 and tier 2, its leads holding the check-in's call 5 days,
+    last notice 24 hours and deadline 2 hours before it and its clean-up, against the queue's
+    clock, never the wall clock.
     """
     league = await ongoing_league(tmp_path, attendance=True)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    arming = league.bot.round_jobs.schedule_attendance_round
-    arming.assert_called_once()
-    kwargs = arming.call_args.kwargs
+    [armed] = leads_armed(league.bot.round_jobs)
     # Armed against the league's own timings, and named for the right season and tier.
-    assert kwargs["notice_days"] == 5
-    assert kwargs["last_notice_hours"] == 24
-    assert kwargs["deadline_hours"] == 2
-    assert kwargs["season_number"] == 3
-    assert kwargs["division_tier"] == 2
+    check_in = {lead.kind: lead.offset for lead in armed["leads"] if lead.kind.startswith("rsvp_")}
+    assert {kind: offset for kind, offset in check_in.items() if kind != "rsvp_cleanup"} == {
+        "rsvp_notice": -timedelta(days=5),
+        "rsvp_last_notice": -timedelta(hours=24),
+        "rsvp_deadline": -timedelta(hours=2),
+    }
+    assert "rsvp_cleanup" in check_in
+    assert (armed["season_number"], armed["division_tier"]) == (3, 2)
     # And against the round as amended, not as it stood.
-    assert _utc(arming.call_args.args[0].scheduled_at) == _utc(_at(league, timedelta(days=100)))
+    assert _utc(armed["rnd"].scheduled_at) == _utc(_at(league, timedelta(days=100)))
     # Judged against the queue's clock.
-    assert kwargs["now"] == league.clock.now
+    assert armed["now"] == league.clock.now
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CHECK_IN_LEADS)
 async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tmp_path):
     """A disabled module produces nothing, a scheduled job included: attendance off, Am's round 3
-    moved from 90 to 100 days out arms no check-in."""
+    moved from 90 to 100 days out is armed once, its leads holding no check-in."""
     league = await ongoing_league(tmp_path, attendance=False)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    league.bot.round_jobs.schedule_attendance_round.assert_not_called()
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert not [lead.kind for lead in armed["leads"] if lead.kind.startswith("rsvp_")]
 
 
 # ---------------------------------------------------------------------------

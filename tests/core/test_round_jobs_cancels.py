@@ -15,15 +15,15 @@ These two were in the weather switch-off's tests, `tests/weather/test_weather_di
 pass: it lists the store once, before it removes anything, so a store that cannot be listed
 removes nothing and a division's or a season's cancellation stands as it was (#439, slice 8).
 
-A round's cancels, `cancel_round`, `cancel_rounds` and `cancel_season_end`, and
-`schedule_round_cleanups` are core's round jobs' (`RoundJobs`, #544), over the framework's
-scheduler. The scheduler's own removals, one job, every job and a one-off timer, are pinned in
+A round's cancels, `cancel_round`, `cancel_rounds` and `cancel_season_end`, are core's round
+jobs' (`RoundJobs`, #544), over the framework's scheduler. The scheduler's own removals, one job, every job and a one-off timer, are pinned in
 `tests/framework/test_scheduler_removals.py`, and image's cancel of its daily portrait refresh in
 `tests/image/test_portrait_refresh_job.py`.
 
-`schedule_round_cleanups` arms a raced round's two clean-ups alone, the forecast's and the
-check-in's, a day after its start: what a cancellation refused after its unarming gives back to a
-round already raced (#439, slice 8).
+A raced round's two clean-ups armed alone, what a cancellation refused after its unarming gives
+back to a round already raced (#439, slice 8), are the modules' clean-up leads armed through
+`arm_leads`, pinned in `tests/core/test_round_jobs_scheduling.py` and
+`tests/core/test_round_rearm_change.py`.
 """
 from __future__ import annotations
 
@@ -200,38 +200,6 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
         "cleanup_r6", "results_r5", "results_r6", "rsvp_cleanup_r5", "season_end_3",
     ]
     assert service._scheduler.get_jobs.call_count == 1
-
-
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
-def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
-    """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2020 at 14:00, long
-    past by the wall clock, and its clean-ups are armed alone with `now` a month before it. Two
-    jobs are added and no other: the forecast's clean-up and the check-in's, each named for the
-    round and each firing a day after the start. The check-in's is judged against the `now`
-    handed, never the wall clock, which would have skipped it."""
-    from datetime import datetime, timedelta, timezone
-
-    from leaguebot.core.models.round import Round, RoundFormat
-    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
-
-    start = datetime(2020, 6, 1, 14, 0, tzinfo=timezone.utc)
-    rnd = Round(
-        id=5, division_id=1, round_number=2, format=RoundFormat.NORMAL,
-        track_name="Bahrain International Circuit", scheduled_at=start,
-    )
-    service = _service([])
-
-    _round_jobs(service).schedule_round_cleanups(
-        rnd, season_number=3, division_tier=1, now=start - timedelta(days=30)
-    )
-
-    armed = {
-        call.kwargs["id"]: call for call in service._scheduler.add_job.call_args_list
-    }
-    assert sorted(armed) == ["cleanup_s3_d1_r2_id5", "rsvp_cleanup_s3_d1_r2_id5"]
-    for call in armed.values():
-        assert call.kwargs["trigger"].run_date == start + POST_RACE_CLEANUP_DELAY
-        assert call.kwargs["replace_existing"] is True
 
 
 #: The nine job kinds a round carries, and the four of them that are weather's.

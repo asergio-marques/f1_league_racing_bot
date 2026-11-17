@@ -114,105 +114,6 @@ def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late
 
 
 # ---------------------------------------------------------------------------
-# The check-in cleanup (#425)
-# ---------------------------------------------------------------------------
-#
-# `schedule_attendance_round` skips any job whose moment is not after the `now` it is handed, and
-# reads no clock of its own: each test hands a `now` the wall clock is nowhere near, so that a read
-# of the wall clock would arm, or skip, what the test says it does not.
-
-def _round_starting(start: datetime) -> SimpleNamespace:
-    return SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start)
-
-
-def _attendance_jobs(service, rnd, *, now: datetime) -> dict:
-    _round_jobs(service).schedule_attendance_round(
-        rnd,
-        season_number=7,
-        division_tier=1,
-        notice_days=5,
-        last_notice_hours=24,
-        deadline_hours=2,
-        now=now,
-    )
-    return {c.kwargs["id"]: c for c in _added(service)}
-
-
-def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
-    """A round on 1 March 2020 at 18:00, long past by the wall clock, armed with `now` a month
-    before it: its check-in clean-up is armed a day after its start, as are its call, last
-    notice and deadline."""
-    service = _service()
-    start = datetime(2020, 3, 1, 18, tzinfo=timezone.utc)
-
-    jobs = _attendance_jobs(service, _round_starting(start), now=start - timedelta(days=30))
-
-    cleanup = jobs["rsvp_cleanup_s7_d1_r3_id21"]
-    assert cleanup.kwargs["trigger"].run_date == start + timedelta(hours=24)
-    assert cleanup.kwargs["replace_existing"] is True
-    assert sorted(jobs) == [
-        "rsvp_cleanup_s7_d1_r3_id21", "rsvp_deadline_s7_d1_r3_id21",
-        "rsvp_last_notice_s7_d1_r3_id21", "rsvp_notice_s7_d1_r3_id21",
-    ]
-
-
-def test_a_check_in_timer_is_armed_with_no_lateness_limit():
-    """A round on 1 March 2026 at 18:00, armed with `now` a month before it: its call, last
-    notice, deadline and clean-up are each armed with no lateness limit, so one due while the bot
-    was down still fires when it is back, and its handler judges what late means."""
-    service = _service()
-    start = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
-
-    jobs = _attendance_jobs(service, _round_starting(start), now=start - timedelta(days=30))
-
-    limits = {job_id: job.kwargs.get("misfire_grace_time", "default")
-              for job_id, job in jobs.items() if job_id.startswith("rsvp_")}
-    assert limits == {
-        "rsvp_cleanup_s7_d1_r3_id21": None, "rsvp_deadline_s7_d1_r3_id21": None,
-        "rsvp_last_notice_s7_d1_r3_id21": None, "rsvp_notice_s7_d1_r3_id21": None,
-    }
-
-
-def test_a_check_in_cleanup_already_due_is_not_armed():
-    """The same rule as the attendance module's other three jobs: a moment gone by is skipped. A
-    round on 1 March 2099 at 18:00, still to come by the wall clock, armed with `now` two days
-    after it: none of its four check-in jobs is armed."""
-    service = _service()
-    start = datetime(2099, 3, 1, 18, tzinfo=timezone.utc)
-
-    jobs = _attendance_jobs(service, _round_starting(start), now=start + timedelta(days=2))
-
-    assert not [job_id for job_id in jobs if job_id.startswith("rsvp_")]
-
-
-def test_a_round_s_forecast_and_check_in_come_down_together():
-    """A round on 1 March 2026 at 18:00 is armed in full, its forecast and its check-in (call 5
-    days before, last notice 24 hours, deadline 2 hours), with `now` a month before it: every job
-    stands at its moment, the three phases at 5 days, 2 days and 2 hours before the start, the
-    submission at it, and both clean-ups at one figure after it, so a round's channels clear at
-    the same moment."""
-    service = _service()
-    start = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
-    rnd = _round_starting(start)
-
-    _round_jobs(service).schedule_round(rnd, season_number=7, division_tier=1)
-    jobs = _attendance_jobs(service, rnd, now=start - timedelta(days=30))
-
-    moments = {job_id: job.kwargs["trigger"].run_date for job_id, job in jobs.items()}
-    assert moments == {
-        "weather_p1_s7_d1_r3_id21": start - timedelta(days=5),
-        "weather_p2_s7_d1_r3_id21": start - timedelta(days=2),
-        "weather_p3_s7_d1_r3_id21": start - timedelta(hours=2),
-        "cleanup_s7_d1_r3_id21": start + POST_RACE_CLEANUP_DELAY,
-        "results_s7_d1_r3_id21": start,
-        "rsvp_notice_s7_d1_r3_id21": start - timedelta(days=5),
-        "rsvp_last_notice_s7_d1_r3_id21": start - timedelta(hours=24),
-        "rsvp_deadline_s7_d1_r3_id21": start - timedelta(hours=2),
-        "rsvp_cleanup_s7_d1_r3_id21": start + POST_RACE_CLEANUP_DELAY,
-    }
-
-
-# ---------------------------------------------------------------------------
 # Arming a round's leads (#544)
 # ---------------------------------------------------------------------------
 #
@@ -224,6 +125,10 @@ def _lead(kind, offset, label, **marks):
     from leaguebot.core.models.round import RoundLead
 
     return RoundLead(kind=kind, offset=offset, label=label, **marks)
+
+
+def _round_starting(start: datetime) -> SimpleNamespace:
+    return SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start)
 
 
 @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
