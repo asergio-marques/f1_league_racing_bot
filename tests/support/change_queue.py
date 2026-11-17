@@ -566,9 +566,8 @@ async def league_bot(db_path: str, *, scheduler: Any = None, round_jobs: Any = N
     The bot is the one the entry point's `build` makes, on settings for *db_path* (the job store
     `jobs.db` beside it), handed the doubles in place of the scheduler, attendance's hook and the
     season service as it builds them, so the change types it registers hold the doubles; every
-    other service is the builder's. The round jobs' double is the bot's `round_jobs` either way:
-    until core builds its round jobs (#544), there is no class to hand the double in place of,
-    and the bot is given it once built."""
+    other service is the builder's. The round jobs' double is handed in place of core's
+    `RoundJobs` the same way, and is the bot's `round_jobs`."""
     import importlib
     import os
     from contextlib import ExitStack
