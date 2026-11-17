@@ -106,8 +106,8 @@ async def _make_db(tmp_path, *, round_format: str = "NORMAL") -> str:
     return db_path
 
 
-#: The kind of the job each step of a round is armed under (`ROUND_JOB_KINDS`), by its phase
-#: number: a mystery round's notice is armed as `weather_p1`, as its Phase 1 would be.
+#: The kind of the job each step of a round is armed under, by its phase number, as each module
+#: maps its own: a mystery round's notice is armed as `weather_p1`, as its Phase 1 would be.
 KIND_OF_PHASE = {
     0: "weather_p1", 1: "weather_p1", 2: "weather_p2", 3: "weather_p3", 4: "results",
     5: "rsvp_notice", 6: "rsvp_last_notice", 7: "rsvp_deadline", 8: "cleanup", 9: "rsvp_cleanup",
@@ -1523,7 +1523,7 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
     round_jobs = MagicMock()
     round_jobs.get_pending_advance_jobs = MagicMock(return_value=[
         {"job_id": f"{prefix}_r{ROUND_ID}", "round_id": ROUND_ID, "phase_number": phase,
-         "next_run_time": datetime(2026, 6, day, tzinfo=timezone.utc)}
+         "kind": prefix, "next_run_time": datetime(2026, 6, day, tzinfo=timezone.utc)}
         for prefix, phase, day in (("rsvp_deadline", 7, 1), ("cleanup", 8, 2),
                                    ("rsvp_cleanup", 9, 2))
     ])

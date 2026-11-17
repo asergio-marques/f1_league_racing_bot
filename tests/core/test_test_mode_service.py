@@ -527,6 +527,7 @@ async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> Non
         "job_id": "phase1_r2",
         "round_id": 2,
         "phase_number": 1,
+        "kind": "weather_p1",
         "next_run_time": NOW + timedelta(days=5),
     }])
     result = await get_next_pending_phase(
@@ -589,11 +590,19 @@ async def _stand(
         await db.commit()
 
 
+#: The kind each phase's job is stored under, as the pending read hands it back with the job.
+_KIND_OF_PHASE = {
+    1: "weather_p1", 2: "weather_p2", 3: "weather_p3", 5: "rsvp_notice",
+    6: "rsvp_last_notice", 7: "rsvp_deadline", 8: "cleanup", 9: "rsvp_cleanup",
+}
+
+
 def _job(round_id: int, phase: int, *, days: float) -> dict:
     return {
         "job_id": f"job_{phase}_r{round_id}",
         "round_id": round_id,
         "phase_number": phase,
+        "kind": _KIND_OF_PHASE[phase],
         "next_run_time": NOW + timedelta(days=days),
     }
 
