@@ -596,7 +596,10 @@ async def league_bot(db_path: str, *, scheduler: Any = None, round_jobs: Any = N
                     bot, db_path))
             try:
                 module = importlib.import_module(module_name)
-            except ModuleNotFoundError:  # #544: core's round jobs are not built yet
+            except ModuleNotFoundError as missing:
+                # #544: core's round jobs alone may be missing, until they are built.
+                if key != "round_jobs" or missing.name != module_name:
+                    raise
                 continue
             stack.enter_context(patch.object(module, name, made))
             if hasattr(entry_point, name):
