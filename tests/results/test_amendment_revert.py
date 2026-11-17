@@ -585,10 +585,7 @@ async def test_the_sweep_runs_through_the_one_runner(tmp_path, monkeypatch):
         service._scheduler._jobstores["default"].engine.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#544: results has no cancelling of its amendment sweep of its own yet"
-)
-def test_cancelling_the_sweep_removes_it_and_tolerates_a_second_call(tmp_path, monkeypatch):
+async def test_cancelling_the_sweep_removes_it_and_tolerates_a_second_call(tmp_path, monkeypatch):
     """Results arms its sweep on a scheduler, then cancels it twice, as turning results off
     twice would: the scheduler holds no `amend_sweep` job, and the second cancel, finding none,
     is not an error."""
