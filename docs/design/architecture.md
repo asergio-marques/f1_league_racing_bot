@@ -1485,7 +1485,10 @@ stated exceptions below them:
    points amendment's save is (the results specification's "Changing points system mid-season");
 3. around reporting a failure or a refusal, or writing a line to the log channel, where that itself
    might fail:
-   keeping a line for retry (`OutputRouter._enqueue_if_configured`), recording a refusal already
+   keeping a line for retry (`OutputRouter._enqueue_if_configured`), the retry worker's tries to
+   deliver a kept line and to post its own (`retry_service.attempt_delivery`, `_post_own_line`: a
+   line that cannot be delivered stays kept and counted for the next try, and the worker's own line
+   falls back to the host's log), recording a refusal already
    answered (`log_lines.record_refusal`) and naming a member in a line (`log_lines.name_of_member`)
    are this place's too, a line that can be neither posted nor kept being logged on the host and
    dropped, a refusal's record that fails not being answered a second time, and a member who cannot
