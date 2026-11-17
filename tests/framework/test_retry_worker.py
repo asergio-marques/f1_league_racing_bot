@@ -496,9 +496,6 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         assert await _row_count(db_path) == 0
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True, reason="#550: deliver_queued hands back no link to the message it sent"
-    )
     async def test_a_line_a_change_saved_is_delivered_to_the_log_channel_set_since(self, tmp_path):
         """A change's line is queued in its save for the log channel of the moment, 555, and
         delivered once the save commits: the log channel is 99 by then, and takes it. The link to
