@@ -809,10 +809,6 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     assert str(raised.value) == fault
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#550: a review's reply lists no notices of the pictures it drew, nor links to them",
-)
 @pytest.mark.parametrize("outcome", ["posted", "refused-then-retried", "lineup-not-drawn"])
 async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
         posting, monkeypatch, tmp_path, outcome):

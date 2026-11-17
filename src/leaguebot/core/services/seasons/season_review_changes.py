@@ -76,6 +76,8 @@ from leaguebot.framework.models.change import (
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
+    RESULT_DRAWN,
+    RESULT_NOTICES,
     StepKind,
     StepResult,
     Verdict,
@@ -90,6 +92,7 @@ from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
+    drawn_notices_of,
     Step,
     StepContext,
 )
@@ -97,7 +100,9 @@ from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_server import league_guild
-from leaguebot.framework.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member
+from leaguebot.framework.utils.log_lines import (
+    abandoned_line, drawn_notices_line, drawn_notices_section, name_of_member,
+)
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.jobs.scheduler import SchedulerService
@@ -517,22 +522,27 @@ def season_review_post_change(
             message = await send_notice(
                 channel, str(picture["text"]), mentions=_NO_MENTIONS
             )
-        result: dict[str, Any] = {"new": message.id, "channel_id": channel.id}
+        result: dict[str, Any] = {
+            "new": message.id, "channel_id": channel.id,
+            RESULT_NOTICES: list(notices), RESULT_DRAWN: str(picture["name"]),
+        }
         # What the picture said when it was drawn is a line of this job, once, naming the picture:
-        # the drawing writes nothing to the log channel itself.
+        # the drawing writes nothing to the log channel itself. It is the job's first line, which
+        # the reply links to.
         lines: tuple[str, ...] = (
             (drawn_notices_line(
                 ctx.named, str(ctx.payload["review"]), str(picture["name"]), notices),)
             if notices else ()
         )
+        linked = 0 if notices else None
         if fault is None:
-            return StepResult(result=result, lines=lines)
+            return StepResult(result=result, lines=lines, linked=linked)
         result["fault"] = fault
         line = (
             f"{ctx.named} | {ctx.payload['review']} | Picture not drawn\n"
             f"  picture: {picture['name']}\n  fault: {fault}"
         )
-        return StepResult(result=result, lines=(*lines, line))
+        return StepResult(result=result, lines=(*lines, line), linked=linked)
 
     shared_delete = standing_posts.delete_replaced_step(DELETE_DRAWING_NOTICE)
 
@@ -636,8 +646,10 @@ def season_review_post_change(
 
     def outcome(ctx: OutcomeContext) -> str:
         faults = _faults(ctx)
+        section = drawn_notices_section(drawn_notices_of(ctx.steps, DRAW_AND_POST))
         if not faults:
-            return ""
+            # A review that drew with notices says it was posted, so that the section has a reply.
+            return f"\u2705 Review posted.\n\n{section}" if section else ""
         body = "\n".join(f"\u2022 **{name}**: {fault}" for name, fault in faults)
         # The review's family words what is withheld: a season's approval, or the placements'
         # (or the configuration's) confirmation, as the review's other faults say.
@@ -646,13 +658,14 @@ def season_review_post_change(
             "mid_season": "the placements are **not** offered for confirmation",
             "configuration": "the configuration is **not** offered for confirmation",
         }.get(str(ctx.payload.get("view", "approve")), "the review is **not** offered for approval")
-        return (
+        text = (
             "\u26d4 **A graphic could not be drawn for this review.**\n"
             f"{body}\n"
             f"Its section was shown as text, and {withheld} "
             "while that stands, so no question was posted. Correct the template or the assets "
             f"it names, then run `{ctx.payload['review']}` again."
         )
+        return f"{text}\n\n{section}" if section else text
 
     return ChangeType(
         kind=POST,
