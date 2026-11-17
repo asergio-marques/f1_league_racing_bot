@@ -724,8 +724,6 @@ _FEATURE_RACE_STANDARD = {
 _FEATURE_RACE_HALF = {1: 15, 2: 13, 3: 11, 4: 9, 5: 7, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1}
 
 
-# ─── Test mode's seeded configurations ──────────────────────────────────────
-
 async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> TestModePart:
     """Create "Standard" and "Half Points" and attach them to *season_id*, on *db*, committing
     nothing: results' part of test mode turned on, run whether or not the results module is on,
