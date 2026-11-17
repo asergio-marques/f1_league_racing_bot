@@ -886,21 +886,21 @@ async def test_a_zero_hour_last_notice_is_no_lead_and_a_zero_hour_deadline_falls
 
 
 @pytest.mark.xfail(strict=True, reason="#544: the builder makes no round_leads_read hook, nor does results answer it yet")
-@pytest.mark.parametrize("results_on", [False, True], ids=["results off", "results on"])
-async def test_results_answers_its_submission_lead_whether_on_or_off(tmp_path, results_on):
-    """A league with weather and attendance off and results on or off. Asked for a round's leads
-    through the hook the builder makes (`round_leads_read`), results alone answers, on or off: one
+async def test_results_answers_its_submission_lead_while_switched_off(tmp_path):
+    """A league with weather, attendance and results all off. Asked for a round's leads through
+    the hook the builder makes (`round_leads_read`), results alone answers, though it is off: one
     lead, its submission, stored as `results`, at the round's own moment (no offset), named
     "Result submission", run at once where its moment has passed and left to `/test-mode advance`
-    where core says so, armed whatever the hour, no clean-up, and quoted by no date check."""
+    where core says so, armed whatever the hour, no clean-up, and quoted by no date check. With
+    results on, the leads hook test's case with the other two off pins the same answer."""
     from leaguebot.core.models.round import RoundLead
     from tests.support.change_queue import seed_server
     from tests.support.season_league import set_module_flag
 
     bot = await built_bot(tmp_path, now=_NOW)
     await seed_server(bot.db_path)
-    for name, on in (("weather", False), ("attendance", False), ("results", results_on)):
-        await set_module_flag(bot.db_path, name, on)
+    for name in ("weather", "attendance", "results"):
+        await set_module_flag(bot.db_path, name, False)
 
     handed = await bot.round_leads_read.call()
 
