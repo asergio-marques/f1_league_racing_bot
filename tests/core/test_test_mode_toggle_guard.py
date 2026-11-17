@@ -251,9 +251,6 @@ class TestEnabling:
         ) == [(season_id, "Half Points"), (season_id, "Standard")]
         assert await stopped_job(db_path) is None
 
-    @pytest.mark.xfail(
-        strict=True, reason="#547: test mode still seeds beside a configuration the server holds"
-    )
     async def test_a_server_holding_a_points_configuration_enters_test_mode_with_none_seeded(
         self, cog, db_path
     ):

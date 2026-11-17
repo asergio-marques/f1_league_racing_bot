@@ -728,8 +728,19 @@ async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> list
     committing nothing: results' part of test mode turned on, run whether or not the results
     module is on, as the core specification's test mode section says without a condition.
 
-    Returns the names of the configurations newly created (empty if both already existed).
+    Seeds only where the server holds no points configuration of any name and none is attached
+    to *season_id*; where it holds one, it creates, changes and attaches nothing.
+
+    Returns the names of the configurations newly created (empty where it seeded nothing).
     """
+    cursor = await db.execute(
+        "SELECT EXISTS (SELECT 1 FROM points_config_store) "
+        "OR EXISTS (SELECT 1 FROM season_points_links WHERE season_id = ?)",
+        (season_id,),
+    )
+    if (await sole_row(cursor))[0]:
+        return []
+
     created: list[str] = []
 
     configs: list[
