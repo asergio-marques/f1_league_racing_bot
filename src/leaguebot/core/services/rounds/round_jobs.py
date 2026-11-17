@@ -1,9 +1,9 @@
 """Core's round jobs: the timed work of a round, armed and cancelled through the framework's scheduler.
 
-A round carries nine jobs, each of a kind (`ROUND_JOB_KINDS`): weather's four forecast phases and
-clean-up, the result submission, and the check-in's call, last notice, deadline and clean-up. Core
-arms them where a round is approved or amended, cancels them where it is called off, and reads
-them where test mode asks what is queued. `RoundJobs` is the one place that knows the scheme their
+A round carries jobs of the kinds the modules sign up (`RoundJobs.sign_up_kinds`): weather's
+forecast phases and clean-up, the result submission, and the check-in's call, last notice, deadline
+and clean-up. Core arms them where a round is approved or amended, cancels them where it is called
+off, and reads them where test mode asks what is queued. `RoundJobs` is the one place that knows the scheme their
 ids are written in, and the framework's scheduler, which it holds, knows none of it: every job is
 armed under the id, kind and key handed to the scheduler's generic calls
 (`docs/design/architecture.md`, "Timed work and restarts"). A job's ids, kinds, names and moments
@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
+from types import MappingProxyType
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from leaguebot.core.models.round import (
-    ROUND_JOB_KINDS,
-    ROUND_JOB_PHASES,
     AttendanceWindows,
     Round,
     RoundLead,
@@ -50,8 +49,8 @@ log = logging.getLogger(__name__)
 _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 
 # A round's job names its owner twice over: its ID prefix and the ``kind`` it is stored with are
-# the same (`ROUND_JOB_KINDS`, with the weather module's four in `WEATHER_JOB_KINDS`). All
-# nine of a round's jobs carry the same ``key`` kwarg (the round id), so the key says which round
+# the same, one of the kinds the modules signed up (`RoundJobs.sign_up_kinds`). All of a round's
+# jobs carry the same ``key`` kwarg (the round id), so the key says which round
 # a job belongs to and nothing about which module it is for. The kind says it, and so does the
 # prefix; `cancel_round(only=...)` reads the prefix, which ``_JOB_SUFFIX_RE`` above exposes,
 # because that is what its callers already hold.
@@ -92,14 +91,6 @@ def _job_event_type(job_id: str) -> str | None:
     return None if m is None else job_id[: m.start()]
 
 
-def _round_of(job: "StoredJob") -> int | None:
-    """The round a stored job belongs to — its key, where its kind is one of a round's
-    (`ROUND_JOB_KINDS`) — or None for any other job."""
-    if job.kind not in ROUND_JOB_KINDS:
-        return None
-    return job.key if isinstance(job.key, int) else None
-
-
 class RoundJobs:
     """Arms, cancels and reads a round's jobs, over the *scheduler* the builder hands it.
 
@@ -109,6 +100,31 @@ class RoundJobs:
     def __init__(self, scheduler: "SchedulerService", db_path: str) -> None:
         self._timers = scheduler
         self._db_path = db_path
+        self._kinds: dict[str, int | None] = {}
+
+    def sign_up_kinds(self, kinds: Mapping[str, int | None]) -> None:
+        """Sign up the kinds of job a module arms for a round, each with the phase number
+        `/test-mode advance` numbers it by, or None for a kind the advance reads from the round's
+        state instead (results' submission).
+
+        Core's round jobs know a job is a round's, and which phase it is, by this register and by
+        nothing of their own: a job of a kind no module signed up is no round's, whatever key it
+        carries. Each module signs its own kinds up at build.
+        """
+        self._kinds.update(kinds)
+
+    @property
+    def kinds(self) -> Mapping[str, int | None]:
+        """Every kind of a round's job the modules signed up, with its advance phase."""
+        return MappingProxyType(self._kinds)
+
+    def _round_of(self, job: "StoredJob") -> int | None:
+        """The round a stored job belongs to: its key, where its kind is one a module signed up as
+        a round's (`sign_up_kinds`), or None for any other job. Another job's key, an amendment's
+        lapse timer's for one, is no round's, however it is numbered."""
+        if job.kind not in self._kinds:
+            return None
+        return job.key if isinstance(job.key, int) else None
 
     def arm_leads(
         self,
@@ -362,7 +378,7 @@ class RoundJobs:
         The ids let a cancellation refused afterwards know what it took and arm it again.
 
         Iterates the live jobstore and removes every job of one of a round's kinds
-        (`ROUND_JOB_KINDS`) whose ``key`` is *round_id*.  This is format-agnostic, and leaves
+        (`sign_up_kinds`) whose ``key`` is *round_id*.  This is format-agnostic, and leaves
         alone a one-off timer of another kind that happens to be keyed with the same number.
 
         Args:
@@ -377,7 +393,7 @@ class RoundJobs:
         """
         removed: list[str] = []
         for job in self._timers.jobs():
-            if _round_of(job) != round_id:
+            if self._round_of(job) != round_id:
                 continue
             if only is not None:
                 event_type = _job_event_type(job.job_id)
@@ -404,7 +420,7 @@ class RoundJobs:
         removed: dict[int, list[str]] = {}
         jobs = self._timers.jobs()
         for job in jobs:
-            round_id = _round_of(job)
+            round_id = self._round_of(job)
             if round_id in wanted or (season_end and job.job_id.startswith("season_end")):
                 if self._timers.remove(job.job_id):
                     log.info("Removed job %s", job.job_id)
@@ -536,20 +552,20 @@ class RoundJobs:
         for job in self._timers.jobs():
             if job.next_run is None:
                 continue
-            round_id = _round_of(job)
+            round_id = self._round_of(job)
             if round_id is None or round_id not in round_ids:
                 continue
-            # The event type, read off the ID by the scheme's one reader
-            event_type = _job_event_type(job.job_id)
-            if event_type is None:
+            # A job carrying no round suffix has no event type to read, and is left alone
+            if _job_event_type(job.job_id) is None:
                 continue
-            phase = ROUND_JOB_PHASES.get(event_type)
+            phase = self._kinds.get(job.kind) if job.kind is not None else None
             if phase is None:
-                continue  # results, season_end, etc.
+                continue  # a kind signed up with no phase (results')
             result.append(
                 {
                     "job_id": job.job_id,
                     "round_id": round_id,
+                    "kind": job.kind,
                     "phase_number": phase,
                     "next_run_time": job.next_run,
                 }
@@ -579,7 +595,7 @@ class RoundJobs:
         for job in self._timers.jobs():
             if job.next_run is None:
                 continue
-            round_id = _round_of(job)
+            round_id = self._round_of(job)
             if round_id is None or round_id not in round_ids:
                 continue
             event_type = _job_event_type(job.job_id)

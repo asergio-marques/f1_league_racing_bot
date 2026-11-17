@@ -75,7 +75,6 @@ def _job(job_id: str):
     return SimpleNamespace(id=job_id, kwargs={"kind": "results", "key": 5}, next_run_time=None)
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 @pytest.mark.parametrize("cancel, args", CANCEL_CASES)
 def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args):
     """Fired or never armed: nothing raises and nothing is logged."""
@@ -88,7 +87,6 @@ def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args):
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 @pytest.mark.parametrize("cancel, args", CANCEL_CASES_FOUND_BY_ROUND)
 def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
     """A job store that cannot be written is a real fault: a warning carrying the error and
@@ -121,7 +119,6 @@ _ONE_OFF_TIMER_KEYED_5 = SimpleNamespace(
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     """Rounds 5 and 6 each carry two jobs, round 7 one, a season-end job stands, and so does
     amendment 5's lapse timer, whose key is the same number as round 5's. Cancelling rounds 5
@@ -143,7 +140,6 @@ def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     assert service._scheduler.get_jobs.call_count == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_store_that_cannot_be_listed_removes_nothing():
     """The job store cannot be read when round 5's and round 6's timed work is to be removed:
     the fault is raised, so that the cancellation stops, and no job is removed."""
@@ -156,7 +152,6 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
     service._scheduler.remove_job.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_cancel_round_gives_the_jobs_it_removed():
     """Round 5 carries its results submission and its clean-up, round 6 its results
     submission, and amendment 5's lapse timer, whose key is the same number as round 5's,
@@ -175,7 +170,6 @@ def test_cancel_round_gives_the_jobs_it_removed():
     assert _ONE_OFF_TIMER_KEYED_5.id not in removed_ids
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_the_season_end():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
     season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
@@ -221,7 +215,6 @@ def _every_job_of(round_id: int, *, season: int, tier: int, rnum: int):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_cancel_round_without_a_filter_still_removes_every_job():
     """`/season cancel`, `/round cancel`, reset and amend all cancel a *round* and want
     all nine of its jobs gone.  The new keyword must not have changed that."""
@@ -233,7 +226,6 @@ def test_cancel_round_without_a_filter_still_removes_every_job():
     assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in ALL_PREFIXES}
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_cancel_round_with_a_filter_spares_other_rounds():
     """The filter narrows by job kind, never by round: a job of the same kind on another
     round is still left alone."""

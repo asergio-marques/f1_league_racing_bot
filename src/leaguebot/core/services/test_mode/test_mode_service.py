@@ -51,7 +51,7 @@ class PhaseEntry(TypedDict):
     #: format, 4 = result submission, 5|6|7 = the check-in call, its last notice and its
     #: deadline, 8|9 = the forecast and the check-in cleanups a day after the round.
     phase_number: int
-    #: The kind of round job the step is armed under (`ROUND_JOB_KINDS`): `weather_p1` for the
+    #: The kind of round job the step is armed under (`RoundJobs.sign_up_kinds`): `weather_p1` for the
     #: mystery notice (0) as for Phase 1, the key of the step its module signed up
     #: (`AdvanceSteps.register_step`).
     kind: str
@@ -450,7 +450,7 @@ async def get_next_pending_phase(
 
     for job in round_jobs.get_pending_advance_jobs({rnd.round_id for rnd in rounds}):
         phase = job["phase_number"]
-        job_kind = PHASE_KINDS.get(phase)
+        job_kind = job["kind"]
         index = next((i for i, rnd in enumerate(rounds) if rnd.round_id == job["round_id"]), None)
         if index is None:
             continue

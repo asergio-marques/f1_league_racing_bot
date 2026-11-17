@@ -170,7 +170,6 @@ def _round_jobs(jobs: list):
     return round_jobs_over(_service(jobs), "/tmp/not-read.db")
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the pending read hands back no job's kind, and core's round jobs keep no register of round kinds yet")
 def test_each_event_type_maps_to_its_phase_number():
     """The advance command fires events by phase number, so a prefix mapped wrongly would
     fire the wrong thing — a check-in deadline in place of a forecast. Each job comes back with
@@ -196,7 +195,6 @@ def test_each_event_type_maps_to_its_phase_number():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_jobs_are_returned_in_the_order_they_will_fire():
     """Advance replays a season in order; out of sequence it would post a deadline before
     the call it closes."""
@@ -212,7 +210,6 @@ def test_jobs_are_returned_in_the_order_they_will_fire():
     assert [p["phase_number"] for p in pending] == [1, 2, 3]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_paused_job_is_not_pending():
     """`next_run_time is None` means it will not fire, and advance must not claim it will."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -221,7 +218,6 @@ def test_a_paused_job_is_not_pending():
     assert _round_jobs(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_another_round_s_jobs_are_not_returned():
     suffix_mine = _round_job_suffix(_round(42, 5), 3, 2)
     suffix_theirs = _round_job_suffix(_round(43, 6), 3, 2)
@@ -235,7 +231,6 @@ def test_another_round_s_jobs_are_not_returned():
     assert [p["round_id"] for p in pending] == [42]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_season_end_jobs_are_excluded():
     """Not an event of any round, so advance must not replay it."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -249,7 +244,6 @@ def test_season_end_jobs_are_excluded():
     assert [p["phase_number"] for p in pending] == [1]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_both_cleanups_are_replayed_as_events_of_their_own():
     """A round's forecast and check-in come down a day after it, and advance fires both in
     their turn (decided 2026-09-24, #425), the forecast's first where they fall together."""
@@ -263,7 +257,6 @@ def test_both_cleanups_are_replayed_as_events_of_their_own():
     assert [p["phase_number"] for p in pending] == [8, 9]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 @pytest.mark.parametrize("minutes", [5, -5], ids=["ahead", "past"])
 def test_a_results_job_is_never_returned(minutes):
     """Result submission is found from database state instead, so that a past-dated job
@@ -278,7 +271,6 @@ def test_a_results_job_is_never_returned(minutes):
     assert [p["job_id"] for p in pending] == [f"weather_p1{suffix}"]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_job_of_a_kind_no_module_signed_up_is_no_round_s():
     """Core's round jobs know a round's job by the kinds the modules signed up (#544), and by
     nothing of their own. With weather's four signed up alone, round 42's first forecast phase
@@ -297,7 +289,6 @@ def test_a_job_of_a_kind_no_module_signed_up_is_no_round_s():
     assert round_jobs.get_queued_events_for_rounds({42}) == {(42, "weather_p1")}
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_job_with_no_round_is_ignored():
     """The portrait refresh and the signup close timer are server-scoped and carry no
     round."""
@@ -306,7 +297,6 @@ def test_a_job_with_no_round_is_ignored():
     assert _round_jobs(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_job_whose_id_does_not_parse_is_ignored():
     """Rather than raising. A job from an older version of the bot must not stop the
     advance command working."""
@@ -315,7 +305,6 @@ def test_a_job_whose_id_does_not_parse_is_ignored():
     assert _round_jobs(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_every_queued_job_is_listed_by_its_round_and_event_type():
     """`get_queued_events_for_rounds` is the review summary's view and deliberately keeps the
     ones advance excludes — it answers "is a job queued", not "what will advance fire" (#426)."""
@@ -327,7 +316,6 @@ def test_every_queued_job_is_listed_by_its_round_and_event_type():
     assert queued == {(42, event_type) for event_type in _ROUND_EVENT_TYPES}
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_paused_job_is_not_queued():
     """A paused job will not fire, and is no more worth reporting as queued than a missing one."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -336,7 +324,6 @@ def test_a_paused_job_is_not_queued():
     assert _round_jobs(jobs).get_queued_events_for_rounds({42}) == set()
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
     """The season, tier and number in an ID are decoration, and two rounds may share them after a
     renumbering. The round a job belongs to is its `round_id` kwarg, which an ID written before
@@ -353,7 +340,6 @@ def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
     assert queued == {(42, "weather_p1"), (43, "weather_p1"), (42, "results")}
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
 def test_a_job_whose_id_does_not_parse_is_not_listed():
     """Its type cannot be read, so it cannot stand for any step of the round."""
     jobs = [_job("something_odd", 42), _job("portrait_refresh", None)]

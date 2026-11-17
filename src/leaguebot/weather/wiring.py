@@ -35,8 +35,24 @@ def register_switch(modules: "ModuleService") -> None:
 def sign_up(bot: "LeagueBot") -> None:
     """Sign weather up to each hook only weather joins. The hooks several modules join are signed
     up by the entry point, in the order they are called, through the functions below."""
+    sign_up_round_kinds(bot)
     sign_up_to_phases_drawn_read(bot)
     sign_up_to_test_mode_flushed(bot)
+
+
+#: The phase number `/test-mode advance` numbers each of weather's kinds of round job by.
+_ADVANCE_PHASES = {"weather_p1": 1, "weather_p2": 2, "weather_p3": 3, "cleanup": 8}
+
+
+def sign_up_round_kinds(bot: "LeagueBot") -> None:
+    """Sign weather's kinds of round job up with core's round jobs, each with its advance phase.
+
+    The kinds are those of `WEATHER_JOB_KINDS`, the set weather's switch-off cancels, so that what
+    is registered and what is switched off cannot drift: a kind in one and not the other fails
+    here, at build."""
+    from leaguebot.core.models.round import WEATHER_JOB_KINDS
+
+    bot.round_jobs.sign_up_kinds({kind: _ADVANCE_PHASES[kind] for kind in WEATHER_JOB_KINDS})
 
 
 def sign_up_to_phases_drawn_read(bot: "LeagueBot") -> None:

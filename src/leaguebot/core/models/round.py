@@ -132,17 +132,10 @@ def read_scheduled_at(stored: str) -> datetime:
 #: clean-up that deletes what they posted.
 WEATHER_JOB_KINDS = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
 
-#: The kinds of a round's nine jobs: each is its job id's prefix, and its key the round id. A
-#: job is a round's where its kind is one of these; another job's key, an amendment's lapse
-#: timer's for one, is no round's, however it is numbered.
-ROUND_JOB_KINDS = WEATHER_JOB_KINDS | {
-    "results", "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup",
-}
-
 #: The phase number (`get_next_pending_phase`) of each kind of round job the job store holds
-#: for the steps `/test-mode advance` runs: the one map both ways read, the job store from kind to
-#: phase and test mode from phase to kind. Result submission (4) is read from database state and
-#: so is not here, and a mystery round's notice (0) is armed as `weather_p1`, which is 1 here.
+#: for the steps `/test-mode advance` runs, which test mode reads from phase to kind until each
+#: module maps its own. Result submission (4) is read from database state and so is not here,
+#: and a mystery round's notice (0) is armed as `weather_p1`, which is 1 here.
 ROUND_JOB_PHASES = {
     "weather_p1": 1, "weather_p2": 2, "weather_p3": 3, "rsvp_notice": 5,
     "rsvp_last_notice": 6, "rsvp_deadline": 7, "cleanup": 8, "rsvp_cleanup": 9,

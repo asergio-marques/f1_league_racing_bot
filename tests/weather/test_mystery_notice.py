@@ -141,7 +141,6 @@ def _arm_mystery(svc, round_id: int = 42, season: int = 1, tier: int = 1) -> Non
 
 class TestScheduleRoundMystery:
 
-    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_schedules_exactly_five_jobs(self):
         # All rounds (including MYSTERY) schedule 5 jobs:
         # weather_p1, weather_p2, weather_p3, cleanup, results
@@ -149,14 +148,12 @@ class TestScheduleRoundMystery:
         _arm_mystery(svc)
         assert svc._scheduler.add_job.call_count == 5
 
-    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_no_legacy_mystery_r_job(self):
         svc = _make_scheduler_no_db()
         _arm_mystery(svc)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert not any(jid.startswith("mystery_r") for jid in job_ids)
 
-    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_all_three_weather_phase_jobs_created(self):
         svc = _make_scheduler_no_db()
         _arm_mystery(svc)
@@ -165,7 +162,6 @@ class TestScheduleRoundMystery:
         assert any("weather_p2" in jid for jid in job_ids)
         assert any("weather_p3" in jid for jid in job_ids)
 
-    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_round_id_in_kwargs_for_all_jobs(self):
         """Every job of a mystery round is stored with the round's id as its key."""
         svc = _make_scheduler_no_db()
@@ -173,7 +169,6 @@ class TestScheduleRoundMystery:
         for call in svc._scheduler.add_job.call_args_list:
             assert call.kwargs["kwargs"]["key"] == 42
 
-    @pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
     def test_job_ids_follow_new_format(self):
         svc = _make_scheduler_no_db()
         _arm_mystery(svc, 42, season=3, tier=2)
@@ -207,14 +202,12 @@ class TestCancelRoundIncludesMystery:
         svc._scheduler.get_jobs.return_value = jobs
         return jobs
 
-    @pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
     def test_removes_all_round_jobs(self):
         svc = _make_scheduler_no_db()
         self._setup_round_jobs(svc, round_id=7)
         round_jobs_over(svc, svc._db_path).cancel_round(7)
         assert svc._scheduler.remove_job.call_count == 5
 
-    @pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
     def test_does_not_remove_other_round_jobs(self):
         svc = _make_scheduler_no_db()
         jobs = [
@@ -227,7 +220,6 @@ class TestCancelRoundIncludesMystery:
         assert "weather_p1_s1_d1_r1" in removed
         assert "weather_p1_s1_d1_r2" not in removed
 
-    @pytest.mark.xfail(strict=True, reason="#544: core's round jobs keep no register of the modules' round kinds yet (sign_up_kinds)")
     def test_no_jobs_removed_when_jobstore_empty(self):
         svc = _make_scheduler_no_db()
         svc._scheduler.get_jobs.return_value = []
@@ -251,10 +243,6 @@ def _arm_check_in(svc, round_id: int, fmt: RoundFormat) -> None:
     )
 
 
-#: Why the check-in arming tests fail until core arms leads.
-_NO_LEADS = "#544: core has no RoundLead nor RoundJobs.arm_leads yet"
-
-
 class TestScheduleAttendanceRoundMystery:
     """A MYSTERY round's check-in leads are armed identically to any other format's."""
 
@@ -267,14 +255,12 @@ class TestScheduleAttendanceRoundMystery:
         ],
         ids=["notice", "deadline", "last_notice_when_enabled"],
     )
-    @pytest.mark.xfail(strict=True, reason=_NO_LEADS)
     def test_mystery_creates_each_rsvp_job(self, expected_id):
         svc = _make_scheduler_no_db()
         _arm_check_in(svc, 5, RoundFormat.MYSTERY)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert expected_id in job_ids
 
-    @pytest.mark.xfail(strict=True, reason=_NO_LEADS)
     def test_mystery_creates_same_rsvp_job_count_as_normal(self):
         """MYSTERY and NORMAL round must produce identical RSVP job counts."""
         svc = _make_scheduler_no_db()

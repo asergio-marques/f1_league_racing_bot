@@ -1570,7 +1570,6 @@ def _round_3(when: Any) -> Any:
     return SimpleNamespace(id=ROUND, division_id=PRO, round_number=3, scheduled_at=when)
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
 async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once(
     tmp_path, scheduler,
 ):
@@ -1609,7 +1608,6 @@ async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_on
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core has no RoundLead nor RoundJobs.arm_leads yet")
 async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_path, scheduler):
     """Round 3 was raced 25 hours ago, and its Phase 3 forecast (9303) still stands: its clean-up
     fell due an hour ago while the bot was down. The bot comes back: weather's start-up step for

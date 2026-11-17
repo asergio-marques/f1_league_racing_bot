@@ -35,9 +35,21 @@ def register_switch(modules: "ModuleService") -> None:
 
 
 def sign_up(bot: "LeagueBot") -> None:
-    """Sign attendance up to each hook only attendance joins: none at present. The hooks several
-    modules join are signed up by the entry point, in the order they are called, through the
-    functions below."""
+    """Sign attendance up to each hook only attendance joins: none at present, and its kinds of
+    round job with core's round jobs. The hooks several modules join are signed up by the entry
+    point, in the order they are called, through the functions below."""
+    sign_up_round_kinds(bot)
+
+
+#: The kinds of round job attendance arms, each with the phase number `/test-mode advance` numbers
+#: it by: the check-in's call, its last notice, its deadline and its clean-up.
+ROUND_KINDS = {"rsvp_notice": 5, "rsvp_last_notice": 6, "rsvp_deadline": 7, "rsvp_cleanup": 9}
+
+
+def sign_up_round_kinds(bot: "LeagueBot") -> None:
+    """Sign attendance's kinds of round job up with core's round jobs, each with its advance
+    phase."""
+    bot.round_jobs.sign_up_kinds(ROUND_KINDS)
 
 
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:
