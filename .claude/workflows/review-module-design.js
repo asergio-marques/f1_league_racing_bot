@@ -32,8 +32,8 @@ const issue = `#${pass.issue}`
 const MAX_GAPS = 3
 
 const GOVERNING = module === 'core'
-  ? 'docs/design/architecture.md'
-  : 'docs/design/architecture.md and docs/design/core.md'
+  ? 'docs/design/architecture.md and docs/design/framework.md'
+  : 'docs/design/architecture.md, docs/design/framework.md and docs/design/core.md'
 
 const CORE_NOTE = module === 'core'
   ? '\n\nCore implements several cross-cutting mechanisms whose rules are architecture.md\'s — the scheduler, the channel registry and the path to Discord, the failure path, the one-league claim. Inventory and review them as core\'s own code; the rule they serve is architecture.md\'s and is referenced, never restated.'
@@ -143,8 +143,8 @@ const REVIEW_SCHEMA = {
           id: { type: 'string', description: 'a short unique slug, prefixed by the concern' },
           title: { type: 'string' },
           evidence: EVIDENCE,
-          rule: { type: 'string', description: 'the architecture.md or core.md rule broken, or the practice where they are silent' },
-          source: { type: 'string', description: 'the section of architecture.md or core.md, or the practice\'s primary source' },
+          rule: { type: 'string', description: 'the architecture.md, framework.md or core.md rule broken, or the practice where they are silent' },
+          source: { type: 'string', description: 'the section of architecture.md, framework.md or core.md, or the practice\'s primary source' },
           defectClass: { type: 'string', description: 'what a league or the maintainer suffers, with issue numbers that instance it' },
           options: {
             type: 'array',
@@ -174,7 +174,7 @@ const REVIEW_SCHEMA = {
       items: {
         type: 'object',
         required: ['what', 'evidence', 'proposal'],
-        properties: { what: { type: 'string' }, evidence: EVIDENCE, proposal: { type: 'string', description: 'the amendment to architecture.md or core.md, for the user to decide' } },
+        properties: { what: { type: 'string' }, evidence: EVIDENCE, proposal: { type: 'string', description: 'the amendment to architecture.md, framework.md or core.md, for the user to decide' } },
       },
     },
     suspectedDefects: {

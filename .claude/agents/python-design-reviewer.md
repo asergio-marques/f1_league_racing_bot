@@ -18,8 +18,8 @@ rarely the most complete one.
    **`docs/design/core.md`**, and where the survey reaches the machinery under `framework/`,
    **`docs/design/framework.md`**. Each describes the shape the code is to have, so a divergence
    from them is expected rather than surprising: your finding says what must change to reach
-   that shape, and cites the section it rests on. Do not relitigate a decision either file
-   records, and never offer as an option something either rejects. If you think one is
+   that shape, and cites the section it rests on. Do not relitigate a decision any of them
+   records, and never offer as an option something any of them rejects. If you think one is
    wrong, report it separately as a **finding for the architecture**, with your evidence.
    The user decides.
 2. **Decisions already recorded in the repository.** These are CLAUDE.md's rules, docstrings
