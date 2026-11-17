@@ -186,18 +186,36 @@ async def channel_on_server(guild, channel_id: int) -> bool:
 
 
 async def channel_fault(
-    guild, division_name: str, value, label: str, command: str
+    guild,
+    division_name: str,
+    value,
+    label: str,
+    command: str,
+    needs: Needs = (VIEW,),
 ) -> str | None:
-    """The line saying a division's channel is not set, or no longer on the *guild*, or None
-    where it is fine: the one wording every module's channel faults and core's own are laid in.
+    """The line saying a division's channel is not set, no longer on the *guild*, or missing
+    permissions the bot needs there, or None where it is fine: the one wording every module's
+    channel faults and core's own are laid in.
 
     *value* is the channel's id as the column holds it; *label* is what a league calls the
-    channel and *command* sets it. With no *guild*, only whether it is set is judged.
+    channel and *command* sets it. *needs* is what the channel's use asks of the bot, which its
+    module states (`channel_needs`); a channel lacking any is named with what it lacks, in
+    Discord's own words, so the league can give the bot them or set another. The channel is
+    judged by `judged_presence`, so one that could not be looked up for any reason but its absence
+    is not a fault. With no *guild*, only whether it is set is judged.
     """
     if not value:
         return f"**{division_name}** has no {label} — `{command}`."
-    if guild is not None and not await channel_on_server(guild, int(value)):
+    if guild is None:
+        return None
+    presence = await judged_presence(guild, int(value), needs)
+    if presence.state is PresenceState.GONE:
         return f"**{division_name}**'s {label} is no longer on the server — `{command}`."
+    if presence.state is PresenceState.UNUSABLE:
+        return (
+            f"**{division_name}**'s {label} is missing permissions the bot needs there: "
+            f"{', '.join(presence.missing)} — give the bot them, or `{command}`."
+        )
     return None
 
 
