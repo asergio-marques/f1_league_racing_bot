@@ -1405,7 +1405,7 @@ Displays every team of the server's default list as *full name — `shorthand` �
 
 Displays the placed drivers for each team seat in the active season. If a division name or tier number is provided only that division is shown; otherwise all divisions are listed. Requires a season being raced, its placements confirmed.
 
-Where the league draws its lineup, each division is a picture, and a division whose picture cannot be drawn refuses the whole command, naming it. Notices a picture was drawn with go to the log channel, and your private follow-up lists them with a link to it, whether or not the lineup was posted `public` — a channel the drivers read never carries a notice. A division refused after others drew still lists the notices already logged.
+Where the league draws its lineup, each division is a picture, and a division whose picture cannot be drawn refuses the whole command, naming it. Notices a picture was drawn with go to the log channel, and your private follow-up lists them with a link to it, whether or not the lineup was posted `public` — a channel the drivers read never carries a notice. A division refused after others drew still lists the notices already logged. **A command asked for `public` that is refused** — no season being raced, a division not found, no divisions, a picture that cannot be drawn, or any fault — is refused to you alone: the "thinking…" it showed the channel is deleted first, and only then are you told why, so no problem is ever shown in the channel. Where Discord will not delete it, the channel is shown one line, *"⛔ The lineup could not be shown."*, naming no problem, and you are still told privately.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
