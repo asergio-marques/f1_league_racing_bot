@@ -232,8 +232,8 @@ channel's `post_log`, which the builder gives the service and which the service 
 so that a handler that fails before it asks for its change is reported by one line. Two things
 share the name of a runner here, and are kept apart: `_one_off_timer_job` is the callable the job
 store pins, and the job runner is what it calls. A kind with no handler is passed over with a
-warning, and so is a service not yet started: a fault in the bot's assembly, not in a job. **A job runs in an empty context** (`_JobScheduler`), so it can never take an
-interaction for its own
+warning, and so is a service not yet started: a fault in the bot's assembly, not in a job. **A job
+runs in an empty context** (`_JobScheduler`), so it can never take an interaction for its own
 (`test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn`).
 A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and restarts").
 
