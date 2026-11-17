@@ -16,11 +16,13 @@ import aiosqlite
 
 from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection, sole_row, tuple_rows_in
+from leaguebot.core.models.channel_needs import ATTACH, SEND, VIEW, Needs
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse, DiscordTargets
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 
 async def set_division_forecast_channel(
@@ -81,15 +83,27 @@ async def division_lines(
     }
 
 
+async def channel_needs(drawing: "ImageDrawing") -> Needs:
+    """What the forecast channel needs of the bot: View Channel and Send Messages, as a forecast
+    is posted as text, and Attach Files where the image module answers that the `weather`
+    pictures could attach a file (`aspect_attaches_files`, a question it answers by its switches
+    and not by the state of a template). A forecast is a post and not an embed, and is not
+    reposted, so Embed Links and Read Message History are not asked."""
+    attaches = await drawing.aspect_attaches_files("weather")
+    return (VIEW, SEND) + ((ATTACH,) if attaches else ())
+
+
 async def division_channel_faults(
     modules: "ModuleService",
     db_path: str,
     *,
+    drawing: "ImageDrawing",
     divisions: Mapping[int, str],
     guild: Any = None,
 ) -> dict[int, list[str]]:
-    """The forecast channel of each division in *divisions* (id to name) that is not set, or not
-    on the *guild*, by division id; nothing where the weather module is off.
+    """The forecast channel of each division in *divisions* (id to name) that is not set, not on
+    the *guild* or lacking a permission its use needs (`channel_needs`, asked of the *drawing*),
+    by division id; nothing where the weather module is off.
 
     Subscribed to core's `division_channel_faults_read`, which hands the divisions the
     confirmation judges and the server. A division with no fault is given an empty list. With no
@@ -99,10 +113,11 @@ async def division_channel_faults(
         return {}
     async with get_connection(db_path) as db:
         channels = await forecast_channels_on(db, list(divisions))
+    needs = await channel_needs(drawing)
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         fault = await channel_fault(
-            guild, name, channels.get(division_id), "weather channel", "/weather channel"
+            guild, name, channels.get(division_id), "weather channel", "/weather channel", needs
         )
         found[division_id] = [fault] if fault else []
     return found

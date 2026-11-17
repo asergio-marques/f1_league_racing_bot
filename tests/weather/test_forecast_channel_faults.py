@@ -14,11 +14,6 @@ from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.channel_faults import answer_attachments, server_holding
 from tests.support.switches import answer_switch
 
-#: Why a test is expected to fail until #449's slice 2a is built.
-NOT_JUDGED_BY_NEEDS = (
-    "#449: weather does not yet judge its channel by the permissions its use needs"
-)
-
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
@@ -26,7 +21,6 @@ def _modules(on: bool) -> MagicMock:
     return modules
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)
 async def test_weather_names_each_division_s_missing_or_deleted_forecast_channel(tmp_path):
     """Pro's weather channel 110 is gone from the server, Am has none, and Old's 310 is there but
     Old is not among the divisions judged. Weather on names Pro's and Am's, each with

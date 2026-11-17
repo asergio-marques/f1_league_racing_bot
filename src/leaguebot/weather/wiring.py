@@ -223,13 +223,17 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
-    """Sign weather's lines naming its forecast channel not set or not on the server up to the hook
-    a division's channel faults are read through, handed the module service and the database's
-    path."""
+    """Sign weather's lines naming its forecast channel not set, not on the server or missing a
+    permission it needs up to the hook a division's channel faults are read through, handed the
+    module service, the database's path and the image module's drawing, which says whether a
+    picture could attach a file."""
     from leaguebot.weather.services import forecast_channel
 
     bot.division_channel_faults_read.subscribe(
-        partial(forecast_channel.division_channel_faults, bot.module_service, bot.db_path)
+        partial(
+            forecast_channel.division_channel_faults, bot.module_service, bot.db_path,
+            drawing=as_image_drawing(bot.image_drawing),
+        )
     )
 
 
