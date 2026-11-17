@@ -203,6 +203,8 @@ def _sign_up_to_round_windows(bot: LeagueBot) -> None:
     attendance_wiring.sign_up_to_round_windows(bot)
     weather_wiring.sign_up_to_round_windows(bot)
     bot.round_leads_read = AwaitedHook()
+    attendance_wiring.sign_up_to_round_leads(bot)
+    weather_wiring.sign_up_to_round_leads(bot)
     results_wiring.sign_up_to_round_leads(bot)
 
 

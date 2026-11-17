@@ -252,7 +252,6 @@ async def _league_for(tmp_path: Any, monkeypatch: Any, **kwargs: Any) -> Any:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calendars_and_sheets_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -884,18 +883,15 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
 @pytest.mark.parametrize(
     ("modules", "armed"),
     [
-        pytest.param({"weather": True}, ["weather"], id="weather on",
-                     marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
+        pytest.param({"weather": True}, ["weather"], id="weather on"),
         pytest.param({"weather": False, "results": True}, ["results"],
                      id="weather off and results on"),
         pytest.param({"weather": False, "results": True, "test_mode": True}, [],
                      id="weather off and results on under test mode"),
         pytest.param({"weather": True, "results": True, "test_mode": True}, ["weather"],
-                     id="weather and results on under test mode",
-                     marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
+                     id="weather and results on under test mode"),
         pytest.param({"weather": False, "results": True, "attendance": True},
-                     ["results", "attendance"], id="weather off, results and attendance on",
-                     marks=pytest.mark.xfail(strict=True, reason="#544: attendance answers its check-in as no leads yet, nor core arms them (arm_leads)")),
+                     ["results", "attendance"], id="weather off, results and attendance on"),
         pytest.param({"weather": False, "results": False}, ["results"],
                      id="weather and results off"),
         pytest.param({"weather": False, "results": False, "test_mode": True}, ["results"],

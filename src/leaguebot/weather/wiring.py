@@ -90,6 +90,16 @@ def sign_up_to_round_windows(bot: "LeagueBot") -> None:
     ))
 
 
+def sign_up_to_round_leads(bot: "LeagueBot") -> None:
+    """Sign weather's forecasts up to the hook a round's leads are read through. It checks its own
+    switch."""
+    from leaguebot.weather.services import weather_config_service
+
+    bot.round_leads_read.subscribe(partial(
+        weather_config_service.round_leads, bot.module_service, bot.db_path
+    ))
+
+
 def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     """Sign weather's section up to the hook a season review gathers its lines through: handed
     which review is gathered, the season and its divisions, it checks its own switch."""

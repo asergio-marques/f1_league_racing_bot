@@ -506,7 +506,6 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the builder makes no round_leads_read hook, and results answers neither it nor round_armed yet")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -785,9 +784,6 @@ async def test_the_builder_signs_signup_up_to_a_driver_s_account_changed(tmp_pat
 _ATTENDANCE_SET = (3, 12, 1)
 _WEATHER_SET = (4, 1, 3)
 
-#: Why the leads tests fail until the modules answer the leads read in place of the windows read.
-_NO_MODULE_LEADS = "#544: attendance and weather answer no round_leads_read yet"
-
 
 async def _leads_read(tmp_path, *, attendance_on, weather_on, attendance=_ATTENDANCE_SET):
     """Every lead the hook the builder makes (`round_leads_read`) hands back, in order, for a
@@ -815,7 +811,6 @@ async def _leads_read(tmp_path, *, attendance_on, weather_on, attendance=_ATTEND
     return [lead for leads in await bot.round_leads_read.call() for lead in leads or ()]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_MODULE_LEADS)
 @pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
 @pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
 async def test_the_leads_hook_hands_each_enabled_module_s_leads(
@@ -865,7 +860,6 @@ async def test_the_leads_hook_hands_each_enabled_module_s_leads(
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_MODULE_LEADS)
 async def test_a_zero_hour_last_notice_is_no_lead_and_a_zero_hour_deadline_falls_at_the_round(
     tmp_path,
 ):

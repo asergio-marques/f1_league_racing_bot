@@ -27,6 +27,18 @@ from leaguebot.framework.utils.hooks import AwaitedHook
 POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
 
 
+def days_before(count: int) -> str:
+    """*count* days ahead of a round as the approval's date check words it: "1 day before",
+    "5 days before"."""
+    return f"{count} day{'' if count == 1 else 's'} before"
+
+
+def hours_before(count: int) -> str:
+    """*count* hours ahead of a round as the approval's date check words it: "1 hour before",
+    "2 hours before"."""
+    return f"{count} hour{'' if count == 1 else 's'} before"
+
+
 async def read_round_windows(
     windows_read: AwaitedHook,
 ) -> tuple[AttendanceWindows | None, WeatherWindows | None]:

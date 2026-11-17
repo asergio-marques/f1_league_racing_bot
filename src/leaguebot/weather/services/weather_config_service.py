@@ -16,13 +16,17 @@ import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import AuditRecord
-from leaguebot.core.models.round import WeatherWindows
+from leaguebot.core.models.round import RoundLead, WeatherWindows
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
+from leaguebot.weather.services.forecast_leads import forecast_leads
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
+
+#: The key weather's switch is asked by.
+SWITCH_KEY = "weather"
 
 _DEFAULTS = WeatherPipelineConfig()  # default field values only
 
@@ -55,6 +59,15 @@ async def windows_read(db_path: str) -> WeatherWindows:
 async def windows_kept_or_read(kept: Mapping[str, Any], db_path: str) -> WeatherWindows:
     """The horizons *kept* holds, or, where it holds none, those the league has now, read afresh."""
     return windows_kept(kept) or await windows_read(db_path)
+
+
+async def round_leads(modules: "ModuleService", db_path: str) -> tuple[RoundLead, ...]:
+    """Weather's part of a round's leads read: the timers its forecasts want set, at the league's
+    own horizons, or none where the module is off. The subscriber to the hook
+    (`round_leads_read`)."""
+    if not await modules.is_enabled(SWITCH_KEY):
+        return ()
+    return forecast_leads(await windows_read(db_path))
 
 
 async def round_window(modules: "ModuleService", db_path: str) -> WeatherWindows | None:

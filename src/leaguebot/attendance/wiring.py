@@ -62,6 +62,16 @@ def sign_up_to_round_windows(bot: "LeagueBot") -> None:
     ))
 
 
+def sign_up_to_round_leads(bot: "LeagueBot") -> None:
+    """Sign attendance's check-in up to the hook a round's leads are read through. It checks its
+    own switch."""
+    from leaguebot.attendance.services.hooks import attendance_hooks
+
+    bot.round_leads_read.subscribe(partial(
+        attendance_hooks.round_leads, bot.attendance_service, bot.module_service
+    ))
+
+
 def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     """Sign attendance's section up to the hook a season review gathers its lines through: handed
     which review is gathered, the season and its divisions, it checks its own switch."""

@@ -14,12 +14,16 @@ from typing import Any, TYPE_CHECKING
 import aiosqlite
 
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-from leaguebot.core.models.round import AttendanceWindows
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_leads
+from leaguebot.core.models.round import AttendanceWindows, RoundLead
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
+
+#: The key attendance's switch is asked by.
+SWITCH_KEY = "attendance"
 
 
 async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
@@ -104,13 +108,24 @@ async def round_window(
     return await lead_times(attendance, modules)
 
 
+async def round_leads(
+    attendance: AttendanceService, modules: "ModuleService"
+) -> tuple[RoundLead, ...]:
+    """Attendance's part of a round's leads read: the timers its check-in wants set, or none where
+    the module is off, since a league without attendance has no check-in to arm or to lose. The
+    subscriber to the hook (`round_leads_read`); reads only, and with no configuration stored the
+    packaged defaults answer and no row is created."""
+    windows = await lead_times(attendance, modules)
+    return () if windows is None else check_in_leads(windows)
+
+
 async def lead_times(
     attendance: AttendanceService, modules: "ModuleService"
 ) -> AttendanceWindows | None:
     """The check-in's three lead times as the league has them, or None where the module is off.
     Reads only: with no configuration stored, the packaged defaults answer and no row is
     created."""
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await attendance.get_config_or_defaults()
     return AttendanceWindows(

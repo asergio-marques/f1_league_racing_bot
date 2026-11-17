@@ -91,7 +91,6 @@ async def test_a_server_that_never_configured_attendance_has_no_config(tmp_path)
     assert await service.get_config() is None
 
 
-@pytest.mark.xfail(strict=True, reason="#544: attendance answers no round_leads yet")
 async def test_reading_a_round_s_window_writes_nothing(tmp_path):
     """A round's leads are read while a season is approved or a round amended, and a read
     writes nothing: with attendance reported on and no configuration row stored, the read of its
