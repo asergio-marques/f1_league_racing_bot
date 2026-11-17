@@ -79,7 +79,6 @@ async def test_an_empty_queue_does_nothing():
     attempt.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#453: a failed retry cycle writes nothing to the log channel")
 async def test_a_database_it_cannot_read_does_not_kill_the_worker(caplog):
     """The loop is long-lived. An exception escaping here would stop the task for good,
     and nothing would retry anything again until the bot was restarted. The kept lines cannot be
@@ -99,7 +98,6 @@ async def test_a_database_it_cannot_read_does_not_kill_the_worker(caplog):
     post_log.assert_awaited_once_with(job_failure_line("log line retry", error), channel=channel)
 
 
-@pytest.mark.xfail(strict=True, reason="#453: one kept line whose retry raises stops the cycle and the loop")
 async def test_one_entry_that_raises_does_not_stop_the_rest_or_the_loop(caplog):
     """Three kept lines, 101, 102 and 103, are due a retry; the database is locked as the first
     two are tried, so trying each of them raises `sqlite3.OperationalError`. The third is still

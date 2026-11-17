@@ -349,6 +349,12 @@ def _safe_post_log(router: "OutputRouter", message: str) -> None:
     asyncio.ensure_future(_post_own_line(router, message))
 
 
+async def post_own_line(router: "OutputRouter", message: str) -> None:
+    """Post one of the worker's own lines by the path that never queues it (`_post_own_line`):
+    the retry loop's report of a cycle that failed. Never raises."""
+    await _post_own_line(router, message)
+
+
 async def _post_own_line(router: "OutputRouter", message: str) -> None:
     """Post one of the worker's own lines, the "Stuck retry entry" warning or the "Retry delivery
     succeeded" line, to the log channel, **never queueing it** (FR-009).

@@ -3269,7 +3269,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("framework/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("framework/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("framework/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
 }
