@@ -83,10 +83,6 @@ LEAVING = {
     # Exempt while it stands; it goes with `_ReviewPoster` when the review is posted on the
     # queue (C93).
     ("core/cogs/season_cog.py", "posted"): "#439 6b C93",
-    # The log-channel warnings being sent to members, each task dropping itself when done: the
-    # router's own set until its warnings start through the background helper, whose held set
-    # replaces it (#453).
-    ("framework/services/posting/output_router.py", "_tasks"): "#453",
 }
 
 #: Stores the plan moves with no change, by (file, name): the file each moves to and the commit

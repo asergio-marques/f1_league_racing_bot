@@ -38,6 +38,7 @@ import discord
 
 from leaguebot.framework.db.database import inserted_id
 from leaguebot.framework.utils.answering import answering_now
+from leaguebot.framework.utils.background import start_background
 from leaguebot.utils.messages import ROLE_MENTION, USER_MENTION, chunk_message
 
 #: Every mention a log line can carry, wrapped whole as code so it names without notifying.
@@ -92,8 +93,6 @@ class OutputRouter:
         # log channel from it and looks no service up on the bot.
         self._config = config_service
         self._retry_db_path: Optional[str] = retry_db_path
-        # The warnings still to be sent, kept so that no task is dropped.
-        self._tasks: set[asyncio.Task[None]] = set()
         # The interactions whose member has been warned, by id, with when each was made.
         self._warned: dict[object, datetime] = {}
 
@@ -317,32 +316,26 @@ class OutputRouter:
             f"⚠️ Failed to write to log channel (id={log_channel_id}). "
             f"Please check bot permissions."
         )
+        # The warnings start through the background helper with no report: the log channel is what
+        # just failed, so a fault in one goes to the host's log alone.
         if interaction.response.is_done():
             self._warned[interaction.id] = now
             if held:
                 await self._tell(interaction, warning)
             else:
-                self._keep(asyncio.create_task(self._tell(interaction, warning)))
+                start_background(self._tell(interaction, warning), name="log channel warning")
         elif task is not None:
             self._warned[interaction.id] = now
             task.add_done_callback(
-                lambda _task: self._keep(asyncio.create_task(self._tell(interaction, warning)))
+                lambda _task: start_background(
+                    self._tell(interaction, warning), name="log channel warning"
+                )
             )
         else:
             log.warning(
                 "the log channel (id=%s) failed and the interaction has not been answered",
                 log_channel_id,
             )
-
-    def _keep(self, task: "asyncio.Task[None]") -> None:
-        """Hold *task* until it ends, logging a failure it did not catch."""
-        self._tasks.add(task)
-        task.add_done_callback(self._task_done)
-
-    def _task_done(self, task: "asyncio.Task[None]") -> None:
-        self._tasks.discard(task)
-        if not task.cancelled() and (error := task.exception()) is not None:
-            log.error("a warning to a member failed", exc_info=error)
 
     @staticmethod
     async def _tell(interaction: discord.Interaction, warning: str) -> None:
