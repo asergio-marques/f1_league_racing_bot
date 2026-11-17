@@ -295,15 +295,15 @@ async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path, bef
 
 @pytest.mark.parametrize("public", [False, True], ids=["private", "public"])
 async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
-    """The league draws its lineup, and Division 1's lineup is drawn, with a notice. The manager
+    """The league draws its lineup, and Division 1's lineup is drawn, with no notice. The manager
     is sent the picture in place of the text, under the division's name in bold, seen by them
-    alone unless they asked for it publicly; the picture is handed back to the drawing to release
-    once sent, its file already closed, so that the release can remove it; and the command itself
-    posts nothing to the log channel, because the drawing has already reported the notice
-    there."""
+    alone unless they asked for it publicly, and nothing besides it; the picture is handed back to
+    the drawing to release once sent, its file already closed, so that the release can remove it;
+    and the command itself posts nothing to the log channel, the drawing being the one to report
+    a picture's notices there."""
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    drawing = LineupDrawingStub(picture=png, notices=("a fallback flag stood in for Zara's",))
+    drawing = LineupDrawingStub(picture=png)
     cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing)
     interaction = _interaction()
     closed_when_released = []
@@ -326,6 +326,70 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     assert drawing.discarded == [png]
     assert closed_when_released == [True]
     cog.bot.output_router.post_log.assert_not_awaited()
+
+
+#: What the drawing noted of Division 1's lineup, and the link to the log channel's message it
+#: reported the notice in.
+_NOTICE = "a fallback flag stood in for Zara's"
+_NOTICES_LINK = "https://discord.test/4242/7"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#550: /team lineup tells the manager no notices of the lineups it drew, nor the link",
+)
+@pytest.mark.parametrize("asked", ["private", "public", "refused_after"])
+async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_link(
+    tmp_path, asked,
+):
+    """The league draws its lineup, and Division 1's lineup is drawn with a notice, a fallback
+    flag standing in for Zara's, which the drawing reported to the log channel. Asked for
+    privately or publicly, the manager is sent the picture as asked, and the picture's post
+    carries neither the notice nor a link; the manager is also sent, seen by them alone whatever
+    `public` says, one follow-up listing the notice under "Image notices", labelled as the log line
+    names the picture (`lineup — Division 1`) and linked to the log channel's message holding it
+    (image spec, Lineup; Constitution XIV.4: no notice in a channel the drivers read). Where
+    Division 2 is then refused (the template is missing a field), no picture is sent, and the
+    manager is told the refusal and, seen by them alone, the notice already logged, linked."""
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    division_1 = {"picture": png, "notices": (_NOTICE,), "log_link": _NOTICES_LINK}
+    divisions = [_division(11, "Division 1", 1)]
+    by_division = {11: division_1}
+    if asked == "refused_after":
+        divisions.append(_division(12, "Division 2", 2))
+        by_division[12] = {"problem": _PROBLEM}
+    drawing = LineupDrawingStub(by_division=by_division)
+    cog = _make_cog(
+        divisions=divisions, teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing
+    )
+    interaction = _interaction()
+
+    await _lineup(cog, interaction, public=asked == "public")
+
+    section = (
+        "⚠️ **Image notices**\n"
+        f"  **lineup — Division 1** ([see them in the log]({_NOTICES_LINK}))\n"
+        f"  • {_NOTICE}"
+    )
+    calls = interaction.followup.send.await_args_list
+
+    def _content(call) -> str:
+        return str(call.args[0] if call.args else call.kwargs.get("content", ""))
+
+    told = [call for call in calls if section in _content(call)]
+    assert len(told) == 1, calls
+    assert told[0].kwargs["ephemeral"] is True
+    assert "files" not in told[0].kwargs
+    pictures = [call for call in calls if "files" in call.kwargs]
+    if asked == "refused_after":
+        assert pictures == [], calls
+        assert any(f"❌ {_PROBLEM}" in _content(call) for call in calls), calls
+        return
+    [picture] = pictures
+    assert picture.args[0] == "**Division 1**"
+    assert picture.kwargs["ephemeral"] is (asked == "private")
+    assert _NOTICE not in picture.args[0] and "see them in the log" not in picture.args[0]
 
 
 async def test_a_drawing_that_fails_fails_the_command(tmp_path):
