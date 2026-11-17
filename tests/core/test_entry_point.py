@@ -884,7 +884,6 @@ async def test_a_zero_hour_last_notice_is_no_lead_and_a_zero_hour_deadline_falls
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: the builder makes no round_leads_read hook, nor does results answer it yet")
 async def test_results_answers_its_submission_lead_while_switched_off(tmp_path):
     """A league with weather, attendance and results all off. Asked for a round's leads through
     the hook the builder makes (`round_leads_read`), results alone answers, though it is off: one

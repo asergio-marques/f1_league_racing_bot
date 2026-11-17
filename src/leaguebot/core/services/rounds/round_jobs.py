@@ -148,6 +148,10 @@ class RoundJobs:
         sent late while the deadline is ahead, a result submission decides what becomes of a late
         round), so the arming never has to.
 
+        The result submission is armed through its lead whatever the modules: results answers it
+        for every round, since it is the round's one way off Not run and its handler moves a round
+        on where results is off.
+
         This only arms. Running a lead at once (`run_lead_now`), taking down what a round's earlier
         arming left, and dropping a lead test mode leaves to the advance are the caller's, and the
         marks on a lead are how it chooses them.
@@ -196,8 +200,7 @@ class RoundJobs:
         """Register DateTrigger jobs for *rnd*.
 
         Schedules three weather-phase jobs (``weather_p1`` / ``weather_p2`` /
-        ``weather_p3``), a cleanup job, and — through `schedule_result_submission_jobs` — a
-        result-submission job for every round regardless of format.  Every job runs through
+        ``weather_p3``) and a cleanup job.  Every job runs through
         the scheduler's one runner, handed its kind (its job id's prefix) and the round id as its key.
         Whether a MYSTERY round's phase asks for a notice or for nothing is weather's rule,
         decided by the handler the builder signs up for ``weather_p1`` to ``weather_p3``, never
@@ -244,12 +247,6 @@ class RoundJobs:
 
         # Post-race Phase 3 cleanup, a day after round start
         self._arm_forecast_cleanup(rnd, season_number=season_number, division_tier=division_tier)
-
-        # Result submission at round start time, armed where every results job is, so that the
-        # one arming here is weather's alone.
-        self.schedule_result_submission_jobs(
-            [rnd], division_meta={rnd.division_id: (season_number, division_tier)}
-        )
 
     def schedule_attendance_round(
         self,
@@ -473,56 +470,6 @@ class RoundJobs:
                 phase_2_days=phase_2_days,
                 phase_3_hours=phase_3_hours,
             )
-
-    def schedule_result_submission_jobs(
-        self,
-        rounds: list[Round],
-        *,
-        division_meta: dict[int, tuple[int, int]],
-    ) -> None:
-        """Schedule the result-submission job for each round: the one place it is armed, which
-        ``schedule_round`` also calls.
-
-        Called alone where ``schedule_round`` (which creates the weather jobs too) is
-        not called for a round: the weather module is off (at approval or at an
-        amendment), or a mystery round was amended inside its first horizon. The round still
-        needs this job to leave Not run.
-
-        Armed with no lateness limit (`misfire_grace_time=None`): a job whose moment passed while
-        the bot was down fires once it is back, and the handler results signs up for it decides
-        what becomes of a late one (`ask_round_start`).
-
-        Args:
-            division_meta: Mapping of ``division_id`` →
-                ``(season_number, division_tier)`` used to build human-readable
-                job IDs.  Every round's ``division_id`` must have an entry.
-        """
-        for rnd in rounds:
-            fire_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)[
-                "results"
-            ]
-            season_number, division_tier = division_meta[rnd.division_id]
-            job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
-            self._timers.arm_at(
-                job_id=job_id, kind="results", key=rnd.id,
-                run_at=fire_at, name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-            )
-
-    def run_result_submission_now(
-        self, rnd: Round, *, season_number: int, division_tier: int
-    ) -> None:
-        """Run *rnd*'s results submission at once, as its own job would have at its moment.
-
-        For a round whose moment passed while its timed work stood removed, as an amendment
-        stopped on the change queue leaves it: the job armed again against that moment lies in the
-        past, and it is the round's one way off Not run, so it is run now rather than left to the
-        scheduler's next wake. It replaces that job under the same id, run at once by the scheduler, and with no lateness limit, so that a restart before it runs still runs it.
-        """
-        job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
-        self._timers.run_now(
-            job_id=job_id, kind="results", key=rnd.id,
-            name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-        )
 
     def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:
         """Return the un-fired weather and check-in jobs for the given round IDs.

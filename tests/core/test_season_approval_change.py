@@ -887,8 +887,7 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
         pytest.param({"weather": True}, ["weather"], id="weather on",
                      marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
         pytest.param({"weather": False, "results": True}, ["results"],
-                     id="weather off and results on",
-                     marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
+                     id="weather off and results on"),
         pytest.param({"weather": False, "results": True, "test_mode": True}, [],
                      id="weather off and results on under test mode"),
         pytest.param({"weather": True, "results": True, "test_mode": True}, ["weather"],
@@ -898,11 +897,9 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
                      ["results", "attendance"], id="weather off, results and attendance on",
                      marks=pytest.mark.xfail(strict=True, reason="#544: attendance answers its check-in as no leads yet, nor core arms them (arm_leads)")),
         pytest.param({"weather": False, "results": False}, ["results"],
-                     id="weather and results off",
-                     marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
+                     id="weather and results off"),
         pytest.param({"weather": False, "results": False, "test_mode": True}, ["results"],
-                     id="weather and results off under test mode",
-                     marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
+                     id="weather and results off under test mode"),
     ],
 )
 async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
@@ -924,7 +921,6 @@ async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch
     assert (await _approval(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads), results answering for its submission")
 @pytest.mark.parametrize("test_mode", [False, True], ids=["test mode off", "test mode on"])
 async def test_a_season_with_weather_and_results_off_arms_a_result_submission_for_each_round(
     tmp_path, monkeypatch, test_mode,
@@ -945,7 +941,6 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
     assert {each["now"] for each in armed} == {league.clock.now}
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
     tmp_path, monkeypatch,
 ):
@@ -991,7 +986,6 @@ def _said_to(interaction: Any) -> list[str]:
     return [str(call.args[0] if call.args else call.kwargs.get("content", "")) for call in calls]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_every_round(
     tmp_path, monkeypatch,
 ):

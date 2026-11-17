@@ -57,7 +57,11 @@ from leaguebot.framework.models.change import (
     VerdictKind,
 )
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.services.rounds.round_moments import read_round_windows, results_left_to_advance
+from leaguebot.core.services.rounds.round_moments import (
+    read_round_leads,
+    read_round_windows,
+    results_left_to_advance,
+)
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.drivers import lineup_posting
@@ -284,6 +288,7 @@ def season_approval_change(
     roles: "TeamRoleService",
     drawing: "ImageDrawing",
     round_windows_read: AwaitedHook,
+    round_leads_read: AwaitedHook,
     placements_confirmed: AwaitedHook,
     placements_confirmed_steps: Hook,
     division_channel_faults_read: AwaitedHook,
@@ -299,6 +304,7 @@ def season_approval_change(
     *round_jobs* (which arms each round's jobs), the *lineups* poster (which posts the lineups) and the team-role service
     *roles* (which gives the drivers their roles), the image module's own drawing (*drawing*),
     *round_windows_read* (the hook the enabled modules' windows are read through),
+    *round_leads_read* (the hook the modules' timers for a round are read through),
     *placements_confirmed* (the hook each module's opening post is planned through, called
     inside the save for each division in turn, on the save's connection) and
     *placements_confirmed_steps* (each module's step definitions for its own opening post, by
@@ -500,13 +506,15 @@ def season_approval_change(
         )
 
     async def arm(ctx: StepContext) -> StepResult:
-        """Arm every round of the season, read as the job runs, whatever the modules.
+        """Arm every round of the season, read as the job runs, with the leads the modules answer.
 
-        Weather on arms each round's phases and result submission together; with it off, the
-        result submission alone, save where results is on under test mode, whose `/test-mode
-        advance` opens each round's wizard by hand. The check-in jobs follow with attendance on.
-        Every job is armed against its round and replaces its own (`replace_existing`), so a
-        retry arms nothing twice.
+        Each module answers the leads it wants set (`round_leads_read`) and core arms them for
+        every round, whatever the modules: results always answers its submission, so every round
+        leaves Not run. Save where results is on under test mode with weather off, whose
+        `/test-mode advance` opens each round's wizard by hand, and where the submission, a lead
+        left to the advance, is dropped (`results_left_to_advance`). Weather on arms each round's
+        phases; the check-in jobs follow with attendance on. Every job is armed against its round
+        and replaces its own (`replace_existing`), so a retry arms nothing twice.
         """
         season_id = int(ctx.payload["season_id"])
         season_number = int(ctx.payload["season_number"])
@@ -518,6 +526,17 @@ def season_approval_change(
             for each in await seasons.get_division_rounds(division.id)
         ]
         attendance, weather = await read_round_windows(round_windows_read)
+        server = await config.get_server_config()
+        leads = await read_round_leads(round_leads_read)
+        if results_left_to_advance(
+            test_mode=server is not None and server.test_mode_active,
+            results_on=await modules.is_results_enabled(),
+            weather_on=weather is not None,
+        ):
+            leads = tuple(lead for lead in leads if not lead.left_to_advance)
+        for each in rounds:
+            number, tier = meta[each.division_id]
+            round_jobs.arm_leads(each, leads, number, tier, now())
         if weather is not None:
             round_jobs.schedule_all_rounds(
                 rounds,
@@ -526,15 +545,6 @@ def season_approval_change(
                 phase_2_days=weather.phase_2_days,
                 phase_3_hours=weather.phase_3_hours,
             )
-        else:
-            server = await config.get_server_config()
-            by_hand = results_left_to_advance(
-                test_mode=server is not None and server.test_mode_active,
-                results_on=await modules.is_results_enabled(),
-                weather_on=False,
-            )
-            if not by_hand:
-                round_jobs.schedule_result_submission_jobs(rounds, division_meta=meta)
         if attendance is not None:
             for each in rounds:
                 number, tier = meta[each.division_id]

@@ -68,6 +68,23 @@ def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
     ))
 
 
+def sign_up_to_round_leads(bot: "LeagueBot") -> None:
+    """Sign results' submission up to the hook a round's leads are read through. It answers for
+    every round whatever results' switch, as the submission is armed whatever the modules (core
+    specification, "What confirming placements does")."""
+    from leaguebot.results.services.submission import round_start
+
+    bot.round_leads_read.subscribe(round_start.submission_leads)
+
+
+def sign_up_to_round_armed(bot: "LeagueBot") -> None:
+    """Sign results' submission up to the hook an amended round's arming again declares, so that
+    the round is armed with its submission whatever the modules."""
+    from leaguebot.results.services.submission import round_start
+
+    bot.round_armed.subscribe(round_start.round_armed)
+
+
 def sign_up_to_cancellation_refused(bot: "LeagueBot") -> None:
     """Sign up results' refusal of a round whose submission accepted results, to the hook of what
     stands in the way of a cancellation."""

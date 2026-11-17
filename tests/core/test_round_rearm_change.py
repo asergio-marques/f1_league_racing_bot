@@ -155,7 +155,6 @@ async def test_a_re_arming_arms_the_round_as_it_stands_and_catches_up_the_phases
     assert await _calls_posted(league) == [R3]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no lead run at once yet (run_lead_now)")
 async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submission_at_once(
     tmp_path,
 ):
@@ -218,7 +217,6 @@ async def test_a_re_arming_whose_round_can_no_longer_be_cancelled_is_dropped(tmp
 # ── It cannot be discarded ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 @pytest.mark.parametrize("job", [
     pytest.param("judge"),
     pytest.param("arm"),
@@ -259,7 +257,6 @@ async def test_the_re_arming_cannot_be_discarded(tmp_path, job, monkeypatch):
     assert league.armed == [("results", [R3])]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_re_arming_stopped_at_its_check_cannot_be_discarded_whole(tmp_path):
     """Pro's round 3's re-arming is asked; when it comes up, the rounds cannot be read, so its
     check fails and the queue stops on it before any job has run. A league admin's Discard, which

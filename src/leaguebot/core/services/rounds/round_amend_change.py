@@ -53,6 +53,7 @@ from leaguebot.core.models.round import (
     ForecastJobs,
     Round,
     RoundFormat,
+    RoundLead,
     RoundStatus,
     read_scheduled_at,
     stored_scheduled_at,
@@ -63,10 +64,7 @@ from leaguebot.core.services.rounds.amendment_rules_service import (
     judged_with_the_modules,
     status_refusal,
 )
-from leaguebot.core.services.rounds.round_moments import (
-    results_left_to_advance,
-    round_event_moments,
-)
+from leaguebot.core.services.rounds.round_moments import results_left_to_advance
 from leaguebot.core.services.rounds.round_steps import (
     JUDGE,
     judge_kept,
@@ -507,16 +505,17 @@ def _round_change(
         The amendment can stand stopped for hours, at the save or before it, and a discard or a
         refusal arms the round again at its old moment: a timer armed for a moment already past
         would only fire late. So, judged at the queue's clock: a round still to be run
-        whose moment has passed has its results submission run at once through the round jobs,
-        and what each module owes is its own answer to the round armed again (`plan_posts`): the
-        forecast phases due are drawn at once, and the call, where none stands and its check-in
-        is not over, is posted where it has fallen due.
+        whose moment has passed has the lead marked to run at once, results' submission, run at
+        once through the round jobs, and what each module owes is its own answer to the round
+        armed again (`plan_posts`): the forecast phases due are drawn at once, and the call, where
+        none stands and its check-in is not over, is posted where it has fallen due.
 
         Under test mode the results submission is not run at once: `/test-mode advance` runs a test
-        season's rounds in their turn. Where results is on and weather off no `results` job is armed
-        at all, as the season's approval arms none; otherwise the round's `results` job is taken
-        down again where its moment has passed, which a job armed with no lateness limit would run
-        at once. Its call is still posted (`post_call`)."""
+        season's rounds in their turn. Where results is on and weather off the lead marked as left
+        to the advance is dropped (`results_left_to_advance`) and no `results` job is armed at all,
+        as the season's approval arms none; otherwise the round's job is taken down again where its
+        moment has passed, which a job armed with no lateness limit would run at once. Its call is
+        still posted (`post_call`)."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -550,6 +549,17 @@ def _round_change(
         planned, jobs = await plan_posts(ctx, rnd)
         forecasts = next((each for each in jobs if isinstance(each, ForecastJobs)), None)
         check_in = next((each for each in jobs if isinstance(each, CheckInJobs)), None)
+        leads = tuple(
+            lead for each in jobs if isinstance(each, tuple) for lead in each
+        )
+        if results_left_to_advance(
+            test_mode=bool(found["test_mode"]),
+            results_on=await modules.is_results_enabled(),
+            weather_on=weather_on,
+        ):
+            # Under test mode with results on and weather off the round is left to
+            # `/test-mode advance`, as the season's approval leaves its rounds.
+            leads = tuple(lead for lead in leads if not lead.left_to_advance)
         if forecasts is not None:
             round_jobs.schedule_round(
                 rnd,
@@ -562,20 +572,6 @@ def _round_change(
                 # passed has no lateness limit and would fire at once, asking for it a second time.
                 skip_phases=forecasts.skip_phases,
             )
-        else:
-            # No forecasts armed, whether weather is off or a mystery round moved inside its first
-            # horizon, whose notice already told the drivers and which must not be fired
-            # retroactively: the round's results submission is armed, or it would never leave
-            # Not run. Not under test mode with results on and weather off, which leaves the round
-            # to `/test-mode advance` as the season's approval does (`results_left_to_advance`).
-            if not results_left_to_advance(
-                test_mode=bool(found["test_mode"]),
-                results_on=await modules.is_results_enabled(),
-                weather_on=weather_on,
-            ):
-                round_jobs.schedule_result_submission_jobs(
-                    [rnd], division_meta={rnd.division_id: (season_number, tier)}
-                )
         if check_in is not None:
             round_jobs.schedule_attendance_round(
                 rnd,
@@ -586,16 +582,19 @@ def _round_change(
                 deadline_hours=check_in.windows.deadline_hours,
                 now=now(),
             )
-        result_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)["results"]
-        if rnd.status == RoundStatus.NOT_RUN.value and result_at <= now() and not found["test_mode"]:
-            # After the arming above, whose job for this moment it replaces.
-            round_jobs.run_result_submission_now(
-                rnd, season_number=season_number, division_tier=tier
-            )
-        elif rnd.status == RoundStatus.NOT_RUN.value and result_at <= now():
-            # Test mode: the arming above made a job for a moment already past, which the
-            # scheduler runs at once, so it comes down again and the advance opens the round.
-            round_jobs.cancel_round(rnd.id, only=frozenset({"results"}))
+        round_jobs.arm_leads(rnd, leads, season_number, tier, now())
+        if rnd.status == RoundStatus.NOT_RUN.value:
+            at = rnd.scheduled_at
+            for lead in leads:
+                if not lead.run_at_once or at + lead.offset > now():
+                    continue
+                if not found["test_mode"]:
+                    # After the arming above, whose job for this moment it replaces.
+                    round_jobs.run_lead_now(rnd, lead, season_number, tier)
+                else:
+                    # Test mode: the arming above made a job for a moment already past, which the
+                    # scheduler runs at once, so it comes down again and the advance opens the round.
+                    round_jobs.cancel_round(rnd.id, only=frozenset({lead.kind}))
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
     async def plan_clean_ups(
@@ -610,7 +609,9 @@ def _round_change(
 
     async def plan_posts(
         ctx: StepContext, rnd: Round
-    ) -> tuple[tuple[PlannedStep, ...], tuple[ForecastJobs | CheckInJobs, ...]]:
+    ) -> tuple[
+        tuple[PlannedStep, ...], tuple[tuple[RoundLead, ...] | ForecastJobs | CheckInJobs, ...]
+    ]:
         """The posts the amendment owes and the timed work to arm, as each module answers the
         round armed again (`RoundArming`): its steps, which the queue runs in today's order (the
         check-in call taken down and posted again, its deadline run, each withdrawn forecast that

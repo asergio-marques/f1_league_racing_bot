@@ -122,6 +122,12 @@ class LeagueBot(commands.Bot):
     #: or weather (architecture.md, "A hook core declares is a list of subscribers");
     #: `read_round_windows` gathers what they hand back.
     round_windows_read: AwaitedHook
+    #: The moment the timers a round wants set are read (the season's approval): each module signs
+    #: up a function handing back the `RoundLead` records of its own timers, handed nothing, and
+    #: core arms them (`RoundJobs.arm_leads`) under its own naming, so that it names no module's
+    #: kind of timer. The builder makes it and signs them up in the order core reads them;
+    #: `read_round_leads` gathers what they hand back.
+    round_leads_read: AwaitedHook
     #: The moment a season's confirmation is judged (the placements review, the approval and the
     #: configuration's faults): each module signs up a function handing back what it refuses the
     #: confirmation on, or nothing where its module is off, handed the season and which

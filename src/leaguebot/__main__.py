@@ -195,12 +195,15 @@ def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
-    """Make the hook a round's timing windows read declares, and sign each module up to it, in
-    the order core gathers them: attendance's window, then weather's. Each is handed whether the
-    round is being amended and checks its own switch."""
+    """Make the hooks a round's timing windows and its leads are read through, and sign each
+    module up to them, in the order core gathers them: for the windows, attendance's then
+    weather's, each handed whether the round is being amended and checking its own switch; for the
+    leads, results' submission, which answers whatever its switch."""
     bot.round_windows_read = AwaitedHook()
     attendance_wiring.sign_up_to_round_windows(bot)
     weather_wiring.sign_up_to_round_windows(bot)
+    bot.round_leads_read = AwaitedHook()
+    results_wiring.sign_up_to_round_leads(bot)
 
 
 def _sign_up_to_review_sections(bot: LeagueBot) -> None:
@@ -243,7 +246,8 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     weather's of its forecasts, asked when it is offered and again inside the save on its
     connection; inside the save, weather's withdrawal of the
     forecasts the amendment withdraws, then attendance's reopening of its check-in; as the round
-    is armed again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the round,
+    is armed again, the posts and timers each owes, attendance's then weather's then results'
+    submission, then the clean-ups due a day after the round,
     weather's then attendance's; the steps each defines for the amendment, weather's then
     attendance's; and the words an outcome gives a step left undone, weather's for a forecast then
     attendance's for its check-in."""
@@ -256,6 +260,7 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     bot.round_armed = AwaitedHook()
     attendance_wiring.sign_up_to_round_armed(bot)
     weather_wiring.sign_up_to_round_armed(bot)
+    results_wiring.sign_up_to_round_armed(bot)
     bot.round_clean_ups_due = AwaitedHook()
     weather_wiring.sign_up_to_round_clean_ups_due(bot)
     attendance_wiring.sign_up_to_round_clean_ups_due(bot)
@@ -798,6 +803,7 @@ def register_change_types(bot: LeagueBot) -> None:
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
             round_windows_read=bot.round_windows_read,
+            round_leads_read=bot.round_leads_read,
             placements_confirmed=bot.placements_confirmed,
             placements_confirmed_steps=bot.placements_confirmed_steps,
             division_channel_faults_read=bot.division_channel_faults_read,

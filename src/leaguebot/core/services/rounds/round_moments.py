@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.round import AttendanceWindows, RoundLead, WeatherWindows
 from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
@@ -40,6 +40,14 @@ async def read_round_windows(
     attendance = next((each for each in handed if isinstance(each, AttendanceWindows)), None)
     weather = next((each for each in handed if isinstance(each, WeatherWindows)), None)
     return attendance, weather
+
+
+async def read_round_leads(leads_read: AwaitedHook) -> tuple[RoundLead, ...]:
+    """Every timer the modules want set for a round, in the order the modules signed up to
+    *leads_read*: each hands back its own leads, plain records core arms under its own naming
+    (`RoundJobs.arm_leads`), and a module that is off hands back none, results alone answering
+    whatever its switch."""
+    return tuple(lead for part in await leads_read.call() for lead in part or ())
 
 
 async def read_phases_drawn(
@@ -91,8 +99,7 @@ def round_event_moments(
 ) -> Mapping[str, datetime]:
     """When each of a round's events falls, keyed by the kind its job is stored with.
 
-    The results submission falls at the round's moment, whatever the modules. Where *weather* is
-    handed, its three phases fall at their horizons before the round and the forecast's
+    Where *weather* is handed, its three phases fall at their horizons before the round and the forecast's
     clean-up `POST_RACE_CLEANUP_DELAY` after it. Where *attendance* is handed, the check-in's
     call, last notice and deadline fall at theirs before it and its clean-up
     `POST_RACE_CLEANUP_DELAY` after: a last notice of 0 hours is no last notice and is left
@@ -115,5 +122,4 @@ def round_event_moments(
             moments["rsvp_last_notice"] = at - timedelta(hours=attendance.last_notice_hours)
         moments["rsvp_deadline"] = at - timedelta(hours=max(attendance.deadline_hours, 0))
         moments["rsvp_cleanup"] = clean_up_moment(at)
-    moments["results"] = at
     return moments

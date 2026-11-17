@@ -1538,7 +1538,6 @@ async def _rearmings(league: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its_timed_work_armed_again(
     tmp_path,
 ):
@@ -1702,7 +1701,6 @@ async def test_a_round_cancellation_ends_its_submission_s_conversation(tmp_path)
     assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_path):
     """Round 3 of Pro waits for its results, its submission open in channel 690 with nothing
     accepted, and the admin runs `/round cancel Pro 3`. The cancellation's check passes when it
