@@ -286,3 +286,157 @@ class TestScheduleAttendanceRoundMystery:
         normal_count = svc._scheduler.add_job.call_count
 
         assert mystery_count == normal_count
+
+
+# ---------------------------------------------------------------------------
+# 4. The notice on the change queue (FR-005, FR-008; #439, slice 6)
+# ---------------------------------------------------------------------------
+
+async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
+    from leaguebot.framework.db.database import get_connection
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 100, 200, 300)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) "
+            "VALUES (1, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions "
+            "(id, season_id, name, mention_role_id, forecast_channel_id) "
+            "VALUES (1, 1, 'Pro', 11, 999)"
+        )
+        await db.execute(
+            "INSERT INTO rounds "
+            "(id, division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (?, 1, 1, 'MYSTERY', NULL, '2026-06-01T14:00:00+00:00')",
+            (round_id,),
+        )
+        await db.commit()
+
+
+async def _notice_league(tmp_path, *, weather: bool = True):
+    """`ongoing_league`'s season 3, Pro's round 3 (id 213) a mystery round, weather as asked."""
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=weather)
+    await league.write("UPDATE rounds SET format = 'MYSTERY' WHERE id = ?", round_id(PRO, 3))
+    return league
+
+
+async def _ask_notice(league, round_id: int) -> None:
+    """Ask for the round's phase 1, as its timer does: a mystery round's is its notice."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast
+
+    await ask_forecast(league.bot.change_queue, league.db_path, round_id, 1)
+
+
+def _forecast_texts(league) -> list[str]:
+    from tests.support.season_league import DIVISIONS, PRO
+
+    return league.texts(DIVISIONS[PRO][3].forecast)
+
+
+async def _phase1_done(league, round_id: int) -> int:
+    [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_id)
+    return row["phase1_done"]
+
+
+class TestRunMysteryNotice:
+    """The notice asked of the change queue for Pro's mystery round 3, and the queue run."""
+
+    async def test_posted_message_has_no_role_tag(self, tmp_path):
+        from tests.support.change_queue import run_queue
+        from tests.support.season_league import PRO, round_id
+
+        league = await _notice_league(tmp_path)
+
+        await _ask_notice(league, round_id(PRO, 3))
+        await run_queue(league.bot)
+
+        [posted_msg] = _forecast_texts(league)
+        assert "<@&" not in posted_msg
+        assert "🏁" in posted_msg
+        assert "Mystery" in posted_msg
+
+    async def test_skips_if_format_amended_to_non_mystery(self, tmp_path):
+        """Guard: the round amended away from MYSTERY while its notice waited on the queue: the
+        change is dropped at its check, nothing posted and Phase 1 left undone."""
+        from tests.support.change_queue import run_queue, stopped_job
+        from tests.support.season_league import PRO, round_id
+
+        league = await _notice_league(tmp_path)
+        await _ask_notice(league, round_id(PRO, 3))
+        await league.write("UPDATE rounds SET format = 'NORMAL' WHERE id = ?", round_id(PRO, 3))
+
+        await run_queue(league.bot)
+
+        assert _forecast_texts(league) == []
+        assert await _phase1_done(league, round_id(PRO, 3)) == 0
+        assert await stopped_job(league.db_path) is None
+
+    async def test_skips_if_round_not_found(self, tmp_path):
+        """A round that does not exist (999): nothing is asked of the queue."""
+        from tests.support.change_queue import change_rows
+
+        league = await _notice_league(tmp_path)
+
+        await _ask_notice(league, 999)
+
+        assert [row for row in await change_rows(league.db_path)
+                if row["kind"].startswith("weather.")] == []
+
+    async def test_no_notice_is_posted_while_the_weather_module_is_off(self, tmp_path):
+        """The notice is a weather posting, and a disabled module produces nothing whatever the
+        path arrives at it — so its change is dropped at its check, as the phases' are (#113),
+        and the round's Phase 1 is left undone (#426)."""
+        from tests.support.change_queue import run_queue, stopped_job
+        from tests.support.season_league import PRO, round_id
+
+        league = await _notice_league(tmp_path, weather=False)
+
+        await _ask_notice(league, round_id(PRO, 3))
+        await run_queue(league.bot)
+
+        assert _forecast_texts(league) == []
+        assert await _phase1_done(league, round_id(PRO, 3)) == 0
+        assert await stopped_job(league.db_path) is None
+
+
+# ---------------------------------------------------------------------------
+# 5. The notice's record, on the save its job hands it (#439)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_notice_s_record_writes_only_on_the_connection_it_is_handed(tmp_path):
+    """The notice marks itself given (`mystery_notice_given`) on the save handed, leaving the
+    round's Phase 1 undone, no forecast having been drawn, and committing nothing of its own: its flag stands or falls with the job, and the notice is posted by a job after it, so
+    a notice Discord refuses no longer leaves the flag set and nothing posted (#439)."""
+    from leaguebot.framework.db.database import get_connection, run_migrations
+    from leaguebot.weather.services.mystery_notice_service import record_mystery_notice_on
+
+    db_path = str(tmp_path / "notice_record.db")
+    await run_migrations(db_path)
+    await _seed_mystery_round(db_path, round_id=5)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET weather_module_enabled = 1")
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        drawn = await record_mystery_notice_on(db, 5)
+        cursor = await db.execute(
+            "SELECT phase1_done, mystery_notice_given FROM rounds WHERE id = 5")
+        row = await cursor.fetchone()
+        assert (row["phase1_done"], row["mystery_notice_given"]) == (0, 1)
+        await db.rollback()
+
+    # Nothing is drawn for a notice, and it writes no line (weather spec :128).
+    assert drawn.payload is None
+    assert drawn.line is None
+    assert not drawn.blocked
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT mystery_notice_given FROM rounds WHERE id = 5")
+        assert (await cursor.fetchone())["mystery_notice_given"] == 0
