@@ -1529,8 +1529,10 @@ def season_cancel_change(
         if refused:
             return refused + _rearming_sentence(ctx)
         if not _season_ended(ctx):
-            return SEASON_END_DISCARDED.format(number=number) + notices.failure_lines(
-                not_notified(ctx)
+            return (
+                SEASON_END_DISCARDED.format(number=number)
+                + notices.failure_lines(not_notified(ctx))
+                + _calendar_notices(ctx)
             )
         return (
             SEASON_CANCELLED
@@ -1538,6 +1540,7 @@ def season_cancel_change(
             + not_done_reply(
                 shared_not_done(ctx, steps), discarded=anything_discarded(ctx)
             )
+            + _calendar_notices(ctx)
         )
 
     def describing(text: str) -> Callable[[StepContext], Awaitable[str]]:

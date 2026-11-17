@@ -410,10 +410,6 @@ async def _cancel_division(league: Any) -> Any:
     return await cancel_division(league, "Pro")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#550: a cancellation's reply lists no notices of the calendar it posted again",
-)
 @pytest.mark.parametrize("cancel", [
     pytest.param(_cancel, id="/round cancel"),
     pytest.param(_cancel_division, id="/division cancel"),
