@@ -743,7 +743,7 @@ async def approve_season(
     # and the calendar and nothing else, so a broken results or weather template, or a
     # rasteriser missing with both of those off, meets no render before the season
     # first tries to post it.
-    if await module_service.is_images_enabled():
+    if await module_service.is_enabled("images"):
         image_faults = await approval_checks.image_configuration_faults(image_drawing)
         if image_faults:
             bullet_list = "\n• ".join(image_faults)

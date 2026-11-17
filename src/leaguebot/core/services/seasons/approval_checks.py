@@ -451,7 +451,7 @@ async def mid_season_configuration_faults(
     What is left is the image module's, whose templates, artwork and settings may all
     change while a season is raced.
     """
-    if not await module_service.is_images_enabled():
+    if not await module_service.is_enabled("images"):
         return []
     return await image_configuration_faults(image_drawing)
 
@@ -547,7 +547,7 @@ async def configuration_faults(
     ]
 
     # ── Images: rasteriser, templates, colours, portraits ─────────────────
-    if await module_service.is_images_enabled():
+    if await module_service.is_enabled("images"):
         faults += await image_configuration_faults(image_drawing)
 
     return faults

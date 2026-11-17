@@ -454,18 +454,18 @@ class SeasonCog(commands.Cog):
 
         # ── Modules ───────────────────────────────────────────────
         # Each module's line, with the note its section hands to show beside it where it is on.
-        weather_on = await self.bot.module_service.is_weather_enabled()
-        results_on = await self.bot.module_service.is_results_enabled()
-        images_on = await self.bot.module_service.is_images_enabled()
+        weather_on = await self.bot.module_service.is_enabled("weather")
+        results_on = await self.bot.module_service.is_enabled("results")
+        images_on = await self.bot.module_service.is_enabled("images")
         notes = {section.module: section.modules_note for section in sections}
         on = "✅ Enabled"
         off = "❌ Disabled"
         header_lines.append("**Modules**")
         for name, enabled in (
             ("Weather", weather_on),
-            ("Signup", await self.bot.module_service.is_signup_enabled()),
+            ("Signup", await self.bot.module_service.is_enabled("signup")),
             ("Results", results_on),
-            ("Attendance", await self.bot.module_service.is_attendance_enabled()),
+            ("Attendance", await self.bot.module_service.is_enabled("attendance")),
             ("Images", images_on),
         ):
             note = notes.get(name.lower()) if enabled else None
@@ -983,11 +983,11 @@ class SeasonCog(commands.Cog):
             f"  Test mode: {'✅ On' if test_mode else '❌ Off'}",
             "",
             "**Modules**",
-            f"  Signup: {on if await module.is_signup_enabled() else off}",
-            f"  Results: {on if await module.is_results_enabled() else off}",
-            f"  Attendance: {on if await module.is_attendance_enabled() else off}",
-            f"  Weather: {on if await module.is_weather_enabled() else off}",
-            f"  Images: {on if await module.is_images_enabled() else off}",
+            f"  Signup: {on if await module.is_enabled("signup") else off}",
+            f"  Results: {on if await module.is_enabled("results") else off}",
+            f"  Attendance: {on if await module.is_enabled("attendance") else off}",
+            f"  Weather: {on if await module.is_enabled("weather") else off}",
+            f"  Images: {on if await module.is_enabled("images") else off}",
             "",
         ]
         lines += await self._league_roles_review_lines()
@@ -1013,7 +1013,7 @@ class SeasonCog(commands.Cog):
             division_ids=[],
         )
         section_lines: list[list[str]] = [lines, *[section.lines for section in sections]]
-        if await module.is_images_enabled():
+        if await module.is_enabled("images"):
             section_lines.append(await self._build_image_review_section())
         report: list[str] = []
         for block in section_lines:

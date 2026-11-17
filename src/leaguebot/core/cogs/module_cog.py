@@ -306,8 +306,7 @@ class ModuleCog(commands.Cog):
         here."""
         enabled = set()
         for module in _MODULE_NAMES:
-            is_enabled = getattr(self.bot.module_service, f"is_{module}_enabled")
-            if await is_enabled():
+            if await self.bot.module_service.is_enabled(module):
                 enabled.add(module)
         return frozenset(enabled)
 
@@ -318,8 +317,7 @@ class ModuleCog(commands.Cog):
         table for every module rather than a rule of *module*'s own, so a second table entry
         needs no change here. Empty for a module with no entry, as `needs` already is."""
         for required in needs(module):
-            is_enabled = getattr(self.bot.module_service, f"is_{required}_enabled")
-            if not await is_enabled():
+            if not await self.bot.module_service.is_enabled(required):
                 await refuse(
                     interaction,
                     f"❌ The {_MODULE_LABEL[module]} requires the {_MODULE_LABEL[required]} "
@@ -402,7 +400,7 @@ class ModuleCog(commands.Cog):
         doing: disabling mid-season destroys that season's results entire and closes every
         round still waiting on them.
         """
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled("results"):
             await refuse(
                 interaction, "⚠️ Results & Standings module is already disabled.", what=describe(interaction)
             )

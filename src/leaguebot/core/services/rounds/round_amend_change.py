@@ -550,8 +550,8 @@ def _round_change(
         leads = tuple(lead for each in jobs for lead in each)
         if results_left_to_advance(
             test_mode=bool(found["test_mode"]),
-            results_on=await modules.is_results_enabled(),
-            weather_on=await modules.is_weather_enabled(),
+            results_on=await modules.is_enabled("results"),
+            weather_on=await modules.is_enabled("weather"),
         ):
             # Under test mode with results on and weather off the round is left to
             # `/test-mode advance`, as the season's approval leaves its rounds.

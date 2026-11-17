@@ -365,7 +365,7 @@ def season_approval_change(
                 "the season cannot be approved:\n" + "\n".join(channels),
             )
 
-        if await modules.is_images_enabled():
+        if await modules.is_enabled("images"):
             fault = rasteriser_fault()
             if fault:
                 return Verdict.refuse(

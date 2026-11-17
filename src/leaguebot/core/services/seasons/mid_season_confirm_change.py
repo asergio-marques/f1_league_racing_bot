@@ -255,7 +255,7 @@ def mid_season_confirm_change(
             ctx.db_path, season_id, guild, division_channel_faults_read=division_channel_faults_read
         )
         faults = [*(f"Unsettled signup: {line}" for line in unsettled), *channels]
-        if await modules.is_images_enabled():
+        if await modules.is_enabled("images"):
             fault = rasteriser_fault()
             if fault:
                 faults.append(fault)
