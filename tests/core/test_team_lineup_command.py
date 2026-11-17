@@ -555,7 +555,7 @@ async def test_a_drawing_that_fails_fails_the_command(tmp_path):
         "unknown_division",
         "no_divisions",
         "drawing_fails",
-        "text_send_fails",
+        pytest.param("text_send_fails"),
     ],
 )
 async def test_a_public_lineup_refused_is_told_to_the_manager_alone(tmp_path, refused):
