@@ -192,7 +192,6 @@ async def test_each_division_s_module_channels_follow_its_own_in_the_modules_ord
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)
 @pytest.mark.parametrize("found, denied, member, answer", [
     pytest.param("cached", (), True, ("PRESENT", ()), id="cached, every need held"),
     pytest.param(

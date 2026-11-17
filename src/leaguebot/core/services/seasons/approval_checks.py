@@ -17,11 +17,13 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Any, TypeVar
 
 import discord
 
 from leaguebot.framework.db.database import get_connection
+from leaguebot.core.models.channel_needs import VIEW, Needs
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round, RoundLead
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
@@ -112,22 +114,75 @@ def date_refusal(
     )
 
 
+class PresenceState(Enum):
+    """What a check can prove of a channel the league saved."""
+
+    PRESENT = "present"
+    GONE = "gone"
+    UNUSABLE = "unusable"
+
+
+@dataclass(frozen=True)
+class Presence:
+    """The answer of `channel_presence`: *missing* names, in Discord's own words, the permissions
+    an unusable channel lacks, and is empty otherwise."""
+
+    state: PresenceState
+    missing: tuple[str, ...] = ()
+
+
+async def channel_presence(guild: discord.Guild, channel_id: int, needs: Needs) -> Presence:
+    """Whether *channel_id* is a channel of *guild* the bot can use as *needs* asks, answering
+    only what Discord proves, and raising otherwise.
+
+    The cache is asked first and the API second, the cache holding no channel it has not seen.
+    A channel found, in either, is `PRESENT` where the bot holds every permission in *needs*
+    there, and `UNUSABLE` naming those it lacks where it does not. A fetch answering NotFound
+    proves the channel `GONE`; one Discord refuses the bot proves it `UNUSABLE`, as a channel the
+    bot cannot see, lacking View Channel. **Anything else is not an answer** and is raised: a
+    server error from the fetch, or a bot member the client cannot read (`guild.me` raises where
+    the client has no user yet, #187), is a check that cannot be made. The caller decides what
+    that means: `judged_presence` stands aside, which is what a confirmation does.
+    """
+    channel: discord.abc.GuildChannel | discord.Thread | None = guild.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(channel_id)
+        except discord.NotFound:
+            return Presence(PresenceState.GONE)
+        except discord.Forbidden:
+            return Presence(PresenceState.UNUSABLE, (VIEW[1],))
+    member = getattr(guild, "me", None)
+    if member is None:
+        raise RuntimeError("the bot's member in the server cannot be read")
+    permissions = channel.permissions_for(member)
+    missing = tuple(name for attribute, name in needs if not getattr(permissions, attribute, False))
+    if missing:
+        return Presence(PresenceState.UNUSABLE, missing)
+    return Presence(PresenceState.PRESENT)
+
+
+async def judged_presence(guild: discord.Guild, channel_id: int, needs: Needs) -> Presence:
+    """`channel_presence`, standing aside where it cannot answer: a check that could not tell
+    answers `PRESENT`, logged on the host, and so is never the thing that refuses a season.
+
+    A stated exception (architecture.md, "A catch-all error handler"): only what Discord proves
+    is a fault, whatever the reason the question could not be put.
+    """
+    try:
+        return await channel_presence(guild, channel_id, needs)
+    except Exception as exc:  # noqa: BLE001 — cannot tell, so not a fault
+        log.warning("channel check: could not judge channel %s: %s", channel_id, exc, exc_info=True)
+    return Presence(PresenceState.PRESENT)
+
+
 async def channel_on_server(guild, channel_id: int) -> bool:
     """Whether *channel_id* is still a channel of *guild*, only NotFound answering no.
 
-    The cache is asked first and the API second, the cache holding no channel it has not
-    seen. Any failure but NotFound answers yes, logged on the host: a check that could not tell
-    must not be the thing that refuses a season.
+    Judged by `judged_presence` against View Channel alone: a channel the bot cannot see is still
+    on the server, and any failure but NotFound answers yes.
     """
-    if guild.get_channel(channel_id) is not None:
-        return True
-    try:
-        await guild.fetch_channel(channel_id)
-    except discord.NotFound:
-        return False
-    except Exception as exc:  # noqa: BLE001 — cannot tell, so not a fault
-        log.warning("channel check: could not fetch channel %s: %s", channel_id, exc, exc_info=True)
-    return True
+    return (await judged_presence(guild, channel_id, (VIEW,))).state is not PresenceState.GONE
 
 
 async def channel_fault(
