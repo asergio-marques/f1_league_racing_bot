@@ -623,6 +623,79 @@ async def test_the_buttons_of_a_stop_notice_whose_message_is_not_yet_recorded_wo
     assert _buttons(notice) == set()
 
 
+@pytest.mark.parametrize("way", [
+    "its job goes through",
+    "its check passes",
+    "its job is no longer due",
+    "its change is no longer due",
+    "its request is refused at its check",
+])
+@pytest.mark.xfail(strict=True, reason=UNRECORDED)
+async def test_a_stop_notice_whose_message_is_not_yet_recorded_loses_its_buttons_when_its_stop_clears_at_a_try(env, way):
+    """A database fault refuses, the whole time, to record which message the stop notice is. The
+    queue stopped at a job that failed, at a bot change's check that refused it (the forecast
+    channel is missing), or at a member's change's check that raised. At the one-minute try the
+    stop clears: the job goes through, the bot change's check lets it go, the job or the bot change
+    is found no longer due, or the member's change is refused at its check. The log channel gets
+    the one line saying so, the queue no longer stops, and the notice loses its buttons."""
+    api = _api()
+    mode = {"check": "go", "due": True}
+    holder: dict[str, Any] = {"fail": None}
+
+    async def _check(_ctx):
+        if mode["check"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["check"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        if mode["check"] == "not_due":
+            return api.Verdict.not_due("the season has ended")
+        return api.Verdict.go()
+
+    async def _still_due(_ctx):
+        return mode["due"]
+
+    _queue(env, _type(steps=[_fails_while(holder, still_due=_still_due,
+                                          describe=_described("posting the dummy"))],
+                      check=_check))
+    await refuse_notice_records(env.db_path, True)
+    if way in ("its check passes", "its change is no longer due"):
+        await _ask(env, origin=api.ChangeOrigin.BOT)
+        mode["check"] = "refuse"
+    elif way == "its request is refused at its check":
+        await _ask(env)
+        mode["check"] = "raise"
+    else:
+        await _ask(env)
+        holder["fail"] = RuntimeError("boom")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["notice_message_id"] is None
+    [notice] = [m for m in env.bot.log_channel.posted
+                if m.content.startswith("❌ The queue is stopped at job #")]
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+    dropped = "it is no longer due, so it was dropped"
+    expected = {
+        "its job goes through": WENT_THROUGH.format(id=job["id"], job="posting the dummy"),
+        "its check passes": WENT_THROUGH.format(id=job["id"], job=WHAT),
+        "its job is no longer due": CLEARED.format(id=job["id"], job="posting the dummy",
+                                                   why=dropped),
+        "its change is no longer due": CLEARED.format(id=job["id"], job=WHAT, why=dropped),
+        "its request is refused at its check": CLEARED.format(
+            id=job["id"], job=WHAT, why="its request was refused at its check"),
+    }[way]
+    holder["fail"] = None
+    mode["check"] = {"its change is no longer due": "not_due",
+                     "its request is refused at its check": "refuse"}.get(way, "go")
+    mode["due"] = way != "its job is no longer due"
+    await _try_at(env, 1)
+
+    assert await stopped_job(env.db_path) is None
+    assert [line.split("\n")[0] for line in await _lines(env)
+            if "went through" in line or "no longer stops the queue" in line] == [expected]
+    assert _buttons(notice) == set()
+
+
 # ---------------------------------------------------------------------------
 # A press while the worker is at the job
 # ---------------------------------------------------------------------------
