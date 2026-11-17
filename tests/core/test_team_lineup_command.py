@@ -250,26 +250,47 @@ async def test_asking_publicly_sends_publicly(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path):
-    """The league draws its lineup, and Division 1's lineup cannot be drawn: the template is
+_PROBLEM = "the lineup: `team_1` — Template is missing a field"
+
+
+@pytest.mark.parametrize("before_it_drawn", [False, True], ids=["alone", "after_a_drawn_division"])
+async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path, before_it_drawn):
+    """The league draws its lineup, and a division's lineup cannot be drawn: the template is
     missing a field. The manager is told why, by that one message alone, and nothing else is
     sent, the text least of all: the caller is the one person able to fix the template, so
     drawing text instead would hide a broken template from the only person who could put it
-    right. It is drawn as the command's output, never as the lineup of record."""
-    drawing = LineupDrawingStub(problem="the lineup: `team_1` — Template is missing a field")
-    cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing)
+    right. It is drawn as the command's output, never as the lineup of record. Where Division 1
+    drew before Division 2 was refused, its picture is not sent with the refusal, nor after it,
+    and is released."""
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    if before_it_drawn:
+        drawing = LineupDrawingStub(
+            by_division={11: {"picture": png}, 12: {"problem": _PROBLEM}}
+        )
+        divisions = [_division(11, "Division 1", 1), _division(12, "Division 2", 2)]
+        refused, drawn_for_command, discarded = "Division 2", [11, 12], [png]
+    else:
+        drawing = LineupDrawingStub(problem=_PROBLEM)
+        divisions = [_division(11, "Division 1", 1)]
+        refused, drawn_for_command, discarded = "Division 1", [11], []
+    cog = _make_cog(
+        divisions=divisions, teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing
+    )
     interaction = _interaction()
 
     await _lineup(cog, interaction)
 
     [call] = interaction.followup.send.await_args_list
     assert call.args[0] == (
-        "❌ the lineup: `team_1` — Template is missing a field\n"
-        "_Lineup for **Division 1** was not drawn._"
+        f"❌ {_PROBLEM}\n"
+        f"_Lineup for **{refused}** was not drawn._"
     )
     assert call.kwargs["ephemeral"] is True
-    assert drawing.drawn_for_command == [11]
+    assert "files" not in call.kwargs
+    assert drawing.drawn_for_command == drawn_for_command
     assert drawing.drawn == []
+    assert drawing.discarded == discarded
 
 
 @pytest.mark.parametrize("public", [False, True], ids=["private", "public"])
