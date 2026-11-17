@@ -12,9 +12,10 @@ real drivers outright.
 
 The toggle is a change on the league lane (#283, S15e), carrying the state it sets, judged at the
 ask and again as it starts, as `/test-mode nationality` is. Turning test mode on is one save: the
-flag, the modules' part through the hook for test mode turned on, and its audit entry. Turning it
-off is one save, the flag and the fake drivers together, then the clearing of the forecasts posted
-under test mode and the deletion of the saved backup as jobs after it. A fault stops the lane.
+flag, the modules' part through the hook for test mode turned on, its own audit entry and those
+the parts hand back. Turning it off is one save, the flag and the fake drivers together, then the
+clearing of the forecasts posted under test mode and the deletion of the saved backup as jobs
+after it. A fault stops the lane.
 
 Every test runs on the bot the entry point builds, its configuration read from the database, with
 the real queue, its "now" pinned to `NOW`: the league's server, and season 3 in Configuration. Admin
@@ -22,6 +23,7 @@ the real queue, its "now" pinned to `NOW`: the league's server, and season 3 in 
 """
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -168,6 +170,12 @@ async def _seeded(db_path: str) -> list[str]:
         return [row["config_name"] for row in await cursor.fetchall()]
 
 
+async def _season_3(db_path: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT id FROM seasons WHERE season_number = 3")
+        return (await cursor.fetchone())["id"]
+
+
 def _lines(cog) -> list[str]:
     """Every line the log channel took, without the rule drawn beneath each."""
     return [unruled(str(line)) for line in cog.bot.log_channel.sent]
@@ -195,14 +203,16 @@ def _as_naive(stamp: str) -> datetime:
 
 class TestEnabling:
     async def test_a_clean_server_may_enter_test_mode(self, cog, db_path):
-        """The server is not in test mode, season 3 is in Configuration with no points
-        configuration, and the queue's clock is five minutes on from `NOW` when it runs. Admin
-        runs the command: they are answered at once with the queue's acknowledgement, turning test
-        mode on, and one change is asked. Once the queue has run it, test mode is on and "Standard"
-        and "Half Points" are seeded, through results' part of the builder's hook; one
-        TEST_MODE_SET entry names Admin, test mode going from off to on, stamped with the queue's
-        clock; Admin's reply and the one line name both configurations, word for word, and the
-        queue is not stopped."""
+        """The server is not in test mode, season 3 is in Configuration and the server holds no
+        points configuration, and the queue's clock is five minutes on from `NOW` when it runs.
+        Admin runs the command: they are answered at once with the queue's acknowledgement,
+        turning test mode on, and one change is asked. Once the queue has run it, test mode is on
+        and "Standard" and "Half Points" are seeded, through results' part of the builder's hook;
+        the TEST_MODE_SET entry comes first, test mode going from off to on, then the 58 entries
+        of the seeding: for each configuration its creation, each position's points, its
+        fastest-lap bonus and its attachment to season 3; every entry names Admin and is stamped
+        with the queue's clock. Admin's reply and the one line name both configurations, word for
+        word, and the queue is not stopped."""
         interaction = await _ask(cog)
         assert acknowledgement(interaction).startswith("⏳ Turning test mode on. ")
         assert len(await change_rows(db_path)) == 1
@@ -220,11 +230,62 @@ class TestEnabling:
         ]
         assert await _flag(db_path) is True
         assert await _seeded(db_path) == ["Standard", "Half Points"]
-        [audit] = await audit_rows(db_path)
+        audit, *seeding = await audit_rows(db_path)
         assert (audit["change_type"], audit["actor_id"]) == (AUDIT_TYPE, ACTOR_ID)
         assert audit["old_value"]["test_mode_active"] is False
         assert audit["new_value"]["test_mode_active"] is True
         assert _as_naive(audit["timestamp"]) == datetime(2026, 10, 1, 12, 5)
+        assert Counter(row["change_type"] for row in seeding) == {
+            "POINTS_CONFIG_ADD": 2,
+            "POINTS_CONFIG_SESSION_SET": 52,
+            "POINTS_CONFIG_FL_SET": 2,
+            "POINTS_CONFIG_ATTACH": 2,
+        }
+        assert {row["actor_id"] for row in seeding} == {ACTOR_ID}
+        assert {_as_naive(row["timestamp"]) for row in seeding} == {datetime(2026, 10, 1, 12, 5)}
+        season_id = await _season_3(db_path)
+        assert sorted(
+            (row["new_value"]["season_id"], row["new_value"]["config"])
+            for row in seeding if row["change_type"] == "POINTS_CONFIG_ATTACH"
+        ) == [(season_id, "Half Points"), (season_id, "Standard")]
+        assert await stopped_job(db_path) is None
+
+    async def test_a_server_holding_a_points_configuration_enters_test_mode_with_none_seeded(
+        self, cog, db_path
+    ):
+        """Decided 2026-11-17 (#547). The server is not in test mode, season 3 is in
+        Configuration, and the server holds its own points configuration "League Ladder", paying
+        25 to the winner of a feature race and attached to no season. Admin runs the command and
+        the queue runs it: test mode is on, and nothing is created or attached, "League Ladder"
+        still paying what it did; Admin's reply is the enabled message alone, word for word, the
+        one line says test mode enabled and names no seeded configuration, and the only audit
+        entry is TEST_MODE_SET, naming Admin."""
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO points_config_store (config_name) VALUES ('League Ladder')"
+            )
+            await db.execute(
+                "INSERT INTO points_config_entries (config_id, session_type, position, points) "
+                "VALUES (?, 'FEATURE_RACE', 1, 25)",
+                (cursor.lastrowid,),
+            )
+            await db.commit()
+
+        interaction = await _toggle(cog)
+
+        assert last_said(interaction) == ENABLED
+        assert _success_lines(cog) == [
+            f"{NAMED} | /test-mode toggle | Success\n  test_mode: enabled"
+        ]
+        assert await _flag(db_path) is True
+        assert await _seeded(db_path) == ["League Ladder"]
+        async with get_connection(db_path) as db:
+            cursor = await db.execute("SELECT position, points FROM points_config_entries")
+            assert [tuple(row) for row in await cursor.fetchall()] == [(1, 25)]
+            cursor = await db.execute("SELECT config_name FROM season_points_links")
+            assert await cursor.fetchall() == []
+        [audit] = await audit_rows(db_path)
+        assert (audit["change_type"], audit["actor_id"]) == (AUDIT_TYPE, ACTOR_ID)
         assert await stopped_job(db_path) is None
 
     async def test_a_real_driver_refuses_it(self, cog, db_path):
@@ -320,10 +381,16 @@ class TestTheSeasonsStage:
 
 async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db_path):
     """Three parts are signed up to test mode turned on in place of results', in this order: one
-    hands back that it created "Sprint Ladder", the next that it created nothing, the last that it
-    created "Wet Ladder". Switching test mode on hands each part the save's own connection,
+    hands back that it created "Sprint Ladder", with the audit entry of its creation, the next that
+    it created nothing and recorded nothing, the last that it created "Wet Ladder", with the audit
+    entry of its creation. Switching test mode on hands each part the save's own connection,
     already reading test mode on, and season 3's id; it names "Sprint Ladder, Wet Ladder", in the
-    order the parts signed up, in the reply and in the log line, and nothing else is seeded."""
+    order the parts signed up, in the reply and in the log line, and nothing else is seeded. The
+    audit trail holds TEST_MODE_SET, then the creation of "Sprint Ladder", then that of "Wet
+    Ladder", each naming Admin."""
+    from leaguebot.core.models.test_mode import TestModePart
+    from leaguebot.framework.models.change import AuditRecord
+
     hook = cog.bot.test_mode_turned_on
     hook._subscribers.clear()
     handed: list[tuple[bool, int]] = []
@@ -332,17 +399,22 @@ async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db
         cursor = await db.execute("SELECT test_mode_active FROM server_configs")
         handed.append((bool((await cursor.fetchone())["test_mode_active"]), season_id))
 
-    async def created_one(db: Any, season_id: int) -> list[str]:
-        await _record(db, season_id)
-        return ["Sprint Ladder"]
+    def created(name: str) -> Any:
+        return TestModePart(
+            seeded=(name,), audits=(AuditRecord("POINTS_CONFIG_ADD", {}, {"config": name}),)
+        )
 
-    async def created_none(db: Any, season_id: int) -> list[str]:
+    async def created_one(db: Any, season_id: int) -> Any:
         await _record(db, season_id)
-        return []
+        return created("Sprint Ladder")
 
-    async def created_another(db: Any, season_id: int) -> list[str]:
+    async def created_none(db: Any, season_id: int) -> Any:
         await _record(db, season_id)
-        return ["Wet Ladder"]
+        return TestModePart(seeded=(), audits=())
+
+    async def created_another(db: Any, season_id: int) -> Any:
+        await _record(db, season_id)
+        return created("Wet Ladder")
 
     hook.subscribe(created_one)
     hook.subscribe(created_none)
@@ -350,9 +422,7 @@ async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db
 
     interaction = await _toggle(cog)
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id FROM seasons WHERE season_number = 3")
-        season_id = (await cursor.fetchone())["id"]
+    season_id = await _season_3(db_path)
     assert handed == [(True, season_id)] * 3
     assert last_said(interaction).endswith(
         "\n📌 Added default point configs: **Sprint Ladder, Wet Ladder**"
@@ -361,6 +431,13 @@ async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db
     assert line.endswith("\n  seeded_configs: Sprint Ladder, Wet Ladder")
     assert await _flag(db_path) is True
     assert await _seeded(db_path) == [], "the toggle seeded beside the hook's parts"
+    assert [
+        (row["change_type"], row["new_value"], row["actor_id"]) for row in await audit_rows(db_path)
+    ] == [
+        (AUDIT_TYPE, {"test_mode_active": True}, ACTOR_ID),
+        ("POINTS_CONFIG_ADD", {"config": "Sprint Ladder"}, ACTOR_ID),
+        ("POINTS_CONFIG_ADD", {"config": "Wet Ladder"}, ACTOR_ID),
+    ]
 
 
 # ── Disabling ─────────────────────────────────────────────────────────────────
@@ -595,7 +672,7 @@ async def test_a_second_press_while_the_first_waits_is_refused_as_a_repeat(
     """Test mode is off (on, for *off*). Admin runs the command, and runs it again before the
     queue has run the first: the second asks the same thing and is refused at once as a repeat,
     in the queue's words, and only the one change is asked. Once the queue has run it, test mode
-    has moved once, with one audit entry."""
+    has moved once, with one TEST_MODE_SET entry."""
     if test_mode:
         await _in_test_mode(db_path)
     await _ask(cog)
@@ -609,7 +686,7 @@ async def test_a_second_press_while_the_first_waits_is_refused_as_a_repeat(
     assert len(await change_rows(db_path)) == 1
     await run_queue(cog.bot)
     assert await _flag(db_path) is (not test_mode)
-    assert len(await audit_rows(db_path)) == 1
+    assert [row["change_type"] for row in await audit_rows(db_path)].count(AUDIT_TYPE) == 1
 
 
 @pytest.mark.parametrize(

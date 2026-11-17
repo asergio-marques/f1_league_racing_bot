@@ -13,8 +13,17 @@ store, but `/results config view` reads the server-level store while a season is
 so a manager checking the configuration was told "Standard — no entries configured" over a
 config that was fully populated. Nothing about a seeded config should differ from a
 hand-built one once it exists.
+
+They are seeded only on a server holding no points configuration at all, of any name, attached or
+not, and the season links none (decided 2026-11-17, #547): a server holding one has it seeded
+nothing, changed nothing and attached nothing, so a league's own "Standard" or "Half Points" is
+never rewritten with the test ladder. Seeding writes through the audited writers
+`/results config` uses, and hands back the names it created and the audit entries its writes
+recorded, as results' part of test mode.
 """
 from __future__ import annotations
+
+import json
 
 import aiosqlite
 import pytest
@@ -29,13 +38,14 @@ SERVER_ID = 9310
 
 
 async def _seed(db_path, season_id):
-    """Results' part of test mode turned on, in a save of its own; the names it newly created."""
-    from leaguebot.results.services.points.points_config_service import seed_test_configs_on
+    """Results' part of test mode turned on, in a save of its own: the part it hands back, the
+    names it created and the audit entries its writes recorded."""
+    from leaguebot.results.services.points.season_points_service import seed_test_configs_on
 
     async with get_connection(db_path) as db:
-        created = await seed_test_configs_on(db, season_id)
+        part = await seed_test_configs_on(db, season_id)
         await db.commit()
-    return created
+    return part
 
 
 @pytest.fixture
@@ -64,9 +74,9 @@ async def season_id(db_path):
 
 
 async def test_both_configs_are_created(db_path, season_id):
-    created = await _seed(db_path, season_id)
+    part = await _seed(db_path, season_id)
 
-    assert sorted(created) == ["Half Points", "Standard"]
+    assert sorted(part.seeded) == ["Half Points", "Standard"]
 
 
 @pytest.mark.parametrize("config_name", ["Standard", "Half Points"])
@@ -125,21 +135,155 @@ async def test_the_configs_are_attached_to_the_season(db_path, season_id):
     assert sorted(names) == ["Half Points", "Standard"]
 
 
-async def test_seeding_twice_creates_nothing_and_changes_nothing(db_path, season_id):
-    """`/test-mode toggle` can be run again; it must not duplicate or disturb a config."""
+def _audited(audits) -> list[tuple[str, str, str]]:
+    """Audit entries as (type, from, to), the values as sorted JSON, in a stable order."""
+    return sorted(
+        (a.change_type, json.dumps(a.old_value, sort_keys=True),
+         json.dumps(a.new_value, sort_keys=True))
+        for a in audits
+    )
+
+
+async def test_seeding_records_an_audit_entry_for_each_creation_its_points_and_its_attachment(
+    db_path, season_id
+):
+    """The server holds no points configuration, and the season is in setup. Seeding hands back,
+    for each of "Standard" and "Half Points", the entries `/results config` records: one
+    POINTS_CONFIG_ADD from nothing to the name, one POINTS_CONFIG_SESSION_SET for every position of
+    every session from no points to the points it pays, one POINTS_CONFIG_FL_SET from no bonus to
+    the bonus and its limit, and one POINTS_CONFIG_ATTACH naming the season, from not attached to
+    attached: 58 entries in all, and nothing else."""
+    part = await _seed(db_path, season_id)
+
+    expected = []
+    for name in ("Standard", "Half Points"):
+        entries, fastest_laps = await points_config_service.get_config_entries(db_path, name)
+        expected.append(("POINTS_CONFIG_ADD", {}, {"config": name}))
+        for e in entries:
+            position = {"config": name, "session_type": e.session_type.value,
+                        "position": e.position}
+            expected.append(("POINTS_CONFIG_SESSION_SET", {**position, "points": None},
+                             {**position, "points": e.points}))
+        for f in fastest_laps:
+            session = {"config": name, "session_type": f.session_type.value}
+            expected.append((
+                "POINTS_CONFIG_FL_SET",
+                {**session, "fl_points": None, "fl_position_limit": None},
+                {**session, "fl_points": f.fl_points, "fl_position_limit": f.fl_position_limit},
+            ))
+        link = {"season_id": season_id, "config": name}
+        expected.append(("POINTS_CONFIG_ATTACH", {**link, "attached": False},
+                         {**link, "attached": True}))
+
+    assert len(part.audits) == 58
+    assert _audited(part.audits) == sorted(
+        (kind, json.dumps(old, sort_keys=True), json.dumps(new, sort_keys=True))
+        for kind, old, new in expected
+    )
+
+
+async def _points_store(db_path) -> dict[str, list[tuple]]:
+    """Every configuration of the server, its points, its fastest-lap bonuses and the seasons'
+    links to configurations, as they stand."""
+    async with get_connection(db_path) as db:
+        read = {
+            "configs": "SELECT config_name FROM points_config_store",
+            "points": "SELECT s.config_name, e.session_type, e.position, e.points "
+            "FROM points_config_entries e JOIN points_config_store s ON s.id = e.config_id",
+            "fastest_laps": "SELECT s.config_name, f.session_type, f.fl_points, "
+            "f.fl_position_limit "
+            "FROM points_config_fl f JOIN points_config_store s ON s.id = f.config_id",
+            "links": "SELECT season_id, config_name FROM season_points_links",
+        }
+        store = {}
+        for key, sql in read.items():
+            cursor = await db.execute(sql)
+            store[key] = sorted(tuple(row) for row in await cursor.fetchall())
+    return store
+
+
+async def _a_config(db_path, season_id, name, *, attached, down_to, fl):
+    """The league's own configuration *name*: a feature race paying 21 less the position down to
+    *down_to*, the fastest-lap bonus *fl* (points, down to position), attached or not."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO points_config_store (config_name) VALUES (?)", (name,)
+        )
+        config_id = cursor.lastrowid
+        for position in range(1, down_to + 1):
+            await db.execute(
+                "INSERT INTO points_config_entries (config_id, session_type, position, points) "
+                "VALUES (?, 'FEATURE_RACE', ?, ?)",
+                (config_id, position, 21 - position),
+            )
+        await db.execute(
+            "INSERT INTO points_config_fl (config_id, session_type, fl_points, fl_position_limit) "
+            "VALUES (?, 'FEATURE_RACE', ?, ?)",
+            (config_id, *fl),
+        )
+        if attached:
+            await db.execute(
+                "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+                (season_id, name),
+            )
+        await db.commit()
+
+
+async def _another_name_unattached(db_path, season_id):
+    await _a_config(db_path, season_id, "League Ladder", attached=False, down_to=10, fl=(1, 10))
+
+
+async def _another_name_attached(db_path, season_id):
+    await _a_config(db_path, season_id, "League Ladder", attached=True, down_to=10, fl=(1, 10))
+
+
+async def _the_leagues_own_standard(db_path, season_id):
+    await _a_config(db_path, season_id, "Standard", attached=False, down_to=20, fl=(1, 20))
+
+
+async def _seeded_already(db_path, season_id):
     await _seed(db_path, season_id)
-    before, before_fl = await points_config_service.get_config_entries(
-        db_path, "Standard"
-    )
 
-    created_again = await _seed(db_path, season_id)
-    after, after_fl = await points_config_service.get_config_entries(
-        db_path, "Standard"
-    )
 
-    assert created_again == []
-    assert len(after) == len(before)
-    assert len(after_fl) == len(before_fl)
+async def _a_dangling_link(db_path, season_id):
+    """The season links "League Ladder", which the server does not hold."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, 'League Ladder')",
+            (season_id,),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    "holding",
+    [
+        pytest.param(_another_name_unattached, id="another_name_unattached"),
+        pytest.param(_another_name_attached, id="another_name_attached"),
+        pytest.param(_the_leagues_own_standard, id="the_leagues_own_standard"),
+        pytest.param(_seeded_already, id="seeded_already"),
+        pytest.param(_a_dangling_link, id="a_dangling_link"),
+    ],
+)
+async def test_a_server_holding_any_points_configuration_is_seeded_nothing(
+    db_path, season_id, holding
+):
+    """Decided 2026-11-17 (#547): the test configurations are seeded only on a server holding no
+    points configuration at all. The server holds "League Ladder" (a feature race down to 10th,
+    1 point for fastest lap down to 10th) not attached to the season; or attached to it; or the
+    league's own "Standard" (a feature race paying 20 down to 1 point to 20th, 1 point for fastest
+    lap down to 20th) not attached; or the "Standard" and "Half Points" test mode seeded before,
+    attached; or holds none, but the season links "League Ladder", which the server does not hold.
+    Seeding then creates nothing and records nothing, every configuration keeps every
+    point and fastest-lap bonus it had, and no season gains or loses a configuration."""
+    await holding(db_path, season_id)
+    before = await _points_store(db_path)
+
+    part = await _seed(db_path, season_id)
+
+    assert list(part.seeded) == []
+    assert list(part.audits) == []
+    assert await _points_store(db_path) == before
 
 
 async def test_approve_carries_the_seeded_config_into_the_season_store(

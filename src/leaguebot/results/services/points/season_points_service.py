@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING
 import aiosqlite
 
 from leaguebot.results.models.switch import SWITCH_KEY
-from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.db.database import get_connection, sole_row
 from leaguebot.framework.models.change import AuditRecord
+from leaguebot.core.models.test_mode import TestModePart
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.framework.services.queue.setting_change import Saved
@@ -288,8 +289,9 @@ async def no_points_config_attached(db_path: str, season_id: int) -> bool:
 
     A link to a configuration that does not exist still counts as attached here; that one is
     `missing_points_config_problems`' fault. Test mode is no exception: it attaches Standard and
-    Half Points when it is enabled and at no other moment, and a season that has had them
-    detached is refused as any other.
+    Half Points when it is enabled, on a server holding no points configuration, and at no other
+    moment, so a test season on a server that holds one, or that has had them detached, is
+    refused as any other.
     """
     return not await get_attached_config_names(db_path, season_id)
 
@@ -303,8 +305,9 @@ async def confirmation_refusals(
     three faults are read through `no_points_config_attached`, `missing_points_config_problems`
     and `points_ordering_problems`, the helpers `review_section` reports from, so the report and
     the refusal cannot drift. Test mode is no exception: it attaches Standard and Half Points when
-    it is enabled and at no other moment, and a season that has had them detached is refused as
-    any other, not given them again behind it.
+    it is enabled, on a server holding no points configuration, and at no other moment, so a
+    season on a server that holds one, or that has had them detached, is refused as any other,
+    not given them behind it.
 
     The placements review refuses on each fault in a private reply of its own: nothing attached,
     then configurations attached that do not exist, then tables out of order. The approval
@@ -419,8 +422,8 @@ async def review_section(
     so the report and the refusal cannot drift. The configuration review has a section only while
     results is on, and it names the configurations alone: its faults are reported with the
     confirmation's. Nothing is promised under test mode: it attaches Standard and Half Points
-    when it is enabled and at no other moment, so a test season with none has a fault as any
-    other season's does. Reads only.
+    when it is enabled, on a server holding no points configuration, and at no other moment, so
+    a test season with none has a fault as any other season's does. Reads only.
     """
     results_on = await modules.is_enabled(SWITCH_KEY)
     if review is Review.CONFIGURATION and not results_on:
@@ -701,3 +704,90 @@ def _changed(before: _Table, after: _Table) -> PointsChanged:
             if old != new:
                 changes.append(ValueChange(config_name, session_type, what, old, new))
     return PointsChanged(tuple(changes))
+
+
+# ─── Test mode's seeded configurations ──────────────────────────────────────
+
+_STANDARD_NAME = "Standard"
+_HALF_POINTS_NAME = "Half Points"
+
+# Points per position (1-indexed) per session type.
+_QUALIFYING_POINTS = {1: 3, 2: 2, 3: 1}
+
+_SPRINT_RACE_STANDARD = {1: 10, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1}
+_SPRINT_RACE_HALF = {1: 5, 2: 4, 3: 3, 4: 2, 5: 1}
+
+_FEATURE_RACE_STANDARD = {
+    1: 30, 2: 27, 3: 24, 4: 21, 5: 18, 6: 15, 7: 13, 8: 11,
+    9: 9, 10: 7, 11: 5, 12: 4, 13: 3, 14: 2, 15: 1,
+}
+_FEATURE_RACE_HALF = {1: 15, 2: 13, 3: 11, 4: 9, 5: 7, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1}
+
+
+async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> TestModePart:
+    """Create "Standard" and "Half Points" and attach them to *season_id*, on *db*, committing
+    nothing: results' part of test mode turned on, run whether or not the results module is on,
+    as the core specification's test mode section says without a condition.
+
+    Seeds only where the server holds no points configuration of any name and none is attached
+    to *season_id* (core specification, Test mode, "Entering and leaving it"); where it holds
+    one, it creates, changes and attaches nothing, so a league's own "Standard" is never
+    rewritten with the test ladder. The two are created together or not at all, in the caller's
+    transaction.
+
+    **Each is written as `/results config` writes one**, through the same audited writers: the
+    name added, every position and the fastest-lap bonus imported, then the configuration
+    attached to the season. It is a real configuration of the server from that moment, listed,
+    viewed and edited as a hand-built one, and the confirmation of placements copies it into the
+    season's own store through the ordinary snapshot.
+
+    Returns the names created and the audit entries of its writes, in the order written, both
+    empty where it seeded nothing.
+    """
+    cursor = await db.execute(
+        "SELECT EXISTS (SELECT 1 FROM points_config_store) "
+        "OR EXISTS (SELECT 1 FROM season_points_links WHERE season_id = ?)",
+        (season_id,),
+    )
+    if (await sole_row(cursor))[0]:
+        return TestModePart()
+
+    configs: list[
+        tuple[str, dict[SessionType, dict[int, int]], dict[SessionType, tuple[int, int]]]
+    ] = [
+        (
+            _STANDARD_NAME,
+            {
+                SessionType.SPRINT_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.SPRINT_RACE: _SPRINT_RACE_STANDARD,
+                SessionType.FEATURE_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.FEATURE_RACE: _FEATURE_RACE_STANDARD,
+            },
+            {SessionType.FEATURE_RACE: (2, 15)},
+        ),
+        (
+            _HALF_POINTS_NAME,
+            {
+                SessionType.SPRINT_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.SPRINT_RACE: _SPRINT_RACE_HALF,
+                SessionType.FEATURE_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.FEATURE_RACE: _FEATURE_RACE_HALF,
+            },
+            {SessionType.FEATURE_RACE: (1, 10)},
+        ),
+    ]
+
+    created: list[str] = []
+    audits: list[AuditRecord] = []
+    for config_name, positions, fastest_laps in configs:
+        for saved in (
+            await points_config_service.create_config_on(db, config_name),
+            await points_config_service.xml_import_config_on(
+                db, config_name, positions, fastest_laps
+            ),
+            await attach_config_on(db, season_id, config_name),
+        ):
+            audits.extend(saved.audits)
+        created.append(config_name)
+
+    return TestModePart(seeded=tuple(created), audits=tuple(audits))

@@ -111,9 +111,9 @@ def sign_up_to_test_mode_turned_on(bot: "LeagueBot") -> None:
     on the connection of the save that turns test mode on, given the season's id (architecture.md,
     "How modules and core fit together"). Results' seeding runs whether or not the results module
     is on, as the core specification's test mode section says without a condition."""
-    from leaguebot.results.services.points import points_config_service
+    from leaguebot.results.services.points import season_points_service
 
-    bot.test_mode_turned_on.subscribe(points_config_service.seed_test_configs_on)
+    bot.test_mode_turned_on.subscribe(season_points_service.seed_test_configs_on)
 
 
 def sign_up_to_season_approved(bot: "LeagueBot") -> None:
