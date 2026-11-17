@@ -110,6 +110,10 @@ ARRIVING_EXEMPT = {
     # and signs up beside each kind's timer handler: the bot's wiring, not the league's data
     # (#283 S21f2).
     ("core/services/test_mode/test_mode_service.py", "_steps"): "#283 S21f2",
+    # Each round job kind's advance phase, held by core's round jobs and signed up by each
+    # module's wiring at build: the bot's wiring, not the league's data, as with the advance
+    # steps above (#544 S5b).
+    ("core/services/rounds/round_jobs.py", "_kinds"): "#544 S5b",
     # The hub's options, held by the hub options the builder makes and signs each module's up on:
     # the bot's wiring, not the league's data. A pack keeps the modules, so it keeps what they
     # offer (#283 S22a).
