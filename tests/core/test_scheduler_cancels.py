@@ -12,6 +12,10 @@ teardown lists where one job that will not go must not stop the rest.
 pass: it lists the store once, before it removes anything, so a store that cannot be listed
 removes nothing and a division's or a season's cancellation stands as it was (#439, slice 8).
 
+A round's cancels, `cancel_round`, `cancel_rounds` and `cancel_season_end`, and
+`schedule_round_cleanups` are core's round jobs' (`RoundJobs`, #544), over the framework's
+scheduler; the rest are the scheduler's own.
+
 `schedule_round_cleanups` arms a raced round's two clean-ups alone, the forecast's and the
 check-in's, a day after its start: what a cancellation refused after its unarming gives back to a
 round already raced (#439, slice 8).
@@ -29,28 +33,33 @@ from leaguebot.core.services.scheduler_service import SchedulerService
 
 LOGGER = "leaguebot.core.services.scheduler_service"
 
-#: Each cancel method, and the arguments it is called with. A job the store lists carries
-#: round 5 as its key and the season-end prefix, so every method that walks the store finds it.
+#: Why a round's cancel fails until core's round jobs exist.
+NO_ROUND_JOBS = "#544: core has no RoundJobs yet; a round's cancels are still the scheduler's"
+
+#: Each cancel method, the arguments it is called with, and whether it is core's round jobs'
+#: rather than the scheduler's. A job the store lists carries round 5 as its key and the
+#: season-end prefix, so every method that walks the store finds it.
 CANCELS = [
-    ("cancel_job", ("wizard_inactivity_101",)),
-    ("cancel_all", ()),
-    ("cancel_round", (5,)),
-    ("cancel_season_end", ()),
-    ("cancel_portrait_refresh", ()),
-    ("cancel_rounds", ([5],)),
+    ("cancel_job", ("wizard_inactivity_101",), False),
+    ("cancel_all", (), False),
+    ("cancel_round", (5,), True),
+    ("cancel_season_end", (), True),
+    ("cancel_portrait_refresh", (), False),
+    ("cancel_rounds", ([5],), True),
     # A wizard's timer, which the signup switch-off disarms whether or not it has fired.
-    ("disarm", ("signup_inactivity", "101")),
+    ("disarm", ("signup_inactivity", "101"), False),
 ]
 
-CANCEL_CASES = [pytest.param(name, args, id=name) for name, args in CANCELS]
+CANCEL_CASES = [
+    pytest.param(
+        name, args, of_round_jobs, id=name,
+        marks=[pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)] if of_round_jobs else [],
+    )
+    for name, args, of_round_jobs in CANCELS
+]
 
 #: The cases again, for a test where the method finds the job by its round.
-CANCEL_CASES_FOUND_BY_ROUND = [
-    pytest.param(
-        name, args, id=name,
-    )
-    for name, args in CANCELS
-]
+CANCEL_CASES_FOUND_BY_ROUND = CANCEL_CASES
 
 
 def _service(jobs) -> SchedulerService:
@@ -61,12 +70,24 @@ def _service(jobs) -> SchedulerService:
     return service
 
 
+def _round_jobs(service: SchedulerService):
+    """Core's round jobs over *service*, built as the builder builds them."""
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
+
+    return RoundJobs(service, "/tmp/not-read.db")
+
+
+def _owner(service: SchedulerService, of_round_jobs: bool):
+    """The object that offers the cancel: core's round jobs, or the scheduler itself."""
+    return _round_jobs(service) if of_round_jobs else service
+
+
 def _job(job_id: str):
-    return SimpleNamespace(id=job_id, kwargs={"kind": "results", "key": 5})
+    return SimpleNamespace(id=job_id, kwargs={"kind": "results", "key": 5}, next_run_time=None)
 
 
-@pytest.mark.parametrize("cancel, args", CANCEL_CASES)
-def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args):
+@pytest.mark.parametrize("cancel, args, of_round_jobs", CANCEL_CASES)
+def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args, of_round_jobs):
     """Fired or never armed: nothing raises and nothing is logged. `cancel_all`, given two
     jobs of which one is already gone, counts only the one that went."""
     jobs = [_job("season_end_gone"), _job("season_end_kept")]
@@ -80,15 +101,17 @@ def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args):
     service._scheduler.remove_job = MagicMock(side_effect=_remove)
 
     with caplog.at_level(logging.WARNING, logger=LOGGER):
-        result = getattr(service, cancel)(*args)
+        result = getattr(_owner(service, of_round_jobs), cancel)(*args)
 
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
     if cancel == "cancel_all":
         assert result == 1
 
 
-@pytest.mark.parametrize("cancel, args", CANCEL_CASES_FOUND_BY_ROUND)
-def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
+@pytest.mark.parametrize("cancel, args, of_round_jobs", CANCEL_CASES_FOUND_BY_ROUND)
+def test_a_cancel_logs_the_traceback_of_any_other_failure(
+    caplog, cancel, args, of_round_jobs
+):
     """A job store that cannot be written is a real fault: a warning carrying the error and
     its traceback, and still no raise. `cancel_all` goes on to the next job and counts it."""
     jobs = [_job("season_end_broken"), _job("season_end_kept")]
@@ -103,7 +126,7 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
     service._scheduler.remove_job = MagicMock(side_effect=_remove)
 
     with caplog.at_level(logging.WARNING, logger=LOGGER):
-        result = getattr(service, cancel)(*args)  # must not raise
+        result = getattr(_owner(service, of_round_jobs), cancel)(*args)  # must not raise
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings, "the fault was not logged"
@@ -115,17 +138,20 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
 def _round_job(job_id: str, round_id: int):
     """A round's job as the store holds it: its kind (its id less the round) and the round id
     as its key."""
-    return SimpleNamespace(id=job_id, kwargs={"kind": job_id.rsplit("_r", 1)[0], "key": round_id})
+    return SimpleNamespace(
+        id=job_id, kwargs={"kind": job_id.rsplit("_r", 1)[0], "key": round_id}, next_run_time=None
+    )
 
 
 #: A one-off timer as `arm_once` stores it, keyed 5 like round 5's jobs but no round's: an
 #: amendment's lapse. Cancelling round 5 must leave it, so a round's jobs are found by a round
 #: kind as well as the key.
 _ONE_OFF_TIMER_KEYED_5 = SimpleNamespace(
-    id="once:amend_lapse:5", kwargs={"kind": "amend_lapse", "key": 5}
+    id="once:amend_lapse:5", kwargs={"kind": "amend_lapse", "key": 5}, next_run_time=None
 )
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     """Rounds 5 and 6 each carry two jobs, round 7 one, a season-end job stands, and so does
     amendment 5's lapse timer, whose key is the same number as round 5's. Cancelling rounds 5
@@ -134,18 +160,20 @@ def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     jobs = [
         _round_job("results_r5", 5), _round_job("rsvp_cleanup_r5", 5),
         _round_job("results_r6", 6), _round_job("cleanup_r6", 6),
-        _round_job("results_r7", 7), SimpleNamespace(id="season_end_3", kwargs={}),
+        _round_job("results_r7", 7),
+        SimpleNamespace(id="season_end_3", kwargs={"kind": "season_end"}, next_run_time=None),
         _ONE_OFF_TIMER_KEYED_5,
     ]
     service = _service(jobs)
 
-    service.cancel_rounds([5, 6])
+    _round_jobs(service).cancel_rounds([5, 6])
 
     removed = [call.args[0] for call in service._scheduler.remove_job.call_args_list]
     assert sorted(removed) == ["cleanup_r6", "results_r5", "results_r6", "rsvp_cleanup_r5"]
     assert service._scheduler.get_jobs.call_count == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_store_that_cannot_be_listed_removes_nothing():
     """The job store cannot be read when round 5's and round 6's timed work is to be removed:
     the fault is raised, so that the cancellation stops, and no job is removed."""
@@ -153,11 +181,12 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
     service._scheduler.get_jobs = MagicMock(side_effect=RuntimeError("the job store is locked"))
 
     with pytest.raises(RuntimeError):
-        service.cancel_rounds([5, 6])
+        _round_jobs(service).cancel_rounds([5, 6])
 
     service._scheduler.remove_job.assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_round_gives_the_jobs_it_removed():
     """Round 5 carries its results submission and its clean-up, round 6 its results
     submission, and amendment 5's lapse timer, whose key is the same number as round 5's,
@@ -169,13 +198,14 @@ def test_cancel_round_gives_the_jobs_it_removed():
     ]
     service = _service(jobs)
 
-    removed = service.cancel_round(5)
+    removed = _round_jobs(service).cancel_round(5)
 
     assert sorted(removed) == ["cleanup_r5", "results_r5"]
     removed_ids = [call.args[0] for call in service._scheduler.remove_job.call_args_list]
     assert _ONE_OFF_TIMER_KEYED_5.id not in removed_ids
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_the_season_end():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
     season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
@@ -185,11 +215,12 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
     jobs = [
         _round_job("results_r5", 5), _round_job("rsvp_cleanup_r5", 5),
         _round_job("results_r6", 6), _round_job("cleanup_r6", 6),
-        _round_job("results_r7", 7), SimpleNamespace(id="season_end_3", kwargs={}),
+        _round_job("results_r7", 7),
+        SimpleNamespace(id="season_end_3", kwargs={"kind": "season_end"}, next_run_time=None),
     ]
     service = _service(jobs)
 
-    removed = service.cancel_rounds([5, 6], season_end=True)
+    removed = _round_jobs(service).cancel_rounds([5, 6], season_end=True)
 
     assert {round_id: sorted(ids) for round_id, ids in removed.items()} == {
         5: ["results_r5", "rsvp_cleanup_r5"],
@@ -201,6 +232,7 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
     assert service._scheduler.get_jobs.call_count == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2020 at 14:00, long
     past by the wall clock, and its clean-ups are armed alone with `now` a month before it. Two
@@ -219,7 +251,7 @@ def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     )
     service = _service([])
 
-    service.schedule_round_cleanups(
+    _round_jobs(service).schedule_round_cleanups(
         rnd, season_number=3, division_tier=1, now=start - timedelta(days=30)
     )
 
