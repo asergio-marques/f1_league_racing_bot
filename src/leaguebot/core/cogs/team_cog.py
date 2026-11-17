@@ -392,11 +392,33 @@ class TeamCog(commands.Cog):
         public: bool = False,
     ) -> None:
         await interaction.response.defer(ephemeral=not public)
+        acknowledgement = _PublicAcknowledgement(interaction, standing=public)
+        try:
+            await self._show_lineup(interaction, division, public, acknowledgement)
+        except Exception:
+            # The command tree answers a fault with a reply the manager alone should see, which
+            # a standing public acknowledgement would show in the channel instead.
+            await acknowledgement.take_down()
+            raise
 
+    async def _show_lineup(
+        self,
+        interaction: discord.Interaction,
+        division: str | None,
+        public: bool,
+        acknowledgement: _PublicAcknowledgement,
+    ) -> None:
+        """Answer `/team lineup` once it is acknowledged.
+
+        Every refusal is sent to the manager alone, and so first takes down the public
+        acknowledgement (`_PublicAcknowledgement`), which would otherwise give the first
+        follow-up its own visibility and show the refusal in the channel (Constitution XIV.4).
+        """
         season = await self.bot.season_service.get_confirmed_season(
 
         )
         if season is None:
+            await acknowledgement.take_down()
             await interaction.followup.send("⛔ No season is being raced, so no lineup is confirmed.", ephemeral=True)
             return
 
@@ -408,12 +430,14 @@ class TeamCog(commands.Cog):
                 season.id, division
             )
             if result is None:
+                await acknowledgement.take_down()
                 await interaction.followup.send(f"⛔ Division `{division}` not found.", ephemeral=True)
                 return
             div_id, _ = result
             all_divisions = [d for d in all_divisions if d.id == div_id]
 
         if not all_divisions:
+            await acknowledgement.take_down()
             await interaction.followup.send("No divisions found.", ephemeral=True)
             return
 
@@ -438,9 +462,8 @@ class TeamCog(commands.Cog):
                         f"❌ {lineups.problem}\n"
                         f"_Lineup for **{lineups.refused}** was not drawn._"
                     )
-                    # The refusal is the first follow-up and keeps the deferral's visibility, so a
-                    # public command would show a section carried in it: the section is always a
-                    # follow-up of its own, which Discord does honour as private.
+                    # The section is always a follow-up of its own, never carried in the refusal.
+                    await acknowledgement.take_down()
                     await interaction.followup.send(refusal, ephemeral=True)
                     await self._tell_notices(interaction, section)
                     return
@@ -455,6 +478,7 @@ class TeamCog(commands.Cog):
                         await interaction.followup.send(
                             text, files=files, ephemeral=not public
                         )
+                        acknowledgement.standing = False
                         await self._tell_notices(interaction, section)
                         return
                     finally:
@@ -487,6 +511,7 @@ class TeamCog(commands.Cog):
                         lines.append(f"    Seat {seat_num}: {driver_str}")
             lines.append("")
 
+        acknowledgement.standing = False
         await _send_long(interaction, "\n".join(lines).rstrip(), ephemeral=not public)
 
     # ------------------------------------------------------------------
@@ -526,6 +551,39 @@ class TeamCog(commands.Cog):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_NOT_SHOWN = "⛔ The lineup could not be shown."
+
+
+class _PublicAcknowledgement:
+    """The "thinking…" a public `/team lineup` shows until its first follow-up.
+
+    Discord gives the first follow-up after a deferral the deferral's visibility, whatever the
+    follow-up asks, so a refusal sent first would be shown in the channel the drivers read
+    (Constitution XIV.4). `take_down` deletes the acknowledgement while it stands, so that the next
+    follow-up is seen as it asks, by the manager alone. Where Discord refuses the deletion, the
+    channel is given one neutral line, naming no problem, as that first follow-up, and the refusal
+    follows privately all the same. `standing` is cleared once anything has been sent, after which
+    there is nothing to take down: deleting the original then would delete what was sent.
+    """
+
+    def __init__(self, interaction: discord.Interaction, *, standing: bool) -> None:
+        self._interaction = interaction
+        self.standing = standing
+
+    async def take_down(self) -> None:
+        if not self.standing:
+            return
+        self.standing = False
+        try:
+            await self._interaction.delete_original_response()
+        except discord.HTTPException:
+            log.warning("could not delete the public acknowledgement of /team lineup", exc_info=True)
+            try:
+                await self._interaction.followup.send(_NOT_SHOWN, ephemeral=False)
+            except discord.HTTPException:
+                log.warning("could not show the channel that the lineup was not shown", exc_info=True)
+
 
 async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: bool = True) -> None:
     """Send potentially-long text, splitting into followup chunks if needed."""

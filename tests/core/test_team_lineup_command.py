@@ -389,10 +389,7 @@ _NEUTRAL_LINE = "⛔ The lineup could not be shown."
         "private",
         "public",
         "refused_after",
-        pytest.param(
-            "refused_after_public",
-            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
-        ),
+        "refused_after_public",
         pytest.param(
             "refused_after_public_undeletable",
             marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
@@ -561,23 +558,7 @@ async def test_a_drawing_that_fails_fails_the_command(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "refused",
-    [
-        pytest.param(
-            "no_season", marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY)
-        ),
-        pytest.param(
-            "unknown_division",
-            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
-        ),
-        pytest.param(
-            "no_divisions", marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY)
-        ),
-        pytest.param(
-            "drawing_fails",
-            marks=pytest.mark.xfail(strict=True, reason=_REFUSAL_SHOWN_PUBLICLY),
-        ),
-    ],
+    "refused", ["no_season", "unknown_division", "no_divisions", "drawing_fails"]
 )
 async def test_a_public_lineup_refused_is_told_to_the_manager_alone(tmp_path, refused):
     """A manager asks for the lineup publicly, and it cannot be shown: no season is being raced;
