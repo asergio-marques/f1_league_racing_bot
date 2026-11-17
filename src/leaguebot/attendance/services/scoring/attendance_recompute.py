@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 
 from leaguebot.attendance.services.scoring import attendance_scoring
+from leaguebot.core.models.channel_needs import ATTACH, READ_HISTORY, SEND, VIEW
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
@@ -20,6 +21,9 @@ from leaguebot.results.services.module.division_channels import verdicts_channel
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+#: What a recalculation's reposting needs of a channel, before a picture is asked of it.
+_REPOSTED = (VIEW, SEND, READ_HISTORY)
 
 
 async def _recalculate_forward(
@@ -196,7 +200,7 @@ async def recalculation_faults(
             fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "attendance",
                 int(attendance_channel),
-                needs_attachment=attendance_graphics,
+                needs=_REPOSTED + ((ATTACH,) if attendance_graphics else ()),
             )
             if fault is not None:
                 faults.append(fault)
@@ -205,7 +209,7 @@ async def recalculation_faults(
             fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "verdicts",
                 verdicts_channel,
-                needs_attachment=False,
+                needs=_REPOSTED,
             )
             if fault is not None:
                 faults.append(fault)

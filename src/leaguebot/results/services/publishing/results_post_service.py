@@ -10,6 +10,7 @@ import aiohttp
 import aiosqlite
 import discord
 
+from leaguebot.core.models.channel_needs import Needs
 from leaguebot.core.services.drivers.driver_names import read_driver_names
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
@@ -46,6 +47,7 @@ from leaguebot.results.services.publishing import (
     results_drawing_composer,
     standings_drawing_composer,
 )
+from leaguebot.results.services.module.division_channels import channel_needs
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
@@ -1473,24 +1475,16 @@ async def load_driver_rows(
 # What a repost needs of a channel
 # ---------------------------------------------------------------------------
 
-#: What the repost needs of a channel before it starts, by the names Discord's own
-#: interface uses. ``view_channel`` is listed even though a bot that cannot see a channel
-#: usually cannot send to it either: the two are separate permissions and Discord will
-#: report ``send_messages`` as granted on a channel the bot cannot read, so checking only
-#: the latter would pass a channel nothing can be posted to.
-#:
-#: ``read_message_history`` is here because a repost *replaces* rather than appends — it
-#: finds what it posted last with ``fetch_message``, which needs it. ``manage_messages`` is
-#: deliberately absent: the bot only ever deletes its own messages, which needs no
-#: permission at all.
-_REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
-    ("view_channel", "View Channel"),
-    ("send_messages", "Send Messages"),
-    ("read_message_history", "Read Message History"),
-)
-
-#: Asked of a channel that may receive a graphic, in addition to the above.
-_ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
+# What a repost needs of a channel is stated by results' `channel_needs`
+# (`results/services/module/division_channels.py`), the one source the faults a season's
+# confirmation names and this gate both read: View Channel, Send Messages and Read Message
+# History, which a repost *replaces* rather than appends needs to find what it posted last with
+# `fetch_message`, and Attach Files where a picture could attach one. `view_channel` is listed
+# even though a bot that cannot see a channel usually cannot send to it either: the two are
+# separate permissions and Discord will report `send_messages` as granted on a channel the bot
+# cannot read, so checking only the latter would pass a channel nothing can be posted to.
+# `manage_messages` is deliberately absent: the bot only ever deletes its own messages, which
+# needs no permission at all.
 
 
 def bot_member(guild: "discord.Guild", bot: LeagueBot | None):
@@ -1521,9 +1515,11 @@ def channel_fault(
     setting: str,
     channel_id: int,
     *,
-    needs_attachment: bool,
+    needs: Needs,
 ) -> str | None:
-    """The fault standing between the bot and posting to *channel_id*, or None.
+    """The fault standing between the bot and posting to *channel_id*, or None: the channel not
+    found, not a text channel, or lacking a permission in *needs*, the permissions the channel's
+    use asks of the bot (`division_channels.channel_needs`).
 
     Reads the gateway cache rather than calling Discord, which is what makes it usable as a
     gate: it is the same reading ``/results channel verdicts`` already takes before it
@@ -1546,10 +1542,7 @@ def channel_fault(
         )
 
     permissions = channel.permissions_for(bot_member)
-    wanted = list(_REPOST_PERMISSIONS)
-    if needs_attachment:
-        wanted.append(_ATTACHMENT_PERMISSION)
-    missing = [name for attr, name in wanted if not getattr(permissions, attr, False)]
+    missing = [name for attr, name in needs if not getattr(permissions, attr, False)]
     if missing:
         return unpostable_channel_fault(division_name, setting, channel_id, missing)
     return None
@@ -1641,19 +1634,18 @@ async def _channel_faults_for_rows(
     division_rows, guild, bot_member, drawing: "ImageDrawing"
 ) -> list[str]:
     """The faults across *division_rows*, each row carrying a division's two channel ids."""
-    # Asked of the image module's drawing, which is handed in, rather than read out of its
-    # configuration here: a posting service hands the image module an occasion and acts on what
-    # comes back, and does not read its settings (#187, and the layering
-    # `tests/image/test_image_module_flow.py` holds).
-    results_graphics = await drawing.aspect_attaches_files("results")
-    standings_graphics = await drawing.aspect_attaches_files("standings")
+    # Asked of results' stated needs, which ask the image module's drawing, handed in, whether a
+    # picture could attach a file, rather than read its configuration here: a posting service
+    # hands the image module an occasion and acts on what comes back, and does not read its
+    # settings (#187, and the layering `tests/image/test_image_module_flow.py` holds).
+    needs = await channel_needs(drawing)
 
     faults: list[str] = []
     for row in division_rows:
         division_name = row["name"] or f"division {row['id']}"
-        for setting, channel_id, needs_attachment in (
-            ("results", row["results_channel_id"], results_graphics),
-            ("standings", row["standings_channel_id"], standings_graphics),
+        for setting, channel_id in (
+            ("results", row["results_channel_id"]),
+            ("standings", row["standings_channel_id"]),
         ):
             if not channel_id:
                 continue
@@ -1663,7 +1655,7 @@ async def _channel_faults_for_rows(
                 division_name,
                 setting,
                 int(channel_id),
-                needs_attachment=needs_attachment,
+                needs=needs[setting],
             )
             if fault is not None:
                 faults.append(fault)
