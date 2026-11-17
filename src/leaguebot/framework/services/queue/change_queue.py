@@ -2148,16 +2148,21 @@ class ChangeQueue:
             )
             if message is None:
                 return
-            async with self._writing, get_connection(self._db_path) as db:
-                await db.execute(
-                    "UPDATE queued_change_steps SET notice_message_id = ?, notice_channel_id = ? "
-                    "WHERE id = ? AND done_at IS NULL",
-                    (message.id, message.channel.id, job_id),
-                )
-                await db.commit()
+            await self._keep_notice(job_id, message.channel.id, message.id)
         except Exception:  # noqa: BLE001 — the stop stands; the notice is posted again
             log.error("could not post the stop notice of job %s (change %s)", job_id,
                       change["id"], exc_info=True)
+
+    async def _keep_notice(self, job_id: int, channel_id: int, message_id: int) -> None:
+        """Save where the stop notice of the job *job_id* landed, on the job. Raises where the save
+        fails: the caller, `_post_notice`, answers for it."""
+        async with self._writing, get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE queued_change_steps SET notice_message_id = ?, notice_channel_id = ? "
+                "WHERE id = ? AND done_at IS NULL",
+                (message_id, channel_id, job_id),
+            )
+            await db.commit()
 
     async def _admins_to_notify(self, lane: str) -> int | None:
         """The league admins' role, where a stop notice of *lane* is to mention it, else None.
