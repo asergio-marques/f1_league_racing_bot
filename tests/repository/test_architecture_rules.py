@@ -3578,10 +3578,6 @@ _WORD_TIMER_KINDS = frozenset({"cleanup", "results"})
 #: a round's cancellation is limited to.
 _KIND_ARGUMENTS = frozenset({"kind", "kinds", "only"})
 
-#: Why core still names the modules' timer kinds: until each module hands core its own leads.
-CORE_NAMES_TIMER_KINDS = "#544: core still names the modules' round timer kinds"
-
-
 def _name_of(node: ast.AST) -> str:
     """The name *node* reads, lower-cased: ``x`` for a name, ``y`` for ``a.y``, a call's name for a
     call (`_call_name`), or ``""``."""
@@ -3649,7 +3645,6 @@ def _timer_kinds_in_core_among(sources) -> Counter[tuple[str, str]]:
     return found
 
 
-@pytest.mark.xfail(strict=True, reason=CORE_NAMES_TIMER_KINDS)
 def test_core_names_no_kind_of_a_round_s_timer():
     """Each module hands core the leads it wants set for a round, each with the kind its timer is
     stored under, and core arms them under its own naming (architecture.md, "Timed work and
