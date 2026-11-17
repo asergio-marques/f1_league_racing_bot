@@ -174,7 +174,7 @@ folder.
 | Drivers | `driver_service` (`DriverService`), `driver_names` | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on`; nothing for `driver_names`, which reads a driver's name, username and nationality, and whether the league collects a nationality, from the profile, the accounts, the test-mode fields and signup's hook |
 | The change queue (the framework's) | `change_queue` (`ChangeQueue`), `change_types`, `queue_records`, `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
 | Timed work (the framework's: `framework/services/jobs/`) | `scheduler` (`SchedulerService`), `start_up` | the job store, a file of its own |
-| A round's timed work | `round_jobs` (`RoundJobs`) | nothing: it reads a round's rows to arm and cancel its jobs through the scheduler |
+| A round's timed work | `round_jobs` (`RoundJobs`) | nothing: it is handed the rounds it arms, and reads the live seasons' rounds only to cancel their jobs (`cancel_live_rounds`) |
 | Posting (the framework's) | `output_router` (`OutputRouter`), `notice_handler`, `standing_post_handler`, `owned_channel_handler`, `standing_posts`, `retry_service` | `pending_messages` |
 | The record (the framework's) | `audit_service` | `audit_entries` |
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook |
@@ -441,8 +441,8 @@ interaction for its own
 A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and restarts").
 
 `RoundJobs` (`core/services/rounds/round_jobs.py`, on the bot as `round_jobs`) is core's side: it
-arms and cancels a round's jobs and the season-end job, and reads test mode's pending jobs and queued
-events, through the scheduler's generic calls. A round's job is named from the round's id and its
+arms and cancels a round's jobs, removes any stale season-end job, and reads test mode's pending jobs
+and queued events, through the scheduler's generic calls. A round's job is named from the round's id and its
 kind (`_round_job_suffix`). The services that arm or cancel a round's jobs are handed it by the
 builder; the cogs, the wirings and the builder alone read `bot.round_jobs`. It is handed the
 database path as well as the scheduler, to read the rounds it cancels for (`cancel_live_rounds`,
