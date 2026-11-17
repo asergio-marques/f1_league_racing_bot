@@ -1035,43 +1035,42 @@ of adding a second (the `_round_job_suffix` docstring in core's round jobs). The
 timers, the job store and the one runner every job names, and arms a job at the id, kind and moment
 it is handed (`arm_at`, `run_now`, `arm_daily`, `arm_every`), lists the jobs it holds (`jobs`) and
 removes one (`remove`); it names no round, module or kind of job. It alone imports APScheduler, so
-that the library's conventions hold for every job. A round's timed work is armed by core's round jobs (`RoundJobs`), through those calls, and
-`RoundJobs` is handed to the services that arm or cancel a round's jobs by the builder, a module's
-wiring or a cog. **Each module lists what it wants set and core arms it:** a module answers with
-`RoundLead` records, each the kind its timer is stored under, its offset from the round's moment,
-its label and a few marks, which name no module, and `RoundJobs.arm_leads` arms each under the id,
-moment, name and key every round's timer has, the clean-up's moment being the one figure
-`clean_up_moment` gives. A module builds its leads, and its own reads of the same moments
-(its recovery, its amendment's rules, its test-mode steps), from one function of its own, so its
-catch-up and core's arming cannot drift apart. `arm_leads` only arms, judging a lead armed while
-ahead against the `now` it is handed ("The time is always passed in"); `run_lead_now` runs at once
-a lead whose moment has passed. Which leads are run at once, and which core drops where test mode
-leaves them to `/test-mode advance`, are marks on a lead, never a check of its kind, and core's
-rule of when test mode leaves one (`results_left_to_advance`) is core's own. Results answers its
-submission as a lead for every round, whatever its switch, since it is the round's one way off Not
-run. Only three changes arm leads: a season's approval, the amendment of a round
-(`round_amend_change`), and the re-arming of a round whose timed work a refused cancellation took,
-a change of its own (`round_rearm_change`, `season.round.rearm`) built from the amendment's steps.
-The arming step those two share runs at once the lead marked so of a round still to be run whose
-moment has passed, save under test mode. Every path arms through these calls. **Core names no kind
-of a round's timer:** each module signs its kinds up with `RoundJobs` at build, each with the phase
-`/test-mode advance` numbers it by, and `RoundJobs` knows a job is a round's, and which phase it is,
-by that register alone. Results signs its kind up with no advance phase, since the advance reads
-its phase from the round's state. A restart arms nothing, the job store
-keeping the jobs and the start-up sweep catching up those missed (above), and neither does test
-mode, whose advance brings forward work already armed or found due in the database. A round's
-next-day clean-ups, which its weather and its attendance arming both owe, are leads of their
-modules, armed with the rest. **In the amendment and the re-arming of a round still to be run,
-whether a module's work is armed, and with what, is that module's answer through `round_armed`**:
-each module hands back its steps and the leads it owes, less any phase it draws at once, and the
-arming step arms what each hands back, so that core holds no module's rule about which jobs a moved
-round still to be run owes. What a module keeps from its part
-of the amendment's judgement, its own windows included, core stores as it is given and hands the
-merged record back to every module, each reading only its own, reading it for none itself: core
-names no module's windows. The re-arming of a round raced, or ended cancelled because every session was
-entered as not held, arms the clean-up leads alone: core asks the modules for their leads and arms
-those marked as clean-ups, and a module that is off answers none, so core reads no module's switch
-and no module's window.
+that the library's conventions hold for every job. A round's timed work is armed by core's round
+jobs (`RoundJobs`), through those calls, and `RoundJobs` is handed to the services that arm or
+cancel a round's jobs by the builder, a module's wiring or a cog. **Each module lists what it wants
+set and core arms it:** a module answers with `RoundLead` records, each the kind its timer is stored
+under, its offset from the round's moment, its label and a few marks, which name no module, and
+`RoundJobs.arm_leads` arms each under the id, moment, name and key every round's timer has, the
+clean-up's moment being the one figure `clean_up_moment` gives. A module builds its leads, and its
+own reads of the same moments (its recovery, its amendment's rules, its test-mode steps), from one
+function of its own, so its catch-up and core's arming cannot drift apart. `arm_leads` only arms,
+judging a lead armed while ahead against the `now` it is handed ("The time is always passed in");
+`run_lead_now` runs at once a lead whose moment has passed. Which leads are run at once, and which
+core drops where test mode leaves them to `/test-mode advance`, are marks on a lead, never a check
+of its kind, and core's rule of when test mode leaves one (`results_left_to_advance`) is core's own.
+Results answers its submission as a lead for every round, whatever its switch, since it is the
+round's one way off Not run. Only three changes arm leads: a season's approval, the amendment of a
+round (`round_amend_change`), and the re-arming of a round whose timed work a refused cancellation
+took, a change of its own (`round_rearm_change`, `season.round.rearm`) built from the amendment's
+steps. The arming step those two share runs at once the lead marked so of a round still to be run
+whose moment has passed, save under test mode. Every path arms through these calls. **Core names no
+kind of a round's timer:** each module signs its kinds up with `RoundJobs` at build, each with the
+phase `/test-mode advance` numbers it by, and `RoundJobs` knows a job is a round's, and which phase
+it is, by that register alone. Results signs its kind up with no advance phase, since the advance
+reads its phase from the round's state. A restart arms nothing, the job store keeping the jobs and
+the start-up sweep catching up those missed (above), and neither does test mode, whose advance
+brings forward work already armed or found due in the database. A round's next-day clean-ups, which
+its weather and its attendance arming both owe, are leads of their modules, armed with the rest.
+**In the amendment and the re-arming of a round still to be run, whether a module's work is armed,
+and with what, is that module's answer through `round_armed`**: each module hands back its steps and
+the leads it owes, less any phase it draws at once, and the arming step arms what each hands back,
+so that core holds no module's rule about which jobs a moved round still to be run owes. What a
+module keeps from its part of the amendment's judgement, its own windows included, core stores as it
+is given and hands the merged record back to every module, each reading only its own, reading it for
+none itself: core names no module's windows. The re-arming of a round raced, or ended cancelled
+because every session was entered as not held, arms the clean-up leads alone: core asks the modules
+for their leads and arms those marked as clean-ups, and a module that is off answers no clean-up, so
+core reads no module's switch and no module's window.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
@@ -1732,7 +1731,8 @@ later on its own.
   task of its own for each item, place 3's guards around reporting and writing a log line, the
   fourth place's hand-off across a thread, and the fifth and sixth places' handlers), a file of
   core naming a kind of a round's timer (a weather phase or clean-up, a check-in timer, results'
-  submission, in a timer's place and not in a docstring), and a save outside a queued change. The job check and the check of cogs handling their own errors are
+  submission, in a timer's place and not in a docstring), and a save outside a queued change. The
+  job check and the check of cogs handling their own errors are
   absolute, with no list of breaches left to grow, and the log channel's check holds its nine places
   for good; every other check lists today's breaches, each under the work that removes it. The check
   of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls,
