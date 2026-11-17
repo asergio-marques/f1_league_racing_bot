@@ -28,6 +28,7 @@ from leaguebot.framework.utils.interaction_errors import describe, describe_form
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import LeagueModal
 from leaguebot.framework.utils.log_lines import drawn_notices_section, refuse
+from leaguebot.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -364,6 +365,16 @@ class TeamCog(commands.Cog):
     # /team lineup  — show placed drivers per team for the active season
     # ------------------------------------------------------------------
 
+    @staticmethod
+    async def _tell_notices(interaction: discord.Interaction, section: str) -> None:
+        """Tell the manager alone the notices of the pictures drawn, one follow-up for each part
+        Discord's message limit leaves: a lineup of several divisions can note more than one
+        message holds, and a failed send would cost the manager the notices and their link."""
+        if not section:
+            return
+        for part in chunk_message(section):
+            await interaction.followup.send(part, ephemeral=True)
+
     @team.command(
         name="lineup",
         description="Show the confirmed team lineups of the season being raced.",
@@ -427,9 +438,11 @@ class TeamCog(commands.Cog):
                         f"❌ {lineups.problem}\n"
                         f"_Lineup for **{lineups.refused}** was not drawn._"
                     )
-                    await interaction.followup.send(
-                        f"{refusal}\n\n{section}" if section else refusal, ephemeral=True,
-                    )
+                    # The refusal is the first follow-up and keeps the deferral's visibility, so a
+                    # public command would show a section carried in it: the section is always a
+                    # follow-up of its own, which Discord does honour as private.
+                    await interaction.followup.send(refusal, ephemeral=True)
+                    await self._tell_notices(interaction, section)
                     return
 
                 if lineups.paths:
@@ -442,8 +455,7 @@ class TeamCog(commands.Cog):
                         await interaction.followup.send(
                             text, files=files, ephemeral=not public
                         )
-                        if section:
-                            await interaction.followup.send(section, ephemeral=True)
+                        await self._tell_notices(interaction, section)
                         return
                     finally:
                         for attachment in files:
