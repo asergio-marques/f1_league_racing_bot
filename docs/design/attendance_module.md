@@ -117,8 +117,8 @@ writes `INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1,
 flag alone and leaving the eight values to the schema, so a module turned off and on again starts
 from the packaged values, not from the ones it was left with, and the defaults live in one place.
 `get_config_or_defaults` reads the same defaults off the schema where no row is stored, so a read
-creates no row. A read hook, the window core asks for when a round is armed, is a reader and writes
-nothing (`attendance_hooks.round_window`). Pinned by
+creates no row. A read hook, the leads core asks for when a round is armed, is a reader and writes
+nothing (`attendance_hooks.round_leads`). Pinned by
 `test_re_enabling_attendance_starts_from_the_packaged_defaults`,
 `test_enabling_attendance_leaves_the_schema_s_own_defaults` and
 `test_reading_a_round_s_window_writes_nothing`.
@@ -170,7 +170,7 @@ topic. The table names a service by its file.
 | `sanctions/` | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
 | `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id) |
 | `settings/` | `attendance_settings` (the eight), `penalty_recalculation` (a penalty changed while a season is ongoing), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config`; through the sync's save, the recalculation's and the sanctions' tables |
-| `hooks/` | `attendance_hooks` (the deletes, the round's window, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `preview_sources` (`AttendancePreviewSources`, the check-in deadline the image module's previews draw), `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
+| `hooks/` | `attendance_hooks` (the deletes, the round's leads, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `preview_sources` (`AttendancePreviewSources`, the check-in deadline the image module's previews draw), `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
 
 **The check-in is four changes, each in a file of its own,** with the file that holds the steps an
 amendment plans over them and the file they share:
@@ -634,7 +634,7 @@ Each is stated where it lives and pinned by the test named.
 |---|---|---|
 | `/attendance`'s subgroups join the group in one file, in the order a league sees them | `attendance_group.py`'s docstring | `test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first` |
 | The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_on_attendance`'s save | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
-| A read of a round's window creates no row | `attendance_hooks.round_window` | `test_reading_a_round_s_window_writes_nothing` |
+| A read of a round's leads creates no row | `attendance_hooks.round_leads` | `test_reading_a_round_s_window_writes_nothing` |
 | A cross-setting rule is judged by the setting's change as it starts | `attendance_settings`' docstring | `test_set_setting_refuses_a_timing_that_breaks_the_invariant` and its two companions |
 | A stored copy has one recompute, run on its caller's connection | `_recalculate_forward`'s docstring | the four tests of "The stored copies of derived figures" |
 | The sync's recalculation and sanctions are one save, its cards later jobs | `attendance_sync_change`'s docstring | `test_a_stop_between_the_sanctions_and_their_cards_finishes_on_restart` |
