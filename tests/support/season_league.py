@@ -17,9 +17,9 @@ it is. A review is posted at the queue's clock, as its post job stamps it, and i
 view the builder's factory makes (`_approve_view_for`), as the queue's post job attaches it.
 
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
-the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
+the builder's (`league_queue`). It reads the enabled modules' leads as the builder has it read
 them, attendance's settings through `_attendance`, and a real `SeasonCog` holds the season's setup
-in memory. Core's round jobs are a double recording each `schedule_*` and `arm_leads` call in
+in memory. Core's round jobs are a double recording each round's leads armed (`arm_leads`) in
 `league.armed`; `run_at_once` reads what it was asked to run at once (`run_lead_now`). The
 league's server holds every channel above, the review's channel (610) among them, the roles above
 and the three drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer
@@ -49,9 +49,8 @@ results submission for a round, its channel standing on the server; `cancel_roun
 
 For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
 horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
-performed (`phases_done`, by round id), and the bot reads the amendment's windows as the builder has
-it read them: attendance's only where it is on, weather's always. The round jobs' double records
-`schedule_round` as weather's arming. `amend_round` runs `/round amend` as admin 77 and presses the
+performed (`phases_done`, by round id), and the bot reads the amendment's leads as the builder has
+it read them. `amend_round` runs `/round amend` as admin 77 and presses the
 Confirm it offered, giving the press; `amendment_changes` lists the amendments asked of the queue;
 `accept_session` saves a session's results as the wizard does on accepting them; `posted_forecast`
 records a phase's forecast as posted, its message standing in the division's forecast channel.
@@ -210,10 +209,10 @@ class SeasonLeague:
         self.events: list[tuple[str, int, int]] = []
         #: Every exception a press raised, as the bot's error handler would have caught it.
         self.errors: list[BaseException] = []
-        #: Each `schedule_*` call, and each round's leads armed (`arm_leads`), by the timed work
-        #: it arms: (which, the round ids it was handed). `"weather"` is the forecasts with the
-        #: result submission, `"results"` the submission alone, `"attendance"` the check-in, and
-        #: `"cleanups"` a raced round's clean-ups armed alone (`_armed_as`).
+        #: Each round's leads armed (`arm_leads`), by the timed work they arm: (which, the round
+        #: ids). `"weather"` is the forecasts with the result submission, `"results"` the
+        #: submission alone, `"attendance"` the check-in, and `"cleanups"` a raced round's
+        #: clean-ups armed alone (`_armed_as`).
         self.armed: list[tuple[str, list[int]]] = []
         #: The roles each member was granted, in order.
         self.granted: dict[int, list[int]] = {}
@@ -266,11 +265,6 @@ class SeasonLeague:
 
         db_path = self.db_path
         round_jobs = MagicMock()
-        round_jobs.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
-        round_jobs.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
-        round_jobs.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
-        round_jobs.schedule_round = MagicMock(side_effect=self._arm("weather"))
-        round_jobs.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
         round_jobs.arm_leads = MagicMock(side_effect=self._arm_leads)
         self.bot = bot = await league_bot(db_path, round_jobs=round_jobs, real_config=True)
         ids = [REVIEW_CHANNEL]
@@ -394,15 +388,6 @@ class SeasonLeague:
         if user_id in self.fetch_fails:
             raise self.fetch_fails[user_id]
         return self._member(user_id)
-
-    def _arm(self, which: str) -> Any:
-        def _record(rounds: Any, *_args: Any, **_kwargs: Any) -> None:
-            if self.arming_fails is not None:
-                raise self.arming_fails
-            handed = rounds if isinstance(rounds, (list, tuple)) else [rounds]
-            self._note(which, [r.id for r in handed])
-
-        return _record
 
     def _arm_leads(self, rnd: Any, leads: Any = (), *_args: Any, **kwargs: Any) -> None:
         """`arm_leads`' double: *rnd*'s *leads* noted as the timed work they arm (`_armed_as`)."""

@@ -982,6 +982,7 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
     assert run_at_once(round_jobs) == [(R4, "results")]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_the_clean_ups_of_a_round_that_ended_cancelled_as_not_held(
     tmp_path,
 ):

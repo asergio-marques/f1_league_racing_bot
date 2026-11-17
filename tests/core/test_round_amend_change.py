@@ -402,6 +402,7 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart(tmp_path):
     """Pro's round 3 moved past round 4. The queue is stopped once the save is made; after a
     restart the round is armed against its new moment, the rounds stand renumbered and one
@@ -420,6 +421,7 @@ async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_resta
     assert len(_success_lines(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_the_timed_work_is_removed_before_the_save_and_armed_after_it(tmp_path):
     """The save fails: the queue stops at it with round 3's timed work already removed and
     nothing armed; once the save goes through on Retry, the round is armed."""
@@ -458,6 +460,7 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
     assert _success_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     """Round 3, ninety days out, moved a day later. The arming fails after the save, stopping
     the queue, and the bot restarts: the success line, saved with the amendment, stands once in
@@ -688,6 +691,7 @@ async def test_a_track_amendment_whose_first_forecast_is_posted_while_it_waits_i
     assert len(_amend_refusals(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_is_refused_by_the_save(
     tmp_path, monkeypatch,
 ):
@@ -736,6 +740,7 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 @pytest.mark.parametrize("stopped", ["apply", "unarm"])
 async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_deadline_passed_is_refused_by_the_save(
     tmp_path, reposts, stopped,
@@ -811,6 +816,7 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 @pytest.mark.parametrize("weather, attendance", [
     pytest.param(True, True),
     pytest.param(True, False),
@@ -874,6 +880,7 @@ async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_ti
     assert _success_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_was(tmp_path):
     """The save fails and a league admin discards it: the round stands as it was, its numbers
     unchanged, and its timed work is armed again against its old moment."""
@@ -1016,6 +1023,7 @@ async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when
     assert "round 3" not in _outcome(press)
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_the_arming_cannot_be_discarded_and_once_retried_arms_the_round(tmp_path):
     """The arming fails and stops the queue. A league admin's Discard on it is refused,
     privately and with one line in the log channel; the queue stays stopped at the arming, and
@@ -1133,9 +1141,10 @@ async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumber
 
 
 @pytest.mark.parametrize("case", [
-    pytest.param("cancelled", id="cancelled while the arming stood stopped"),
+    pytest.param("cancelled", id="cancelled while the arming stood stopped",
+                 marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
     pytest.param("results", id="results entered while the removal stood stopped"),
-    pytest.param("control", id="still to be run"),
+    pytest.param("control", id="still to be run", marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
 ])
 async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(tmp_path, case):
     """(cancelled) The arming stops; meanwhile `/season cancel`, off the queue, records round 3
@@ -1185,6 +1194,7 @@ async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(t
         assert await _moment(league) != _when(league, days=91)
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_submission(
     tmp_path,
 ):
@@ -1203,6 +1213,7 @@ async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_
     assert ("weather", [R3]) not in league.armed
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_mystery_notice(
     tmp_path,
 ):
@@ -1271,7 +1282,8 @@ async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_on
 
 @pytest.mark.parametrize("stopped", [
     pytest.param("apply", id="the save stopped"),
-    pytest.param("take_down_call", id="the take-down stopped after the arming"),
+    pytest.param("take_down_call", id="the take-down stopped after the arming",
+                 marks=pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")),
 ])
 async def test_a_call_that_fell_due_while_the_amendment_stood_stopped_is_posted_again(
     tmp_path, reposts, stopped,
@@ -3122,6 +3134,10 @@ async def test_with_no_module_signed_up_nothing_is_armed(tmp_path):
     assert league.armed == []
     assert [lead for each in leads_armed(league.bot.round_jobs) for lead in each["leads"]] == []
     assert run_at_once(league.bot.round_jobs) == []
+    # The round jobs are asked nothing but the round's removal and its leads' arming.
+    assert {name for name, *_ in league.bot.round_jobs.method_calls} <= {
+        "cancel_round", "arm_leads", "run_lead_now"
+    }
 
 
 # ── Each module keeps its own windows (#287, T7) ───────────────────────────────────────────

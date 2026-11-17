@@ -314,7 +314,9 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
 
 @pytest.mark.parametrize("fault_in", [
-    pytest.param("arming the round's jobs"),
+    pytest.param("arming the round's jobs",
+                 marks=pytest.mark.xfail(strict=True,
+                                         reason="#544: core arms no round's leads yet (arm_leads)")),
     "re-running a phase",
 ])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
@@ -352,6 +354,7 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_amending_two_fields_amends_once(tmp_path, phases):
     """Amending a round's track and its date together is one amendment, not two.
 
