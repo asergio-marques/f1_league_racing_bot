@@ -8,6 +8,7 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import ROUNDS_GROUP, ResultsSubgroup
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -216,7 +217,7 @@ class RoundsCommands(ResultsSubgroup):
             label_of,
         )
 
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(
                 interaction,
                 "\u274c The Results & Standings module is not enabled.",

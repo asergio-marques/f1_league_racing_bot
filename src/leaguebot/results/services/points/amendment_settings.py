@@ -28,6 +28,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import Verdict
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.framework.services.queue.change_types import CheckContext
@@ -92,7 +93,7 @@ async def _gate(
     The module, then the live season's stage in the command's own words, then that it is still
     the season asked about, then that no approval of its points is in hand.
     """
-    if not await modules.is_results_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return Verdict.refuse(MODULE_OFF)
     season = await seasons.get_setup_or_active_season()
     if season is None:

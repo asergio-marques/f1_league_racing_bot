@@ -28,6 +28,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
@@ -103,7 +104,7 @@ def module_on_results(
     """
 
     async def check(_ctx: CheckContext) -> Verdict:
-        if await modules.is_results_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Results & Standings module is already enabled.")
         if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)

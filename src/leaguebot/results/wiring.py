@@ -28,11 +28,12 @@ if TYPE_CHECKING:
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign results up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_results_enabled` asks it by."""
+    """Sign results up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.results.models.switch import SWITCH_KEY
     from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 
-    modules.register_switch("results", results_enabled_on)
+    modules.register_switch(SWITCH_KEY, results_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:
@@ -389,7 +390,7 @@ def register_change_types(
     bot.change_queue.register(
         results_off_change(
             attendance_off_on=attendance_off_on,
-            attendance_enabled=bot.module_service.is_attendance_enabled,
+            attendance_enabled=partial(bot.module_service.is_enabled, "attendance"),
             rounds_made_final=bot.rounds_made_final,
             disarm_amendment_sweep=lambda: cancel_amendment_sweep(bot.scheduler_service),
             now=lambda: bot.change_queue.now(),

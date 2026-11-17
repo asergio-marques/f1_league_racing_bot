@@ -32,6 +32,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.models.season import SeasonStatus
@@ -81,7 +82,7 @@ def _config_add(modules: "ModuleService") -> Setting:
     """`/results config add`: a configuration, every position at nought points."""
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if await points_config_service.config_exists(ctx.db_path, name):
@@ -114,7 +115,7 @@ def _config_remove(modules: "ModuleService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -168,7 +169,7 @@ def _config_points(modules: "ModuleService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -273,7 +274,7 @@ def _config_fastest_lap(modules: "ModuleService") -> Setting:
         return "fl_points" if "fl_points" in payload else "fl_position_limit"
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -372,7 +373,7 @@ def _config_import(modules: "ModuleService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -478,7 +479,7 @@ def _config_attach(modules: "ModuleService", seasons: "SeasonService") -> Settin
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         refusal = await _setup_season_refusal(ctx, seasons, attaching=True)
         if refusal is not None:
@@ -523,7 +524,7 @@ def _config_detach(modules: "ModuleService", seasons: "SeasonService") -> Settin
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         refusal = await _setup_season_refusal(ctx, seasons, attaching=False)
         if refusal is not None:
@@ -577,7 +578,7 @@ def _reserves(modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         season = await seasons.get_setup_or_active_season()
         if season is None:

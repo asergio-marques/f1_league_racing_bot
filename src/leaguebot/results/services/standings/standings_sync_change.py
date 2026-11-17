@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
@@ -58,7 +59,7 @@ def standings_sync_change(
     async def check(ctx: CheckContext) -> Verdict:
         name = str(ctx.payload["division_name"])
         division_id = int(ctx.payload["division_id"])
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("❌ The Results & Standings module is not enabled on this server.")
         season = await seasons.get_setup_or_active_season()
         refusal = stage_refusal(season.stage if season is not None else None, _COMMAND)

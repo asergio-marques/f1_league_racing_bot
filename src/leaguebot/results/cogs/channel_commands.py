@@ -9,6 +9,7 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import CHANNEL_GROUP, ResultsSubgroup
 from leaguebot.results.services.module.channel_settings import (
     NO_ACCESS,
@@ -69,7 +70,7 @@ class ChannelCommands(ResultsSubgroup):
         Every refusal is recorded: `refuse` answers and writes one line naming the command,
         which is read from the interaction.
         """
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, NOT_ENABLED, what=describe(interaction))
             return
 

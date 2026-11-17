@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import discord
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import (
     PlannedStep,
     StepFailedOnDiscord,
@@ -569,7 +570,7 @@ def opening_steps(
         ) + _refused_picture_lines(ctx, tables, subject="opening standings"))
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the opening standings of **{ctx.step_payload['division_name']}**"
@@ -631,7 +632,7 @@ def final_steps(
         ) + _refused_picture_lines(ctx, tables, subject="final classification"))
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the final standings of **{ctx.step_payload['division_name']}**"

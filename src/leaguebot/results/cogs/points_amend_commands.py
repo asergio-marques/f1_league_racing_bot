@@ -11,6 +11,7 @@ import logging
 import discord
 from discord import app_commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import (
     MODULE_OFF,
     RACE_SESSION_CHOICES,
@@ -88,7 +89,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         bot = bot_of(interaction)
         what = "`/results amend bulk-session`"
 
-        if not await bot.module_service.is_results_enabled():
+        if not await bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, MODULE_OFF, what=what)
             return
 

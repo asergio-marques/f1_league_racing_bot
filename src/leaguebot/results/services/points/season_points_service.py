@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
@@ -312,7 +313,7 @@ async def confirmation_refusals(
     ordering, which is read only then. The configuration's faults are one line each, in the
     review's order. Reads only.
     """
-    if not await modules.is_results_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return []
     if confirmation is Confirmation.APPROVAL:
         return await _approval_refusals(db_path, season_id)
@@ -421,7 +422,7 @@ async def review_section(
     when it is enabled and at no other moment, so a test season with none has a fault as any
     other season's does. Reads only.
     """
-    results_on = await modules.is_results_enabled()
+    results_on = await modules.is_enabled(SWITCH_KEY)
     if review is Review.CONFIGURATION and not results_on:
         return None
     config_names = await get_attached_config_names(db_path, season_id)

@@ -11,6 +11,7 @@ import logging
 import discord
 from discord import app_commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import (
     MODULE_OFF,
     RACE_SESSION_CHOICES,
@@ -97,7 +98,7 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
         session_type = SessionType(self._session.value)
 
         # Checked again at the submit: the form may be submitted long after it was shown.
-        if not await bot.module_service.is_results_enabled():
+        if not await bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, MODULE_OFF, what=what)
             return
 

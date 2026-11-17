@@ -17,6 +17,7 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import RESULTS_GROUP
 
 # The subgroups are declared together in `results_group.py`, in the order a league sees them, so
@@ -96,7 +97,7 @@ class ResultsCog(
         is, unless *record* is False — which the views and lists pass, since they change
         nothing and record nothing.
         """
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             reply = "\u274c The Results & Standings module is not enabled on this server."
             if record:
                 await refuse(interaction, reply, what=describe(interaction))

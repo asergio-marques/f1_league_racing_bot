@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.framework.utils.channels import as_text_channel
@@ -91,7 +92,7 @@ def _channel_setting(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         value = int(payload["value"])
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         if channel_of is not None and not _may_post(channel_of(value)):
             return Verdict.refuse(NO_ACCESS)

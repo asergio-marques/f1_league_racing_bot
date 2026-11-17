@@ -119,9 +119,9 @@ def results_off_change(
 
     *attendance_off_on* switches attendance off on the connection it is handed, committing
     nothing, and says whether attendance was on. *attendance_enabled* says whether attendance is
-    on now, read the same way the cog reads it at the ask (`ModuleService.is_attendance_enabled`,
-    handed rather than read from attendance's own table directly, so this module still imports
-    none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
+    on now, read the same way the cog reads it at the ask (`ModuleService.is_enabled`, by the
+    key `"attendance"`, handed rather than read from attendance's own table directly, so this
+    module still imports none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
     results calls with the rounds it made FINAL. *disarm_amendment_sweep* removes the amendment
     sweep from the scheduler (`amendment_writes.cancel_amendment_sweep`, handed the scheduler by
     results' wiring). *now* is the queue's clock, which dates the closing of the rounds (`ChangeQueue.now`). The payload is ``{"cascade_attendance": bool}``.

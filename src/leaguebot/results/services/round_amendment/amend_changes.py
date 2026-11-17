@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.round import RoundStatus
@@ -222,7 +223,7 @@ def amend_open_change(
         payload = ctx.payload
         round_id = int(payload["round_id"])
         division_id = int(payload["division_id"])
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("❌ The Results & Standings module is not enabled.")
         season = await live_season(ctx.db_path)
         refusal = stage_refusal(

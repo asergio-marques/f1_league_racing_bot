@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import (
     SCOPE_DIVISION,
@@ -176,7 +177,7 @@ def notify_results_steps(*, modules: "ModuleService", seasons: SeasonService) ->
         })
 
     async def results_on(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the results note for **{ctx.step_payload['division_name']}**"
