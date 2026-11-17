@@ -44,7 +44,8 @@ from leaguebot.framework.models.change import (
     StepKind,
     StepResult,
     Verdict,
-    drawn_lines_kept,
+    DrawnKept,
+    drawn_kept,
 )
 from leaguebot.core.services.drivers.division_seating import SeatOccupant, division_seating
 from leaguebot.framework.services.queue.change_queue import (
@@ -391,14 +392,29 @@ def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tup
 
 
 def carry_lineup_lines(
-    ctx: StepContext, stop: StepFailedOnDiscord, earlier: tuple[str, ...]
+    ctx: StepContext, stop: StepFailedOnDiscord, kept: DrawnKept
 ) -> StepFailedOnDiscord:
     """*stop*, a refused lineup post, with the lines its picture was drawn with kept on it beside
-    *earlier*, those of the tries before (`drawn_lines_kept`): a picture is drawn on the first try
-    alone, so what it said must go with the stop for the try that posts to hand back, never lost
-    with a post Discord refused."""
+    *kept*, what the tries before kept (`drawn_kept`): a picture is drawn on the first try
+    alone, so what it said, its lines and its notices, must go with the stop for the try that
+    posts to hand back, never lost with a post Discord refused."""
     drawn = getattr(stop, LINEUP_DRAWN_ATTRIBUTE, None)
-    return stop.carrying(earlier + (fallen_back_to_text_line(ctx, drawn) if drawn else ()))
+    notices = tuple(drawn.get(RESULT_NOTICES) or ()) if drawn else ()
+    return stop.carrying(
+        kept.lines + (fallen_back_to_text_line(ctx, drawn) if drawn else ()),
+        notices=kept.notices + notices,
+        linked=_notices_index(kept, notices),
+    )
+
+
+def _notices_index(kept: DrawnKept, notices: tuple[str, ...]) -> int | None:
+    """The index, among a lineup job's lines, of the one holding the picture's notices: the one an
+    earlier try kept where it kept notices (a picture is drawn on the first try alone), else this
+    try's own, which comes first of its lines after those kept from before, and None where the
+    picture had no notices."""
+    if kept.notices:
+        return kept.linked
+    return len(kept.lines) if notices else None
 
 
 def _then(result: Mapping[str, Any] | None) -> tuple[PlannedStep, ...]:
@@ -456,11 +472,13 @@ def lineup_step(
         return ctx.step_payload.get(key, ctx.payload.get(key, default))
 
     async def run(ctx: StepContext) -> StepResult:
-        earlier = drawn_lines_kept(ctx.kept)
+        kept = drawn_kept(ctx.kept)
         try:
             await standing_posts.remove_kept(ctx.bot, ctx.kept)
         except StepFailedOnDiscord as stop:
-            raise stop.carrying(earlier) from stop.__cause__
+            raise stop.carrying(
+                kept.lines, notices=kept.notices, linked=kept.linked
+            ) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
@@ -469,13 +487,15 @@ def lineup_step(
                 guild, int(value_of(ctx, "division_id")), as_text=ctx.tries > 0
             )
         except StepFailedOnDiscord as stop:
-            raise carry_lineup_lines(ctx, stop, earlier) from stop.__cause__
+            raise carry_lineup_lines(ctx, stop, kept) from stop.__cause__
         result = posted_result(posted)
+        lines = kept.lines + fallen_back_to_text_line(ctx, result)
+        drawn = tuple(result.get(RESULT_NOTICES) or ())
+        if result:
+            # The reply lists the notices of every try; the log line above holds this try's alone.
+            result = {**result, RESULT_NOTICES: [*kept.notices, *drawn]}
         return StepResult(
-            result=result, lines=earlier + fallen_back_to_text_line(ctx, result),
-            # The notices line comes first of this try's own, after the lines kept from before.
-            linked=len(earlier) if result.get(RESULT_NOTICES) else None,
-            then=_then(result),
+            result=result, lines=lines, linked=_notices_index(kept, drawn), then=_then(result),
         )
 
     async def describe(ctx: StepContext) -> str:

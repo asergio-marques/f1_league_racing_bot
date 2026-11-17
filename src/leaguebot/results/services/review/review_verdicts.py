@@ -82,6 +82,7 @@ from leaguebot.framework.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
+    drawn_kept,
     drawn_lines_kept,
 )
 from leaguebot.core.services.drivers import lineup_posting
@@ -995,14 +996,15 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     message posted and the one it replaces, saves the new id with its mark and plans the
     review's own `delete_message` for the old one (`review_posting.not_done` names a discard).
     """
-    earlier = drawn_lines_kept(ctx.kept)
+    kept = drawn_kept(ctx.kept)
+    earlier = kept.lines
     try:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         result = await hook.refresh_lineup(
             int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
         )
     except StepFailedOnDiscord as stop:
-        raise lineup_posting.carry_lineup_lines(ctx, stop, earlier) from stop.__cause__
+        raise lineup_posting.carry_lineup_lines(ctx, stop, kept) from stop.__cause__
     if not result or result.get("new") is None:
         return StepResult(result=result or {}, lines=earlier)
     old = result.get("old")

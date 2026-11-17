@@ -512,9 +512,7 @@ async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
 
 @pytest.mark.parametrize("start", [
     pytest.param(_lineup_asked, id="a lineup asked"),
-    pytest.param(_placements_approved, id="the placements approved", marks=pytest.mark.xfail(
-        strict=True, reason="#550: a lineup retried as text drops its notices from the reply",
-    )),
+    pytest.param(_placements_approved, id="the placements approved"),
 ])
 async def test_a_refused_lineup_s_notices_reach_the_log_once_when_it_is_retried(
     tmp_path, monkeypatch, start,
