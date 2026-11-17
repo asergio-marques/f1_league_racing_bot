@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
@@ -138,7 +139,7 @@ def notify_checkin_steps(*, modules: "ModuleService", seasons: SeasonService) ->
         return StepResult(result={"unset": True} if problem else {"sent": True})
 
     async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the check-in notice for **{ctx.step_payload['division_name']}**"

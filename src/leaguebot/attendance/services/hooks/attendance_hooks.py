@@ -13,6 +13,7 @@ from typing import Any, TYPE_CHECKING
 
 import aiosqlite
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.attendance.services.check_in.check_in_leads import check_in_leads
 from leaguebot.attendance.models.attendance import AttendanceWindows
@@ -22,9 +23,6 @@ from leaguebot.core.services.seasons.approval_checks import channel_fault
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
-
-#: The key attendance's switch is asked by.
-SWITCH_KEY = "attendance"
 
 
 async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
@@ -138,7 +136,7 @@ async def review_section(
     Subscribed to core's `review_sections_read`. A module never configured has no configuration
     to show, its section then empty. Reads only.
     """
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await service.get_config()
     lines: list[str] = []
@@ -180,7 +178,7 @@ async def division_lines(
     Subscribed to core's `division_lines_read`, which hands the season (as it does every
     subscriber; the divisions named are what is read) and its divisions. Reads only.
     """
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return {}
     lines: dict[int, list[str]] = {}
     for division_id in division_ids:
@@ -216,7 +214,7 @@ async def division_channel_faults(
     confirmation judges (id to name) and the server. A division with no fault is given an empty
     list. With no *guild*, only whether each channel is set is judged. Reads only.
     """
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return {}
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():

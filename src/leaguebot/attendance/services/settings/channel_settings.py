@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.settings.division_channels import (
     set_attendance_channel,
     set_rsvp_channel,
@@ -87,7 +88,7 @@ def _channel_setting(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         value = int(payload["value"])
-        if not await modules.is_attendance_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         if not _may_post(channel_of(value)):
             return Verdict.refuse(NO_ACCESS)

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.models.change import (
@@ -100,7 +101,7 @@ def sheet_step(
         await attendance_sheet.record_sheet_on(db, int(payload["division_id"]), result.result)
 
     async def still_due(ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         payload = ctx.step_payload or ctx.payload
@@ -203,7 +204,7 @@ def opening_steps(
                                                   result.result)
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the opening attendance sheet of **{ctx.step_payload['division_name']}**"
@@ -288,7 +289,7 @@ def final_steps(
         return StepResult(result=result, lines=attendance_sheet.sheet_lines(result))
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the final attendance sheet of **{ctx.step_payload['division_name']}**"

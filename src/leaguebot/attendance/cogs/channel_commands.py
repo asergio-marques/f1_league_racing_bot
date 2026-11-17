@@ -8,6 +8,7 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.cogs.attendance_group import CHANNEL_GROUP, AttendanceSubgroup
 from leaguebot.attendance.services.settings.channel_settings import (
     ATTENDANCE_CHANNEL,
@@ -60,7 +61,7 @@ class ChannelCommands(AttendanceSubgroup):
         Every refusal is recorded: `refuse` answers and writes one line naming the command, which
         is read from the interaction.
         """
-        if not await self.bot.module_service.is_attendance_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, NOT_ENABLED, what=describe(interaction))
             return
 

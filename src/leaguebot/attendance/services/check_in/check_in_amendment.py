@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.models.attendance import (
     CHECK_IN_CALL,
     CHECK_IN_CLEAN_UP,
@@ -361,7 +362,7 @@ def amendment_steps(
         check-in is over by then, as a clean-up a day after the round leaves it. A call still to
         come is posted by its timer, armed with the round; one whose deadline has passed is given
         up (`post_call`)."""
-        if not await modules.is_attendance_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None or not _call_fell_due(rnd, await window(ctx), now):

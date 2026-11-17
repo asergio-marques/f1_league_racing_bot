@@ -16,6 +16,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services.drivers import driver_service, team_service
@@ -127,7 +128,7 @@ def read_check_in_steps(*, modules: "ModuleService") -> dict[str, Step]:
         return StepResult(result={"record": record})
 
     async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         payload = ctx.step_payload

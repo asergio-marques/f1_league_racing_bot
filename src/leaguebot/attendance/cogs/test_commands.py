@@ -10,6 +10,7 @@ from typing import Any
 import discord
 from discord import app_commands
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.cogs.attendance_group import (
     TEST_GROUP,
     AttendanceSubgroup,
@@ -63,7 +64,7 @@ class TestCommands(AttendanceSubgroup):
         # The attendance module gate (issue #114). A call posted while the module was on
         # leaves its `rsvp_embed_messages` row behind, so without this the command finds that
         # embed and writes check-in answers for a module the league has switched off.
-        if not await self.bot.module_service.is_attendance_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(
                 interaction,
                 "❌ The Attendance module is not enabled, so there is no check-in to set.",
@@ -168,7 +169,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 what=form,
             )
             return
-        if not await self._bot.module_service.is_attendance_enabled():
+        if not await self._bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(
                 interaction,
                 "\u274c The Attendance module was switched off while this form was open. "

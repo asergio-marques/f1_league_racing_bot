@@ -27,11 +27,12 @@ if TYPE_CHECKING:
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign attendance up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_attendance_enabled` asks it by."""
+    """Sign attendance up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.attendance.models.switch import SWITCH_KEY
     from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 
-    modules.register_switch("attendance", attendance_enabled_on)
+    modules.register_switch(SWITCH_KEY, attendance_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:

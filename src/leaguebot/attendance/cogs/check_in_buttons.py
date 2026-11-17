@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import discord
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.check_in.check_in_answer_changes import ask_check_in_answer
 from leaguebot.framework.utils.league_bot import bot_of
 from leaguebot.framework.utils.league_server import LeagueView
@@ -114,7 +115,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     bot = bot_of(interaction)
 
     # The module gate — see the docstring for why it sits here and not on the cog.
-    if not await bot.module_service.is_attendance_enabled():
+    if not await bot.module_service.is_enabled(SWITCH_KEY):
         await refuse(
             interaction,
             "❌ The Attendance module is switched off for this server, so check-in is "

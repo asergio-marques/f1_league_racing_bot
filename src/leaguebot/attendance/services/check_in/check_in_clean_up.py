@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.models.attendance import CHECK_IN_CLEAN_UP, RsvpEmbedMessage
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.attendance.services.check_in.check_in_changes import (
@@ -495,7 +496,7 @@ def take_down_steps(
             )
 
     async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         payload = ctx.step_payload

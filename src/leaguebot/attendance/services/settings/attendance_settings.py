@@ -29,6 +29,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.models.attendance import AttendanceConfig
 from leaguebot.attendance.services.check_in.attendance_config_service import validate_timing_invariant
 from leaguebot.attendance.services.settings.channel_settings import NOT_ENABLED
@@ -234,7 +235,7 @@ def _setting(
     handed in."""
     async def check(ctx: CheckContext) -> Verdict:
         value = ctx.payload["value"]
-        if not await modules.is_attendance_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED_HERE)
         if spec.timing and await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED)

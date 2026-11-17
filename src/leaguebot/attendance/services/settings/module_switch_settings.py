@@ -44,6 +44,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs
 from leaguebot.framework.services.queue.change_types import CheckContext
@@ -96,11 +97,10 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
     and the audit, in one save (Principle X.6's reset)."""
 
     async def check(_ctx: CheckContext) -> Verdict:
-        if await modules.is_attendance_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Attendance module is already enabled.")
         for required in needs("attendance"):
-            is_enabled = getattr(modules, f"is_{required}_enabled")
-            if not await is_enabled():
+            if not await modules.is_enabled(required):
                 return Verdict.refuse(
                     f"❌ The {_MODULE_LABEL['attendance']} requires the "
                     f"{_MODULE_LABEL[required]} to be enabled first."
@@ -146,7 +146,7 @@ def module_off_attendance(*, modules: "ModuleService", attendance: "AttendanceSe
     from turning Results & Standings off does through the same method."""
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_attendance_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Attendance module is already disabled.")
         if await modules_frozen_for_completion(ctx.db_path):
             return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)
