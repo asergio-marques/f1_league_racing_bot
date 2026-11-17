@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from tests.support.switches import answer_switch
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +414,7 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
 
     async def faults(on: bool, guild) -> dict[int, list[str]]:
         modules = MagicMock()
-        modules.is_attendance_enabled = AsyncMock(return_value=on)
+        answer_switch(modules, "attendance", on)
         found = await division_channel_faults(
             AttendanceService(db_path), modules, divisions={10: "Pro", 11: "Am"}, guild=guild
         )

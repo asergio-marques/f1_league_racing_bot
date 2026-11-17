@@ -60,6 +60,7 @@ from tests.results.test_verdict_announcement_jobs import drawn  # noqa: F401 —
 from tests.support.season_league import set_module_flag
 from tests.support.settings_league import unruled
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -190,7 +191,7 @@ async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
     bot = await league_bot(db_path, attendance_hook_of=_hook)
     # The lineup a sack owes is not what these tests are about.
     bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "images", False)
     channels = {
         bot.log_channel.id: bot.log_channel,
         bot.interaction_channel.id: bot.interaction_channel,

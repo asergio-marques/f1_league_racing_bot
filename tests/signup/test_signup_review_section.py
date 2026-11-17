@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 _LINES = [
     "**Signup Config**",
@@ -37,7 +38,7 @@ def _service(*, configured: bool = True, channel_id: int | None = 900) -> MagicM
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
-    modules.is_signup_enabled = AsyncMock(return_value=on)
+    answer_switch(modules, "signup", on)
     return modules
 
 

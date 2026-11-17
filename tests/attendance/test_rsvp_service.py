@@ -24,6 +24,7 @@ from leaguebot.attendance.services.check_in.rsvp_service import (
     reserve_distribution_on,
     write_distribution_on,
 )
+from tests.support.switches import answer_switch
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ def _make_bot(db_path: str) -> MagicMock:
     # Distribution is gated on the attendance module (issue #114). These tests are about the
     # distribution algorithm, so the module is on throughout; the gate itself is pinned in
     # test_attendance_module_gate.py.
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     return bot
 
 

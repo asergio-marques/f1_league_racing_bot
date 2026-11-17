@@ -73,6 +73,7 @@ from tests.support.change_queue import (
     run_queue,
     updated_reply,
 )
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8508
 SEASON_ID = 1
@@ -278,7 +279,7 @@ async def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
     """
     now = datetime.now(timezone.utc)
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     bot.get_channel = MagicMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
     league_queue(bot, db_path, now=now)
@@ -717,7 +718,7 @@ def _logged(interaction) -> list[str]:
 
 
 async def _module_off(db_path, interaction):
-    interaction.client.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    answer_switch(interaction.client.module_service, "attendance", False)
 
 
 async def _cancel_round(db_path, interaction):

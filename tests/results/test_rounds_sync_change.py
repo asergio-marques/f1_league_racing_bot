@@ -51,6 +51,7 @@ from tests.support.review_league import (
     review_league,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 KIND = "results.rounds.sync"
 #: Round 4's Feature Race results, standing where a test posts them.
@@ -64,7 +65,7 @@ async def _league(tmp_path: Any) -> ReviewLeague:
     league = await review_league(tmp_path, round_status="FINAL")
     await _write(league, "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
                          "VALUES (1, 1)")
-    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "results", True)
     # The builder's own season service, which its change types hold, its divisions read
     # from the database again.
     vars(league.bot.season_service).pop("get_divisions", None)
@@ -159,7 +160,7 @@ def _results_drawn(league: ReviewLeague, tmp_path: Any) -> tuple[ExitStack, Asyn
     PNG: the real picture poster runs. Gives the patches, to enter, and the render, to count."""
     png = tmp_path / "results.png"
     png.write_bytes(b"\x89PNG")
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={"results_race_template": MagicMock(valid=True)}

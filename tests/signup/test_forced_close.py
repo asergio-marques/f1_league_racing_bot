@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.switches import answer_switch
 
 SERVER_ID = 13308
 SIGNUP_CHANNEL = 700
@@ -116,7 +117,7 @@ def _unattended_bot(db_path, *, signups_open=True, enabled=True, channel=None):
     """A bot whose signup module is *enabled* or not, and whose window is open or not, with
     its close time set at `SET_TIME`, and a log channel that keeps what is posted to it."""
     bot = _bot(db_path, config=_window(signups_open=signups_open, close_at=SET_TIME), channel=channel)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
+    answer_switch(bot.module_service, "signup", enabled)
     bot.output_router.post_log = AsyncMock(return_value=None)
     return bot
 

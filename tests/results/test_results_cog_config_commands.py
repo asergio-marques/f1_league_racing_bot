@@ -30,6 +30,7 @@ from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
 from tests.support.settings_league import interaction, last_said, said, settings_league
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7700
 SEASON_ID = 21
@@ -245,7 +246,7 @@ def _gate_interaction(bot, command: str):
 
 def _gate_bot(*, results_on: bool):
     bot = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_on)
+    answer_switch(bot.module_service, "results", results_on)
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock()
     return bot

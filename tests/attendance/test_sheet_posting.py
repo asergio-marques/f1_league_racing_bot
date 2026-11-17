@@ -43,6 +43,7 @@ from tests.support.season_league import (
     run_attendance_channel_command,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 KIND = "attendance.sync"
 SHEET = DIVISIONS[PRO][3].attendance
@@ -479,9 +480,7 @@ async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tm
     from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     league = await _scored_league(tmp_path, images=True)
-    league.bot.module_service.is_images_enabled = AsyncMock(
-        side_effect=SwitchNotSignedUp("images")
-    )
+    answer_switch(league.bot.module_service, "images", SwitchNotSignedUp("images"))
 
     await _sync_pro(league)
     await run_queue(league.bot)

@@ -26,6 +26,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
@@ -63,7 +64,7 @@ def _drawing(tmp_path, *, blocks=4, seats=2, lineup_on=True, images=True, valid=
     path.write_bytes(_template_bytes(blocks, seats))
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value={"lineup": lineup_on})
     config.is_aspect_enabled = AsyncMock(side_effect=lambda aspect: lineup_on)

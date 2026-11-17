@@ -100,11 +100,11 @@ async def _switch(league, cog, *, on: bool) -> None:
 
 async def test_enable_creates_defaults(tmp_path):
     league, cog, config_service = await _switched(tmp_path)
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
 
     await _switch(league, cog, on=True)
 
-    assert await league.bot.module_service.is_images_enabled() is True
+    assert await league.bot.module_service.is_enabled("images") is True
 
     cfg = await config_service.get_config()
     assert cfg is not None
@@ -137,7 +137,7 @@ async def test_disable_retains_configuration(tmp_path):
     toggles_before = await config_service.get_toggles()
 
     await _switch(league, cog, on=False)
-    assert await module_service.is_images_enabled() is False
+    assert await module_service.is_enabled("images") is False
 
     # Nothing may be cleared by the disable itself.
     during = await config_service.get_config()
@@ -185,7 +185,7 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
 
     await _switch(league, cog, on=False)
 
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
     assert portrait_refresh_cancels(league.scheduler) == 1
 
 
@@ -223,7 +223,7 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
         await cog._disable_images(asked)
         await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
     replied = last_said(asked)
     assert replied.startswith("✅ Image module disabled."), replied
     note = replied.splitlines()[-1]
@@ -288,7 +288,7 @@ async def test_gate_reads_flag_not_row_presence(tmp_path):
     await _switch(league, cog, on=False)
 
     assert await config_service.get_config() is not None
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
 
 
 # ── T028 — templates relocate independently (SC-002) ──────────────────────
@@ -1896,7 +1896,7 @@ async def test_aspect_enabled_while_source_module_disabled(
     await saves.set_aspect(config_service, "standings", True)
 
     # The results module backs the standings aspect and is disabled on this server.
-    assert await module_service.is_results_enabled() is False
+    assert await module_service.is_enabled("results") is False
 
     validity = ImageValidityService(config_service, module_service, SimpleNamespace())
     statuses = {s.aspect: s for s in await validity.aspect_statuses()}

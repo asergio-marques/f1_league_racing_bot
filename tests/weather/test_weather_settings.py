@@ -242,17 +242,18 @@ async def test_a_check_fault_when_a_deadline_runs_says_nothing_was_saved_records
     asked = await _ask(league, 1, 6)
     behind = await _ask(league, 2, 3)
     modules = league.bot.module_service
-    read = modules.is_weather_enabled
+    read = modules.is_enabled_on
     reads = 0
 
-    async def _faults_once() -> bool:
+    async def _faults_once(db, module: str) -> bool:
         nonlocal reads
-        reads += 1
-        if reads == 1:
-            raise RuntimeError("the module flags could not be read")
-        return await read()
+        if module == "weather":
+            reads += 1
+            if reads == 1:
+                raise RuntimeError("the module flags could not be read")
+        return await read(db, module)
 
-    modules.is_weather_enabled = _faults_once
+    modules.is_enabled_on = _faults_once
     await run_queue(league.bot)
 
     assert last_said(asked) == failure_reply(

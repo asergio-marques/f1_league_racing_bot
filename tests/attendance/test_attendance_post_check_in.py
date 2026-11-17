@@ -70,6 +70,7 @@ from tests.support.season_league import (
     round_id,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 4242
 SEASON_ID = 1
@@ -130,7 +131,7 @@ async def _make_db(tmp_path, *, scheduled_at: datetime, status: str = "NOT_RUN")
 def _cog(db_path: str, *, stage=SeasonStage.ONGOING) -> AttendanceCog:
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     season = None if stage is None else SimpleNamespace(id=SEASON_ID, stage=stage)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
@@ -562,7 +563,7 @@ async def _arrange(tmp_path, case):
     }.get(case, SeasonStage.ONGOING)
     cog = _cog(db_path, stage=stage)
     if case == "module-disabled":
-        cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+        answer_switch(cog.bot.module_service, "attendance", False)
     if case == "standing":
         await _record_call(db_path)
     if case == "no-configuration":

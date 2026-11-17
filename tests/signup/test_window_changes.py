@@ -1019,7 +1019,7 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
 
     await cog._disable_signup(interaction)
 
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
     assert (await _window(league))["signups_open"]
     assert len(await _changes_of(league, MODULE_OFF_KIND)) == 1
 
@@ -1034,7 +1034,7 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     assert SIGNUP_BUTTON not in league.channel(LEAGUE_SIGNUP_CHANNEL).messages
     assert len(_closed_notices(league)) == 1
     assert len(_told(league)) == 1
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert await league.rows("SELECT * FROM signup_module_config") == []
 
 

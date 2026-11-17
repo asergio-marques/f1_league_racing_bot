@@ -29,6 +29,7 @@ from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.support.change_queue import in_a_job
 from tests.support.mentions import NOBODY, notified
 from tests.support.teams import seed_team_instances
+from tests.support.switches import answer_switch, switch_asked
 
 SEASON_ID = 31
 DIVISION_ID = 41
@@ -121,7 +122,7 @@ async def _run(db_path, channel=None, *, attendance=True):
     bot = MagicMock()
     bot.add_view = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    answer_switch(bot.module_service, "attendance", attendance)
     handed = (
         {"attendance": AttendanceAfterReview(bot, MagicMock())}
         if "attendance" in inspect.signature(run_amendment_review_stages).parameters else {}
@@ -284,9 +285,7 @@ async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_
     await _pardon(db_path)
     bot = MagicMock()
     bot.add_view = MagicMock()
-    bot.module_service.is_attendance_enabled = AsyncMock(
-        side_effect=AssertionError("results read attendance's switch itself")
-    )
+    answer_switch(bot.module_service, "attendance", AssertionError("results read attendance's switch itself"))
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
 
@@ -306,4 +305,4 @@ async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_
     [call] = hook.pardons_to_review.await_args_list
     assert [p.pardon_type for p in call.args[0]] == ["NO_RSVP"]
     assert state.staged_pardons == []
-    bot.module_service.is_attendance_enabled.assert_not_awaited()
+    assert not switch_asked(bot.module_service, "attendance")

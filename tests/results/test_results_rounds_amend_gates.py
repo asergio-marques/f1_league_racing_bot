@@ -60,6 +60,7 @@ from tests.support.change_queue import (
     seed_server,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 OPEN = "results.amend.open"
@@ -132,7 +133,7 @@ async def _make_cog(
     database."""
     bot = league_double(db_path)
     bot.module_service = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
+    answer_switch(bot.module_service, "results", results_enabled)
     bot.season_service = SeasonService(db_path)
     async with get_connection(db_path) as db:
         if season is None:

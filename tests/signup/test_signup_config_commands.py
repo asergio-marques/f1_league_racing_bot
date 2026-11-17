@@ -48,6 +48,7 @@ from tests.support.settings_league import (
     settings_league,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8908
 ACTOR_ID = MEMBER_ID
@@ -88,7 +89,7 @@ async def _make_db(tmp_path, *, config: bool = True) -> str:
 def _make_cog(db_path: str) -> SignupCog:
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "signup", True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.config_service = ConfigService(db_path)
     bot.output_router = MagicMock()

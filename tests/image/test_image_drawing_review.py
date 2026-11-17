@@ -34,6 +34,7 @@ from leaguebot.image.services.validity.image_validity_service import (
     plain_reason,
     plain_remedy,
 )
+from tests.support.switches import answer_switch
 
 #: The sentence a template reads when its folder cannot be found, chosen because it names the
 #: same plain reason and remedy whatever else the report carries.
@@ -54,7 +55,7 @@ def _drawing(
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images_on)
+    answer_switch(modules, "images", images_on)
     service = MagicMock()
     service.get_config = AsyncMock(return_value=config)
     service.get_toggles = AsyncMock(return_value=dict(toggles or {}))

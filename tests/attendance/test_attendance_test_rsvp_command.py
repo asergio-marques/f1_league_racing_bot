@@ -35,6 +35,7 @@ from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.cogs.test_commands import _RsvpBulkSetModal
 from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12409
 SEASON_ID = 1
@@ -105,7 +106,7 @@ def _make_cog(
         else SimpleNamespace(test_mode_active=test_mode)
     )
     bot.module_service = MagicMock()
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_current_embed_message = AsyncMock(
         return_value=_embed_row() if current_embed is _UNSET else current_embed

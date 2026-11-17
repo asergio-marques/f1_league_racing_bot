@@ -21,6 +21,7 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
     db_path,  # noqa: F401 — the fixture
 )
+from tests.support.switches import answer_switch
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 #: The display names the server gives the fixture's three drivers: 1001 committed to Pro's Alpha,
@@ -57,7 +58,7 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images_on)
+    answer_switch(modules, "images", images_on)
     config = MagicMock()
     config.is_aspect_enabled = AsyncMock(return_value=aspect_on)
     config.get_toggles = AsyncMock(return_value={"lineup": aspect_on})
@@ -122,7 +123,7 @@ async def test_a_lineup_gate_that_cannot_be_read_answers_text(caplog):
     lineup is not drawn, so the text goes out and a league never loses its lineup; the error is in
     the host's log, and nothing is said in the log channel."""
     drawing, _, post_log, modules = _drawing()
-    modules.is_images_enabled = AsyncMock(side_effect=RuntimeError("db down"))
+    answer_switch(modules, "images", RuntimeError("db down"))
 
     assert await drawing.lineup_wanted() is False
     assert "db down" in caplog.text
@@ -136,7 +137,7 @@ async def test_a_lineup_gate_whose_switch_nobody_signed_up_for_raises():
     from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     drawing, _, _, modules = _drawing()
-    modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    answer_switch(modules, "images", SwitchNotSignedUp("images"))
 
     with pytest.raises(SwitchNotSignedUp, match="images"):
         await drawing.lineup_wanted()
@@ -155,7 +156,7 @@ async def test_every_aspect_gate_lets_a_switch_nobody_signed_up_for_through(aspe
     from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     drawing, _, _, modules = _drawing()
-    modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    answer_switch(modules, "images", SwitchNotSignedUp("images"))
 
     with pytest.raises(SwitchNotSignedUp, match="images"):
         await drawing.aspect_wanted(aspect)

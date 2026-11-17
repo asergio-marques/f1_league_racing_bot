@@ -36,6 +36,7 @@ from tests.support.season_league import (
     ongoing_league,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 #: The moment every round is placed relative to.
 NOW = datetime(2026, 10, 5, 18, 0, tzinfo=timezone.utc)
@@ -191,7 +192,7 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
     from leaguebot.framework.models.change import ChangeOrigin
 
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)
     for rid in (POSTED_ROUND, EARLIER_ROUND):
@@ -270,7 +271,7 @@ async def _clean_up(
             await db.execute("UPDATE attendance_config SET module_enabled = 0")
             await db.commit()
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)
     for rid in (POSTED_ROUND, EARLIER_ROUND):

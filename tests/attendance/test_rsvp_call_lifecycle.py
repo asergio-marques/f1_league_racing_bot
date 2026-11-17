@@ -47,6 +47,7 @@ from tests.support.change_queue import (
     run_queue,
     stopped_job,
 )
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8408
 SEASON_ID = 1
@@ -233,8 +234,8 @@ async def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
     from tests.support.review_league import channel as recording_channel
 
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", True)
+    answer_switch(bot.module_service, "images", False)
     bot.events = []
     bot.channels = {cid: recording_channel(cid, bot.events) for cid in channel_ids}
     for chan in bot.channels.values():

@@ -45,6 +45,7 @@ from tests.support.season_league import (
     round_id,
     run_division_channel_command,
 )
+from tests.support.switches import answer_switch
 
 #: The kind of a forecast's change.
 KIND = "weather.forecast"
@@ -218,7 +219,7 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
     reason "the template file is too small" where it is not."""
     from types import SimpleNamespace
 
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": True})
     report = SimpleNamespace(valid=valid, reason=None if valid else "the template file is too small")
     league.bot.image_validity_service.template_reports = AsyncMock(return_value={
@@ -262,7 +263,7 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     league = await _league(tmp_path, mystery=mystery)
     _pictures_due(league, valid=cause != "invalid drawing file")
     if cause == "unreadable switch":
-        league.bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError(reason))
+        answer_switch(league.bot.module_service, "images", RuntimeError(reason))
     elif cause == "drawing fault":
         monkeypatch.setattr(image_weather_post, "render_forecast",
                             AsyncMock(side_effect=RuntimeError(reason)))
@@ -273,7 +274,7 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
                             AsyncMock(side_effect=RuntimeError("the round could not be read")))
     if cause.startswith("images off"):
-        league.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+        answer_switch(league.bot.module_service, "images", False)
     elif cause.startswith("weather pictures off"):
         league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": False})
     before = league.log()

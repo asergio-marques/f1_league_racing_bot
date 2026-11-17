@@ -48,6 +48,7 @@ from leaguebot.attendance.services.hooks.attendance_after_review import sanction
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.review.review_state import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
+from tests.support.switches import answer_switch
 
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
@@ -189,8 +190,8 @@ def _bot(db_path: str, *, attendance: bool = True, channel: Any = None,
     bot.get_channel = MagicMock(return_value=channel)
     bot.fetch_channel = AsyncMock(return_value=channel)
     bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", attendance)
+    answer_switch(bot.module_service, "images", False)
     bot.placement_service = MagicMock(side_effect=AssertionError("the bot's placement service"))
     for name in ("sack_driver", "move_driver", "sack_on", "move_on", "guard_move",
                  "driver_role_ids"):

@@ -15,6 +15,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 TRACKS = {
     "Silverstone Circuit": NS(
@@ -48,7 +49,7 @@ def _drawing(*, images_on=True, aspect_on=True, flag_directory="resources/defaul
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images_on)
+    answer_switch(modules, "images", images_on)
     config = MagicMock()
     config.is_aspect_enabled = AsyncMock(return_value=aspect_on)
     config.get_config = AsyncMock(
@@ -98,7 +99,7 @@ async def test_a_gate_that_cannot_be_read_answers_text(caplog):
     calendar is not drawn, so the text goes out and a league never loses its calendar, and the
     error is in the host's log."""
     drawing, _, _, modules = _drawing()
-    modules.is_images_enabled = AsyncMock(side_effect=RuntimeError("db down"))
+    answer_switch(modules, "images", RuntimeError("db down"))
 
     assert await drawing.calendar_wanted() is False
     assert "db down" in caplog.text
@@ -212,7 +213,7 @@ async def test_a_switch_nobody_signed_up_for_is_raised_not_read_as_text():
     drawing, _, _, modules = _drawing()
     from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
-    modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    answer_switch(modules, "images", SwitchNotSignedUp("images"))
 
     with pytest.raises(SwitchNotSignedUp, match="images"):
         await drawing.calendar_wanted()

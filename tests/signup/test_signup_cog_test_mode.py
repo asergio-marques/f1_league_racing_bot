@@ -21,6 +21,7 @@ from tests.signup.test_wizard_changes import START_KIND, _changes_of, _driver, _
 from tests.support.change_queue import acknowledgement, updated_reply
 from tests.support.season_league import SIGNING_UP
 from tests.support.undecorate import undecorate
+from tests.support.switches import switches
 
 SERVER_ID = 4242
 
@@ -78,7 +79,7 @@ def _bot(*, test_mode: bool):
             current_account=AsyncMock(side_effect=lambda a: str(a)),
         ),
         signup_module_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),
-        module_service=SimpleNamespace(is_signup_enabled=AsyncMock(return_value=True)),
+        module_service=switches(signup=True),
         output_router=SimpleNamespace(post_log=AsyncMock()),
     )
 

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 _LINES = [
     "**Attendance Config**",
@@ -40,7 +41,7 @@ def _service(*, configured: bool = True) -> MagicMock:
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
-    modules.is_attendance_enabled = AsyncMock(return_value=on)
+    answer_switch(modules, "attendance", on)
     return modules
 
 

@@ -31,6 +31,7 @@ from leaguebot.image.services.validity.image_validity_service import (
     check_all_templates,
     templates_of_enabled_aspects,
 )
+from tests.support.switches import answer_switch
 
 DEFAULT_TEMPLATES = os.path.join(
     os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates"
@@ -154,7 +155,7 @@ def _drawing(*, module_on=True, toggles=None, reports=None):
     a third it must not."""
     toggles = toggles or {}
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=module_on)
+    answer_switch(modules, "images", module_on)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value=toggles)
     config.is_aspect_enabled = AsyncMock(side_effect=lambda aspect: toggles.get(aspect, False))
@@ -217,7 +218,7 @@ async def test_a_switch_nobody_signed_up_for_answers_no_and_is_left_to_the_job()
     not where it is raised: it answers no, and the picture's own gate, asked when the job draws,
     raises it and stops the job (`test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job`)."""
     drawing = _drawing(toggles={"standings": True})
-    drawing._modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    answer_switch(drawing._modules, "images", SwitchNotSignedUp("images"))
 
     assert not await drawing.aspect_attaches_files("standings")
 

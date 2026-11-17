@@ -12,6 +12,7 @@ import pytest
 
 from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
+from tests.support.switches import answer_switch
 
 
 pytestmark = pytest.mark.asyncio
@@ -96,7 +97,7 @@ def _guild():
 def _bot(db_path, *, module=True, toggle=True, valid=True):
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module)
+    answer_switch(bot.module_service, "images", module)
     bot.image_config_service.get_toggles = AsyncMock(return_value={"results": toggle})
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={"results_race_template": MagicMock(valid=valid)}

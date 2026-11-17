@@ -30,6 +30,7 @@ from leaguebot.signup.models.signup_module import (
     WizardState,
 )
 from leaguebot.signup.services.wizard_service import WizardService
+from tests.support.switches import answer_switch
 
 SERVER_ID = 14208
 DRIVER = "4242"
@@ -104,7 +105,7 @@ def _service(
 
     bot = MagicMock()
     bot.driver_service = drivers
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=module_enabled)
+    answer_switch(bot.module_service, "signup", module_enabled)
     bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(
             interaction_role_id=900, league_admin_role_id=901, test_mode_active=False

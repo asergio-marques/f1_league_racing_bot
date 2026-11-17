@@ -45,6 +45,7 @@ from tests.support.settings_league import (
     switch,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 4400
 USER_ID = 88
@@ -421,8 +422,8 @@ def _cog(db_path):
     cog.bot.get_guild = MagicMock(return_value=_guild())
     # Both modules off, said in as many words: left to a whole-bot mock, an unawaited coroutine
     # is truthy and the image module would read as on.
-    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    answer_switch(cog.bot.module_service, "images", False)
+    answer_switch(cog.bot.module_service, "attendance", False)
     cog.bot.image_drawing.aspect_attaches_files = AsyncMock(return_value=False)
     return cog
 

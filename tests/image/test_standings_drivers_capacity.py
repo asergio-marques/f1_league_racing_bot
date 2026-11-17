@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
+from tests.support.switches import answer_switch
 
 
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -53,7 +54,7 @@ def _drawing(template, *, toggle: bool = True, images: bool = True):
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value={"standings": toggle})
     validity = MagicMock()

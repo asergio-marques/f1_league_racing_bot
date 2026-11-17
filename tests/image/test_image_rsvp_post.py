@@ -37,6 +37,7 @@ from tests.support.season_league import (
     ongoing_league,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
@@ -65,7 +66,7 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("boom"))
+    answer_switch(bot.module_service, "images", RuntimeError("boom"))
     drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=AsyncMock(), db_path="unused.db",
@@ -89,7 +90,7 @@ async def test_a_call_whose_switch_nobody_signed_up_for_raises():
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    answer_switch(bot.module_service, "images", SwitchNotSignedUp("images"))
     drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=AsyncMock(), db_path="unused.db",

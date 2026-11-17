@@ -36,6 +36,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.switches import answer_switch
 
 SERVER_ID = 5511
 SEASON_ID = 1
@@ -110,7 +111,7 @@ def _make_bot(db_path: str) -> MagicMock:
     """A bot double, weather on, its change queue's clock the host's."""
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "weather", True)
     bot.change_queue.now = MagicMock(return_value=datetime.now(timezone.utc))
     return bot
 
@@ -219,7 +220,7 @@ async def test_a_restart_recovers_no_phase_for_a_mystery_round(tmp_path):
         db_path, days_until_round=0.25, horizons=(7, 3, 12), round_format="MYSTERY"
     )
     bot = await league_bot(db_path)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "weather", True)
     league_queue(bot, db_path, now=datetime.now(timezone.utc))
 
     await dict(start_up_steps(bot))["missed phases"]()

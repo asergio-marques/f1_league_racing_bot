@@ -64,6 +64,7 @@ from tests.support.change_queue import (
     stopped_job,
     updated_reply,
 )
+from tests.support.switches import answer_switch
 
 SERVER_ID = 10808
 SEASON_ID = 1
@@ -187,7 +188,7 @@ async def _bot(db_path: str, *, attendance_rows=None, channel=_STANDING, saved=N
 
     bot = await league_bot(db_path)
     bot.config_service.get_server_config.return_value.test_mode_active = True
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     # The lines the queue writes reach the log channel the database names (101), whose sends are
     # the router's `post_log` record, where the tests read them with the refusals' (#439), as the
     # direct posts wrote them.
@@ -598,7 +599,7 @@ async def _test_mode_off(bot):
 
 
 async def _module_off(bot):
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", False)
     await _write(bot, "UPDATE attendance_config SET module_enabled = 0")
 
 

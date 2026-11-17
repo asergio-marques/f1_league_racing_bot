@@ -63,6 +63,7 @@ from tests.support.channel_uses import sign_up_channel_uses_read
 from tests.support.mentions import NOBODY, USERS_ONLY, notified
 from tests.support.season_league import set_module_flag
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -202,7 +203,7 @@ class _League:
         self.bot.fetch_channel = AsyncMock(side_effect=_fetch)
         self.bot.get_guild = MagicMock(return_value=guild)
         self.bot.guilds = [guild]
-        self.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+        answer_switch(self.bot.module_service, "images", False)
 
     def channel(self, cid: int) -> Any:
         return self.channels[cid]
@@ -435,7 +436,7 @@ async def test_a_stop_between_the_post_and_the_delete_deletes_the_old_message_on
 
 async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text(tmp_path):
     league = await _league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     results = league.channel(RESULTS_CHANNEL)
     results.send_fails = http_error(text="Discord is down")
 
@@ -557,7 +558,7 @@ async def _set_results_channel(league: _League, channel_id: int) -> Any:
     from leaguebot.results.cogs.results_cog import ResultsCog
 
     await set_module_flag(league.db_path, "results", True)
-    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "results", True)
     league.bot.season_service = SeasonService(league.db_path)
     builder = MagicMock()
     builder.module_service = league.bot.module_service
@@ -1231,7 +1232,7 @@ async def _republish_with_the_picture_declined(league: _League) -> Any:
     """Republish round 3 with image generation on and the picture declined, so the results go
     out as text after the picture was asked for; give `build_drawing`'s stand-in, which the
     results module composed the drawing with and which the session's rows and heading reach."""
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     with _results_picture_is_due() as composed, patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(return_value=(None, ())),
@@ -1780,7 +1781,7 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
     from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league = await _league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     with _pictures_are_due("results", "standings"), patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
@@ -1808,7 +1809,7 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     channel gains one line naming round 3 of Pro, the standings picture, the fault, and that the
     standings went out as text."""
     league = await _league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     with _pictures_are_due("results", "standings"), patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(return_value=(None, ())),
@@ -1841,7 +1842,7 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
         await db.execute("UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = ?",
                          (SEASON_ID,))
         await db.commit()
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     with _pictures_are_due("results", "standings"), patch(
         "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
         new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
@@ -2033,7 +2034,7 @@ async def test_a_picture_whose_images_switch_nobody_signed_up_for_stops_its_job(
     from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     league = await _league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     other = "draw_standings" if draw == "draw_results" else "draw_results"
     with _pictures_are_due("results", "standings"), patch(
         f"leaguebot.image.services.render.image_drawing.ImageDrawing.{draw}",
@@ -2062,7 +2063,7 @@ async def test_a_picture_that_cannot_be_drawn_keeps_its_line_when_its_text_is_re
     from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league = await _league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
     failing = AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT))
     with _pictures_are_due("results", "standings"), patch(

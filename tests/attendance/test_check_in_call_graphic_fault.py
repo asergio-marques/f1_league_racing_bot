@@ -26,6 +26,7 @@ from tests.support.season_league import (
     ongoing_league,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
@@ -207,9 +208,7 @@ async def test_a_check_in_call_whose_images_switch_nobody_signed_up_for_stops_it
 
     league = await _league(tmp_path)
     _draw_with(league, tmp_path, "notice")
-    league.bot.module_service.is_images_enabled = AsyncMock(
-        side_effect=SwitchNotSignedUp("images")
-    )
+    answer_switch(league.bot.module_service, "images", SwitchNotSignedUp("images"))
 
     await _ask_and_run(league)
 

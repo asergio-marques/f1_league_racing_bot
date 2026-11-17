@@ -20,6 +20,8 @@ import pytest
 from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
 from tests.support.saves import create_image_defaults, set_field
+from tests.support.switches import answer_switch
+from tests.support.switches import switches
 
 
 pytestmark = pytest.mark.asyncio
@@ -44,7 +46,7 @@ def _drawn(tmp_path, championship: str) -> Path:
 def _bot(db_path="db", *, module=True, toggle=True, drivers_valid=True, constructors_valid=True):
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module)
+    answer_switch(bot.module_service, "images", module)
     bot.image_config_service.get_toggles = AsyncMock(return_value={"standings": toggle})
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={
@@ -98,7 +100,7 @@ def _drawing(*, module=True, toggle=True, drivers_valid=True, constructors_valid
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=module)
+    answer_switch(modules, "images", module)
     config = MagicMock()
     if isinstance(toggle, Exception):
         config.get_toggles = AsyncMock(side_effect=toggle)
@@ -630,7 +632,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
     config_service = ImageConfigService(db_path)
     await create_image_defaults(config_service)
     validity_service = ImageValidityService(
-        config_service, SimpleNamespace(is_images_enabled=_true), MagicMock()
+        config_service, switches(images=True), MagicMock()
     )
     bot = SimpleNamespace(
         db_path=db_path,

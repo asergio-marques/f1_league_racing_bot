@@ -40,6 +40,7 @@ from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.hooks import attendance_hooks
 from leaguebot.attendance.services.scoring import attendance_recompute, attendance_scoring
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8308
 SEASON_ID = 1
@@ -97,7 +98,7 @@ async def test_reading_a_round_s_window_writes_nothing(tmp_path):
     leads leaves the table as it found it rather than creating the row."""
     db_path = await _make_db(tmp_path)
     modules = MagicMock()
-    modules.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "attendance", True)
 
     await attendance_hooks.round_leads(AttendanceService(db_path), modules)
 

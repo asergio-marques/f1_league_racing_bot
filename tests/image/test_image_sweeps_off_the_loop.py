@@ -53,6 +53,7 @@ from tests.support.off_the_loop import (
     holds_a_tree,
     recording_threads,
 )
+from tests.support.switches import answer_switch
 
 #: The templates the bot ships, from the repository's root.
 SHIPPED = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
@@ -67,7 +68,7 @@ def _validity(config: Any) -> ImageValidityService:
 def _setting(kind: str, config: Any, proposed: Any) -> Any:
     """The image setting *kind*, the module on and *proposed* the configuration it would make."""
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "images", True)
     config.candidate_config = AsyncMock(return_value=proposed)
     return next(
         each for each in image_settings(
@@ -383,7 +384,7 @@ def _drawing(aspect: str) -> Any:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "images", True)
     config = MagicMock()
     config.get_config = AsyncMock(return_value=object())
     config.get_toggles = AsyncMock(return_value={aspect: True})

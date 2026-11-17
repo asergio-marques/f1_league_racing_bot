@@ -75,6 +75,7 @@ from tests.support.review_league import (
     review_league,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 
 OPEN = "results.amend.open"
@@ -148,7 +149,7 @@ async def _league(
     league.guild.create_text_channel = AsyncMock(side_effect=_create)
     league.guild.me = None
     league.guild.default_role = MagicMock(name="@everyone")
-    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "results", True)
     league.bot.season_service = SeasonService(league.db_path)
     monkeypatch.setattr(
         paste_reading, "_build_division_validation_data",

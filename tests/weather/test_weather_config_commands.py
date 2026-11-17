@@ -63,6 +63,7 @@ from tests.support.settings_league import (
     switch,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7161
 DB_PATH = "/nonexistent/weather.db"  # the view tests' doubles never open it
@@ -168,7 +169,7 @@ def _make_cog(*, weather_enabled: bool = True, season: Season | None = None) -> 
     bot = MagicMock()
     bot.db_path = DB_PATH
     bot.module_service = MagicMock()
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
+    answer_switch(bot.module_service, "weather", weather_enabled)
     bot.season_service = AsyncMock(spec=SeasonService)
     bot.season_service.get_confirmed_season.return_value = season
     bot.output_router = MagicMock()

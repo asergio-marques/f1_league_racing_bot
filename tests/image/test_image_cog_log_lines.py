@@ -43,6 +43,7 @@ from tests.support.image_cog_doubles import (
 )
 from tests.support.settings_league import audit_rows, portrait_refresh_times, settings_league
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 
 
@@ -114,7 +115,7 @@ async def _league(tmp_path, *, modules=("images",), tier_colours=(), no_configur
     if no_configuration:
         # The module's flag is a column of the configuration, so a league with the module on
         # and no configuration is reached only by the module service answering for it.
-        league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+        answer_switch(league.bot.module_service, "images", True)
     log_bot(league)
     return league
 
@@ -170,7 +171,7 @@ async def test_a_command_that_changes_nothing_records_nothing_when_refused(tmp_p
 
 async def test_a_long_configuration_report_is_sent_in_the_parts_core_splits_it_into():
     bot = log_bot()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "images", True)
     cog = ImageCog(bot)
     report = "\n".join(f"Setting {index:02d}: " + "x" * 48 for index in range(60))
     cog.build_configuration_report = AsyncMock(return_value=report)

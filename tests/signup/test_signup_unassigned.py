@@ -35,6 +35,7 @@ import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 9308
 
@@ -102,7 +103,7 @@ def _slot(sequence: int, label: str, slot_id: str | None = None):
 
 def _make_cog(*, listed=None, exportable=None, slots=None) -> SignupCog:
     bot = MagicMock()
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "signup", True)
     bot.signup_module_service = MagicMock()
     bot.signup_module_service.get_unassigned_drivers_seeded = AsyncMock(
         return_value=listed if listed is not None else []

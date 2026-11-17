@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.switches import answer_switch
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -56,9 +57,9 @@ async def _make_db(tmp_path, *, results=True, rsvp=True) -> str:
 def _bot(db_path, *, weather=True, results=True, attendance=True):
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    answer_switch(bot.module_service, "weather", weather)
+    answer_switch(bot.module_service, "results", results)
+    answer_switch(bot.module_service, "attendance", attendance)
     return bot
 
 

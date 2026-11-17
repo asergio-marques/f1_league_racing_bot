@@ -29,6 +29,7 @@ from tests.support.change_queue import change_rows, member_interaction, run_queu
 from tests.support.season_league import setup_league
 from tests.support.settings_league import fault_in, last_said, log_lines, record_followups, said
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7731
 
@@ -82,7 +83,7 @@ def _cog(db_path):
 
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "signup", True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.scheduler_service = MagicMock()
     bot.output_router.post_log = AsyncMock()

@@ -13,6 +13,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 
 ORDINARY = "Team 1"
@@ -42,7 +43,7 @@ def _drawing(*, images: bool = True):
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value={})
     validity = MagicMock()
