@@ -104,41 +104,16 @@ def sign_up_driver_names_read(bot: Any) -> None:
 
 def sign_up_division_channel_faults_read(bot: Any) -> None:
     """Give *bot* the hook a division's channel faults are read through
-    (`division_channel_faults_read`), each module's faults signed up as the builder signs them, in
-    the order a division's lines are read: weather's forecast channel, results' three channels,
-    then attendance's two. Weather and results are handed *bot*'s module service and database,
-    attendance its service over that database and the module service; then each is handed the
-    divisions judged and the server. Each module's function is looked up as the hook is called, so
-    a stand-in bot carries the hook whether or not any check asks it yet. It mirrors the
-    builder's `_sign_up_to_division_channel_faults_read`."""
-    from leaguebot.framework.utils.hooks import AwaitedHook
+    (`division_channel_faults_read`), made by the builder's own
+    `_sign_up_to_division_channel_faults_read`, so that the parts signed up to it, and the order a
+    division's lines read in, are the bot's and not a copy. *bot* is first given attendance's
+    service over its database, which attendance's part is handed; it must carry its module
+    service, its database and the image module's drawing (`channel_faults.answer_attachments`)."""
+    from leaguebot.__main__ import _sign_up_to_division_channel_faults_read
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
-    async def weather_faults(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.weather.services import forecast_channel
-
-        return await forecast_channel.division_channel_faults(
-            bot.module_service, bot.db_path, *args, **kwargs
-        )
-
-    async def results_faults(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.results.services.module import division_channels
-
-        return await division_channels.division_channel_faults(
-            bot.module_service, bot.db_path, *args, **kwargs
-        )
-
-    async def attendance_faults(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.attendance.services.check_in import attendance_config_service
-        from leaguebot.attendance.services.hooks import attendance_hooks
-
-        return await attendance_hooks.division_channel_faults(
-            attendance_config_service.AttendanceService(bot.db_path), bot.module_service,
-            *args, **kwargs,
-        )
-
-    bot.division_channel_faults_read = AwaitedHook()
-    for subscriber in (weather_faults, results_faults, attendance_faults):
-        bot.division_channel_faults_read.subscribe(subscriber)
+    bot.attendance_service = AttendanceService(bot.db_path)
+    _sign_up_to_division_channel_faults_read(bot)
 
 
 def sign_up_division_lines_read(bot: Any) -> None:

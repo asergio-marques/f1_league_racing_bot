@@ -171,6 +171,15 @@ class TestTimingInvariantLastNotAboveDeadlineRejected:
 import discord  # noqa: E402
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
+#: Why a test is expected to fail until #449's slice 2a is built.
+NOT_JUDGED_BY_NEEDS = (
+    "#449: attendance does not yet judge its channels by the permissions their use needs"
+)
+#: Why a case is expected to fail until #449's slice 2a is built.
+VERDICTS_NOT_JUDGED_BY_NEEDS = (
+    "#449: the recalculation's check never asks Attach Files of the verdicts channel"
+)
+
 
 async def _seed_attendance_season(
     tmp_path,
@@ -364,11 +373,29 @@ async def test_recalculation_faults_says_nothing_about_an_absent_guild(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_path):
+@pytest.mark.parametrize("aspect, autosack, label", [
+    pytest.param("attendance", None, "attendance channel", id="attendance sheet"),
+    pytest.param(
+        "verdict_banner", 3, "verdicts channel", id="verdict banner",
+        marks=pytest.mark.xfail(strict=True, reason=VERDICTS_NOT_JUDGED_BY_NEEDS),
+    ),
+    pytest.param(
+        "verdicts", 3, "verdicts channel", id="verdict picture",
+        marks=pytest.mark.xfail(strict=True, reason=VERDICTS_NOT_JUDGED_BY_NEEDS),
+    ),
+])
+async def test_recalculation_faults_wants_attach_files_only_with_graphics(
+    tmp_path, aspect, autosack, label
+):
+    """Division Alpha's attendance channel 601 and verdicts channel 602 are both there, the bot
+    lacking Attach Files in each. With no picture on, the recalculation's check names nothing.
+    With the pictures of *aspect* on, it names the one channel those pictures are posted in,
+    *label*, as lacking Attach Files. The verdicts channel is asked only where a sanction could
+    fall (an autosack threshold of 3), the attendance channel always."""
     from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
 
     path, season_id = await _seed_attendance_season(
-        tmp_path, autosack=None, autoreserve=None
+        tmp_path, autosack=autosack, autoreserve=None
     )
     guild = _attendance_guild()
     denied = MagicMock()
@@ -386,9 +413,9 @@ async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_pa
     assert await recalculation_faults(path, season_id, guild, (bot := _plain_bot()), drawing=bot.image_drawing) == []
 
     with_graphics = _plain_bot()
-    # The image module's drawing: the module on and the `attendance` aspect on.
+    # The image module's drawing: the module on and *aspect* on.
     with_graphics.image_drawing.aspect_attaches_files = AsyncMock(
-        side_effect=lambda aspect: aspect == "attendance"
+        side_effect=lambda asked: asked == aspect
     )
     faults = await recalculation_faults(
         path, season_id, guild, with_graphics, drawing=with_graphics.image_drawing
@@ -396,19 +423,25 @@ async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_pa
 
     assert len(faults) == 1, faults
     assert "Attach Files" in faults[0]
+    assert label in faults[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_JUDGED_BY_NEEDS)
 async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_path):
     """Pro's RSVP channel 130 is gone from the server and its attendance channel 131 is there;
     Am has neither. Attendance on names Pro's RSVP channel as gone and both of Am's as missing,
     RSVP first, each with the command that sets it; with no server, only Am's two. Attendance off
-    names nothing."""
+    names nothing.
+
+    On a server where the bot lacks Embed Links in both of Pro's channels, the RSVP channel, where
+    the check-in call is posted as an embed, is named with what it lacks; the attendance channel,
+    which needs no embed, is not."""
     from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.attendance.services.hooks.attendance_hooks import division_channel_faults
     from leaguebot.framework.db.database import get_connection
-    from tests.support.channel_faults import server_holding
+    from tests.support.channel_faults import answer_attachments, server_holding
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -421,7 +454,8 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
         modules = MagicMock()
         answer_switch(modules, "attendance", on)
         found = await division_channel_faults(
-            AttendanceService(db_path), modules, divisions={10: "Pro", 11: "Am"}, guild=guild
+            AttendanceService(db_path), modules, drawing=answer_attachments(MagicMock()),
+            divisions={10: "Pro", 11: "Am"}, guild=guild,
         )
         return {division_id: lines for division_id, lines in found.items() if lines}
 
@@ -435,3 +469,10 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
     }
     assert await faults(True, None) == am
     assert await faults(False, server_holding(gone=(130,))) == {}
+    assert await faults(True, server_holding(unusable={130: ("embed_links",), 131: ("embed_links",)})) == {
+        10: [
+            "**Pro**'s RSVP channel is missing permissions the bot needs there: Embed Links — "
+            "give the bot them, or `/attendance channel rsvp`."
+        ],
+        **am,
+    }
