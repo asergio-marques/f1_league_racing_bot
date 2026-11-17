@@ -1113,10 +1113,6 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
     assert "SEASON 0" in caplog.text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#550: the approval's reply lists calendar notices alone, under no link to the log",
-)
 async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallback(
     tmp_path, monkeypatch,
 ):

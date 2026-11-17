@@ -38,6 +38,8 @@ from leaguebot.framework.models.change import (
     ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
+    RESULT_DRAWN,
+    RESULT_NOTICES,
     StepFailedOnDiscord,
     StepKind,
     StepResult,
@@ -333,6 +335,11 @@ class LineupPoster:
         )
 
 
+def _drawn_as(division_name: Any) -> str:
+    """What the lineup's log line, and the reply listing its notices, call the picture."""
+    return f"lineup — {division_name}"
+
+
 def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
     """What a lineup post job returns: the new message and the one it replaces, or an empty
     result where nothing was posted (the division is gone, or its picture is not posted by this
@@ -342,7 +349,8 @@ def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "division_name": posted.division_name, "form": posted.form, "problem": posted.problem,
-        "notices": list(posted.notices), "refused": posted.refused,
+        RESULT_NOTICES: list(posted.notices), RESULT_DRAWN: _drawn_as(posted.division_name),
+        "refused": posted.refused,
     }
 
 
@@ -369,7 +377,7 @@ def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tup
     lines: tuple[str, ...] = ()
     if result.get("notices"):
         lines += (drawn_notices_line(
-            ctx.named, ctx.what, f"lineup — {result.get('division_name')}", result["notices"]
+            ctx.named, ctx.what, _drawn_as(result.get("division_name")), result["notices"]
         ),)
     problem = result.get("problem")
     if problem is None:
@@ -465,6 +473,8 @@ def lineup_step(
         result = posted_result(posted)
         return StepResult(
             result=result, lines=earlier + fallen_back_to_text_line(ctx, result),
+            # The notices line comes first of this try's own, after the lines kept from before.
+            linked=len(earlier) if result.get(RESULT_NOTICES) else None,
             then=_then(result),
         )
 
