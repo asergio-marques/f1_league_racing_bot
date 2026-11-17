@@ -80,7 +80,7 @@ def round_jobs_double() -> MagicMock:
 def weather_job_cancels(round_jobs: Any) -> int:
     """How many times core's round jobs' double was asked to cancel the live season's rounds'
     weather jobs, and those alone."""
-    from leaguebot.core.models.round import WEATHER_JOB_KINDS
+    from leaguebot.weather.services.forecast_leads import WEATHER_JOB_KINDS
 
     return sum(
         1 for call in round_jobs.cancel_live_rounds.await_args_list

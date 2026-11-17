@@ -310,12 +310,6 @@ async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path,
 # ── A round already raced ───────────────────────────────────────────────────────────
 
 
-#: Why a clean-ups-only re-arming's tests fail until core arms the modules' clean-up leads.
-_NO_CLEAN_UP_LEADS = ("#544: a clean-ups-only re-arm reads the modules' switches by name and "
-                      "arms no clean-up leads yet")
-
-
-@pytest.mark.xfail(strict=True, reason=_NO_CLEAN_UP_LEADS)
 async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
@@ -337,7 +331,6 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     assert run_at_once(league.bot.round_jobs) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CLEAN_UP_LEADS)
 async def test_a_switched_off_module_adds_no_clean_up_to_a_raced_round_s_re_arming(tmp_path):
     """Weather off and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the

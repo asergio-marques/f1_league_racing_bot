@@ -68,8 +68,6 @@ PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 HORIZONS = (5, 2, 2)
 
-#: Why the tests reading weather's leads armed fail until weather answers its forecasts as leads.
-WEATHER_LEADS_NOT_ARMED = "#544: weather answers its forecasts as no leads yet"
 AMENDED = "✅ Round amended successfully."
 ACK = (
     "⏳ Amending round 3 in **Pro**. This message will be updated when it is done; if it takes "
@@ -1206,7 +1204,6 @@ async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_
     assert ("weather", [R3]) not in league.armed
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_mystery_notice(
     tmp_path,
 ):
@@ -2102,7 +2099,6 @@ async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to
     assert run_at_once(league.bot.round_jobs) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_under_test_mode_with_weather_on_an_amended_round_is_armed_with_its_result_submission(
     tmp_path,
 ):
@@ -2147,7 +2143,6 @@ async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes
     assert run_at_once(league.bot.round_jobs) == []
 
 
-@pytest.mark.xfail(strict=True, reason=WEATHER_LEADS_NOT_ARMED)
 async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
     """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3, its Phase 1 never drawn, is
     brought forward to four days, twenty-three hours and fifty-eight minutes out: its Phase 1
@@ -2740,8 +2735,7 @@ async def _with_its_notice_posted(league: Any, *, days: float) -> int:
 
 
 @pytest.mark.parametrize("weather_on", [
-    pytest.param(True, id="weather on",
-                 marks=pytest.mark.xfail(strict=True, reason=WEATHER_LEADS_NOT_ARMED)),
+    pytest.param(True, id="weather on"),
     pytest.param(False, id="weather switched off since the notice"),
 ])
 async def test_a_mystery_round_changed_to_another_type_after_its_notice_takes_the_notice_down(
@@ -3162,7 +3156,8 @@ async def test_core_keeps_and_hands_on_no_module_s_windows(tmp_path):
     The record `judge` keeps holds no windows, and `round_armed` is handed none: no argument
     named for attendance or weather, and no forecast horizons or check-in lead times among what
     it is handed."""
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round import AttendanceWindows
+    from leaguebot.weather.models.weather_config import WeatherWindows
 
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
     handed: list[dict[str, Any]] = []

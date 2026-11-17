@@ -24,12 +24,7 @@ from types import MappingProxyType
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from leaguebot.core.models.round import (
-    AttendanceWindows,
-    Round,
-    RoundLead,
-    WeatherWindows,
-)
+from leaguebot.core.models.round import AttendanceWindows, Round, RoundLead
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.framework.db.database import get_connection
 
@@ -186,68 +181,6 @@ class RoundJobs:
             name=f"{lead.label} s{season_number} d{division_tier} r{rnd.round_number}",
         )
 
-    def schedule_round(
-        self,
-        rnd: Round,
-        *,
-        season_number: int,
-        division_tier: int,
-        phase_1_days: int = 5,
-        phase_2_days: int = 2,
-        phase_3_hours: int = 2,
-        skip_phases: Collection[int] = frozenset(),
-    ) -> None:
-        """Register DateTrigger jobs for *rnd*.
-
-        Schedules three weather-phase jobs (``weather_p1`` / ``weather_p2`` /
-        ``weather_p3``) and a cleanup job.  Every job runs through
-        the scheduler's one runner, handed its kind (its job id's prefix) and the round id as its key.
-        Whether a MYSTERY round's phase asks for a notice or for nothing is weather's rule,
-        decided by the handler the builder signs up for ``weather_p1`` to ``weather_p3``, never
-        here.
-
-        Job IDs follow the convention
-        ``<event_type>_s{season_number}_d{division_tier}_r{round_number}_id{round_id}``
-        written by `_round_job_suffix` and read back by `_job_event_type`. The season,
-        tier and number make them readable in APScheduler admin views; the round id is
-        what makes them unique. The round id is always stored as the job's ``key``
-        for programmatic lookups (`_round_of`).
-
-        Jobs use ``replace_existing=True`` so re-scheduling an amended round
-        is safe.
-
-        Args:
-            season_number:  Season number (for human-readable job IDs).
-            division_tier:  Division tier (for human-readable job IDs).
-            phase_1_days:   Days before round to fire Phase 1 (default 5).
-            phase_2_days:   Days before round to fire Phase 2 (default 2).
-            phase_3_hours:  Hours before round to fire Phase 3 (default 2).
-            skip_phases:    Phases armed no job, for the caller draws them at once itself: an
-                            amendment's catch-up (`round_amend_change`). A job armed for a
-                            horizon already passed has no lateness limit and would fire at
-                            once, asking for the phase a second time.
-        """
-        _suffix = _round_job_suffix(rnd, season_number, division_tier)
-
-        moments = round_event_moments(
-            rnd.scheduled_at,
-            weather=WeatherWindows(phase_1_days, phase_2_days, phase_3_hours),
-            attendance=None,
-        )
-
-        for phase_num in (1, 2, 3):
-            if phase_num in skip_phases:
-                continue
-            fire_at = moments[f"weather_p{phase_num}"]
-            job_id = f"weather_p{phase_num}{_suffix}"
-            self._timers.arm_at(
-                job_id=job_id, kind=f"weather_p{phase_num}", key=rnd.id,
-                run_at=fire_at, name=f"Weather P{phase_num} s{season_number} d{division_tier} r{rnd.round_number}",
-            )
-
-        # Post-race Phase 3 cleanup, a day after round start
-        self._arm_forecast_cleanup(rnd, season_number=season_number, division_tier=division_tier)
-
     def schedule_attendance_round(
         self,
         rnd: Round,
@@ -262,7 +195,7 @@ class RoundJobs:
         """Register RSVP DateTrigger jobs for *rnd* (attendance module).
 
         Job IDs follow the same ``<event_type>_s{S}_d{D}_r{R}_id{round_id}`` convention
-        as ``schedule_round``.  Jobs are only created when their fire time is in
+        as `arm_leads`.  Jobs are only created when their fire time is in
         the future.  ``replace_existing=True`` makes re-scheduling amended
         rounds safe.
 
@@ -285,7 +218,6 @@ class RoundJobs:
         """
         moments = round_event_moments(
             rnd.scheduled_at,
-            weather=None,
             attendance=AttendanceWindows(notice_days, last_notice_hours, deadline_hours),
         )
         _suffix = _round_job_suffix(rnd, season_number, division_tier)
@@ -311,63 +243,26 @@ class RoundJobs:
 
         # Cleanup job, a day after the round
         self.schedule_round_cleanups(
-            rnd, season_number=season_number, division_tier=division_tier, forecast=False, now=now
+            rnd, season_number=season_number, division_tier=division_tier, now=now
         )
 
     def schedule_round_cleanups(
-        self,
-        rnd: Round,
-        *,
-        season_number: int,
-        division_tier: int,
-        now: datetime,
-        forecast: bool = True,
-        check_in: bool = True,
+        self, rnd: Round, *, season_number: int, division_tier: int, now: datetime
     ) -> None:
-        """Register the clean-ups that take a round's posts down `POST_RACE_CLEANUP_DELAY` after its start.
-
-        ``cleanup`` deletes the round's weather forecasts and ``rsvp_cleanup`` its check-in call,
-        last notice and distribution message; *forecast* and *check_in* choose which are armed
-        (``schedule_round`` arms the first through `_arm_forecast_cleanup`,
-        ``schedule_attendance_round`` calls this for the second alone, and a refused
-        cancellation arms both for a round raced, or ended cancelled as not held). The
-        forecast's is armed whatever the hour; the check-in's only while its moment is still
-        ahead of *now*, the restart's catch-up taking one already past (weather's
-        `recover_missed_forecast_clean_ups`, attendance's `recover_missed_check_in_clean_ups`).
-        Both replace a job of the same id.
-        """
-        if forecast:
-            self._arm_forecast_cleanup(
-                rnd, season_number=season_number, division_tier=division_tier
-            )
-
-        if check_in:
-            suffix = _round_job_suffix(rnd, season_number, division_tier)
-            cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
-            rsvp_job_id = f"rsvp_cleanup{suffix}"
-            if cleanup_fire_at > now:
-                self._timers.arm_at(
-                    job_id=rsvp_job_id, kind="rsvp_cleanup", key=rnd.id,
-                    run_at=cleanup_fire_at, name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-                )
-            else:
-                log.info("Skipping %s — fire time %s is in the past", rsvp_job_id, cleanup_fire_at.isoformat())
-
-    def _arm_forecast_cleanup(
-        self, rnd: Round, *, season_number: int, division_tier: int
-    ) -> None:
-        """Arm the ``cleanup`` job that deletes a round's forecasts, whatever the hour.
-
-        Armed by `schedule_round` and, on its own, by `schedule_round_cleanups`. No clock is
-        read: the job is armed past-dated too.
-        """
+        """Register the ``rsvp_cleanup`` that takes a round's call, last notice and distribution
+        message down `POST_RACE_CLEANUP_DELAY` after its start, only while its moment is still
+        ahead of *now*, the restart's catch-up taking one already past (attendance's
+        `recover_missed_check_in_clean_ups`). It replaces a job of the same id."""
         suffix = _round_job_suffix(rnd, season_number, division_tier)
         cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
-        cleanup_job_id = f"cleanup{suffix}"
-        self._timers.arm_at(
-            job_id=cleanup_job_id, kind="cleanup", key=rnd.id,
-            run_at=cleanup_fire_at, name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-        )
+        rsvp_job_id = f"rsvp_cleanup{suffix}"
+        if cleanup_fire_at > now:
+            self._timers.arm_at(
+                job_id=rsvp_job_id, kind="rsvp_cleanup", key=rnd.id,
+                run_at=cleanup_fire_at, name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
+            )
+        else:
+            log.info("Skipping %s — fire time %s is in the past", rsvp_job_id, cleanup_fire_at.isoformat())
 
     def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> list[str]:
         """Remove scheduler jobs belonging to *round_id*, and give the ids of those that went.
@@ -443,33 +338,6 @@ class RoundJobs:
             rows = await cursor.fetchall()
         for row in rows:
             self.cancel_round(row[0], only=only)
-
-    def schedule_all_rounds(
-        self,
-        rounds: list[Round],
-        *,
-        division_meta: dict[int, tuple[int, int]],
-        phase_1_days: int = 5,
-        phase_2_days: int = 2,
-        phase_3_hours: int = 2,
-    ) -> None:
-        """Schedule all rounds in *rounds*.
-
-        Args:
-            division_meta: Mapping of ``division_id`` →
-                ``(season_number, division_tier)`` used to build human-readable
-                job IDs.  Every round's ``division_id`` must have an entry.
-        """
-        for rnd in rounds:
-            season_number, division_tier = division_meta[rnd.division_id]
-            self.schedule_round(
-                rnd,
-                season_number=season_number,
-                division_tier=division_tier,
-                phase_1_days=phase_1_days,
-                phase_2_days=phase_2_days,
-                phase_3_hours=phase_3_hours,
-            )
 
     def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:
         """Return the un-fired weather and check-in jobs for the given round IDs.

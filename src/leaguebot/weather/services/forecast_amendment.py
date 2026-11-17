@@ -5,9 +5,9 @@ part of the judgement: the two refusals for a forecast already posted, the note 
 amendment does to the forecasts, and the phases it withdraws, which weather keeps for the
 amendment's save (`phase_withdrawal.round_amended_on`). `judge_forecasts` is pure: the phases
 drawn are read by `amendment_judged`, on the connection core hands it. When the round is armed
-again, `round_armed` plans the posts the round now owes of weather's and says whether the round's
-forecasts are armed, and with what. Core makes the scheduler's calls from that answer, holding no
-switch and no rule of weather's.
+again, `round_armed` plans the posts the round now owes of weather's and answers the forecasts'
+timers it wants armed, as `RoundLead` records (`forecast_leads`), less the phases it draws at once.
+Core arms them, holding no switch and no rule of weather's.
 """
 
 from __future__ import annotations
@@ -23,13 +23,9 @@ import aiosqlite
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.framework.models.change import PlannedStep
-from leaguebot.core.models.round import (
-    ForecastJobs,
-    Round,
-    RoundFormat,
-    WeatherWindows,
-)
-from leaguebot.core.services.rounds.round_moments import round_event_moments
+from leaguebot.core.models.round import Round, RoundFormat
+from leaguebot.weather.models.weather_config import WeatherWindows
+from leaguebot.weather.services.forecast_leads import forecast_leads, forecast_moments
 from leaguebot.weather.services.draw_guard import weather_enabled_on
 from leaguebot.weather.services.forecast_changes import (
     DELETE_FORECAST,
@@ -101,7 +97,7 @@ def judge_forecasts(
     """
     phases: dict[int, PhaseWindow] = {}
     if windows is not None:
-        moments = round_event_moments(moment, weather=windows, attendance=None)
+        moments = forecast_moments(moment, windows)
         for number in (1, 2, 3):
             fire_at = moments[f"weather_p{number}"]
             phases[number] = PhaseWindow(
@@ -246,5 +242,5 @@ async def round_armed(
     armed = on and (rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather, at))
     return RoundArming(
         steps=tuple(planned),
-        jobs=ForecastJobs(windows=weather, skip_phases=frozenset(draw)) if armed else None,
+        jobs=forecast_leads(weather, skip_phases=draw) if armed else None,
     )

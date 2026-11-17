@@ -149,7 +149,7 @@ async def left_to_advance(
     ):
         return None
     moments = round_event_moments(
-        scheduled_at_of(row), weather=None,
+        scheduled_at_of(row),
         attendance=AttendanceWindows(
             row["notice_days"] or 0, row["last_notice_hours"] or 0, row["deadline_hours"] or 0
         ),

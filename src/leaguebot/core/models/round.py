@@ -128,10 +128,6 @@ def read_scheduled_at(stored: str) -> datetime:
     return moment.astimezone(timezone.utc)
 
 
-#: The kinds of the jobs the weather module owns: its three forecast phases and the post-race
-#: clean-up that deletes what they posted.
-WEATHER_JOB_KINDS = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
-
 #: The phase number (`get_next_pending_phase`) of each kind of round job the job store holds
 #: for the steps `/test-mode advance` runs, which test mode reads from phase to kind until each
 #: module maps its own. Result submission (4) is read from database state and so is not here,
@@ -149,25 +145,6 @@ class AttendanceWindows:
     notice_days: int
     last_notice_hours: int
     deadline_hours: int
-
-
-@dataclass(frozen=True)
-class WeatherWindows:
-    """The three forecast phase horizons, as `weather_pipeline_config` stores them."""
-
-    phase_1_days: int
-    phase_2_days: int
-    phase_3_hours: int
-
-
-@dataclass(frozen=True)
-class ForecastJobs:
-    """What a module asks the scheduler to arm of a round's forecasts, as the round is armed again:
-    the horizons the phases fall at and the phases *skip_phases* a job of the amendment draws at
-    once instead, which a timer armed with no lateness limit would otherwise draw a second time."""
-
-    windows: WeatherWindows
-    skip_phases: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)

@@ -353,7 +353,6 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_amending_two_fields_amends_once(tmp_path, phases):
     """Amending a round's track and its date together is one amendment, not two.
 
@@ -447,7 +446,6 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#544: weather answers its forecasts as no leads yet")
 async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
@@ -522,7 +520,6 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     assert armed["now"] == league.clock.now
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CHECK_IN_LEADS)
 async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tmp_path):
     """A disabled module produces nothing, a scheduled job included: attendance off and weather
     on, Am's round 3 moved from 90 to 100 days out is armed once, its leads holding weather's
@@ -565,7 +562,6 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
     assert (armed["season_number"], armed["division_tier"]) == (3, 2)
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads), results answering for its submission")
 async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
     """With weather on, the round's forecasts and its result submission are armed together, and
     the submission once only: arming it again would duplicate. Am's round 3 moved from 90 to 100

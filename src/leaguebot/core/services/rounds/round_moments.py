@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.models.round import AttendanceWindows, RoundLead, WeatherWindows
+from leaguebot.core.models.round import AttendanceWindows, RoundLead
 from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
@@ -89,30 +89,20 @@ def clean_up_moment(scheduled_at: datetime) -> datetime:
 
 
 def round_event_moments(
-    scheduled_at: datetime,
-    *,
-    weather: WeatherWindows | None,
-    attendance: AttendanceWindows | None,
+    scheduled_at: datetime, *, attendance: AttendanceWindows | None
 ) -> Mapping[str, datetime]:
-    """When each of a round's events falls, keyed by the kind its job is stored with.
+    """When each of a round's check-in events falls, keyed by the kind its job is stored with.
 
-    Where *weather* is handed, its three phases fall at their horizons before the round and the forecast's
-    clean-up `POST_RACE_CLEANUP_DELAY` after it. Where *attendance* is handed, the check-in's
-    call, last notice and deadline fall at theirs before it and its clean-up
-    `POST_RACE_CLEANUP_DELAY` after: a last notice of 0 hours is no last notice and is left
-    out, and a deadline of 0 hours is the round's own moment. A round's moment is aware, and
-    every moment given is in UTC.
+    Where *attendance* is handed, the check-in's call, last notice and deadline fall at theirs
+    before the round and its clean-up `POST_RACE_CLEANUP_DELAY` after it: a last notice of 0 hours
+    is no last notice and is left out, and a deadline of 0 hours is the round's own moment. A
+    round's moment is aware, and every moment given is in UTC.
 
     No moment is judged here, neither past nor ahead: whether one still falls ahead is the
     caller's to ask of the `now` it holds.
     """
     at = scheduled_at.astimezone(timezone.utc)
     moments: dict[str, datetime] = {}
-    if weather is not None:
-        moments["weather_p1"] = at - timedelta(days=weather.phase_1_days)
-        moments["weather_p2"] = at - timedelta(days=weather.phase_2_days)
-        moments["weather_p3"] = at - timedelta(hours=weather.phase_3_hours)
-        moments["cleanup"] = clean_up_moment(at)
     if attendance is not None:
         moments["rsvp_notice"] = at - timedelta(days=attendance.notice_days)
         if attendance.last_notice_hours > 0:

@@ -10,18 +10,29 @@ the bot was down fires when it is back, and the handler of the phase judges what
 horizons are the league's own, never the packaged 5 days, 2 days and 2 hours: a round armed again
 by an amendment is armed at the horizons the league has (weather specification, "Changes to a
 round after generation").
+
+`forecast_moments` places the same leads at a round's moment, for every read weather makes of when
+its events fall (recovery, the amendment's rules, its phases due), so those reads and core's
+arming cannot drift apart.
 """
 from __future__ import annotations
 
-from collections.abc import Collection
-from datetime import timedelta
+from collections.abc import Collection, Mapping
+from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.models.round import RoundLead, WeatherWindows
+from leaguebot.core.models.round import RoundLead
+from leaguebot.weather.models.weather_config import WeatherWindows
 from leaguebot.core.services.rounds.round_moments import (
     POST_RACE_CLEANUP_DELAY,
     days_before,
     hours_before,
 )
+
+#: The kinds of the jobs the weather module owns: its three forecast phases and the post-race
+#: clean-up that deletes what they posted. Weather's wiring signs them up as a round's kinds, and
+#: its switch-off cancels them and nothing else, so that what is registered and what is switched
+#: off cannot drift.
+WEATHER_JOB_KINDS = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
 
 
 def forecast_leads(
@@ -51,3 +62,12 @@ def forecast_leads(
         kind="cleanup", offset=POST_RACE_CLEANUP_DELAY, label="Forecast cleanup", clean_up=True
     ))
     return tuple(leads)
+
+
+def forecast_moments(scheduled_at: datetime, windows: WeatherWindows) -> Mapping[str, datetime]:
+    """When each of a round's forecast events falls, by the kind its timer is stored under, in UTC:
+    the leads `forecast_leads` gives for *windows*, placed at *scheduled_at*. No moment is judged,
+    neither past nor ahead: whether one still falls ahead is the caller's to ask of the `now` it
+    holds."""
+    at = scheduled_at.astimezone(timezone.utc)
+    return {lead.kind: at + lead.offset for lead in forecast_leads(windows)}

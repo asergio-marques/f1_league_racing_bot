@@ -90,7 +90,7 @@ def judge_check_in(
     refusals: list[str] = []
     warnings: list[str] = []
     if windows is not None:
-        moments = round_event_moments(moment, weather=None, attendance=windows)
+        moments = round_event_moments(moment, attendance=windows)
         listed = [
             ("call", "Check-in call", moments["rsvp_notice"]),
             # Absent from the moments where the last notice is 0 hours: no last notice at all.

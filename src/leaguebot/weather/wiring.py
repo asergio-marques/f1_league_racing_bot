@@ -50,7 +50,7 @@ def sign_up_round_kinds(bot: "LeagueBot") -> None:
     The kinds are those of `WEATHER_JOB_KINDS`, the set weather's switch-off cancels, so that what
     is registered and what is switched off cannot drift: a kind in one and not the other fails
     here, at build."""
-    from leaguebot.core.models.round import WEATHER_JOB_KINDS
+    from leaguebot.weather.services.forecast_leads import WEATHER_JOB_KINDS
 
     bot.round_jobs.sign_up_kinds({kind: _ADVANCE_PHASES[kind] for kind in WEATHER_JOB_KINDS})
 

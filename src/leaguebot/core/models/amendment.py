@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from leaguebot.framework.models.change import PlannedStep
-from leaguebot.core.models.round import CheckInJobs, ForecastJobs, RoundLead
+from leaguebot.core.models.round import CheckInJobs, RoundLead
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class RoundArming:
     in order, and the *jobs* it asks the scheduler to arm, the leads it wants set, or none."""
 
     steps: tuple[PlannedStep, ...] = ()
-    jobs: tuple[RoundLead, ...] | ForecastJobs | CheckInJobs | None = None
+    jobs: tuple[RoundLead, ...] | CheckInJobs | None = None
 
 
 @dataclass(frozen=True)

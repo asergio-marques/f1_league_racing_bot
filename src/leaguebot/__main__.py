@@ -938,6 +938,7 @@ def register_change_types(bot: LeagueBot) -> None:
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
+            round_leads_read=bot.round_leads_read,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -952,6 +953,7 @@ def register_change_types(bot: LeagueBot) -> None:
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
+            round_leads_read=bot.round_leads_read,
             now=lambda: bot.change_queue.now(),
         )
     )

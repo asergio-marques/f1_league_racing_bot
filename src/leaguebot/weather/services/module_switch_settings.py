@@ -41,7 +41,7 @@ from leaguebot.framework.models.change import (
     module_on,
 )
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
-from leaguebot.core.models.round import WEATHER_JOB_KINDS
+from leaguebot.weather.services.forecast_leads import WEATHER_JOB_KINDS
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,

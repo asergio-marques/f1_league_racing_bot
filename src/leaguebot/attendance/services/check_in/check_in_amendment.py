@@ -159,7 +159,7 @@ def _call_fell_due(
     """Whether the round's check-in call has fallen due at *now*: its moment has passed."""
     if attendance is None:
         return False
-    moments = round_event_moments(rnd.scheduled_at, weather=None, attendance=attendance)
+    moments = round_event_moments(rnd.scheduled_at, attendance=attendance)
     return moments["rsvp_notice"] <= now()
 
 
@@ -167,7 +167,7 @@ def _deadline_passed(
     rnd: Round, attendance: AttendanceWindows, now: Callable[[], datetime]
 ) -> bool:
     """Whether the round's check-in deadline has passed at *now*."""
-    moments = round_event_moments(rnd.scheduled_at, weather=None, attendance=attendance)
+    moments = round_event_moments(rnd.scheduled_at, attendance=attendance)
     return moments["rsvp_deadline"] <= now()
 
 

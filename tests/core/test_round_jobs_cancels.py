@@ -229,7 +229,7 @@ def test_cancel_round_without_a_filter_still_removes_every_job():
 def test_cancel_round_with_a_filter_spares_other_rounds():
     """The filter narrows by job kind, never by round: a job of the same kind on another
     round is still left alone."""
-    from leaguebot.core.models.round import WEATHER_JOB_KINDS
+    from leaguebot.weather.services.forecast_leads import WEATHER_JOB_KINDS
 
     service = _service(
         _every_job_of(11, season=1, tier=1, rnum=1) + _every_job_of(12, season=1, tier=1, rnum=2)

@@ -930,7 +930,6 @@ async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_i
     assert "Round 3" not in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#544: core arms no round's leads yet (arm_leads)")
 async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_the_check(
     tmp_path,
 ):
