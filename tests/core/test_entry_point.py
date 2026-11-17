@@ -935,7 +935,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     import importlib
     from contextlib import asynccontextmanager
 
-    import leaguebot.core.services.upkeep.start_up as start_up_module
+    import leaguebot.framework.services.jobs.start_up as start_up_module
     from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.core.services.modules import hub_service
@@ -1152,7 +1152,7 @@ async def _run_main(tmp_path, monkeypatch, calls: list[str], tree: _Tree):
 
     await bot_module.main()
 
-    from leaguebot.core.services.upkeep import start_up as start_up_module
+    from leaguebot.framework.services.jobs import start_up as start_up_module
 
     start_up = AsyncMock(side_effect=lambda **kwargs: calls.append("start-up") or True)
     monkeypatch.setattr(start_up_module, "start_up", start_up)

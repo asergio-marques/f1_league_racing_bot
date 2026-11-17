@@ -28,7 +28,7 @@ from typing import Any
 
 import pytest
 
-_MODULE = "leaguebot.core.services.upkeep.start_up"
+_MODULE = "leaguebot.framework.services.jobs.start_up"
 
 
 def _fresh_start_up() -> Any:

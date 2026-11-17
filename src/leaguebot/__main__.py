@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
-from leaguebot.core.services.upkeep.start_up import start_up
+from leaguebot.framework.services.jobs.start_up import start_up
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook, StartingHook
 from leaguebot.framework.utils.interaction_errors import start_up_failure_line
 from leaguebot.framework.utils.league_bot import LeagueBot
