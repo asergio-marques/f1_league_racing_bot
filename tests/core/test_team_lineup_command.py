@@ -334,10 +334,6 @@ _NOTICE = "a fallback flag stood in for Zara's"
 _NOTICES_LINK = "https://discord.test/4242/7"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#550: /team lineup tells the manager no notices of the lineups it drew, nor the link",
-)
 @pytest.mark.parametrize("asked", ["private", "public", "refused_after", "unlinked"])
 async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_link(
     tmp_path, asked,

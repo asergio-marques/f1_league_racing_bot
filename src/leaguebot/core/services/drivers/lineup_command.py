@@ -6,7 +6,9 @@ The command's output is **not** the lineup of record (FR-028): nothing is writte
 command rather than falling back to text**: the caller is the one person able to fix the template,
 and text in its place would hide a broken template from them (Constitution XIV.7). The drawing has
 already reported each division's notices to the log channel, headed with the division, so nothing
-here reports them a second time.
+here reports them a second time; what is kept here is each division's notices with the link to that
+message, labelled as the log line names the picture, for the command to tell the manager alone
+(Constitution XIV.4: no notice in a channel the drivers read).
 
 The cog chooses the replies and their visibility; the rules are here, so they can be tested with
 no interaction involved (`architecture.md`, "What each part may do").
@@ -22,6 +24,7 @@ from typing import Any
 
 from leaguebot.core.models.division import Division
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
+from leaguebot.framework.models.change import DrawnNotices
 
 
 @dataclass(frozen=True)
@@ -33,13 +36,15 @@ class CommandLineups:
     one released as the drawing ends. *refused* is the division that could not be drawn, by name,
     and *problem* the image module's words for why, worded for the command's own refusal; both
     are None where every division drew. A refusal stops the drawing there: no division after it
-    is drawn.
+    is drawn. *notices* are the notices of each division drawn, refused or not, in order, each
+    labelled `lineup — <division>` as the drawing's log line is, with the link to that line.
     """
 
     drawn: bool
     paths: tuple[Path, ...] = field(default_factory=tuple)
     refused: str | None = None
     problem: str | None = None
+    notices: tuple[DrawnNotices, ...] = field(default_factory=tuple)
 
 
 @asynccontextmanager
@@ -58,6 +63,7 @@ async def lineups_for_command(
     they would be the one leak no posting path accounts for.
     """
     drawn_paths: list[Path] = []
+    noticed: list[DrawnNotices] = []
     try:
         if not await drawing.lineup_wanted():
             yield CommandLineups(drawn=False)
@@ -66,13 +72,20 @@ async def lineups_for_command(
             picture = await drawing.draw_lineup_for_command(guild, division.id)
             if picture.path is not None:
                 drawn_paths.append(picture.path)
+            if picture.notices:
+                noticed.append(DrawnNotices(
+                    f"lineup — {division.name}", tuple(picture.notices), picture.log_link
+                ))
             if picture.problem is not None:
                 yield CommandLineups(
                     drawn=True, paths=tuple(drawn_paths),
                     refused=division.name, problem=picture.problem,
+                    notices=tuple(noticed),
                 )
                 return
-        yield CommandLineups(drawn=True, paths=tuple(drawn_paths))
+        yield CommandLineups(
+            drawn=True, paths=tuple(drawn_paths), notices=tuple(noticed)
+        )
     finally:
         for path in drawn_paths:
             drawing.discard_picture(path)

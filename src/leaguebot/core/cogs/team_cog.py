@@ -27,7 +27,7 @@ from leaguebot.core.utils.channel_guard import league_admin_only, league_manager
 from leaguebot.framework.utils.interaction_errors import describe, describe_form
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import LeagueModal
-from leaguebot.framework.utils.log_lines import refuse
+from leaguebot.framework.utils.log_lines import drawn_notices_section, refuse
 
 log = logging.getLogger(__name__)
 
@@ -419,11 +419,16 @@ class TeamCog(commands.Cog):
             self.bot.image_drawing, interaction.guild, all_divisions
         ) as lineups:
             if lineups.drawn:
+                # The notices are told to the manager alone, whatever `public` says: a channel
+                # the drivers read carries the picture and nothing else (Constitution XIV.4).
+                section = drawn_notices_section(lineups.notices)
                 if lineups.problem is not None:
-                    await interaction.followup.send(
+                    refusal = (
                         f"❌ {lineups.problem}\n"
-                        f"_Lineup for **{lineups.refused}** was not drawn._",
-                        ephemeral=True,
+                        f"_Lineup for **{lineups.refused}** was not drawn._"
+                    )
+                    await interaction.followup.send(
+                        f"{refusal}\n\n{section}" if section else refusal, ephemeral=True,
                     )
                     return
 
@@ -437,6 +442,8 @@ class TeamCog(commands.Cog):
                         await interaction.followup.send(
                             text, files=files, ephemeral=not public
                         )
+                        if section:
+                            await interaction.followup.send(section, ephemeral=True)
                         return
                     finally:
                         for attachment in files:
