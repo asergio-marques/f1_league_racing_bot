@@ -59,7 +59,7 @@ async def test_each_module_s_switch_reads_its_own_flag_alone(db_path, module):
     svc = _modules(db_path)
 
     async def switches() -> dict[str, bool]:
-        return {name: await getattr(svc, f"is_{name}_enabled")() for name in MODULES}
+        return {name: await svc.is_enabled(name) for name in MODULES}
 
     await set_module_flag(db_path, module, True)
     assert await switches() == {name: name == module for name in MODULES}
@@ -90,7 +90,7 @@ async def test_each_switch_is_answered_by_the_reader_its_module_registered(db_pa
     svc = ModuleService(db_path)
     svc.register_switch(module, reader)
 
-    assert await getattr(svc, f"is_{module}_enabled")() is True
+    assert await svc.is_enabled(module) is True
     assert servers == [1]
 
 

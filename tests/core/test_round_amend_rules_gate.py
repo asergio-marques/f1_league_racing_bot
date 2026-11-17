@@ -90,7 +90,7 @@ async def _cog(
     cog.bot.output_router.post_log = AsyncMock()
     answer_switch(cog.bot.module_service, "attendance", attendance)
     for module in ("signup", "results", "images"):
-        setattr(cog.bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
+        answer_switch(cog.bot.module_service, module, False)
     answer_switch(cog.bot.module_service, "weather", weather)
     cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=SimpleNamespace(

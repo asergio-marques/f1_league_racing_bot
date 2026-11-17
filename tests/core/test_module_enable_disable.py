@@ -667,7 +667,7 @@ async def test_a_switch_on_asked_before_placements_are_confirmed_and_run_after_i
     await _confirm_a_season(league.db_path)
     await run_queue(league.bot)
 
-    assert await getattr(league.bot.module_service, f"is_{module}_enabled")() is False
+    assert await league.bot.module_service.is_enabled(module) is False
     assert await _audit(league.db_path) == []
     assert last_said(asked) == PLACEMENTS_CONFIRMED
     assert _refused_line(PLACEMENTS_CONFIRMED.removeprefix("❌ ")) in await log_lines(league)
@@ -696,7 +696,7 @@ async def test_a_switch_off_asked_before_pending_completion_and_run_in_it_is_ref
     await _stage(league.db_path, "PENDING_COMPLETION", "ACTIVE")
     await run_queue(league.bot)
 
-    assert await getattr(league.bot.module_service, f"is_{module}_enabled")() is True
+    assert await league.bot.module_service.is_enabled(module) is True
     assert await _audit(league.db_path) == []
     assert last_said(asked) == PENDING_COMPLETION
     refused = f"⛔ `/module disable` refused for {NAMED} — {PENDING_COMPLETION.removeprefix('❌ ')}"

@@ -20,6 +20,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import _ReviewPoster
 from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.setup_reads import hold_setup
+from tests.support.switches import answer_switch
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -444,7 +445,7 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
         ]
     )
     for module in ("weather", "attendance", "results", "signup", "images"):
-        setattr(bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
+        answer_switch(bot.module_service, module, False)
 
     # No module's window counts: a leads hook nothing is signed up to.
     bot.round_leads_read = AwaitedHook()
