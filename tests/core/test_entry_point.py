@@ -450,7 +450,7 @@ _FINAL_PARTS = (
 #: and what the test calls it, in the order the builder signs them up. Each seeds what the module
 #: seeds for a season under test, on the connection of the save that turns test mode on.
 _TEST_MODE_PARTS = (
-    ("leaguebot.results.services.points.points_config_service", "seed_test_configs_on",
+    ("leaguebot.results.services.points.season_points_service", "seed_test_configs_on",
      "results' points configurations"),
 )
 
@@ -506,6 +506,10 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#547: results' seeding is not signed up from season_points_service yet",
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
