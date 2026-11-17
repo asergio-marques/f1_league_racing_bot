@@ -289,8 +289,9 @@ async def no_points_config_attached(db_path: str, season_id: int) -> bool:
 
     A link to a configuration that does not exist still counts as attached here; that one is
     `missing_points_config_problems`' fault. Test mode is no exception: it attaches Standard and
-    Half Points when it is enabled and at no other moment, and a season that has had them
-    detached is refused as any other.
+    Half Points when it is enabled, on a server holding no points configuration, and at no other
+    moment, so a test season on a server that holds one, or that has had them detached, is
+    refused as any other.
     """
     return not await get_attached_config_names(db_path, season_id)
 
@@ -304,8 +305,9 @@ async def confirmation_refusals(
     three faults are read through `no_points_config_attached`, `missing_points_config_problems`
     and `points_ordering_problems`, the helpers `review_section` reports from, so the report and
     the refusal cannot drift. Test mode is no exception: it attaches Standard and Half Points when
-    it is enabled and at no other moment, and a season that has had them detached is refused as
-    any other, not given them again behind it.
+    it is enabled, on a server holding no points configuration, and at no other moment, so a
+    season on a server that holds one, or that has had them detached, is refused as any other,
+    not given them behind it.
 
     The placements review refuses on each fault in a private reply of its own: nothing attached,
     then configurations attached that do not exist, then tables out of order. The approval
@@ -420,8 +422,8 @@ async def review_section(
     so the report and the refusal cannot drift. The configuration review has a section only while
     results is on, and it names the configurations alone: its faults are reported with the
     confirmation's. Nothing is promised under test mode: it attaches Standard and Half Points
-    when it is enabled and at no other moment, so a test season with none has a fault as any
-    other season's does. Reads only.
+    when it is enabled, on a server holding no points configuration, and at no other moment, so
+    a test season with none has a fault as any other season's does. Reads only.
     """
     results_on = await modules.is_enabled(SWITCH_KEY)
     if review is Review.CONFIGURATION and not results_on:
