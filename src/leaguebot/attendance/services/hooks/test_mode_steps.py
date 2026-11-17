@@ -54,8 +54,9 @@ _CHECK_IN_PHASES = {
     CHECK_IN_CLEAN_UP: 9,
 }
 
-#: The scheduler's event type of each check-in step, by its phase.
-_CHECK_IN_EVENTS = {5: "rsvp_notice", 6: "rsvp_last_notice", 7: "rsvp_deadline", 9: "rsvp_cleanup"}
+#: The kind of round job each check-in step is armed under, by its phase: the one map attendance's
+#: wiring signs its kinds up from, inverted, so the register and these steps cannot drift.
+ADVANCE_KINDS = {5: "rsvp_notice", 6: "rsvp_last_notice", 7: "rsvp_deadline", 9: "rsvp_cleanup"}
 
 
 async def check_ins_cleared(
@@ -132,7 +133,7 @@ async def pending_steps(
 
     def add(rid: int, phase: int) -> None:
         if (rid, phase) not in in_hand:
-            pending.append(PendingStep(rid, phase, _CHECK_IN_EVENTS[phase]))
+            pending.append(PendingStep(rid, phase, ADVANCE_KINDS[phase]))
 
     for rid in round_ids:
         call = calls.get(rid)
@@ -170,7 +171,7 @@ async def review_marks(
     last_notice_on, cleared, calls = state
     if queued is not None:
         queued = queued | {
-            (rid, _CHECK_IN_EVENTS[phase]) for rid, phase in await _check_ins_in_hand(db_path)
+            (rid, ADVANCE_KINDS[phase]) for rid, phase in await _check_ins_in_hand(db_path)
         }
 
     marks: ReviewMarks = {}

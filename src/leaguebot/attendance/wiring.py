@@ -42,15 +42,14 @@ def sign_up(bot: "LeagueBot") -> None:
     sign_up_round_kinds(bot)
 
 
-#: The kinds of round job attendance arms, each with the phase number `/test-mode advance` numbers
-#: it by: the check-in's call, its last notice, its deadline and its clean-up.
-ROUND_KINDS = {"rsvp_notice": 5, "rsvp_last_notice": 6, "rsvp_deadline": 7, "rsvp_cleanup": 9}
-
-
 def sign_up_round_kinds(bot: "LeagueBot") -> None:
     """Sign attendance's kinds of round job up with core's round jobs, each with its advance
-    phase."""
-    bot.round_jobs.sign_up_kinds(ROUND_KINDS)
+    phase: the check-in's call, its last notice, its deadline and its clean-up, from the map its
+    test-mode steps hold (`ADVANCE_KINDS`), inverted, so the register and the steps cannot
+    drift."""
+    from leaguebot.attendance.services.hooks.test_mode_steps import ADVANCE_KINDS
+
+    bot.round_jobs.sign_up_kinds({kind: phase for phase, kind in ADVANCE_KINDS.items()})
 
 
 def sign_up_to_round_leads(bot: "LeagueBot") -> None:

@@ -47,11 +47,13 @@ from leaguebot.weather.services.round_phases import PhasesDrawn, phases_drawn_on
 #: The step that takes the forecasts of Phases 1 to 3 down, a day after the round.
 CLEAN_UP_PHASE = 8
 
-#: The kind of round job each of weather's steps is armed under. A mystery round's notice (0) is
-#: armed as `weather_p1`, which its step tells from Phase 1 by the round's format.
-_STEP_KINDS = {
-    0: "weather_p1", 1: "weather_p1", 2: "weather_p2", 3: "weather_p3", CLEAN_UP_PHASE: "cleanup",
-}
+#: The kind of round job each of weather's advance phases is armed under, the one map weather's
+#: wiring signs its kinds up from, inverted, so the register and these steps cannot drift.
+ADVANCE_KINDS = {1: "weather_p1", 2: "weather_p2", 3: "weather_p3", CLEAN_UP_PHASE: "cleanup"}
+
+#: The kind each of weather's steps is armed under: its advance phases, and a mystery round's
+#: notice (0), armed as `weather_p1`, which its step tells from Phase 1 by the round's format.
+_STEP_KINDS = {0: "weather_p1", **ADVANCE_KINDS}
 
 
 async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:

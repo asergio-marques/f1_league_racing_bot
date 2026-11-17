@@ -55,7 +55,9 @@ def sign_up_round_kinds(bot: "LeagueBot") -> None:
     """Sign results' kind of round job, the submission, up with core's round jobs as a round's
     with no advance phase: `/test-mode advance` reads the submission from the round's state, so
     core's pending read of jobs leaves it out (phase 4 stays in results' own test-mode map)."""
-    bot.round_jobs.sign_up_kinds({"results": None})
+    from leaguebot.results.services.submission.round_start import ROUND_START_KIND
+
+    bot.round_jobs.sign_up_kinds({ROUND_START_KIND: None})
 
 
 def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
