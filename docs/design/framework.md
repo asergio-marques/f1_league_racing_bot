@@ -336,13 +336,13 @@ stated exception; each docstring there named carries its reason.
 | A scheduled job | `_one_off_timer_job` (`framework/services/jobs/scheduler.py`), running the handler through `run_job` (`framework/utils/job_runner.py`), which logs the fault on the host and reports it to the log channel by `job_failure_line` |
 | A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each run through `run_job` and reported to the log channel by `start_up_failure_line` |
 | The retry loop | `RetryCog.retry_loop`, running each cycle through `run_job` with a report that never queues, and `retry_service.attempt_delivery` |
-| A background task | `start_background` (`framework/utils/background.py`), running the work through `run_job`, with a report where the log channel is not what failed |
+| A background task | `start_background` (`framework/utils/background.py`), running the work through `run_job`, with a report unless the log channel is what failed or a line of the work's own closes it |
 
 **The job runner never raises**: a fault in its report is logged on the host and dropped, since
 the fault may be the one the report would write to, and a cancellation is no failure and passes
 through. A caller gives it no report where the work's own failure is what the log channel just
-refused or where a line of its own closes the work: the router's member warnings and the factory
-reset's clean-up. `start_background` holds each task in a set of its own until it ends, since
+refused, the router's member warnings and the retry worker's own line, or where a line of its own
+closes the work, the factory reset's clean-up. `start_background` holds each task in a set of its own until it ends, since
 asyncio keeps only a weak hold on a task nobody stores, and a task cancelled is neither logged nor
 reported.
 
