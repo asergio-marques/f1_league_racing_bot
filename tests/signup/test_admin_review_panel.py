@@ -556,7 +556,6 @@ async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untou
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason="#453: a lapse that faults reaches nobody")
 async def test_a_reason_lapse_that_fails_is_reported(tmp_path, monkeypatch):
     """Manager 77 presses Reject on Kimi's panel and types no reason; when the five minutes run
     out, writing the lapse's line faults unexpectedly. One ❌ line in the log channel names the
