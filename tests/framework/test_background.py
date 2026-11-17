@@ -14,11 +14,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-#: Why each test fails until the helper is built.
-NOT_YET = "#453: there is no background helper"
 
-
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_started_task_is_held_until_it_ends():
     """While the work runs the helper holds the task, so it cannot be collected; once it ends
     the helper lets it go."""
@@ -39,7 +35,6 @@ async def test_a_started_task_is_held_until_it_ends():
     assert task not in background._running
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("reported", [True, False], ids=["with a report", "without a report"])
 async def test_a_task_that_raises_is_logged_and_reported(reported, caplog):
     """The work raises: its traceback reaches the host's log, naming the task, and where a
@@ -68,7 +63,6 @@ async def test_a_task_that_raises_is_logged_and_reported(reported, caplog):
         report.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_cancelled_task_is_neither_logged_nor_reported(caplog):
     """A cancellation is not a failure: the task ends cancelled, nothing reaches the host's log
     as a fault and nothing is reported."""
