@@ -496,23 +496,30 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         assert await _row_count(db_path) == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=True, reason="#550: deliver_queued hands back no link to the message it sent"
+    )
     async def test_a_line_a_change_saved_is_delivered_to_the_log_channel_set_since(self, tmp_path):
         """A change's line is queued in its save for the log channel of the moment, 555, and
-        delivered once the save commits: the log channel is 99 by then, and takes it."""
+        delivered once the save commits: the log channel is 99 by then, and takes it. The link to
+        the message it was delivered in is handed back against the line's id, for a reply to point
+        at (#550)."""
         db_path = await _make_db(str(tmp_path))
         await enqueue(db_path, 555, "Admin | /module enable weather | Success", "", now=NOW)
         [entry] = await get_all_pending(db_path)
         new = _make_text_channel_mock()
+        new.send = AsyncMock(return_value=MagicMock(jump_url="https://discord.test/99/1"))
         bot = _worker_bot(db_path, None)
         bot.get_channel = _channels(c99=new)
         bot.fetch_channel = AsyncMock(
             side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
         )
 
-        await bot.output_router.deliver_queued([entry.id])
+        links = await bot.output_router.deliver_queued([entry.id])
 
         assert new.send.await_count == 1
         assert await _row_count(db_path) == 0
+        assert links == {entry.id: "https://discord.test/99/1"}
 
     @pytest.mark.asyncio
     async def test_a_log_channel_that_cannot_be_read_leaves_the_row_and_raises_nothing(
