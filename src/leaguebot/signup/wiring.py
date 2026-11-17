@@ -18,22 +18,23 @@ from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
 
-from leaguebot.core.utils.hooks import runs_while_off
+from leaguebot.framework.utils.hooks import runs_while_off
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.hooks import StartUpStep
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.hooks import StartUpStep
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign signup up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_signup_enabled` asks it by."""
+    """Sign signup up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.signup.models.switch import SWITCH_KEY
     from leaguebot.signup.services.signup_module_service import signup_enabled_on
 
-    modules.register_switch("signup", signup_enabled_on)
+    modules.register_switch(SWITCH_KEY, signup_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:
@@ -250,7 +251,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
     from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
 
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
     from leaguebot.signup.services.module_switch_settings import module_on_signup
     from leaguebot.signup.services.channel_setting import channel_setting
     from leaguebot.signup.services.close_time_settings import close_time_settings

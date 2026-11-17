@@ -25,10 +25,10 @@ sections, so the reviewer can compare fact with target without re-reading the co
 
 ## The aspects, and what each must answer
 
-- **Tables.** Every table the scope writes or reads, from `src/leaguebot/core/db/migrations/`. For each: what
-  one row means, in a sentence a maintainer can use; its key; which files write it and which
-  read it, and which module each writer belongs to; any copy of a value derived from another
-  table, naming what recomputes it; and any link to it that stops a delete. Name the scope's
+- **Tables.** Every table the scope writes or reads, from `src/leaguebot/framework/db/migrations/`.
+  For each: what one row means, in a sentence a maintainer can use; its key; which files write it
+  and which read it, and which module each writer belongs to; any copy of a value derived from
+  another table, naming what recomputes it; and any link to it that stops a delete. Name the scope's
   own columns on another module's table, core's included.
 - **Changes.** Every path that changes data: what starts it (a command, a button, a form, a
   typed answer, a timer, a Discord event, start-up), and in order what it saves, in which
@@ -61,8 +61,8 @@ sections, so the reviewer can compare fact with target without re-reading the co
   test whose name or docstring pins a trade-off, a lock or an ordering held on purpose.
 - **Mechanisms** (whole-bot scope only). The composition root in `src/leaguebot/__main__.py`, the scheduler,
   the channel registry and `OutputRouter`, `report_failure`, the `League*` bases, the
-  one-league claim (`core/utils/league_server.py`), module enable and disable
-  (`module_service`), and database connection handling (`core/db/database.py`). For each: where
+  one-league claim (`framework/utils/league_server.py`), module enable and disable
+  (`module_service`), and database connection handling (`framework/db/database.py`). For each: where
   it is, what it does, and who bypasses it.
 
 ## Measure with the tool, not by hand

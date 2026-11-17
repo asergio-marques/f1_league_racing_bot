@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.results.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
@@ -33,7 +34,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 #: Results' three channels, in the order a division's lines read: the column that holds it, what a
 #: league calls it, the command that sets it, and what the review shows where it is not set.
@@ -229,7 +230,7 @@ async def division_channel_faults(
     confirmation judges (id to name) and the server. A division with no fault is given an empty
     list. With no *guild*, only whether each channel is set is judged. Reads only.
     """
-    if not await modules.is_results_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return {}
     channels = await _channels_of(db_path)
     found: dict[int, list[str]] = {}

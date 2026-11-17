@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import (
     attach_queue,
     http_error,
@@ -80,8 +80,8 @@ async def _record_channel(db: Any, _ctx: Any, result: Any) -> None:
 async def _run(league: ReviewLeague, *planned: tuple[Any, dict[str, Any]]) -> None:
     """Ask a member's dummy change running the *planned* steps, each with its payload, then run
     the queue."""
-    from leaguebot.core.models.change import PlannedStep, Verdict
-    from leaguebot.core.services.queue.change_types import ChangeType
+    from leaguebot.framework.models.change import PlannedStep, Verdict
+    from leaguebot.framework.services.queue.change_types import ChangeType
 
     async def _go(_ctx: Any) -> Any:
         return Verdict.go()

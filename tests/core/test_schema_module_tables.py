@@ -13,7 +13,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_the_signup_module_tables_exist(tmp_path) -> None:
     """The schema holds the signup module's tables."""
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "bot.db")
 
@@ -39,7 +39,7 @@ async def test_the_signup_module_tables_exist(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_forecast_channel_id_is_nullable(tmp_path) -> None:
     """divisions.forecast_channel_id must accept NULL."""
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "bot.db")
 
@@ -76,7 +76,7 @@ async def test_forecast_channel_id_is_nullable(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_module_flag_columns_default_to_zero(tmp_path) -> None:
     """server_configs must have weather_module_enabled and signup_module_enabled defaulting to 0."""
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "bot.db")
 

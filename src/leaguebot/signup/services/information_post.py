@@ -14,16 +14,16 @@ from typing import TYPE_CHECKING, Literal
 
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.signup_posting import post_standing_message
 from leaguebot.signup.services.signup_views import SignupButtonView
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

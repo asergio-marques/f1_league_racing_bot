@@ -18,8 +18,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.season_cog import _ReviewPoster
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.setup_reads import hold_setup
+from tests.support.switches import answer_switch
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -199,7 +200,7 @@ async def test_the_review_section_raises_a_switch_nobody_signed_up_for():
     """A module's switch reader was never signed up, so the image module's section raises
     `SwitchNotSignedUp`: a fault in the bot's assembly, which the section raises rather than
     stating as a configuration it cannot read."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     cog = _section_cog(SwitchNotSignedUp("results"))
 
@@ -325,7 +326,7 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest(tmp_path):
     delete completing as already gone, and the queue is not stopped."""
     import discord
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import http_error, run_queue, stopped_job
 
     env = await _standing_placements(tmp_path)
@@ -374,7 +375,7 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     from types import SimpleNamespace
 
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.core.models.round import Round, RoundFormat
     from leaguebot.core.models.season import SeasonStage
     from leaguebot.core.models.server_config import ServerConfig
@@ -444,10 +445,10 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
         ]
     )
     for module in ("weather", "attendance", "results", "signup", "images"):
-        setattr(bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
+        answer_switch(bot.module_service, module, False)
 
-    # No module's window counts: a windows hook nothing is signed up to.
-    bot.round_windows_read = AwaitedHook()
+    # No module's window counts: a leads hook nothing is signed up to.
+    bot.round_leads_read = AwaitedHook()
     # Results' refusals, through the hook the approval asks them of, as the builder signs them.
     sign_up_confirmation_refused(bot)
     monkeypatch.setattr(approval_checks, "team_name_problems", AsyncMock(return_value=[]))
@@ -500,7 +501,7 @@ def _asked(cog, kind: str) -> list[dict]:
 
 
 async def _prompt_rows(cog) -> int:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(cog.bot.db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
@@ -574,7 +575,7 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     holder = {}
 
@@ -618,8 +619,8 @@ SEASON_CHANGED = (
 def _approval_double(refusal: str, on_check=None):
     """A `season.approve` whose check, made as the queue is asked, refuses with *refusal*,
     calling *on_check* first where given. Its jobs, never reached, do nothing."""
-    from leaguebot.core.models import change
-    from leaguebot.core.services.queue import change_types
+    from leaguebot.framework.models import change
+    from leaguebot.framework.services.queue import change_types
 
     async def _check(_ctx):
         if on_check is not None:

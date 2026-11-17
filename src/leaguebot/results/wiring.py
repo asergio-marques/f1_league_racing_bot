@@ -21,24 +21,26 @@ import aiosqlite
 from leaguebot.image.services.render.image_drawing import as_image_drawing
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.hooks import StartUpStep
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.hooks import StartUpStep
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign results up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_results_enabled` asks it by."""
+    """Sign results up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.results.models.switch import SWITCH_KEY
     from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 
-    modules.register_switch("results", results_enabled_on)
+    modules.register_switch(SWITCH_KEY, results_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:
     """Sign results up to each hook only results joins. The hooks several modules join (the one a
     season's confirmation is refused through among them) are signed up by the entry point, in the
     order they are called, through the functions below."""
+    sign_up_round_kinds(bot)
     sign_up_to_cancellation_refused(bot)
     sign_up_to_rounds_made_final(bot)
     sign_up_to_test_mode_turned_on(bot)
@@ -47,6 +49,15 @@ def sign_up(bot: "LeagueBot") -> None:
     sign_up_to_season_standing_read(bot)
     sign_up_to_final_round_read(bot)
     sign_up_to_season_end_refused(bot)
+
+
+def sign_up_round_kinds(bot: "LeagueBot") -> None:
+    """Sign results' kind of round job, the submission, up with core's round jobs as a round's
+    with no advance phase: `/test-mode advance` reads the submission from the round's state, so
+    core's pending read of jobs leaves it out (phase 4 stays in results' own test-mode map)."""
+    from leaguebot.results.services.submission.round_start import ROUND_START_KIND
+
+    bot.round_jobs.sign_up_kinds({ROUND_START_KIND: None})
 
 
 def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
@@ -58,6 +69,23 @@ def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
     bot.confirmation_refused.subscribe(partial(
         season_points_service.confirmation_refusals, bot.module_service, bot.db_path
     ))
+
+
+def sign_up_to_round_leads(bot: "LeagueBot") -> None:
+    """Sign results' submission up to the hook a round's leads are read through. It answers for
+    every round whatever results' switch, as the submission is armed whatever the modules (core
+    specification, "What confirming placements does")."""
+    from leaguebot.results.services.submission import round_start
+
+    bot.round_leads_read.subscribe(round_start.submission_leads)
+
+
+def sign_up_to_round_armed(bot: "LeagueBot") -> None:
+    """Sign results' submission up to the hook an amended round's arming again declares, so that
+    the round is armed with its submission whatever the modules."""
+    from leaguebot.results.services.submission import round_start
+
+    bot.round_armed.subscribe(round_start.round_armed)
 
 
 def sign_up_to_cancellation_refused(bot: "LeagueBot") -> None:
@@ -306,7 +334,7 @@ def register_change_types(
     switch-off, which results turned off carries out for it.
     """
     from leaguebot.core.services.seasons.season_lifecycle_service import steps_of_the_modules
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
     from leaguebot.results.services.round_amendment.amend_changes import amend_open_change
     from leaguebot.results.services.round_amendment.amend_changes import TIMER as AMEND_TIMER
     from leaguebot.results.services.round_amendment.amend_end_changes import (
@@ -355,6 +383,7 @@ def register_change_types(
         submission_open_change,
         submission_restart_change,
     )
+    from leaguebot.results.services.round_amendment.amendment_writes import cancel_amendment_sweep
     from leaguebot.results.services.submission.submission_turn_change import (
         submission_config_change,
         submission_turn_change,
@@ -363,9 +392,9 @@ def register_change_types(
     bot.change_queue.register(
         results_off_change(
             attendance_off_on=attendance_off_on,
-            attendance_enabled=bot.module_service.is_attendance_enabled,
+            attendance_enabled=partial(bot.module_service.is_enabled, "attendance"),
             rounds_made_final=bot.rounds_made_final,
-            disarm_amendment_sweep=bot.scheduler_service.cancel_amendment_sweep,
+            disarm_amendment_sweep=lambda: cancel_amendment_sweep(bot.scheduler_service),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -590,13 +619,15 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     bot.advance_steps.register_step("results", advance_step(bot.change_queue, bot.db_path))
 
     # The standing sweep that undoes an amendment nobody carried through; start-up arms it.
+    from leaguebot.results.services.round_amendment.amendment_writes import AMENDMENT_SWEEP_KIND
+
     async def _amendment_sweep_cb() -> None:
         from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
         await sweep_expired_amendments(
             bot.db_path, queue=bot.change_queue, now=bot.change_queue.now()
         )
 
-    scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
+    scheduler.register_timer(AMENDMENT_SWEEP_KIND, _amendment_sweep_cb)
 
 
 
@@ -638,4 +669,6 @@ async def arm_amendment_sweep(bot: "LeagueBot") -> None:
     without a setting of its own: the amendment's first stage commits, so a league running the results module at all can
     leave a round half-amended, and the sweep is what makes that recoverable without anybody
     noticing it happened."""
-    bot.scheduler_service.schedule_amendment_sweep()
+    from leaguebot.results.services.round_amendment.amendment_writes import schedule_amendment_sweep
+
+    schedule_amendment_sweep(bot.scheduler_service)

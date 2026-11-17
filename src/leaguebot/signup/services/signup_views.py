@@ -21,26 +21,26 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
-from leaguebot.core.utils.interaction_errors import report_failure
-from leaguebot.core.utils.league_bot import LeagueBot, bot_of
-from leaguebot.core.utils.league_server import (
+from leaguebot.framework.utils.interaction_errors import report_failure
+from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
+from leaguebot.framework.utils.league_server import (
     CallbackButton,
     Handler,
     LeagueView,
     channel_id_of,
     guild_of,
 )
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.member_names import interaction_member
 
 if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)

@@ -15,7 +15,7 @@ from leaguebot.attendance.cogs.attendance_group import (
 )
 from leaguebot.attendance.services.settings.attendance_settings import KINDS
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
-from leaguebot.core.utils.interaction_errors import describe
+from leaguebot.framework.utils.interaction_errors import describe
 
 
 class ConfigCommands(AttendanceSubgroup):

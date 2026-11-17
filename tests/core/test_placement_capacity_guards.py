@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 
 RESERVE = "Reserve"
@@ -178,7 +178,7 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     """Each guard refuses in its words where the drawing reports a problem, and lets the assignment
     through where it reports none, and where it raises (the error kept whole in the host's
     log)."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     from leaguebot.core.services.modules.image_drawing import CapacityProblem
 
     db_path, season_id, division_id = await _seed(tmp_path)
@@ -432,7 +432,7 @@ async def test_a_guard_whose_switch_nobody_signed_up_for_raises(tmp_path):
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a guard that cannot run, so the placement raises it rather than
     letting the driver through unchecked."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({name: SwitchNotSignedUp("images") for name in GUARDS})

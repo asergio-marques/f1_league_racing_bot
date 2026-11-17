@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -46,7 +46,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -61,7 +61,8 @@ from leaguebot.core.services.rounds.division_edit_changes import (
 )
 from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.seasons.season_service import validate_division_name, validate_division_tier
-from leaguebot.core.utils.formatting import discord_ts, format_round_list
+from leaguebot.core.utils.formatting import format_round_list
+from leaguebot.utils.messages import discord_ts
 
 if TYPE_CHECKING:
     from leaguebot.core.services.seasons.season_service import SeasonService

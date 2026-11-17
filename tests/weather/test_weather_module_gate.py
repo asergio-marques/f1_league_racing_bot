@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import run_queue
 from tests.support.season_league import (
     AM,
@@ -236,7 +236,10 @@ async def test_amend_round_runs_no_overdue_phase_while_weather_is_disabled(tmp_p
     await _amend(league, track="Silverstone Circuit", scheduled_at=_moment(league, _AN_HOUR))
 
     assert phases.ran == []
-    league.bot.scheduler_service.schedule_round.assert_not_called()
+    from tests.support.season_league import leads_armed
+
+    assert not [lead for each in leads_armed(league.bot.round_jobs) for lead in each["leads"]
+                if lead.kind.startswith("weather_p") or lead.kind == "cleanup"]
     assert await _phase_state(league.db_path, AM_3) == (0, 0, 0, 0)
 
 

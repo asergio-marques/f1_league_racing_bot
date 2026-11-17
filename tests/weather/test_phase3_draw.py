@@ -39,7 +39,7 @@ from unittest.mock import patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.session import MAX_SLOTS, SessionType
 
 SERVER_ID = 1

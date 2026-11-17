@@ -2,7 +2,7 @@
 
 Each `/results config …` command that changes the league's points configurations asks one
 `results.setting.…` change, built from a `Setting` below by `setting_change`
-(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
+(`framework/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault). The check of each is the command's, in today's order and words,
 run at the ask and again as the change starts, so a configuration removed, a module turned off or
 a season taken up by a change ahead of it on the queue is taken into account. Every check refuses
@@ -32,11 +32,12 @@ import dataclasses
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.results.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import Verdict
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.publishing import results_post_service
@@ -52,8 +53,8 @@ if TYPE_CHECKING:
     import aiosqlite
     import discord
 
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 CONFIG_ADD = "results.setting.config_add"
@@ -81,7 +82,7 @@ def _config_add(modules: "ModuleService") -> Setting:
     """`/results config add`: a configuration, every position at nought points."""
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if await points_config_service.config_exists(ctx.db_path, name):
@@ -114,7 +115,7 @@ def _config_remove(modules: "ModuleService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -168,7 +169,7 @@ def _config_points(modules: "ModuleService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -273,7 +274,7 @@ def _config_fastest_lap(modules: "ModuleService") -> Setting:
         return "fl_points" if "fl_points" in payload else "fl_position_limit"
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -372,7 +373,7 @@ def _config_import(modules: "ModuleService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
@@ -478,7 +479,7 @@ def _config_attach(modules: "ModuleService", seasons: "SeasonService") -> Settin
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         refusal = await _setup_season_refusal(ctx, seasons, attaching=True)
         if refusal is not None:
@@ -523,7 +524,7 @@ def _config_detach(modules: "ModuleService", seasons: "SeasonService") -> Settin
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         refusal = await _setup_season_refusal(ctx, seasons, attaching=False)
         if refusal is not None:
@@ -577,7 +578,7 @@ def _reserves(modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         season = await seasons.get_setup_or_active_season()
         if season is None:

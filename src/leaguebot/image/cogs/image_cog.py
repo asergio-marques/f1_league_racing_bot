@@ -26,10 +26,11 @@ from discord.ext import commands
 
 # The subgroups join `/images` in `image_group.py`, in the order a league sees them, so the order
 # of these imports does not matter.
-from leaguebot.core.utils.interaction_errors import describe as describe_command
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.image.models.switch import SWITCH_KEY
+from leaguebot.framework.utils.interaction_errors import describe as describe_command
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import refuse
+from leaguebot.utils.messages import chunk_message
 from leaguebot.image.cogs.config_commands import ConfigCommands
 from leaguebot.image.cogs.image_group import IMAGES_GROUP
 from leaguebot.image.cogs.template_commands import TemplateCommands
@@ -63,7 +64,7 @@ class ImageCog(
         because its callers differ: a command that has already deferred must answer on the
         followup, and sending a fresh response there raises ``404 Unknown interaction``.
         """
-        if await self.bot.module_service.is_images_enabled():
+        if await self.bot.module_service.is_enabled(SWITCH_KEY):
             return True
         reply = "❌ The Image module is not enabled. Use `/module enable images` first."
         if record:

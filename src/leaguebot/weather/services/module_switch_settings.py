@@ -1,9 +1,9 @@
 """Weather's own switch, on and off, as two settings on the change queue.
 
 `/module enable weather` and `/module disable weather` each ask one change built from a
-`Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
+`Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("weather")` and
-`module_off("weather")` (`core/models/change.py`), so core's cog names the change without
+`module_off("weather")` (`framework/models/change.py`), so core's cog names the change without
 importing weather. Each save writes only `server_configs.weather_module_enabled`, weather's own
 column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 `tests/repository/test_architecture_rules.py`).
@@ -11,7 +11,7 @@ column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 **The switch-off removes the season's weather jobs after the save, not before**
 (`docs/design/architecture.md`, "How modules and core fit together"): the flag going down and its
 audit entry share one save, and only once that has run does an `After` step call
-`SchedulerService.cancel_all_weather`. Doing the jobs' removal after the flag rather than before is
+`cancel_all_weather`. Doing the jobs' removal after the flag rather than before is
 safe only because the flag is read by each weather change's check, which drops the job while it
 is off (core specification, "A disabled module shall produce nothing … a scheduled job"; pinned by
 `tests/weather/test_weather_module_gate.py`,
@@ -31,7 +31,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import (
+from leaguebot.weather.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,
@@ -40,20 +41,21 @@ from leaguebot.core.models.change import (
     module_off,
     module_on,
 )
-from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.weather.services.forecast_leads import WEATHER_JOB_KINDS
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
 )
-from leaguebot.core.services.queue.setting_change import After, Saved, Setting
+from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 #: The name of the step, after the switch-off's save, that removes the season's weather jobs.
@@ -83,7 +85,7 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
     """
 
     async def check(_ctx: CheckContext) -> Verdict:
-        if await modules.is_weather_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Weather module is already enabled.")
         if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
@@ -117,7 +119,37 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
     )
 
 
-def _remove_jobs(scheduler: "SchedulerService") -> After:
+async def cancel_all_weather(round_jobs: "RoundJobs") -> None:
+    """Cancel the weather module's jobs for every round in an active or set-up season.
+
+    Only the four jobs of `WEATHER_JOB_KINDS` are taken, by asking core's round jobs to cancel
+    those kinds of the live season's rounds (`RoundJobs.cancel_live_rounds`): weather holds no SQL
+    on core's tables. The other five a round carries belong to modules that are still switched
+    on and must survive:
+
+    * ``results`` is not only the results module's. The round's start (``results.submission.open``)
+      is the round's one clock-driven status transition, and it runs for every round whatever the
+      modules: with results off it simply closes the round as FINAL. Cancelled, the round never
+      leaves NOT_RUN, its division never finishes and its season can never be completed.
+    * ``rsvp_notice``, ``rsvp_last_notice``, ``rsvp_deadline`` and ``rsvp_cleanup`` are
+      attendance's, and nothing short of the confirmation of placements recreates them, which
+      cannot be run again on an active season, so cancelling them loses the season's check-ins for
+      good.
+
+    Do not widen this to a whole-round cancel: switching weather off would then silently stop
+    results collection and check-ins for the rest of the season while reporting that only weather
+    jobs had been cancelled. Leaving the ``results`` job in place is deliberate: removing it would
+    destroy the round-arrival transition of a league whose results module is on, which is the
+    defect above by another route.
+
+    The switch-off is the caller: the ``REMOVE_JOBS`` ``After`` step of `module_off_weather`, run
+    once the flag's save has gone through. It raises where the league database or the job store
+    cannot be read, before it removes anything.
+    """
+    await round_jobs.cancel_live_rounds(only=WEATHER_JOB_KINDS)
+
+
+def _remove_jobs(round_jobs: "RoundJobs") -> After:
     """The step that removes the season's weather jobs once the flag is down.
 
     It may fail without holding up the queue: the switch-off stays saved, and the reply says the
@@ -125,7 +157,7 @@ def _remove_jobs(scheduler: "SchedulerService") -> After:
     """
 
     async def run(_ctx: StepContext) -> StepResult:
-        await scheduler.cancel_all_weather()
+        await cancel_all_weather(round_jobs)
         return StepResult()
 
     def fault_reply(_payload: dict[str, Any], reply: str) -> str:
@@ -137,7 +169,7 @@ def _remove_jobs(scheduler: "SchedulerService") -> After:
     return After(step=Step(REMOVE_JOBS, StepKind.ACT, run), fault_reply=fault_reply)
 
 
-def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService") -> Setting:
+def module_off_weather(*, modules: "ModuleService", round_jobs: "RoundJobs") -> Setting:
     """`module.off:weather`: lower the flag and write its audit entry in one save, then remove
     the season's weather jobs in a step of its own.
 
@@ -148,7 +180,7 @@ def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Weather module is already disabled.")
         if await modules_frozen_for_completion(ctx.db_path):
             return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)
@@ -177,7 +209,7 @@ def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService
         save=save,
         reply=reply,
         writes=("server_configs",),
-        after={REMOVE_JOBS: _remove_jobs(scheduler), REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
+        after={REMOVE_JOBS: _remove_jobs(round_jobs), REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
     )
 
 

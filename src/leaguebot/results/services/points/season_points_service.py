@@ -7,11 +7,12 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.modules.confirmation_refusals import Confirmation, Refusal
-from leaguebot.core.services.modules.review_sections import Review, ReviewSection
-from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.results.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import AuditRecord
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
+from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
+from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.services.points import points_config_service
@@ -19,7 +20,7 @@ from leaguebot.results.services.module.module_switch_settings import results_ena
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 
@@ -312,7 +313,7 @@ async def confirmation_refusals(
     ordering, which is read only then. The configuration's faults are one line each, in the
     review's order. Reads only.
     """
-    if not await modules.is_results_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return []
     if confirmation is Confirmation.APPROVAL:
         return await _approval_refusals(db_path, season_id)
@@ -421,7 +422,7 @@ async def review_section(
     when it is enabled and at no other moment, so a test season with none has a fault as any
     other season's does. Reads only.
     """
-    results_on = await modules.is_results_enabled()
+    results_on = await modules.is_enabled(SWITCH_KEY)
     if review is Review.CONFIGURATION and not results_on:
         return None
     config_names = await get_attached_config_names(db_path, season_id)

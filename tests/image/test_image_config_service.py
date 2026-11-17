@@ -12,7 +12,7 @@ import pytest
 
 from types import SimpleNamespace
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
 from leaguebot.image.models.image_module import ImageConfig
 from leaguebot.image.services.config.image_config_service import (
@@ -600,7 +600,7 @@ def test_the_rule_does_not_bind_while_portraits_are_disabled():
 
 async def _count_writes(db_path: str) -> None:
     """Install the counting triggers on `image_config` and `image_tier_colour`."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         await db.execute("CREATE TABLE test_writes (tbl TEXT NOT NULL)")
@@ -617,7 +617,7 @@ async def _count_writes(db_path: str) -> None:
 
 
 async def _writes(db_path: str) -> int:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) AS n FROM test_writes")

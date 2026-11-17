@@ -2,7 +2,7 @@
 
 `/signup nationality`, `time-type`, `time-image`, `time-slot add` and `time-slot remove` each ask
 one change, `signup.setting.<name>` (underscores in place of the command's hyphens), built from
-the `Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what
+the `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what
 every settings change does with a fault). The value, its audit entry and its log line are one
 save, stamped by the queue's clock; the command holds no rule of its own.
 
@@ -30,19 +30,20 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.models.refusal import Refused
-from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import AuditRecord, Verdict
+from leaguebot.framework.models.refusal import Refused
+from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
-from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.signup.services.signup_module_service import settings_on, slots_on
 
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 KIND_PREFIX = "signup.setting."
@@ -154,7 +155,7 @@ async def open_to_change(
 
     A setting that repairs what the league cannot do without passes *repairing*, which says
     whether the change is a repair now: a fixed configuration then does not refuse it."""
-    if not await modules.is_signup_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return NOT_ENABLED
     season_number = await configuration_fixed(db_path)
     if season_number is not None and not (repairing is not None and await repairing()):

@@ -28,10 +28,10 @@ of these grounds, and report which of them it survives:
 - **Proportion.** Is the recommended remedy the simplest one that closes the defect class, for
   a single-league bot on a Pi with one maintainer? Does it import a framework, a layer or an
   abstraction with one implementation where something smaller would do?
-- **Conflict.** Does it contradict a decision already recorded in CLAUDE.md, a "decided"
-  docstring, a test pinning a trade-off, `docs/design/architecture.md` or
-  `docs/design/core.md`? A finding that overrules a recorded decision is refuted as a
-  finding. It may survive only as a *finding for the architecture*, for the user to decide.
+- **Conflict.** Does it contradict a decision already recorded in CLAUDE.md, a "decided" docstring,
+  a test pinning a trade-off, `docs/design/architecture.md`, `docs/design/framework.md` or
+  `docs/design/core.md`? A finding that overrules a recorded decision is refuted as a finding. It
+  may survive only as a *finding for the architecture*, for the user to decide.
 - **Ownership.** Is it assigned to the pass that owns those files under `classify()` in
   `tools/coverage_by_module.py`? Where an open issue on the Architecture & design milestone
   already carries the correction (`gh issue list --milestone "Architecture & design"`), the
@@ -76,7 +76,10 @@ report every failure with its line in the file:
    owes; what it posts, of which kind, where, and how it finds a message again; how it meets
    core and the other modules (the hooks it signs up to or declares, its entry in the
    dependency table, its command group); how it fails; and the constraints a later reader
-   might tune away. Also the topics the issue names for that module. For `architecture.md`: every item under #282's "What the document should settle".
+   might tune away. Also the topics the issue names for that module. For `framework.md`, the
+   same items for the machinery's own code: its tables, services, the change queue, the
+   scheduler and the start-up sweep, posting, the hook types, its failure paths and its
+   constraints. For `architecture.md`: every item under #282's "What the document should settle".
    Where one is absent, the file must say why.
 7. **House style.** British English, in plain words. Declarative, a shape followed by its
    trade-offs, with each decision and its "*Rejected:*" lines written in the section it

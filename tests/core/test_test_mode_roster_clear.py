@@ -333,7 +333,7 @@ async def test_a_fault_in_the_save_removes_nobody(league):
     interaction = _asks(league)
 
     await _ask(league, interaction)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _drivers(league) == _EVERYONE
@@ -363,7 +363,7 @@ async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league)
     refusal as a line; only the one change is queued. The queue runs it: Mock Alpha and Mock Beta
     are gone and everyone else stays, with one audit entry for each of the two, and the log
     channel holds the refusal and then the one success line."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
     from tests.support.setup_rounds import repeated
 
     first, repeat = _asks(league), _asks(league)

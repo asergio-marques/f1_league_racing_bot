@@ -47,15 +47,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.placement_service import PlacementService
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.review_workflows import (
     record_review_views, run_workflow, sign_up_confirmation_refused, sign_up_division_lines_read,
 )
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12808
 SEASON_ID = 13
@@ -222,11 +223,11 @@ def _cog(
     hold_setup(bot.season_service, pending or _pending())
 
     modules = bot.module_service
-    modules.is_weather_enabled = AsyncMock(return_value=weather)
-    modules.is_signup_enabled = AsyncMock(return_value=signup)
-    modules.is_results_enabled = AsyncMock(return_value=results)
-    modules.is_attendance_enabled = AsyncMock(return_value=attendance)
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "weather", weather)
+    answer_switch(modules, "signup", signup)
+    answer_switch(modules, "results", results)
+    answer_switch(modules, "attendance", attendance)
+    answer_switch(modules, "images", images)
 
     bot.signup_module_service.get_config = AsyncMock(
         return_value=SimpleNamespace(signup_channel_id=900)
@@ -1057,8 +1058,8 @@ async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(d
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
-    # No module's window counts: a windows hook nothing is signed up to.
-    cog.bot.round_windows_read = AwaitedHook()
+    # No module's window counts: a leads hook nothing is signed up to.
+    cog.bot.round_leads_read = AwaitedHook()
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction.followup.send.reset_mock()
 

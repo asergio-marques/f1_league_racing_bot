@@ -46,7 +46,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.setup_rounds import (
     NAMED,
@@ -128,7 +128,8 @@ def _make_cog(
     bot.season_service.cancel_division = AsyncMock(return_value=None)
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.scheduler_service = MagicMock()
-    bot.scheduler_service.cancel_round = MagicMock(return_value=None)
+    bot.round_jobs = MagicMock()
+    bot.round_jobs.cancel_round = MagicMock(return_value=None)
     bot.change_queue = MagicMock()
     # The change's id, as the queue gives it once the change is asked for.
     bot.change_queue.ask = AsyncMock(return_value=1)
@@ -487,7 +488,7 @@ async def test_a_failed_division_rename_or_amendment_changes_nothing(tmp_path, c
         asked = await _ask_rename(league)
     else:
         asked = await _ask_amend(league, tier=3)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _divisions(league.db_path) == _STANDING
@@ -1149,7 +1150,7 @@ async def test_a_failed_division_delete_deletes_nothing(tmp_path):
     await _give_the_modules_rows(league.db_path)
     before = await _modules_rows(league.db_path)
     asked = await _ask_delete(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _divisions(league.db_path) == _STANDING
@@ -1355,8 +1356,8 @@ async def test_cancelling_asks_the_queue_with_the_division(tmp_path):
     call = cog.bot.change_queue.ask.await_args
     assert call.kwargs["interaction"] is interaction
     assert call.kwargs["what"] == "`/division cancel`"
-    cog.bot.scheduler_service.cancel_round.assert_not_called()
-    cog.bot.scheduler_service.cancel_rounds.assert_not_called()
+    cog.bot.round_jobs.cancel_round.assert_not_called()
+    cog.bot.round_jobs.cancel_rounds.assert_not_called()
     cog.bot.season_service.cancel_division.assert_not_awaited()
 
 

@@ -42,10 +42,9 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
-    FORECAST,
-    FORECAST_CLEAN_UP,
+from leaguebot.weather.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
@@ -54,15 +53,14 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
     drawn_lines_kept,
-    forecasts_named,
 )
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.change_queue import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -70,7 +68,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.posting.notice_handler import send_notice
+from leaguebot.framework.services.posting.notice_handler import send_notice
 from leaguebot.core.services.seasons.season_service import division_on, round_facts_on
 from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.rounds.round_steps import judge_kept, named_now, round_number_now
@@ -82,6 +80,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     test_mode_on,
 )
 from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
+from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP, forecasts_named
 from leaguebot.weather.services import (
     forecast_cleanup_service,
     mystery_notice_service,
@@ -99,7 +98,7 @@ from leaguebot.weather.services.draw_guard import (
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 from leaguebot.weather.services.round_phases import phases_drawn_on, phases_due
 from leaguebot.weather.services.weather_config_service import windows_kept_or_read
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.image.models.forecast_values import ForecastSession, ForecastValues
 from leaguebot.weather.utils.message_builder import (
     PHASE_DESCRIPTIONS,
@@ -112,7 +111,7 @@ from leaguebot.weather.utils.message_builder import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
@@ -397,7 +396,7 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
         except discord.NotFound:
             pass
         except discord.HTTPException as exc:
-            from leaguebot.core.utils.league_server import league_guild
+            from leaguebot.framework.utils.league_server import league_guild
 
             kept: dict[str, Any] = {
                 "phase": phase, "channel_id": int(channel_id), "message_id": message_id,
@@ -985,7 +984,7 @@ def amendment_steps(
         return named_now(seasons, text)
 
     async def weather_on(_ctx: StepContext) -> bool:
-        return await modules.is_weather_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe_forecast_delete(ctx: StepContext) -> str:
         if ctx.step_payload.get("clean_up"):
@@ -1058,7 +1057,7 @@ def amendment_steps(
         race still ahead and the round no mystery round. A job before it can stop and be retried
         after the race, and a forecast for a round already raced is no forecast (owner,
         2026-10-09)."""
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:

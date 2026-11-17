@@ -66,10 +66,13 @@ def _sources() -> tuple[tuple[str, ast.Module], ...]:
 
 
 def _kind(path: str) -> str:
-    """The kind of code a file of the package holds: the folder inside its module's folder
-    (``cogs``, ``services``, ``utils``, ``models`` or ``db``), or ``""`` for the entry point and a
+    """The kind of code a file of the package holds: the folder inside its part's or the
+    framework's folder (``cogs``, ``services``, ``utils``, ``models`` or ``db``), ``utils`` for a
+    file of the `utils` layer, which holds its helpers directly, or ``""`` for the entry point and a
     module's wiring (``<module>/wiring.py``), which keeps the entry point's rules."""
     parts = path.split("/")
+    if parts[0] == "utils" and len(parts) == 2:
+        return "utils"
     return parts[1] if len(parts) > 2 else ""
 
 
@@ -184,7 +187,7 @@ def test_database_code_lives_only_in_services():
 _WRITE = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE)\b", re.IGNORECASE)
 #: What may be awaited on a cursor while a write is open: reading its rows, or closing it.
 _CURSOR_CALLS = frozenset({"fetchone", "fetchall", "fetchmany", "close"})
-#: `leaguebot.core.db.database`'s helper that reads a cursor's one row, which is a cursor call by another name.
+#: `leaguebot.framework.db.database`'s helper that reads a cursor's one row, which is a cursor call by another name.
 _CURSOR_HELPERS = frozenset({"sole_row"})
 
 
@@ -428,7 +431,7 @@ def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
 
 #: Where an `on_error` may be defined: the base classes that send every failure to
 #: `report_failure`.
-ON_ERROR_ALLOWED = frozenset({"core/utils/league_server.py"})
+ON_ERROR_ALLOWED = frozenset({"framework/utils/league_server.py"})
 
 
 def _own_error_handlers() -> Counter[tuple[str, str]]:
@@ -515,7 +518,7 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/posting/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
+    ("framework/services/posting/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
 }
 
 
@@ -527,7 +530,7 @@ def test_no_background_task_is_started_and_dropped():
 
 # ── 6. Nothing reaches past the scheduler service ───────────────────────────────────────────
 
-SCHEDULER_SERVICE = "core/services/scheduler_service.py"
+SCHEDULER_SERVICE = "framework/services/jobs/scheduler.py"
 
 
 def _scheduler_reached_around() -> Counter[tuple[str, str]]:
@@ -550,6 +553,29 @@ def test_nothing_reaches_past_the_scheduler_service():
         _scheduler_reached_around(),
         KNOWN_SCHEDULER_REACHED_AROUND,
     )
+
+
+def _apscheduler_imported() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if path == SCHEDULER_SERVICE:
+            continue
+        names = (
+            [node.module or ""] if isinstance(node, ast.ImportFrom)
+            else [alias.name for alias in node.names] if isinstance(node, ast.Import)
+            else []
+        )
+        found[(path, function)] += sum(
+            1 for name in names if name == "apscheduler" or name.startswith("apscheduler.")
+        )
+    return +found
+
+
+def test_nothing_but_the_scheduler_imports_apscheduler():
+    """Core's round jobs and each module's own jobs arm, list and remove them through the
+    scheduler's generic calls, and import no APScheduler, so the scheduler alone knows the library
+    and its conventions hold for every job (architecture.md, "Timed work and restarts")."""
+    _check("nothing but the scheduler imports APScheduler", _apscheduler_imported(), {})
 
 
 # ── 7. No job is armed with a lateness limit ────────────────────────────────────────────────
@@ -595,7 +621,7 @@ def test_no_job_is_armed_with_a_lateness_limit():
 
 @cache
 def _files_by_module_name() -> dict[str, str]:
-    """``"leaguebot.core.services.posting.retry_service"`` to ``"core/services/posting/retry_service.py"``, for
+    """``"leaguebot.framework.services.posting.retry_service"`` to ``"framework/services/posting/retry_service.py"``, for
     every file of the package."""
     names: dict[str, str] = {}
     for path, _tree in _sources():
@@ -609,7 +635,7 @@ def _is_private(name: str) -> bool:
 
 
 #: The file declaring the bot's attributes, read for the class each one holds.
-LEAGUE_BOT = "core/utils/league_bot.py"
+LEAGUE_BOT = "framework/utils/league_bot.py"
 
 
 def _imported_names(tree: ast.Module, files: dict[str, str]) -> dict[str, str]:
@@ -815,7 +841,7 @@ def test_the_private_names_check_sees_a_private_method_through_the_bot_s_service
 
     assert _private_names_in(sample, "signup/services/sample_service.py") == Counter({
         ("signup/services/sample_service.py",
-         "leaguebot.core.services.scheduler_service.SchedulerService._scheduler"): 5,
+         "leaguebot.framework.services.jobs.scheduler.SchedulerService._scheduler"): 5,
     })
 
 
@@ -853,23 +879,23 @@ def test_the_private_names_check_leaves_an_unresolvable_receiver_alone():
 
 
 def test_the_private_names_check_leaves_a_module_s_own_private_name_alone():
-    """A private name used inside its own module is the module's business: core reaching core's
-    scheduler service's private attribute, through the bot or an annotation, is not counted."""
+    """A private name used inside its own module is the module's business: the framework reaching
+    the framework's scheduler's private attribute, through the bot or an annotation, is not counted."""
     sample = (
-        "from leaguebot.core.services.scheduler_service import SchedulerService\n"
+        "from leaguebot.framework.services.jobs.scheduler import SchedulerService\n"
         "async def handler(bot, scheduler: SchedulerService):\n"
         "    bot.scheduler_service._scheduler.get_job('x')\n"
         "    scheduler._scheduler.get_job('x')\n"
     )
 
-    assert _private_names_in(sample, "core/services/sample_service.py") == Counter()
+    assert _private_names_in(sample, "framework/services/sample_service.py") == Counter()
 
 
 # ── 9. Only the router writes the log channel ───────────────────────────────────────────────
 
 #: Every file that may name the log channel, and why. Only the first posts to it.
 LOG_CHANNEL_NAMED_BY = {
-    "core/services/posting/output_router.py": "the one writer of the log channel",
+    "framework/services/posting/output_router.py": "the one writer of the log channel",
     "core/models/server_config.py": "the setting itself",
     "core/services/settings/config_service.py": "reads and stores the setting",
     "core/cogs/bot_cog.py": "the commands that set it",
@@ -877,6 +903,9 @@ LOG_CHANNEL_NAMED_BY = {
     "core/services/upkeep/pack_service.py": "clears it when the bot is packed",
     "core/services/settings/bot_settings.py": "the setting that sets it",
     "core/services/settings/bot_init_change.py": "the change that first claims it",
+    "framework/models/league_settings.py": (
+        "the framework's protocol names the setting the log writer asks of the league"
+    ),
 }
 
 def _files_naming_the_log_channel() -> set[str]:
@@ -906,21 +935,21 @@ def test_only_the_router_writes_the_log_channel():
 #: the notice handler, the standing-post handler and the bot-owned channel handler (architecture.md,
 #: "Posting to Discord").
 POSTING_ALLOWED = frozenset({
-    "core/services/posting/output_router.py",
-    "core/services/posting/notice_handler.py",
-    "core/services/posting/standing_post_handler.py",
-    "core/services/posting/owned_channel_handler.py",
+    "framework/services/posting/output_router.py",
+    "framework/services/posting/notice_handler.py",
+    "framework/services/posting/standing_post_handler.py",
+    "framework/services/posting/owned_channel_handler.py",
 })
 #: The one file the job check passes over: the router, whose log lines, stop notice and turn-away
 #: stay off the queue. Every other handler's functions carry `posts_in_a_job`.
-JOB_CHECK_ALLOWED = frozenset({"core/services/posting/output_router.py"})
+JOB_CHECK_ALLOWED = frozenset({"framework/services/posting/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
     ("__main__.py", "build.guild_sync"): (
         "the owner's own `!sync` command, which deletes the owner's message and posts a note "
         "that deletes itself: a prefix command's reply"
     ),
-    ("core/services/queue/change_queue.py", "ChangeQueue._update_reply"): (
+    ("framework/services/queue/change_queue.py", "ChangeQueue._update_reply"): (
         "edits the member's own ephemeral acknowledgement, a WebhookMessage the follow-up "
         "returned, which answers a member and posts in no channel"
     ),
@@ -1027,7 +1056,7 @@ def test_the_posting_check_does_not_count_a_review_poster_reply():
 # ── 10a. Every post is made in a job ────────────────────────────────────────────────────────
 
 #: The decorator that marks a function as posting, and refuses to run it outside a job
-#: (`core/utils/in_a_job.py`).
+#: (`framework/utils/in_a_job.py`).
 POSTS_IN_A_JOB = "posts_in_a_job"
 
 #: A post made off the change queue, and why (#439 slice 6b). Every other function that posts
@@ -1191,7 +1220,7 @@ def test_a_not_a_post_entry_is_not_counted_by_the_job_check():
     """The queue's edit of a member's own acknowledgement, named in `NOT_A_POST`, answers the
     member and posts in no channel: undecorated, it is not counted, while the same edit in another
     function of the file is."""
-    path = "core/services/queue/change_queue.py"
+    path = "framework/services/queue/change_queue.py"
     nodes = _sample(
         "class ChangeQueue:\n"
         "    async def _update_reply(self, reply):\n"
@@ -1216,7 +1245,7 @@ def test_every_post_off_the_queue_names_its_reason():
 
 # ── 10b. No service reaches the change queue through the bot ────────────────────────────────
 
-#: The bot's attribute that holds the change queue (`core/utils/league_bot.py`).
+#: The bot's attribute that holds the change queue (`framework/utils/league_bot.py`).
 CHANGE_QUEUE = "change_queue"
 
 
@@ -1298,12 +1327,12 @@ def test_the_queue_check_sees_bot_of_an_interaction():
 
 # ── 10c. No service looks another service up on the bot ─────────────────────────────────────
 
-#: What `LeagueBot` (`core/utils/league_bot.py`) declares that is not a service or a hook the
+#: What `LeagueBot` (`framework/utils/league_bot.py`) declares that is not a service or a hook the
 #: lookup check counts: the bot's own state, and the change queue, which the queue check counts.
 _BOT_STATE_NOT_LOOKED_UP = frozenset({
     "db_path", "running_version", "running_version_date", CHANGE_QUEUE,
 })
-_LEAGUE_BOT = "core/utils/league_bot.py"
+_LEAGUE_BOT = "framework/utils/league_bot.py"
 
 
 @cache
@@ -1403,40 +1432,40 @@ def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
 #: interaction to the league's server, and the bot's handler of an event's error, which the builder
 #: attaches to the bot as its `on_error`. The lookup check does not count them.
 COG_FACING_HELPERS = frozenset({
-    ("core/utils/autocomplete.py", "team_autocomplete"),
+    ("core/utils/team_autocomplete.py", "team_autocomplete"),
     ("core/utils/channel_guard.py", "_tier_guard"),
     ("core/utils/channel_guard.py", "bot_setup_only"),
     ("core/utils/channel_guard.py", "server_owner_only"),
-    ("core/utils/league_server.py", "admits"),
-    ("core/utils/league_server.py", "is_foreign_guild"),
-    ("core/utils/league_server.py", "on_event_error"),
+    ("framework/utils/league_server.py", "admits"),
+    ("framework/utils/league_server.py", "is_foreign_guild"),
+    ("framework/utils/league_server.py", "on_event_error"),
 })
 
 #: The helpers a service calls that may look a core service up on the bot, for good, with the reason.
 LOOKUPS_ALLOWED: dict[tuple[str, str], str] = {
-    ("core/utils/league_server.py", "league_guild"): (
-        "the one route from a job or a service to the league's server, which reads the "
-        "configuration service to find it: handing the configuration service instead to every "
-        "service that posts would add a parameter to each, for no rule gained (architecture.md, "
-        "\"How the code is laid out\")"
+    ("framework/utils/league_server.py", "league_guild"): (
+        "the one route from a job or a service to the league's server, which asks the "
+        "framework's settings protocol, `league_settings`, to find it: handing the settings "
+        "instead to every service that posts would add a parameter to each, for no rule gained "
+        "(architecture.md, \"How the code is laid out\")"
     ),
-    ("core/utils/interaction_errors.py", "report_failure"): (
+    ("framework/utils/interaction_errors.py", "report_failure"): (
         "the one failure path, which a service's view or a change's step calls with the "
         "interaction and which writes the failure's line through the bot's log writer: handing "
         "the router to each caller would add a parameter to each, for no rule gained "
         "(architecture.md, \"Errors and failures\")"
     ),
-    ("core/utils/log_lines.py", "record_refusal"): (
+    ("framework/utils/log_lines.py", "record_refusal"): (
         "called only by `refuse`, whose reason it shares: it writes the one line of a refusal "
         "through the bot's log writer (architecture.md, \"Errors and failures\")"
     ),
-    ("core/utils/log_lines.py", "refuse"): (
+    ("framework/utils/log_lines.py", "refuse"): (
         "the one way a command, button or form refuses, which a service's view or a change's "
         "step calls and which writes the refusal's line through the bot's log writer: handing the "
         "router to each caller would add a parameter to each, for no rule gained "
         "(architecture.md, \"Errors and failures\")"
     ),
-    ("core/utils/log_lines.py", "record_abandoned"): (
+    ("framework/utils/log_lines.py", "record_abandoned"): (
         "records a confirmation cancelled or left to lapse through the bot's log writer, for a "
         "service's view or a scheduled lapse, which have no router to hand it (architecture.md, "
         "\"Errors and failures\")"
@@ -1579,7 +1608,7 @@ def test_the_lookup_check_does_not_count_a_cog_facing_helper_or_league_guild():
     service = "core/services/sample_service.py"
 
     for path, source in (
-        ("core/utils/channel_guard.py", guards), ("core/utils/league_server.py", server),
+        ("core/utils/channel_guard.py", guards), ("framework/utils/league_server.py", server),
     ):
         assert _service_lookups_among(_sample(source, path)) == Counter({(path, "elsewhere"): 1})
     assert _service_lookups_among(_sample(guards, service)) == Counter({
@@ -1694,8 +1723,8 @@ TABLE_OWNER: dict[str, str] = {
     "default_teams": "core", "team_role_configs": "core", "driver_profiles": "core",
     "driver_accounts": "core", "driver_history_entries": "core",
     "driver_season_assignments": "core", "driver_division_memberships": "core",
-    "audit_entries": "core", "pending_messages": "core", "season_review_prompts": "core",
-    "queued_changes": "core", "queued_change_steps": "core",
+    "audit_entries": "framework", "pending_messages": "framework", "season_review_prompts": "core",
+    "queued_changes": "framework", "queued_change_steps": "framework",
     # results
     "session_results": "results", "qualifying_session_results": "results",
     "race_session_results": "results", "driver_standings_snapshots": "results",
@@ -1927,8 +1956,9 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
     return +found
 
 
-KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-}
+#: Today's writes to a table outside its owner. None is left: core writes the framework's audit log
+#: through the framework's audit writers.
+KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_what_was_read_by_hand_is_still_what_it_was():
@@ -2031,16 +2061,16 @@ _SAVING_CALLS = frozenset({"commit", "executescript"})
 #: Where a save outside a queued change is allowed for good, and why. A function of ``"*"``
 #: allows the whole file.
 SAVES_ALLOWED = {
-    ("core/db/database.py", "run_migrations"): "the migrations, which build the schema",
-    ("core/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
-    ("core/services/queue/change_queue.py", "*"): "the queue's own records of the changes it carries out",
-    ("core/services/queue/queue_records.py", "empty_queue_in"):
+    ("framework/db/database.py", "run_migrations"): "the migrations, which build the schema",
+    ("framework/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
+    ("framework/services/queue/change_queue.py", "*"): "the queue's own records of the changes it carries out",
+    ("framework/services/queue/queue_records.py", "empty_queue_in"):
         "the queue's own records, emptied in a restored database before it is put in place",
-    ("core/services/queue/queue_records.py", "carry_job_numbering"):
+    ("framework/services/queue/queue_records.py", "carry_job_numbering"):
         "the queue's own records, numbering a database put in place after the jobs already named",
-    ("core/services/posting/retry_service.py", "enqueue"): "the retry queue for log lines",
-    ("core/services/posting/retry_service.py", "mark_delivered"): "the retry queue for log lines",
-    ("core/services/posting/retry_service.py", "mark_failed"): "the retry queue for log lines",
+    ("framework/services/posting/retry_service.py", "enqueue"): "the retry queue for log lines",
+    ("framework/services/posting/retry_service.py", "mark_delivered"): "the retry queue for log lines",
+    ("framework/services/posting/retry_service.py", "mark_failed"): "the retry queue for log lines",
     ("core/services/upkeep/backup_service.py", "_write_empty_database"):
         "writes the scheduler's empty file, not the league's",
     ("core/services/upkeep/pack_service.py", "pack"):
@@ -2121,9 +2151,9 @@ def test_the_write_check_counts_commits_and_scripts_but_not_a_handed_connection(
         ("core/services/sample_service.py", "build"): 1,
         ("core/services/sample_service.py", "enqueue"): 1,
     })
-    assert _saves_among(nodes("core/services/posting/retry_service.py")) == Counter({
-        ("core/services/posting/retry_service.py", "save"): 1,
-        ("core/services/posting/retry_service.py", "build"): 1,
+    assert _saves_among(nodes("framework/services/posting/retry_service.py")) == Counter({
+        ("framework/services/posting/retry_service.py", "save"): 1,
+        ("framework/services/posting/retry_service.py", "build"): 1,
     })
 
 
@@ -2167,7 +2197,7 @@ CONNECTIONS_OF_THEIR_OWN = {
         "writes the scheduler's empty file on a connection of its own",
     ("core/services/upkeep/factory_reset_service.py", "_self_contained"):
         "takes a backup copy out of WAL on a connection of its own",
-    ("core/services/scheduler_service.py", "prepare_jobstore"):
+    ("framework/services/jobs/scheduler.py", "prepare_jobstore"):
         "sets the scheduler's job store to WAL on a connection of its own",
 }
 
@@ -2234,7 +2264,7 @@ def test_the_connection_state_check_sees_each_setting(line):
     assert _connection_settings_among(_sample(source)) == Counter(
         {("core/services/sample_service.py", "handler"): 1}
     )
-    assert _connection_settings_among(_sample(source, "core/db/database.py")) == Counter()
+    assert _connection_settings_among(_sample(source, "framework/db/database.py")) == Counter()
 
 
 def test_every_function_setting_up_a_connection_of_its_own_opens_one():
@@ -2329,7 +2359,7 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/upkeep/factory_reset_service.py", "gather_targets"): (
         1,
         "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, and core's "
-        "`season_review_prompts` and `pending_messages`",
+        "`season_review_prompts`",
     ),
     ("results/services/points/amendment_mode_service.py", "_staged_rows_on"):
         (1, "results' own live and staged points tables"),
@@ -2388,11 +2418,10 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
     return _reads_outside_the_owner_among(_nodes())
 
 
-#: Today's reads of a table outside its owner, under the design pass that removes each: a module's
-#: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
-#: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
-KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-}
+#: Today's reads of a table outside its owner. None is left: core reads the framework's queue tables
+#: through the framework's queue records. A table whose name is spliced into the statement at run
+#: time counts here, unless its function was read by hand (`SPLICED_READS_READ_BY_HAND`).
+KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_each_table_is_read_by_the_module_that_owns_it():
@@ -2571,11 +2600,20 @@ SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
 )
 
 
+#: The tables of another owner a spliced read's tuple names, until its owner is asked for them.
+#: None is left: the factory reset asks the framework for its undelivered log lines.
+KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER: dict[tuple[str, str, str], str] = {}
+
+
 def test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s():
     """Each tuple a hand-read spliced read iterates (`SPLICED_SOURCES`) names tables, and every
     table it names is owned by the module of the file it is declared in: a module's table put back
     into one, as the factory reset's channels once were, fails here naming the table and the tuple,
-    though the count of spliced statements is unchanged."""
+    though the count of spliced statements is unchanged. A table listed as another owner's names a
+    tuple the check reads, so a line left behind when its tuple goes fails too."""
+    assert {(path, name) for path, name, _table in KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER} <= set(
+        SPLICED_SOURCES
+    ), "a line of KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER names a tuple the check no longer reads"
     trees = dict(_sources())
     for path, name in SPLICED_SOURCES:
         values = [
@@ -2593,7 +2631,10 @@ def test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s():
         }
         assert tables, f"{name} in {path} names no table"
         module = _module_of(path)
-        assert {table: TABLE_OWNER[table] for table in tables if TABLE_OWNER[table] != module} == {}, (
+        foreign = {table for table in tables if TABLE_OWNER[table] != module}
+        listed = {table for (p, n, table) in KNOWN_SPLICED_TABLES_OF_ANOTHER_OWNER if (p, n) == (path, name)}
+        assert listed <= foreign, f"{name} in {path} no longer names {sorted(listed - foreign)}: delete the line"
+        assert {table: TABLE_OWNER[table] for table in foreign - listed} == {}, (
             f"{name} in {path} names another module's table"
         )
 
@@ -2657,27 +2698,36 @@ def test_a_listed_read_that_is_gone_fails_the_read_check():
 # ── 15. Core reads no module's service on the bot ───────────────────────────────────────────
 
 
+#: Core and the two layers below the modules (architecture.md, "How the code is laid out"): none of
+#: them reaches a module but through the hooks it subscribes, so none reads a module's service on
+#: the bot.
+BELOW_THE_MODULES = frozenset({"core", "framework", "utils"})
+
+
 @cache
 def _module_attributes_of_the_bot() -> frozenset[str]:
     """The attributes `LeagueBot` declares with a type from a module's package: a module's service,
-    or the module's share of a hook. What core's own services are typed with is not among them."""
+    or the module's share of a hook. What core's own services and the framework's are typed with is
+    not among them."""
     return frozenset(
         name
         for name, (dotted, _cls) in _bot_attributes(_sources(), _files_by_module_name()).items()
-        if dotted.split(".")[1] != "core"
+        if dotted.split(".")[1] not in BELOW_THE_MODULES
     )
 
 
-def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[tuple[str, str]]:
+def _module_lookups_in_core_among(
+    nodes, attributes: frozenset[str], parts: frozenset[str] = BELOW_THE_MODULES
+) -> Counter[tuple[str, str]]:
     """The reads among *nodes*, each ``(file, function, node)``, of one of *attributes* on the bot
     from a file of core (its cogs, services and utils; the entry point builds the bot and is not
-    core), counted by file and function. The bot is reached as `_reaches_the_bot` reads it, or
+    core) or of a layer below the modules, or of *parts* where they are named, counted by file and function. The bot is reached as `_reaches_the_bot` reads it, or
     through a local name bound to it (`_locals_bound_to_the_bot`), as the lookup check follows it."""
     nodes = list(nodes)
     bound = _locals_bound_to_the_bot(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
-        if _module_of(path) != "core":
+        if _module_of(path) not in parts:
             continue
         name = _attribute_read_on_the_bot(node)
         if name is None and isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
@@ -2699,7 +2749,8 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
 
 def test_core_reads_no_module_s_service_on_the_bot():
     """Core reaches a module only through the hooks the module subscribes (architecture.md, "Core
-    reaches a module only through hooks"), so no file of core reads on the bot an attribute that
+    reaches a module only through hooks"), and the framework and `utils` reach one no more than core
+    does, so no file of theirs or of core reads on the bot an attribute that
     `LeagueBot` types from a module's package: ``bot.X``, ``self.bot.X``, ``interaction.client.X``,
     ``bot_of(…).X``, ``getattr(bot, "X")``, or either through a local bound to the bot. A breach is
     keyed by the reading function, and listed with the issue that will fix it."""
@@ -2708,6 +2759,60 @@ def test_core_reads_no_module_s_service_on_the_bot():
         _module_lookups_in_core_among(_nodes(), _module_attributes_of_the_bot()),
         KNOWN_MODULE_LOOKUPS_IN_CORE,
     )
+
+
+#: The two layers below core (architecture.md, "How the code is laid out").
+BELOW_CORE = frozenset({"framework", "utils"})
+
+
+#: The hooks that are the framework's own moments rather than core's: the bot starting.
+FRAMEWORK_HOOKS = frozenset({"starting"})
+
+
+@cache
+def _core_attributes_of_the_bot() -> frozenset[str]:
+    """The attributes `LeagueBot` declares with a type from core's package, core's services, and
+    every hook it declares but the framework's own moments (`FRAMEWORK_HOOKS`): the hooks are core's
+    moments, typed by the framework's hook types, which the framework and `utils` never read on the
+    bot."""
+    return frozenset(
+        name
+        for name, (dotted, _cls) in _bot_attributes(_sources(), _files_by_module_name()).items()
+        if dotted.split(".")[1] == "core"
+        or (dotted == "leaguebot.framework.utils.hooks" and name not in FRAMEWORK_HOOKS)
+    )
+
+
+def test_the_framework_reads_no_service_of_core_s_on_the_bot():
+    """The framework asks and core answers (architecture.md, "How the code is laid out"): what the
+    machinery needs of the league it learns through a protocol of its own, which core's settings
+    service fulfils and the builder hands over, never by reading one of core's services on the bot,
+    which no import contract can see. Nor does `utils`, which knows nothing of the bot. Read as the
+    module check reads a lookup in core (`_module_lookups_in_core_among`)."""
+    _check(
+        "the framework reads no service of core's on the bot",
+        _module_lookups_in_core_among(_nodes(), _core_attributes_of_the_bot(), BELOW_CORE),
+        {},
+    )
+
+
+def test_a_framework_read_of_a_core_service_on_the_bot_is_counted():
+    """In a file of the framework or of `utils`, a read of one of core's services on the bot is
+    counted; in a file of core, it is core's own and is not; and the attributes held to it are
+    core's, a module's services aside."""
+    sample = "async def handler(bot):\n    bot.season_service.get()\n    bot.attendance_service\n"
+    attributes = frozenset({"season_service"})
+
+    for path in ("framework/services/queue/sample_service.py", "utils/sample_helper.py"):
+        assert _module_lookups_in_core_among(_sample(sample, path), attributes, BELOW_CORE) == Counter(
+            {(path, "handler"): 1}
+        )
+    path = "core/services/sample_service.py"
+    assert _module_lookups_in_core_among(_sample(sample, path), attributes, BELOW_CORE) == Counter()
+    assert "season_service" in _core_attributes_of_the_bot()
+    assert "season_deleted" in _core_attributes_of_the_bot()
+    assert "starting" not in _core_attributes_of_the_bot()
+    assert "attendance_service" not in _core_attributes_of_the_bot()
 
 
 def test_the_module_attributes_of_the_bot_are_the_ones_typed_from_a_module():
@@ -2734,11 +2839,18 @@ _MODULE_LOOKUP_SAMPLE = (
 
 def test_the_module_lookup_check_counts_each_way_of_reading_a_module_s_service_in_core():
     """In a file of core, each way of reading a module's attribute on the bot is counted, a local
-    bound to the bot included, and a core service is not; a module's own file and the entry point
+    bound to the bot included, and a core service is not; so is it in a file of the framework or of
+    `utils`, which reach a module no more than core does; a module's own file and the entry point
     are not core."""
     attributes = frozenset({"wizard_service", "attendance_service", "image_render_service"})
 
-    for path in ("core/cogs/sample_cog.py", "core/services/sample_service.py", "core/utils/sample_helper.py"):
+    for path in (
+        "core/cogs/sample_cog.py",
+        "core/services/sample_service.py",
+        "core/utils/sample_helper.py",
+        "framework/services/queue/sample_service.py",
+        "utils/sample_helper.py",
+    ):
         assert _module_lookups_in_core_among(_sample(_MODULE_LOOKUP_SAMPLE, path), attributes) == Counter(
             {(path, "handler"): 6}
         )
@@ -2770,7 +2882,7 @@ _SQL_CLOCK = re.compile(
 
 #: The functions allowed for good to read the wall clock in a service, and why.
 WALL_CLOCK_ALLOWED = {
-    ("core/services/queue/change_queue.py", "ChangeQueue.__init__"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue.__init__"):
         "the change queue's own default clock, `ChangeQueue.now`, which hands every service its time",
 }
 
@@ -2893,11 +3005,11 @@ def test_the_wall_clock_check_sees_each_read_in_a_services_file_but_not_elsewher
 
     assert _wall_clock_reads_among(_sample(source, path)) == Counter({(path, "handler"): 1})
     assert _wall_clock_reads_among(_sample(source, "weather/cogs/sample_cog.py")) == Counter()
-    assert _wall_clock_reads_among(_sample(source, "core/services/queue/change_queue.py")) == Counter(
-        {("core/services/queue/change_queue.py", "handler"): 1}
+    assert _wall_clock_reads_among(_sample(source, "framework/services/queue/change_queue.py")) == Counter(
+        {("framework/services/queue/change_queue.py", "handler"): 1}
     )
     named = f"class ChangeQueue:\n    def __init__(self):\n        {line}\n"
-    assert _wall_clock_reads_among(_sample(named, "core/services/queue/change_queue.py")) == Counter()
+    assert _wall_clock_reads_among(_sample(named, "framework/services/queue/change_queue.py")) == Counter()
 
 
 def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
@@ -2922,78 +3034,78 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
 #: catch-all error handler"). A handler that re-raises, that calls `report_failure`, or that sits
 #: directly in the body of a loop needs no entry.
 CATCH_ALLS_ALLOWED = {
-    ("core/services/queue/change_queue.py", "ChangeQueue._work_lane"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._work_lane"):
         "the lane's worker, a failure path: the error goes to the host's log and the worker pauses",
-    ("core/services/queue/change_queue.py", "ChangeQueue._work"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._work"):
         "the dispatcher, a failure path: a fault in starting the lanes goes to the host's log",
-    ("core/services/queue/change_queue.py", "ChangeQueue._run_step"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._run_step"):
         "the queue's catch of a step that raises, a failure path: it stops the lane or ends the job",
-    ("core/services/queue/change_queue.py", "ChangeQueue._start"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._start"):
         "the queue's catch of a check that raises, a failure path: it stops the lane or ends the "
         "change",
-    ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
+    ("framework/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
         "the autocompletes' failure path: no choices, and the error to the host's log",
-    ("core/services/queue/change_queue.py", "ChangeQueue._acknowledge"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._acknowledge"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._acknowledge_saved"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._acknowledge_saved"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._finish"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._finish"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._name_job"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._name_job"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._post_notice"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._post_notice"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._tell"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._tell"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._tell_origin"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._tell_origin"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._update_reply"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._update_reply"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/queue/change_queue.py", "ChangeQueue._end_on_check_fault"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._end_on_check_fault"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._refuse"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._refuse"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._step_failed"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._step_failed"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._discard_follow_ons"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._discard_follow_ons"):
         "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
-    ("core/services/queue/change_queue.py", "ChangeQueue._undiscardable_refusal"):
+    ("framework/services/queue/change_queue.py", "ChangeQueue._undiscardable_refusal"):
         "a stated exception: the Discard is refused all the same, whatever the reader does",
     ("results/services/round_amendment/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
     ("image/utils/svg_document.py", "_contained"):
         "place 4, around work run in a worker thread: the error is handed back as plain text and "
         "raised again on the loop, so that nothing parsed leaves the thread with it",
-    ("core/utils/interaction_errors.py", "report_failure"):
+    ("framework/utils/interaction_errors.py", "report_failure"):
         "place 3, around reporting a failure, where the report itself might fail",
-    ("core/utils/league_server.py", "on_event_error"):
+    ("framework/utils/league_server.py", "on_event_error"):
         "place 3, around reporting a Discord event's failure, where the report itself might fail",
-    ("core/utils/log_lines.py", "refuse"):
+    ("framework/utils/log_lines.py", "refuse"):
         "place 3, around telling the member of a refusal, which is still recorded",
-    ("core/utils/log_lines.py", "record_abandoned"):
+    ("framework/utils/log_lines.py", "record_abandoned"):
         "place 3, around recording that a confirmation ended",
-    ("core/services/posting/output_router.py", "OutputRouter._tell"):
+    ("framework/services/posting/output_router.py", "OutputRouter._tell"):
         "place 3, around telling the member that the log channel failed, the router's own containment",
-    ("core/services/posting/output_router.py", "OutputRouter._enqueue_if_configured"):
+    ("framework/services/posting/output_router.py", "OutputRouter._enqueue_if_configured"):
         "place 3, around keeping for retry a log line that could not be posted, the router's own "
         "containment",
-    ("core/services/posting/output_router.py", "OutputRouter.strip_view"):
+    ("framework/services/posting/output_router.py", "OutputRouter.strip_view"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/utils/log_lines.py", "record_refusal"):
+    ("framework/utils/log_lines.py", "record_refusal"):
         "place 3, around recording a refusal already answered",
-    ("core/utils/log_lines.py", "name_of_member"):
+    ("framework/utils/log_lines.py", "name_of_member"):
         "place 3, around naming a member in a line: one who cannot be looked up is named by mention "
         "alone",
-    ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
+    ("framework/services/jobs/scheduler.py", "SchedulerService._remove_job"):
         "a stated exception: every cancel is a clean-up, so a job that will not go is logged and "
         "left",
     ("results/services/points/points_amendment_faults.py", "approval_faults"):
@@ -3153,10 +3265,10 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
 #: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
-    ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
-    ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
+    ("framework/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
+    ("framework/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
+    ("framework/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
+    ("framework/services/jobs/scheduler.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("image/services/portraits/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
 }
 
@@ -3271,7 +3383,7 @@ def test_the_catch_all_check_passes_a_handler_in_each_of_the_places_its_shape_sh
 
 def test_the_catch_all_check_passes_a_function_named_for_good():
     """A function in `CATCH_ALLS_ALLOWED` may hold a catch-all that is in no place by its shape."""
-    path, function = "core/utils/interaction_errors.py", "report_failure"
+    path, function = "framework/utils/interaction_errors.py", "report_failure"
     source = f"async def {function}():\n    try:\n        pass\n    except Exception:\n        log.error('x')\n"
 
     assert _catch_alls_outside_the_places_among(_sample(source, path)) == Counter()
@@ -3320,7 +3432,7 @@ def _root_of_the_subscriber(expr: ast.expr) -> tuple[str, str] | None:
 
 def _sign_ups_among(nodes, bot: dict[str, str]) -> dict[str, set[str]]:
     """Each hook signed up among *nodes* of the entry point, by how its subscription reads it
-    (``bot.round_windows_read``), to the modules whose functions it signs up. A subscriber's module
+    (``bot.round_leads_read``), to the modules whose functions it signs up. A subscriber's module
     is the package it is imported from, the module of the bot's attribute it is read on (*bot*,
     attribute to module), or, for a loop's name, the modules of everything the loop runs over; a
     subscriber of core's, or one no module can be told for, names none."""
@@ -3346,7 +3458,7 @@ def _sign_ups_among(nodes, bot: dict[str, str]) -> dict[str, set[str]]:
             return set()
         how, name = root
         if how == "bot":
-            return {bot[name]} - {"core"} if name in bot else set()
+            return {bot[name]} - BELOW_THE_MODULES if name in bot else set()
         loop_name, over = looped.get(id(call), ("", []))
         if name == loop_name:
             return {module for each in over for module in modules_of(each, function, call)}
@@ -3356,7 +3468,7 @@ def _sign_ups_among(nodes, bot: dict[str, str]) -> dict[str, set[str]]:
             if scope in ("<module>", function) or function.startswith(f"{scope}.")
             for imported_name, package in names.items()
         }.get(name)
-        return {module} - {"core"} if module else set()
+        return {module} - BELOW_THE_MODULES if module else set()
 
     joined: dict[str, set[str]] = {}
     for _path, function, node in nodes:
@@ -3388,7 +3500,8 @@ def test_the_entry_point_signs_up_no_hook_one_module_joins():
 def test_the_sign_up_check_tells_the_module_of_each_subscriber():
     """The check tells a subscriber's module through a `partial`, an import made in the function
     or at the top of the file, a loop over modules, and a service read on the bot; a hook several
-    modules join names them all, and a subscriber of core's names none. The starting hook, core's
+    modules join names them all, and a subscriber of core's, of the framework's or of `utils`'
+    names none. The starting hook, core's
     step signed up by name and a module's wiring function bound to the bot by `module=`, names the
     modules whose wirings it binds, by package, not by the switch key it is signed up under."""
     source = (
@@ -3408,16 +3521,32 @@ def test_the_sign_up_check_tells_the_module_of_each_subscriber():
         "    for steps in (results_purge,):\n"
         "        bot.several.subscribe(steps.pending)\n"
         "    bot.core_only.subscribe(season_service.read)\n"
+        "    bot.with_the_queue.subscribe(bot.change_queue.wake)\n"
+        "    bot.with_the_queue.subscribe(results_purge.deleted_on)\n"
     )
-    bot = {"signup_module_service": "signup", "db_path": "core"}
+    bot = {"signup_module_service": "signup", "db_path": "core", "change_queue": "framework"}
 
     assert _sign_ups_among(_sample(source, ENTRY_POINT), bot) == {
         "bot.one": {"results"},
         "bot.two": {"signup"},
         "bot.several": {"weather", "results"},
         "bot.core_only": set(),
+        "bot.with_the_queue": {"results"},
         "bot.starting": {"results", "image"},
     }
+
+
+def test_a_helper_of_the_utils_layer_is_held_to_a_helper_s_rules():
+    """A file of the `utils` layer is a helper, though it sits directly in its layer's folder: a
+    lookup of a service or of the queue on the bot is counted in it, as in any helper, which the
+    import contracts cannot see."""
+    path = "utils/time_parsing.py"
+
+    assert _kind(path) == "utils"
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) != Counter()
+    assert _queue_reached_through_the_bot_among(
+        _sample("async def handler(bot):\n    await bot.change_queue.ask('kind', {})\n", path)
+    ) != Counter()
 
 
 @pytest.mark.parametrize(
@@ -3433,3 +3562,128 @@ def test_a_module_s_wiring_keeps_the_entry_point_s_rules(path):
         _sample("async def handler(bot):\n    await bot.change_queue.ask('kind', {})\n", path)
     ) == Counter()
     assert _wall_clock_reads_among(_sample("def handler():\n    datetime.now()\n", path)) == Counter()
+
+
+# ── 19. Core names no kind of a round's timer ───────────────────────────────────────────────
+
+#: A kind of a round's timer that only a module arms, in any string of core's: weather's phases
+#: (`weather_p1` to `weather_p3`) and attendance's check-in timers (`rsvp_notice` and the rest).
+_MODULE_TIMER_KIND = re.compile(r"(?<![A-Za-z0-9_])(?:weather_p|rsvp_)")
+
+#: The kinds of a round's timer that are ordinary words besides, weather's forecast clean-up and
+#: results' submission: counted only in a timer's place (`_in_a_timer_s_place`).
+_WORD_TIMER_KINDS = frozenset({"cleanup", "results"})
+
+#: The keyword arguments that name a timer's kind: the kind a timer is armed under, and the kinds
+#: a round's cancellation is limited to.
+_KIND_ARGUMENTS = frozenset({"kind", "kinds", "only"})
+
+def _name_of(node: ast.AST) -> str:
+    """The name *node* reads, lower-cased: ``x`` for a name, ``y`` for ``a.y``, a call's name for a
+    call (`_call_name`), or ``""``."""
+    if isinstance(node, ast.Name):
+        return node.id.lower()
+    if isinstance(node, ast.Attribute):
+        return node.attr.lower()
+    if isinstance(node, ast.Call):
+        return _call_name(node).lower()
+    return ""
+
+
+def _in_a_timer_s_place(constant: ast.Constant, parents: dict[ast.AST, ast.AST]) -> bool:
+    """Whether *constant*, one of `_WORD_TIMER_KINDS`, stands where a timer's kind does: whole in a
+    job's id (``"results_s7_d1_r3_id21"``) or at its head (``f"results{suffix}"``); in a keyword
+    argument naming a kind (`_KIND_ARGUMENTS`); compared with something named for a kind
+    (``kind == "results"``); in what is bound to a name of kinds or phases (``PHASE_KINDS = {4:
+    "results"}``); or as the key of something named for moments (``moments["results"]``). A
+    module's name handed to its switch (``is_enabled("results")``) is none of these."""
+    value = constant.value
+    if value.startswith(("results_s", "cleanup_s")):
+        return True
+    parent = parents.get(constant)
+    if (isinstance(parent, ast.JoinedStr) and parent.values[0] is constant
+            and len(parent.values) > 1 and isinstance(parent.values[1], ast.FormattedValue)):
+        return True
+    node: ast.AST = constant
+    while node in parents and not isinstance(node, ast.stmt):
+        child, node = node, parents[node]
+        if isinstance(node, ast.keyword) and node.arg in _KIND_ARGUMENTS:
+            return True
+        if isinstance(node, ast.Compare) and any(
+            "kind" in _name_of(side) for side in (node.left, *node.comparators)
+        ):
+            return True
+        if isinstance(node, ast.Subscript) and child is node.slice and "moment" in _name_of(node.value):
+            return True
+    if isinstance(node, (ast.Assign, ast.AnnAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return any(word in _name_of(target) for target in targets for word in ("kind", "phase"))
+    return False
+
+
+def _timer_kinds_in_core_among(sources) -> Counter[tuple[str, str]]:
+    """The strings in core naming a kind of a round's timer, among *sources*, each ``(file, parsed
+    tree)``, counted by file and function: any naming one of weather's or attendance's
+    (`_MODULE_TIMER_KIND`), and `cleanup` or `results` where it stands in a timer's place
+    (`_in_a_timer_s_place`). A docstring is prose and not counted."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, tree in sources:
+        if _module_of(path) != "core":
+            continue
+        owners = _owners(tree)
+        docstrings = _docstrings(tree)
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) \
+                    or id(node) in docstrings:
+                continue
+            if _MODULE_TIMER_KIND.search(node.value) or (
+                (node.value in _WORD_TIMER_KINDS or node.value.startswith(("results_s", "cleanup_s")))
+                and _in_a_timer_s_place(node, parents)
+            ):
+                found[(path, owners.get(node, "<module>"))] += 1
+    return found
+
+
+def test_core_names_no_kind_of_a_round_s_timer():
+    """Each module hands core the leads it wants set for a round, each with the kind its timer is
+    stored under, and core arms them under its own naming (architecture.md, "Timed work and
+    restarts"), so no file of core names a kind of a round's timer: neither weather's phases and
+    clean-up nor attendance's check-in timers nor results' submission, whether to arm one, to cancel
+    by it, to place its moment or to map test mode's phases."""
+    _check("core names no kind of a round's timer", _timer_kinds_in_core_among(_sources()), {})
+
+
+@pytest.mark.parametrize(
+    ("source", "path", "counted"),
+    [
+        pytest.param("def arm(timers):\n    timers.arm_at(job_id='x', kind='results')\n",
+                     "core/services/rounds/round_jobs.py", 1, id="a kind armed"),
+        pytest.param("def job_id(suffix):\n    return f'cleanup{suffix}'\n",
+                     "core/services/rounds/round_jobs.py", 1, id="the head of a job's id"),
+        pytest.param("def unarm(jobs, rid):\n    jobs.cancel_round(rid, only=frozenset({'results'}))\n",
+                     "core/services/rounds/round_amend_change.py", 1, id="a cancellation by kind"),
+        pytest.param("def due(job):\n    return job.kind == 'cleanup'\n",
+                     "core/services/test_mode/test_mode_service.py", 1, id="a kind compared"),
+        pytest.param("PHASE_KINDS = {0: 'weather_p1', 4: 'results'}\n",
+                     "core/services/test_mode/test_mode_service.py", 2, id="a map of phases"),
+        pytest.param("def at(moments):\n    return moments['results']\n",
+                     "core/services/rounds/round_moments.py", 1, id="a moment by kind"),
+        pytest.param("def phase(n):\n    return f'weather_p{n}', 'rsvp_notice'\n",
+                     "core/services/rounds/round_jobs.py", 2, id="a module's kind anywhere"),
+        pytest.param("async def on(modules, db):\n    return await modules.is_enabled_on(db, 'results')\n",
+                     "core/services/rounds/round_jobs.py", 0, id="a module's switch by name"),
+        pytest.param("def arm():\n    '''Arms weather_p1 and the cleanup.'''\n",
+                     "core/services/rounds/round_jobs.py", 0, id="a docstring"),
+        pytest.param("def arm(timers):\n    timers.arm_at(job_id='x', kind='weather_p1')\n",
+                     "weather/services/forecast_leads.py", 0, id="a module's own file"),
+    ],
+)
+def test_the_timer_kind_check_counts_a_kind_in_a_timer_s_place_and_leaves_a_module_s_name(
+    source, path, counted
+):
+    """In a file of core, a string naming a kind of a round's timer is counted where it stands as
+    one: armed, at the head of a job's id, cancelled by, compared with a kind, mapped from a phase,
+    or the key of a moment; weather's and attendance's kinds wherever they stand. `results` handed
+    to a module's switch, a docstring, and a module's own file are not counted."""
+    assert sum(_timer_kinds_in_core_among([(path, ast.parse(source))]).values()) == counted

@@ -47,17 +47,18 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.drivers.driver_service import drivers_in_states, write_transition
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -74,7 +75,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     live_season_stage,
 )
 from leaguebot.core.utils.channel_guard import league_role_faults
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
     BUTTON_KEPT,
@@ -98,9 +99,9 @@ from leaguebot.signup.services.information_post import stamp as _stamp
 from leaguebot.signup.services.window_close import CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 OPEN = "signup.open"
@@ -170,7 +171,7 @@ def window_open_change(
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_signup_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         server_cfg = await config.get_server_config()
         if server_cfg is not None and server_cfg.test_mode_active:
@@ -534,7 +535,7 @@ def season_end_close_step(
         return await returning.run(db, ctx)
 
     async def window_stands(_ctx: StepContext) -> bool:
-        if not await modules().is_signup_enabled():
+        if not await modules().is_enabled(SWITCH_KEY):
             return False
         config = await signup_module_service().get_config()
         return config is not None and config.signups_open

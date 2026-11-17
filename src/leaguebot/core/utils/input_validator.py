@@ -26,7 +26,7 @@ and applies them in one of two modes:
   nobody to refuse.
 
 **Formats** are the values an input parses rather than publishes, each defined once below. A time
-of day and a colour keep homes of their own: ``leaguebot.core.utils.time_parsing`` and
+of day and a colour keep homes of their own: ``leaguebot.utils.time_parsing`` and
 ``leaguebot.image.utils.colour``.
 """
 from __future__ import annotations
@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from leaguebot.core.utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.utils.messages import ROLE_MENTION, USER_MENTION
 
 
 class Rule(Enum):
@@ -311,11 +312,6 @@ DRAWN_NAME = InputValidator(_ALL, Mode.STRIP)
 
 
 # ── Formats: people and roles ─────────────────────────────────────────────
-
-#: A user mention, ``<@123>`` or ``<@!123>``, and a role mention, ``<@&123>``, as pattern text
-#: for code that finds them inside a longer text. The id is the one group each captures.
-USER_MENTION = r"<@!?(\d+)>"
-ROLE_MENTION = r"<@&(\d+)>"
 
 _USER_MENTION_RE = re.compile(rf"^{USER_MENTION}$")
 _ROLE_MENTION_RE = re.compile(rf"^{ROLE_MENTION}$")

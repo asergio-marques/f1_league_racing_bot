@@ -44,13 +44,14 @@ suite runs one session at a time.
 Every decision, the plan, every issue filed and every push goes through the user. **Do not
 enter plan mode while the workflow runs.**
 
-The yardstick is `docs/design/architecture.md`, then `docs/design/core.md` for every module
-but core, and then [`python-practices.md`](../architecture-review/python-practices.md) for what
-those leave open. Once the architecture has decided something, its decision wins over the
-practice file. The architecture describes the shape the code is to have, so the pass's work is
-to bring the module to it, section by section, and its design file describes the module in the
-architecture's terms: its changes as the queue carries them, its posts by kind, its timed
-events and start-up work, its hooks and its command group.
+The yardstick is `docs/design/architecture.md`, then `docs/design/framework.md` for the machinery
+every module runs on, `docs/design/core.md` for every module but core, and then
+[`python-practices.md`](../architecture-review/python-practices.md) for what those leave open. Once
+the architecture has decided something, its decision wins over the practice file. The architecture
+describes the shape the code is to have, so the pass's work is to bring the module to it, section by
+section, and its design file describes the module in the architecture's terms: its changes as the
+queue carries them, its posts by kind, its timed events and start-up work, its hooks and its command
+group.
 
 ## Phase 0 — Resolve, and check the gates
 
@@ -85,6 +86,7 @@ gh issue develop --list <N>
   across every module. A divergence one of them carries is that issue's: the pass names it,
   says what this module adds to it, and files nothing new for it. Where the issue has already
   landed, the module's part of it is this pass's to finish.
+- **`framework.md`**, for every module, core included: the machinery's design.
 - **`core.md`**, for every module but core.
 - **The module's wip-spec.** A design file cites it and never restates it: by `[REQ-ID]`
   where the spec has requirement IDs (only the stewarding spec does today), and by section
@@ -125,7 +127,8 @@ and has a critic check that everything the design file owes is supported. When i
 - **Refuted findings** are dropped, with a count and two or three examples for the user.
   **Uncertain** ones are settled by you, from the code, before they go further.
 - **Spot-check at least one confirmed finding per concern** yourself.
-- **`forArchitecture`** findings are proposals to amend `architecture.md` or `core.md`, and
+- **`forArchitecture`** findings are proposals to amend `architecture.md`, `framework.md` or
+  `core.md`, and
   go to the user as decisions.
 - **`suspectedDefects`** are things a league would see. They go into the Phase 9 batch as
   drafted bugs. A design pass changes no rule a league experiences.
@@ -155,7 +158,7 @@ plan carries:
 2. **The order.** Pure moves and renames go first, each green on its own, with behaviour
    preserved throughout.
 3. **What is deferred** to new tech-debt issues, and why each is too large for this pass.
-4. **Amendments to `architecture.md` or `core.md`**, where the user took any.
+4. **Amendments to `architecture.md`, `framework.md` or `core.md`**, where the user took any.
 5. **The outline of the design file.** List the contents every module file covers, each
    against the section of `architecture.md` it answers to:
    - its tables and what each row means, its own columns on core's tables, and any link of its
@@ -232,7 +235,8 @@ branch's final commit, not at the survey's.
   opening says what the file holds, that it cites rules instead of restating them, and that it
   is corrected at close-out.
 - **Cover the contents Phase 5 lists and the issue's own topics**, or say why one is absent.
-- **Reference `architecture.md`, and `core.md` for modules; never restate either.** For core,
+- **Reference `architecture.md` and `framework.md`, and `core.md` for modules; never restate
+  any of them.** For core,
   describe its implementation of the cross-cutting mechanisms as core's own code, and leave
   the rules those mechanisms serve to `architecture.md`.
 - **Record a rejected alternative only where something preserves it**: a docstring, an issue,

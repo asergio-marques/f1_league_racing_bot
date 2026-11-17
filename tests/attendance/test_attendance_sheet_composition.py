@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.sheet.attendance_sheet import _sheet_rows
 
 SERVER_ID = 22170

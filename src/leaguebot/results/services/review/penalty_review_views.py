@@ -14,26 +14,26 @@ import logging
 
 import discord
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import (
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.services.posting.owned_channel_handler import (
     edit_in_owned_channel,
     post_in_owned_channel,
 )
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import (
     accounts_of_in_division, current_account_map_for_division, driver_test_names_on,
 )
 from leaguebot.results.services.review.penalty_service import validate_penalty_input
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
-from leaguebot.core.utils.interaction_errors import describe_form
-from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.interaction_errors import describe_form
+from leaguebot.framework.utils.league_server import CallbackButton, LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.results.services.review.penalty_wizard import (
     _CID_ADD,
     _CID_APPROVE,
@@ -536,7 +536,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             )
             return
 
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         from leaguebot.core.services.drivers.driver_service import current_account_of, resolve_driver_profile_id
 
         async with get_connection(self.state.db_path) as db:
@@ -1357,7 +1357,7 @@ class ApprovalView(LeagueView):
             return
         # Immutability guard: reject finalize on archived season
         from leaguebot.core.services.seasons.season_service import SeasonImmutableError
-        from leaguebot.core.db.database import get_connection as _gc
+        from leaguebot.framework.db.database import get_connection as _gc
         try:
             async with _gc(self.state.db_path) as _db:
                 facts = await season_service.round_facts_on(_db, self.state.round_id)

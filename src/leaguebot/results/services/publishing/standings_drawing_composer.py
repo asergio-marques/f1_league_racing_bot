@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.drivers.driver_names import (
     read_driver_names,
@@ -56,7 +56,7 @@ from leaguebot.results.services.standings import standings_service
 from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 

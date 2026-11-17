@@ -27,7 +27,7 @@ from datetime import datetime
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.setup_rounds import (
     FORMS,
     NAMED,
@@ -435,7 +435,7 @@ async def test_a_failed_import_save_adds_nothing(tmp_path, form, value, command)
     league = await setup_league(tmp_path, divisions=_HELD)
     before = await round_rows(league.db_path, "Pro")
     asked = await import_rounds(league, form, value)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await round_rows(league.db_path, "Pro") == before

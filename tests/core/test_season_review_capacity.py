@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService
 from tests.support.review_workflows import run_check
@@ -393,7 +393,7 @@ async def test_a_switch_nobody_signed_up_for_is_raised_by_a_check(tmp_path, ques
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a check that cannot run, so the lineup check and the round guard
     raise it rather than letting the season or the round through."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     drawing = _Drawing({question: SwitchNotSignedUp("images")})
     cog = _cog(await _seed(tmp_path, SEASON), drawing)

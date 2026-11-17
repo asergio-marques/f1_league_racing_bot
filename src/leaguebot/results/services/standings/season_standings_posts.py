@@ -35,7 +35,8 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.results.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import (
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,
@@ -43,15 +44,15 @@ from leaguebot.core.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
-from leaguebot.core.services.queue.change_types import Step, StepContext
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.queue.change_types import Step, StepContext
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
 from leaguebot.core.services.seasons.season_service import (
     division_first_round,
     division_rounds_on,
     round_by_id,
 )
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -149,7 +150,7 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     keeps the copies removed. The earlier try's picture lines stay in it, as a stop's result
     replaces what the job kept and a failure that is not Discord's carries none of its own.
     """
-    from leaguebot.core.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.framework.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.publishing.results_post_service import remove_part_posted_messages
 
     earlier = [int(each) for each in (kept or {}).get("new") or []]
@@ -178,7 +179,7 @@ async def keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[No
     names no result is given *removed*, and a failure that is not a Discord one becomes one that
     does, so that the job keeps what is true: nothing left standing.
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     try:
         yield
@@ -207,7 +208,7 @@ async def produce_stranding(
     beside them, for the try that posts to hand back.
     """
 
-    from leaguebot.core.models.change import StepFailedOnDiscord, drawn_lines_kept
+    from leaguebot.framework.models.change import StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.publishing.results_post_service import DRAWN_LINES_ATTRIBUTE
 
     try:
@@ -230,7 +231,7 @@ async def produce_stranding(
 async def standings_channel_of(db_path: str, division_id: int) -> int | None:
     """The standings channel *division_id* was given in `division_results_config`, or None where
     it never was."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         config = await (
@@ -269,7 +270,7 @@ async def post_opening_standings(
     copy removed. *drawing* is the image module's, which draws the pictures (none is drawn where it is None); *as_text* leaves the graphic out, which is how a job retries (Constitution XIV
     rule 8).
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.drivers.driver_names import read_driver_names
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import (
@@ -417,7 +418,7 @@ async def post_final_standings(
     posts both again, as the opening standings do. *as_text* leaves the graphic out, which is
     how a job retries (Constitution XIV rule 8).
     """
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import (
         driver_standings_for_display,
@@ -569,7 +570,7 @@ def opening_steps(
         ) + _refused_picture_lines(ctx, tables, subject="opening standings"))
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the opening standings of **{ctx.step_payload['division_name']}**"
@@ -631,7 +632,7 @@ def final_steps(
         ) + _refused_picture_lines(ctx, tables, subject="final classification"))
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the final standings of **{ctx.step_payload['division_name']}**"

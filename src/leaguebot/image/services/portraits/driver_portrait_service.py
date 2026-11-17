@@ -52,18 +52,20 @@ import os
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
+import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 from leaguebot.core.services.drivers.division_seating import (
     active_season_driver_ids as assigned_driver_ids,
 )
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.utils.asset_resolver import filename_for
 from leaguebot.image.utils.svg_document import off_the_loop
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -169,7 +171,7 @@ def portrait_aspect(config) -> float:
     """
     try:
         from leaguebot.image.services.validity.image_validity_service import class_aspect_of
-        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.framework.utils.paths import resolve_within_project_root
         from leaguebot.image.utils.svg_document import load_svg
 
         filename = getattr(config, "lineup_template", None)
@@ -354,6 +356,62 @@ async def images_are_on(db_path: str) -> bool:
         return await images_enabled_on(db)
 
 
+#: The kind of the daily refresh's job, stored on it and signed up with the scheduler's
+#: `register_timer` by image's wiring.
+PORTRAIT_REFRESH_KIND = "portrait_refresh"
+
+#: One league, so one daily refresh: the job is named by what it does, not by a server.
+PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
+
+
+def schedule_portrait_refresh(scheduler: SchedulerService, time_of_day: str) -> None:
+    """Arm the league's daily driver-portrait refresh at *time_of_day* (``HH:MM``, read as UTC),
+    through the scheduler's generic daily call.
+
+    A recurring trigger, and deliberately so: the refresh is a standing instruction rather than
+    an event, and the scheduler re-arms it itself, so a run that raised is not the last. The time
+    is UTC because a stored local time would need a zone stored with it and would drift against
+    daylight saving; the league is told the zone when it names the time. The job has no lateness
+    limit, so that what becomes of a run missed while the bot was down is the refresh's to judge
+    (`run_daily_refresh` skips it). Naming a new time re-arms the job rather than duplicating it.
+    """
+    hour, _, minute = time_of_day.partition(":")
+    scheduler.arm_daily(
+        PORTRAIT_REFRESH_JOB_ID,
+        PORTRAIT_REFRESH_KIND,
+        int(hour),
+        int(minute),
+        "Daily driver portrait refresh",
+    )
+
+
+def cancel_portrait_refresh(scheduler: SchedulerService) -> bool:
+    """Remove the daily portrait refresh, and say whether it is gone: True where it was removed or
+    was not there, False where it stands still because the scheduler could not remove it.
+
+    The removal never raises, as every cancel of a job is a clean-up: the scheduler's removal logs
+    a fault and answers False, which is also what it answers for a job already gone; so a False is
+    read against whether the job stands, and only a job that stands is a failure. That read of the
+    store can raise where the store cannot be read, and `disarm_daily`'s fault reply covers it.
+    """
+    if scheduler.remove(PORTRAIT_REFRESH_JOB_ID):
+        log.info("Removed %s", PORTRAIT_REFRESH_JOB_ID)
+        return True
+    return not scheduler.has_job(PORTRAIT_REFRESH_JOB_ID)
+
+
+async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
+    """Hand the pack the daily refresh's job id to keep armed, touching nothing in *db*.
+
+    The refresh is a standing instruction from an image setting the pack keeps, and it does
+    nothing while no server is claimed. Core names the key it reads the ids under
+    (`pack_service.KEPT_JOB_IDS`) and keeps the union of what the parts hand back.
+    """
+    from leaguebot.core.services.upkeep.pack_service import KEPT_JOB_IDS
+
+    return {KEPT_JOB_IDS: frozenset({PORTRAIT_REFRESH_JOB_ID})}
+
+
 async def rearm_daily_refresh(db_path: str, scheduler: SchedulerService) -> None:
     """Re-arm the daily refresh at start-up, at the time the league stored, where it has the
     refresh asked for (portraits on, daily on).
@@ -369,7 +427,7 @@ async def rearm_daily_refresh(db_path: str, scheduler: SchedulerService) -> None
         row = await cursor.fetchone()
     if row is None:
         return
-    scheduler.schedule_portrait_refresh(row["pfp_daily_time"])
+    schedule_portrait_refresh(scheduler, row["pfp_daily_time"])
 
 
 def _fired_late(now: datetime, time_of_day: str) -> bool:
@@ -412,7 +470,7 @@ async def run_daily_refresh(bot: LeagueBot, images: ImageConfigService, *, now: 
             log.info("driver portraits: the daily refresh fired late and is skipped")
             return 0
 
-        from leaguebot.core.utils.league_server import league_guild
+        from leaguebot.framework.utils.league_server import league_guild
 
         guild = await league_guild(bot)
         if guild is None:

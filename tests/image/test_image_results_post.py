@@ -10,8 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
+from tests.support.switches import answer_switch
 
 
 pytestmark = pytest.mark.asyncio
@@ -19,7 +20,7 @@ pytestmark = pytest.mark.asyncio
 
 async def _seeded(tmp_path, *, result_status="AWAITING_REPORT_VERDICTS", message_id=None):
     """A database holding one season, division, round and session result."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.results.models.session_result import SessionResult
 
     db_path = str(tmp_path / "image.db")
@@ -96,7 +97,7 @@ def _guild():
 def _bot(db_path, *, module=True, toggle=True, valid=True):
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module)
+    answer_switch(bot.module_service, "images", module)
     bot.image_config_service.get_toggles = AsyncMock(return_value={"results": toggle})
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={"results_race_template": MagicMock(valid=valid)}
@@ -244,7 +245,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
     """The picture is posted and handed back with the message it replaces, 111, which it leaves
     standing and the stored id unchanged: the caller's job saves the new id and deletes the old
     message after it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
@@ -309,7 +310,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
 
 async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
     """The league keeps the results it had rather than losing them to a failed rebuild."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
@@ -766,7 +767,7 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
     again as a picture, none of the three is fetched or deleted and nothing is written: the
     picture is handed back naming all three as the posting it replaces, for the caller's jobs to
     delete."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results

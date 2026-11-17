@@ -27,7 +27,7 @@ from typing import Any, Protocol, TypeVar
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import PlannedStep
+from leaguebot.framework.models.change import PlannedStep
 
 _Pardon = TypeVar("_Pardon")
 

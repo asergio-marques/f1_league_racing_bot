@@ -9,6 +9,7 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import CHANNEL_GROUP, ResultsSubgroup
 from leaguebot.results.services.module.channel_settings import (
     NO_ACCESS,
@@ -20,8 +21,8 @@ from leaguebot.results.services.module.channel_settings import (
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.utils.channel_guard import league_manager_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import refuse
 
 
 #: The kind of change each `/results channel` command asks of the queue.
@@ -69,7 +70,7 @@ class ChannelCommands(ResultsSubgroup):
         Every refusal is recorded: `refuse` answers and writes one line naming the command,
         which is read from the interaction.
         """
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, NOT_ENABLED, what=describe(interaction))
             return
 

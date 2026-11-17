@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 _LINES = [
     "**Attendance Config**",
@@ -40,13 +41,13 @@ def _service(*, configured: bool = True) -> MagicMock:
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
-    modules.is_attendance_enabled = AsyncMock(return_value=on)
+    answer_switch(modules, "attendance", on)
     return modules
 
 
 async def _section(service, on: bool, review: str, division_ids):
     from leaguebot.attendance.services.hooks.attendance_hooks import review_section
-    from leaguebot.core.services.modules.review_sections import Review
+    from leaguebot.core.services.seasons.review_sections import Review
 
     return await review_section(service, _modules(on), review=Review[review], season_id=1,
                                 division_ids=division_ids)

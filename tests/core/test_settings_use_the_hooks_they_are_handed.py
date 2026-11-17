@@ -14,9 +14,9 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
-from leaguebot.core.models.change import ChangeOrigin, VerdictKind
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.db.database import run_migrations
+from leaguebot.framework.models.change import ChangeOrigin, VerdictKind
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.settings.bot_settings import (
     BASE_ROLE_CHANGED,
     base_role_setting,
@@ -26,7 +26,8 @@ from leaguebot.core.services.settings.bot_settings import (
 )
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse
 from leaguebot.core.services.settings.division_settings import division_channel_settings
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
+from tests.support.switches import switches
 
 CHANNEL = 4040
 
@@ -77,10 +78,7 @@ def _seasons() -> Any:
 def _modules() -> Any:
     """The module service, weather switched on."""
 
-    async def on() -> bool:
-        return True
-
-    return SimpleNamespace(is_weather_enabled=on)
+    return switches(weather=True)
 
 
 def _forecast_channel(hook: AwaitedHook) -> Any:

@@ -63,6 +63,7 @@ from tests.support.season_league import (
     profile_id,
     reply,
     round_id,
+    run_at_once,
     seed_season_end,
 )
 
@@ -109,6 +110,7 @@ _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
+
 
 
 async def _change(league: Any) -> dict[str, Any]:
@@ -295,7 +297,7 @@ async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled
 
     await _done(league)
 
-    assert sorted(await _round_audits(league)) == ["AWAITING_RESULTS", "NOT_RUN"]
+    assert sorted(await _round_audits(league)) == ['"AWAITING_RESULTS"', '"NOT_RUN"']
 
 
 async def test_a_call_message_discord_will_not_delete_stops_the_queue(tmp_path):
@@ -536,7 +538,7 @@ async def test_a_subscriber_s_planned_steps_are_planned_in_the_save_in_order(tmp
     save, then Pro's check-in notice, attendance's own take-down of round 3's call, the module's
     take-down of round 4's, then the forecast and results notes, the calendar and the close."""
     from leaguebot.core.models.cancellation import CalledOffSteps
-    from leaguebot.core.models.change import PlannedStep
+    from leaguebot.framework.models.change import PlannedStep
 
     league = await ongoing_league(tmp_path)
     seen: list[tuple[str, list[tuple[int, int, str, bool]]]] = []
@@ -612,10 +614,10 @@ async def test_the_unarming_removes_the_division_s_rounds_in_one_pass(tmp_path):
 
     await _run_through(league, "unarm")
 
-    scheduler = league.bot.scheduler_service
-    scheduler.cancel_round.assert_not_called()
-    assert scheduler.cancel_rounds.call_count == 1
-    call = scheduler.cancel_rounds.call_args
+    round_jobs = league.bot.round_jobs
+    round_jobs.cancel_round.assert_not_called()
+    assert round_jobs.cancel_rounds.call_count == 1
+    call = round_jobs.cancel_rounds.call_args
     assert sorted(call.args[0]) == [round_id(PRO, n) for n in range(1, 5)]
     assert call.kwargs.get("season_end", False) is False
 
@@ -663,7 +665,7 @@ async def test_a_discarded_save_cancels_nothing(tmp_path):
 
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.scheduler_service.cancel_rounds = MagicMock(
+    league.bot.round_jobs.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
     interaction = await _asked(league)
@@ -720,7 +722,7 @@ async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s
     assert CANCELLED in reply(division_asked)
     assert (await _statuses(league))[R3] == "CANCELLED"
     assert (await _statuses(league))[R4] == "CANCELLED"
-    assert await _round_audits(league) == ["NOT_RUN", "NOT_RUN"]
+    assert await _round_audits(league) == ['"NOT_RUN"', '"NOT_RUN"']
     kinds = [row["kind"] for row in await change_rows(league.db_path)
              if row["kind"] in (ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND)]
     assert kinds == [ROUND_CANCEL_KIND, ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND]
@@ -840,7 +842,7 @@ async def _amendment_in_hand(league: Any, how: str) -> int | None:
         await run_queue(league.bot)
         assert await _stopped_at(league) == "notify_checkin"
     else:
-        league.bot.scheduler_service.cancel_round = MagicMock(
+        league.bot.round_jobs.cancel_round = MagicMock(
             side_effect=RuntimeError("job store unavailable")
         )
     await amend_round(league, "Pro", 4, scheduled_at=await _a_day_later(league, R4))
@@ -943,16 +945,16 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
         (league.clock.now - timedelta(minutes=10)).astimezone(timezone.utc).isoformat(), R4,
     )
     interaction = await _asked(league)
-    scheduler = league.bot.scheduler_service
-    unarming = (scheduler.cancel_round, scheduler.cancel_rounds)
-    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
-    scheduler.cancel_rounds = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    round_jobs = league.bot.round_jobs
+    unarming = (round_jobs.cancel_round, round_jobs.cancel_rounds)
+    round_jobs.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    round_jobs.cancel_rounds = MagicMock(side_effect=RuntimeError("the job store is locked"))
     await run_queue(league.bot)
     assert await _stopped_at(league) == "unarm"
     await accept_session(league, R3)
     before = await _statuses(league)
 
-    scheduler.cancel_round, scheduler.cancel_rounds = unarming
+    round_jobs.cancel_round, round_jobs.cancel_rounds = unarming
     await retry_job(league.bot)
 
     r1, r2 = round_id(PRO, 1), round_id(PRO, 2)
@@ -976,8 +978,7 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
     assert armed_whole == {R3, R4}
     assert not {rid for which, ids in league.armed if which == "cleanups" for rid in ids} & {
         R3, R4}
-    opened = scheduler.run_result_submission_now
-    assert [call.args[0].id for call in opened.call_args_list] == [R4]
+    assert run_at_once(round_jobs) == [(R4, "results")]
 
 
 async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_the_clean_ups_of_a_round_that_ended_cancelled_as_not_held(
@@ -1040,7 +1041,7 @@ async def _closed(league: Any) -> dict[int, int]:
     return {row["round_id"]: row["closed"] for row in rows}
 
 
-@pytest.mark.parametrize("when", ["at ask", "at run"])
+@pytest.mark.parametrize("when", ["at ask", pytest.param("at run")])
 async def test_a_division_with_a_round_whose_submission_has_accepted_results_is_refused_naming_the_round(
     tmp_path, when,
 ):

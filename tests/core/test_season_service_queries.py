@@ -34,7 +34,7 @@ from datetime import date
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError, SeasonService
 from tests.support.delete_hooks import DIVISION_HOOKS, delete_hooks
@@ -351,7 +351,7 @@ async def test_tiers_with_a_gap_are_refused_in_the_member_s_words(tmp_path):
     and a gap is a refusal the manager reads. Season 1 is being set up with Division 1 at tier 1
     and Division 3 at tier 3, and nothing at tier 2. The check refuses it as the member's refusal,
     `Refused`, naming the tiers held and the one missing."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "SETUP")

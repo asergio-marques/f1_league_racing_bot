@@ -58,7 +58,9 @@ armed with a lateness limit, a new way of reaching a service.
 
 You are given a drafted plan and the modules it touches. A module's design file is
 `docs/design/core.md` for core, `docs/design/steward_module.md` for stewarding, and
-`docs/design/<module>_module.md` for the rest. For each module:
+`docs/design/<module>_module.md` for the rest. A plan that touches anything under `framework/` is
+checked against `docs/design/framework.md` too, as though the framework were one of its modules.
+For each module:
 
 - **Where the file exists,** name the sections the plan touches, and say whether the plan keeps to
   each. List every change the design file needs because of the fix, section by section: those are

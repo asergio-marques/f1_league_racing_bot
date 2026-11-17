@@ -70,8 +70,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
@@ -80,11 +80,12 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.queue_records import (
+    step_done_at_on,
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     Ahead,
     ChangeType,
     CheckContext,
@@ -92,15 +93,15 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member
+from leaguebot.framework.utils.channels import as_text_channel
+from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import abandoned_line, drawn_notices_line, name_of_member
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -609,15 +610,8 @@ def season_review_post_change(
         if not question or "new" not in question:
             return StepResult(result={"dropped": True})
         async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute(
-                "SELECT done_at FROM queued_change_steps WHERE change_id = ? AND name = ?",
-                (ctx.change_id, POST_QUESTION),
-            )
-            row = await cursor.fetchone()
-        posted = (
-            datetime.fromisoformat(row["done_at"]) if row and row["done_at"]
-            else now()
-        )
+            done_at = await step_done_at_on(db, ctx.change_id, POST_QUESTION)
+        posted = done_at if done_at is not None else now()
         run_at = posted + REVIEW_WINDOW
         scheduler.arm_once(TIMER, int(question["new"]), run_at)
         return StepResult(result={"armed": run_at.isoformat()})

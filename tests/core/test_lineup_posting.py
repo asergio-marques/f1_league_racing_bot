@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -69,8 +69,8 @@ def _refusing(league: Any, channel_id: int) -> Any:
 async def _stop_the_queue(league: Any) -> None:
     """A change of the bot's, asked before anything else, whose job Discord refuses: the queue
     stops at it, and whatever is asked after it waits."""
-    from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
 
     async def _refused(_ctx: Any) -> Any:
         raise StepFailedOnDiscord("Missing Access")
@@ -390,7 +390,7 @@ async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tup
     Lewis: he is moved to the Reserve team, and the review's own job posts Pro's lineup. Returns
     the league and Alex's interaction."""
     from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
@@ -671,7 +671,7 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     channel, for the queue to stop on; nothing is posted."""
     from types import SimpleNamespace
 
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.drivers.lineup_posting import lineup_step
     from tests.support.change_queue import in_a_job
 
@@ -698,7 +698,7 @@ async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers.lineup_posting import lineup_step
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
     from tests.support.change_queue import in_a_job
 
     league = await ongoing_league(tmp_path)

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -65,7 +65,7 @@ async def _save_wizard(svc, db_path, wizard):
 async def db_path(tmp_path):
     """The real schema, migrated. It was once built by hand here, and drifted from the
     migrations the moment signups came to belong to a season (issue #220)."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     path = str(tmp_path / "signup_test.db")
     await run_migrations(path)
@@ -251,7 +251,7 @@ class TestSnapshotStoresTheDurableIdentity:
     async def test_no_display_ordinal_is_persisted(self, db_path):
         import json
 
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         svc = SignupModuleService(db_path)
@@ -303,7 +303,7 @@ class TestSnapshotStoresTheDurableIdentity:
         """An in-flight wizard from before this change carries no slot_id — derive it."""
         import json
 
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         legacy = {
@@ -429,7 +429,7 @@ class TestSignupRecordCRUD:
         fetched = await svc.get_record("u1")
         assert fetched is not None
         assert fetched.platform == "PSN"
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) AS n FROM signup_records WHERE discord_user_id = 'u1'"
@@ -583,7 +583,7 @@ class TestConfigSnapshotIsolation:
 
 
 async def _wizard_row(db_path, user_id: str) -> dict:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -601,7 +601,7 @@ async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_
     the wizard is as it was. Committed by the caller, the wizard is unengaged and keeps its
     signup channel, which the hold and the channel's deletion still read. A driver with no wizard
     is nothing to end."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     svc = SignupModuleService(db_path)
@@ -629,7 +629,7 @@ async def test_the_drivers_mid_signup_are_listed_oldest_first_with_the_channel_t
     3 assigned (not mid-signup) and 4 pending completion whose wizard has no channel. Asked for
     the two mid-signup states, the service gives drivers 1, 2 and 4 in profile order, each with
     their state and channel (None where they have none); asked for no state, it gives nothing."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

@@ -30,7 +30,7 @@ from datetime import datetime
 import discord
 
 from leaguebot.core.services.modules.hub_service import HubOption
-from leaguebot.core.utils.league_bot import bot_of
+from leaguebot.framework.utils.league_bot import bot_of
 
 PROJECT_NAME = "F1 League Racing Bot"
 REPOSITORY_URL = "https://github.com/asergio-marques/f1_league_racing_bot"

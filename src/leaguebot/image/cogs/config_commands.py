@@ -12,22 +12,23 @@ import logging
 import discord
 from discord import app_commands
 
-from leaguebot.core.models.refusal import Refused
-from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.image.models.switch import SWITCH_KEY
+from leaguebot.framework.models.refusal import Refused
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
-from leaguebot.core.utils.interaction_errors import (
+from leaguebot.framework.utils.interaction_errors import (
     describe as describe_command,
     describe_form,
 )
-from leaguebot.core.utils.league_server import LeagueModal
-from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.messages import chunk_message
-from leaguebot.core.utils.paths import (
+from leaguebot.framework.utils.league_server import LeagueModal
+from leaguebot.framework.utils.log_lines import refuse
+from leaguebot.utils.messages import chunk_message
+from leaguebot.framework.utils.paths import (
     PathContainmentError,
     relative_to_root,
     resolve_within_project_root,
 )
-from leaguebot.core.utils.timezones import clear_zone_cache, zone_names
+from leaguebot.utils.timezones import clear_zone_cache, zone_names
 from leaguebot.image.cogs.image_group import CONFIG_GROUP, ImageSubgroup
 from leaguebot.image.services.config.image_config_service import tier_name_refusal
 from leaguebot.image.services.config.image_settings import (
@@ -47,7 +48,7 @@ from leaguebot.image.services.preview.configuration_report import (
 
 log = logging.getLogger(__name__)
 
-#: The memoised zone list, which now lives in `core/utils/timezones.py` so that the round
+#: The memoised zone list, which now lives in `utils/timezones.py` so that the round
 #: importer can validate a zone without importing this cog — and Discord with it. Kept
 #: under its old name here because the autocomplete below and its tests both reach for it,
 #: and the move is not a change to either. `clear_zone_cache` is re-exported above for the
@@ -120,7 +121,7 @@ async def _module_still_on(cog, interaction: discord.Interaction, form: discord.
     it would store belongs to a module that is off. Nothing is written then: the submit is
     refused and recorded under the form's name.
     """
-    if await cog.bot.module_service.is_images_enabled():
+    if await cog.bot.module_service.is_enabled(SWITCH_KEY):
         return True
     await refuse(
         interaction,

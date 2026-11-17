@@ -30,9 +30,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.check_in import rsvp_service
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7714
 SEASON_ID = 1
@@ -178,7 +179,7 @@ def _make_bot(db_path: str, *, attendance_enabled: bool) -> MagicMock:
     """A bot double whose module_service answers from the flag under test."""
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
     bot.attendance_service = AttendanceService(db_path)
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.get_channel = MagicMock(return_value=_make_channel())
@@ -226,7 +227,7 @@ async def _ask(bot: MagicMock, step: str) -> list[int]:
     as the bot; run the queue; return the ids posted in the check-in channel."""
     import importlib
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
     home = importlib.import_module(f"leaguebot.attendance.services.check_in.check_in_{step}")
@@ -281,8 +282,8 @@ async def _queue_bot(db_path: str, *, attendance_enabled: bool) -> Any:
     from tests.support.review_league import channel as recording_channel
 
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
+    answer_switch(bot.module_service, "images", False)
     bot.events = []
     rsvp = recording_channel(RSVP_CHANNEL_ID, bot.events)
     rsvp.seed(900900, "the call")
@@ -298,7 +299,7 @@ async def _ask_last_notice(bot: MagicMock) -> list[int]:
     """Ask the queue for the round's last notice as its timer does; run the queue; return the
     ids posted in the check-in channel."""
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
 
     await ask_check_in_last_notice(bot.change_queue, bot.db_path, ROUND_ID,

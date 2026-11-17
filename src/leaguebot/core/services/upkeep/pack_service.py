@@ -14,8 +14,9 @@ post into them.
 connection, and signup, weather, attendance and results each clear what is theirs, in that order
 (`__main__._sign_up_to_pack`). Signup hands back what the reply and the audit entry report: the
 signup wizards it cleared and the signup channel's id as it stood. The pack itself clears
-only core's own: the team roles, the queued messages, the review prompts, the server's roles,
-hub and claim, and the divisions' lineup and calendar message ids.
+only core's own: the team roles, the review prompts, the server's roles, hub and claim, and the
+divisions' lineup and calendar message ids, with the queued messages, which are the framework's
+and cleared through it.
 
 **Refused while the league has a current season**: a season in any stage short of completed or
 cancelled, which is read off the lifecycle `stage` rather than the coarser `status`. A current
@@ -34,29 +35,37 @@ change set up between the checks and the release cannot be stranded on a server 
 left, nor go on changing a server it has. The audit entry shares it too: every pack that takes
 effect is recorded, and a refused one records nothing.
 
+**The framework's tables are reached through the framework.** The queue's job a pack would wait
+on is read with `queue_records.pending_job_on`, the log lines still waiting for delivery are
+cleared with `retry_service.clear_pending_on`, and the audit entry is written by
+`audit_service.record_change_on`, each on the pack's one connection and so in its one
+transaction. The pack holds no SQL of its own against `queued_changes`, `queued_change_steps`,
+`pending_messages` or `audit_entries`.
+
 The Discord side is left as it is: the old server keeps the bot's messages and buttons, which
-refuse from then on (see `leaguebot.core.utils.league_server.LeagueView`). Pack touches only the database.
+refuse from then on (see `leaguebot.framework.utils.league_server.LeagueView`). Pack touches only the database.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import LEAGUE_LANE
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.posting.retry_service import clear_pending_on
+from leaguebot.framework.services.queue.audit_service import record_change_on
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import pending_job_on
 from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
 from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
-from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 log = logging.getLogger(__name__)
 
@@ -69,9 +78,10 @@ _FINISHED_STAGES: tuple[str, ...] = (SeasonStage.COMPLETED.value, SeasonStage.CA
 CLEARED_WIZARDS = "wizards"
 CLEARED_SIGNUP_CHANNEL_ID = "signup_channel_id"
 
-#: Scheduled work pack leaves armed. The daily portrait refresh is a standing instruction from
-#: an image setting pack keeps, and does nothing while no server is claimed.
-KEPT_JOBS: frozenset[str] = frozenset({PORTRAIT_REFRESH_JOB_ID})
+#: What a part of the pack hands back, as a set of job ids, for the scheduled work the pack leaves
+#: armed: a module's standing job from a setting the pack keeps (image's daily portrait refresh,
+#: which does nothing while no server is claimed). The pack keeps the union of every part's set.
+KEPT_JOB_IDS = "kept_job_ids"
 
 
 class PackRefused(Exception):
@@ -113,25 +123,6 @@ class PackResult:
     scheduled_jobs: int
 
 
-async def pending_job(db) -> tuple[int, bool, str] | None:
-    """The job a pack would wait on as (number, stopped, lane), or None where no lane holds one.
-
-    Every lane is read, the league's and each conversation's, since a pack would otherwise
-    clear a server a lane still changes. A job *stopped* (failed, holding its lane until Retry
-    or Discard) comes first, as the one an admin has to act on; else the first job not yet done
-    of the oldest change still open, which is the one its lane's worker runs next.
-    """
-    row = await (
-        await db.execute(
-            "SELECT s.id, s.failing_since IS NOT NULL, c.lane FROM queued_change_steps s "
-            "JOIN queued_changes c ON c.id = s.change_id "
-            "WHERE c.state IN ('QUEUED', 'RUNNING') AND s.done_at IS NULL "
-            "ORDER BY s.failing_since IS NULL, c.id, s.position LIMIT 1"
-        )
-    ).fetchone()
-    return None if row is None else (int(row[0]), bool(row[1]), str(row[2]))
-
-
 async def current_season(db) -> tuple[int, str | None] | None:
     """The league's current season as (number, stage), or None where it has none."""
     placeholders = ",".join("?" for _ in _FINISHED_STAGES)
@@ -156,7 +147,7 @@ async def what_stops_a_pack(
     asks again inside its own transaction.
     """
     async with get_connection(db_path) as db:
-        return await current_season(db), await pending_job(db)
+        return await current_season(db), await pending_job_on(db)
 
 
 #: The settings a league set that pack clears from `server_configs`, as the audit names them.
@@ -211,7 +202,9 @@ async def pack(
     start between the judging and the clear. *bot_packed* is the bot's hook for the modules' own
     clear, called once on the pack's connection, after the refusals and before the claim is
     released; the command's catch of `PackRefused` holds that hook, which is harmless because
-    `PackRefused` is raised by this module alone, so no hook's fault can be taken for it.
+    `PackRefused` is raised by this module alone, so no hook's fault can be taken for it. A part
+    hands back the ids of the scheduled jobs it keeps under `KEPT_JOB_IDS`; the pack clears every
+    other scheduled job, and keeps the union of what the parts handed back.
 
     *in_memory_state_cleared*, the bot's hook for the clear, where given with *queue*, has its
     in-memory league state dropped too; the command passes both, the queue being handed on to
@@ -226,20 +219,23 @@ async def pack(
             season = await current_season(db)
             if season is not None:
                 raise PackRefused(*season)
-            job = await pending_job(db)
+            job = await pending_job_on(db)
             if job is not None:
                 raise PackRefused(job_id=job[0], stopped=job[1], lane=job[2])
 
             # Each module clears its own rows, on this connection, in this transaction.
             handed_back: dict[str, Any] = {}
+            kept_jobs: set[str] = set()
             for answer in await bot_packed.call(db):
-                handed_back.update(answer or {})
+                handed = dict(answer or {})
+                kept_jobs |= set(handed.pop(KEPT_JOB_IDS, ()))
+                handed_back.update(handed)
             wizards = int(handed_back.get(CLEARED_WIZARDS, 0))
 
             cleared = await _cleared_configuration(db, handed_back.get(CLEARED_SIGNUP_CHANNEL_ID))
 
             team_roles = (await db.execute("DELETE FROM team_role_configs")).rowcount
-            queued = (await db.execute("DELETE FROM pending_messages")).rowcount
+            queued = await clear_pending_on(db)
             await db.execute("DELETE FROM season_review_prompts")
             # No change is open (refused above), so the queue holds only history, which stays.
 
@@ -261,24 +257,17 @@ async def pack(
 
             await db.execute(RELEASE_CLAIM_SQL)
 
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-                "timestamp) VALUES (?, ?, NULL, 'BOT_PACKED', ?, ?, ?)",
-                (
-                    actor_id,
-                    actor_name,
-                    json.dumps(cleared),
-                    json.dumps({**dict.fromkeys(cleared), "team_roles": {}}),
-                    now.isoformat(),
-                ),
+            await record_change_on(
+                db, actor_id=actor_id, actor_name=actor_name, change_type="BOT_PACKED",
+                old_value=cleared, new_value={**dict.fromkeys(cleared), "team_roles": {}},
+                now=now,
             )
         except BaseException:
             await db.rollback()
             raise
         await db.commit()
 
-    jobs = scheduler_service.cancel_all(keep=KEPT_JOBS)
+    jobs = scheduler_service.cancel_all(keep=frozenset(kept_jobs))
     if in_memory_state_cleared is not None and queue is not None:
         clear_in_memory_state(in_memory_state_cleared, queue=queue)
 

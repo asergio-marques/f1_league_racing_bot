@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.driver_names import read_driver_names, read_driver_nationalities
 from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 from leaguebot.image.services.aspects.image_verdict_service import VerdictKind

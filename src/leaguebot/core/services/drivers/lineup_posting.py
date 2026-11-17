@@ -33,8 +33,8 @@ from typing import Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
@@ -45,24 +45,24 @@ from leaguebot.core.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.services.drivers.division_seating import SeatOccupant, division_seating
-from leaguebot.core.services.queue.change_queue import (
+from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.audit_service import record_change_on
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.audit_service import record_change_on
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
-from leaguebot.core.services.posting.standing_post_handler import post_standing
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import drawn_notices_line
+from leaguebot.framework.services.posting.standing_post_handler import post_standing
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import drawn_notices_line
 
 log = logging.getLogger(__name__)
 

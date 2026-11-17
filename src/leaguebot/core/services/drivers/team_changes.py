@@ -41,11 +41,11 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import AuditRecord, LEAGUE_LANE, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import AuditRecord, LEAGUE_LANE, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import Season, SeasonStage
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -58,8 +58,8 @@ from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.services.drivers.team_service import RESERVE_NAME, TeamService, resolve_team_reference
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import role_grant_refusal
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 TEAM_ADD = "core.team_add"
 TEAM_REMOVE = "core.team_remove"

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.driver_transitions import reassigned
 
 SERVER_ID = 22120
@@ -159,7 +159,7 @@ async def test_with_no_module_answering_the_history_records_no_standing(db_path)
     writes our driver's entry as it would with no standings at all: no position, no points and no
     gap, rather than reading results' standings itself."""
     from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     await _seed_a_finished_season(db_path)
 

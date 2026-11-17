@@ -12,7 +12,7 @@ these of core's events, subscribed in wiring:
 - `amendment_posts`, when the round is armed again (`round_armed`), answers a `RoundArming`: the
   posts the round now owes of attendance's, in order (the standing call taken down and posted
   again, or a call posted where none stands, and the deadline run where it passed) and the
-  check-in's timers (`CheckInJobs`), armed only while attendance is on;
+  check-in's timers as `RoundLead` records (`check_in_leads`), armed only while attendance is on;
 - `amendment_clean_ups` hands core the clean-ups due;
 - `check_in_failure` words a step of its own an outcome names as left undone
   (`amendment_step_failure`).
@@ -38,11 +38,13 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.models.attendance import (
     CHECK_IN_CALL,
     CHECK_IN_CLEAN_UP,
     CHECK_IN_DEADLINE,
     CHECK_IN_LAST_NOTICE,
+    AttendanceWindows,
 )
 from leaguebot.attendance.services.check_in import rsvp_service
 from leaguebot.attendance.services.check_in.attendance_config_service import (
@@ -75,13 +77,14 @@ from leaguebot.attendance.services.check_in.check_in_amendment_rules import judg
 from leaguebot.attendance.services.check_in.check_in_clean_up import check_in_clean_up_steps, take_down_steps
 from leaguebot.attendance.services.check_in.check_in_deadline import check_in_deadline_steps
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
-from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
-from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, CheckInJobs, Round
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
-from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
+from leaguebot.framework.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_leads, check_in_moments
+from leaguebot.core.models.round import ROUND_CANCELLABLE, Round
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import Step, StepContext, StepView
+from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.rounds.round_steps import judge_kept, named_now
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.test_mode.test_mode_service import (
@@ -92,8 +95,8 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
@@ -159,7 +162,7 @@ def _call_fell_due(
     """Whether the round's check-in call has fallen due at *now*: its moment has passed."""
     if attendance is None:
         return False
-    moments = round_event_moments(rnd.scheduled_at, weather=None, attendance=attendance)
+    moments = check_in_moments(rnd.scheduled_at, attendance)
     return moments["rsvp_notice"] <= now()
 
 
@@ -167,7 +170,7 @@ def _deadline_passed(
     rnd: Round, attendance: AttendanceWindows, now: Callable[[], datetime]
 ) -> bool:
     """Whether the round's check-in deadline has passed at *now*."""
-    moments = round_event_moments(rnd.scheduled_at, weather=None, attendance=attendance)
+    moments = check_in_moments(rnd.scheduled_at, attendance)
     return moments["rsvp_deadline"] <= now()
 
 
@@ -219,7 +222,7 @@ async def amendment_posts(
     armed = attendance is not None and await attendance_enabled_on(db)
     return RoundArming(
         steps=tuple(planned),
-        jobs=CheckInJobs(windows=attendance) if armed and attendance is not None else None,
+        jobs=check_in_leads(attendance) if armed and attendance is not None else None,
     )
 
 
@@ -359,7 +362,7 @@ def amendment_steps(
         check-in is over by then, as a clean-up a day after the round leaves it. A call still to
         come is posted by its timer, armed with the round; one whose deadline has passed is given
         up (`post_call`)."""
-        if not await modules.is_attendance_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None or not _call_fell_due(rnd, await window(ctx), now):

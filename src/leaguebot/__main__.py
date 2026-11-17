@@ -17,17 +17,17 @@ from dotenv import load_dotenv
 from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
-from leaguebot.core.services.upkeep.start_up import start_up
-from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
-from leaguebot.core.utils.interaction_errors import start_up_failure_line
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import (
+from leaguebot.framework.services.jobs.start_up import start_up
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook, StartingHook
+from leaguebot.framework.utils.interaction_errors import start_up_failure_line
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import (
     league_guild,
     LeagueCommandTree,
     on_event_error,
     warn_if_serving_several,
 )
-from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
+from leaguebot.framework.utils.log_filters import install_late_autocomplete_filter
 from leaguebot.image import wiring as image_wiring
 from leaguebot.results import wiring as results_wiring
 from leaguebot.results.services.publishing.preview_sources import ResultsPreviewSources
@@ -35,7 +35,7 @@ from leaguebot.signup import wiring as signup_wiring
 from leaguebot.weather import wiring as weather_wiring
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_review_changes import DrawnPicture
     from leaguebot.core.services.modules.hub_service import HubOptions
 
@@ -72,7 +72,7 @@ class Settings:
     """What the host's environment sets, read once by :func:`read_settings` and handed on.
 
     ``jobstore_path`` is the scheduler's job store, kept apart from the league database on
-    purpose (see the module docstring in ``core/services/scheduler_service.py``).
+    purpose (see the module docstring in ``framework/services/jobs/scheduler.py``).
     """
 
     token: str = field(repr=False)
@@ -90,7 +90,7 @@ def read_settings(environ: Mapping[str, str]) -> Settings:
     (``tests/repository/test_suite_needs_no_dotenv.py``). INKSCAPE, a module's own host setting, is
     not one of these: the image module reads it when it renders.
     """
-    from leaguebot.core.services.scheduler_service import default_jobstore_path
+    from leaguebot.framework.services.jobs.scheduler import default_jobstore_path
 
     token = environ.get("BOT_TOKEN")
     if not token:
@@ -140,7 +140,7 @@ class LeaguePreviewSources(ResultsPreviewSources):
 
 def register_module_switches(modules: "ModuleService") -> None:
     """Sign each module up with `ModuleService` for the reader of its own switch, keyed by the
-    name `is_<module>_enabled` asks it by."""
+    name `ModuleService.is_enabled` is asked by."""
 
     weather_wiring.register_switch(modules)
     signup_wiring.register_switch(modules)
@@ -195,12 +195,14 @@ def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
-    """Make the hook a round's timing windows read declares, and sign each module up to it, in
-    the order core gathers them: attendance's window, then weather's. Each is handed whether the
-    round is being amended and checks its own switch."""
-    bot.round_windows_read = AwaitedHook()
-    attendance_wiring.sign_up_to_round_windows(bot)
-    weather_wiring.sign_up_to_round_windows(bot)
+    """Make the hook a round's leads are read through, and sign each module up to it, in the order
+    core gathers them: attendance's check-in, then weather's forecasts, then results' submission,
+    which answers whatever its switch (the others each check their own), so that the approval's
+    date check names the windows in that order."""
+    bot.round_leads_read = AwaitedHook()
+    attendance_wiring.sign_up_to_round_leads(bot)
+    weather_wiring.sign_up_to_round_leads(bot)
+    results_wiring.sign_up_to_round_leads(bot)
 
 
 def _sign_up_to_review_sections(bot: LeagueBot) -> None:
@@ -243,7 +245,8 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     weather's of its forecasts, asked when it is offered and again inside the save on its
     connection; inside the save, weather's withdrawal of the
     forecasts the amendment withdraws, then attendance's reopening of its check-in; as the round
-    is armed again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the round,
+    is armed again, the posts and timers each owes, attendance's then weather's then results'
+    submission, then the clean-ups due a day after the round,
     weather's then attendance's; the steps each defines for the amendment, weather's then
     attendance's; and the words an outcome gives a step left undone, weather's for a forecast then
     attendance's for its check-in."""
@@ -256,6 +259,7 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     bot.round_armed = AwaitedHook()
     attendance_wiring.sign_up_to_round_armed(bot)
     weather_wiring.sign_up_to_round_armed(bot)
+    results_wiring.sign_up_to_round_armed(bot)
     bot.round_clean_ups_due = AwaitedHook()
     weather_wiring.sign_up_to_round_clean_ups_due(bot)
     attendance_wiring.sign_up_to_round_clean_ups_due(bot)
@@ -317,6 +321,7 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     weather_wiring.sign_up_to_pack(bot)
     attendance_wiring.sign_up_to_pack(bot)
     results_wiring.sign_up_to_pack(bot)
+    image_wiring.sign_up_to_pack(bot)
 
 
 def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
@@ -537,7 +542,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             change_queue=bot.change_queue,
             scheduler_service=bot.scheduler_service,
             output_router=bot.output_router,
-            round_windows_read=bot.round_windows_read,
+            round_leads_read=bot.round_leads_read,
             confirmation_refused=bot.confirmation_refused,
             configuration_faults_read=bot.configuration_faults_read,
             driver_names_read=bot.driver_names_read,
@@ -553,7 +558,7 @@ def register_change_types(bot: LeagueBot) -> None:
     """Make the queue known every kind of change the bot carries out.
 
     The builder is where modules meet: it hands each change type what it needs of another module,
-    so that core's queue and cogs import none of them. The tests' support module calls this to get
+    so that the framework's queue and core's cogs import none of them. The tests' support module calls this to get
     the real set.
     """
     from leaguebot.core.services.rounds.calendar_post_service import calendar_sync_change
@@ -598,7 +603,7 @@ def register_change_types(bot: LeagueBot) -> None:
         interaction_role_setting,
         log_channel_setting,
     )
-    from leaguebot.core.services.posting.channel_tell_change import channel_tell_change
+    from leaguebot.framework.services.posting.channel_tell_change import channel_tell_change
     from leaguebot.core.services.settings.division_settings import division_channel_settings
     from leaguebot.core.services.test_mode.test_mode_settings import test_mode_nationality_setting
     from leaguebot.core.services.test_mode.test_mode_former_driver_change import (
@@ -635,7 +640,7 @@ def register_change_types(bot: LeagueBot) -> None:
         wind_down_change,
     )
     from leaguebot.image.services.render.image_render_service import discard_render
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(
         bot.change_queue, bot.config_service, hub_options=bot.hub_options
@@ -723,6 +728,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_complete_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             roles=bot.team_role_service,
             final_round_read=bot.final_round_read,
             season_standing_read=bot.season_standing_read,
@@ -744,6 +750,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_cancel_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
@@ -790,11 +797,11 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             config=bot.config_service,
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             lineups=bot.lineup_poster,
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
-            round_windows_read=bot.round_windows_read,
+            round_leads_read=bot.round_leads_read,
             placements_confirmed=bot.placements_confirmed,
             placements_confirmed_steps=bot.placements_confirmed_steps,
             division_channel_faults_read=bot.division_channel_faults_read,
@@ -924,13 +931,14 @@ def register_change_types(bot: LeagueBot) -> None:
         round_amend_change(
             modules=bot.module_service,
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             amendment_judged=bot.amendment_judged,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
+            round_leads_read=bot.round_leads_read,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -938,20 +946,21 @@ def register_change_types(bot: LeagueBot) -> None:
         round_rearm_change(
             modules=bot.module_service,
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             amendment_judged=bot.amendment_judged,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
+            round_leads_read=bot.round_leads_read,
             now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
         round_cancel_change(
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
@@ -964,7 +973,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         division_cancel_change(
             seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
+            round_jobs=bot.round_jobs,
             drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
@@ -1021,16 +1030,17 @@ async def build(settings: Settings) -> LeagueBot:
     """
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
+    from leaguebot.framework.services.posting.output_router import OutputRouter
 
     bot = create_bot()
     bot.db_path = settings.db_path
 
     # The version is read once, here, and never when a command runs: it belongs to
-    # the code this process loaded. See `core/utils/version.py`.
-    from leaguebot.core.utils.paths import PROJECT_ROOT
-    from leaguebot.core.utils.version import read_version, read_version_date
+    # the code this process loaded. See `utils/version.py`.
+    from leaguebot.framework.utils.paths import PROJECT_ROOT
+    from leaguebot.utils.version import read_version, read_version_date
 
     version = read_version(PROJECT_ROOT)
     made = read_version_date(PROJECT_ROOT)
@@ -1047,18 +1057,22 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.services.drivers.team_service import TeamService
 
     bot.config_service = ConfigService(settings.db_path)
+    bot.league_settings = bot.config_service
     bot.season_service = SeasonService(settings.db_path)
     bot.scheduler_service = SchedulerService(
         settings.db_path, settings.jobstore_path
     )
+    bot.round_jobs = RoundJobs(bot.scheduler_service, settings.db_path)
     bot.output_router = OutputRouter(
-        bot, bot.config_service, retry_db_path=settings.db_path,
+        bot, bot.league_settings, retry_db_path=settings.db_path,
         now=lambda: bot.change_queue.now(),
     )
     # The queue is handed the router, and is started by start-up, after the recoveries.
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
 
-    bot.change_queue = ChangeQueue(settings.db_path, bot, bot.output_router, bot.config_service)
+    bot.change_queue = ChangeQueue(
+        settings.db_path, bot, bot.output_router, bot.league_settings, tiers=bot.config_service
+    )
     # The moment the bot came up, by the queue's clock, recorded here once. The wiring hands that
     # one value, as a callable, to a module's handler of a timed job and to its start-up catch-up,
     # so both tell a start missed while the bot was down from one met while it is up.
@@ -1067,7 +1081,7 @@ async def build(settings: Settings) -> LeagueBot:
     bot.team_service = TeamService(settings.db_path)
 
     from leaguebot.core.services.modules.hub_service import HubOptions
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
@@ -1194,7 +1208,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.cogs.module_cog import ModuleCog
     from leaguebot.signup.cogs.signup_cog import SignupCog
     from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
-    from leaguebot.core.cogs.retry_cog import RetryCog
+    from leaguebot.framework.cogs.retry_cog import RetryCog
     from leaguebot.results.cogs.results_cog import ResultsCog
     from leaguebot.weather.cogs.weather_cog import WeatherCog
     from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
@@ -1344,7 +1358,7 @@ async def main() -> None:
     # code, and discord.py logs it as an ERROR with a full traceback. Downgrade just that one.
     install_late_autocomplete_filter()
 
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     # A staged restore is swapped in **here**, before a single service is constructed and
     # before the scheduler opens its job store. Every service captures its path and holds
@@ -1395,7 +1409,7 @@ async def main() -> None:
 
     log.info("Starting bot...")
 
-    from leaguebot.core.db.database import close_connections
+    from leaguebot.framework.db.database import close_connections
 
     try:
         async with bot:

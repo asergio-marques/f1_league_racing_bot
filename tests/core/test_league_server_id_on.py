@@ -5,7 +5,7 @@ needed the league's server to link a message by.
 """
 from __future__ import annotations
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import league_server_id_on
 
 

@@ -43,8 +43,8 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     ChangeOrigin,
     FollowOn,
@@ -57,16 +57,19 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.services.rounds.round_moments import read_round_windows, results_left_to_advance
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.core.services.rounds.round_moments import (
+    read_round_leads,
+    results_left_to_advance,
+)
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.drivers import lineup_posting
-from leaguebot.core.services.posting import standing_posts
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.rounds.calendar_post_service import POST_CALENDAR, calendar_steps
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -76,7 +79,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.seasons.season_service import (
     SeasonService,
@@ -84,17 +87,17 @@ from leaguebot.core.services.seasons.season_service import (
     create_sessions_for_round_on,
     transition_to_active_on,
 )
-from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
+from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.services.seasons.season_lifecycle_service import kept_line
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 log = logging.getLogger(__name__)
@@ -279,11 +282,11 @@ def season_approval_change(
     modules: "ModuleService",
     config: "ConfigService",
     seasons: SeasonService,
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     lineups: "LineupPoster",
     roles: "TeamRoleService",
     drawing: "ImageDrawing",
-    round_windows_read: AwaitedHook,
+    round_leads_read: AwaitedHook,
     placements_confirmed: AwaitedHook,
     placements_confirmed_steps: Hook,
     division_channel_faults_read: AwaitedHook,
@@ -296,9 +299,10 @@ def season_approval_change(
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
-    *scheduler*, the *lineups* poster (which posts the lineups) and the team-role service
+    *round_jobs* (which arms each round's jobs), the *lineups* poster (which posts the lineups) and the team-role service
     *roles* (which gives the drivers their roles), the image module's own drawing (*drawing*),
-    *round_windows_read* (the hook the enabled modules' windows are read through),
+    *round_leads_read* (the hook the modules' timers for a round are read through, which the
+    approval's date check and its arming both read),
     *placements_confirmed* (the hook each module's opening post is planned through, called
     inside the save for each division in turn, on the save's connection) and
     *placements_confirmed_steps* (each module's step definitions for its own opening post, by
@@ -344,9 +348,8 @@ def season_approval_change(
         # What the fingerprint does not cover: the clock, the server and the host.
         divisions = await seasons.get_divisions(season_id)
         rounds = {each.id: await seasons.get_division_rounds(each.id) for each in divisions}
-        attendance, weather = await read_round_windows(round_windows_read)
         dates = approval_checks.date_refusal(
-            divisions, rounds, now=now(), attendance=attendance, weather=weather
+            divisions, rounds, now=now(), leads=await read_round_leads(round_leads_read)
         )
         if dates is not None:
             return Verdict.refuse(dates.reply, dates.reason)
@@ -362,7 +365,7 @@ def season_approval_change(
                 "the season cannot be approved:\n" + "\n".join(channels),
             )
 
-        if await modules.is_images_enabled():
+        if await modules.is_enabled("images"):
             fault = rasteriser_fault()
             if fault:
                 return Verdict.refuse(
@@ -500,13 +503,15 @@ def season_approval_change(
         )
 
     async def arm(ctx: StepContext) -> StepResult:
-        """Arm every round of the season, read as the job runs, whatever the modules.
+        """Arm every round of the season, read as the job runs, with the leads the modules answer.
 
-        Weather on arms each round's phases and result submission together; with it off, the
-        result submission alone, save where results is on under test mode, whose `/test-mode
-        advance` opens each round's wizard by hand. The check-in jobs follow with attendance on.
-        Every job is armed against its round and replaces its own (`replace_existing`), so a
-        retry arms nothing twice.
+        Each module answers the leads it wants set (`round_leads_read`) and core arms them for
+        every round, whatever the modules: results always answers its submission, so every round
+        leaves Not run. Save where results is on under test mode with weather off, whose
+        `/test-mode advance` opens each round's wizard by hand, and where the submission, a lead
+        left to the advance, is dropped (`results_left_to_advance`). Weather on arms each round's
+        phases; the check-in jobs follow with attendance on. Every job is armed against its round
+        and replaces its own (`replace_existing`), so a retry arms nothing twice.
         """
         season_id = int(ctx.payload["season_id"])
         season_number = int(ctx.payload["season_number"])
@@ -517,36 +522,17 @@ def season_approval_change(
             for division in divisions
             for each in await seasons.get_division_rounds(division.id)
         ]
-        attendance, weather = await read_round_windows(round_windows_read)
-        if weather is not None:
-            scheduler.schedule_all_rounds(
-                rounds,
-                division_meta=meta,
-                phase_1_days=weather.phase_1_days,
-                phase_2_days=weather.phase_2_days,
-                phase_3_hours=weather.phase_3_hours,
-            )
-        else:
-            server = await config.get_server_config()
-            by_hand = results_left_to_advance(
-                test_mode=server is not None and server.test_mode_active,
-                results_on=await modules.is_results_enabled(),
-                weather_on=False,
-            )
-            if not by_hand:
-                scheduler.schedule_result_submission_jobs(rounds, division_meta=meta)
-        if attendance is not None:
-            for each in rounds:
-                number, tier = meta[each.division_id]
-                scheduler.schedule_attendance_round(
-                    each,
-                    season_number=number,
-                    division_tier=tier,
-                    notice_days=attendance.notice_days,
-                    last_notice_hours=attendance.last_notice_hours,
-                    deadline_hours=attendance.deadline_hours,
-                    now=now(),
-                )
+        server = await config.get_server_config()
+        leads = await read_round_leads(round_leads_read)
+        if results_left_to_advance(
+            test_mode=server is not None and server.test_mode_active,
+            results_on=await modules.is_enabled("results"),
+            weather_on=await modules.is_enabled("weather"),
+        ):
+            leads = tuple(lead for lead in leads if not lead.left_to_advance)
+        for each in rounds:
+            number, tier = meta[each.division_id]
+            round_jobs.arm_leads(each, leads, number, tier, now())
         return StepResult(result={"rounds": len(rounds)})
 
     async def post_batch_notice(ctx: StepContext) -> StepResult:

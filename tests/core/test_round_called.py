@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 SEASON_ID = 7
 DIVISION_ID = 11

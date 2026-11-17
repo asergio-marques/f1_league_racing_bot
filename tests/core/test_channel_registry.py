@@ -19,20 +19,18 @@ import ast
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.channel_registry_service import (
     SETTING_LABELS,
     ChannelUse,
-    as_text_channel,
     channel_refusal,
     find_channel_use,
     refusal,
 )
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.channel_uses import channel_uses_given
 
 SERVER_ID = 4242
@@ -384,13 +382,6 @@ async def test_a_division_refuses_the_hub_channel(db_path):
 # ---------------------------------------------------------------------------
 
 SRC = Path(__file__).resolve().parents[2] / "src"
-
-
-def test_as_text_channel_hands_back_the_channel_it_was_given():
-    """A narrowing for the type check alone: the same object, and None stays None."""
-    channel = MagicMock()
-    assert as_text_channel(channel) is channel
-    assert as_text_channel(None) is None
 
 
 def _is_listener(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:

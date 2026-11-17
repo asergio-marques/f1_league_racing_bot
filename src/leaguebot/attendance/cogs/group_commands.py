@@ -22,12 +22,12 @@ from leaguebot.attendance.services.sanctions.attendance_sync_change import (
     round_verdict,
 )
 from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call, judge_hand_post
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services.seasons.season_service import round_by_number
 from leaguebot.core.utils.channel_guard import league_manager_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.image.services.render.image_drawing import as_image_drawing
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 

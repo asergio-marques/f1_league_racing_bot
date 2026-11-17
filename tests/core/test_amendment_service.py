@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.points.amendment_mode_service import get_amendment_state
 from tests.support.change_queue import run_queue, stopped_job
 from tests.support.saves import (
@@ -30,8 +30,10 @@ from tests.support.season_league import (
     ongoing_league,
     posted_forecast,
     profile_id,
+    leads_armed,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 
 #: Who staged each change, and when: the modification store records each change it stages (#442).
@@ -45,6 +47,7 @@ ACTOR = {
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
+
 
 
 @pytest.fixture
@@ -222,25 +225,43 @@ async def _stopped_at(league) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-async def test_amend_round_changes_the_field(tmp_path):
+@pytest.mark.parametrize(
+    ("mystery", "old_value"),
+    [
+        pytest.param(
+            False, '"Bahrain International Circuit"', id="a named track",
+        ),
+        pytest.param(
+            True, "null", id="a mystery round naming none",
+        ),
+    ],
+)
+async def test_amend_round_changes_the_field(tmp_path, mystery, old_value):
     """`/round amend` was dead on arrival: its opening SELECT asked `divisions` for a
     `division_id` column, which that table has never had, so every amendment of an active
     season's round raised `no such column: d.division_id` and the league was told the
     amendment failed. Nothing else in the suite executed this path.
 
-    Am's round 3, at Bahrain International Circuit, is amended to Silverstone Circuit and the
-    queue run: the round holds the new track, and its record names the change from the old.
+    Am's round 3, at Bahrain International Circuit, or (a mystery round naming none) a mystery
+    round with no track, is amended to Silverstone Circuit, the mystery round to the NORMAL
+    format with it, and the queue run: the round holds the new track, and its record names the
+    change from the old, each value as JSON: the old track in quotes, or null where there was
+    none, and the new one in quotes.
     """
     league = await ongoing_league(tmp_path)
     await _place(league, at=timedelta(days=90))
-
-    await _amend(league, track=SILVERSTONE)
+    if mystery:
+        await league.write(
+            "UPDATE rounds SET format = 'MYSTERY', track_name = NULL WHERE id = ?", AM_3
+        )
+        await _amend(league, track=SILVERSTONE, format="NORMAL")
+    else:
+        await _amend(league, track=SILVERSTONE)
 
     assert (await _round(league))["track_name"] == SILVERSTONE
-    [entry] = await _round_audits(league)
-    assert entry["change_type"] == "round.track_name"
-    assert entry["old_value"] == BAHRAIN
-    assert entry["new_value"] == SILVERSTONE
+    [entry] = [a for a in await _round_audits(league) if a["change_type"] == "round.track_name"]
+    assert entry["old_value"] == old_value
+    assert entry["new_value"] == '"Silverstone Circuit"'
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +315,7 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
 
 @pytest.mark.parametrize("fault_in", [
-    "arming the round's jobs",
+    pytest.param("arming the round's jobs"),
     "re-running a phase",
 ])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
@@ -428,25 +449,28 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
-    `schedule_round` falls back to the packaged 5 / 2 / 2 when it is not told otherwise, and the
+    The arming once fell back to the packaged 5 / 2 / 2 when it was not told otherwise, and the
     amendment never told it — so a league running 7 / 3 / 4 had the defaults quietly restored
     every time it moved a round, and the phases fired at moments nobody had chosen. It also put
     the amendment at odds with itself once the rules began reading the configured horizons: a
-    phase would be judged at seven days and armed at five.
+    phase would be judged at seven days and armed at five. Weather now answers its own leads,
+    and core keeps no horizons of its own.
 
-    Weather on, the league's horizons 7 / 3 / 4; Am's round 3 has its track amended.
+    Weather on, the league's horizons 7 / 3 / 4; Am's round 3 has its track amended. The round is
+    armed once, its three phases 7 days, 3 days and 4 hours before it.
     """
     league = await ongoing_league(tmp_path, weather=True, horizons=(7, 3, 4))
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, track=SILVERSTONE)
 
-    schedule_round = league.bot.scheduler_service.schedule_round
-    schedule_round.assert_called_once()
-    kwargs = schedule_round.call_args.kwargs
-    assert kwargs["phase_1_days"] == 7
-    assert kwargs["phase_2_days"] == 3
-    assert kwargs["phase_3_hours"] == 4
+    [armed] = leads_armed(league.bot.round_jobs)
+    phases = {lead.kind: lead.offset for lead in armed["leads"] if lead.kind.startswith("weather_p")}
+    assert phases == {
+        "weather_p1": -timedelta(days=7),
+        "weather_p2": -timedelta(days=3),
+        "weather_p3": -timedelta(hours=4),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -458,45 +482,51 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     """The reported defect: amending a round destroyed its check-in for good.
 
     Cancelling the round takes all eight of its jobs, the check-in call, its reminder and its
-    deadline included, and only the weather ones were ever put back. Nothing else arms them —
-    `schedule_attendance_round` is called from the confirmation of placements and nowhere else, and that
-    cannot be run again on an active season. So the round asked nobody whether they were racing,
+    deadline included, and only the weather ones were ever put back. Nothing else armed them —
+    the check-in was armed from the confirmation of placements and nowhere else, and that cannot
+    be run again on an active season. So the round asked nobody whether they were racing,
     opened no attendance records, charged nobody, and read afterwards as perfect attendance for
     the entire division, with nothing anywhere reporting it.
 
     Attendance on, at the league's timings (call 5 days out, last notice 24 hours, deadline 2
-    hours); Am's round 3 (season 3, tier 2) is moved from 90 to 100 days out. The check-in is
-    armed against the queue's clock, never the wall clock.
+    hours); Am's round 3 (season 3, tier 2) is moved from 90 to 100 days out. The round is armed
+    once, as amended, under season 3 and tier 2, its leads holding the check-in's call 5 days,
+    last notice 24 hours and deadline 2 hours before it and its clean-up, against the queue's
+    clock, never the wall clock.
     """
     league = await ongoing_league(tmp_path, attendance=True)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    arming = league.bot.scheduler_service.schedule_attendance_round
-    arming.assert_called_once()
-    kwargs = arming.call_args.kwargs
+    [armed] = leads_armed(league.bot.round_jobs)
     # Armed against the league's own timings, and named for the right season and tier.
-    assert kwargs["notice_days"] == 5
-    assert kwargs["last_notice_hours"] == 24
-    assert kwargs["deadline_hours"] == 2
-    assert kwargs["season_number"] == 3
-    assert kwargs["division_tier"] == 2
+    check_in = {lead.kind: lead.offset for lead in armed["leads"] if lead.kind.startswith("rsvp_")}
+    assert {kind: offset for kind, offset in check_in.items() if kind != "rsvp_cleanup"} == {
+        "rsvp_notice": -timedelta(days=5),
+        "rsvp_last_notice": -timedelta(hours=24),
+        "rsvp_deadline": -timedelta(hours=2),
+    }
+    assert "rsvp_cleanup" in check_in
+    assert (armed["season_number"], armed["division_tier"]) == (3, 2)
     # And against the round as amended, not as it stood.
-    assert _utc(arming.call_args.args[0].scheduled_at) == _utc(_at(league, timedelta(days=100)))
+    assert _utc(armed["rnd"].scheduled_at) == _utc(_at(league, timedelta(days=100)))
     # Judged against the queue's clock.
-    assert kwargs["now"] == league.clock.now
+    assert armed["now"] == league.clock.now
 
 
 async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tmp_path):
-    """A disabled module produces nothing, a scheduled job included: attendance off, Am's round 3
-    moved from 90 to 100 days out arms no check-in."""
-    league = await ongoing_league(tmp_path, attendance=False)
+    """A disabled module produces nothing, a scheduled job included: attendance off and weather
+    on, Am's round 3 moved from 90 to 100 days out is armed once, its leads holding weather's
+    forecasts and no check-in."""
+    league = await ongoing_league(tmp_path, attendance=False, weather=True)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    league.bot.scheduler_service.schedule_attendance_round.assert_not_called()
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert any(lead.kind.startswith("weather_p") for lead in armed["leads"])
+    assert not [lead.kind for lead in armed["leads"] if lead.kind.startswith("rsvp_")]
 
 
 # ---------------------------------------------------------------------------
@@ -505,36 +535,40 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
 
 
 async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path):
-    """`schedule_round` builds the weather jobs and the results job together.
+    """The result submission once came only with the weather jobs.
 
-    So with weather switched off it was never called, and the amendment's cancel took the
+    So with weather switched off it was never armed, and the amendment's cancel took the
     round's results job with nothing putting it back. That job is the round's one clock-driven
     status transition — without it the round never leaves NOT_RUN, its division never finishes,
-    and its season can never be completed.
+    and its season can never be completed. Results answers with its submission whatever the
+    modules.
 
-    Weather and attendance off; Am's round 3 (season 3, tier 2) moved from 90 to 100 days out.
+    Weather and attendance off; Am's round 3 (season 3, tier 2) moved from 90 to 100 days out:
+    the round is armed once, with results' submission alone, under season 3 and tier 2.
     """
     league = await ongoing_league(tmp_path)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    arming = league.bot.scheduler_service.schedule_result_submission_jobs
-    arming.assert_called_once()
-    assert [r.id for r in arming.call_args.args[0]] == [AM_3]
-    assert arming.call_args.kwargs["division_meta"] == {AM: (3, 2)}
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert armed["rnd"].id == AM_3
+    assert [lead.kind for lead in armed["leads"]] == ["results"]
+    assert (armed["season_number"], armed["division_tier"]) == (3, 2)
 
 
 async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
-    """With weather on, `schedule_round` has already created it — arming again would duplicate.
-    Am's round 3 moved from 90 to 100 days out."""
+    """With weather on, the round's forecasts and its result submission are armed together, and
+    the submission once only: arming it again would duplicate. Am's round 3 moved from 90 to 100
+    days out is armed once, its leads holding one result submission."""
     league = await ongoing_league(tmp_path, weather=True)
     await _place(league, at=timedelta(days=90))
 
     await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    league.bot.scheduler_service.schedule_round.assert_called_once()
-    league.bot.scheduler_service.schedule_result_submission_jobs.assert_not_called()
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert [lead.kind for lead in armed["leads"]].count("results") == 1
+    assert league.armed == [("weather", [AM_3])]
 
 
 # ---------------------------------------------------------------------------
@@ -837,8 +871,8 @@ async def _bot_recording_reposts(path: str, reposted: list[tuple], *,
 
     bot.user.id = _BOT_USER_ID
     bot.get_guild = MagicMock(return_value=guild)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", False)
+    answer_switch(bot.module_service, "images", False)
     bot.image_config_service.get_toggles = AsyncMock(return_value={})
     return bot
 
@@ -1264,7 +1298,7 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
         path, [], missing=(601,),
         attendance_hook_of=lambda made, _path: AttendanceAfterReview(made, MagicMock()),
     )
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
 
     press = await _approve(path, season_id, bot)
 
@@ -1302,9 +1336,7 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
     # 601 is absent, but the module is off, or cannot be read, so nothing asks after it.
     bot = await _bot_recording_reposts(path, [], missing=(601,))
     if unreadable:
-        bot.module_service.is_attendance_enabled = AsyncMock(
-            side_effect=sqlite3.OperationalError("database is locked")
-        )
+        answer_switch(bot.module_service, "attendance", sqlite3.OperationalError("database is locked"))
     await _approve(path, season_id, bot)
 
     async with get_connection(path) as db:

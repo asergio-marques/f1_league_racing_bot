@@ -22,13 +22,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
-from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.db.database import get_connection, run_migrations
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import change_rows, member_interaction, run_queue, tier_member
 from tests.support.season_league import setup_league
 from tests.support.settings_league import fault_in, last_said, log_lines, record_followups, said
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7731
 
@@ -82,7 +83,7 @@ def _cog(db_path):
 
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "signup", True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.scheduler_service = MagicMock()
     bot.output_router.post_log = AsyncMock()
@@ -487,7 +488,7 @@ async def test_a_close_time_faulted_in_its_save_stores_nothing(
     args = () if run is _cancel else (LATER,)
 
     asked = await _asked(league, run, *args)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     command = f"/signup close-time {name}"

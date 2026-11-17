@@ -30,6 +30,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
@@ -47,14 +48,14 @@ from leaguebot.signup.services.window_changes import (
 )
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.time_parsing import parse_time_of_day
-from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.utils.time_parsing import parse_time_of_day
+from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
-from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
-from leaguebot.core.utils.messages import chunk_message
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
+from leaguebot.framework.utils.league_server import LeagueView, is_foreign_guild
+from leaguebot.utils.messages import chunk_message
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import name_of_member, record_abandoned, refuse
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
@@ -276,7 +277,7 @@ class SignupCog(commands.Cog):
         change nothing and record nothing. A command run in a DM never gets this far: the
         tier guard has sent it to the host log.
         """
-        if await self.bot.module_service.is_signup_enabled():
+        if await self.bot.module_service.is_enabled(SWITCH_KEY):
             return True
         reply = "⛔ Signup module is not enabled. Use `/module enable signup` first."
         if record:

@@ -17,9 +17,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.change_queue import in_a_job
 from tests.support.saves import create_image_defaults, set_field
+from tests.support.switches import answer_switch
+from tests.support.switches import switches
 
 
 pytestmark = pytest.mark.asyncio
@@ -44,7 +46,7 @@ def _drawn(tmp_path, championship: str) -> Path:
 def _bot(db_path="db", *, module=True, toggle=True, drivers_valid=True, constructors_valid=True):
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module)
+    answer_switch(bot.module_service, "images", module)
     bot.image_config_service.get_toggles = AsyncMock(return_value={"standings": toggle})
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={
@@ -98,7 +100,7 @@ def _drawing(*, module=True, toggle=True, drivers_valid=True, constructors_valid
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=module)
+    answer_switch(modules, "images", module)
     config = MagicMock()
     if isinstance(toggle, Exception):
         config.get_toggles = AsyncMock(side_effect=toggle)
@@ -371,7 +373,7 @@ async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
 
 async def _seed_league(tmp_path):
     """A season, a division, two teams with seats, two drivers, a run round and a next one."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "league.db")
     await run_migrations(db_path)
@@ -630,7 +632,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
     config_service = ImageConfigService(db_path)
     await create_image_defaults(config_service)
     validity_service = ImageValidityService(
-        config_service, SimpleNamespace(is_images_enabled=_true), MagicMock()
+        config_service, switches(images=True), MagicMock()
     )
     bot = SimpleNamespace(
         db_path=db_path,
@@ -723,7 +725,7 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
 
 async def _seed(tmp_path, *, cancelled=False):
     """A database holding one season, division and round, ready to post standings for."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "standings.db")
     await run_migrations(db_path)
@@ -762,7 +764,7 @@ async def _seed(tmp_path, *, cancelled=False):
 
 async def _seed_previous(db_path, division_id, round_id, **ids):
     """Record the message each championship's standings stand as, e.g. ``drivers=4321``."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.publishing.results_post_service import (
         set_standings_message_id_on,
     )
@@ -1061,7 +1063,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
     reported with 4321 as the message it replaces, which is left standing and its id left
     recorded, for the change queue's own jobs to save the new id and delete the old once the new
     one stands (FR-048)."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
     from leaguebot.results.services.publishing.results_post_service import (
         PostedTable,
@@ -1223,7 +1225,7 @@ async def _highlighted_svg(tmp_path):
     explicitly invites, turned the marked test below red with a plate colour of its own. The
     `rasteriser` marker keeps that test out of CI, so nothing else would ever have caught it.
     """
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.image.models.image_constants import packaged_directory_for
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import resolve_configured_directories

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.core.test_driver_move import (
     _NOW,
     AM,

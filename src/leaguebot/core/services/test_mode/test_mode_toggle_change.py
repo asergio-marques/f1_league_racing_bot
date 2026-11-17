@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -53,7 +53,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -82,10 +82,10 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
     switch_test_mode_off_on,
 )
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
 
 TEST_MODE_TOGGLE = "core.test_mode_toggle"
 

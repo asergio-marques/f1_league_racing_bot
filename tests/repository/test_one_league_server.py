@@ -19,7 +19,7 @@ import discord
 import pytest
 
 from leaguebot.__main__ import create_bot
-from leaguebot.core.utils.league_server import (
+from leaguebot.framework.utils.league_server import (
     REFUSAL,
     UNCLAIMED_REFUSAL,
     LeagueCommandTree,
@@ -43,6 +43,7 @@ def _bot(league: int | None):
     bot = create_bot()
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=league)
+    bot.league_settings = bot.config_service
     return bot
 
 
@@ -88,7 +89,7 @@ async def test_a_refused_command_never_runs():
 async def test_a_command_from_another_server_is_not_recorded_in_the_log_channel(caplog):
     """Someone on another server is no member of the league: their refusal goes to the host's
     log alone (owner decision on #482, 2026-09-29: host log only)."""
-    caplog.set_level(logging.INFO, logger="leaguebot.core.utils.league_server")
+    caplog.set_level(logging.INFO, logger="leaguebot.framework.utils.league_server")
     bot = _bot(LEAGUE)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
@@ -99,7 +100,7 @@ async def test_a_command_from_another_server_is_not_recorded_in_the_log_channel(
     interaction.response.send_message.assert_awaited_once_with(REFUSAL, ephemeral=True)
     bot.output_router.post_log.assert_not_awaited()
     [line] = [
-        r.getMessage() for r in caplog.records if r.name == "leaguebot.core.utils.league_server"
+        r.getMessage() for r in caplog.records if r.name == "leaguebot.framework.utils.league_server"
     ]
     assert str(ELSEWHERE) in line and "user 7" in line
 
@@ -131,9 +132,12 @@ async def test_only_another_server_is_foreign():
 
 
 async def test_the_league_s_guild_is_found_through_its_configuration():
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
-    bot.get_guild.return_value = "the guild"
+    """The framework's settings protocol is all the lookup asks of the bot: a bot carrying only
+    `league_settings` finds the league's guild, with no service of core's on it."""
+    league_settings = MagicMock()
+    league_settings.get_league_server_id = AsyncMock(return_value=LEAGUE)
+    bot = SimpleNamespace(league_settings=league_settings,
+                          get_guild=MagicMock(return_value="the guild"))
 
     assert await league_guild(bot) == "the guild"
     bot.get_guild.assert_called_once_with(LEAGUE)
@@ -142,6 +146,7 @@ async def test_the_league_s_guild_is_found_through_its_configuration():
 async def test_no_guild_before_any_server_is_set_up():
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=None)
+    bot.league_settings = bot.config_service
 
     assert await league_guild(bot) is None
     bot.get_guild.assert_not_called()
@@ -273,7 +278,7 @@ def test_every_view_and_modal_derives_from_the_league_s_own():
     """
     direct = []
     for path, tree in _src_trees():
-        if path == "core/utils/league_server.py":
+        if path == "framework/utils/league_server.py":
             continue
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -291,7 +296,7 @@ _LISTENERS_NOT_ABOUT_A_SERVER = {
     ("__main__.py", "on_disconnect"): "reports a lost connection to the host, whichever server",
     ("__main__.py", "_warn_if_serving_several"): (
         "warns the host of every server the bot sits in, the league's included, by design "
-        "(core/utils/league_server.py, 'Upon another server the bot stays, and refuses')"
+        "(framework/utils/league_server.py, 'Upon another server the bot stays, and refuses')"
     ),
 }
 
@@ -348,7 +353,7 @@ def _guild(guild_id: int, name: str):
 def test_the_host_is_warned_when_the_bot_sits_in_two_servers(caplog):
     bot = SimpleNamespace(guilds=[_guild(ELSEWHERE, "Test"), _guild(LEAGUE, "League")])
 
-    with caplog.at_level(logging.WARNING, logger="leaguebot.core.utils.league_server"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.framework.utils.league_server"):
         warn_if_serving_several(bot)
 
     [record] = caplog.records
@@ -361,7 +366,7 @@ def test_the_host_is_warned_when_the_bot_sits_in_two_servers(caplog):
 def test_one_server_raises_no_warning(caplog):
     bot = SimpleNamespace(guilds=[_guild(LEAGUE, "League")])
 
-    with caplog.at_level(logging.WARNING, logger="leaguebot.core.utils.league_server"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.framework.utils.league_server"):
         warn_if_serving_several(bot)
 
     assert caplog.records == []
@@ -387,6 +392,7 @@ async def test_the_host_is_warned_at_start_up_and_on_joining_a_server(event, mon
 def _listener_bot():
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
+    bot.league_settings = bot.config_service
     bot.wizard_service.get_wizard_by_channel = AsyncMock(return_value=None)
     bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router.post_log = AsyncMock()

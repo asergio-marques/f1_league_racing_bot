@@ -50,6 +50,7 @@ from leaguebot.results.models.points_config import (
 )
 from leaguebot.results.services.points.points_config_service import ConfigNotFoundError
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12008
 SEASON_ID = 1
@@ -65,7 +66,7 @@ def _make_cog(*, enabled: bool = True, season_status: str | None = "ACTIVE") -> 
     bot = MagicMock()
     bot.db_path = "/tmp/not-read.db"
     bot.module_service = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
+    answer_switch(bot.module_service, "results", enabled)
     bot.season_service = MagicMock()
     bot.season_service.get_season_for_server = AsyncMock(
         return_value=None

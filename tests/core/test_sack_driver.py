@@ -36,7 +36,7 @@ import os
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.placement_service import PlacementService
 from tests.core.test_driver_move import _NOW, _end_the_races, _unconfirm_lewis
@@ -201,7 +201,7 @@ async def _profile_state(db_path):
 
 async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     """Issue #220: an uncommitted placement is unassigned, an Unassigned driver rejected."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, name="sack_uncommitted")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE driver_season_assignments SET committed = 0")
@@ -228,7 +228,7 @@ async def test_any_other_state_is_refused(tmp_path, state):
     refusal names the state it found: a manager who meets it needs to know which state they
     hit, not merely that they hit one — a driver still in review and one already gone call for
     different next steps."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, name=f"refuse_{state.value}", state=state)
 
     with pytest.raises(Refused, match=f"Unassigned or Assigned.*{state.value}"):
@@ -555,7 +555,7 @@ def _sack_line(name: str, user_id: int) -> str:
 
 
 def _sack_refusal(reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
     from tests.core.test_driver_move import _ADMIN
 
     return f"⛔ `/driver sack` refused for {_ADMIN} — {reply_reason(reply)}"
@@ -584,10 +584,10 @@ async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_role
     role touched and no lineup posted until the queue runs the change, of kind `core.driver_sack`.
     Once it has, Lewis holds no seat and is at Not Signed Up, every other driver where they sat;
     one audit entry, `DRIVER_SACK`, by Admin, stamped with the queue's clock, records him Assigned
-    in Pro before and Not Signed Up after; the log channel holds today's success line once; Lewis
-    has Pro's role, Ferrari's and the driver role taken; Pro's lineup is posted once in its lineup
-    channel and Am's not at all; and the acknowledgement is updated to today's reply, word for
-    word."""
+    in Pro before and Not Signed Up after, each value JSON with its keys sorted; the log channel
+    holds today's success line once; Lewis has Pro's role, Ferrari's and the driver role taken;
+    Pro's lineup is posted once in its lineup channel and Am's not at all; and the
+    acknowledgement is updated to today's reply, word for word."""
     from tests.core.test_driver_move import _STANDING, _seated
     from tests.support.change_queue import change_rows, run_queue, step_rows
     from tests.support.season_league import (
@@ -615,6 +615,13 @@ async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_role
     assert (entry["change_type"], entry["actor_id"]) == ("DRIVER_SACK", 77)
     assert entry["old_value"] == {"state": "ASSIGNED", "divisions": [PRO]}
     assert entry["new_value"]["new_state"] == DriverState.NOT_SIGNED_UP.value
+    [written] = await league.rows(
+        "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'DRIVER_SACK'"
+    )
+    assert (written["old_value"], written["new_value"]) == (
+        json.dumps(entry["old_value"], sort_keys=True),
+        json.dumps(entry["new_value"], sort_keys=True),
+    )
     assert entry["timestamp"] == league.clock.now.isoformat()
     assert _sack_lines(await log_lines(league)) == [_sack_line("Lewis", LEWIS)]
     assert sorted(league.revoked[LEWIS]) == [PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE]
@@ -688,7 +695,7 @@ async def test_a_failed_driver_sack_sacks_nothing(tmp_path):
 
     league = await _ongoing_sack(tmp_path)
     asked = await _ask_sack(league, LEWIS)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _seated(league) == _STANDING

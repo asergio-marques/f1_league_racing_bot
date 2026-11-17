@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
@@ -241,6 +241,9 @@ async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatc
 
 
 async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
+    """The driver pass is audited once, by the system, at the time it is handed, each value JSON
+    with its keys sorted: the old value each reset driver's state by their profile id, the new
+    one the deleted profiles first, then the state they were reset to."""
     import json
 
     await _pass(db_path)
@@ -255,6 +258,8 @@ async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
     assert row["timestamp"] == NOW.isoformat()
     assert json.loads(row["old_value"])["2"] == "ASSIGNED"
     assert json.loads(row["new_value"])["deleted"] == [2, 3, 4, 5]
+    assert row["old_value"] == json.dumps(json.loads(row["old_value"]), sort_keys=True)
+    assert row["new_value"] == '{"deleted": [2, 3, 4, 5], "state": "NOT_SIGNED_UP"}'
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +470,7 @@ async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
     (`season_lifecycle_service.py:493-494`)."""
     import discord
 
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
     from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 

@@ -128,7 +128,7 @@ def layer_of(rel: str) -> str:
 def known_tables(src: Path) -> set[str]:
     """Every table the migrations leave standing, applied in file order."""
     tables: set[str] = set()
-    for sql in sorted((src / "leaguebot" / "core" / "db" / "migrations").glob("*.sql")):
+    for sql in sorted((src / "leaguebot" / "framework" / "db" / "migrations").glob("*.sql")):
         text = sql.read_text(encoding="utf-8")
         tables.update(_CREATE.findall(text))
         tables.difference_update(_DROP.findall(text))

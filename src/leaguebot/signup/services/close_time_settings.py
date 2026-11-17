@@ -1,7 +1,7 @@
 """`/signup close-time add`, `cancel` and `modify` as changes on the queue.
 
 Each asks one change, `signup.close_time.<command>`, built from the `Setting` below by
-`setting_change` (`core/services/queue/setting_change.py`, which holds what every settings change
+`setting_change` (`framework/services/queue/setting_change.py`, which holds what every settings change
 does with a fault). The close time stored on the window, its audit entry and its log line are one
 save, stamped by the queue's clock. The close timer (`window_close.CLOSE_TIMER`) is armed or
 disarmed by a step after the save, which the setting does not need: a fault arming or disarming it
@@ -25,10 +25,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
-from leaguebot.core.services.queue.setting_change import After, Saved, Setting
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
+from leaguebot.utils.messages import discord_ts
 from leaguebot.signup.services.signup_settings import NOT_ENABLED
 from leaguebot.signup.services.window_close import (
     CLOSE_TIMER,
@@ -40,8 +41,8 @@ from leaguebot.signup.services.window_close import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 KIND_PREFIX = "signup.close_time."
@@ -112,7 +113,7 @@ def close_time_settings(
 
     async def open_window(ctx: CheckContext) -> tuple[str | None, str | None]:
         """The refusal of a module off or a window not open, and the close time stored."""
-        if not await modules.is_signup_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return NOT_ENABLED, None
         cfg = await signup.get_config()
         if cfg is None or not cfg.signups_open:

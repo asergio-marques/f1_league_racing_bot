@@ -13,7 +13,8 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.switches import answer_switch
 
 SERVER_ID = 22071
 SEASON_ID = 7
@@ -50,9 +51,9 @@ async def db_path(tmp_path):
 
 def _modules(*, weather=False, results=False, attendance=False):
     modules = MagicMock()
-    modules.is_weather_enabled = AsyncMock(return_value=weather)
-    modules.is_results_enabled = AsyncMock(return_value=results)
-    modules.is_attendance_enabled = AsyncMock(return_value=attendance)
+    answer_switch(modules, "weather", weather)
+    answer_switch(modules, "results", results)
+    answer_switch(modules, "attendance", attendance)
     return modules
 
 
@@ -160,7 +161,7 @@ async def test_the_unsettled_signups_are_read_by_the_service(db_path):
     from types import SimpleNamespace
 
     from leaguebot.core.services.seasons.approval_checks import unsettled_signups
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.wiring import sign_up_to_driver_names_read
 
@@ -233,7 +234,7 @@ def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.services.seasons import approval_checks
-    from leaguebot.core.utils.formatting import discord_ts
+    from leaguebot.utils.messages import discord_ts
 
     at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
     later = at + timedelta(days=7)
@@ -270,7 +271,7 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
     hook a season's confirmation is refused through, as signup's wiring signs them up: a season's
     approval is refused only while signup is on and its channel unset, in today's words, word for
     word; and signup refuses neither the review nor the configuration's confirmation."""
-    from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+    from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
     from tests.support.review_workflows import (
         sign_up_confirmation_refused,
         sign_up_signup_refusals,
@@ -278,8 +279,8 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
 
     bot = MagicMock()
     bot.db_path = ":memory:"
-    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
+    answer_switch(bot.module_service, "results", False)
+    answer_switch(bot.module_service, "signup", enabled)
     bot.signup_module_service.get_config = AsyncMock(return_value=config)
     sign_up_confirmation_refused(bot)
     sign_up_signup_refusals(bot)

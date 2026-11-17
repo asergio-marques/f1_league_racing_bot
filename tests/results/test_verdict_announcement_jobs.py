@@ -27,7 +27,7 @@ import discord
 import pytest
 
 from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.verdict_announcement_service import (
@@ -66,6 +66,7 @@ from tests.support.review_league import (
     stopped_at,
     verdict_headings,
 )
+from tests.support.switches import answer_switch
 
 APPEALS_PROMPT = 8902
 
@@ -967,7 +968,7 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     from leaguebot.image.models.image_module import Problem, RenderOutcome
 
     league = await review_league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={template: MagicMock(valid=True)}
@@ -1007,7 +1008,7 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
 
     league = await review_league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={template: MagicMock(valid=True)}
@@ -1048,7 +1049,7 @@ async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_i
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
 
     league = await review_league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={aspect: True})
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={template: MagicMock(valid=True)}
@@ -1092,7 +1093,7 @@ async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_wh
     from leaguebot.image.models.image_module import Problem, RenderOutcome
 
     league = await review_league(tmp_path)
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={"verdicts": True})
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={"verdicts_template": MagicMock(valid=True)}

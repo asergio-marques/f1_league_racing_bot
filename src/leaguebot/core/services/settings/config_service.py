@@ -14,8 +14,10 @@ import logging
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.server_config import ServerConfig
+from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
+from leaguebot.framework.models.league_settings import SettingsRow
 
 log = logging.getLogger(__name__)
 
@@ -85,7 +87,7 @@ class ConfigService:
     async def get_league_server_id(self) -> int | None:
         """The league's server: the one that holds the configuration row, or None.
 
-        `/bot init` claims it and `/bot pack` frees it; see `leaguebot.core.utils.league_server`, which asks
+        `/bot init` claims it and `/bot pack` frees it; see `leaguebot.framework.utils.league_server`, which asks
         this before every command.
         """
         async with get_connection(self._db_path) as db:
@@ -95,6 +97,17 @@ class ConfigService:
         """`get_league_server_id` on *db*, for a save that must see its own writes: `/bot init`'s
         save asks it, after its claim is refused, who holds the league."""
         return await league_server_id_on(db)
+
+    def is_league_admin(self, config: SettingsRow | None, member: discord.Member) -> bool:
+        """Whether *member* holds the league admin tier, which the framework's change queue asks of
+        a Discard through `AuthorityTiers`. The rule is `channel_guard`'s, which this hands over."""
+        return is_league_admin(config, member)
+
+    def is_league_manager(self, config: SettingsRow | None, member: discord.Member) -> bool:
+        """Whether *member* holds the league manager tier (the league admin's carries it), which
+        the framework's change queue asks of a Retry through `AuthorityTiers`. The rule is
+        `channel_guard`'s, which this hands over."""
+        return is_league_manager(config, member)
 
     async def claim_on(self, db: aiosqlite.Connection, cfg: ServerConfig) -> bool:
         """Claim the league's server for *cfg* on *db*, committing nothing. Returns whether it did.

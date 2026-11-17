@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from tests.support.change_queue import (
     Clock,
     INTERACTION_CHANNEL_ID,

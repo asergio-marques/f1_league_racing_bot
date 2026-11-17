@@ -116,7 +116,7 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
     league.guild.create_text_channel = AsyncMock(side_effect=_create)
     category.create_text_channel = league.guild.create_text_channel
     # The league's default teams, which the wizard's team buttons offer (the Reserve team apart).
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.drivers.team_service import TeamService
 
     league.bot.team_service = TeamService(league.db_path)
@@ -915,7 +915,7 @@ async def _ask_channel_gone(league: SeasonLeague) -> int | None:
     """Ask the queue, as the bot, to end Kimi's signup because his signup channel (6405) was gone
     when his review panel was due, as the panel's job does; gives the change's id, or None where
     it was not due."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.signup.services.wizard_changes import CHANNEL_GONE
 
     return await league.bot.change_queue.ask(
@@ -1503,14 +1503,14 @@ def _stuck_turn(league: SeasonLeague) -> list[str]:
     """Register `KIMI_TURN`, a change of the test's own on Kimi's lane: one job posting in his
     channel, which Discord refuses, its conversation read from his wizard's row. Gives the list
     each try that reaches Discord is noted in."""
-    from leaguebot.core.models.change import (
+    from leaguebot.framework.models.change import (
         PlannedStep,
         StepFailedOnDiscord,
         StepKind,
         StepResult,
         Verdict,
     )
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import register
 
     tries: list[str] = []

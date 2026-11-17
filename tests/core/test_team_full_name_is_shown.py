@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.standings.standings_service import opening_team_standings
 from leaguebot.core.services.drivers.team_service import (
     team_artwork_keys_for_instances,

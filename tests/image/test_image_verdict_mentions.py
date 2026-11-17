@@ -69,7 +69,7 @@ async def _seed(db_path: str, drivers) -> None:
 
     *drivers* is an iterable of ``(user_id, signup_display_name, signup_username)``.
     """
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     await run_migrations(db_path)
 

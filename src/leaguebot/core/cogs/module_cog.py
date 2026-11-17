@@ -8,13 +8,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.models.change import module_off, module_on
+from leaguebot.framework.models.change import module_off, module_on
 from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_server import LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_server import LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 
 
 _MODULE_CHOICES = [
@@ -306,8 +306,7 @@ class ModuleCog(commands.Cog):
         here."""
         enabled = set()
         for module in _MODULE_NAMES:
-            is_enabled = getattr(self.bot.module_service, f"is_{module}_enabled")
-            if await is_enabled():
+            if await self.bot.module_service.is_enabled(module):
                 enabled.add(module)
         return frozenset(enabled)
 
@@ -318,8 +317,7 @@ class ModuleCog(commands.Cog):
         table for every module rather than a rule of *module*'s own, so a second table entry
         needs no change here. Empty for a module with no entry, as `needs` already is."""
         for required in needs(module):
-            is_enabled = getattr(self.bot.module_service, f"is_{required}_enabled")
-            if not await is_enabled():
+            if not await self.bot.module_service.is_enabled(required):
                 await refuse(
                     interaction,
                     f"❌ The {_MODULE_LABEL[module]} requires the {_MODULE_LABEL[required]} "
@@ -402,7 +400,7 @@ class ModuleCog(commands.Cog):
         doing: disabling mid-season destroys that season's results entire and closes every
         round still waiting on them.
         """
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled("results"):
             await refuse(
                 interaction, "⚠️ Results & Standings module is already disabled.", what=describe(interaction)
             )

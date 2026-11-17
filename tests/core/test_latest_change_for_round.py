@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import json
 
-from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.queue.queue_records import AskedChange, latest_change_for_round
+from leaguebot.framework.db.database import get_connection, run_migrations
+from leaguebot.framework.services.queue.queue_records import AskedChange, latest_change_for_round
 
 KIND = "results.review.open"
 

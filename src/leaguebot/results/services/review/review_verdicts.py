@@ -74,9 +74,9 @@ from typing import TYPE_CHECKING, Any
 
 import discord
 
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
@@ -85,14 +85,14 @@ from leaguebot.core.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.services.drivers import lineup_posting
-from leaguebot.core.services.posting import standing_posts
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
-from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
+from leaguebot.framework.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import OutcomeContext, Step, StepContext
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.image.models import verdict_banner_drawing
 from leaguebot.results.services.review import verdict_announcement_service as vas
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview

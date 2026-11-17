@@ -215,7 +215,7 @@ async def test_a_text_heading_is_returned_so_it_can_be_taken_down(flow):
 async def test_the_banner_is_discarded_once_posted(flow, monkeypatch, refuses):
     """The banner's file is discarded through the drawing once its post is made, whether Discord
     took it or refused it, so no rendered png outlives the heading."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     discard = MagicMock()
     monkeypatch.setattr(flow["drawing"], "discard_attachment", discard)

@@ -67,7 +67,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 
 async def _ask_closing(league: SeasonLeague, user_id: int = SIGNING_UP) -> int | None:
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     return await league.bot.change_queue.ask(
         CLOSING_KIND,

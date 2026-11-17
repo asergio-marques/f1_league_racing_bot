@@ -141,39 +141,39 @@ def test_no_test_patches_a_name_its_module_does_not_have():
 def test_the_check_sees_each_form_of_a_patch_that_creates_a_missing_name():
     source = (
         "from unittest.mock import patch\n"
-        "import leaguebot.core.utils.league_bot as lb\n"
-        "from leaguebot.core.utils import league_bot as other\n"
-        "from leaguebot.core.utils.league_bot import LeagueBot\n"
+        "import leaguebot.framework.utils.league_bot as lb\n"
+        "from leaguebot.framework.utils import league_bot as other\n"
+        "from leaguebot.framework.utils.league_bot import LeagueBot\n"
         "def test_a(monkeypatch):\n"
-        "    patch('leaguebot.core.utils.league_bot.gone', new=1, create=True)\n"
+        "    patch('leaguebot.framework.utils.league_bot.gone', new=1, create=True)\n"
         "    patch.object(lb, 'also_gone', new=1, create=True)\n"
         "    monkeypatch.setattr(other, 'again_gone', 1, raising=False)\n"
-        "    monkeypatch.setattr('leaguebot.core.utils.league_bot.path_gone', 1, raising=False)\n"
+        "    monkeypatch.setattr('leaguebot.framework.utils.league_bot.path_gone', 1, raising=False)\n"
         "    monkeypatch.setattr(LeagueBot, 'class_gone', 1, raising=False)\n"
-        "    patch('leaguebot.core.utils.league_bot.LeagueBot.path_class_gone', new=1, create=True)\n"
+        "    patch('leaguebot.framework.utils.league_bot.LeagueBot.path_class_gone', new=1, create=True)\n"
         "    monkeypatch.setattr(other.LeagueBot, 'module_class_gone', 1, raising=False)\n"
         "    patch.object(lb.LeagueBot, 'alias_class_gone', new=1, create=True)\n"
     )
 
     assert _dead_patches(source, "t.py") == [
-        "t.py:6: leaguebot.core.utils.league_bot.gone",
-        "t.py:7: leaguebot.core.utils.league_bot.also_gone",
-        "t.py:8: leaguebot.core.utils.league_bot.again_gone",
-        "t.py:9: leaguebot.core.utils.league_bot.path_gone",
-        "t.py:10: leaguebot.core.utils.league_bot.LeagueBot.class_gone",
-        "t.py:11: leaguebot.core.utils.league_bot.LeagueBot.path_class_gone",
-        "t.py:12: leaguebot.core.utils.league_bot.LeagueBot.module_class_gone",
-        "t.py:13: leaguebot.core.utils.league_bot.LeagueBot.alias_class_gone",
+        "t.py:6: leaguebot.framework.utils.league_bot.gone",
+        "t.py:7: leaguebot.framework.utils.league_bot.also_gone",
+        "t.py:8: leaguebot.framework.utils.league_bot.again_gone",
+        "t.py:9: leaguebot.framework.utils.league_bot.path_gone",
+        "t.py:10: leaguebot.framework.utils.league_bot.LeagueBot.class_gone",
+        "t.py:11: leaguebot.framework.utils.league_bot.LeagueBot.path_class_gone",
+        "t.py:12: leaguebot.framework.utils.league_bot.LeagueBot.module_class_gone",
+        "t.py:13: leaguebot.framework.utils.league_bot.LeagueBot.alias_class_gone",
     ]
 
 
 def test_the_check_passes_over_a_name_the_target_has_and_a_target_it_cannot_resolve():
     source = (
         "from unittest.mock import patch\n"
-        "import leaguebot.core.utils.league_bot as lb\n"
+        "import leaguebot.framework.utils.league_bot as lb\n"
         "def test_a(monkeypatch, cog):\n"
-        "    patch('leaguebot.core.utils.league_bot.LeagueBot', new=1, create=True)\n"
-        "    patch('leaguebot.core.utils.league_bot.LeagueBot.setup_hook', new=1, create=True)\n"
+        "    patch('leaguebot.framework.utils.league_bot.LeagueBot', new=1, create=True)\n"
+        "    patch('leaguebot.framework.utils.league_bot.LeagueBot.setup_hook', new=1, create=True)\n"
         "    patch('os.path.gone', new=1, create=True)\n"
         "    patch.object(lb, 'gone', new=1)\n"
         "    monkeypatch.setattr(lb, 'gone', 1)\n"

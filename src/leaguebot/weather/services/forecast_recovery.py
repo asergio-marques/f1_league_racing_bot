@@ -31,12 +31,12 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import forecasts_named
+from leaguebot.framework.db.database import get_connection
+from leaguebot.weather.models.forecast_kinds import forecasts_named
 from leaguebot.core.models.division import DivisionStatus
-from leaguebot.core.models.round import RoundFormat, RoundStatus, WeatherWindows
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
+from leaguebot.core.models.round import RoundFormat, RoundStatus
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.seasons.season_service import (
     round_facts_on,
     rounds_called,
@@ -45,6 +45,7 @@ from leaguebot.core.services.seasons.season_service import (
 from leaguebot.weather.models.recovery_failed import RecoveryFailed
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 from leaguebot.weather.services import forecast_changes, weather_config_service
+from leaguebot.weather.services.forecast_leads import forecast_moments
 from leaguebot.weather.services.round_phases import phases_drawn_on
 
 log = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ async def recover_missed_phases(db_path: str, *, queue: ChangeQueue) -> None:
     change's check.
 
     The horizons are the league's own, read from ``weather_pipeline_config`` and placed by
-    `round_event_moments`, not the packaged 5 / 2 / 2. Every other path that decides whether a
+    `forecast_moments`, not the packaged 5 / 2 / 2. Every other path that decides whether a
     phase is overdue reads that config — the confirmation of placements and a round amendment's
     judgement — and a restart judging by the defaults would make the same league see one set of
     timings on an enable and another on a restart: a longer phase 1 would never be published at
@@ -102,11 +103,7 @@ async def recover_missed_phases(db_path: str, *, queue: ChangeQueue) -> None:
     for each in rounds:
         if config is None:
             config = await weather_config_service.get_weather_pipeline_config(db_path)
-        moments = round_event_moments(
-            each.scheduled_at,
-            weather=WeatherWindows(config.phase_1_days, config.phase_2_days, config.phase_3_hours),
-            attendance=None,
-        )
+        moments = forecast_moments(each.scheduled_at, weather_config_service.windows_of(config))
         for phase in (1, 2, 3):
             done = (
                 drawn[each.id].first_done(mystery=each.format == RoundFormat.MYSTERY)

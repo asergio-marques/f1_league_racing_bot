@@ -101,7 +101,7 @@ def _recorded(cog, command: str):
 async def _through_the_tree(command, cog, interaction) -> None:
     """Run the command's body as the bot's command tree does, handing whatever it raises to the
     tree's own failure handler."""
-    from leaguebot.core.utils.league_server import LeagueCommandTree
+    from leaguebot.framework.utils.league_server import LeagueCommandTree
 
     try:
         await _body(command)(cog, interaction)
@@ -270,7 +270,7 @@ async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, mon
     has been replaced — reaches the tree's failure handler: the standard reply saying the save
     may have been partly done, never "The log channel has the detail" nor the error itself, one
     failure line, and the scheduler still resumed (#482, special case 11)."""
-    from leaguebot.core.utils.interaction_errors import failure_reply
+    from leaguebot.framework.utils.interaction_errors import failure_reply
 
     def fail(*_args, **_kwargs):
         raise OSError("the disk is full")

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import tuple_rows
+from leaguebot.framework.db.database import tuple_rows
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 
 if TYPE_CHECKING:

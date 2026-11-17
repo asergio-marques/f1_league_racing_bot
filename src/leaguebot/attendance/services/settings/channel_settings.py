@@ -1,7 +1,7 @@
 """A division's check-in call (RSVP) and attendance channels, as settings on the change queue.
 
 `/attendance channel rsvp` and `/attendance channel attendance` each ask one change built from the
-`Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
+`Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault), `{"division_id",
 "division_name", "value", "channel_name"}`, for the division by its id: the command finds it from
 the name a manager typed and carries that name for the reply and the line, so a division renamed
@@ -31,27 +31,28 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.settings.division_channels import (
     set_attendance_channel,
     set_rsvp_channel,
 )
-from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.models.change import AuditRecord, Verdict
+from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
-    as_text_channel,
     find_channel_use,
     refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 
 RSVP_CHANNEL = "attendance.setting.rsvp_channel"
@@ -87,7 +88,7 @@ def _channel_setting(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         value = int(payload["value"])
-        if not await modules.is_attendance_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         if not _may_post(channel_of(value)):
             return Verdict.refuse(NO_ACCESS)

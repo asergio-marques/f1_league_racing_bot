@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 #: "Now", as the change queue's clock gives it.
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
@@ -119,7 +119,7 @@ async def ask_duplicate(league: Any, source: str = "Pro", new_name: str = "Am", 
 def refusal_line(what: str, reply: str) -> str:
     """The log channel's line for *what* (a command or a form, as the log names it) refused for
     Admin with *reply*."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ {what} refused for {NAMED} — {reply_reason(reply)}"
 

@@ -11,22 +11,22 @@ import aiosqlite
 import discord
 
 from leaguebot.core.services.drivers.driver_names import read_driver_names
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import delete_owned_channel
-from leaguebot.core.services.posting.standing_post_handler import (
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.services.posting.owned_channel_handler import delete_owned_channel
+from leaguebot.framework.services.posting.standing_post_handler import (
     delete_standing,
     edit_standing,
     post_standing,
 )
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.drivers.driver_service import (
     current_account_map_for_division,
     driver_test_names_on,
 )
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_lifecycle_service import season_stage_on
 from leaguebot.core.services.seasons.season_service import (
@@ -47,9 +47,9 @@ from leaguebot.results.services.publishing import (
     standings_drawing_composer,
 )
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from leaguebot.core.models.change import AuditRecord
+from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.results.models.session_result import (
     DriverSessionResult,
     OutcomeModifier,
@@ -67,7 +67,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 )
 from leaguebot.core.services.drivers.team_service import team_names_for_instances
 from leaguebot.results.utils import results_formatter
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing

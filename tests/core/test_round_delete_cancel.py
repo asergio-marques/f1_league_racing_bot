@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.round_cog import RoundCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.setup_rounds import (
@@ -105,6 +105,7 @@ def _make_cog(
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
 
     bot.scheduler_service = MagicMock()
+    bot.round_jobs = MagicMock()
     bot.change_queue = MagicMock()
     # The change's id, as the queue gives it once the change is asked for.
     bot.change_queue.ask = AsyncMock(return_value=1)
@@ -203,7 +204,7 @@ async def test_cancelling_asks_the_queue_with_the_round(tmp_path):
     assert call.kwargs["interaction"] is interaction
     assert call.kwargs["what"] == "`/round cancel`"
     interaction.response.defer.assert_not_awaited()
-    cog.bot.scheduler_service.cancel_round.assert_not_called()
+    cog.bot.round_jobs.cancel_round.assert_not_called()
     cog.bot.season_service.cancel_round.assert_not_awaited()
 
 
@@ -535,7 +536,7 @@ async def test_a_failed_round_delete_deletes_nothing(tmp_path):
     await _give_every_round_a_weather_phase(league.db_path)
     drawn = await _drawn(league.db_path)
     asked = await _ask_delete(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await round_rows(league.db_path, "Pro") == _PRO_STANDING

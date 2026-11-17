@@ -38,7 +38,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.submission.result_submission_service import is_submission_open
 from leaguebot.results.services.review.review_prompts import is_channel_in_penalty_review
 from tests.support.change_queue import ADMIN_ROLE_ID, MANAGER_ROLE_ID, run_queue
@@ -142,7 +142,7 @@ async def _opening_league(tmp_path: Any) -> SeasonLeague:
 async def _open(league: SeasonLeague) -> None:
     """Pro's round 3 starts: its timer asks the queue to open its submission, as the bot, and
     the queue is run."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await league.bot.change_queue.ask(
         "results.submission.open", {"round_id": PRO_ROUND_3},

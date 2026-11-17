@@ -14,8 +14,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.round import Round, RoundFormat, RoundStatus, WeatherWindows
+from leaguebot.framework.db.database import get_connection, run_migrations
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
+from leaguebot.weather.models.weather_config import WeatherWindows
 
 ROUND_ID = 31
 MOMENT = datetime(2026, 12, 1, 18, 0, tzinfo=timezone.utc)

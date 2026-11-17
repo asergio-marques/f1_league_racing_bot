@@ -1,7 +1,7 @@
 """Closing the connections the bot keeps idle to lend again, between tests (#540).
 
 `get_connection` keeps a few connections idle once they are given back cleanly, and lends them to
-the next caller (`leaguebot.core.db.database.close_connections`). Each holds a thread of
+the next caller (`leaguebot.framework.db.database.close_connections`). Each holds a thread of
 aiosqlite's that is not a daemon, and its database file open. Left to the next test, one would be
 waited on by `stop_started_queues` for its whole grace period, would hold a test's `tmp_path`
 database open where Windows refuses to delete it, and would carry one test's database into the next
@@ -53,7 +53,7 @@ def close_lent_connections() -> None:
     where it keeps no connection idle. A minute is long enough for any closing; past it, the loop
     has died, and that is raised rather than waited on by every hook to come.
     """
-    database = sys.modules.get("leaguebot.core.db.database")
+    database = sys.modules.get("leaguebot.framework.db.database")
     close = getattr(database, "close_connections", None)
     if close is None:
         return

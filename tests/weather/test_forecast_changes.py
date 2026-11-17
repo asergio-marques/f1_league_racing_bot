@@ -45,6 +45,7 @@ from tests.support.season_league import (
     round_id,
     run_division_channel_command,
 )
+from tests.support.switches import answer_switch
 
 #: The kind of a forecast's change.
 KIND = "weather.forecast"
@@ -218,7 +219,7 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
     reason "the template file is too small" where it is not."""
     from types import SimpleNamespace
 
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": True})
     report = SimpleNamespace(valid=valid, reason=None if valid else "the template file is too small")
     league.bot.image_validity_service.template_reports = AsyncMock(return_value={
@@ -262,7 +263,7 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     league = await _league(tmp_path, mystery=mystery)
     _pictures_due(league, valid=cause != "invalid drawing file")
     if cause == "unreadable switch":
-        league.bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError(reason))
+        answer_switch(league.bot.module_service, "images", RuntimeError(reason))
     elif cause == "drawing fault":
         monkeypatch.setattr(image_weather_post, "render_forecast",
                             AsyncMock(side_effect=RuntimeError(reason)))
@@ -273,7 +274,7 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
                             AsyncMock(side_effect=RuntimeError("the round could not be read")))
     if cause.startswith("images off"):
-        league.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+        answer_switch(league.bot.module_service, "images", False)
     elif cause.startswith("weather pictures off"):
         league.bot.image_config_service.get_toggles = AsyncMock(return_value={"weather": False})
     before = league.log()
@@ -1083,7 +1084,8 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
     from types import SimpleNamespace
 
     from leaguebot.__main__ import register_scheduler_callbacks
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
+    from leaguebot.core.services.rounds import round_jobs
     from leaguebot.core.services.test_mode import test_mode_service
 
     league = await _league(tmp_path, mystery=True)
@@ -1101,7 +1103,7 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
         def _refused(*_args: Any, **_kwargs: Any) -> Any:
             raise AssertionError("the scheduler read the league database")
 
-        monkeypatch.setattr(scheduler_service, "get_connection", _refused)
+        monkeypatch.setattr(round_jobs, "get_connection", _refused)
 
         for kind in ("weather_p1", "weather_p2", "weather_p3"):
             await scheduler_service._one_off_timer_job(kind, ROUND)
@@ -1120,7 +1122,7 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
 
 async def _remove_round(league: Any, round_: int = ROUND) -> None:
     """Round *round_* is no longer in the database, its sessions with it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         await db.execute("PRAGMA foreign_keys = OFF")
@@ -1448,7 +1450,7 @@ async def test_a_delete_naming_no_division_finds_the_round_s_and_its_record_forg
 ):
     """A delete job of round 3's Phase 3 forecast (9303) that names no division nor message: it
     finds Pro by the round, deletes the forecast, and its record drops Pro's row."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.weather.services.forecast_changes import DELETE_FORECAST
 
     league = await _league(tmp_path)
@@ -1472,7 +1474,7 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
 ):
     """The same delete job for round 999, not in the database: it finds nothing to delete, and its
     record, finding no division, forgets nothing; round 3's forecast stands."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.weather.services.forecast_changes import DELETE_FORECAST
 
     league = await _league(tmp_path)
@@ -1493,12 +1495,22 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
 # ---------------------------------------------------------------------------
 # A timer missed while the bot was down, firing beside the restart's own ask
 # ---------------------------------------------------------------------------
+#
+# The round's timers are armed by core's round jobs (`RoundJobs`, #544), over the real scheduler.
+
+
+def _round_jobs(service: Any, db_path: str) -> Any:
+    """Core's round jobs over *service*, built as the builder builds them."""
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
+
+    return RoundJobs(service, db_path)
+
 
 @pytest.fixture
 def scheduler(tmp_path, monkeypatch):
     """Build the real scheduler service on a league's database and a job store of its own, as the
     bot does at its start; it is stopped and its job store closed once the test has run."""
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
     made: list[Any] = []
@@ -1577,7 +1589,11 @@ async def test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_on
     service = scheduler(league.db_path)
     fired = _weather_timers(league, service)
     service.start(paused=True)
-    service.schedule_round(_round_3(race), season_number=3, division_tier=1)
+    from tests.support.round_jobs import forecast_leads
+
+    _round_jobs(service, league.db_path).arm_leads(
+        _round_3(race), forecast_leads(), 3, 1, league.clock.now
+    )
 
     await dict(start_up_steps(league.bot))["missed phases"]()
     await run_queue(league.bot)
@@ -1613,8 +1629,11 @@ async def test_a_past_dated_forecast_clean_up_armed_again_takes_down_once(tmp_pa
 
     await dict(start_up_steps(league.bot))["missed forecast clean-ups"]()
     await run_queue(league.bot)
-    service.schedule_round_cleanups(_round_3(race), season_number=3, division_tier=1,
-                                    now=league.clock.now, check_in=False)
+    from tests.support.round_jobs import forecast_leads
+
+    _round_jobs(service, league.db_path).arm_leads(
+        _round_3(race), forecast_leads()[-1:], 3, 1, league.clock.now
+    )
     service.resume()
     await _until_fired(fired, 1)
     await run_queue(league.bot)

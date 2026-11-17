@@ -426,7 +426,7 @@ def test_every_mark_the_projection_can_emit_has_a_packaged_file():
     from pathlib import Path
 
     from leaguebot.image.models.image_constants import packaged_directory_for
-    from leaguebot.core.utils.paths import PROJECT_ROOT
+    from leaguebot.framework.utils.paths import PROJECT_ROOT
 
     packaged = Path(PROJECT_ROOT) / packaged_directory_for(MARK_ASSET_CLASS)
     for datum in MARK_DATA:

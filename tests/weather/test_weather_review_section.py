@@ -9,12 +9,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
+from tests.support.switches import answer_switch
 
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
-    modules.is_weather_enabled = AsyncMock(return_value=on)
+    answer_switch(modules, "weather", on)
     return modules
 
 
@@ -25,7 +26,7 @@ def _modules(on: bool) -> MagicMock:
 async def test_weather_hands_its_deadlines_to_each_review(tmp_path, review):
     """Weather on, its deadlines as stored: the Weather Config section, its deadlines in the
     words `describe_deadlines` gives them; off, no section."""
-    from leaguebot.core.services.modules.review_sections import Review
+    from leaguebot.core.services.seasons.review_sections import Review
     from leaguebot.weather.services.weather_config_service import (
         describe_deadlines,
         get_weather_pipeline_config,

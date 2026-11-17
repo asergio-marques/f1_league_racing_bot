@@ -188,7 +188,7 @@ async def _seed_season(db_path: str, *, status: str, number: int, stage: str | N
                        edition: int = 24) -> None:
     """A season numbered *number*, for F1 *edition*, in *status* and *stage*, started on
     1 March 2025."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -201,7 +201,7 @@ async def _seed_season(db_path: str, *, status: str, number: int, stage: str | N
 
 async def _setup_rows(db_path: str) -> list[dict]:
     """Every season being set up, as the database holds it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -268,7 +268,7 @@ def _success_line(number: int, edition: int) -> str:
 def _refusal_line(reply: str) -> str:
     """The log channel's line for `/season setup` refused with *reply*, its reason the reply without
     the mark it opens with."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/season setup` refused for {NAMED} — {reply_reason(reply)}"
 
@@ -362,7 +362,7 @@ async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
 
     league = await _league(tmp_path)
     first = await _ask_setup(league, 25)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _setup_rows(league.db_path) == []

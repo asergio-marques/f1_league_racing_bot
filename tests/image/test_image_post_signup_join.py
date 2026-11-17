@@ -27,7 +27,7 @@ from types import SimpleNamespace
 import aiosqlite
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 SERVER_ID = 5150
 USER_ID = 9_100_000_000_000_001

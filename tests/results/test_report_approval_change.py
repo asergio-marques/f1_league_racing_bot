@@ -26,10 +26,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (
     acknowledgement,
@@ -1004,7 +1004,7 @@ async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, appl
     job and no card follow, so the job plans nothing. Where it applied, on a clean round with no
     banner recorded, the job plans the role change the hook named, then the heading over the
     cards; a sanction naming no roles (a test driver's) plans the heading alone."""
-    from leaguebot.core.models.change import StepKind
+    from leaguebot.framework.models.change import StepKind
     from leaguebot.results.services.review import review_verdicts
     from tests.support.review_league import NOW
 
@@ -1027,7 +1027,7 @@ async def test_a_fault_working_out_the_cards_heading_rolls_the_sanction_back(
     and reading the round's banners for the cards' heading then fails. The job fails having
     committed nothing, so the save is rolled back whole and the sanction is not applied: on Retry
     it is still owed, and its card is not lost."""
-    from leaguebot.core.models.change import StepKind
+    from leaguebot.framework.models.change import StepKind
     from leaguebot.results.services.review import review_verdicts
     from leaguebot.results.services.review import verdict_announcement_service
     from tests.support.review_league import NOW

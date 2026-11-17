@@ -10,13 +10,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.channel_faults import server_holding
+from tests.support.switches import answer_switch
 
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
-    modules.is_weather_enabled = AsyncMock(return_value=on)
+    answer_switch(modules, "weather", on)
     return modules
 
 

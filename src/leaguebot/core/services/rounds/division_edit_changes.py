@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -44,7 +44,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

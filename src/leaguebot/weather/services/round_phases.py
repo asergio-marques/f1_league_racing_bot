@@ -16,9 +16,10 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, tuple_rows_in
-from leaguebot.core.models.round import Round, RoundFormat, WeatherWindows
-from leaguebot.core.services.rounds.round_moments import round_event_moments
+from leaguebot.framework.db.database import get_connection, tuple_rows_in
+from leaguebot.core.models.round import Round, RoundFormat
+from leaguebot.weather.models.weather_config import WeatherWindows
+from leaguebot.weather.services.forecast_leads import forecast_moments
 
 
 class PhasesDrawn(dict[int, bool]):
@@ -91,7 +92,7 @@ def phases_due(
     moment = rnd.scheduled_at
     if rnd.format == RoundFormat.MYSTERY or moment <= at:
         return []
-    moments = round_event_moments(moment, weather=weather, attendance=None)
+    moments = forecast_moments(moment, weather)
     horizons = {n: moments[f"weather_p{n}"] for n in (1, 2, 3)}
     return [n for n, horizon in horizons.items() if not drawn.get(n, False) and horizon <= at]
 
@@ -99,5 +100,5 @@ def phases_due(
 def first_horizon_ahead(rnd: Round, weather: WeatherWindows, at: datetime) -> bool:
     """Whether the round as it stands has its first forecast horizon still to come at *at*: a
     mystery round moved inside it has had its notice, which must not be fired retroactively."""
-    moments = round_event_moments(rnd.scheduled_at, weather=weather, attendance=None)
+    moments = forecast_moments(rnd.scheduled_at, weather)
     return at < moments["weather_p1"]

@@ -26,6 +26,7 @@ from tests.support.season_league import (
     ongoing_league,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
@@ -46,7 +47,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 async def _ask_and_run(league: SeasonLeague) -> None:
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
                             origin=ChangeOrigin.BOT)
@@ -203,13 +204,11 @@ async def test_a_check_in_call_whose_images_switch_nobody_signed_up_for_stops_it
     module's switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own
     wiring. The fault reaches the call's job, which stops; the call is not posted as text with a
     "the graphic could not be drawn" line, as a picture that merely would not draw is."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     league = await _league(tmp_path)
     _draw_with(league, tmp_path, "notice")
-    league.bot.module_service.is_images_enabled = AsyncMock(
-        side_effect=SwitchNotSignedUp("images")
-    )
+    answer_switch(league.bot.module_service, "images", SwitchNotSignedUp("images"))
 
     await _ask_and_run(league)
 

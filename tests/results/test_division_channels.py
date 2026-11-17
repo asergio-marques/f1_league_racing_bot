@@ -15,12 +15,13 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.module.division_channels import (
     set_division_penalty_channel,
     set_division_results_channel,
     set_division_standings_channel,
 )
+from tests.support.switches import answer_switch
 
 SERVER_ID = 9808
 DIVISION_ID = 11
@@ -219,7 +220,7 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
 
     async def faults(on: bool, server=guild) -> dict[int, list[str]]:
         modules = MagicMock()
-        modules.is_results_enabled = AsyncMock(return_value=on)
+        answer_switch(modules, "results", on)
         found = await division_channel_faults(
             modules, db_path, divisions={DIVISION_ID: "Division 11", 12: "Am"}, guild=server
         )

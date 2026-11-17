@@ -12,7 +12,7 @@ Made using GitHub Copilot Spec Kit and Claude as an experiment.
 
 ## Prerequisites
 
-- Python 3.10 or higher (3.13 recommended — it is what CI runs)
+- Python 3.12 or higher (3.13 recommended — it is what CI runs)
 - A Discord Bot Token ([Discord Developer Portal](https://discord.com/developers/applications)), for a bot application of the league's own — see [One bot, one server](#one-bot-one-server)
 
 ---

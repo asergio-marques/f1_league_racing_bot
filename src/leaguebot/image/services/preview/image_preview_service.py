@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 from leaguebot.image.models.image_constants import ASSET_CLASS_TO_COLUMN, PREVIEW_KINDS
 from leaguebot.core.models.round import Round
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.image.services.preview.preview_sources import PreviewSources
 
 if TYPE_CHECKING:

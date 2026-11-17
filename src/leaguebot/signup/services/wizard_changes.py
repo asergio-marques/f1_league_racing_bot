@@ -52,7 +52,8 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -62,22 +63,22 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
-from leaguebot.core.utils.member_names import member_named
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import abandoned_line, name_of_member
+from leaguebot.framework.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
@@ -109,10 +110,10 @@ from leaguebot.signup.services.wizard_answers import (
 from leaguebot.signup.services.wizard_service import WizardService, build_step_view
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.drivers.team_service import TeamService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
@@ -232,7 +233,7 @@ def start_change(
             )
         # A Sign Up button the close could not delete stays pressable after the window shut.
         cfg = await signup().get_config()
-        if not await modules.is_signup_enabled() or (cfg is not None and not cfg.signups_open):
+        if not await modules.is_enabled(SWITCH_KEY) or (cfg is not None and not cfg.signups_open):
             return Verdict.refuse("⛔ Signups are closed.")
         if cfg is None:
             return Verdict.refuse("❌ Signup module is not configured. Contact an admin.")

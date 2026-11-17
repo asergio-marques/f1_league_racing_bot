@@ -36,7 +36,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import ASPECTS
 from leaguebot.image.services.validity.image_validity_service import Problem

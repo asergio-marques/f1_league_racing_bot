@@ -26,7 +26,7 @@ no change in hand is put back by the stage it was left at:
   deletes, nor for a review, whatever the flag a resubmission left up;
 - a round whose last paste finished but whose review never opened, because its opening was
   discarded: ``results.review.open`` again. **The queue's own record is the durable mark that the
-  last paste finished** (:func:`~leaguebot.core.services.queue.queue_records.ever_asked`): the paste asks
+  last paste finished** (:func:`~leaguebot.framework.services.queue.queue_records.ever_asked`): the paste asks
   for the review as its last act, and the request is kept in whatever state it ends. Without the
   mark such a round, results all in and review flag still down, is indistinguishable from a first
   paste cut short, whose results recovery deletes.
@@ -53,13 +53,13 @@ from typing import Any, Protocol
 
 import discord
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.queue_records import ever_asked, unfinished
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import name_of_member
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import ever_asked, unfinished
+from leaguebot.framework.utils.channels import as_text_channel
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import name_of_member
 from leaguebot.results.services.review import review_open_change
 from leaguebot.results.services.submission import resubmission_changes, submission_changes, submission_turn_change
 from leaguebot.results.services.review.review_changes import round_in_hand

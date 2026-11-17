@@ -38,7 +38,7 @@ import aiohttp
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     discard_job,
     http_error,
@@ -47,6 +47,7 @@ from tests.support.change_queue import (
     run_queue,
     stopped_job,
 )
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8408
 SEASON_ID = 1
@@ -233,8 +234,8 @@ async def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
     from tests.support.review_league import channel as recording_channel
 
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", True)
+    answer_switch(bot.module_service, "images", False)
     bot.events = []
     bot.channels = {cid: recording_channel(cid, bot.events) for cid in channel_ids}
     for chan in bot.channels.values():
@@ -253,7 +254,7 @@ async def _ask(bot: MagicMock, *, replacing: bool = False) -> None:
     """Ask the queue for round 1's call, as its timer does or, *replacing*, as an amendment
     posts it again; then run the queue."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_call(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT,
                             replacing=replacing)
@@ -664,7 +665,7 @@ async def _second_reserve(db_path: str) -> None:
 async def _ask_deadline(bot: MagicMock) -> None:
     """Ask the queue for round 1's deadline as its timer does, and run the queue."""
     from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_deadline(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
     await run_queue(bot)

@@ -49,6 +49,7 @@ PRO_RESULTS = DIVISIONS[PRO][3].results
 ROUND_3 = round_id(PRO, 3)
 
 
+
 @pytest.fixture(autouse=True)
 def _no_panel_to_refresh(monkeypatch):
     """The hub has no panel here; turning results off refreshes it as a change of its own."""

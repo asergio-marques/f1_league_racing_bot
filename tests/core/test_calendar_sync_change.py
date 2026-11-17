@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
@@ -101,8 +101,8 @@ def _calendar_texts(league: Any) -> list[str]:
 async def _queue_stopped_ahead(league: Any) -> None:
     """A change of the bot's, asked before anything else, whose job Discord refuses: the queue
     stops at it, and whatever is asked after it waits."""
-    from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
 
     async def _refused(_ctx: Any) -> Any:
         raise StepFailedOnDiscord("Missing Access")

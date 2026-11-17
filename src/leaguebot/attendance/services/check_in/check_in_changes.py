@@ -24,15 +24,12 @@ import discord
 
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.attendance.services.hooks.test_mode_steps import check_ins_cleared
-from leaguebot.core.models.change import ChangeOrigin
-from leaguebot.core.models.round import (
-    ROUND_CANCELLABLE,
-    AttendanceWindows,
-    read_scheduled_at,
-)
-from leaguebot.core.services.queue.change_types import CheckContext, StepContext
+from leaguebot.framework.models.change import ChangeOrigin
+from leaguebot.attendance.models.attendance import AttendanceWindows
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_moments
+from leaguebot.core.models.round import ROUND_CANCELLABLE, read_scheduled_at
+from leaguebot.framework.services.queue.change_types import CheckContext, StepContext
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.rounds.round_moments import round_event_moments
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.seasons.season_end_changes import test_mode_on
 
@@ -148,9 +145,9 @@ async def left_to_advance(
         or not await test_mode_on(db)
     ):
         return None
-    moments = round_event_moments(
-        scheduled_at_of(row), weather=None,
-        attendance=AttendanceWindows(
+    moments = check_in_moments(
+        scheduled_at_of(row),
+        AttendanceWindows(
             row["notice_days"] or 0, row["last_notice_hours"] or 0, row["deadline_hours"] or 0
         ),
     )

@@ -14,12 +14,13 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, sole_row, tuple_rows_in
+from leaguebot.weather.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection, sole_row, tuple_rows_in
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse, DiscordTargets
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 
 async def set_division_forecast_channel(
@@ -94,7 +95,7 @@ async def division_channel_faults(
     confirmation judges and the server. A division with no fault is given an empty list. With no
     *guild*, only whether the channel is set is judged. Reads only.
     """
-    if not await modules.is_weather_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return {}
     async with get_connection(db_path) as db:
         channels = await forecast_channels_on(db, list(divisions))

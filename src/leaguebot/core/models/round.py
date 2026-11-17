@@ -1,7 +1,7 @@
-"""Round model, and the plain data that places a round's timed events: its job kinds and windows."""
+"""Round model, and `RoundLead`, the plain record a module hands core for each of a round's timers."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 class RoundFormat(str, Enum):
@@ -128,58 +128,32 @@ def read_scheduled_at(stored: str) -> datetime:
     return moment.astimezone(timezone.utc)
 
 
-#: The kinds of the jobs the weather module owns: its three forecast phases and the post-race
-#: clean-up that deletes what they posted.
-WEATHER_JOB_KINDS = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
-
-#: The kinds of a round's nine jobs: each is its job id's prefix, and its key the round id. A
-#: job is a round's where its kind is one of these; another job's key, an amendment's lapse
-#: timer's for one, is no round's, however it is numbered.
-ROUND_JOB_KINDS = WEATHER_JOB_KINDS | {
-    "results", "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup",
-}
-
-#: The phase number (`get_next_pending_phase`) of each kind of round job the job store holds
-#: for the steps `/test-mode advance` runs: the one map both ways read, the job store from kind to
-#: phase and test mode from phase to kind. Result submission (4) is read from database state and
-#: so is not here, and a mystery round's notice (0) is armed as `weather_p1`, which is 1 here.
-ROUND_JOB_PHASES = {
-    "weather_p1": 1, "weather_p2": 2, "weather_p3": 3, "rsvp_notice": 5,
-    "rsvp_last_notice": 6, "rsvp_deadline": 7, "cleanup": 8, "rsvp_cleanup": 9,
-}
-
-
 @dataclass(frozen=True)
-class AttendanceWindows:
-    """The three check-in lead times, as `attendance_config` stores them."""
+class RoundLead:
+    """One timer a module wants set for a round, as a plain record core arms under its own naming.
 
-    notice_days: int
-    last_notice_hours: int
-    deadline_hours: int
+    A module answers with the leads it wants and core arms them (`RoundJobs.arm_leads`), so the
+    record names no module and no kind of its own: *kind* is what the module's timer is stored
+    under, *offset* is its moment from the round's (negative for before it) and *label* heads the
+    timer's name ("Weather P1" in ``Weather P1 s7 d1 r3``).
 
+    *ahead_only* arms the timer only while its moment is still ahead of now; otherwise it is armed
+    whatever the hour. *clean_up* marks one that takes a round's posts down, the only kind a
+    clean-ups-only re-arm sets. *left_to_advance* marks one core drops where test mode leaves it
+    to `/test-mode advance` (`results_left_to_advance`), and *run_at_once* one an amendment runs
+    at once where the round's moment has passed while it was still Not run.
 
-@dataclass(frozen=True)
-class WeatherWindows:
-    """The three forecast phase horizons, as `weather_pipeline_config` stores them."""
+    *check_label* and *check_wording* are what the approval's date check quotes of a window that
+    falls before the round ("Check-in call", "5 days before"); a lead with neither is never
+    judged.
+    """
 
-    phase_1_days: int
-    phase_2_days: int
-    phase_3_hours: int
-
-
-@dataclass(frozen=True)
-class ForecastJobs:
-    """What a module asks the scheduler to arm of a round's forecasts, as the round is armed again:
-    the horizons the phases fall at and the phases *skip_phases* a job of the amendment draws at
-    once instead, which a timer armed with no lateness limit would otherwise draw a second time."""
-
-    windows: WeatherWindows
-    skip_phases: frozenset[int] = frozenset()
-
-
-@dataclass(frozen=True)
-class CheckInJobs:
-    """What a module asks the scheduler to arm of a round's check-in, as the round is armed again:
-    the lead times its call, its last notice and its deadline fall at."""
-
-    windows: AttendanceWindows
+    kind: str
+    offset: timedelta
+    label: str
+    ahead_only: bool = False
+    clean_up: bool = False
+    left_to_advance: bool = False
+    run_at_once: bool = False
+    check_label: str | None = None
+    check_wording: str | None = None

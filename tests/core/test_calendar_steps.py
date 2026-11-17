@@ -58,6 +58,7 @@ PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 OLD_LINK = f"https://discord.test/{PRO_CALENDAR}/{CALENDAR_MESSAGE}"
 
 
+
 async def _change(league: Any, kind: str) -> dict[str, Any]:
     rows = [row for row in await change_rows(league.db_path) if row["kind"] == kind]
     assert len(rows) == 1, rows

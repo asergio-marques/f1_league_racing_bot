@@ -29,7 +29,7 @@ import pytest
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.services.settings.attendance_settings import PENALTY_COLUMNS
 from leaguebot.attendance.services.settings.penalty_recalculation import CHECK_CAPACITY
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.attendance.test_attendance_sync_change import (
     DIVISION_ID,
     DRIVER_PROFILE,

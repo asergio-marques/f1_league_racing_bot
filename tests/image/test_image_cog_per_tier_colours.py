@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.image.cogs.config_commands import (
     MAX_PALETTE_IMPORT_BYTES,
     ConfigCommands,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from leaguebot.core.services.seasons import season_lifecycle_service as lifecycle
 from leaguebot.core.services.seasons.season_service import SeasonService, refresh_division_status_on
@@ -163,7 +163,7 @@ async def _wind_down_league(tmp_path, *, stage, signups_open=False):
 
 async def _wind_down(league):
     """Ask for the wind-down as the bot does, and run the queue; give the change's id."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
     from tests.support.season_league import WIND_DOWN_KIND
 
@@ -221,7 +221,8 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
     winding it down closes the window as every division being done, and cancels the close
     timer. Driver 105, still filling in the wizard, is returned by the close. The "Signups are
     now closed" post's own job records the window closed and, in the same record, audits the
-    close once, by the system, and writes its one "🔒 Signups closed as every division is done"
+    close once, by the system, from "open" to "closed" as JSON, and writes its one "🔒 Signups
+    closed as every division is done"
     line, which names no member and states the one driver returned beneath it (signup :67)."""
     from tests.support.change_queue import queued_log_lines, step_rows
     from tests.support.season_league import signing_up, window_open
@@ -240,7 +241,7 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
         "WHERE change_type = 'SIGNUP_DIVISIONS_DONE_CLOSE'"
     )
     assert [(row["old_value"], row["new_value"], row["actor_name"]) for row in audits] == [
-        ("open", "closed", "system")
+        ('"open"', '"closed"', "system")
     ]
     lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
     [line] = [line for line in lines if "🔒 Signups closed as every division is done" in line]

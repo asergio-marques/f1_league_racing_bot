@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 _LINES = [
     "**Signup Config**",
@@ -37,12 +38,12 @@ def _service(*, configured: bool = True, channel_id: int | None = 900) -> MagicM
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
-    modules.is_signup_enabled = AsyncMock(return_value=on)
+    answer_switch(modules, "signup", on)
     return modules
 
 
 async def _section(service, on: bool, review: str):
-    from leaguebot.core.services.modules.review_sections import Review
+    from leaguebot.core.services.seasons.review_sections import Review
     from leaguebot.signup.services.signup_module_service import review_section
 
     return await review_section(service, _modules(on), review=Review[review], season_id=1,

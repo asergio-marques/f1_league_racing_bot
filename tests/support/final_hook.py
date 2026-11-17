@@ -18,7 +18,7 @@ from typing import Any
 def rounds_made_final() -> Any:
     """The `rounds_made_final` hook, as the builder makes it and signs results up, to hand a
     closer."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.results.wiring import sign_up_to_rounds_made_final
 
     bot = SimpleNamespace(rounds_made_final=AwaitedHook())
@@ -39,7 +39,7 @@ def recorder() -> tuple[Any, list[tuple[Any, ...]]]:
 
 def recording_hook() -> tuple[Any, list[tuple[Any, ...]]]:
     """A hook whose one subscriber is a `recorder`, and the list it records into."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     record, handed = recorder()
     hook = AwaitedHook()

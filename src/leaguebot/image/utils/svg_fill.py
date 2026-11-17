@@ -194,7 +194,7 @@ def _packaged_directory(asset_class: str) -> Path | None:
     directory simply leaves the tier empty and the miss falls through to fatal, which is
     what a single-tier resolution would have done anyway.
     """
-    import leaguebot.core.utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
+    import leaguebot.framework.utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
     from leaguebot.image.models.image_constants import packaged_directory_for
 
     relative = packaged_directory_for(asset_class)
@@ -898,7 +898,7 @@ def _as_href(value: str) -> str:
     if _URI_SCHEME_RE.match(text) and not re.match(r"^[a-zA-Z]:[\\/]", text):
         return text  # data:, file:, http: … already a URI
 
-    import leaguebot.core.utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
+    import leaguebot.framework.utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
 
     candidate = Path(text)
     if not candidate.is_absolute():

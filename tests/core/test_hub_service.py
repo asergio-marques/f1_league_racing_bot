@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.modules import hub_service
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.modules.hub_service import (
@@ -36,7 +36,7 @@ from leaguebot.core.services.modules.hub_service import (
     recover_hub,
     render_panel,
 )
-from leaguebot.core.utils.league_server import LeagueView
+from leaguebot.framework.utils.league_server import LeagueView
 from tests.support.change_queue import (
     SERVER_ID as LEAGUE_SERVER_ID,
     Clock,
@@ -323,6 +323,7 @@ def _guild(channel, *, roles=(BASE_ROLE, MANAGER_ROLE, ADMIN_ROLE)):
 def _bot(db_path, guild):
     bot = MagicMock()
     bot.config_service = ConfigService(db_path)
+    bot.league_settings = bot.config_service
     bot.get_guild = MagicMock(return_value=guild)
     bot.add_view = MagicMock()
     return bot
@@ -373,7 +374,7 @@ def _offer(league, *options):
 
 async def _ask_refresh(league, command="/module enable weather"):
     """The bot asks the queue to refresh the panel, as a module toggle's save does."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     return await league.bot.change_queue.ask(
         hub_service.HUB_REFRESH, {"command": command},

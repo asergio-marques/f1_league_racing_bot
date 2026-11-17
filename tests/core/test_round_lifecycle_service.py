@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.delete_hooks import ROUND_HOOKS, delete_hooks
@@ -286,7 +286,7 @@ async def test_cancelling_is_audited_against_its_division(tmp_path):
         )
         row = await cursor.fetchone()
     assert row["change_type"] == "round.status"
-    assert row["new_value"] == "CANCELLED"
+    assert row["new_value"] == '"CANCELLED"'
     assert row["division_id"] == DIVISION_ID
 
 

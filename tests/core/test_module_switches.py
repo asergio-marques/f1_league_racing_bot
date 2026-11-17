@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.cogs.module_cog import _MODULE_CHOICES
-from leaguebot.core.models.change import module_off
+from leaguebot.framework.models.change import module_off
 
 #: Every module `/module enable` and `/module disable` offer, by the name the command gives it.
 OFFERED = tuple(choice.value for choice in _MODULE_CHOICES)
@@ -49,7 +49,7 @@ def test_the_dependency_table_answers_what_a_switch_needs_and_takes_down():
 def test_a_module_is_switched_on_and_off_by_kinds_naming_it():
     """Every module /module offers is switched on by `module.on:<name>` and off by
     `module.off:<name>`."""
-    from leaguebot.core.models.change import module_on
+    from leaguebot.framework.models.change import module_on
 
     assert {module: (module_on(module), module_off(module)) for module in OFFERED} == {
         module: (f"module.on:{module}", f"module.off:{module}") for module in OFFERED

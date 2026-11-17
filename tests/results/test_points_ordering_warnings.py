@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from discord import app_commands
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
@@ -45,6 +45,7 @@ from tests.support.settings_league import (
     switch,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 4400
 USER_ID = 88
@@ -417,11 +418,12 @@ def _cog(db_path):
     cog.bot.output_router.post_log = AsyncMock()
     # ``league_guild`` awaits this and then calls ``get_guild`` synchronously.
     cog.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    cog.bot.league_settings = cog.bot.config_service
     cog.bot.get_guild = MagicMock(return_value=_guild())
     # Both modules off, said in as many words: left to a whole-bot mock, an unawaited coroutine
     # is truthy and the image module would read as on.
-    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    answer_switch(cog.bot.module_service, "images", False)
+    answer_switch(cog.bot.module_service, "attendance", False)
     cog.bot.image_drawing.aspect_attaches_files = AsyncMock(return_value=False)
     return cog
 

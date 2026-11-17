@@ -1,9 +1,9 @@
 """Attendance's own switch, on and off, as two settings on the change queue.
 
 `/module enable attendance` and `/module disable attendance` each ask one change built from a
-`Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
+`Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("attendance")` and
-`module_off("attendance")` (`core/models/change.py`), so core's cog names the change without
+`module_off("attendance")` (`framework/models/change.py`), so core's cog names the change without
 importing attendance. `docs/design/architecture.md`, "How modules and core fit together", designs
 the gap this closes: weather's switch (`weather/services/module_switch_settings.py`) is the model.
 
@@ -44,22 +44,23 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
+from leaguebot.attendance.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
 )
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 _ENABLE_COMMAND = "/module enable attendance"
@@ -96,11 +97,10 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
     and the audit, in one save (Principle X.6's reset)."""
 
     async def check(_ctx: CheckContext) -> Verdict:
-        if await modules.is_attendance_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Attendance module is already enabled.")
         for required in needs("attendance"):
-            is_enabled = getattr(modules, f"is_{required}_enabled")
-            if not await is_enabled():
+            if not await modules.is_enabled(required):
                 return Verdict.refuse(
                     f"❌ The {_MODULE_LABEL['attendance']} requires the "
                     f"{_MODULE_LABEL[required]} to be enabled first."
@@ -146,7 +146,7 @@ def module_off_attendance(*, modules: "ModuleService", attendance: "AttendanceSe
     from turning Results & Standings off does through the same method."""
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await modules.is_attendance_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Attendance module is already disabled.")
         if await modules_frozen_for_completion(ctx.db_path):
             return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)

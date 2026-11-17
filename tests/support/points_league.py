@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 from discord import app_commands
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     http_error,
     league_bot,
@@ -49,6 +49,7 @@ from tests.support.review_league import AttendanceDouble, channel
 from tests.support.settings_league import record_followups, said
 from tests.support.teams import seed_team_instances
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 NOW = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -168,11 +169,9 @@ class PointsLeague:
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
         set_guilds(bot, [guild])
-        bot.module_service.is_results_enabled = AsyncMock(side_effect=lambda: self.results_on)
-        bot.module_service.is_images_enabled = AsyncMock(side_effect=lambda: self.images_on)
-        bot.module_service.is_attendance_enabled = AsyncMock(
-            side_effect=lambda: self.attendance_on
-        )
+        answer_switch(bot.module_service, "results", lambda: self.results_on)
+        answer_switch(bot.module_service, "images", lambda: self.images_on)
+        answer_switch(bot.module_service, "attendance", lambda: self.attendance_on)
         # No picture aspect is switched on in these leagues, so no channel needs Attach Files.
         bot.image_drawing.aspect_attaches_files = AsyncMock(return_value=False)
         league_queue(bot, db_path, now=NOW)

@@ -62,7 +62,7 @@ def test_a_round_note_with_no_track_names_mystery():
 async def test_a_raising_notice_lets_a_fault_of_the_bot_s_own_through_unchanged(tmp_path):
     """Sending the results note fails with a ValueError, a fault of the bot's own rather than
     Discord's. It is raised as it is, not turned into StepFailedOnDiscord."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     bot = notice_bot(await notice_db(tmp_path))
     guild, channels = notice_guild()

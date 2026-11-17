@@ -1,7 +1,7 @@
 """`/signup channel` as a change on the queue, `signup.setting.channel`.
 
 The channel, its audit entry and its log line are one save, stamped by the queue's clock; the
-setting is built by `setting_change` (`core/services/queue/setting_change.py`, which holds what
+setting is built by `setting_change` (`framework/services/queue/setting_change.py`, which holds what
 every settings change does with a fault). It is a channel setting, so it `repairs_the_bot`: a
 stop notice for a channel gone tells the league to set the channel, and the setting must still
 run while the lane is stopped.
@@ -41,11 +41,11 @@ from typing import TYPE_CHECKING, Any
 
 import discord
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.seasons.approval_checks import channel_on_server
-from leaguebot.core.models.refusal import Refused
-from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
-from leaguebot.core.services.queue.setting_change import (
+from leaguebot.framework.models.refusal import Refused
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.setting_change import (
     RENAMED_OUTCOME,
     SAVE,
     After,
@@ -57,8 +57,8 @@ from leaguebot.core.services.settings.channel_registry_service import (
     find_channel_use,
     refusal,
 )
-from leaguebot.core.utils.interaction_errors import describe_fault
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.interaction_errors import describe_fault
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.information_post import post_information
 from leaguebot.signup.services.signup_module_service import signup_channel_overwrites
 from leaguebot.signup.services.signup_settings import open_to_change
@@ -66,10 +66,10 @@ from leaguebot.signup.services.signup_settings import open_to_change
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 KIND = "signup.setting.channel"

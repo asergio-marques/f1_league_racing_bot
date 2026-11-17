@@ -13,7 +13,8 @@ from types import SimpleNamespace
 import pytest
 
 from leaguebot.image.cogs.image_cog import ImageCog
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from leaguebot.framework.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from tests.support.switches import switches
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
 
@@ -794,13 +795,13 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
     it came from."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from leaguebot.core.utils.interaction_errors import describe
+    from leaguebot.framework.utils.interaction_errors import describe
 
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     cog = ImageCog(
         SimpleNamespace(
-            module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)),
+            module_service=switches(images=True),
             driver_names_read=AwaitedHook(),
             output_router=SimpleNamespace(post_log=AsyncMock(return_value=None)),
             db_path="league.db",

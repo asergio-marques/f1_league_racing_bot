@@ -386,7 +386,7 @@ drivers, so there is nothing for it to agree with the roster about. It reads the
 in two places, and both are the same argument the roster generator makes for importing
 nationalities: a value the bot rejects would make the whole import fail.
 
-- **The circuits come from the bot's own migration**, `src/leaguebot/core/db/migrations/029_track_data_expansion.sql`,
+- **The circuits come from the bot's own migration**, `src/leaguebot/framework/db/migrations/001_baseline.sql`,
   parsed out of its seed statement. They live in SQL rather than a module and reading
   `track_service` would mean opening a database, which nothing here does — so the statement is
   parsed. The generator emits the **numeric id** in `<track>`, which side-steps the accented

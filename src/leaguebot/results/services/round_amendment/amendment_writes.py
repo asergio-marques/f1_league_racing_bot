@@ -13,17 +13,17 @@ from typing import TYPE_CHECKING, Any, Mapping
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import OutcomeModifier
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.results.services.points.scoring import _apply_points_from_config_on
 from leaguebot.results.services.submission.result_submission_service import (
     CollectedSession,
@@ -33,8 +33,9 @@ from leaguebot.results.services.submission.result_submission_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
+    from leaguebot.framework.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.review.review_state import PenaltyReviewState, ReadServerConfig
 
@@ -764,7 +765,7 @@ async def stage_in_hand(db_path: str, round_id: int, *, before: int | None = Non
     With *before*, only what was asked ahead of the change of that id counts: a Cancel asked
     before the last paste handed stage one over comes up first and ends the amendment, so stage one
     queued behind it is no stage "in hand" ahead of it."""
-    from leaguebot.core.services.queue.queue_records import unfinished
+    from leaguebot.framework.services.queue.queue_records import unfinished
     from leaguebot.results.services.round_amendment.amend_turn_change import STAGE_ONE_KIND
     from leaguebot.results.services.round_amendment.amendment_stage_changes import (
         APPEALS_KIND,
@@ -1157,3 +1158,43 @@ async def sweep_expired_amendments(
         if change_id is not None:
             asked += 1
     return asked
+
+
+#: The kind of the standing sweep's job, stored on it and signed up with the scheduler's
+#: `register_timer` by results' wiring.
+AMENDMENT_SWEEP_KIND = "amendment_sweep"
+
+#: The standing sweep that undoes an amendment nobody approved.
+AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
+
+#: How often it looks. An amendment lapses after `AMENDMENT_STAGE_TIMEOUT_SECONDS`; sweeping every
+#: five minutes means a lapsed one is undone within five minutes of its deadline rather than at the
+#: deadline exactly, which is close enough for a round nobody is working on and cheap: the sweep
+#: reads one indexed table and almost always finds nothing.
+AMENDMENT_SWEEP_MINUTES = 5
+
+
+def schedule_amendment_sweep(scheduler: SchedulerService) -> None:
+    """Arm the standing sweep that undoes an amendment nobody carried through, through the
+    scheduler's generic repeating call.
+
+    A repeating job, not one timer per amendment, because an amendment is left abandoned by no
+    event the bot sees: nobody carried it through. Each run re-reads the amendments' rows and
+    undoes those past their deadline (architecture.md, "Timed work and restarts": a standing job
+    re-reads its rows each time it runs). The scheduler re-arms it itself, so a sweep that raised
+    is not the last, and arms it with no lateness limit, so a run due while the bot was down is
+    made when it is back. Arming it again replaces it, so a restart does not duplicate it.
+    """
+    scheduler.arm_every(
+        AMENDMENT_SWEEP_JOB_ID,
+        AMENDMENT_SWEEP_KIND,
+        AMENDMENT_SWEEP_MINUTES,
+        "Revert abandoned round amendments",
+    )
+
+
+def cancel_amendment_sweep(scheduler: SchedulerService) -> None:
+    """Remove the standing sweep `schedule_amendment_sweep` arms (a no-op where it is not armed),
+    as turning results off undoes what turning it on set up."""
+    if scheduler.remove(AMENDMENT_SWEEP_JOB_ID):
+        log.info("Removed %s", AMENDMENT_SWEEP_JOB_ID)

@@ -25,11 +25,11 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from leaguebot.core.models.change import GuildUnavailable, StepKind, StepResult
-from leaguebot.core.services.queue.change_types import Step, StepContext
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.utils.interaction_errors import describe_fault
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.models.change import GuildUnavailable, StepKind, StepResult
+from leaguebot.framework.services.queue.change_types import Step, StepContext
+from leaguebot.framework.utils.channels import as_text_channel
+from leaguebot.framework.utils.interaction_errors import describe_fault
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import DELETE_TIMER, HOLD
 from leaguebot.signup.services.signup_module_service import (
     DELETE_REPLACED_CHANNEL,
@@ -40,7 +40,7 @@ from leaguebot.signup.services.wizard_changes import delete_signup_channel
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 

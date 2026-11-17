@@ -49,8 +49,8 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     FollowOn,
     PlannedStep,
     StepFailedOnDiscord,
@@ -60,22 +60,22 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import state_of_account_on
-from leaguebot.core.services.posting import standing_posts
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.queue import typed_turns
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue import typed_turns
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import abandoned_line, name_of_member, refusal_line
-from leaguebot.core.utils.messages import chunk_message
-from leaguebot.core.utils.member_names import member_named
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import abandoned_line, name_of_member, refusal_line
+from leaguebot.utils.messages import chunk_message
+from leaguebot.framework.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.signup.services.closing_steps import CHANNEL_GONE, END, INACTIVITY_TIMER
 from leaguebot.signup.services.signup_posting import post
@@ -90,11 +90,11 @@ from leaguebot.signup.services.wizard_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
     from leaguebot.core.services.settings.config_service import ConfigService
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 ANSWER = "signup.answer"

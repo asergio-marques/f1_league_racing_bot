@@ -13,6 +13,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 
 ORDINARY = "Team 1"
@@ -42,7 +43,7 @@ def _drawing(*, images: bool = True):
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value={})
     validity = MagicMock()
@@ -106,7 +107,7 @@ async def test_the_images_module_off_answers_nothing(declare):
 async def _seed(tmp_path):
     """A season's division with three race drivers seated, `Team 1`'s two seats free, and driver
     9999 waiting to be placed."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "declared_capacity.db")
     await run_migrations(db_path)
@@ -178,7 +179,7 @@ async def _seed(tmp_path):
 async def test_a_placement_past_the_declared_rows_is_refused_through_guard_assign(
     tmp_path, declare
 ):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 

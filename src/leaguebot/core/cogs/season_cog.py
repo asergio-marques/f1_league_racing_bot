@@ -24,10 +24,10 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.cancellations.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.modules.image_drawing import Held
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
-from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_windows
-from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
-from leaguebot.core.services.modules.review_sections import (
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
+from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_leads
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
+from leaguebot.core.services.seasons.review_sections import (
     Review,
     read_division_lines,
     read_review_sections,
@@ -48,11 +48,10 @@ from leaguebot.core.utils.channel_guard import (
     league_manager_only,
     changes_nothing,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.formatting import discord_ts
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.utils.messages import chunk_message, discord_ts
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -317,17 +316,16 @@ class SeasonCog(commands.Cog):
         return ["**Image output**", *lines, ""]
 
     async def _approval_windows(self):
-        """The lead times the enabled modules configure, read once for a whole season.
-
-        Returns ``(attendance, weather)``, either of them None where that module is off.
+        """The leads the enabled modules answer, read once for a whole season: the windows the
+        date faults are judged against, as a flat list.
 
         Read once rather than per division: the date faults are judged a division at a time,
-        and a league with eight of them would otherwise pay eight times over for two configs
+        and a league with eight of them would otherwise pay eight times over for configs
         that cannot have changed in between. They are read through the bot's hook
-        (`LeagueBot.round_windows_read`, signed up to by the modules in the builder), so that the
-        change queue's check of the approval reads the same windows without a cog.
+        (`LeagueBot.round_leads_read`, signed up to by the modules in the builder), so that the
+        change queue's check of the approval reads the same leads without a cog.
         """
-        return await read_round_windows(self.bot.round_windows_read)
+        return await read_round_leads(self.bot.round_leads_read)
 
     def _calendar_fault_lines(self, fault) -> list[str]:
         """One division's date faults, as the error lines posted with its calendar.
@@ -456,18 +454,18 @@ class SeasonCog(commands.Cog):
 
         # ── Modules ───────────────────────────────────────────────
         # Each module's line, with the note its section hands to show beside it where it is on.
-        weather_on = await self.bot.module_service.is_weather_enabled()
-        results_on = await self.bot.module_service.is_results_enabled()
-        images_on = await self.bot.module_service.is_images_enabled()
+        weather_on = await self.bot.module_service.is_enabled("weather")
+        results_on = await self.bot.module_service.is_enabled("results")
+        images_on = await self.bot.module_service.is_enabled("images")
         notes = {section.module: section.modules_note for section in sections}
         on = "✅ Enabled"
         off = "❌ Disabled"
         header_lines.append("**Modules**")
         for name, enabled in (
             ("Weather", weather_on),
-            ("Signup", await self.bot.module_service.is_signup_enabled()),
+            ("Signup", await self.bot.module_service.is_enabled("signup")),
             ("Results", results_on),
-            ("Attendance", await self.bot.module_service.is_attendance_enabled()),
+            ("Attendance", await self.bot.module_service.is_enabled("attendance")),
             ("Images", images_on),
         ):
             note = notes.get(name.lower()) if enabled else None
@@ -580,9 +578,9 @@ class SeasonCog(commands.Cog):
         # in for each is carried with it (posted only where Discord refuses the file).
         draws_calendar, draws_lineup = await self._review_picture_gates()
 
-        # The lead times both date faults are judged against, read once for the season
+        # The leads both date faults are judged against, read once for the season
         # and reused by every division's calendar below.
-        _att_windows, _wx_windows = await self._approval_windows()
+        _leads = await self._approval_windows()
         # Raised by any division whose calendar holds a round already run, or one already
         # inside a configured window. Collected rather than acted on in the loop, because
         # the Approve button is decided once for the whole season after it.
@@ -627,8 +625,7 @@ class SeasonCog(commands.Cog):
                 calendar_faults(
                     rounds_db,
                     now=self.bot.change_queue.now(),
-                    attendance=_att_windows,
-                    weather=_wx_windows,
+                    leads=_leads,
                 )
             )
             calendar_faults_found.extend(fault_lines)
@@ -986,11 +983,11 @@ class SeasonCog(commands.Cog):
             f"  Test mode: {'✅ On' if test_mode else '❌ Off'}",
             "",
             "**Modules**",
-            f"  Signup: {on if await module.is_signup_enabled() else off}",
-            f"  Results: {on if await module.is_results_enabled() else off}",
-            f"  Attendance: {on if await module.is_attendance_enabled() else off}",
-            f"  Weather: {on if await module.is_weather_enabled() else off}",
-            f"  Images: {on if await module.is_images_enabled() else off}",
+            f"  Signup: {on if await module.is_enabled("signup") else off}",
+            f"  Results: {on if await module.is_enabled("results") else off}",
+            f"  Attendance: {on if await module.is_enabled("attendance") else off}",
+            f"  Weather: {on if await module.is_enabled("weather") else off}",
+            f"  Images: {on if await module.is_enabled("images") else off}",
             "",
         ]
         lines += await self._league_roles_review_lines()
@@ -1016,7 +1013,7 @@ class SeasonCog(commands.Cog):
             division_ids=[],
         )
         section_lines: list[list[str]] = [lines, *[section.lines for section in sections]]
-        if await module.is_images_enabled():
+        if await module.is_enabled("images"):
             section_lines.append(await self._build_image_review_section())
         report: list[str] = []
         for block in section_lines:

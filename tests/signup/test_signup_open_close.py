@@ -48,7 +48,7 @@ import discord
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import ConfirmCloseView, SignupCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
@@ -67,6 +67,7 @@ from tests.support.change_queue import (
 from tests.support.review_league import channel as recording_channel
 from tests.support.season_league import SIGNUP_CHANNEL_BASE, setup_league, signing_up
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 CHANNEL_ID = 777001
 BASE_ROLE_ID = 555001
@@ -146,7 +147,7 @@ async def _cog(db_path: str) -> SignupCog:
     """The cog, its bot (`league_bot`) carrying the league's log channel, a real output router,
     its configuration read from the database, and a real change queue (#439, slice 6b)."""
     bot = await league_bot(db_path, real_config=True)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "signup", True)
     league_queue(bot, db_path, now=Clock(datetime.now(timezone.utc)))
 
     cog = SignupCog.__new__(SignupCog)

@@ -18,7 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8208
 SEASON_ID = 1
@@ -164,7 +165,7 @@ from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE  #
 def _cog(db_path: str, *, stage=SeasonStage.ONGOING) -> AttendanceCog:
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     season = None if stage is None else SimpleNamespace(id=SEASON_ID, stage=stage)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
@@ -261,7 +262,7 @@ async def test_a_channel_fault_refuses_it_with_nothing_changed(tmp_path):
 
 async def _refused_while_disabled(tmp_path):
     cog = _cog(await _make_db(tmp_path, autosack=20))
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    answer_switch(cog.bot.module_service, "attendance", False)
     return cog, {}
 
 

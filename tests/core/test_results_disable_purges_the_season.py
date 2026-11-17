@@ -40,7 +40,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.publishing.results_post_service import (
     STANDINGS_CONSTRUCTORS,
     set_standings_message_id_on,
@@ -496,10 +496,10 @@ async def test_every_closed_round_is_audited(tmp_path) -> None:
         rows = [dict(r) for r in await cur.fetchall()]
 
     assert [r["old_value"] for r in rows] == [
-        "AWAITING_APPEAL_VERDICTS",
-        "AWAITING_RESULTS",
+        '"AWAITING_APPEAL_VERDICTS"',
+        '"AWAITING_RESULTS"',
     ]
-    assert {r["new_value"] for r in rows} == {"FINAL"}
+    assert {r["new_value"] for r in rows} == {'"FINAL"'}
 
 
 async def test_the_purge_is_audited_with_what_it_took(tmp_path) -> None:

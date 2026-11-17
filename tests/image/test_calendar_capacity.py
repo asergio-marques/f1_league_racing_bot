@@ -29,6 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
+from tests.support.switches import answer_switch
 
 SVG_NS = "http://www.w3.org/2000/svg"
 CALENDAR = "calendar_template"
@@ -66,7 +67,7 @@ def _drawing(
             template_key=CALENDAR,
         )
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_config = AsyncMock(return_value=MagicMock())
     config.get_toggles = AsyncMock(return_value={"calendar": aspect})

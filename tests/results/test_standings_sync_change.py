@@ -49,6 +49,7 @@ from tests.support.review_league import (
     review_league,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 KIND = "results.standings.sync"
 #: Round 4's standings, standing where a test posts them.
@@ -62,7 +63,7 @@ async def _league(tmp_path: Any) -> ReviewLeague:
     league = await review_league(tmp_path, round_status="FINAL")
     await _write(league, "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
                          "VALUES (1, 1)")
-    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "results", True)
     # The builder's own season service, which its change types hold, its divisions read
     # from the database again.
     vars(league.bot.season_service).pop("get_divisions", None)
@@ -70,7 +71,7 @@ async def _league(tmp_path: Any) -> ReviewLeague:
 
 
 async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         await db.execute(sql, args)
@@ -80,7 +81,7 @@ async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
 async def _round_4_posted(league: ReviewLeague) -> None:
     """Round 4 at Spa holds a Feature Race too, Lewis winning it, its standings standing as
     message 8811 in the standings channel and recorded on its snapshot."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         session = await db.execute(

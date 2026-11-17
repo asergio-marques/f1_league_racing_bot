@@ -34,7 +34,7 @@ from discord import app_commands
 
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.modules import hub_service
 from tests.support.undecorate import undecorate
 
@@ -176,7 +176,7 @@ async def test_a_refused_toggle_leaves_the_panel_alone(queued_bot, refused):
     await run_queue(queued_bot)
 
     assert await _refreshes_asked(queued_bot) == []
-    assert await queued_bot.module_service.is_weather_enabled() is (refused == "already-on")
+    assert await queued_bot.module_service.is_enabled("weather") is (refused == "already-on")
 
 
 async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:

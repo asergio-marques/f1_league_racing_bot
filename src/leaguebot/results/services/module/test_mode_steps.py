@@ -24,10 +24,9 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, tuple_rows_in
-from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.framework.db.database import get_connection, tuple_rows_in
+from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (
-    PHASE_KINDS,
     ActiveRound,
     ModuleSteps,
     PendingStep,
@@ -35,6 +34,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     phase_mark,
 )
 from leaguebot.results.services.module.module_switch_settings import results_enabled_on
+from leaguebot.results.services.submission.round_start import ROUND_START_KIND
 from leaguebot.results.services.submission.submission_changes import KIND as SUBMISSION_OPEN
 
 #: The phase of the result submission, and the statuses a round stands at while it is still due.
@@ -69,7 +69,7 @@ async def pending_steps(
     in_hand = {int(p["round_id"]) for p in await unfinished(db_path, (SUBMISSION_OPEN,))}
     return ModuleSteps(
         pending=[
-            PendingStep(r.round_id, SUBMISSION_PHASE, PHASE_KINDS[SUBMISSION_PHASE])
+            PendingStep(r.round_id, SUBMISSION_PHASE, ROUND_START_KIND)
             for r in rounds
             if r.status in _DUE_STATUSES
             and r.round_id not in with_results

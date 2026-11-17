@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 #: Pro's rounds 1 to 3, and the channel each one's submission stands in.
 ROUND_ID, SECOND_ROUND_ID, THIRD_ROUND_ID = 31, 32, 33

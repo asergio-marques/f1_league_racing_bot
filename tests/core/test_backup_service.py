@@ -716,7 +716,7 @@ def test_a_real_migrated_database_survives_the_round_trip(tmp_path):
     """
     import asyncio
 
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     live = tmp_path / "bot.db"
     jobs = tmp_path / "scheduler.db"
@@ -819,7 +819,7 @@ def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch)
 async def test_a_restored_state_brings_back_no_queue(tmp_path):
     """A change saved with the state, stopped on a failed job, is not carried out again on a server
     whose messages it no longer knows: the staged file's queue is emptied before the swap."""
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
     await run_migrations(str(live))

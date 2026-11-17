@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import (
     MEMBER_ID,
     acknowledgement,
@@ -208,7 +208,7 @@ async def test_a_fault_in_a_deadline_s_save_saves_nothing_and_the_lane_goes_on(t
     league = await settings_league(tmp_path)
 
     asked = await _ask(league, 1, 6)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _ask(league, 2, 3)
     await run_queue(league.bot)
@@ -242,17 +242,18 @@ async def test_a_check_fault_when_a_deadline_runs_says_nothing_was_saved_records
     asked = await _ask(league, 1, 6)
     behind = await _ask(league, 2, 3)
     modules = league.bot.module_service
-    read = modules.is_weather_enabled
+    read = modules.is_enabled_on
     reads = 0
 
-    async def _faults_once() -> bool:
+    async def _faults_once(db, module: str) -> bool:
         nonlocal reads
-        reads += 1
-        if reads == 1:
-            raise RuntimeError("the module flags could not be read")
-        return await read()
+        if module == "weather":
+            reads += 1
+            if reads == 1:
+                raise RuntimeError("the module flags could not be read")
+        return await read(db, module)
 
-    modules.is_weather_enabled = _faults_once
+    modules.is_enabled_on = _faults_once
     await run_queue(league.bot)
 
     assert last_said(asked) == failure_reply(

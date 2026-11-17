@@ -45,7 +45,7 @@ from leaguebot.results.utils.results_formatter import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: The stages at which each sanction phase has closed. Before it closes, the column carries
 #: no value the generation can reach and every cell of it is emptied.

@@ -12,9 +12,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from tests.support import saves
+from tests.support.switches import answer_switch
 
 SEASON_ID = 13
 
@@ -54,11 +55,11 @@ async def _attach_phantom(db_path, name: str) -> None:
 
 
 async def _section(db_path, *, on: bool, review: str):
-    from leaguebot.core.services.modules.review_sections import Review
+    from leaguebot.core.services.seasons.review_sections import Review
     from leaguebot.results.services.points.season_points_service import review_section
 
     modules = MagicMock()
-    modules.is_results_enabled = AsyncMock(return_value=on)
+    answer_switch(modules, "results", on)
     return await review_section(modules, db_path, review=Review[review], season_id=SEASON_ID,
                                 division_ids=[10])
 

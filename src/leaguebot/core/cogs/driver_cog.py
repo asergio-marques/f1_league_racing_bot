@@ -20,12 +20,13 @@ from leaguebot.core.services.drivers.driver_changes import (
     NOT_UNASSIGNED_REFUSAL,
     PAST_ACCOUNT_REFUSAL,
 )
-from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
+from leaguebot.core.utils.team_autocomplete import team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.input_validator import parse_user_id
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import refuse
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)

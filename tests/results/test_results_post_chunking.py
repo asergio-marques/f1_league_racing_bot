@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.services.posting.standing_post_handler import delete_standing
+from leaguebot.framework.services.posting.standing_post_handler import delete_standing
 from leaguebot.results.services.publishing.results_post_service import (
     _MSG_MAX,
     _delete_posting as _delete_posting_with,

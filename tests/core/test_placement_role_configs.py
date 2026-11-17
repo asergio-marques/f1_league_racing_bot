@@ -22,7 +22,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.signup.services.signup_module_service import _fmt_ms
 
 
@@ -221,7 +221,7 @@ async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path
     """A submission names a team by its role, so a role two teams held would name either.
     Alpha holds 4242 and Beta 5353; giving Beta 4242 is refused naming Alpha, and Beta keeps
     5353."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
@@ -235,7 +235,7 @@ async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path
 
 
 async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _map(db_path, "Reserve", ROLE_ID)
 

@@ -29,7 +29,7 @@ from lxml import etree
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.input_validator import parse_datetime
-from leaguebot.core.utils.timezones import is_known_zone
+from leaguebot.utils.timezones import is_known_zone
 
 __all__ = [
     "ParsedRound",

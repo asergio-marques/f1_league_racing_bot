@@ -28,12 +28,12 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import ROUND_JOB_PHASES, read_scheduled_at
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.db.database import get_connection
+from leaguebot.core.models.round import read_scheduled_at
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
 
 log = logging.getLogger(__name__)
 
@@ -46,12 +46,12 @@ class PhaseEntry(TypedDict):
     round_id: int
     round_number: int
     division_id: int
-    #: 0 = mystery notice — from the job store as well, where it is armed as `weather_p1` and
+    #: 0 = mystery notice — from the job store as well, where it is armed as Phase 1's kind and
     #: weather's step reads the round's format, 1|2|3 = weather phases of a round of any other
     #: format, 4 = result submission, 5|6|7 = the check-in call, its last notice and its
     #: deadline, 8|9 = the forecast and the check-in cleanups a day after the round.
     phase_number: int
-    #: The kind of round job the step is armed under (`ROUND_JOB_KINDS`): `weather_p1` for the
+    #: The kind of round job the step is armed under (`RoundJobs.sign_up_kinds`): Phase 1's for the
     #: mystery notice (0) as for Phase 1, the key of the step its module signed up
     #: (`AdvanceSteps.register_step`).
     kind: str
@@ -96,13 +96,6 @@ class ModuleSteps:
 
     pending: list[PendingStep]
     passed_over: list[PendingStep] = field(default_factory=list)
-
-
-#: The kind of round job each phase number is armed under: `weather_p1` for the mystery notice
-#: (0) too, which weather's step tells from Phase 1 by the round's format.
-PHASE_KINDS = {phase: kind for kind, phase in ROUND_JOB_PHASES.items()} | {
-    0: "weather_p1", 4: "results",
-}
 
 
 #: A step's place among those of its round, by phase number: the notice or Phase 1 (0, 1), the
@@ -199,7 +192,7 @@ class AdvanceSteps:
 
 
 async def run_advance_step(
-    scheduler_service: SchedulerService, entry: PhaseEntry, *, advance_steps: AdvanceSteps
+    round_jobs: RoundJobs, entry: PhaseEntry, *, advance_steps: AdvanceSteps
 ) -> AdvanceOutcome:
     """Run the step *advance_steps* holds for the *entry*'s kind and return what became of it.
 
@@ -214,7 +207,7 @@ async def run_advance_step(
         step = advance_steps.step_for(kind)
     except LookupError as exc:
         raise AdvanceStepFailed(kind) from exc
-    scheduler_service.cancel_round(entry["round_id"], only=frozenset({kind}))
+    round_jobs.cancel_round(entry["round_id"], only=frozenset({kind}))
     return await step(entry)
 
 
@@ -236,7 +229,7 @@ class AdvanceRun:
 
 async def advance_next_step(
     db_path: str,
-    scheduler_service: SchedulerService,
+    round_jobs: RoundJobs,
     *,
     now: datetime,
     announce: Callable[[PhaseEntry, list[PhaseEntry]], Awaitable[None]],
@@ -255,7 +248,7 @@ async def advance_next_step(
     propagates.
     """
     entry = await get_next_pending_phase(
-        db_path, scheduler_service, now=now, pending_steps_read=pending_steps_read
+        db_path, round_jobs, now=now, pending_steps_read=pending_steps_read
     )
     passed_over = await get_passed_over_steps(
         db_path, now=now, pending_steps_read=pending_steps_read
@@ -264,7 +257,7 @@ async def advance_next_step(
         return AdvanceRun(None, passed_over)
     await announce(entry, passed_over)
     try:
-        outcome = await run_advance_step(scheduler_service, entry, advance_steps=advance_steps)
+        outcome = await run_advance_step(round_jobs, entry, advance_steps=advance_steps)
     except AdvanceStepFailed as exc:
         return AdvanceRun(entry, passed_over, failure=exc)
     return AdvanceRun(entry, passed_over, outcome=outcome)
@@ -394,7 +387,7 @@ def _entry(rnd: ActiveRound, step: PendingStep, job_id: str | None = None) -> Ph
 
 async def get_next_pending_phase(
     db_path: str,
-    scheduler_service: SchedulerService,
+    round_jobs: RoundJobs,
     *,
     now: datetime,
     pending_steps_read: AwaitedHook,
@@ -448,9 +441,9 @@ async def get_next_pending_phase(
         )
         return None if step is None else _entry(rnd, step)
 
-    for job in scheduler_service.get_pending_advance_jobs({rnd.round_id for rnd in rounds}):
+    for job in round_jobs.get_pending_advance_jobs({rnd.round_id for rnd in rounds}):
         phase = job["phase_number"]
-        job_kind = PHASE_KINDS.get(phase)
+        job_kind = job["kind"]
         index = next((i for i, rnd in enumerate(rounds) if rnd.round_id == job["round_id"]), None)
         if index is None:
             continue
@@ -534,7 +527,7 @@ def phase_mark(
           already auto-fired — must use /test-mode advance)
 
     *event* is the ``(round_id, event_type)`` the slot's job is armed under, and *queued* the
-    scheduler's own answer from ``get_queued_events_for_rounds`` — a job is found by its round
+    round jobs' own answer from ``get_queued_events_for_rounds`` — a job is found by its round
     and its type, never by an ID rebuilt.
     When *queued* is None (no scheduler available) pending phases show ⏳.
     """
@@ -556,7 +549,7 @@ ReviewMarks = dict[int, list[tuple[str, str]]]
 
 async def build_review_summary(
     db_path: str,
-    scheduler_service: Any = None,
+    round_jobs: Any = None,
     *,
     now: datetime,
     review_marks_read: AwaitedHook,
@@ -572,7 +565,7 @@ async def build_review_summary(
     A module's marks of a round are written as ``Label: mark`` cells, apart by two spaces, and
     one module's marks are apart from the next's by a bar.
 
-    When *scheduler_service* is supplied, the modules are handed the jobs it holds, and each
+    When *round_jobs* is supplied, the modules are handed the jobs it holds, and each
     pending step is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
       ⚠️  = job is absent (misfired, evicted, or never created — needs /advance)
@@ -598,8 +591,8 @@ async def build_review_summary(
 
     # The jobs the scheduler holds, as (round_id, event_type) — when one is available.
     queued: set[tuple[int, str]] | None = (
-        scheduler_service.get_queued_events_for_rounds({rnd.round_id for rnd in rounds})
-        if scheduler_service is not None
+        round_jobs.get_queued_events_for_rounds({rnd.round_id for rnd in rounds})
+        if round_jobs is not None
         else None
     )
     answers: list[ReviewMarks] = await review_marks_read.call(

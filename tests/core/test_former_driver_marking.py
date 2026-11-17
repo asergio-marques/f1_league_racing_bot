@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.submission.result_submission_service import (
     recompute_former_drivers_for_round,
 )

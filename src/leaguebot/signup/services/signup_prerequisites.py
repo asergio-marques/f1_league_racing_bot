@@ -16,13 +16,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from leaguebot.core.services.modules.confirmation_refusals import Confirmation, Refusal
+from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
 from leaguebot.core.utils.channel_guard import league_role_faults
 
 if TYPE_CHECKING:
     import discord
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
@@ -45,7 +46,7 @@ async def confirmation_refusals(
     """
     if confirmation is not Confirmation.APPROVAL:
         return []
-    if not await modules.is_signup_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return []
     config = await signup.get_config()
     if config is None or config.signup_channel_id is not None:
@@ -73,7 +74,7 @@ async def configuration_faults(
     Subscribed to core's `configuration_faults_read`, and read where signup's lines stand in the
     configuration's faults, ahead of the team names, so the manager reads them in the same order.
     """
-    if not await modules.is_signup_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return []
     config = await signup.get_config()
     server_config = await configs.get_server_config()

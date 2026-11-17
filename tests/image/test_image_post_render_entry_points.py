@@ -24,6 +24,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.switches import answer_switch
 
 
 pytestmark = pytest.mark.asyncio
@@ -62,7 +63,7 @@ def _bot_with_decision(tmp_path):
     bot.image_render_service.render_for_posting = AsyncMock(
         return_value=PostingDecision(action=POST_IMAGE, png_paths=[png])
     )
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "images", True)
     return bot, png
 
 

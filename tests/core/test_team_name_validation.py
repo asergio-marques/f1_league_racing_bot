@@ -151,7 +151,7 @@ def test_the_key_and_the_asset_filename_come_from_one_rule():
 
 import logging  # noqa: E402
 
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.framework.db.database import get_connection, run_migrations  # noqa: E402
 from leaguebot.core.services.drivers.team_service import TeamService  # noqa: E402
 
 

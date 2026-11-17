@@ -13,16 +13,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.image.models.image_constants import (
     ASPECTS,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.services.config.image_config_service import ImageConfigService
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
+from tests.support.settings_league import portrait_refresh_cancels, portrait_refresh_times
 
 SERVER_ID = 4242
 
@@ -99,11 +100,11 @@ async def _switch(league, cog, *, on: bool) -> None:
 
 async def test_enable_creates_defaults(tmp_path):
     league, cog, config_service = await _switched(tmp_path)
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
 
     await _switch(league, cog, on=True)
 
-    assert await league.bot.module_service.is_images_enabled() is True
+    assert await league.bot.module_service.is_enabled("images") is True
 
     cfg = await config_service.get_config()
     assert cfg is not None
@@ -136,7 +137,7 @@ async def test_disable_retains_configuration(tmp_path):
     toggles_before = await config_service.get_toggles()
 
     await _switch(league, cog, on=False)
-    assert await module_service.is_images_enabled() is False
+    assert await module_service.is_enabled("images") is False
 
     # Nothing may be cleared by the disable itself.
     during = await config_service.get_config()
@@ -180,12 +181,12 @@ async def test_disabling_disarms_the_daily_portrait_refresh(tmp_path):
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE image_config SET use_pfp = 1, pfp_daily = 1")
         await db.commit()
-    league.scheduler.cancel_portrait_refresh.reset_mock()
+    league.scheduler.remove.reset_mock()
 
     await _switch(league, cog, on=False)
 
-    assert await league.bot.module_service.is_images_enabled() is False
-    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+    assert await league.bot.module_service.is_enabled("images") is False
+    assert portrait_refresh_cancels(league.scheduler) == 1
 
 
 async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_off_and_says_so(
@@ -209,7 +210,7 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE image_config SET use_pfp = 1, pfp_daily = 1")
         await db.commit()
-    league.scheduler.cancel_portrait_refresh.side_effect = RuntimeError(
+    league.scheduler.remove.side_effect = RuntimeError(
         "the job store refused the removal"
     )
     before = len(await log_lines(league))
@@ -222,7 +223,7 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
         await cog._disable_images(asked)
         await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
     replied = last_said(asked)
     assert replied.startswith("✅ Image module disabled."), replied
     note = replied.splitlines()[-1]
@@ -237,7 +238,15 @@ async def test_a_disable_that_cannot_remove_the_daily_refresh_leaves_the_module_
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.parametrize("on", [True, False], ids=["images on", "images off"])
+@pytest.mark.parametrize(
+    "on",
+    [
+        pytest.param(
+            True, id="images on",
+        ),
+        pytest.param(False, id="images off"),
+    ],
+)
 async def test_a_restart_arms_the_daily_portrait_refresh_only_while_images_is_on(tmp_path, on):
     """Images was switched on with portraits refreshed daily at 07:45, and the bot starts again:
     image's start-up steps run in its turn of the start-up sweep. With images on, the daily refresh
@@ -252,14 +261,14 @@ async def test_a_restart_arms_the_daily_portrait_refresh_only_while_images_is_on
             "UPDATE image_config SET use_pfp = 1, pfp_daily = 1, pfp_daily_time = '07:45'"
         )
         await db.commit()
-    league.scheduler.schedule_portrait_refresh.reset_mock()
+    league.scheduler.arm_daily.reset_mock()
 
     assert await run_image_start_up(league.bot, on=on) == []
 
     if on:
-        league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
+        assert portrait_refresh_times(league.scheduler) == ["07:45"]
     else:
-        league.scheduler.schedule_portrait_refresh.assert_not_called()
+        assert portrait_refresh_times(league.scheduler) == []
 
 
 # ── T013 ──────────────────────────────────────────────────────────────────
@@ -279,7 +288,7 @@ async def test_gate_reads_flag_not_row_presence(tmp_path):
     await _switch(league, cog, on=False)
 
     assert await config_service.get_config() is not None
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
 
 
 # ── T028 — templates relocate independently (SC-002) ──────────────────────
@@ -610,7 +619,7 @@ async def test_season_review_and_config_view_agree(
     await saves.set_aspect(config_service, "weather", True)
 
     monkeypatch.setattr(
-        "leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False
+        "leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False
     )
 
     validity = ImageValidityService(config_service, module_service, SimpleNamespace())
@@ -856,7 +865,7 @@ async def test_render_without_season(
     """Every kind renders on a server with no season configured at all."""
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -959,7 +968,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
     """SC-007: the reason is stated and nothing is rendered while the binary is missing."""
     import leaguebot.image.services.render.image_render_service as render_module
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1003,7 +1012,7 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
         ImageValidityService,
     )
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
 
     await _enable(module_service, config_service)
@@ -1033,7 +1042,7 @@ async def test_render_raises_notices_without_failing(
     scratch_slot,
 ):
     """A substituted font and a truncated field are notices, not problems (XIV.4)."""
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "verdicts_template.svg").write_bytes(RICH_TEMPLATE)
@@ -1066,7 +1075,7 @@ async def test_render_problem_yields_no_image(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
     """png_paths is empty whenever problem is set — never a partial image."""
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_field(config_service, "calendar_template", "absent.svg")
@@ -1095,7 +1104,7 @@ async def test_render_is_off_the_event_loop(
 
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "calendar_template.svg").write_bytes(RICH_TEMPLATE)
@@ -1181,7 +1190,7 @@ def _race_template(background_markup: str) -> bytes:
 async def test_contrast_is_measured_against_the_declared_background(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1199,7 +1208,7 @@ async def test_contrast_is_measured_against_the_declared_background(
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1222,7 +1231,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
 async def test_contrast_unmeasurable_when_template_is_invalid(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_field(config_service, "results_race_template", "gone.svg")
@@ -1236,7 +1245,7 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
 async def test_contrast_unmeasurable_when_background_element_is_absent(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1259,7 +1268,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
 async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1284,7 +1293,7 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     `computed_style` reads only simple selectors, so "none the bot can read" is not quite
     "none", and FR-027 forbids guessing.
     """
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -1335,7 +1344,7 @@ def _slotted_plate(authored: str) -> bytes:
 
 async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, palettes):
     """Configure per-tier colours on, *markup* as the race template, and *palettes*."""
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "results_race_template.svg").write_bytes(markup)
     await saves.set_flag(config_service, "per_tier_colour_enabled", True)
@@ -1767,7 +1776,7 @@ def test_the_reply_says_why_nothing_was_measured():
 async def test_asset_directory_independence(module_service, config_service, tmp_path, monkeypatch):
     from leaguebot.image.services.validity.image_validity_service import evaluate_directories
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
 
     # Give every asset directory a real folder.
@@ -1800,7 +1809,7 @@ async def test_asset_directory_escaping_root_is_reported(
 ):
     from leaguebot.image.services.validity.image_validity_service import evaluate_directories
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "flag_directory", "../../elsewhere")
 
@@ -1880,14 +1889,14 @@ async def test_aspect_enabled_while_source_module_disabled(
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
 
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_aspect(config_service, "standings", True)
 
     # The results module backs the standings aspect and is disabled on this server.
-    assert await module_service.is_results_enabled() is False
+    assert await module_service.is_enabled("results") is False
 
     validity = ImageValidityService(config_service, module_service, SimpleNamespace())
     statuses = {s.aspect: s for s in await validity.aspect_statuses()}
@@ -2284,7 +2293,7 @@ async def test_a_clean_render_posts_the_image(
 ):
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
 
@@ -2468,7 +2477,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     from leaguebot.results.services.review import verdict_announcement_service as vas
     from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_field(config_service, "template_directory", "templates")
     await saves.set_aspect(config_service, "verdicts", True)
@@ -2545,7 +2554,7 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     from leaguebot.results.services.review import verdict_announcement_service as vas
     from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
 
-    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await saves.set_aspect(config_service, "verdicts", False)
 

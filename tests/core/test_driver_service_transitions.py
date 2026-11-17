@@ -14,7 +14,7 @@ from tests.support.driver_transitions import transitioned
 @pytest.fixture
 async def db_path(tmp_path):
     """A migrated database with the league's server_configs row."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     path = str(tmp_path / "driver_test.db")
     await run_migrations(path)
@@ -25,7 +25,7 @@ async def db_path(tmp_path):
 
 
 async def _seed_driver(db_path, user_id: str, state: str) -> None:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, ?)",
@@ -67,7 +67,7 @@ async def test_an_allowed_transition_lands_on_its_target(db_path, from_state, to
     driver's as anyone's. The awaiting-correction-parameter state (T052, spec 014) is reached
     from pending admin approval, and left for a driver correction, back to admin approval when
     it times out, or to Not Signed Up on a withdrawal or a forced close."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.models.driver_profile import DriverState
     await _seed_driver(db_path, "u1", from_state)
     if former:
@@ -96,7 +96,7 @@ async def test_a_transition_the_table_does_not_allow_raises(db_path, from_state,
     refusal a member reads: a caller judges the move first, and catches this by name only where
     a move raced past its judgement."""
     from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     await _seed_driver(db_path, "u1", from_state)
     with pytest.raises(InvalidDriverTransition) as refused:
         await transitioned(db_path, "u1", DriverState(to_state))
@@ -112,7 +112,7 @@ class TestSignupDataClearing:
     """T052: NOT_SIGNED_UP keeps a former driver's signup data (issue #220 withdrew the clearing)."""
 
     async def _seed_former_driver_with_record(self, db_path: str, user_id: str) -> None:
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
         async with get_connection(db_path) as db:
             await db.execute(
                 "INSERT INTO driver_profiles "
@@ -153,7 +153,7 @@ class TestSignupDataClearing:
 async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
     """`write_transition` is how a sack or the driver pass changes a state inside a larger
     write, and it refuses what the table refuses, writing nothing."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.core.models.driver_profile import InvalidDriverTransition
     from leaguebot.core.services.drivers.driver_service import write_transition

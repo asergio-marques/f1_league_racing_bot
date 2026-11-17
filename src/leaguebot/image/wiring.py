@@ -15,23 +15,32 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.hooks import StartUpStep
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.hooks import StartUpStep
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign image up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_images_enabled` asks it by."""
+    """Sign image up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.image.models.switch import SWITCH_KEY
     from leaguebot.image.services.config.module_switch_settings import images_enabled_on
 
-    modules.register_switch("images", images_enabled_on)
+    modules.register_switch(SWITCH_KEY, images_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:
     """Sign image up to each hook only image joins. The hooks several modules join are signed up
     by the entry point, in the order they are called, through the functions below."""
     sign_up_to_drivers_deleted(bot)
+
+
+def sign_up_to_pack(bot: "LeagueBot") -> None:
+    """Sign image's hand-back of the job it keeps armed up to the hook the bot packed declares:
+    the pack clears all scheduled work but what the parts hand back."""
+    from leaguebot.image.services.portraits import driver_portrait_service
+
+    bot.bot_packed.subscribe(driver_portrait_service.bot_packed_on)
 
 
 def sign_up_to_drivers_deleted(bot: "LeagueBot") -> None:
@@ -54,7 +63,7 @@ def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
 
 def register_change_types(bot: "LeagueBot") -> None:
     """Make the queue known image's kinds of change: the module's switch and its settings."""
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
     from leaguebot.image.services.config.image_settings import image_settings
     from leaguebot.image.services.config.module_switch_settings import (
         module_off_images,
@@ -93,11 +102,13 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     whether it was missed: the job has no lateness limit, and the refresh, handed the queue's
     moment, skips a run that fires late. It reads the bot when it fires."""
 
+    from leaguebot.image.services.portraits.driver_portrait_service import PORTRAIT_REFRESH_KIND
+
     async def _portrait_refresh_cb() -> None:
         from leaguebot.image.services.portraits.driver_portrait_service import run_daily_refresh
         await run_daily_refresh(bot, bot.image_config_service, now=bot.change_queue.now())
 
-    bot.scheduler_service.register_timer("portrait_refresh", _portrait_refresh_cb)
+    bot.scheduler_service.register_timer(PORTRAIT_REFRESH_KIND, _portrait_refresh_cb)
 
 
 def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":

@@ -45,9 +45,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.review.review_state import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
+from tests.support.switches import answer_switch
 
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
@@ -184,12 +185,13 @@ def _bot(db_path: str, *, attendance: bool = True, channel: Any = None,
     bot.user = MagicMock(id=BOT_USER_ID)
     bot.get_guild = MagicMock(return_value=guild)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
+    bot.league_settings = bot.config_service
     bot.guilds = [guild]
     bot.get_channel = MagicMock(return_value=channel)
     bot.fetch_channel = AsyncMock(return_value=channel)
     bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", attendance)
+    answer_switch(bot.module_service, "images", False)
     bot.placement_service = MagicMock(side_effect=AssertionError("the bot's placement service"))
     for name in ("sack_driver", "move_driver", "sack_on", "move_on", "guard_move",
                  "driver_role_ids"):
@@ -402,7 +404,7 @@ async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path
     silently passed over". Pro has no Reserve team and Max is owed an autoreserve: the check
     made before the sanction is saved refuses it, for the queue to stop on, and the save
     refuses it too should it be reached. The driver is still owed it, and nothing is moved."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _db(tmp_path, autosack=None, reserve_team=False)
     await _totals(db_path, LATEST_ROUND, {MAX: 12})
@@ -544,7 +546,7 @@ async def test_change_sanction_roles_raises_where_discord_refuses(tmp_path):
     """Lewis's autosack is saved and he still holds the roles of Pro and Alpha. Discord refuses
     to take them (Missing Permissions): the role change raises `StepFailedOnDiscord`, for the
     queue to stop on."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _db(tmp_path)
     await _sacked(db_path, LEWIS)
@@ -581,7 +583,7 @@ async def test_change_sanction_roles_stops_where_the_member_cannot_be_fetched(tm
     """Lewis's autosack is saved, and Discord fails to fetch him for a reason other than his
     absence (a server error): the change raises `StepFailedOnDiscord`, rather than passing his
     roles over."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _db(tmp_path)
     await _sacked(db_path, LEWIS)
@@ -597,7 +599,7 @@ async def test_change_sanction_roles_stops_where_a_role_to_grant_is_gone(tmp_pat
     """Max's autoreserve is saved, his seat now the Reserve team's, but the Reserve team's role
     has been deleted from the server: the change raises `StepFailedOnDiscord`, and Max is given
     no role."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _db(tmp_path)
     await _moved_to_reserve(db_path, MAX)
@@ -652,8 +654,8 @@ async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     Reserve team of Pro (its block in the lineup picture is full). The check made before the
     sanction is saved raises `StepFailedOnDiscord` carrying the guard's refusal, for the queue
     to stop on, and nothing is moved."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.refusal import Refused
 
     db_path = await _db(tmp_path, autosack=None)
     await _totals(db_path, LATEST_ROUND, {MAX: 12})
@@ -693,7 +695,7 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     """Defect 4: the sheet's failure stops the queue and is retried there, so it raises
     `StepFailedOnDiscord`; nothing is put on the old retry queue, and the sheet posted earlier is
     still the one recorded."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _db(tmp_path)
     await _totals(db_path, LATEST_ROUND, {LEWIS: 3, MAX: 1})
@@ -701,7 +703,7 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     channel.send = AsyncMock(side_effect=http_error(status=403, text="Missing Access"))
     hook = _hook(_bot(db_path, channel=channel), _placement())
 
-    with patch("leaguebot.core.services.posting.retry_service.enqueue", new=AsyncMock()) as enqueue:
+    with patch("leaguebot.framework.services.posting.retry_service.enqueue", new=AsyncMock()) as enqueue:
         with pytest.raises(StepFailedOnDiscord):
             with in_a_job():
                 await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned=set(), as_text=False)

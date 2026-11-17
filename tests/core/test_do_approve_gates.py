@@ -46,7 +46,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.review_workflows import (
     run_workflow,
     sign_up_confirmation_refused,
@@ -55,6 +55,7 @@ from tests.support.review_workflows import (
 
 from tests.support.season_points import snapshot_points
 from tests.support.setup_reads import hold_setup
+from tests.support.switches import answer_switch
 
 SERVER_ID = 3300
 SEASON_ID = 11
@@ -152,11 +153,11 @@ def _cog(db_path, **overrides):
     # Every module off unless a test says otherwise. Said in as many words rather than left
     # to a mock's truthiness, so a gate that runs here runs because a test chose it.
     module_svc = cog.bot.module_service
-    module_svc.is_weather_enabled = AsyncMock(return_value=False)
-    module_svc.is_attendance_enabled = AsyncMock(return_value=False)
-    module_svc.is_results_enabled = AsyncMock(return_value=False)
-    module_svc.is_signup_enabled = AsyncMock(return_value=False)
-    module_svc.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(module_svc, "weather", False)
+    answer_switch(module_svc, "attendance", False)
+    answer_switch(module_svc, "results", False)
+    answer_switch(module_svc, "signup", False)
+    answer_switch(module_svc, "images", False)
 
     # The image module's drawing, answering "nothing wrong" to each question of the image
     # configuration. Said in as many words, since a mock's answer read as a fault would refuse
@@ -228,7 +229,7 @@ async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
 
 
 async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(
@@ -276,7 +277,7 @@ _RASTERISER = "Inkscape is not installed on this host."
 def _images_on(cog, *, rasteriser=None, templates=(), colours=()):
     """The image module switched on, its drawing answering the drawing program's fault, the
     broken templates a switched-on output draws and the per-tier colour problems as given."""
-    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(cog.bot.module_service, "images", True)
     cog.bot.image_drawing.rasteriser_fault = MagicMock(return_value=rasteriser)
     cog.bot.image_drawing.template_faults = AsyncMock(return_value=list(templates))
     cog.bot.image_drawing.colour_shortfall_problems = AsyncMock(return_value=list(colours))
@@ -390,9 +391,9 @@ def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     div = _division()
     cog.bot.season_service.get_divisions = AsyncMock(return_value=[div])
     cog.bot.season_service.get_division_rounds = AsyncMock(return_value=rounds)
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    answer_switch(cog.bot.module_service, "attendance", attendance)
+    answer_switch(cog.bot.module_service, "weather", weather)
+    answer_switch(cog.bot.module_service, "results", False)
     cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=_attendance_config()
     )
@@ -623,7 +624,7 @@ def _cog_with_results(db_path, **overrides):
     # ``AsyncMock`` answered every question truthily, so this fixture's name was the only
     # place the intent existed — and a test meaning to cover a league without the results
     # module would have covered this one just the same.
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    answer_switch(cog.bot.module_service, "results", True)
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=False)
     )
@@ -909,7 +910,7 @@ async def _a_wrongly_ordered_points_table(db_path, monkeypatch):
 
 async def _no_signup_channel(db_path, monkeypatch):
     cog = _cog(db_path)
-    cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(cog.bot.module_service, "signup", True)
     cog.bot.signup_module_service.get_config = AsyncMock(
         return_value=SimpleNamespace(signup_channel_id=None)
     )
@@ -1044,7 +1045,7 @@ async def _gate_s_unsettled_signups_and_channel_faults(db_path, monkeypatch):
 
 
 async def _gate_tiers_not_sequential(db_path, monkeypatch):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(

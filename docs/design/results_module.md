@@ -21,8 +21,8 @@ Answers to `architecture.md`, "The database".
 ### Results' tables
 
 Results owns twenty-seven tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`),
-all declared in `core/db/migrations/001_baseline.sql`. Every one of them is written on a connection
-the change queue or a core hook hands in: nothing in `results/` commits.
+all declared in `framework/db/migrations/001_baseline.sql`. Every one of them is written on a
+connection the change queue or a core hook hands in: nothing in `results/` commits.
 
 **The submission and amendment conversations**
 
@@ -180,7 +180,7 @@ beside the configurations it amends. The table names a service by its file.
 
 | Folder | Services | Chiefly writes |
 |---|---|---|
-| `submission/` | `submission_changes` (a round's opening, the restart of a first paste cut short, a round whose every session is cancelled, and the closing of its channel), `submission_turn_change` (each paste a turn, for a submission and a resubmission, and the configuration's choice), `submission_steps` (the channel made and the lines posted in a dialogue), `resubmission_changes` (the resubmission started and its swap), `result_submission_service` (the submission's state, a session's save, the swap's writer, the configuration picker, the cancellation refusal and the round called off), `paste_reading` (a paste read and judged), `round_start` (what a round's start asks), `submission_recovery` and `review_recovery` (what a restart does to an open submission) | `round_submission_channels`, `resubmission_drafts`, `session_results` and the driver rows |
+| `submission/` | `submission_changes` (a round's opening, the restart of a first paste cut short, a round whose every session is cancelled, and the closing of its channel), `submission_turn_change` (each paste a turn, for a submission and a resubmission, and the configuration's choice), `submission_steps` (the channel made and the lines posted in a dialogue), `resubmission_changes` (the resubmission started and its swap), `result_submission_service` (the submission's state, a session's save, the swap's writer, the configuration picker, the cancellation refusal and the round called off), `paste_reading` (a paste read and judged), `round_start` (what a round's start asks, and the submission's lead, which it answers on the leads read and on `round_armed`), `submission_recovery` and `review_recovery` (what a restart does to an open submission) | `round_submission_channels`, `resubmission_drafts`, `session_results` and the driver rows |
 | `review/` | `review_open_change` (the review opened, its prompt put up, the appeals prompt put back, a stale review closed), `review_stage_change` (a staging), `review_confirm_change` (the approval question), `review_lock_change` (the locked channel's warning), `report_approval_change` and `appeals_approval_change` (the two approvals), `review_posting` (every posting job a review plans), `review_verdicts` (the verdict, sheet and sanction jobs), `review_changes` (what holds a round or a division), `review_prompts` (the prompts and the appeal records), `review_state` (what a review holds, and the store above), `penalty_service` (a penalty validated and applied), `verdict_records` (the verdict join), `verdict_announcement_service` (a verdict or a card posted, the banners' records, and the sanction's wording, which results hands the verdict's drawing), `penalty_wizard`, `penalty_review_views`, `appeals_review_views` (the review's buttons and forms) | `penalty_records`, `appeal_records`, `verdict_banner_messages`, `review_lock_warnings` |
 | `round_amendment/` | `amend_changes` (the amendment opened), `amend_turn_change` (each paste a turn, stage one recorded, the channel closed), `amend_end_changes` (the cancel, the lapse, the lapse's timer and the restart's recovery), `amendment_stage_changes` (the two stages approved), `amendment_writes` (the snapshot, the rewrite, the revert, the holds and the sweep), `amend_views` (Cancel Amendment) | `round_amend_channels`, `amend_drafts` |
 | `points/` | `points_config_service` (the league's configurations), `points_settings` (`/results config` and the reserves toggle as settings), `points_paste` (a points table pasted at once), `season_points_service` (attaching, the season's copy, validation, the staged install), `amendment_mode_service` and `amendment_settings` (the amendment mode and its settings), `points_amendment_change` (its approval), `points_amendment_faults` (what stops its publication), `scoring` (points applied to a session's rows) | the points tables, the season's copy and the modification store |
@@ -227,7 +227,8 @@ docstring says), `points_ordering` (the ordering rule, held once for its four ca
 `tyre_compound` (the compounds a session's rows name, which the image module's preview takes through
 `PreviewSources`) and `xml_import`. `results/models/` holds plain data: a session's result, a points
 configuration, a standings snapshot, the amendment mode's state, `PointsChanged` (what a points
-amendment's approval changed) and `RecoveryFailed` (below, "Errors and failures").
+amendment's approval changed), `RecoveryFailed` (below, "Errors and failures"), and `SWITCH_KEY`
+(`switch.py`), the key results' switch is read by.
 
 ---
 
@@ -395,14 +396,23 @@ session") and the core specification's ("When the bot stops").
 
 ### The round's `results` job
 
-Core arms each round's `results` job (`SchedulerService.schedule_result_submission_jobs`, `core.md`,
-"Core's own timed events") with no lateness limit, so a job whose moment passes while the bot is
+Results answers each round's `results` job as a lead (`round_start.submission_lead`, at the
+round's own moment), and core arms it (`RoundJobs.arm_leads`, `core.md`, "Core's own timed events")
+with no lateness limit, so a job whose moment passes while the bot is
 down fires once it is back. Its handler, which the wiring registers, is `ask_round_start`
 (`results/services/submission/round_start.py`), and results' start-up catch-up calls the same
 function, so a job run on time and one caught up take one path. It reads the round again and asks
 `results.submission.open` only for a round still to be run whose opening is not already in hand, so
 the late job and the catch-up, in either order, ask once
 (`test_the_late_job_and_the_catch_up_both_firing_open_the_round_once`).
+
+**Results answers the submission for every round, whatever its switch,** on the leads read and on
+the round armed again, since it is the round's one way off Not run and its handler moves a round on
+where results is off. Two of the lead's marks are set: that an amendment
+runs it at once where the round's moment passed while the round was still Not run, and that test
+mode leaves it to `/test-mode advance` where core's rule says so (`results_left_to_advance`).
+Results signs its kind up with core's round jobs with no advance phase, so that the pending read
+leaves it out and phase 4 stays read from the round's state.
 
 **The opening's check judges the round still due as it comes up to run**: its start passed by the
 queue's clock, and the round still to be run. An amendment or a cancellation of the round in hand
@@ -420,7 +430,8 @@ so the two judge "before the bot came up" by one value (`ask_round_start`'s docs
 
 The amendment sweep is a standing sweep (`architecture.md`, "A standing sweep is an interval job
 that re-reads its rows each time it runs"): an `IntervalTrigger` every `AMENDMENT_SWEEP_MINUTES`,
-armed with no lateness limit by `SchedulerService.schedule_amendment_sweep`, whose handler,
+armed with no lateness limit by `schedule_amendment_sweep` (`amendment_writes`, a plain function
+handed the scheduler, which arms it through `arm_every`), whose handler,
 `amendment_writes.sweep_expired_amendments`, reads every amendment's deadline against the `now` it
 is handed and asks `results.amend.lapse` for each past it. **It is a sweep and not one timer per
 amendment** because an amendment is left abandoned by no event the bot sees, and it is an interval
@@ -430,7 +441,8 @@ job rather than one that re-arms itself because a sweep that raised would then b
 stage of the amendment is in hand, stopped included, so the next run asks again.
 
 It is armed in results' start-up turn (`arm_amendment_sweep`) and by the switch-on's `After` step,
-and removed by the switch-off's `disarm_sweep`, as a switch-off undoes what the switch-on set up
+and removed by the switch-off's `disarm_sweep`, which calls `cancel_amendment_sweep` handed
+through results' wiring, as a switch-off undoes what the switch-on set up
 (`results_off_change`'s docstring; `test_turning_results_off_removes_the_amendment_sweep`).
 
 ### The lapse and the lock's clear
@@ -471,7 +483,7 @@ docstring).
 
 **A failed recovery reports once.** A round that cannot be recovered stops none of the others; once
 every round is gone through, the step raises one `RecoveryFailed` naming each and carrying
-`rounds_called`, each as core names it (`RoundsFailed`, `core/models/recovery.py`);
+`rounds_called`, each as core names it (`RoundsFailed`, `framework/models/recovery.py`);
 `architecture.md`, "The sweep is core's own steps, then each enabled module's turn", says what the
 sweep does with it (`test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are`).
 
@@ -595,6 +607,8 @@ held or turns itself off, it hands core's writer the hook (`cancellation_notices
 | `review_sections_read` | `season_points_service.review_section` | results' section of a season review |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry and the factory reset |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | results' configuration in the season's fingerprint |
+| `round_leads_read` | `round_start.submission_leads` | answers the submission's lead for every round, whatever results' switch ("The round's `results` job") |
+| `round_armed` | `round_start.round_armed` | answers the submission's lead for an amended round, whatever results' switch |
 | `pending_steps_read`, `review_marks_read` | `test_mode_steps.pending_steps`, `review_marks` | a round's submission for `/test-mode advance` and its review |
 | `in_memory_state_cleared` | `review_state.clear_held_reviews` | the reviews held in memory |
 | the six delete and pack hooks | see "The database" | — |
@@ -672,7 +686,7 @@ exception, results' among them.
 |---|---|
 | A command, button or form | the base classes and `report_failure`; no cog or view of results' has an error handler. The cog catches by name only what it turns into a refusal (`ConfigNotFoundError`, `UnicodeDecodeError`), and `points_settings.run_xml_import` an `XmlImportError`; a lapsed confirmation's buttons that cannot be taken down are logged as a warning, the lapse recorded all the same |
 | A change | its check refuses a member's request and drops the bot's where the work is no longer due; a job that fails stops its lane, with the stop notice, Retry and Discard |
-| A timed job | the scheduler's job runner (`core.md`, "Errors and failures"); the sweep catches each lapse it cannot ask, logs it on the host and goes on, so one amendment stuck stops none of the rest |
+| A timed job | the scheduler's job runner (`framework.md`, "Errors and failures"); the sweep catches each lapse it cannot ask, logs it on the host and goes on, so one amendment stuck stops none of the rest |
 | A start-up step | `RecoveryFailed`, raised once a recovery has gone through every round, which the start-up sweep reports in one line |
 | A picture | the fallback to text and its line, above |
 
@@ -729,7 +743,7 @@ Each is stated where it lives and pinned by the test named.
 | A posting's chunks are the ids recorded; nothing that follows it is deleted | `_send_chunked`, `_delete_posting` | `test_nothing_that_merely_follows_the_posting_is_deleted`, `test_a_posting_that_fails_part_way_takes_its_first_chunks_down` |
 | The opening re-judges the round as it comes up to run; nothing holds it back | `ask_round_start`, `submission_changes`' docstring | `test_a_round_whose_amendment_stopped_across_the_restart_moves_its_start_ahead_is_not_opened`, `test_the_late_job_and_the_catch_up_both_firing_open_the_round_once` |
 | Under test mode a start that passed before the bot came up is left to the advance | `ask_round_start` | `test_under_test_mode_a_missed_round_start_is_left_to_the_advance` |
-| The amendment sweep is a standing interval job, not a timer per amendment nor one that re-arms itself | `SchedulerService.schedule_amendment_sweep` | `test_the_sweep_is_scheduled_as_a_standing_job`, `test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback` |
+| The amendment sweep is a standing interval job, not a timer per amendment nor one that re-arms itself | `amendment_writes.schedule_amendment_sweep` | `test_the_sweep_is_scheduled_as_a_standing_job`, `test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback` |
 | Turning results off removes the sweep turning it on arms | `results_off_change`'s docstring | `test_turning_results_off_removes_the_amendment_sweep` |
 | Amendments are recovered before submissions, and missed starts after both | the comments in `wiring.start_up_steps` | `test_the_builder_orders_the_start_up_steps` |
 | A failed recovery stops none of the other rounds and is reported once | `recover_orphaned_submission_channels`, `RecoveryFailed` | `test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are` |

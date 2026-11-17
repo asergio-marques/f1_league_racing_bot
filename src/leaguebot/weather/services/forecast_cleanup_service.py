@@ -27,15 +27,15 @@ from typing import TYPE_CHECKING
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
-from leaguebot.core.services.posting.standing_post_handler import delete_standing, post_standing
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord
+from leaguebot.framework.services.posting.standing_post_handler import delete_standing, post_standing
 from leaguebot.core.services.seasons.season_service import round_facts_on
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.utils.messages import chunk_message
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)

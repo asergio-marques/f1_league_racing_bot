@@ -29,9 +29,9 @@ import aiosqlite
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from tests.support.change_queue import (
     MEMBER_ID,
     SERVER_ID,
@@ -148,7 +148,7 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     """
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.__main__ import register_module_switches
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
     bot = league_double(db_path)
     bot.user.id = 77
@@ -496,7 +496,7 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
     # Every connection is opened afresh and closed on return for the count: one lent again would
     # be in use without being opened, and so missed. The count is taken where aiosqlite starts a
     # connection's thread and where it closes it, however the connection is opened and closed.
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
 
     await database.close_connections()
     open_now: set[int] = set()
@@ -968,7 +968,11 @@ async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
     league manager confirms `/module disable results` and the queue carries it out: the switch-off
     is done, and the scheduler holds no amendment sweep, as turning results on had set up
     (architecture.md, "Each module turns itself on and off")."""
-    from leaguebot.core.services.scheduler_service import AMENDMENT_SWEEP_JOB_ID, SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
+    from leaguebot.results.services.round_amendment.amendment_writes import (
+        AMENDMENT_SWEEP_JOB_ID,
+        schedule_amendment_sweep,
+    )
 
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
@@ -977,7 +981,7 @@ async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
         bot.scheduler_service = scheduler
         # The change types again, as the builder registers them for this scheduler.
         attach_queue(bot, seeded.db_path, now=bot.clock)
-        scheduler.schedule_amendment_sweep()
+        schedule_amendment_sweep(scheduler)
         assert scheduler.has_job(AMENDMENT_SWEEP_JOB_ID)
         await _confirm(bot)
 

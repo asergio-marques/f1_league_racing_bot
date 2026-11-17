@@ -17,6 +17,7 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import RESULTS_GROUP
 
 # The subgroups are declared together in `results_group.py`, in the order a league sees them, so
@@ -27,10 +28,10 @@ from leaguebot.results.cogs.reserves_commands import ReservesCommands
 from leaguebot.results.cogs.standings_commands import StandingsCommands
 from leaguebot.results.cogs.rounds_commands import RoundsCommands
 from leaguebot.results.cogs.channel_commands import ChannelCommands
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import is_foreign_guild
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import is_foreign_guild
+from leaguebot.framework.utils.log_lines import refuse
 
 
 class ResultsCog(
@@ -96,7 +97,7 @@ class ResultsCog(
         is, unless *record* is False — which the views and lists pass, since they change
         nothing and record nothing.
         """
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             reply = "\u274c The Results & Standings module is not enabled on this server."
             if record:
                 await refuse(interaction, reply, what=describe(interaction))

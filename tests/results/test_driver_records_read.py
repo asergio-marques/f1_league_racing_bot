@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.teams import seed_team_instances
 
 A, B, C = "6501", "6502", "6503"

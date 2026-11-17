@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import tuple_rows, tuple_rows_in
+from leaguebot.framework.db.database import tuple_rows, tuple_rows_in
 
 if TYPE_CHECKING:
     from leaguebot.core.services.seasons.season_service import SeasonService

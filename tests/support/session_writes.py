@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points import scoring
 from leaguebot.results.services.submission import result_submission_service as service

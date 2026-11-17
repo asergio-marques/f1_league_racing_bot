@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.drivers.team_service import TeamService
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,

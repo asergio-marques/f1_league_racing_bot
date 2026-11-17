@@ -27,10 +27,10 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import drivers_in_states
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -39,14 +39,14 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.audit_service import record_system_change_on
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.audit_service import record_system_change_on
 from leaguebot.core.services.seasons.season_end_changes import season_ending_on
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     NO_CHANNEL_LEFT,
     advance_on_window_close_on,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     DiscardedContext,
@@ -55,12 +55,12 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.signup_posting import post, post_standing_message
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)
@@ -525,7 +525,7 @@ async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> se
 
     Gives the accounts it asked an ending of, which the rest of the recovery skips.
     """
-    from leaguebot.core.utils.log_lines import name_of_member
+    from leaguebot.framework.utils.log_lines import name_of_member
     from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
     from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
 

@@ -18,7 +18,7 @@ from typing import Any, Iterable, NamedTuple
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import (
     SCOPE_DIVISION,
     SCOPE_ROUND,
@@ -26,11 +26,11 @@ from leaguebot.core.models.cancellation import (
     CalledOffSteps,
     CancellationRound,
 )
-from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import (
+from leaguebot.framework.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.services.posting.owned_channel_handler import (
     edit_in_owned_channel,
     post_in_owned_channel,
 )
@@ -46,9 +46,9 @@ from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import parse_gap, parse_lap_gap, parse_time
-from leaguebot.core.utils.league_server import CallbackButton, LeagueView
-from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.framework.utils.league_server import CallbackButton, LeagueView
+from leaguebot.framework.utils.log_lines import refuse
+from leaguebot.framework.utils.member_names import interaction_member
 from leaguebot.results.services.publishing.results_post_service import _parse_ids
 from leaguebot.results.services.review.review_posting import DELETE_CHANNEL
 from leaguebot.results.services.submission.paste_reading import ParsedQualifyingRow, ParsedRaceRow, _parse_time_to_ms

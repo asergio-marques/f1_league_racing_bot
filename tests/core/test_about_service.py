@@ -27,7 +27,7 @@ from leaguebot.core.services.modules.about_service import (
     about_text,
     respond,
 )
-from leaguebot.core.utils import version
+from leaguebot.utils import version
 from tests.support.change_queue import built_bot
 
 

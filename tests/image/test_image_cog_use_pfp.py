@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.cogs.use_pfp_commands import PortraitTimeConfirm, PortraitTimeModal
 from tests.support.change_queue import run_queue
@@ -37,7 +37,13 @@ from tests.support.image_cog_doubles import (
     logged,
     said,
 )
-from tests.support.settings_league import audit_rows, settings_league, switch
+from tests.support.settings_league import (
+    audit_rows,
+    portrait_refresh_cancels,
+    portrait_refresh_times,
+    settings_league,
+    switch,
+)
 from tests.support.undecorate import undecorate
 
 #: The command the confirmation belongs to, as its log lines name it.
@@ -125,7 +131,7 @@ def _not_asked(interaction) -> None:
 
 def _fail_to_arm(league) -> None:
     """The scheduler refusing the daily job, as a job store refusing it would."""
-    league.scheduler.schedule_portrait_refresh.side_effect = RuntimeError(
+    league.scheduler.arm_daily.side_effect = RuntimeError(
         "the job store refused the job"
     )
 
@@ -190,7 +196,7 @@ async def test_the_master_toggle_disables_portraits_and_stops_the_daily_job(tmp_
     _acknowledged(interaction)
     assert (await _portraits(league))["use_pfp"] == 0
     # A job left running against a setting that says no would keep fetching.
-    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+    assert portrait_refresh_cancels(league.scheduler) == 1
 
 
 # ── The two sub-toggles need the master on ────────────────────────────────
@@ -239,7 +245,7 @@ async def test_disabling_the_last_trigger_is_refused_the_other_way_round(tmp_pat
     assert "Cannot disable daily updates" in said(interaction)
     _not_asked(interaction)
     assert (await _portraits(league))["pfp_daily"] == 1
-    league.scheduler.cancel_portrait_refresh.assert_not_called()
+    assert portrait_refresh_cancels(league.scheduler) == 0
 
 
 async def test_the_master_toggle_is_never_refused_by_the_rule(tmp_path):
@@ -286,7 +292,7 @@ async def test_disabling_the_daily_job_needs_no_modal(tmp_path):
     interaction.response.send_modal.assert_not_awaited()
     _acknowledged(interaction)
     assert (await _portraits(league))["pfp_daily"] == 0
-    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+    assert portrait_refresh_cancels(league.scheduler) == 1
 
 
 async def test_an_unreadable_time_changes_nothing(tmp_path):
@@ -330,7 +336,7 @@ async def test_confirming_stores_the_time_enables_the_job_and_arms_it(tmp_path):
 
     stored = await _portraits(league)
     assert (stored["pfp_daily"], stored["pfp_daily_time"]) == (1, "19:00")
-    league.scheduler.schedule_portrait_refresh.assert_called_once_with("19:00")
+    assert portrait_refresh_times(league.scheduler) == ["19:00"]
     _acknowledged(interaction)
     assert "19:00 UTC" in interaction.said[-1]
     interaction.response.edit_message.assert_awaited()
@@ -347,7 +353,7 @@ async def test_cancelling_the_confirmation_changes_nothing(tmp_path):
 
     assert "Cancelled" in said(interaction)
     assert await _portraits(league) == {**PACKAGED, "use_pfp": 1}
-    league.scheduler.schedule_portrait_refresh.assert_not_called()
+    assert portrait_refresh_times(league.scheduler) == []
 
 
 async def test_a_scheduler_failure_does_not_lose_the_setting(tmp_path):
@@ -429,7 +435,7 @@ async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_record
     time it is armed, and one success line follows it."""
     cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
     recorded_by_then = []
-    league.scheduler.schedule_portrait_refresh.side_effect = (
+    league.scheduler.arm_daily.side_effect = (
         lambda *_args: recorded_by_then.append(logged(league.bot))
     )
 
@@ -437,7 +443,7 @@ async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_record
 
     _acknowledged(interaction)
     assert recorded_by_then == [[]]
-    league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
+    assert portrait_refresh_times(league.scheduler) == ["07:45"]
     assert_one_line(league.bot, "images use-pfp toggle")
 
 
@@ -470,7 +476,7 @@ async def test_a_second_press_of_confirm_saves_nothing_and_is_refused(tmp_path):
     second = await _confirm(view, league)
 
     _acknowledged(first)
-    league.scheduler.schedule_portrait_refresh.assert_called_once()
+    assert len(portrait_refresh_times(league.scheduler)) == 1
     assert len(await audit_rows(league.db_path)) == 1
     assert "ℹ️ This confirmation has already been answered." in said(second)
     _not_asked(second)
@@ -573,7 +579,7 @@ async def test_confirm_writes_nothing_once_things_changed_since_opening(
 
     assert (await _portraits(league))["pfp_daily_time"] == "03:00"
     assert await audit_rows(league.db_path) == []
-    league.scheduler.schedule_portrait_refresh.assert_not_called()
+    assert portrait_refresh_times(league.scheduler) == []
     assert reply in said(press)
     _not_asked(press)
     lines = logged(league.bot)

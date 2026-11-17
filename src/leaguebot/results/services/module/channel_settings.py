@@ -1,7 +1,7 @@
 """A division's results, standings and verdicts channels, as settings on the change queue.
 
 `/results channel results`, `standings` and `verdicts` each ask one change built from a `Setting`
-below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every settings
+below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every settings
 change does with a value already held and with a fault), `{"division_id", "division_name",
 "value", "channel_name"}`, for the division by its id: the command finds it from the name a manager
 typed and carries that name for the reply and the line, so a division renamed while the change
@@ -31,16 +31,17 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.results.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import AuditRecord, Verdict
+from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
-    as_text_channel,
     find_channel_use,
     refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 from leaguebot.results.services.module.division_channels import (
     set_division_penalty_channel,
     set_division_results_channel,
@@ -50,9 +51,9 @@ from leaguebot.results.services.module.division_channels import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 
 RESULTS_CHANNEL = "results.setting.results_channel"
@@ -91,7 +92,7 @@ def _channel_setting(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         value = int(payload["value"])
-        if not await modules.is_results_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         if channel_of is not None and not _may_post(channel_of(value)):
             return Verdict.refuse(NO_ACCESS)

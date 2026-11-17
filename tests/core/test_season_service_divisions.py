@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.setup_rounds import ask_duplicate, round_moments, setup_league
 
 #: Pro's rounds: a normal round at Silverstone on 1 March and a sprint round at Monza on 8 March
@@ -108,7 +108,7 @@ async def test_a_duplicate_that_fails_part_way_leaves_nothing_behind(tmp_path, f
     league = await _league(tmp_path)
     asked = await ask_duplicate(league)
     if fault is None:
-        with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+        with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
             await run_queue(league.bot)
     else:
         async with get_connection(league.db_path) as db:

@@ -18,7 +18,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from leaguebot.framework.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.cancellations.cancellation_changes import (
@@ -41,13 +41,13 @@ from leaguebot.core.services.seasons.season_end_changes import season_end_in_han
 from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
 import leaguebot.core.services.rounds.track_service as track_service
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
-from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
-from leaguebot.core.utils.league_bot import LeagueBot, bot_of
-from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
+from leaguebot.framework.utils.interaction_errors import describe, describe_form, report_failure
+from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.round_import import (
     ParsedDivisionRounds,
     format_import_errors as _format_import_errors,

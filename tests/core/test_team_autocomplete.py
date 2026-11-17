@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from leaguebot.core.utils.autocomplete import team_autocomplete, team_choices
+from leaguebot.core.utils.team_autocomplete import team_autocomplete, team_choices
 
 TEAMS = [
     {"name": "MCL", "full_name": "McLaren Formula 1 Team", "is_reserve": False},

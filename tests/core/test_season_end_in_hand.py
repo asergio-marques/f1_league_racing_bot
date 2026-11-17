@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from tests.support.season_league import (
     SEASON_ABORT_KIND,
     SEASON_CANCEL_KIND,

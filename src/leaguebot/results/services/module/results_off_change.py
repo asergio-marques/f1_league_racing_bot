@@ -15,8 +15,8 @@ and resumes after a stop:
    take-downs and the close, in the queue's order (`hub_service.hub_refresh_change`, `season_lifecycle_service.wind_down_change`).
 2. **`disarm_sweep`**, first of what follows: the standing sweep that undoes an amendment nobody
    carried through, which turning results on arms (`module_switch_settings.ARM_SWEEP`), is
-   removed through the scheduler service the builder hands in, as a switch-off undoes what the
-   switch-on set up.
+   removed through `cancel_amendment_sweep`, handed in through results' wiring, as a switch-off
+   undoes what the switch-on set up.
 3. **`take_down`**, one for each message or channel: `results_purge_service.take_down`. **Each is
    a job like any other**, so a removal that fails stops the queue until it is cleared (decided with
    the owner, 2026-10-02, withdrawing the earlier "tried once"): the bot tries it again on the
@@ -45,8 +45,8 @@ from typing import Any, Awaitable, Callable
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     FollowOn,
     PlannedStep,
@@ -56,7 +56,7 @@ from leaguebot.core.models.change import (
     module_off,
 )
 from leaguebot.core.models.module_dependencies import taken_down_with
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -70,7 +70,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     modules_frozen_for_completion,
 )
 from leaguebot.core.services.seasons.season_service import end_rounds_awaiting_results_on
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 from leaguebot.results.services.module.results_purge_service import (
     CHANNEL_KINDS,
@@ -119,12 +119,12 @@ def results_off_change(
 
     *attendance_off_on* switches attendance off on the connection it is handed, committing
     nothing, and says whether attendance was on. *attendance_enabled* says whether attendance is
-    on now, read the same way the cog reads it at the ask (`ModuleService.is_attendance_enabled`,
-    handed rather than read from attendance's own table directly, so this module still imports
-    none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
+    on now, read the same way the cog reads it at the ask (`ModuleService.is_enabled`, by the
+    key `"attendance"`, handed rather than read from attendance's own table directly, so this
+    module still imports none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
     results calls with the rounds it made FINAL. *disarm_amendment_sweep* removes the amendment
-    sweep from the scheduler (`SchedulerService.cancel_amendment_sweep`). *now* is the queue's clock, which dates the closing of
-    the rounds (`ChangeQueue.now`). The payload is ``{"cascade_attendance": bool}``.
+    sweep from the scheduler (`amendment_writes.cancel_amendment_sweep`, handed the scheduler by
+    results' wiring). *now* is the queue's clock, which dates the closing of the rounds (`ChangeQueue.now`). The payload is ``{"cascade_attendance": bool}``.
     """
 
     async def check(ctx: CheckContext) -> Verdict:

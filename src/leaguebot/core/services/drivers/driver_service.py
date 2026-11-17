@@ -9,12 +9,13 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.framework.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import (
     DriverProfile, DriverState, InvalidDriverTransition,
 )
-from leaguebot.core.models.refusal import Refused
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.models.refusal import Refused
+from leaguebot.framework.services.queue.audit_service import record_change_on
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 
@@ -465,12 +466,9 @@ async def _merge(
         (kept["id"], int(bool(absorbed["former_driver"]))),
     )
     await db.execute("DELETE FROM driver_profiles WHERE id = ?", (absorbed["id"],))
-    await db.execute(
-        "INSERT INTO audit_entries "
-        "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-        "timestamp) VALUES (?, ?, NULL, "
-        "'DRIVER_PROFILES_MERGED', ?, ?, ?)",
-        (actor_id, actor_name, str(absorbed["id"]), str(kept["id"]), now.isoformat()),
+    await record_change_on(
+        db, actor_id=actor_id, actor_name=actor_name, change_type="DRIVER_PROFILES_MERGED",
+        old_value=absorbed["id"], new_value=kept["id"], now=now,
     )
 
 

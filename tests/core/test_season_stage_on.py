@@ -5,7 +5,7 @@ the stage of one season by its id, None where there is no such season.
 """
 from __future__ import annotations
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.seasons.season_lifecycle_service import season_stage_on
 

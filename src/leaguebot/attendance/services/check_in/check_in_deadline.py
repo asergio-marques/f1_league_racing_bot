@@ -43,8 +43,8 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     deadline_of,
     round_not_owed,
 )
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -53,9 +53,9 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting.notice_handler import edit_notice, send_notice
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting.notice_handler import edit_notice, send_notice
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -63,7 +63,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.channels import as_text_channel
 
 log = logging.getLogger(__name__)
 

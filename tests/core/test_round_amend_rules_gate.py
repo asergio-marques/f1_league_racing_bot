@@ -14,9 +14,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.round_cog import RoundCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
 from tests.support.setup_reads import hold_setup
+from tests.support.switches import answer_switch
 
 SERVER_ID = 4400
 USER_ID = 88
@@ -87,10 +88,10 @@ async def _cog(
     # about *rules* would mean a rule passing on the stub rather than the round in front of it.
     cog.bot = await league_bot(db_path)
     cog.bot.output_router.post_log = AsyncMock()
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    answer_switch(cog.bot.module_service, "attendance", attendance)
     for module in ("signup", "results", "images"):
-        setattr(cog.bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
+        answer_switch(cog.bot.module_service, module, False)
+    answer_switch(cog.bot.module_service, "weather", weather)
     cog.bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=SimpleNamespace(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2

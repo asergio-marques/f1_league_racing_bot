@@ -406,11 +406,8 @@ fetches that message and reads its attachments.
 ## 8. The schema change
 
 The bot is not live, so every table and column above is added to
-`src/leaguebot/core/db/migrations/001_baseline.sql` rather than to a new migration, as issue #254
-settled. Each is added by the issue that first needs it, not in one block up front: S01 the licence
-and sanction tables, S02 the config row, S03 the channels and `steward_messages`, S04 the team, S06
-the outcomes, S08 the auto-rules, S10 the tickets, S11 the ballots and verdicts, S12 the cycles, S16
-the close record, S36 the downtime record.
+`src/leaguebot/framework/db/migrations/001_baseline.sql` rather than to a new migration, each by the
+work that first needs it, not in one block up front.
 
 The cost is that a developer's existing database has to be recreated at each such issue —
 `run_migrations` will not re-apply a baseline it has already recorded, and refuses a database
@@ -444,10 +441,10 @@ way deliberately.
 **A stage boundary is tested through its handler, never through APScheduler's clock.** Seed the
 rows, call the handler with a fixed `now`, assert on what changed. What the scheduler is separately
 tested for is that the right job is armed with the right id at the right moment — a real job store
-in `tmp_path` and assertions over `get_jobs()`, as `test_scheduler_job_ids.py` does — and that each
-module-level job callable survives its service or callback being absent, as
-`test_scheduler_job_callables.py` does. The two halves are tested apart because that is the only
-way to test either without a clock that runs.
+in `tmp_path` and assertions over the job stored at its id (`get_job`), as
+`test_round_jobs_runner.py` does — and that each module-level job callable survives its service or
+callback being absent, as `test_scheduler_job_callables.py` does. The two halves are tested apart
+because that is the only way to test either without a clock that runs.
 
 **This module's handlers are tested as `test_bot_rsvp_recovery.py` tests its own recovery.** Build a
 database with an open cycle and a `last_seen_at` an hour ago, run the start step and hand the

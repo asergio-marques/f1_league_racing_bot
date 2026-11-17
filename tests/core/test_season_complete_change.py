@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import (
     SERVER_ID,
     acknowledgement,
@@ -170,6 +170,7 @@ ALREADY = (
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
+
 
 
 async def _asked(league: Any) -> Any:
@@ -684,7 +685,7 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
     Kimi among them: on that connection Kimi's signup has already ended and the season is not yet
     archived or deleted, while another connection still reads Kimi as signing up. What it writes on
     its connection is unseen elsewhere while `end` stands open, and is saved with that save."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.support.season_league import (
         abort_season,
         cancel_season,
@@ -1136,11 +1137,15 @@ async def test_every_audit_row_of_one_save_has_the_queues_time(tmp_path):
     queue's clock moved two days past the host's. Admin 77 completes it: the wind-down turns Max's
     placement down and the end save runs the driver pass. Every audit row the completion writes,
     the turn-down's and the driver pass's among them, carries the queue's time in ISO 8601 with
-    its UTC offset, never SQLite's clock."""
+    its UTC offset, never SQLite's clock. The turn-down's row, by the system, holds as JSON Max's
+    state by his profile id before, and the state he is turned down to after."""
     league = await pending_completion_league(tmp_path, stage="ONGOING_PLACEMENTS")
     await league.write(
         "UPDATE driver_season_assignments SET committed = 0 WHERE driver_profile_id IN "
         "(SELECT id FROM driver_profiles WHERE discord_user_id = ?)", str(MAX),
+    )
+    [max_profile] = await league.rows(
+        "SELECT id FROM driver_profiles WHERE discord_user_id = ?", str(MAX)
     )
     before = await league.rows("SELECT COALESCE(MAX(id), 0) AS last FROM audit_entries")
     league.clock.advance(days=2)
@@ -1155,6 +1160,13 @@ async def test_every_audit_row_of_one_save_has_the_queues_time(tmp_path):
     kinds = {row["change_type"] for row in written}
     assert {"PENDING_PLACEMENTS_TURNED_DOWN", "DRIVER_PASS"} <= kinds
     assert {row["timestamp"] for row in written} == {league.clock.now.isoformat()}
+    [turned_down] = await league.rows(
+        "SELECT actor_name, old_value, new_value FROM audit_entries "
+        "WHERE change_type = 'PENDING_PLACEMENTS_TURNED_DOWN'"
+    )
+    assert (turned_down["actor_name"], turned_down["old_value"], turned_down["new_value"]) == (
+        "system", json.dumps({str(max_profile["id"]): "ASSIGNED"}), '{"state": "NOT_SIGNED_UP"}'
+    )
 
 
 async def test_a_discarded_wind_down_completes_nothing(tmp_path):
@@ -1176,7 +1188,7 @@ async def test_a_discarded_wind_down_completes_nothing(tmp_path):
 async def test_a_discarded_first_save_completes_nothing(tmp_path):
     league = await pending_completion_league(tmp_path)
     interaction = await _asked(league)
-    league.bot.scheduler_service.cancel_season_end = MagicMock(
+    league.bot.round_jobs.cancel_season_end = MagicMock(
         side_effect=RuntimeError("the job store could not be read")
     )
 
@@ -1380,7 +1392,8 @@ async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_
     record writes the window's close, the window is closed while the season is still active,
     no history written and Max still assigned: the driver pass has not yet run. Driver 105,
     still filling in the wizard, is returned by the close. The window's close is audited once,
-    by the system, and its one "🔒 Signups closed as the season ended" line written in that
+    by the system, from "open" to "closed" as JSON, and its one "🔒 Signups closed as the season
+    ended" line written in that
     post's record: it names no member, and states the one driver returned beneath it (signup
     :67). Driver 106, awaiting a league manager's approval, is left as they are: the close
     returns only drivers still filling in the wizard (signup spec, "signup close"), so 106 is
@@ -1396,7 +1409,7 @@ async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_
     assert SIGNING_UP_TOO not in [user for user, _text in league.notices]
     assert SIGNING_UP_TOO not in league.locked
     assert await _window_close_audits(league) == [
-        ("SIGNUP_SEASON_END_CLOSE", "open", "closed", "system")
+        ("SIGNUP_SEASON_END_CLOSE", '"open"', '"closed"', "system")
     ]
     [line] = await _closed_lines(league)
     assert "<@" not in line, line
@@ -1537,11 +1550,11 @@ async def test_a_season_end_job_left_by_an_older_version_is_removed(tmp_path):
     league = await pending_completion_league(tmp_path)
     await _asked(league)
     assert len(await season_end_changes(league, SEASON_COMPLETE_KIND)) == 1
-    league.bot.scheduler_service.cancel_season_end.assert_not_called()
+    league.bot.round_jobs.cancel_season_end.assert_not_called()
 
     await run_queue(league.bot)
 
-    league.bot.scheduler_service.cancel_season_end.assert_called_once()
+    league.bot.round_jobs.cancel_season_end.assert_called_once()
 
 
 async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_the_season_is_archived(
@@ -2159,7 +2172,7 @@ async def _ending(league: Any, end: str) -> Any:
     """Ask for *end* of the season: `/season complete`, `/season cancel`, `/season abort`, or the
     wind-down the bot asks once every division is done. Gives the command's interaction, or None
     for the wind-down, which no one types."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.season_league import WIND_DOWN_KIND, abort_season, cancel_season
 
     if end == "completion":

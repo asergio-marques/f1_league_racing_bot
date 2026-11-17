@@ -1,9 +1,9 @@
-"""What attendance gives core's hooks: its deletes, its part of a round's window and of a review.
+"""What attendance gives core's hooks: its deletes, its leads for a round and its part of a review.
 
 Core declares the hooks and attendance signs up to them in its wiring (architecture.md, "How
 modules and core fit together"). Each delete clears attendance's own rows on the connection core's
-delete was handed and commits nothing; the readers give core attendance's lead times, its section
-of a season's review and the channel lines the placements review shows.
+delete was handed and commits nothing; the readers give core attendance's leads for a round, its
+lead times, its section of a season's review and the channel lines the placements review shows.
 """
 
 from __future__ import annotations
@@ -13,13 +13,16 @@ from typing import Any, TYPE_CHECKING
 
 import aiosqlite
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-from leaguebot.core.models.round import AttendanceWindows
-from leaguebot.core.services.modules.review_sections import Review, ReviewSection
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_leads
+from leaguebot.attendance.models.attendance import AttendanceWindows
+from leaguebot.core.models.round import RoundLead
+from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 
 async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
@@ -93,15 +96,15 @@ async def bot_packed_on(db: aiosqlite.Connection) -> None:
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
 
-async def round_window(
+async def round_leads(
     attendance: AttendanceService, modules: "ModuleService"
-) -> AttendanceWindows | None:
-    """Attendance's part of a round's timing windows read: its three lead times, or None where
-    the module is off, since a league without attendance has no check-in to lose or to be inside
-    the window of. The subscriber to the hook; the amendment's judgement reads the lead times
-    through `lead_times` itself where it is asked outside a save, and on the save's connection
-    inside one."""
-    return await lead_times(attendance, modules)
+) -> tuple[RoundLead, ...]:
+    """Attendance's part of a round's leads read: the timers its check-in wants set, or none where
+    the module is off, since a league without attendance has no check-in to arm or to lose. The
+    subscriber to the hook (`round_leads_read`); reads only, and with no configuration stored the
+    packaged defaults answer and no row is created."""
+    windows = await lead_times(attendance, modules)
+    return () if windows is None else check_in_leads(windows)
 
 
 async def lead_times(
@@ -110,7 +113,7 @@ async def lead_times(
     """The check-in's three lead times as the league has them, or None where the module is off.
     Reads only: with no configuration stored, the packaged defaults answer and no row is
     created."""
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await attendance.get_config_or_defaults()
     return AttendanceWindows(
@@ -133,7 +136,7 @@ async def review_section(
     Subscribed to core's `review_sections_read`. A module never configured has no configuration
     to show, its section then empty. Reads only.
     """
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await service.get_config()
     lines: list[str] = []
@@ -175,7 +178,7 @@ async def division_lines(
     Subscribed to core's `division_lines_read`, which hands the season (as it does every
     subscriber; the divisions named are what is read) and its divisions. Reads only.
     """
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return {}
     lines: dict[int, list[str]] = {}
     for division_id in division_ids:
@@ -211,7 +214,7 @@ async def division_channel_faults(
     confirmation judges (id to name) and the server. A division with no fault is given an empty
     list. With no *guild*, only whether each channel is set is judged. Reads only.
     """
-    if not await modules.is_attendance_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return {}
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():

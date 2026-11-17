@@ -37,8 +37,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.module_cog import ModuleCog
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import MEMBER_ID
+from tests.support.settings_league import portrait_refresh_times
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
@@ -288,7 +289,9 @@ async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_o
 @pytest.mark.parametrize(
     ("use_pfp", "pfp_daily", "armed"),
     [
-        pytest.param(1, 1, True, id="daily updates asked for"),
+        pytest.param(
+            1, 1, True, id="daily updates asked for",
+        ),
         pytest.param(1, 0, False, id="daily updates not asked for"),
         pytest.param(0, 1, False, id="portraits off"),
     ],
@@ -311,9 +314,9 @@ async def test_enabling_arms_the_daily_portrait_refresh_where_the_configuration_
 
     assert await _images_flag(league.db_path) == 1
     if armed:
-        league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
+        assert portrait_refresh_times(league.scheduler) == ["07:45"]
     else:
-        league.scheduler.schedule_portrait_refresh.assert_not_called()
+        assert portrait_refresh_times(league.scheduler) == []
 
 
 async def test_an_enable_that_cannot_arm_the_daily_refresh_leaves_the_module_on_as_one_failure(
@@ -327,7 +330,7 @@ async def test_an_enable_that_cannot_arm_the_daily_refresh_leaves_the_module_on_
 
     league, cog = await _league(tmp_path, on=True)
     await _keep_daily_portraits(league.db_path)
-    league.scheduler.schedule_portrait_refresh.side_effect = RuntimeError(
+    league.scheduler.arm_daily.side_effect = RuntimeError(
         "the job store refused the job"
     )
     asked = _asked(league)

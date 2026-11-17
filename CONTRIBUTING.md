@@ -19,7 +19,8 @@ A good issue carries:
 
 Label every issue with `bug` (or `feature-request`, `question`, `documentation`), the module it
 belongs to (`module-weather`, `module-signup`, `module-results`, `module-attendance`,
-`module-image`, `module-stewarding`, `module-stats`, or `core` where no single module owns it),
+`module-image`, `module-stewarding`, `module-stats`, or `core` where no single module owns it,
+the framework and `utils` included),
 and one priority from below.
 
 ## Issue priorities
@@ -132,10 +133,11 @@ pytest tests/ -q -m rasteriser
 Verify generated images as PNG, never as SVG in a browser — the rasteriser exposes bugs the
 browser hides.
 
-CI runs the suite on Linux and Windows and gates on a coverage floor — applied both to `src/`
-as a whole and to **each module separately**, so a thin module cannot hide inside a healthy
-average. Read the threshold from `.github/workflows/unit-test.yml` rather than assuming one.
-Coverage measures `src/` only; `.coveragerc` says so and explains why.
+CI runs the suite on Linux and Windows and gates on a coverage floor — applied both to `src/` as a
+whole and to **each part separately** (each folder under `src/leaguebot/`: the five modules, core,
+the framework and `utils`), so a thin part cannot hide inside a healthy average. Read the threshold from
+`.github/workflows/unit-test.yml` rather than assuming one. Coverage measures `src/` only;
+`.coveragerc` says so and explains why.
 
 Before opening a pull request, check where your change left the module you touched:
 
@@ -158,11 +160,11 @@ error code and no library is skipped, and tests refuse each. Where the check can
 the code knows, say it in the code — a narrowing with its reason, or one of the helpers that
 raises by name — rather than switching the check off.
 
-**The bot is typed as `LeagueBot`** (`src/leaguebot/core/utils/league_bot.py`). Declare an attribute
-there before the entry point, `src/leaguebot/__main__.py`, attaches it, annotate a `bot` parameter
-as it, and reach an interaction's bot through `bot_of(interaction)`. A library that ships no types
-is described in `stubs/`; using more of one means extending its stub, which `stubtest` then holds to
-the installed version.
+**The bot is typed as `LeagueBot`** (`src/leaguebot/framework/utils/league_bot.py`). Declare an
+attribute there before the entry point, `src/leaguebot/__main__.py`, attaches it, annotate a `bot`
+parameter as it, and reach an interaction's bot through `bot_of(interaction)`. A library that ships
+no types is described in `stubs/`; using more of one means extending its stub, which `stubtest` then
+holds to the installed version.
 
 ## Pull requests
 
@@ -217,11 +219,11 @@ merged since it, so `v0.4.0-230` follows `v0.4.0-229`. Pull requests are squash-
 each on `main`, which is what keeps the number in merge order. Nobody stamps it: `VERSION` holds two
 placeholders, the version and the date and time its last change was made, that GitHub fills in
 whenever it packages the code, and a clone asks git instead. **Never write a value into `VERSION`**
-— see `src/leaguebot/core/utils/version.py`.
+— see `src/leaguebot/utils/version.py`.
 
 **Go-live is `v1.0.0`.** Every release before it is marked a pre-release. From `v1.0.0` on the
 migration baseline is frozen, and every schema change is a new migration (see `run_migrations`
-in `src/leaguebot/core/db/database.py`).
+in `src/leaguebot/framework/db/database.py`).
 
 **To cut one:**
 

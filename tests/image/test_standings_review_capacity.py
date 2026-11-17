@@ -32,6 +32,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
+from tests.support.switches import answer_switch
 
 
 pytestmark = pytest.mark.asyncio
@@ -86,7 +87,7 @@ def _drawing(reports, *, toggle=True):
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "images", True)
     config = MagicMock()
     config.get_config = AsyncMock(return_value=MagicMock())
     config.get_toggles = AsyncMock(return_value={"standings": toggle})

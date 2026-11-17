@@ -23,8 +23,8 @@ Answers to `architecture.md`, "The database".
 ### Signup's tables
 
 Signup owns seven tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`. Every one of them is written, as the bot runs, on
-a connection the change queue or a core hook hands in.
+declared in `framework/db/migrations/001_baseline.sql`. Every one of them is written, as the bot
+runs, on a connection the change queue or a core hook hands in.
 
 | Table | One row is | Held to it by |
 |---|---|---|
@@ -273,7 +273,8 @@ several modules join, `register_change_types` (which registers the three timers 
 holds no rule and no database code: each start-up step stands for a function of the services.
 
 `signup/models/signup_module.py` holds plain data: `WizardState`, the configuration, the settings, a
-slot, the configuration snapshot, a signup record and a wizard record.
+slot, the configuration snapshot, a signup record and a wizard record; `signup/models/switch.py`
+holds `SWITCH_KEY`, the key signup's switch is read by.
 
 ---
 
@@ -356,13 +357,13 @@ Three of the shape's consequences:
 ### Settings are `Setting` changes
 
 The five settings, the channel and the switch-on are each a `Setting`
-(`core/services/queue/setting_change.py`); the close-time group's three are too, under kinds that do
-not carry `.setting.`, since a close time repairs nothing and is not among the settings that overtake
-a stopped lane (`close_time_settings`' docstring). The refusals are the check's, in the command's
-order and words, made at the ask and again as the change starts. `open_to_change` holds the two
-the five settings and the channel share (the module on, the configuration not fixed by a confirmed
-season); the close-time group's check reads the switch itself and judges no fixed configuration,
-and the switch-on refuses where the module is already on. **A slot is removed by its
+(`framework/services/queue/setting_change.py`); the close-time group's three are too, under kinds
+that do not carry `.setting.`, since a close time repairs nothing and is not among the settings that
+overtake a stopped lane (`close_time_settings`' docstring). The refusals are the check's, in the
+command's order and words, made at the ask and again as the change starts. `open_to_change` holds
+the two the five settings and the channel share (the module on, the configuration not fixed by a
+confirmed season); the close-time group's check reads the switch itself and judges no fixed
+configuration, and the switch-on refuses where the module is already on. **A slot is removed by its
 identity, not its rank**, the command resolving the rank to a day and time at the ask
 (`test_removing_slot_n_twice_removes_one_slot`).
 
@@ -512,10 +513,10 @@ docstring). Pinned by `test_a_close_time_missed_while_down_closes_on_start`,
 
 Answers to `architecture.md`, "Posting to Discord". Every message signup posts as a job, and every
 driver's channel it deletes, goes through `signup_posting.py`, the one place it does so, which hands
-it to core's handler for its kind and turns Discord's refusal into `StepFailedOnDiscord` with the
-reason its caller gives. A message taken down (the Sign Up button, the closed notice, a manager's
-reason) is taken down by core's `standing_posts.delete_replaced_step`; a driver's channel is created
-by `WizardService._create_wizard_channel`, in the `create_channel` job.
+it to the framework's handler for its kind and turns Discord's refusal into `StepFailedOnDiscord`
+with the reason its caller gives. A message taken down (the Sign Up button, the closed notice, a
+manager's reason) is taken down by the framework's `standing_posts.delete_replaced_step`; a driver's
+channel is created by `WizardService._create_wizard_channel`, in the `create_channel` job.
 
 | Post | Kind | Channel | Handler | Found again by |
 |---|---|---|---|---|
@@ -617,15 +618,15 @@ Answers to `architecture.md`, "Errors and failures".
 | A command, button or form | the base classes and `report_failure`; a refusal is `refuse`, one reply and one line |
 | A change | its check refuses a member's request and drops the bot's where the work is no longer due; a job that fails stops its lane, with Retry and Discard |
 | A timed job | the scheduler's job runner: each callback asks its change |
-| A start-up step | the sweep's containment (`core.md`, "Start-up"); inside `recover_gone_channels` and `recover_correction_timeouts`, one driver's ask failing stops none of the others, while `recover_held_channels`' loop over the holds and `recover_wizards`' over the expiries catch nothing |
+| A start-up step | the sweep's containment (`framework.md`, "Start-up"); inside `recover_gone_channels` and `recover_correction_timeouts`, one driver's ask failing stops none of the others, while `recover_held_channels`' loop over the holds and `recover_wizards`' over the expiries catch nothing |
 
-**Refusals are raised and caught by name.** A setting's save raises core's `Refused` where what its
-check judged has gone (`NOT_CONFIGURED`, a slot no longer there); a driver's transition the state
-machine refuses is `InvalidDriverTransition`, caught by name and read as the driver having moved on
-(`test_the_state_machine_s_refusal_is_read_as_the_driver_having_moved_on`); a Discord refusal is
-caught as `discord.HTTPException` (or `discord.NotFound` where a channel already gone is nothing to
-do) and turned into `StepFailedOnDiscord` for the queue to stop on, or named where the job's rule
-says so.
+**Refusals are raised and caught by name.** A setting's save raises the framework's `Refused` where
+what its check judged has gone (`NOT_CONFIGURED`, a slot no longer there); a driver's transition the
+state machine refuses is `InvalidDriverTransition`, caught by name and read as the driver having
+moved on (`test_the_state_machine_s_refusal_is_read_as_the_driver_having_moved_on`); a Discord
+refusal is caught as `discord.HTTPException` (or `discord.NotFound` where a channel already gone is
+nothing to do) and turned into `StepFailedOnDiscord` for the queue to stop on, or named where the
+job's rule says so.
 
 **`_may_review_signup` has no catch-all.** The review panel stands in the driver's own channel, so
 the tier check is all that keeps a driver from approving themselves; a fault reading the

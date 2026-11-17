@@ -71,8 +71,8 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -81,11 +81,11 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services.drivers import lineup_posting
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -99,9 +99,9 @@ from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.core.services.drivers.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.seasons.season_approval_change import unposted_lineup_line
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import PLACEMENT_STAGES
 
 if TYPE_CHECKING:

@@ -28,12 +28,13 @@ from pathlib import Path
 
 import discord
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.upkeep import backup_service
-from leaguebot.core.services.queue.change_queue import (
+from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting.retry_service import pending_channel_ids_on
+from leaguebot.framework.services.queue.queue_records import (
     carry_job_numbering,
     highest_job_number,
 )
@@ -44,7 +45,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     channel_ids_in,
 )
 from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 
 log = logging.getLogger(__name__)
 
@@ -114,11 +115,11 @@ def _self_contained(path: Path) -> None:
 # ── What to clean in Discord, gathered before the wipe ────────────────────
 
 
-#: Channels core posts to that no setting names, as (table, column): where a review prompt waits
-#: or an undelivered message was bound. The channels the modules hold are each module's to name.
+#: Channels core posts to that no setting names, as (table, column): where a review prompt waits.
+#: The channels the modules hold are each module's to name, and those an undelivered log line is
+#: bound for are the framework's, read through it.
 _OTHER_SOURCES: tuple[tuple[str, str], ...] = (
     ("season_review_prompts", "channel_id"),
-    ("pending_messages", "channel_id"),
 )
 
 
@@ -141,6 +142,7 @@ async def gather_targets(db_path: str, *, setting_channels_read: AwaitedHook) ->
             channels |= await channel_ids_in(
                 db, f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL", f"{table}.{column}"
             )
+        channels |= await pending_channel_ids_on(db)
         cursor = await db.execute("SELECT id FROM divisions")
         division_ids = [int(row[0]) for row in await cursor.fetchall()]
     created: set[int] = set()

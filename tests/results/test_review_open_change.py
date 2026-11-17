@@ -41,7 +41,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (
@@ -200,7 +200,7 @@ async def _open(league: ReviewLeague, *, by_bot: bool = False, run: bool = True,
     """Ask for round 3's review to open, as the paste of the league manager Alex or as the bot,
     then run the queue. *changes* replace the payload's defaults; one given as None is left out.
     Gives what the queue's `ask` gives."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     payload: dict[str, Any] = {"round_id": ROUND_ID, "label": "Provisional Results",
                                "publish": True}
@@ -683,7 +683,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
         review_open_change,
     )
 
-    caplog.set_level(logging.INFO, logger="leaguebot.core.services.queue.change_queue")
+    caplog.set_level(logging.INFO, logger="leaguebot.framework.services.queue.change_queue")
     appeals = route == "appeals-recovery"
     league = await _league(
         tmp_path, name=f"names_{route}", in_review=True, results_posted=True,

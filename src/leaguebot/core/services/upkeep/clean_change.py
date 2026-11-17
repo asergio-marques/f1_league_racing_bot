@@ -30,24 +30,24 @@ from typing import Any
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.channels import as_text_channel
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 
 KIND = "core.clean"
 CHOOSE = "choose"

@@ -27,11 +27,11 @@ sweep to report: nothing is caught up, and nothing says so but that line.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.attendance.models.attendance import CHECK_IN_DEADLINE
+from leaguebot.attendance.models.attendance import CHECK_IN_DEADLINE, AttendanceWindows
 from leaguebot.attendance.models.recovery_failed import RecoveryFailed
 from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
 from leaguebot.attendance.services.check_in.check_in_changes import (
@@ -39,14 +39,15 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
 )
 from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_in_clean_up
 from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
+from leaguebot.attendance.services.check_in.check_in_leads import check_in_moments
 from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 from leaguebot.attendance.services.hooks.test_mode_steps import check_ins_cleared
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.seasons.season_end_changes import test_mode_on
 from leaguebot.core.services.seasons.season_service import (
@@ -54,7 +55,7 @@ from leaguebot.core.services.seasons.season_service import (
     rounds_of_ongoing_seasons,
     round_facts_on,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -136,8 +137,11 @@ async def recover_missed_check_in_calls(bot: LeagueBot, *, queue: ChangeQueue) -
     for each in owed:
         if each.id in over:
             continue
-        due_at = each.scheduled_at - timedelta(days=notice_days)
-        deadline_at = each.scheduled_at - timedelta(hours=deadline_hours)
+        moments = check_in_moments(
+            each.scheduled_at, AttendanceWindows(notice_days, 0, deadline_hours)
+        )
+        due_at = moments["rsvp_notice"]
+        deadline_at = moments["rsvp_deadline"]
         if moment < due_at:
             continue
         # The change judges the deadline when it runs: it posts the call while the deadline is
@@ -213,7 +217,10 @@ async def recover_rsvp_views_and_deadlines(
         each for each in await rounds_of_ongoing_seasons(
             bot.db_path, {each.value for each in RoundStatus} - {RoundStatus.CANCELLED.value}
         )
-        if each.id in unrun and each.scheduled_at - timedelta(hours=deadline_hours) <= moment
+        if each.id in unrun
+        and check_in_moments(each.scheduled_at, AttendanceWindows(0, 0, deadline_hours))[
+            "rsvp_deadline"
+        ] <= moment
     ]
     in_hand = {int(each["round_id"]) for each in await unfinished(bot.db_path, [CHECK_IN_DEADLINE])}
 

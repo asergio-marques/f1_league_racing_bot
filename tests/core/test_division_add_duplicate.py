@@ -41,8 +41,8 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.framework.db.database import get_connection
+from leaguebot.utils.messages import discord_ts
 from tests.support.setup_rounds import (
     acknowledged,
     ask_duplicate,
@@ -119,7 +119,7 @@ def _success_line(name: str, tier: int) -> str:
 
 def _refusal_line(reply: str) -> str:
     """The log channel's line for `/division add` refused with *reply*."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/division add` refused for {NAMED} — {reply_reason(reply)}"
 
@@ -265,7 +265,7 @@ async def test_a_failed_division_save_adds_nothing(tmp_path):
 
     league = await _setup_league(tmp_path)
     asked = await _ask_add(league, "Am", 2)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _division_rows(league.db_path) == [("Pro", 1, 10)]

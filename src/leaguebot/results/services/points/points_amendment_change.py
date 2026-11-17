@@ -52,9 +52,9 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import aiosqlite
 
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,
@@ -62,11 +62,11 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.modules.module_service import ModuleService
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.switches.module_service import ModuleService
+from leaguebot.framework.services.queue.queue_records import (
     in_hand,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -78,7 +78,7 @@ from leaguebot.core.services.seasons.season_service import (
     live_season,
     season_divisions_on,
 )
-from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.points.points_amendment_faults import approval_faults

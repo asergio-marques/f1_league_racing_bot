@@ -1,8 +1,8 @@
 """Signup's own switch-on, as a setting on the change queue.
 
 `/module enable signup` asks one change built from the `Setting` below by `setting_change`
-(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
-already held and with a fault): `module_on("signup")` (`core/models/change.py`), so core's cog
+(`framework/services/queue/setting_change.py`, which holds what every settings change does with a value
+already held and with a fault): `module_on("signup")` (`framework/models/change.py`), so core's cog
 names the change without importing signup, as `docs/design/architecture.md`, "How modules and
 core fit together", designs it: weather's switch
 (`weather/services/module_switch_settings.py`) is the model. Signup's switch-off is
@@ -36,20 +36,21 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_on
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, Verdict, module_on
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     configuration_fixed,
     configuration_fixed_refusal,
 )
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.core.services.settings.config_service import ConfigService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 _ENABLE_COMMAND = "/module enable signup"
 
@@ -63,7 +64,7 @@ def module_on_signup(*, modules: "ModuleService", config: "ConfigService") -> Se
     audit, in one save."""
 
     async def check(ctx: CheckContext) -> Verdict:
-        if await modules.is_signup_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Signup module is already enabled.")
         season_number = await configuration_fixed(ctx.db_path)
         if season_number is not None:

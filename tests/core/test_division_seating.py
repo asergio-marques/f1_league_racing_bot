@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.division_seating import (
     active_season_driver_ids,
     division_seating,

@@ -22,8 +22,8 @@ from datetime import datetime, timezone
 import pytest
 
 from leaguebot.core.cogs.round_cog import RoundCog
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.formatting import discord_ts
+from leaguebot.framework.db.database import get_connection
+from leaguebot.utils.messages import discord_ts
 from tests.support.setup_rounds import (
     NAMED,
     NOW,
@@ -166,7 +166,7 @@ async def test_a_failed_round_save_adds_nothing(tmp_path):
     league = await setup_league(tmp_path, divisions=_HELD)
     before = await round_rows(league.db_path, "Pro")
     asked = await _ask(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await round_rows(league.db_path, "Pro") == before

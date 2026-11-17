@@ -22,6 +22,7 @@ from pathlib import Path
 from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.image.services.aspects.image_attendance_post import SheetRender
+from tests.support.switches import answer_switch
 
 
 # ── The render outcome ────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
     guild = MagicMock()
     guild.id = 1
     bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("boom"))
+    answer_switch(bot.module_service, "images", RuntimeError("boom"))
 
     result = await attendance_sheet._sheet_attachment(
         bot,
@@ -164,7 +165,7 @@ def _rendered_sheet(tmp_path):
 
     from leaguebot.image.services.aspects.image_attendance_service import build_fill_spec
     from leaguebot.image.services.render.image_render_service import rasterise
-    from leaguebot.core.utils.paths import PROJECT_ROOT
+    from leaguebot.framework.utils.paths import PROJECT_ROOT
     from leaguebot.image.utils.svg_document import canvas_of
     from leaguebot.image.utils.svg_fill import fill as fill_spec_onto
 

@@ -43,9 +43,10 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import http_error, league_bot, league_queue, run_queue, stopped_job
 from tests.support.review_league import channel as recording_channel
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8608
 SEASON_ID = 1
@@ -184,8 +185,8 @@ async def _make_bot(db_path: str, *, visible: bool = True) -> MagicMock:
     check-in channel (770277) on the server where *visible*, recording its sends in
     `bot.events`; a channel the bot cannot find is refused as Discord refuses it."""
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", True)
+    answer_switch(bot.module_service, "images", False)
     bot.events = []
     bot.rsvp_channel = recording_channel(RSVP_CHANNEL_ID, bot.events)
     known = {bot.log_channel.id: bot.log_channel,
@@ -208,7 +209,7 @@ async def _ask(bot: MagicMock, round_id: int = ROUND_ID) -> None:
     """Ask the queue for *round_id*'s last notice as its timer does, as the bot; run the
     queue."""
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_last_notice(bot.change_queue, bot.db_path, round_id,
                                    origin=ChangeOrigin.BOT)
@@ -497,7 +498,7 @@ async def _no_call_league(tmp_path):
 
 async def _ask_last_notice(league) -> None:
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
     from tests.support.season_league import PRO, round_id
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 
 async def test_a_channel_is_not_resubmitting_unless_told_so(tmp_path):

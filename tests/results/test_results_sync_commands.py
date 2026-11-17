@@ -45,11 +45,12 @@ import pytest
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.results.cogs.results_cog import ResultsCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
 from tests.support.settings_league import interaction as member_asks
 from tests.support.settings_league import log_lines, said, settings_league
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 11908
 SEASON_ID = 1
@@ -100,7 +101,7 @@ def _make_cog(
     bot = MagicMock()
     bot.db_path = db_path
     bot.module_service = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
+    answer_switch(bot.module_service, "results", enabled)
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(

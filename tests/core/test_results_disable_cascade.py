@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.change_queue import (
@@ -41,6 +41,7 @@ from tests.support.change_queue import (
     run_queue,
     updated_reply,
 )
+from tests.support.switches import answer_switch
 
 SERVER_ID = 6611
 ACTOR_ID = 4242
@@ -118,14 +119,15 @@ async def _make_cog(db_path: str, *, attendance_enabled: bool,
         return cog
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.league_settings = bot.config_service
     bot.db_path = db_path
-    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "results", True)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
     # The disable now reads every module's flag through the table (#283), not attendance's
     # alone, so each other module's getter needs its own double too.
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "weather", False)
+    answer_switch(bot.module_service, "signup", False)
+    answer_switch(bot.module_service, "images", False)
     bot.output_router.post_log = AsyncMock(return_value=None)
     # A real one: the disable asks it whether a season is running, and then to close any round
     # only the results module could have moved (issue #167).

@@ -21,18 +21,18 @@ from typing import Any, TypeVar
 
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.division import Division
-from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
+from leaguebot.core.models.round import Round, RoundLead
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
-from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
-from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
-from leaguebot.core.utils.formatting import discord_ts
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.utils.messages import discord_ts
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 
@@ -66,20 +66,20 @@ def date_refusal(
     rounds_by_division: dict[int, list[Any]],
     *,
     now: datetime,
-    attendance: AttendanceWindows | None,
-    weather: WeatherWindows | None,
+    leads: Sequence[RoundLead],
 ) -> DatesRefusal | None:
     """The refusal for a season whose calendar holds a round already run or inside a window, or
     None where every division's calendar is clean (Gate 2d).
 
     **Both confirmations of a season's placements ask this**: the press, and the change queue's
     check as the approval comes up to run, where the clock has moved on. One bullet per division,
-    and at most two findings within it. Each division's rounds are judged by `calendar_faults`.
+    and at most two findings within it. Each division's rounds are judged by `calendar_faults`,
+    against the *leads* the enabled modules answer (`round_leads_read`).
     """
     problems: list[str] = []
     for division in divisions:
         fault = calendar_faults(
-            rounds_by_division[division.id], now=now, attendance=attendance, weather=weather
+            rounds_by_division[division.id], now=now, leads=leads
         )
         if fault is None:
             continue
@@ -451,7 +451,7 @@ async def mid_season_configuration_faults(
     What is left is the image module's, whose templates, artwork and settings may all
     change while a season is raced.
     """
-    if not await module_service.is_images_enabled():
+    if not await module_service.is_enabled("images"):
         return []
     return await image_configuration_faults(image_drawing)
 
@@ -547,7 +547,7 @@ async def configuration_faults(
     ]
 
     # ── Images: rasteriser, templates, colours, portraits ─────────────────
-    if await module_service.is_images_enabled():
+    if await module_service.is_enabled("images"):
         faults += await image_configuration_faults(image_drawing)
 
     return faults

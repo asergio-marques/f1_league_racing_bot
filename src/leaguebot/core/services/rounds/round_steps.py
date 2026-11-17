@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_types import StepContext
+    from leaguebot.framework.services.queue.change_types import StepContext
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 

@@ -130,7 +130,7 @@ async def test_a_discarded_prompt_asks_the_review_again(tmp_path):
 async def _put_up_the_appeals_prompt(league: Any) -> None:
     """Ask round 3's lane for the appeals stage's prompt, as the reports approval asks it in its
     last save, then run the queue."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await league.bot.change_queue.ask(
         PROMPT_KIND,

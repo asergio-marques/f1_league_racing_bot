@@ -79,7 +79,7 @@ async def _league(tmp_path: Any, **options: Any) -> SeasonLeague:
 async def _ask(league: SeasonLeague, round_: int = ROUND_3) -> None:
     """Ask the queue to open *round_*'s submission as its round-start timer does, as the bot; the
     queue is not run."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await league.bot.change_queue.ask(
         KIND, {"round_id": round_}, what="opening round 3's results submission",
@@ -384,7 +384,7 @@ async def _fire_job(league: SeasonLeague, monkeypatch: Any, round_: int = ROUND_
     runner swallows a handler's fault, so one that raises is raised again here."""
     from types import SimpleNamespace
 
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.framework.services.jobs import scheduler as scheduler_service
 
     handlers = {
         call.args[0]: call.args[1]

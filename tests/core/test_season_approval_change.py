@@ -26,9 +26,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
@@ -59,6 +59,7 @@ from tests.support.season_league import (
     TEST_DRIVER,
     DIVISIONS,
     approval_changes,
+    leads_armed,
     post_review,
     press_approve,
     reply,
@@ -97,6 +98,7 @@ NOT_SAVED = (
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
+
 
 
 async def _pressed(league: Any, **kwargs: Any) -> Any:
@@ -690,8 +692,7 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
         return _read
 
     for cls, names in (
-        (ModuleService, ("is_weather_enabled", "is_results_enabled", "is_attendance_enabled",
-                         "is_images_enabled", "is_signup_enabled")),
+        (ModuleService, ("is_enabled",)),
         (SeasonService, ("get_divisions", "get_division_rounds", "get_stage")),
     ):
         for name in names:
@@ -887,6 +888,8 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
                      id="weather off and results on"),
         pytest.param({"weather": False, "results": True, "test_mode": True}, [],
                      id="weather off and results on under test mode"),
+        pytest.param({"weather": True, "results": True, "test_mode": True}, ["weather"],
+                     id="weather and results on under test mode"),
         pytest.param({"weather": False, "results": True, "attendance": True},
                      ["results", "attendance"], id="weather off, results and attendance on"),
         pytest.param({"weather": False, "results": False}, ["results"],
@@ -897,16 +900,20 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
 )
 async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
     """Each round's result submission is armed whatever the modules, save under test mode with
-    results on, where `/test-mode advance` opens it by hand (owner, "Fold them in"). A check-in
-    is armed against the queue's clock, never the wall clock."""
+    results on and weather off, where `/test-mode advance` opens it by hand (owner, "Fold them in"). A check-in
+    is armed through attendance's leads against the queue's clock, never the wall clock, and only
+    where attendance is on."""
     league = await _league_for(tmp_path, monkeypatch, **modules)
     await _pressed(league)
 
     await run_queue(league.bot)
 
     assert _armed(league) == {which: sorted(_all_rounds()) for which in armed}
-    check_in = league.bot.scheduler_service.schedule_attendance_round
-    assert {call.kwargs["now"] for call in check_in.call_args_list} <= {league.clock.now}
+    check_in = [each for each in leads_armed(league.bot.round_jobs)
+                if any(lead.kind.startswith("rsvp_") for lead in each["leads"])]
+    assert {each["now"] for each in check_in} == (
+        {league.clock.now} if "attendance" in armed else set()
+    )
     assert (await _approval(league))["state"] == "DONE"
 
 
@@ -920,12 +927,14 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
 
     await run_queue(league.bot)
 
-    arm = league.bot.scheduler_service.schedule_result_submission_jobs
-    assert arm.call_count == 1, league.armed
-    assert league.armed == [("results", _all_rounds())]
-    assert arm.call_args.kwargs["division_meta"] == {
-        division: (SEASON_NUMBER, DIVISIONS[division][1]) for division in (PRO, AM)
-    }
+    armed = leads_armed(league.bot.round_jobs)
+    assert sorted(each["rnd"].id for each in armed) == sorted(_all_rounds()), league.armed
+    for each in armed:
+        assert [lead.kind for lead in each["leads"]] == ["results"]
+        assert (each["season_number"], each["division_tier"]) == (
+            SEASON_NUMBER, DIVISIONS[each["rnd"].division_id][1]
+        )
+    assert {each["now"] for each in armed} == {league.clock.now}
 
 
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
@@ -935,7 +944,7 @@ async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_
     change queue to open its round's submission, as the bot, and the queue is run. With results
     off every round is made FINAL, each division finishes, no channel is created and nothing is
     posted."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     league = await _league_for(tmp_path, monkeypatch, weather=False, results=False)
     await _pressed(league)
@@ -1000,7 +1009,7 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     league.arming_fails = None
     await retry_job(league.bot)
 
-    assert league.armed == [("results", _all_rounds())]
+    assert _armed(league) == {"results": sorted(_all_rounds())}
     assert await stopped_job(league.db_path) is None
     assert APPROVED in reply(press)
     assert "timed work was not armed" not in reply(press)
@@ -1657,12 +1666,14 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
     raises GuildUnavailable, a failure on Discord's side the queue stops on, rather than ending
     as done with nothing posted."""
     from leaguebot.__main__ import _sign_up_to_placements_confirmed
-    from leaguebot.core.models.change import GuildUnavailable
-    from leaguebot.core.services.queue.change_types import StepContext
+    from leaguebot.framework.models.change import GuildUnavailable
+    from leaguebot.framework.services.queue.change_types import StepContext
 
+    settings = SimpleNamespace(get_league_server_id=AsyncMock(return_value=1))
     bot = SimpleNamespace(
         module_service=MagicMock(spec=ModuleService),
-        config_service=SimpleNamespace(get_league_server_id=AsyncMock(return_value=1)),
+        config_service=settings,
+        league_settings=settings,
         get_guild=lambda _server_id: None,
         image_drawing=MagicMock(),
         driver_names_read=AwaitedHook(),

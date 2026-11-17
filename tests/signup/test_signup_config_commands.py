@@ -31,13 +31,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from discord import app_commands
 
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from tests.support.change_queue import MEMBER_ID, run_queue
 from tests.support.settings_league import (
     fault_in,
@@ -48,6 +48,7 @@ from tests.support.settings_league import (
     settings_league,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 8908
 ACTOR_ID = MEMBER_ID
@@ -88,7 +89,7 @@ async def _make_db(tmp_path, *, config: bool = True) -> str:
 def _make_cog(db_path: str) -> SignupCog:
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "signup", True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.config_service = ConfigService(db_path)
     bot.output_router = MagicMock()
@@ -341,7 +342,7 @@ async def test_a_signup_setting_saves_its_value_and_audit_in_one_save(
     faulted = await _ask(league, command, *args)
     if command.startswith("time_slot_"):
         assert said(faulted)[0].startswith("⏳ ")
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert last_said(faulted) == failure_reply(
@@ -367,7 +368,7 @@ async def test_a_fault_after_a_slot_is_saved_is_not_read_as_a_duplicate(tmp_path
     league = await _league(tmp_path)
 
     asked = await _ask(league, "time_slot_add", _MONDAY, "20:00")
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on",
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on",
                   ValueError("a fault after the slot's insert")):
         await run_queue(league.bot)
 
@@ -522,7 +523,7 @@ _HELD_FOR_THE_CATCH_UP = {
 
 def _the_wait_of(callback):
     """The wait for the catch-up *callback* wears beneath its guard, or None where it wears none."""
-    from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+    from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 
     async def body(self, interaction):
         return None
@@ -548,11 +549,11 @@ async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
     from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
     from leaguebot.core.cogs import bot_cog
     from leaguebot.core.cogs.test_mode_cog import TestModeCog
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from tests.support.change_queue import member_interaction, response_in_its_slot
 
     bot = MagicMock()
-    bot.change_queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
+    bot.change_queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock(), tiers=MagicMock())
     attendance, bot_commands, test_mode, signup = cogs = [
         AttendanceCog(bot), bot_cog.BotCog(bot), TestModeCog(bot), SignupCog(bot)
     ]

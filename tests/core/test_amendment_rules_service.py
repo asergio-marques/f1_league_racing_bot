@@ -17,7 +17,8 @@ import pytest
 
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.services.rounds.amendment_rules_service import judge_amendment
-from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+from leaguebot.attendance.models.attendance import AttendanceWindows
+from leaguebot.weather.models.weather_config import WeatherWindows
 from tests.support.amendment_judging import judged
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
@@ -321,7 +322,7 @@ def _judged_hook(*answers):
     """An `amendment_judged` hook whose subscribers answer *answers* in sign-up order, and the
     list each records what it was handed into: the connection, the round, the changes, and by
     name the amended moment, the clock and anything else core hands it."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
     handed: list[tuple] = []

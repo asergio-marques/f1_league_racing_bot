@@ -1,8 +1,7 @@
 """weather_config_service.py — CRUD for the weather_pipeline_config table.
 
 Provides the league's configurable phase horizons (Phase 1 in days, Phase 2 in
-days, Phase 3 in hours) with defaults of 5 / 2 / 2 matching the previously
-hardcoded schedule_round values.
+days, Phase 3 in hours) with the packaged defaults of 5 / 2 / 2.
 
 Ordering invariant (enforced before every write):
     (phase_1_days × 24) > (phase_2_days × 24) > phase_3_hours   [strict]
@@ -14,15 +13,17 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.models.round import WeatherWindows
-from leaguebot.core.services.modules.review_sections import Review, ReviewSection
-from leaguebot.core.services.queue.setting_change import Saved
-from leaguebot.weather.models.weather_config import WeatherPipelineConfig
+from leaguebot.weather.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import AuditRecord
+from leaguebot.core.models.round import RoundLead
+from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
+from leaguebot.framework.services.queue.setting_change import Saved
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig, WeatherWindows
+from leaguebot.weather.services.forecast_leads import forecast_leads
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 _DEFAULTS = WeatherPipelineConfig()  # default field values only
 
@@ -57,12 +58,13 @@ async def windows_kept_or_read(kept: Mapping[str, Any], db_path: str) -> Weather
     return windows_kept(kept) or await windows_read(db_path)
 
 
-async def round_window(modules: "ModuleService", db_path: str) -> WeatherWindows | None:
-    """Weather's part of a round's timing windows read: its three horizons, or None where the
-    module is off."""
-    if not await modules.is_weather_enabled():
-        return None
-    return await windows_read(db_path)
+async def round_leads(modules: "ModuleService", db_path: str) -> tuple[RoundLead, ...]:
+    """Weather's part of a round's leads read: the timers its forecasts want set, at the league's
+    own horizons, or none where the module is off. The subscriber to the hook
+    (`round_leads_read`)."""
+    if not await modules.is_enabled(SWITCH_KEY):
+        return ()
+    return forecast_leads(await windows_read(db_path))
 
 
 async def review_section(
@@ -78,7 +80,7 @@ async def review_section(
 
     Subscribed to core's `review_sections_read`. Reads only.
     """
-    if not await modules.is_weather_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await get_weather_pipeline_config(db_path)
     return ReviewSection(

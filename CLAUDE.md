@@ -13,7 +13,8 @@ Three sets of documents carry this project's knowledge and all of them go stale 
 - `docs/wip-specs/*.md` — **the source of truth for rules.** What the bot shall do, end to end and at a functional level.
 - `README.md` — **what a league sees.** Commands, behaviour, authoring conventions.
 - `docs/how-to/*.md` — **the order to do a job in.** One guide per module, plus the core bot.
-- `docs/design/*.md` — **why the code is shaped as it is.** One file per module.
+- `docs/design/*.md` — **why the code is shaped as it is.** One file per module, plus the
+  framework's and `architecture.md`.
 
 Update them by *what changed*, not by the fact that something did. A refactor or a
 test-only change needs none of them. A changed rule, a new command, or **a decision the user
@@ -43,7 +44,7 @@ and the checks to run — including the `pytest tests/ -q` run. Read it rather t
 | `README.md` | **Source.** User-facing. |
 | `docs/wip-specs/core_specification.md` | **Source, and the home of everything no module owns** (decided 2026-09-08). Leagues, seasons, divisions, tiers, rounds, sessions, tracks, teams, seats, drivers, the channels and the log, which modules exist, what survives a restart, and test mode. It absorbed `other_changes.md`, `module_list.md` and the signup spec's Driver Profile, Teams, Changes to Seasons and initialisation sections, all four of which are now deleted or trimmed — do not recreate a grab-bag document beside it. A rule belongs here unless a single module owns it: **core owns the driver, signup owns the signing up**, and core names the modules while each module's own spec keeps its enable, disable and dependency rules. |
 | `docs/how-to/` | **Becoming the source for behaviour.** Task-ordered guides for a league manager. A guide owns the *order* of a job. **A module's guide covers that module only:** core setup is named as a prerequisite and linked, never explained, and findings about core behaviour belong in the core guide or the README, not in it. |
-| `docs/design/` | **Why the code is shaped as it is** (decided 2026-09-20). `architecture.md` holds what binds every module (decided 2026-09-25, #282), and one file per module holds the rest, pointing to it rather than repeating it: its structure, the alternatives rejected and the trade-offs taken. **Source for intent, never for detail** — where it and the code disagree about what the code *does*, the code wins and the document is corrected, as with a wip-spec. It restates no functional rule, citing the wip-spec's requirement IDs instead. **It documents the design, not its history** (decided 2026-09-25): each decision, and the alternatives it rejected, is written in the section it governs, never gathered in a list at the head; it cites other documentation (the wip-specs, the constitution, CLAUDE.md, other design files, docstrings) and never an issue or a commit; it keeps no register of where the code falls short, which the architecture checks and the tracker hold; and it records no provenance, neither who took a decision nor when nor how, only the decision and its reasons. A decision constraining one function still belongs in that function's docstring, pinned by a named test: the design file holds the shape, the docstring the local constraint. Written before a module is built and corrected at close-out. |
+| `docs/design/` | **Why the code is shaped as it is** (decided 2026-09-20). `architecture.md` holds what binds every module (decided 2026-09-25, #282), `framework.md` the machinery every part runs on, and one file per module holds the rest, pointing to it rather than repeating it: its structure, the alternatives rejected and the trade-offs taken. **Source for intent, never for detail** — where it and the code disagree about what the code *does*, the code wins and the document is corrected, as with a wip-spec. It restates no functional rule, citing the wip-spec's requirement IDs instead. **It documents the design, not its history** (decided 2026-09-25): each decision, and the alternatives it rejected, is written in the section it governs, never gathered in a list at the head; it cites other documentation (the wip-specs, the constitution, CLAUDE.md, other design files, docstrings) and never an issue or a commit; it keeps no register of where the code falls short, which the architecture checks and the tracker hold; and it records no provenance, neither who took a decision nor when nor how, only the decision and its reasons. A decision constraining one function still belongs in that function's docstring, pinned by a named test: the design file holds the shape, the docstring the local constraint. Written before a module is built and corrected at close-out. |
 | `docs/how-to/test-mode.md` | **Derived, hand-written.** For maintainers, not leagues — how test mode *is used*, as a walkthrough. Technical register, not strictly a `how-to/` guide, but placed in the same directory for ease. The **rules** test mode holds to live in the core specification's `## Test mode` section (decided 2026-09-08); this guide stays the walkthrough and its overlap with that section is intended. |
 | GitHub issues | **The register of defects** (decided 2026-09-09). Records what is wrong, never what shall be done — do not read an issue as a rule, and do not fix one without being asked. Raise one when reading the code turns up a defect out of scope for the task in hand. It replaced `docs/wip-specs/known_issues.md`, whose sixty-six entries were migrated and the document deleted; do not recreate it. `CONTRIBUTING.md` holds the priority levels and what a good issue carries. |
 | `specs/NNN-*/` | **Derived, and a historical record.** Spec-kit output per increment. Do not hand-maintain, never copy a wip-spec rule into it, and never read it as current behaviour — it describes one increment as planned, not the bot as it stands. |
@@ -182,12 +183,12 @@ the tests and the settings files that pin them.
   `inserted_id`), a declared type; a `cast` only where true by construction, with a docstring saying
   why (`bot_of`, `as_text_channel`). A `None` that can really happen is a defect: fix it, with a
   test, rather than narrowing it away.
-- **The bot is `LeagueBot`** (`src/leaguebot/core/utils/league_bot.py`): every attribute the entry
-  point attaches is declared there first, a `bot` parameter is annotated as it, and an interaction's
-  bot is reached through `bot_of(interaction)`. A library that ships no types is described in
-  `stubs/` (fontTools, APScheduler 3) for the part the bot uses and no more; using more means
-  extending the stub, which `test_library_stubs.py` holds to the installed library. lxml uses the
-  pinned `types-lxml`.
+- **The bot is `LeagueBot`** (`src/leaguebot/framework/utils/league_bot.py`): every attribute the
+  entry point attaches is declared there first, a `bot` parameter is annotated as it, and an
+  interaction's bot is reached through `bot_of(interaction)`. A library that ships no types is
+  described in `stubs/` (fontTools, APScheduler 3) for the part the bot uses and no more; using more
+  means extending the stub, which `test_library_stubs.py` holds to the installed library. lxml uses
+  the pinned `types-lxml`.
 - **A test must not depend on what the host carries.** The suite runs on Windows, CI and the Pi,
   which differ in libraries, fonts and libxml2. Never assert on the first item an index yields:
   choose with `sorted()`, never dict or `rglob` order. Where the host's resources are the subject,
@@ -218,7 +219,7 @@ the tests and the settings files that pin them.
   on a file under `tmp_path`, not `:memory:`, seeded through `get_connection`, parents first. Never
   write a `CREATE TABLE` for a table the migrations declare; a table of the test's own is fine.
   `test_migration_steps.py` names the exceptions.
-- **The schema starts from one baseline,** `src/leaguebot/core/db/migrations/001_baseline.sql`.
+- **The schema starts from one baseline,** `src/leaguebot/framework/db/migrations/001_baseline.sql`.
   Until go-live (`v1.0.0`) a schema change edits it; from go-live on, every change is a new
   migration numbered after it, with a test of its own, and no applied file is edited.
   `run_migrations` refuses a database recording a migration the bot does not carry; its docstring

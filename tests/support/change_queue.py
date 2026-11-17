@@ -1,6 +1,6 @@
 """A real change queue for a test, on the test's own database, with "now" pinned (#439).
 
-The queue is the one the bot builds (`leaguebot.core.services.queue.change_queue.ChangeQueue`), handed the
+The queue is the one the bot builds (`leaguebot.framework.services.queue.change_queue.ChangeQueue`), handed the
 router the test gives it, or the bot's own. `built_bot` is the real bot instead, every service
 and change type as the entry point's `build` makes them (#283), its queue's clock pinned the same way.
 
@@ -46,7 +46,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
+from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.connections import close_lent_connections
 
 SERVER_ID = 12408
@@ -105,11 +106,14 @@ def attach_queue(bot: Any, db_path: str, *, now: datetime | Clock, router: Any =
     *types*, the bot's real change types are registered through `register_change_types`, as the
     builder registers them; with *types*, those alone.
     """
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
 
     clock = now if isinstance(now, Clock) else Clock(now)
     chosen = router if router is not None else bot.output_router
-    queue = ChangeQueue(db_path, bot, chosen, bot.config_service, clock=clock)
+    # The tiers are the league's own rule, which a real configuration service answers: the bot's
+    # `config_service` is a double that would let every member through.
+    queue = ChangeQueue(db_path, bot, chosen, bot.config_service, tiers=ConfigService(db_path),
+                        clock=clock)
     bot.change_queue = queue
     setup = _Setup(db_path, clock, chosen, real_types=types is None, types=list(types or ()))
     setattr(bot, _SETUP, setup)
@@ -126,7 +130,7 @@ async def built_bot(tmp_path: Any, *, now: datetime | Clock) -> Any:
     gives it a fresh queue as it does any other bot. A test needing one service keeps its
     hand-made double."""
     from leaguebot.__main__ import Settings, build
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     settings = Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
                         jobstore_path=str(tmp_path / "jobs.db"))
@@ -177,13 +181,14 @@ async def restart_queue(bot: Any) -> Any:
     The old queue is stopped first where it was started. The same change types are registered.
     The queue is remembered, for `stop_started_queues` to stop once the test has run.
     """
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
 
     setup: _Setup = getattr(bot, _SETUP)
     old = bot.change_queue
     if getattr(old, "_task", None) is not None:
         await old.stop()
-    queue = ChangeQueue(setup.db_path, bot, setup.router, bot.config_service, clock=setup.clock)
+    queue = ChangeQueue(setup.db_path, bot, setup.router, bot.config_service,
+                        tiers=ConfigService(setup.db_path), clock=setup.clock)
     bot.change_queue = queue
     _register(bot, queue, setup)
     await maybe_await(queue.start())
@@ -434,13 +439,13 @@ def league_double(db_path: str, *, now: Any = None) -> Any:
     builder hands it, so that a test attaching a queue moves the router's time with the queue's.
 
     `bot.log_channel` and `bot.interaction_channel` record what each is sent. The league's server
-    is `SERVER_ID`, as `config_service.get_league_server_id` gives it; `bot.get_guild` finds no
+    is `SERVER_ID`, as `league_settings.get_league_server_id` gives it; `bot.get_guild` finds no
     guild for it until a test gives one.
     `bot.attendance_after_review` is the attendance hook the builder hands the review's change
     types (#439), as a league with attendance off sees it (`attendance_hook_double`). A test that
     runs the hook replaces it.
     """
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.posting.output_router import OutputRouter
 
     bot = MagicMock()
     bot.db_path = db_path
@@ -497,6 +502,11 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
         )
     )
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    # The log writer reads the log channel on the caller's connection, as the league's own
+    # configuration service reads it there: the row the database holds, None while unclaimed.
+    bot.config_service.get_server_config_on = ConfigService(bot.db_path).get_server_config_on
+    # The framework's view of the league's settings, as the builder hands it over.
+    bot.league_settings = bot.config_service
 
 
 def attendance_hook_double() -> Any:
@@ -528,18 +538,20 @@ def attendance_hook_double() -> Any:
 #: registers hold the double: by name, as `build` imports them.
 #: The season service is doubled only where a league gives one.
 _DOUBLED_AT_BUILD = {
-    "scheduler": ("leaguebot.core.services.scheduler_service", "SchedulerService"),
+    "scheduler": ("leaguebot.framework.services.jobs.scheduler", "SchedulerService"),
+    "round_jobs": ("leaguebot.core.services.rounds.round_jobs", "RoundJobs"),
     "attendance_hook": ("leaguebot.attendance.services.hooks.attendance_after_review",
                         "AttendanceAfterReview"),
     "season_service": ("leaguebot.core.services.seasons.season_service", "SeasonService"),
 }
 
 
-async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: Any = None,
-                     attendance_hook_of: Any = None, season_service: Any = None,
-                     real_config: bool = False) -> Any:
+async def league_bot(db_path: str, *, scheduler: Any = None, round_jobs: Any = None,
+                     attendance_hook: Any = None, attendance_hook_of: Any = None,
+                     season_service: Any = None, real_config: bool = False) -> Any:
     """The bot of a test league on *db_path*, the Discord side `league_double` gives stubbed over
-    it, its scheduler *scheduler* (a bare double if None), its attendance hook
+    it, its scheduler *scheduler* (a bare double if None), core's round jobs *round_jobs* (a bare
+    double if None), its attendance hook
     *attendance_hook* (`attendance_hook_double`'s if None) and, where given, its season service
     *season_service*; its queue is attached by `league_queue`, once the league has set its own
     services (#283). With *real_config*, the league's config service reads the database, as a
@@ -554,13 +566,15 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
     The bot is the one the entry point's `build` makes, on settings for *db_path* (the job store
     `jobs.db` beside it), handed the doubles in place of the scheduler, attendance's hook and the
     season service as it builds them, so the change types it registers hold the doubles; every
-    other service is the builder's."""
+    other service is the builder's. The round jobs' double is handed in place of core's
+    `RoundJobs` the same way, and is the bot's `round_jobs`."""
     import importlib
     import os
     from contextlib import ExitStack
     from unittest.mock import patch
 
     scheduler = scheduler if scheduler is not None else MagicMock()
+    round_jobs = round_jobs if round_jobs is not None else MagicMock()
     if attendance_hook is None and attendance_hook_of is None:
         attendance_hook = attendance_hook_double()
     from leaguebot.__main__ import Settings, build
@@ -569,7 +583,7 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
                         jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
     import leaguebot.__main__ as entry_point
 
-    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook or attendance_hook_of,
+    doubles = {"scheduler": scheduler, "round_jobs": round_jobs, "attendance_hook": attendance_hook or attendance_hook_of,
                "season_service": season_service}
     with ExitStack() as stack:
         for key, (module_name, name) in _DOUBLED_AT_BUILD.items():
@@ -579,10 +593,12 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
             if key == "attendance_hook" and attendance_hook_of is not None:
                 made = MagicMock(side_effect=lambda bot, *_args, **_kwargs: attendance_hook_of(
                     bot, db_path))
-            stack.enter_context(patch.object(importlib.import_module(module_name), name, made))
+            module = importlib.import_module(module_name)
+            stack.enter_context(patch.object(module, name, made))
             if hasattr(entry_point, name):
                 stack.enter_context(patch.object(entry_point, name, made))
         bot = await maybe_await(build(settings))
+    bot.round_jobs = round_jobs
     _stub_discord(bot, real_config=real_config)
     # A bot that has not logged in has no user of its own.
     bot._connection.user = MagicMock()
@@ -751,8 +767,8 @@ PAST_THE_STOP = (
 async def stop_the_league_lane(bot: Any, db_path: str) -> dict[str, Any]:
     """Stop the league's lane on another job: a change whose one job fails on a fault in the bot
     is asked and run. Gives the job it stopped at."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
 
     async def fails(_ctx: Any) -> StepResult:
         raise RuntimeError("a fault in the bot")
@@ -833,12 +849,12 @@ TEST_JOB = 1
 def in_a_job(job_id: int = TEST_JOB) -> Iterator[None]:
     """Run the body as job *job_id* runs, for a unit test calling a function that posts directly,
     with no queue to run it in a job. Where the bot keeps no running job's number yet
-    (`leaguebot.core.utils.in_a_job`, #439 6b), no function refuses a post outside a job, and the
+    (`leaguebot.framework.utils.in_a_job`, #439 6b), no function refuses a post outside a job, and the
     body runs as it is."""
     try:
-        from leaguebot.core.utils.in_a_job import running_job
+        from leaguebot.framework.utils.in_a_job import running_job
     except ModuleNotFoundError as missing:
-        if missing.name != "leaguebot.core.utils.in_a_job":
+        if missing.name != "leaguebot.framework.utils.in_a_job":
             raise
         yield
         return
@@ -948,7 +964,7 @@ async def ask_turn(bot: Any, kind: str, message: Any, *, types: Any = None,
     it is marked at once and the turn of *kind* asked for as the member's, with no interaction.
     *types* are the change types `turn_waiting` reads, by default those the test registered.
     """
-    from leaguebot.core.services.queue import typed_turns
+    from leaguebot.framework.services.queue import typed_turns
 
     chosen = types if types is not None else getattr(bot, _SETUP).types
     if await typed_turns.turn_waiting(bot.db_path, chosen, message.channel.id):

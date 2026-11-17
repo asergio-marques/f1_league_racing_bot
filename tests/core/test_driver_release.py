@@ -79,7 +79,7 @@ def _release_line(name: str, user_id: int, division: str = "Am") -> str:
 
 
 def _release_refusal(reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/driver release` refused for {_ADMIN} — {reply_reason(reply)}"
 
@@ -227,7 +227,7 @@ async def test_a_failed_driver_release_releases_nothing(tmp_path):
 
     league = await _twice_seated(tmp_path)
     asked = await _ask_release(league, LEWIS)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _lewis_seats(league) == _BOTH

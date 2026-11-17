@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone, timedelta
+from typing import Any
 
 import pytest
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import read_scheduled_at
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
@@ -526,6 +527,7 @@ async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> Non
         "job_id": "phase1_r2",
         "round_id": 2,
         "phase_number": 1,
+        "kind": "weather_p1",
         "next_run_time": NOW + timedelta(days=5),
     }])
     result = await get_next_pending_phase(
@@ -588,11 +590,19 @@ async def _stand(
         await db.commit()
 
 
+#: The kind each phase's job is stored under, as the pending read hands it back with the job.
+_KIND_OF_PHASE = {
+    1: "weather_p1", 2: "weather_p2", 3: "weather_p3", 5: "rsvp_notice",
+    6: "rsvp_last_notice", 7: "rsvp_deadline", 8: "cleanup", 9: "rsvp_cleanup",
+}
+
+
 def _job(round_id: int, phase: int, *, days: float) -> dict:
     return {
         "job_id": f"job_{phase}_r{round_id}",
         "round_id": round_id,
         "phase_number": phase,
+        "kind": _KIND_OF_PHASE[phase],
         "next_run_time": NOW + timedelta(days=days),
     }
 
@@ -870,50 +880,52 @@ async def test_the_review_shows_a_cleared_check_in_as_done_throughout(tmp_path) 
 
 
 @pytest.fixture
-async def paused_scheduler():
-    """A `SchedulerService` over a real APScheduler, started paused so nothing it holds can fire.
+async def paused_round_jobs():
+    """Core's round jobs over a `SchedulerService` on a real APScheduler, started paused so
+    nothing it holds can fire.
 
     In memory rather than on SQLite: the store is not the subject, and a job store left holding a
     file fails only on Windows. Started, because a stopped scheduler keeps its jobs pending with
-    no fire time at all.
+    no fire time at all. Handed a league database it never reads: arming a round and reading its
+    jobs read none.
     """
+    from tests.support.round_jobs import round_jobs_over
+
     service = SchedulerService.__new__(SchedulerService)
     service._scheduler = AsyncIOScheduler(jobstores={"default": MemoryJobStore()}, timezone="UTC")
     service._scheduler.start(paused=True)
-    yield service
+    yield round_jobs_over(service, "unread.db")
     service._scheduler.shutdown(wait=False)
 
 
 async def _arm(
     db_path: str,
-    service: SchedulerService,
+    round_jobs: Any,
     round_ids: list[int],
     *,
     weather: bool = True,
     attendance: bool = True,
     last_notice_hours: int = 24,
 ) -> None:
-    """Arm *round_ids* as approval arms them, with the production `schedule_*` writers, the check-in
-    against `NOW`, by which the rounds are placed."""
+    """Arm *round_ids* as approval arms them, through core's round jobs' `arm_leads`, against
+    `NOW`, by which the rounds are placed: weather's packaged forecast leads and results'
+    submission where *weather*, and attendance's check-in leads (5 days, *last_notice_hours*,
+    2 hours) where *attendance*."""
+    from tests.support.round_jobs import check_in_leads, forecast_leads, submission_lead
+
     season_service = SeasonService(db_path)
     for round_id in round_ids:
         rnd = await season_service.get_round(round_id)
         assert rnd is not None
+        leads: tuple[Any, ...] = ()
         if weather:
-            service.schedule_round(rnd, season_number=1, division_tier=rnd.division_id)
+            leads += (*forecast_leads(), submission_lead())
         if attendance:
-            service.schedule_attendance_round(
-                rnd,
-                season_number=1,
-                division_tier=rnd.division_id,
-                notice_days=5,
-                last_notice_hours=last_notice_hours,
-                deadline_hours=2,
-                now=NOW,
-            )
+            leads += check_in_leads(last_notice_hours=last_notice_hours)
+        round_jobs.arm_leads(rnd, leads, 1, rnd.division_id, NOW)
 
 
-async def _season_armed_as_approval_arms_it(tmp_path, service: SchedulerService) -> str:
+async def _season_armed_as_approval_arms_it(tmp_path, round_jobs: Any) -> str:
     """Weather, the check-in and results on; a normal and a mystery round in Division A and a
     normal round in Division B, all a week ahead; every one of their jobs queued."""
     db_path = str(tmp_path / "review_jobs.db")
@@ -929,7 +941,7 @@ async def _season_armed_as_approval_arms_it(tmp_path, service: SchedulerService)
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
         await db.commit()
-    await _arm(db_path, service, [1, 2, 3])
+    await _arm(db_path, round_jobs, [1, 2, 3])
     return db_path
 
 
@@ -957,12 +969,12 @@ async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_p
     assert summary.index(_round_row(summary, 2)) < summary.index(_round_row(summary, 1))
 
 
-async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_scheduler) -> None:
+async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_round_jobs) -> None:
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
-    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
+    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
 
     summary = await build_review_summary(
-        db_path, paused_scheduler, now=NOW, review_marks_read=review_marks_read()
+        db_path, paused_round_jobs, now=NOW, review_marks_read=review_marks_read()
     )
 
     check_in = "Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳"
@@ -991,16 +1003,16 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_sche
     ],
 )
 async def test_a_job_taken_from_the_store_reads_as_missing(
-    tmp_path, paused_scheduler, round_id, event_type, cell
+    tmp_path, paused_round_jobs, round_id, event_type, cell
 ) -> None:
     """Each cell reads its own job and no other. A mystery round's notice is armed as
     `weather_p1`, so taking that job away is what leaves its `Notice` without one."""
-    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
-    paused_scheduler.cancel_round(round_id, only=frozenset({event_type}))
+    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
+    paused_round_jobs.cancel_round(round_id, only=frozenset({event_type}))
 
     row = _round_row(
         await build_review_summary(
-            db_path, paused_scheduler, now=NOW, review_marks_read=review_marks_read()
+            db_path, paused_round_jobs, now=NOW, review_marks_read=review_marks_read()
         ),
         round_id,
     )
@@ -1036,7 +1048,7 @@ async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -
 
 
 async def _mystery_round_armed(
-    tmp_path, service: SchedulerService, *, notice_posted: bool
+    tmp_path, round_jobs: Any, *, notice_posted: bool
 ) -> str:
     """A mystery round a week ahead, weather and results on, its jobs armed as approval arms
     them; where *notice_posted*, its notice recorded as given and no Phase 1 drawn."""
@@ -1049,17 +1061,17 @@ async def _mystery_round_armed(
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
         await db.commit()
-    await _arm(db_path, service, [1], attendance=False)
+    await _arm(db_path, round_jobs, [1], attendance=False)
     return db_path
 
 
 async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
-    tmp_path, paused_scheduler
+    tmp_path, paused_round_jobs
 ) -> None:
-    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=False)
+    db_path = await _mystery_round_armed(tmp_path, paused_round_jobs, notice_posted=False)
 
     result = await get_next_pending_phase(
-        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+        db_path, paused_round_jobs, now=NOW, pending_steps_read=pending_steps_read(),
     )
 
     assert result is not None
@@ -1069,16 +1081,16 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
 
 
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
-    tmp_path, paused_scheduler
+    tmp_path, paused_round_jobs
 ) -> None:
     """A notice posted from database state can leave its job queued. Advancing that job would
     post the notice a second time, so the round's next step — its result submission — comes
     instead."""
-    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
-    paused_scheduler.cancel_round(1, only=frozenset({"weather_p2", "weather_p3"}))
+    db_path = await _mystery_round_armed(tmp_path, paused_round_jobs, notice_posted=True)
+    paused_round_jobs.cancel_round(1, only=frozenset({"weather_p2", "weather_p3"}))
 
     result = await get_next_pending_phase(
-        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+        db_path, paused_round_jobs, now=NOW, pending_steps_read=pending_steps_read(),
     )
 
     assert result is not None
@@ -1086,15 +1098,15 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
 
 
 async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
-    tmp_path, paused_scheduler
+    tmp_path, paused_round_jobs
 ) -> None:
     """They do nothing when they fire in a live season, so advance has nothing to fire for them:
     handed on as Phases 2 and 3, they reached the weather runners, which read no format."""
-    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
-    paused_scheduler.cancel_round(1, only=frozenset({"weather_p1"}))
+    db_path = await _mystery_round_armed(tmp_path, paused_round_jobs, notice_posted=True)
+    paused_round_jobs.cancel_round(1, only=frozenset({"weather_p1"}))
 
     result = await get_next_pending_phase(
-        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+        db_path, paused_round_jobs, now=NOW, pending_steps_read=pending_steps_read(),
     )
 
     assert result is not None
@@ -1127,13 +1139,13 @@ async def _last_notice_switched_off(db_path: str) -> None:
         await db.commit()
 
 
-async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_scheduler) -> None:
+async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_round_jobs) -> None:
     db_path = str(tmp_path / "last_notice_off.db")
     await _last_notice_switched_off(db_path)
-    await _arm(db_path, paused_scheduler, [2], weather=False, last_notice_hours=0)
+    await _arm(db_path, paused_round_jobs, [2], weather=False, last_notice_hours=0)
 
     result = await get_next_pending_phase(
-        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+        db_path, paused_round_jobs, now=NOW, pending_steps_read=pending_steps_read(),
     )
 
     assert result is not None
@@ -1522,7 +1534,7 @@ def _steps_hook(*modules, handed_to: list | None = None):
     passed over) pair of (round, phase, kind) lists it hands back; each records the rounds and the
     moment it was handed in *handed_to*, where given."""
     from leaguebot.core.services.test_mode.test_mode_service import ModuleSteps, PendingStep
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
     for pending, passed_over in modules:
@@ -1835,7 +1847,7 @@ def _marks_hook(*modules, handed_to: list | None = None):
     """A `review_marks_read` hook with one subscriber per *modules* entry, each the marks it hands
     back by round id, as (label, mark) pairs; each records the ids of the rounds, the moment and
     the scheduler's jobs it was handed in *handed_to*, where given."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
     for marks in modules:

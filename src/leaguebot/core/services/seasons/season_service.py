@@ -10,10 +10,10 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.framework.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.models.cancellation import SCOPE_ROUND, CancellationNotices
 from leaguebot.core.models.division import Division, DivisionStatus
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,
@@ -33,7 +33,8 @@ from leaguebot.core.models.season import (
 )
 from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
 from leaguebot.core.services.modules.image_drawing import Held
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.services.queue.audit_service import record_change_on
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
@@ -967,17 +968,9 @@ async def cancel_round_on(
     )
     if cursor.rowcount == 0:
         return None
-    await db.execute(
-        """
-        INSERT INTO audit_entries
-            (actor_id, actor_name, division_id, change_type,
-             old_value, new_value, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            actor_id, actor_name, division_id,
-            "round.status", previous, "CANCELLED", now.isoformat(),
-        ),
+    await record_change_on(
+        db, actor_id=actor_id, actor_name=actor_name, change_type="round.status",
+        old_value=previous, new_value="CANCELLED", now=now, division_id=division_id,
     )
     await refresh_division_status_on(db, division_id)
     return previous
@@ -1042,17 +1035,9 @@ async def end_round_not_held_on(
     )
     if cursor.rowcount == 0:
         return None
-    await db.execute(
-        """
-        INSERT INTO audit_entries
-            (actor_id, actor_name, division_id, change_type,
-             old_value, new_value, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            actor_id, actor_name, division_id,
-            "round.status", previous, "CANCELLED", now.isoformat(),
-        ),
+    await record_change_on(
+        db, actor_id=actor_id, actor_name=actor_name, change_type="round.status",
+        old_value=previous, new_value="CANCELLED", now=now, division_id=division_id,
     )
     await refresh_division_status_on(db, division_id)
     cursor = await db.execute(
@@ -1115,39 +1100,18 @@ async def cancel_division_on(
         await db.execute(
             "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,)
         )
-        await db.execute(
-            """
-            INSERT INTO audit_entries
-                (actor_id, actor_name, division_id, change_type,
-                 old_value, new_value, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                actor_id, actor_name, division_id,
-                "round.status", round_status, "CANCELLED", now.isoformat(),
-            ),
+        await record_change_on(
+            db, actor_id=actor_id, actor_name=actor_name, change_type="round.status",
+            old_value=round_status, new_value="CANCELLED", now=now, division_id=division_id,
         )
 
     await db.execute(
         "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?",
         (division_id,),
     )
-    await db.execute(
-        """
-        INSERT INTO audit_entries
-            (actor_id, actor_name, division_id, change_type,
-             old_value, new_value, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            actor_id,
-            actor_name,
-            division_id,
-            "division.status",
-            previous,
-            "CANCELLED",
-            now.isoformat(),
-        ),
+    await record_change_on(
+        db, actor_id=actor_id, actor_name=actor_name, change_type="division.status",
+        old_value=previous, new_value="CANCELLED", now=now, division_id=division_id,
     )
     return [round_id for round_id, _ in unraced]
 
@@ -1247,7 +1211,6 @@ async def end_rounds_awaiting_results_on(
     Returns one dict per round closed — ``division``, ``round_number``, ``track_name`` and
     the ``status`` it was taken from — so the caller can report what it did.
     """
-    stamp = now.isoformat()
     cursor = await db.execute(
         f"""
         SELECT r.id, r.round_number, r.track_name, r.status,
@@ -1268,22 +1231,10 @@ async def end_rounds_awaiting_results_on(
             "UPDATE rounds SET status = ? WHERE id = ?",
             (RoundStatus.FINAL.value, row["id"]),
         )
-        await db.execute(
-            """
-            INSERT INTO audit_entries
-                (actor_id, actor_name, division_id, change_type,
-                 old_value, new_value, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                actor_id,
-                actor_name,
-                row["division_id"],
-                "round.status",
-                row["status"],
-                RoundStatus.FINAL.value,
-                stamp,
-            ),
+        await record_change_on(
+            db, actor_id=actor_id, actor_name=actor_name, change_type="round.status",
+            old_value=row["status"], new_value=RoundStatus.FINAL.value, now=now,
+            division_id=row["division_id"],
         )
 
     if rows:
@@ -2008,21 +1959,10 @@ async def close_raced_rounds_on(
             "UPDATE rounds SET status = ? WHERE id = ?",
             (RoundStatus.FINAL.value, row["id"]),
         )
-        await db.execute(
-            """
-            INSERT INTO audit_entries
-                (actor_id, actor_name, division_id, change_type,
-                 old_value, new_value, timestamp)
-            VALUES (?, ?, ?, 'round.status', ?, ?, ?)
-            """,
-            (
-                actor_id,
-                actor_name,
-                row["division_id"],
-                row["status"],
-                RoundStatus.FINAL.value,
-                now.isoformat(),
-            ),
+        await record_change_on(
+            db, actor_id=actor_id, actor_name=actor_name, change_type="round.status",
+            old_value=row["status"], new_value=RoundStatus.FINAL.value, now=now,
+            division_id=row["division_id"],
         )
     if rows:
         await rounds_made_final.call(db, [row["id"] for row in rows])

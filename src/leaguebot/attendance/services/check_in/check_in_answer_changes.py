@@ -46,8 +46,8 @@ from leaguebot.attendance.services.check_in.attendance_config_service import (
     rsvp_lock,
 )
 from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,
     StepFailedOnDiscord,
@@ -56,26 +56,26 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.queue.change_queue import (
+from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     done_step_results_before,
     in_hand,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.posting.notice_handler import edit_notice
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.services.posting.notice_handler import edit_notice
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import round_facts_on
-from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, refuse, reply_reason
 
 log = logging.getLogger(__name__)
 

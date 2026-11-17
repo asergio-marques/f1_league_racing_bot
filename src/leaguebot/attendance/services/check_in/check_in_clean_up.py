@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.models.attendance import CHECK_IN_CLEAN_UP, RsvpEmbedMessage
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.attendance.services.check_in.check_in_changes import (
@@ -39,9 +40,9 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     call_row,
 )
 from leaguebot.attendance.services.check_in.check_in_record import checkin_record
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,
     StepFailedOnDiscord,
@@ -49,10 +50,10 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.posting.notice_handler import delete_notice
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.posting.notice_handler import delete_notice
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -60,12 +61,12 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.channels import as_text_channel
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.posting.output_router import OutputRouter
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.services.posting.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
 
@@ -495,7 +496,7 @@ def take_down_steps(
             )
 
     async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         payload = ctx.step_payload

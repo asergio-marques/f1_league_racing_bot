@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.support.change_queue import (
     Clock,
@@ -691,9 +691,10 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
     "timer", then "restart"). Each asks `signup.close` as the bot's own change and posts nothing
     itself: the window stays open until the queue runs. When it runs, the window is closed, the
     closed notice posted and Kimi returned to Not Signed Up. The close is audited once, by the
-    system, as an automatic close, and one "🔒 Signups closed automatically at their set time"
-    line is written, its head showing the set time (and, for the restart, that it came at
-    start-up); it names no member and states beneath it the one driver returned (signup :67)."""
+    system, as an automatic close, from "open" to "closed" as JSON, and one "🔒 Signups closed
+    automatically at their set time" line is written, its head showing the set time (and, for
+    the restart, that it came at start-up); it names no member and states beneath it the one
+    driver returned (signup :67)."""
     from leaguebot.signup.services.window_close import close_signups_unattended
     from tests.support.change_queue import queued_log_lines
 
@@ -724,7 +725,7 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
             "WHERE change_type LIKE 'SIGNUP_%CLOSE'"
         )
         assert [(row["change_type"], row["old_value"], row["new_value"], row["actor_name"])
-                for row in audits] == [("SIGNUP_AUTO_CLOSE", "open", "closed", "system")], cause
+                for row in audits] == [("SIGNUP_AUTO_CLOSE", '"open"', '"closed"', "system")], cause
         lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
         [line] = [line for line in lines
                   if "🔒 Signups closed automatically at their set time" in line]
@@ -1018,7 +1019,7 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
 
     await cog._disable_signup(interaction)
 
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
     assert (await _window(league))["signups_open"]
     assert len(await _changes_of(league, MODULE_OFF_KIND)) == 1
 
@@ -1033,7 +1034,7 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     assert SIGNUP_BUTTON not in league.channel(LEAGUE_SIGNUP_CHANNEL).messages
     assert len(_closed_notices(league)) == 1
     assert len(_told(league)) == 1
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert await league.rows("SELECT * FROM signup_module_config") == []
 
 
@@ -1123,7 +1124,7 @@ async def test_the_close_wins_over_a_last_answer_handed_over_behind_it(tmp_path)
     close is done and Kimi returned to Not Signed Up; his submission finds him returned and is
     dropped as no longer due, saving no signup record. Kimi learns of the close from the close's
     own notice in his channel, the only one he is sent."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     league = await _close_league(tmp_path, SIGNING_UP)
     # On his last question, a state of the wizard's own (the helper gives it the driver's).

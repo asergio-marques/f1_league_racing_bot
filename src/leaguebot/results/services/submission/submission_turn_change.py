@@ -50,16 +50,16 @@ from typing import Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue import queue_records, typed_turns
-from leaguebot.core.services.queue.change_queue import (
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.framework.services.queue import queue_records, typed_turns
+from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -68,8 +68,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.utils.channel_guard import is_league_manager
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
-from leaguebot.core.utils.member_names import member_named
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points import scoring
 from leaguebot.results.services.round_amendment import amendment_writes

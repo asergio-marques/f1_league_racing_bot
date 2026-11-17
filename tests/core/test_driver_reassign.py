@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.driver_service import DriverService
 from tests.support.driver_transitions import reassigned
 
@@ -82,7 +82,7 @@ async def _reassign(db_path: str, old: str, new: str):
 
 
 async def _refused(db_path: str, old: str, new: str, match: str) -> None:
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     before = await _state_of_the_league(db_path)
     with pytest.raises(Refused, match=match):
         await _reassign(db_path, old, new)
@@ -308,7 +308,7 @@ def _reassign_line(replaced: int, new: int, accounts: str) -> str:
 
 def _reassign_refusal(reply: str) -> str:
     from tests.core.test_driver_move import _ADMIN, _as_logged
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/driver reassign` refused for {_ADMIN} — {_as_logged(reply_reason(reply))}"
 
@@ -447,10 +447,13 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     106, 9002 and 9006, a former driver now; the other profile is gone. The profiles-merged hook is
     called once, with Valtteri's profile and the other's, inside the save's transaction. Two audit
     entries, both by Admin and stamped with the queue's clock: `DRIVER_PROFILES_MERGED`, the other
-    profile's id before and Valtteri's after, and `DRIVER_USER_ID_REASSIGN`, 106 before and 9002
-    after. The reply is today's, "✅ Driver merged with the driver on <@9002>, <@9006>, and given
-    that account.", naming every account the other held, with 106 and 9006 his past accounts. Takes
-    the place of `test_driver_cog.py`'s "a merge is reported as one"."""
+    profile's id before and Valtteri's after, each stored as a bare JSON number, and
+    `DRIVER_USER_ID_REASSIGN`, 106 before and 9002 after. The reply is today's, "✅ Driver merged
+    with the driver on <@9002>, <@9006>, and given that account.", naming every account the other
+    held, with 106 and 9006 his past accounts. Takes the place of `test_driver_cog.py`'s "a merge is
+    reported as one"."""
+    import json
+
     from tests.support.change_queue import run_queue
     from tests.support.season_league import UNASSIGNED, profile_id
     from tests.support.settings_league import last_said
@@ -487,6 +490,11 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     assert sorted(audits) == ["DRIVER_PROFILES_MERGED", "DRIVER_USER_ID_REASSIGN"]
     merge, reassign = audits["DRIVER_PROFILES_MERGED"], audits["DRIVER_USER_ID_REASSIGN"]
     assert (str(merge["old_value"]), str(merge["new_value"])) == (str(other["id"]), str(kept))
+    [stored] = await league.rows(
+        "SELECT old_value, new_value FROM audit_entries "
+        "WHERE change_type = 'DRIVER_PROFILES_MERGED'"
+    )
+    assert (stored["old_value"], stored["new_value"]) == (json.dumps(other["id"]), json.dumps(kept))
     assert (str(reassign["old_value"]), str(reassign["new_value"])) == ("106", str(_OTHER))
     assert {row["actor_id"] for row in audits.values()} == {77}
     assert {row["timestamp"] for row in audits.values()} == {league.clock.now.isoformat()}
@@ -555,7 +563,7 @@ async def test_a_failed_driver_reassign_changes_nothing(tmp_path, monkeypatch):
     discarded = _portraits_discarded(league, monkeypatch)
     standing = await _accounts(league)
     asked = await _ask_reassign(league, UNASSIGNED, _NEW)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _accounts(league) == standing

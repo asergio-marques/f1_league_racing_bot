@@ -51,6 +51,7 @@ from tests.support.review_league import (
     review_league,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 KIND = "results.rounds.sync"
 #: Round 4's Feature Race results, standing where a test posts them.
@@ -64,7 +65,7 @@ async def _league(tmp_path: Any) -> ReviewLeague:
     league = await review_league(tmp_path, round_status="FINAL")
     await _write(league, "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
                          "VALUES (1, 1)")
-    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "results", True)
     # The builder's own season service, which its change types hold, its divisions read
     # from the database again.
     vars(league.bot.season_service).pop("get_divisions", None)
@@ -72,7 +73,7 @@ async def _league(tmp_path: Any) -> ReviewLeague:
 
 
 async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         await db.execute(sql, args)
@@ -82,7 +83,7 @@ async def _write(league: ReviewLeague, sql: str, *args: Any) -> None:
 async def _round_4_posted(league: ReviewLeague) -> None:
     """Round 4 at Spa holds a Feature Race too, Lewis winning it, its results standing as
     message 8810 in the results channel."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         session = await db.execute(
@@ -137,7 +138,7 @@ def _outcome(interaction: Any) -> str:
 
 
 async def _session_ids(league: ReviewLeague, round_id: int = ROUND_ID) -> Any:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(league.db_path) as db:
         row = await (await db.execute(
@@ -159,7 +160,7 @@ def _results_drawn(league: ReviewLeague, tmp_path: Any) -> tuple[ExitStack, Asyn
     PNG: the real picture poster runs. Gives the patches, to enter, and the render, to count."""
     png = tmp_path / "results.png"
     png.write_bytes(b"\x89PNG")
-    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(league.bot.module_service, "images", True)
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
     league.bot.image_validity_service.template_reports = AsyncMock(
         return_value={"results_race_template": MagicMock(valid=True)}
@@ -362,7 +363,7 @@ async def test_a_rounds_sync_replaces_a_session_cancelled_line(tmp_path):
     message 8820, recorded as the qualifying's. `/results rounds sync` for Pro posts a new line in
     the qualifying's place, before round 3's race table, records it as the qualifying's, and
     deletes 8820 after it."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     league = await _league(tmp_path)
     await _write(

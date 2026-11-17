@@ -15,28 +15,49 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.image.services.render.image_drawing import as_image_drawing
 
 if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.hooks import StartUpStep
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.hooks import StartUpStep
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign weather up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_weather_enabled` asks it by."""
+    """Sign weather up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
     from leaguebot.weather.services.draw_guard import weather_enabled_on
 
-    modules.register_switch("weather", weather_enabled_on)
+    modules.register_switch(SWITCH_KEY, weather_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:
     """Sign weather up to each hook only weather joins. The hooks several modules join are signed
     up by the entry point, in the order they are called, through the functions below."""
+    sign_up_round_kinds(bot)
     sign_up_to_phases_drawn_read(bot)
     sign_up_to_test_mode_flushed(bot)
+
+
+def sign_up_round_kinds(bot: "LeagueBot") -> None:
+    """Sign weather's kinds of round job up with core's round jobs, each with its advance phase.
+
+    The phases are those its test-mode steps hold (`ADVANCE_KINDS`), inverted, so the register
+    and the steps cannot drift. The kinds must be exactly `WEATHER_JOB_KINDS`, the set weather's
+    switch-off cancels, so that what is registered and what is switched off cannot drift either:
+    a kind in one and not the other fails here, at build."""
+    from leaguebot.weather.services.forecast_leads import WEATHER_JOB_KINDS
+    from leaguebot.weather.services.test_mode_steps import ADVANCE_KINDS
+
+    phases = {kind: phase for phase, kind in ADVANCE_KINDS.items()}
+    if set(phases) != set(WEATHER_JOB_KINDS):
+        raise RuntimeError(
+            f"weather's advance kinds {sorted(phases)} are not its switch-off's "
+            f"{sorted(WEATHER_JOB_KINDS)}"
+        )
+    bot.round_jobs.sign_up_kinds(phases)
 
 
 def sign_up_to_phases_drawn_read(bot: "LeagueBot") -> None:
@@ -64,13 +85,13 @@ def sign_up_to_test_mode_flushed(bot: "LeagueBot") -> None:
     bot.test_mode_flushed.subscribe(forecast_changes.test_mode_flushed_on)
 
 
-def sign_up_to_round_windows(bot: "LeagueBot") -> None:
-    """Sign weather's window up to the hook a round's timing windows read declares. It checks its own
+def sign_up_to_round_leads(bot: "LeagueBot") -> None:
+    """Sign weather's forecasts up to the hook a round's leads are read through. It checks its own
     switch."""
     from leaguebot.weather.services import weather_config_service
 
-    bot.round_windows_read.subscribe(partial(
-        weather_config_service.round_window, bot.module_service, bot.db_path
+    bot.round_leads_read.subscribe(partial(
+        weather_config_service.round_leads, bot.module_service, bot.db_path
     ))
 
 
@@ -98,7 +119,7 @@ def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
     async def judged(*handed: Any, **context: Any) -> AmendmentPart:
         outside_a_save = handed[0] is None
         windows = await weather_config_service.windows_read(bot.db_path) if outside_a_save else None
-        weather_on = await bot.module_service.is_weather_enabled() if outside_a_save else None
+        weather_on = await bot.module_service.is_enabled(SWITCH_KEY) if outside_a_save else None
         return await forecast_amendment.amendment_judged(
             *handed, db_path=bot.db_path, windows=windows, weather_on=weather_on, **context,
         )
@@ -250,7 +271,7 @@ def sign_up_to_season_end_steps(bot: "LeagueBot") -> None:
 def register_change_types(bot: "LeagueBot") -> None:
     """Make the queue known weather's kinds of change: the forecast and its clean-up, the module's
     switch and its two settings."""
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
     from leaguebot.weather.services.forecast_changes import (
         forecast_change,
         forecast_clean_up_change,
@@ -289,7 +310,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_off_weather(modules=bot.module_service, scheduler=bot.scheduler_service)
+            module_off_weather(modules=bot.module_service, round_jobs=bot.round_jobs)
         )
     )
 

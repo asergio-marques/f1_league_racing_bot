@@ -53,31 +53,31 @@ from leaguebot.attendance.services.sanctions import attendance_sanctions
 from leaguebot.attendance.services.sanctions import attendance_sync_change as sync
 from leaguebot.attendance.services.scoring import attendance_recompute
 from leaguebot.attendance.services.sheet import sheet_posting
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict, VerdictKind
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict, VerdictKind
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services.drivers import lineup_posting
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.queue.setting_change import SAVE
+from leaguebot.framework.services.queue.setting_change import SAVE
 from leaguebot.core.services.seasons import season_service
-from leaguebot.core.utils.interaction_errors import failure_line
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.interaction_errors import failure_line
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 
 if TYPE_CHECKING:
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 

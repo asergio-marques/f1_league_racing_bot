@@ -1,8 +1,8 @@
 """Results & Standings' own switch-on, as a setting on the change queue.
 
 `/module enable results` asks one change built from the `Setting` below by `setting_change`
-(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
-already held and with a fault): `module_on("results")` (`core/models/change.py`), so core's cog
+(`framework/services/queue/setting_change.py`, which holds what every settings change does with a value
+already held and with a fault): `module_on("results")` (`framework/models/change.py`), so core's cog
 names the change without importing results. `docs/design/architecture.md`, "How modules and core
 fit together", designs the gap this closes: weather's switch
 (`weather/services/module_switch_settings.py`) is the model.
@@ -28,7 +28,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import (
+from leaguebot.results.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,
@@ -36,16 +37,17 @@ from leaguebot.core.models.change import (
     Verdict,
     module_on,
 )
-from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import PLACEMENTS_CONFIRMED_REFUSAL
-from leaguebot.core.services.queue.setting_change import After, Saved, Setting
+from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
+from leaguebot.results.services.round_amendment.amendment_writes import schedule_amendment_sweep
 
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 #: The name of the step, after the switch-on's save, that arms the amendment sweep.
@@ -79,7 +81,7 @@ def _arm_sweep(scheduler: "SchedulerService") -> After:
     """
 
     async def run(_ctx: StepContext) -> StepResult:
-        scheduler.schedule_amendment_sweep()
+        schedule_amendment_sweep(scheduler)
         return StepResult()
 
     def fault_reply(_payload: dict[str, Any], reply: str) -> str:
@@ -102,7 +104,7 @@ def module_on_results(
     """
 
     async def check(_ctx: CheckContext) -> Verdict:
-        if await modules.is_results_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse("⚠️ Results & Standings module is already enabled.")
         if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)

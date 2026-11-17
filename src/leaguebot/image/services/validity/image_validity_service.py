@@ -57,8 +57,8 @@ from leaguebot.image.models.image_module import (
     Problem,
     ValidityReport,
 )
-from leaguebot.core.models.refusal import Refused
-from leaguebot.core.utils.paths import resolve_within_project_root
+from leaguebot.framework.models.refusal import Refused
+from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.utils.svg_document import (
     FieldIndex,
     SvgNoCanvasError,
@@ -1315,11 +1315,11 @@ class ImageValidityService:
 
     async def disabled_source_modules(self) -> set[str]:
         disabled: set[str] = set()
-        if not await self._module_service.is_results_enabled():
+        if not await self._module_service.is_enabled("results"):
             disabled.add("results")
-        if not await self._module_service.is_attendance_enabled():
+        if not await self._module_service.is_enabled("attendance"):
             disabled.add("attendance")
-        if not await self._module_service.is_weather_enabled():
+        if not await self._module_service.is_enabled("weather"):
             disabled.add("weather")
         return disabled
 

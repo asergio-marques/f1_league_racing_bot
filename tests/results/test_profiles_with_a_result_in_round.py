@@ -6,7 +6,7 @@ Attendance scores a round from who raced it, and asks results through
 """
 from __future__ import annotations
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.services.standings.standings_service import (
     profiles_with_a_result_in_round_on,
 )

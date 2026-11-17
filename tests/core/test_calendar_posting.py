@@ -41,7 +41,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.rounds.calendar_post_service import (
     post_division_calendar,
     replace_calendar_message,
@@ -146,7 +146,7 @@ async def _post(
     channel = channel if channel is not None else _channel()
     guild = guild if guild is not None else _guild(channel)
     drawing = drawing if drawing is not None else CalendarDrawingStub(wanted=False)
-    with patch("leaguebot.core.services.posting.retry_service.enqueue", new=AsyncMock()):
+    with patch("leaguebot.framework.services.posting.retry_service.enqueue", new=AsyncMock()):
         with in_a_job():
             result = await post_division_calendar(
                 drawing,
@@ -285,7 +285,7 @@ async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel
     """A calendar channel never set is optional, and the caller reports it rather than failing.
     One set and no longer on the server raises for the change queue to stop on: a league can put
     it right and press Retry."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _make_db(tmp_path, name="cal_nochannel")
 
@@ -303,7 +303,7 @@ async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel
 async def test_a_drawn_calendar_discord_refuses_is_still_released(tmp_path):
     """Pro's calendar drawn, and Discord refusing the post: the posting raises for the change
     queue to stop on, and the drawn file is still handed back to the drawing to release, once."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     db_path = await _make_db(tmp_path, name="cal_refused_send")
     png = tmp_path / "calendar.png"

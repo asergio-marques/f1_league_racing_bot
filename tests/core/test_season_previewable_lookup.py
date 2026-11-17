@@ -14,7 +14,7 @@ from datetime import date
 import aiosqlite
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.seasons.season_service import SeasonService
 

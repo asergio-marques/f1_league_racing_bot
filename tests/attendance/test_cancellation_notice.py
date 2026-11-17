@@ -85,7 +85,7 @@ async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):
     """Pro's check-in channel is set but no longer on the server. Posting attendance's notice
     raises StepFailedOnDiscord, caused by nothing else, so the queue stops until the channel is
     set again and Retry is pressed."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.framework.models.change import StepFailedOnDiscord
 
     bot = notice_bot(await notice_db(tmp_path))
     guild, _ = notice_guild(missing=(RSVP,))

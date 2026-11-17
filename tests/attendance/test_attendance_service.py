@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from tests.support.switches import answer_switch
 
 
 # ---------------------------------------------------------------------------
@@ -14,7 +15,7 @@ async def db_path(tmp_path):
     """A migrated database: the league's server_configs row, one season, and its divisions
     10 and 11. No attendance_config row, which is how a league that has never enabled the
     module stands."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     path = str(tmp_path / "test.db")
     await run_migrations(path)
@@ -44,7 +45,7 @@ async def test_attendance_switches_off_on_a_handed_connection(db_path):
     caller's connection and saved only when the caller commits; it says whether attendance was
     on."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
@@ -86,7 +87,7 @@ class TestSetAttendanceChannel:
         RSVP channel still unset, and the setter gives back no channel replaced."""
         from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
         from leaguebot.attendance.services.settings.division_channels import set_attendance_channel
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.framework.db.database import get_connection
 
         async with get_connection(db_path) as db:
             assert await set_attendance_channel(db, 10, 888) is None
@@ -178,7 +179,7 @@ async def _seed_attendance_season(
 
     Returns ``(db_path, season_id)``.
     """
-    from leaguebot.core.db.database import run_migrations, get_connection
+    from leaguebot.framework.db.database import run_migrations, get_connection
 
     path = str(tmp_path / "recalc_faults.db")
     await run_migrations(path)
@@ -279,7 +280,7 @@ async def test_recalculation_faults_names_a_cancelled_division_s_channels_only_w
     `cancelled_too`, as a points approval asks, the channel is named; asked as `/attendance
     sync` asks, with nothing, a cancelled division is passed over as it is today."""
     from leaguebot.attendance.services.scoring.attendance_recompute import recalculation_faults
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     path, season_id = await _seed_attendance_season(tmp_path)
     async with get_connection(path) as db:
@@ -401,7 +402,7 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.attendance.services.hooks.attendance_hooks import division_channel_faults
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.support.channel_faults import server_holding
 
     async with get_connection(db_path) as db:
@@ -413,7 +414,7 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
 
     async def faults(on: bool, guild) -> dict[int, list[str]]:
         modules = MagicMock()
-        modules.is_attendance_enabled = AsyncMock(return_value=on)
+        answer_switch(modules, "attendance", on)
         found = await division_channel_faults(
             AttendanceService(db_path), modules, divisions={10: "Pro", 11: "Am"}, guild=guild
         )

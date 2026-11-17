@@ -12,16 +12,16 @@ member's placement roles itself, through the team-role service's logging helpers
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.framework.db.database import get_connection, sole_row
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
+from leaguebot.framework.services.queue.audit_service import record_change_on
 from leaguebot.core.services.drivers.driver_service import write_transition
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
@@ -467,15 +467,10 @@ class PlacementService:
             team_name=team_name,
         )
         audit = summary["audit"]
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
-            (
-                acting_user_id, acting_user_name, audit["division_id"],
-                json.dumps(audit["old_value"]), json.dumps(audit["new_value"]),
-                now.isoformat(),
-            ),
+        await record_change_on(
+            db, actor_id=acting_user_id, actor_name=acting_user_name,
+            change_type="DRIVER_MOVE", old_value=audit["old_value"],
+            new_value=audit["new_value"], now=now, division_id=audit["division_id"],
         )
         return summary
 
@@ -1087,17 +1082,10 @@ class PlacementService:
         saved = await self.sack_seats_on(
             db, driver_profile_id=driver_profile_id, season_id=season_id
         )
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (?, ?, NULL, 'DRIVER_SACK', ?, ?, ?)",
-            (
-                acting_user_id,
-                acting_user_name,
-                json.dumps(saved.audit["old_value"]),
-                json.dumps(saved.audit["new_value"]),
-                now.isoformat(),
-            ),
+        await record_change_on(
+            db, actor_id=acting_user_id, actor_name=acting_user_name,
+            change_type="DRIVER_SACK", old_value=saved.audit["old_value"],
+            new_value=saved.audit["new_value"], now=now,
         )
         return saved
 

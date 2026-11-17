@@ -37,12 +37,13 @@ from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.cogs.team_cog import TeamCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from leaguebot.weather.cogs.weather_cog import WeatherCog
 from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
 from tests.support.settings_league import NOW
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 22400
 SEASON_ID = 1
@@ -100,8 +101,8 @@ async def _bot(db_path: str, stage: SeasonStage | None):
     archived = _season(stage) if stage in (SeasonStage.COMPLETED, SeasonStage.CANCELLED) else live
 
     bot = await league_bot(db_path, season_service=MagicMock())
-    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "results", True)
+    answer_switch(bot.module_service, "weather", True)
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=live)
     # The old lookup, still answered so that a command which has *not* been moved off it
     # would go on working and the test would catch that rather than erroring.
@@ -468,7 +469,7 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     cog_class, command = MODULE_CHANNEL_COMMANDS[which]
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     bot = await _bot(db_path, SeasonStage.PENDING_COMPLETION)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_division_config = AsyncMock(return_value=None)
     interaction = _interaction()
@@ -508,7 +509,7 @@ async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):
     """The season's last chance to correct its record before the final classification."""
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     bot = await _bot(db_path, SeasonStage.PENDING_COMPLETION)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "results", True)
     cog = _cog(ResultsCog, bot)
     interaction = _interaction()
 

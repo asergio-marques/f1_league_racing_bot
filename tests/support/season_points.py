@@ -9,7 +9,7 @@ modules read afterwards as the test set them.
 """
 from __future__ import annotations
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 
 
 async def snapshot_points(db_path: str, season_id: int) -> None:

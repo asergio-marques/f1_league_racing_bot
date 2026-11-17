@@ -102,7 +102,7 @@ async def _team_audits(league):
 
 
 def _refusal(what: str, reply: str) -> str:
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ {what} refused for {_ADMIN} — {_as_logged(reply_reason(reply))}"
 
@@ -338,7 +338,7 @@ async def test_a_failed_team_add_changes_nothing(tmp_path):
 
     league = await _team_league(tmp_path)
     asked = await _ask_add(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _server_list(league) == _STANDING
@@ -634,7 +634,7 @@ async def test_a_failed_team_remove_changes_nothing(tmp_path):
 
     league = await _team_league(tmp_path)
     asked = await _ask_remove(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _server_list(league) == _STANDING
@@ -1069,7 +1069,7 @@ async def test_a_failed_team_modify_changes_nothing(tmp_path):
     league = await _team_league(tmp_path)
     asked = await _ask_modify(league, shorthand="MCL", full_name="McLaren Racing",
                               role_id=ALPINE_ROLE)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _server_list(league) == _STANDING
@@ -1552,7 +1552,7 @@ async def test_a_failed_team_reserve_role_changes_nothing(tmp_path):
 
     league = await _reserve_team_league(tmp_path)
     asked = await _ask_reserve_role(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _server_list(league) == _RESERVE_STANDING

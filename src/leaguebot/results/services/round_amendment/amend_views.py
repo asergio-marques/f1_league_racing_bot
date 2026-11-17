@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.utils.channel_guard import is_league_manager
-from leaguebot.core.utils.league_server import LeagueView
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.league_server import LeagueView
+from leaguebot.framework.utils.log_lines import refuse
 
 #: The change a Cancel Amendment press asks for.
 CANCEL_KIND = "results.amend.cancel"

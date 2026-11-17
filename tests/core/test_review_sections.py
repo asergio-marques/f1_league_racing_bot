@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
+from tests.support.switches import answer_switch
 
 
 def _hook(*handed_back):
@@ -30,7 +31,7 @@ async def test_the_sections_are_laid_out_in_the_review_s_order():
     subscriber handed the review, the season and the divisions. With weather signed up before
     signup, and only those two handing a section, weather's then signup's: core keeps the order
     they signed up in and sorts by no module's name."""
-    from leaguebot.core.services.modules.review_sections import Review, ReviewSection, read_review_sections
+    from leaguebot.core.services.seasons.review_sections import Review, ReviewSection, read_review_sections
 
     hook = _hook(*(ReviewSection(module=module, lines=[f"**{module}**"])
                    for module in ("signup", "attendance", "results", "weather")), None)
@@ -56,7 +57,7 @@ async def test_a_section_that_cannot_be_read_fails_the_review_as_today():
     """A subscriber raising while its section is read: the raise reaches the review command's
     failure path, as a signup, attendance, weather or points reader's raise does today. Core
     adds no catch of its own and no stand-aside."""
-    from leaguebot.core.services.modules.review_sections import Review, read_review_sections
+    from leaguebot.core.services.seasons.review_sections import Review, read_review_sections
 
     hook = AwaitedHook()
 
@@ -79,7 +80,7 @@ async def test_the_builder_signs_results_division_lines_up_before_attendance_s(t
 
     from leaguebot.__main__ import _sign_up_to_division_lines_read
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "lines.db")
     await run_migrations(db_path)
@@ -102,7 +103,7 @@ async def test_the_builder_signs_results_division_lines_up_before_attendance_s(t
         )
         await db.commit()
     modules = MagicMock()
-    modules.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "attendance", True)
     bot = SimpleNamespace(
         db_path=db_path, module_service=modules, attendance_service=AttendanceService(db_path)
     )

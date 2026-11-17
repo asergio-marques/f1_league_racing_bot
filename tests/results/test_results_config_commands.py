@@ -41,13 +41,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.cogs.config_commands import _ConfirmRemoveConfigView
 from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
 from tests.support.settings_league import interaction, last_said, log_lines, said, settings_league
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
@@ -64,7 +65,7 @@ def _make_cog(*, results_enabled: bool = True) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.module_service = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
+    answer_switch(bot.module_service, "results", results_enabled)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 

@@ -24,6 +24,7 @@ from tests.support.season_league import reply as _told
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7
 SEASON_ID = 31
@@ -114,11 +115,11 @@ def _bot(
     by the migrations, which the press may read; `bot.change_queue` records what is asked."""
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=signup)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=images)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "signup", signup)
+    answer_switch(bot.module_service, "results", results)
+    answer_switch(bot.module_service, "images", images)
+    answer_switch(bot.module_service, "attendance", False)
+    answer_switch(bot.module_service, "weather", False)
     bot.signup_module_service.get_config = AsyncMock(
         return_value=signup_config if signup_config is not None else _signup_config()
     )
@@ -151,7 +152,7 @@ def _cog(bot: MagicMock) -> SeasonCog:
 
 async def _migrated(tmp_path) -> str:
     """A database built by the migrations, empty, for a press to read."""
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     db_path = str(tmp_path / "league.db")
     await run_migrations(db_path)
@@ -268,7 +269,7 @@ async def test_team_names_of_the_server_list_are_checked():
 
 
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
@@ -365,7 +366,7 @@ async def _team_list_since_the_review(env, monkeypatch, now: str = "as reviewed"
     list "as reviewed"; the season as it stands now has the team list as *now*."""
     import json
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async with get_connection(env.db_path) as db:
@@ -426,7 +427,7 @@ def _lines(env, mark: str) -> list[str]:
 
 
 async def _prompt_rows(env) -> int:
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     async with get_connection(env.db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
@@ -509,7 +510,7 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
     once; the log holds one refusal line for the press and no lapse line."""
     from datetime import datetime, timezone
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from tests.support.change_queue import acknowledgement, post_in, run_queue
     from tests.support.review_prompts import store_review_prompt
 
@@ -664,7 +665,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     A test season with results on and no points configuration attached: the review asked of the
     queue says none is attached, promises nothing, refuses for want of one, and asks no question.
     """
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
@@ -702,8 +703,8 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     from leaguebot.weather.services import weather_config_service
 
     bot = _report_bot(signup=True, results=True, images=True)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
+    answer_switch(bot.module_service, "weather", True)
     bot.attendance_service.get_config = AsyncMock(
         return_value=SimpleNamespace(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2,
@@ -807,15 +808,15 @@ async def test_the_builder_s_faults_read_signup_s_settings_as_they_stand(tmp_pat
     channel is unset. The configuration's faults the builder put on the bot name the missing
     signup channel and `/signup channel`: signup's settings are read as they stand when asked,
     not as they stood when the bot was built."""
-    from leaguebot.core.db.database import run_migrations
+    from leaguebot.framework.db.database import run_migrations
     from tests.support.change_queue import league_bot
 
     db_path = str(tmp_path / "config_faults.db")
     await run_migrations(db_path)
     bot = await league_bot(db_path, real_config=True)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "signup", True)
+    answer_switch(bot.module_service, "results", False)
+    answer_switch(bot.module_service, "images", False)
     bot.signup_module_service = SimpleNamespace(
         get_config=AsyncMock(return_value=_signup_config(channel=None))
     )
@@ -914,7 +915,7 @@ async def test_a_portrait_check_whose_switch_nobody_signed_up_for_raises():
     """The images module's switch reader was never signed up, so the portrait check raises
     `SwitchNotSignedUp`: a fault in the bot's assembly, which the image faults raise rather than
     stand aside from as a check that cannot be read."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     cog = _image_cog()
     cog.bot.image_drawing.portrait_fault = AsyncMock(side_effect=SwitchNotSignedUp("images"))

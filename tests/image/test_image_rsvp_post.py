@@ -37,6 +37,7 @@ from tests.support.season_league import (
     ongoing_league,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
@@ -65,7 +66,7 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("boom"))
+    answer_switch(bot.module_service, "images", RuntimeError("boom"))
     drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=AsyncMock(), db_path="unused.db",
@@ -85,11 +86,11 @@ async def test_a_call_whose_switch_nobody_signed_up_for_raises():
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`), and Division
     1's round 1 check-in call at Silverstone is drawn: that is a fault in the bot's assembly, not a
     gate that cannot be read, so it is raised rather than answered as a call without a picture."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    answer_switch(bot.module_service, "images", SwitchNotSignedUp("images"))
     drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=AsyncMock(), db_path="unused.db",
@@ -186,7 +187,7 @@ async def _post_the_call(league: SeasonLeague) -> list[int]:
     """Ask the queue for round 4's call as its timer does and run it; the ids sent in Pro's
     check-in channel."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
                             origin=ChangeOrigin.BOT)
@@ -320,7 +321,7 @@ async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeagu
 
 async def _run_the_deadline(league: SeasonLeague) -> None:
     from leaguebot.attendance.services.check_in.check_in_deadline import ask_check_in_deadline
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await ask_check_in_deadline(league.bot.change_queue, league.db_path, ROUND_3,
                                 origin=ChangeOrigin.BOT)

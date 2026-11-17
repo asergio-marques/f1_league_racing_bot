@@ -20,9 +20,10 @@ Answers to `architecture.md`, "The database".
 
 ### Core's tables
 
-Core owns twenty tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`. `schema_migrations` is the migrations' own
-record, written by `run_migrations` alone.
+Core owns sixteen tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
+declared in `framework/db/migrations/001_baseline.sql`. The framework's four, the queue's, the
+record's and the log lines', and the migrations' own record are `framework.md`'s ("The database");
+core asks of them as below.
 
 | Table | One row is | Held to it by |
 |---|---|---|
@@ -41,11 +42,14 @@ record, written by `run_migrations` alone.
 | `driver_history_entries` | a driver's result in one division of a past season | unique over profile, season number and division name |
 | `driver_season_assignments` | a driver's placement in a division of a season | `committed` filled by a trigger when inserted empty |
 | `driver_division_memberships` | a driver having held a committed placement in a division | written by triggers on the placements |
-| `audit_entries` | one recorded change | — |
-| `pending_messages` | one log line the log channel has not yet taken | — |
-| `queued_changes` | one change asked of the queue | CHECKs on `origin` and `state`; `queued_changes_one_running` |
-| `queued_change_steps` | one job: a step of a change | `UNIQUE (change_id, position)` |
 | `season_review_prompts` | one standing season-review question | keyed by its message id |
+
+**Core writes the audit log and reaches the queue through the framework.** The framework's four
+tables are not written or read by core's own SQL. A change's audit entry is written by the
+framework's writers (`record_change_on`, `record_system_change_on`), each handed the raw old and new
+values, which the writer encodes as JSON with sorted keys, so no core site chooses an encoding of its
+own; core asks the change queue through `queue_records` and the retry queue through `retry_service`
+(reading, and clearing it in a pack), each on the connection it is handed where it has one.
 
 **A season keeps two states.** `status` is the coarse one, `stage` the lifecycle's, and the
 database keeps them in step: the `seasons_stage_*` triggers fill `stage` from `status`, carry it
@@ -137,7 +141,10 @@ then deletes its own, and the caller commits. The builder makes these hooks in
 | `season_deleted` | results, signup | `delete_season` |
 | `profiles_deleted` | attendance, results | `delete_driver_profiles` |
 | `profiles_merged` | attendance, results | `DriverService._merge` |
-| `bot_packed` | signup, weather, attendance, results | `pack_service.pack` |
+| `bot_packed` | signup, weather, attendance, results, image | `pack_service.pack` |
+
+A part may also hand the pack back the ids of the jobs it keeps (`KEPT_JOB_IDS`), as image's does
+for its daily portrait refresh; the pack keeps their union.
 
 `test_every_delete_leaves_no_orphan` fills one row in every table and runs each kind of delete
 against it; `test_a_merge_leaves_nothing_naming_the_driver_absorbed` does the same for a merge.
@@ -147,31 +154,34 @@ against it; `test_a_merge_leaves_nothing_naming_the_driver_absorbed` does the sa
 ## How the code is laid out
 
 Answers to `architecture.md`, "How the code is laid out". Core's code sits in `core/cogs/`,
-`core/services/`, `core/models/`, `core/utils/` and `core/db/`.
+`core/services/`, `core/models/` and `core/utils/`. The machinery it runs on, the database code, the
+change queue, posting, the module switches, the retry loop's cog, the bot's type, the hook types and
+the failure paths, is the framework's (`framework/`), whose design is `framework.md`'s; this file
+names it only where core's own code rests on it.
 
 ### Services, and what each owns
 
-Each service but the scheduler's sits in a topic folder of `core/services/` (`architecture.md`, "How
-the code is laid out"). The table names a service by its file, not its folder.
+Each of core's services sits in a topic folder of `core/services/`
+(`architecture.md`, "How the code is laid out"). The table names a service by its file, not its
+folder.
 
 | Area | Services | Owns |
 |---|---|---|
-| Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server |
+| Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server; it also fulfils the framework's protocols, answering the league's settings (the claimed server, the settings row) and the authority tiers (who is a league admin, who a league manager) the change queue asks, each tier delegating to `channel_guard`, where the rule stays |
 | Seasons, divisions, rounds | `season_service` (`SeasonService`), `season_lifecycle_service`, `season_end_service`, `round_moments`, `track_service`, `round_context` (`round_context`, `division_context`, `division_rounds`) | seasons, divisions, rounds, sessions; reads `tracks`; `round_context` answers a round's, and a division's, season, tier and grand prix for the module that heads a picture with them (image's pictures), and `division_rounds` a division's rounds in order, for a picture that lists them |
 | Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`), `division_seating` (`division_seating`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing, reads a team's role through the team-role service it is handed, joins `team_role_configs` in its own queries for the roles a driver's placements carry, reads the driver role from the settings row, and gives and takes roles only through that service's helpers); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`); the seats and who sits in them, read as the lineup of record shows them, for every module that lists who races in a division (`division_seating`: the text lineup, image's lineup, standings and previews, each handing in its own filter on the state of the driver who sits); the portrait roster reads `active_season_driver_ids` beside it, which takes no filter: every driver assigned in the active season, a placement not yet confirmed included, test drivers left out |
 | Drivers | `driver_service` (`DriverService`), `driver_names` | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on`; nothing for `driver_names`, which reads a driver's name, username and nationality, and whether the league collects a nationality, from the profile, the accounts, the test-mode fields and signup's hook |
-| The change queue | `change_queue` (`ChangeQueue`), `change_types`, `queue_records`, `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
-| Timed work | `scheduler_service` (`SchedulerService`), `start_up` | the job store, a file of its own |
-| Posting | `output_router` (`OutputRouter`), `notice_handler`, `standing_post_handler`, `owned_channel_handler`, `standing_posts`, `retry_service` | `pending_messages` |
-| The record | `audit_service` | `audit_entries` |
+| A round's timed work | `round_jobs` (`RoundJobs`) | nothing: it is handed the rounds it arms, and reads the live seasons' rounds only to cancel their jobs (`cancel_live_rounds`) |
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook |
-| Module switches | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
+
+The services core runs on, the change queue, the scheduler, posting, the record of what changed
+and the module switches, are the framework's (`framework.md`, "Services, and what each owns").
 
 The change types core registers each sit in a file of their own beside these (`*_change.py`,
 `*_changes.py`, `bot_settings.py`, `division_settings.py`, `test_mode_settings.py`), and are listed
@@ -191,18 +201,22 @@ through the `configuration_faults_read` hook, so that core reaches the module on
 architecture.md's "How modules and core fit together" has it and holds no rule of signup's.
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
-status and stage, a division's and a round's status, the driver's state, the change queue's
-vocabulary (`change.py`), the dependency table (`module_dependencies.py`) and `Refused`
-(`refusal.py`).
+status and stage, a division's and a round's status, the driver's state and the dependency table
+(`module_dependencies.py`). The change queue's vocabulary and `Refused` are the framework's models
+(`framework.md`, "How the code is laid out").
 
-**Core's helpers** (`core/utils/`) are the bot's type (`league_bot.py`), the one-league claim and
-the base classes for the command tree, buttons and forms (`league_server.py`), the hook types
-(`hooks.py`), the failure path for interactions (`interaction_errors.py`), the refusal and the
-standard log lines (`log_lines.py`), `bounded_autocomplete` (`autocomplete.py`), the posting guard
-(`in_a_job.py`), and plain formatting, parsing and time helpers.
+**Core's helpers** (`core/utils/`) are the tier guards (`channel_guard.py`), the season-stage gate
+(`season_gate.py`), the team choices a command's autocomplete offers (`team_autocomplete.py`),
+core's own listings (`formatting.py`), readers of what a league types (`input_validator.py`,
+`round_import.py`, `roster_import.py`), the asset slug (`asset_slug.py`) and the nationalities a
+driver may give (`nationality_data.py`). The bot's type, the one-league claim and the base classes,
+the hook types, the failure paths, the standard log lines, `bounded_autocomplete` and the posting
+guard are the framework's helpers (`framework/utils/`, `framework.md`). The helpers that know
+nothing of the bot, reading a typed time, the time zones, the version and the fitting of text to
+Discord's limits, are the `utils` layer's (`architecture.md`, "How the code is laid out"), and the
+rendering of a date for a graphic is the image module's.
 
-**The database code** is `core/db/database.py`: `get_connection`, which lends idle connections
-again, `close_connections`, `run_migrations`, and the helpers `sole_row` and `inserted_id`.
+**The database code** is the framework's (`framework.md`, "The database").
 
 ### The entry point
 
@@ -217,11 +231,10 @@ signs the start-up steps up to the starting hook (`_sign_up_to_starting`), all b
 connects; `main()` then holds the change queue (`ChangeQueue.hold`), so that a request made before
 the sweep has asked its own waits for it. Beside core's own part, the builder keeps what joins
 modules: every service, every hook and the order of its subscribers, a hand-in from one module to
-another, the cogs and views, and the order of the modules' start-up turns. Core has no
-wiring of its own. `test_build_returns_every_service_complete` and
+another, the cogs and views, and the order of the modules' start-up turns. Core has no wiring of its
+own. `test_build_returns_every_service_complete` and
 `test_every_kind_is_registered_before_the_scheduler_starts` pin that. `LeagueBot`
-(`core/utils/league_bot.py`) declares every attribute the builder attaches, each hook among them,
-and `test_every_attribute_bot_py_attaches_is_declared` holds the two equal.
+declares every attribute the builder attaches (`framework.md`, "How the code is laid out").
 
 ### Command groups
 
@@ -238,8 +251,8 @@ and `test_every_attribute_bot_py_attaches_is_declared` holds the two equal.
 | `/track` | `track_cog` | `list` |
 | — | `clean_cog` | `/clean-bot`, a top-level command |
 
-`retry_cog` holds no command: it runs the retry loop for log lines (below). No module's command
-sits under one of these groups.
+No module's command sits under one of these groups. The retry loop for log lines runs in the
+framework's cog (`framework/cogs/retry_cog.py`), which holds no command.
 
 ---
 
@@ -248,61 +261,13 @@ sits under one of these groups.
 Answers to `architecture.md`, "How a change is carried out", which designs the queue; the core
 specification's section of the same name holds what a league is told.
 
-### The queue's code
-
-The queue is `ChangeQueue` (`core/services/queue/change_queue.py`), and it is one class: asking, the
-dispatcher, a change's start and end, a step's run, the stop and its notice, Retry and Discard, the
-audit and the held reply are one state machine around one lock order (`_working[lane]`, then
-`_asking`, then `_writing`) and the attributes they share. *Rejected:* mixins, which would split the
-file and leave one state machine whose lock order no single class states; and collaborator objects,
-which would reach into the queue's private state or be handed all of it (`ChangeQueue`'s docstring).
-What reads none of that state is out of the file. `core/services/queue/change_types.py` holds the
-types a change is made of, `Step` and `ChangeType` with the contexts a check, a step, an outcome and
-the refusal and discard hooks are handed, and the decisions that govern them (a post's id saved with
-its mark, a step's four kinds, a job that ends on a fault); `core/services/queue/queue_records.py`
-holds the bookkeeping over the queue's tables, what is in hand, what was ever asked, the job
-numbering and the emptying of a restored database, which a check, a recovery, a restore and a
-factory reset call without a queue. The queue file keeps the constants the class reads:
-`RETRY_AFTER`, the bot's own tries; `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply
-may be updated; `WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and
-`QUEUE_TABLES`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`,
-`EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The
-engineering decisions that govern the queue are in its module docstring, and those that govern a
-step's kinds, its record and a fault's ending in `change_types`', each pinned by a test in
-`tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or `test_change_queue_controls.py`.
-Among them:
-
-- **One save at a time across lanes**, under an in-process lock (`ChangeQueue._writing`) held for
-  the save alone, with a fixed lock order. *Rejected:* one worker for every lane, which holds a
-  conversation behind the league's Discord calls; and SQLite's own busy wait, which gives up where
-  a save is held longer (the module docstring; `test_two_lanes_saves_never_overlap`).
-- **A post's id is saved with its mark** (`Step.record`). *Rejected:* a `SAVE` job after each post
-  to write its id, which doubles the jobs a change numbers and stops on (`change_types`' docstring).
-- **A change starts only if it is still queued:** the claim that sets it running is conditioned
-  on its state in the statement, so a change ended while its check ran does not start
-  (`test_a_change_discarded_while_its_check_runs_does_not_start`).
-- **The queue is held from the entry point's `hold()` until the start-up sweep has asked its own**
-  (`sweeping()`, whose leaving, or `release()`, lets the asks go ahead; releasing twice is harmless).
-  Every `ask` and `ask_after` made outside the sweep waits before its check, so nothing a member
-  does or Discord reports lands on a lane ahead of a recovery asked a moment later. An interaction
-  not yet answered is deferred, privately, before the ask waits, for Discord's three seconds. A kind
-  that declares a `turn_channel` puts it in `_held_turns` while its ask waits, which
-  `held_turn_channels()` returns, so `turn_waiting` counts a typed answer held there as waiting and
-  a second message typed meanwhile is turned away. *Rejected:* the held channels in `_held`, which
-  holds the kept replies. A queue never held asks at once, as every test queue does. A command answered off the queue waits through `wait_out_the_hold` by the `after_the_catch_up` decorator (`core/utils/catch_up_gate.py`), worn below the tier guard, which hands the command a response that follows up in the place of the one the deferral used; each cog gives it the way to its own queue, a helper never reading the queue off the bot.
-- **A kept reply is the same entry held in memory**, let go once it can no longer be updated.
-  *Rejected:* a second table of replies (`ChangeQueue.keep_reply`'s docstring;
-  `test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated`).
-
-The stop notice's buttons are one persistent view, `QueueStopView`, registered as the queue
-starts. A message typed into a conversation's channel is answered through `typed_turns`.
+The queue that carries every change out, its lanes, its stop and its records, is the framework's
+(`framework.md`, "How a change is carried out"); what follows is core's own part of it.
 
 ### A league's settings
 
-Every settings command, core's own included, declares a `Setting`, and `setting_change` builds its
-change type, so the line, the audit entry, the answer for a value already held and the answer for
-a fault are formed in one place. `setting_change`'s docstring holds the shape and its rejected
-alternatives, each pinned by a test in `tests/core/test_setting_change.py`.
+Every settings command, core's own included, declares a `Setting`, which the framework's
+`setting_change` builds into its change type (`framework.md`, "Settings").
 
 Core's settings, each of kind `core.setting.<name>`:
 
@@ -363,8 +328,8 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.clean` | `/clean-bot` | `close`, last: a save writing the line | before it: `choose`, then one `delete_message` for each message chosen |
 
 Each module's switch is a change of the module's own, of kind `module.on:<name>` or
-`module.off:<name>` (`module_on` and `module_off` in `core/models/change.py`), which `ModuleCog`
-asks for by that kind.
+`module.off:<name>` (`module_on` and `module_off` in `framework/models/change.py`), which
+`ModuleCog` asks for by that kind.
 
 Each file's docstring holds its change's check, its steps and the reason for each. Three shapes
 recur:
@@ -401,20 +366,21 @@ recur:
 Answers to `architecture.md`, "Timed work and restarts". What each kind of job does when missed is
 the core specification's ("When the bot stops").
 
-### The scheduler service
+### Core's round jobs
 
-`SchedulerService` (`core/services/scheduler_service.py`) is the one place a job is armed, found or
-removed. **Its job store is a SQLite file of its own**, apart from the league's database, for the
-reason its module docstring gives: the store writes synchronously on the event loop's thread.
+The scheduler a round's jobs are armed on, its one runner and its job store, is the framework's
+(`framework.md`, "The scheduler").
 
-Every job runs through one module-level callable, `_one_off_timer_job`, which looks up the handler
-the builder registered for the job's kind (`register_timer`) and hands it the job's key: a round's
-id, a one-off timer's key, or nothing for a standing job. A kind with no handler is passed over with
-a warning. **A job runs in an empty context** (`_JobScheduler`), so it can never take an
-interaction for its own
-(`test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn`).
-A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and restarts"). A round's
-job is named from the round's id and its kind (`_round_job_suffix`).
+`RoundJobs` (`core/services/rounds/round_jobs.py`, on the bot as `round_jobs`) is core's side: it
+arms and cancels a round's jobs, removes any stale season-end job, and reads test mode's pending
+jobs and queued events, through the scheduler's generic calls. A round's job is named from the
+round's id and its kind (`_round_job_suffix`). The services that arm or cancel a round's jobs are
+handed it by the builder, a module's wiring or a cog; the cogs, the wirings and the builder alone
+read `bot.round_jobs`. It is handed the database path as well as the scheduler, to read the rounds
+it cancels for (`cancel_live_rounds`, which weather's switch-off asks for its own kinds). It holds
+the scheduler under a name other than `_scheduler`, which the check that nothing reaches past the
+scheduler reads as a reach wherever it appears outside the scheduler. A module's own standing job
+is its module's (`architecture.md`, "Timed work and restarts").
 
 ### Core's own timed events
 
@@ -428,56 +394,38 @@ start-up's step for expired review prompts, core's first, asks the take-down fir
 scheduler is paused until start-up ends.
 
 **A round's timed work is armed by three changes**: the season's approval (its `ARM` job), and the
-amendment and re-arming of a round (`round_amend_change`), through the scheduler service's arming
-functions. Each reads when a round's events fall from `round_event_moments`
-(`core/services/rounds/round_moments.py`), which is pure: no database, no clock, no scheduler. A
-cancellation removes a round's work (`cancel_round`, `cancel_rounds`) before its save. Whether a
-module's work is armed, and with what, is that module's answer through `round_armed`, a `RoundArming`
-of its steps and its jobs (weather's `ForecastJobs`, attendance's `CheckInJobs`); the arming step
-makes the scheduler's calls from them and arms the results submission whatever they answer. A round
-already raced, or ended not held, is armed its clean-ups alone, by `schedule_round_cleanups`, from the
-modules' switches. The handlers for a round's kinds are the modules'.
+amendment and re-arming of a round (`round_amend_change`), through `RoundJobs.arm_leads`. The rules
+they serve are `architecture.md`'s, "Timed work and restarts"; what follows is core's own code.
+
+- **`RoundLead`** (`core/models/round.py`) is the plain record a module answers with: a timer's
+  kind, its offset from the round's moment, its label, and the marks core reads (armed only while
+  ahead, a clean-up, left to `/test-mode advance`, run at once by an amendment, and the words the
+  approval's date check quotes). It names no module.
+- **`arm_leads`** gives each lead the id, name and key a round's timer has always had and arms it,
+  nothing more. Running a lead at once (`run_lead_now`), or under test mode taking down the job
+  just armed for a moment already past, stays in the amendment's arming step, chosen by a lead's
+  marks, never by its kind.
+- **The approval** reads every module's leads through `read_round_leads` and arms them for every
+  round. **The amendment and re-arming** take them from each module's `round_armed`, a
+  `RoundArming`, and a round already raced, or ended not held, is armed its clean-up leads alone,
+  from the approval's read (`read_round_leads`).
+- **`results_left_to_advance`** is core's one rule for whether test mode leaves the submission to
+  the advance; where it does, the approval and the amendment drop the leads marked as left to it.
+- **`sign_up_kinds`** is where a module signs its round kinds up at build; `RoundJobs` knows a job
+  is a round's, and which phase it is, by that register alone.
+- **`clean_up_moment`** is core's one shared next-day figure; every other moment is the module's
+  own function (`forecast_leads`, `check_in_leads`). Results' reason for answering every round is
+  in `results_module.md`, "Timed work and restarts".
 
 ### Start-up
 
 `main()` reads the settings, swaps in a staged restore, applies the migrations, builds the bot and
 connects it, in that order (`test_migrations_run_before_the_bot_connects`). When Discord first
-reports the bot ready, `start_up` (`core/services/upkeep/start_up.py`) runs once per process, as the
-sweep of everything that came due while the bot was stopped:
+reports the bot ready, the framework's `start_up` runs once per process, as the sweep of everything
+that came due while the bot was stopped.
 
-- **It starts the scheduler paused**, so the job store can be read while no job runs, and resumes
-  it last, in a `finally`, so a queue that fails to start does not hold the jobs paused.
-- **It runs core's own steps, then turns to each module in turn.** Inside the queue's `sweeping()`
-  it runs core's steps in the order they signed up, one at a time. Then, for each module in sign-up
-  order, it reads the module's switch (`ModuleService.is_enabled`, by the switch key), passes the
-  module over, with a line in the host's log, where it is off, save for any step the module marks
-  `runs_while_off`, which runs whatever the switch says, and otherwise runs the module's own steps
-  in the module's own order. A module marks a step so only where it finishes work the module
-  announced while on (signup's deletion of a held channel past its `held_until`). Each enabled
-  module catches up its own missed events in its
-  turn: no pass interleaves the events of different modules by time (`architecture.md`, "Timed work
-  and restarts"). *Rejected:* one list of every module's steps in core's hands, which ran a
-  disabled module's recoveries and left the order of the modules' steps among themselves to the
-  builder.
-- **Each step, each switch read, each module's list of steps and the queue's start is contained**:
-  one that raises is logged with its traceback and reported to the log channel by one line
-  (`start_up_failure_line`), and the rest carry on, the module's later steps included. Where the
-  error carries `rounds_called` (the protocol `RoundsFailed`, `core/models/recovery.py`: each round
-  a step failed for, named as core names it), the line names them, and never asks for a module's own
-  error type, so each module's `RecoveryFailed` is its own; an error carrying none is a step that
-  failed as a whole, and its line names no round. A module whose
-  switch or list cannot be read is passed over; a switch not signed up is a fault in the assembly and
-  is reported, never read as off.
-- **The hold is released when the sweep has asked its own**, on leaving `sweeping()`, and again in an
-  outer `finally`, so a scheduler that cannot start does not leave every request waiting for the rest
-  of the run.
-- **The queue's start follows the sweep.** `ChangeQueue.start` registers the stop notice's view,
-  leaves every stopped job stopped, delivers lines never tried, posts any stop notice that never
-  landed, and starts the dispatcher.
-- **A guard of its own** makes a second ready, after a network drop, run nothing.
-
-Each is pinned by a test in `tests/core/test_start_up.py`; `ChangeQueue.start`'s docstring says
-what the queue's start does.
+Its design is the framework's (`framework.md`, "Start-up"); what follows is which steps it runs, and
+in what order.
 
 The steps are signed up to `StartingHook` by the builder (`_sign_up_to_starting`): core's two, by
 name, then each module's, by the module's own `start_up_steps` function in its wiring bound to the
@@ -511,15 +459,10 @@ results is on, a restart or not. The builder records the moment the bot came up
 (`LeagueBot.came_up_at`), which the wiring hands to results' `results` job and its catch-up alike,
 so both judge a start passed while the bot was down against one value.
 
-The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
-function"): core's is `RetryCog.retry_loop` (`retry_cog`), started by `LeagueBot.setup_hook`
-(`test_login_starts_the_retry_loop_once`).
-
 ### The clock
 
-The queue's clock, `ChangeQueue.now`, is the bot's: the builder hands services, change types and
-the log writer `now=lambda: bot.change_queue.now()`. In the running bot it is the wall clock in UTC;
-a test hands the queue a clock of its own.
+Core's services and change types judge by the queue's clock, which the builder hands them
+(`framework.md`, "The clock").
 
 ---
 
@@ -539,12 +482,10 @@ files; this section says what core posts through them.
 | The approval's batch notice | notice | the review's channel | `season.approve`'s `post_batch_notice` | its job's result, read by the job that deletes it |
 | A line to the review's channel | notice | the review's channel | `season.approve.tell`, `channel.tell` | not kept |
 | A module's cancellation notice | notice | the module's channel | `cancellation_notice_service`: `post_cancellation_notice`, which attendance's and weather's jobs call and which drops the message, and `post_cancellation_message`, which results' job calls and which hands the message back | not kept, except results', in `called_off_notes`, where its switch-off finds it again |
-| A log line | log line | `server_configs.log_channel_id` | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
-| The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id` |
 
-A replaced standing post is deleted by a job after the new one, built by `standing_posts`
-(`replaced`, `delete_replaced_step`), which also removes a copy a failed `record` left
-(`remove_kept`). Its docstring holds the shape;
+The log channel's lines and the stop notice are the framework's (`framework.md`, "Posting to
+Discord"). A replaced standing post of core's is deleted by a job after the new one, built by the
+framework's `standing_posts`;
 `test_the_text_lineup_is_posted_before_the_old_one_is_deleted` and
 `test_moving_the_hub_posts_the_new_panel_before_deleting_the_old` pin it.
 
@@ -554,15 +495,13 @@ and the calendar's in `post_division_calendar`, whose `commanded` parameter tell
 asked for from one that was not (`test_an_uncommanded_posting_falls_back_to_the_text`). The lineup's
 and the calendar's post job ask for text on every try after the first (`as_text`).
 
-**Who a post may mention is stated where it is sent** (`architecture.md`, "Posting to Discord");
-who that is, is the core specification's ("The record of what changed", "How a change is
-carried out"). The stop notice's mention is decided by `ChangeQueue._admins_to_notify`, and a log
-line's mentions are wrapped by the router (`test_every_mention_in_a_log_line_is_written_as_code`).
+**Who a post may mention is stated where it is sent** (`architecture.md`, "Posting to Discord"); who
+that is, is the core specification's ("The record of what changed", "How a change is carried out").
 `post_cancellation_notice` and `post_cancellation_message` post with the mentions their caller, a
 module's notice job, hands them.
 
 **Core's posts off the queue** are `architecture.md`'s exceptions ("Every post is made in a
-job"), in `OutputRouter`, `ChangeQueue._update_reply`, `typed_turns` and `BotCog`'s factory reset.
+job"): `BotCog`'s factory reset; the framework's are `framework.md`'s.
 `/team lineup` answers the member with its picture as a reply and records nothing.
 
 ---
@@ -573,18 +512,8 @@ Answers to `architecture.md`, "How modules and core fit together".
 
 ### The hook types
 
-`core/utils/hooks.py` declares `Hook`, whose subscribers are plain functions, and `AwaitedHook`,
-whose subscribers are awaited one after another; each `call` returns what each subscriber handed
-back, in the order they signed up. A subscriber that raises is not caught: the caller's own failure
-path has it (the module docstring;
-`test_a_hook_calls_its_subscribers_in_order_on_the_handed_connection`).
-The builder makes every hook, signs the modules up and attaches it to the bot; a cog reads it off
-the bot and hands it on, and a change type is handed it by the builder.
-
-`StartingHook` is of another shape: it holds core's own steps, signed up by name, and each module's,
-signed up as one function bound to the bot, under the module's switch key. The hook calls nothing:
-`start_up` reads it and runs each step contained, a module's only where its switch is on, save a step the module marks `runs_while_off` (see
-"Start-up"). `StartUpStep`, a name and what it runs, is declared beside it.
+The hook types, `Hook`, `AwaitedHook` and `StartingHook`, are the framework's (`framework.md`, "The
+hook types"); the builder makes every hook and signs the modules up.
 
 ### The hooks core declares
 
@@ -595,11 +524,11 @@ which each `_sign_up_to_*` docstring states where it matters.
 | Hook | Type | Subscribers | Core calls it in |
 |---|---|---|---|
 | `starting` | `StartingHook`, read rather than called | core's two steps, then signup, results, attendance, weather, image | `start_up` |
-| `round_windows_read` | A | attendance, weather | `round_moments.read_round_windows`, for the season's approval and review; an amendment reads no module's windows through it |
+| `round_leads_read` | A | attendance, weather, results | `round_moments.read_round_leads`, called with no arguments: for the season's approval (its date check and its arming), the review and a clean-ups-only re-arm; results answers whatever its switch |
 | `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn`, whose one caller is `/season status` |
 | `amendment_judged` | A | attendance, weather | `round_amend_change`, and `/round amend`'s confirmation (`round_cog`); handed no windows, each module reading and keeping its own |
 | `round_amended`, `round_clean_ups_due` | A | weather, attendance | `round_amend_change` |
-| `round_armed` | A | attendance, weather | `round_amend_change` |
+| `round_armed` | A | attendance, weather, results | `round_amend_change` |
 | `amendment_steps` | P | weather, attendance | `round_amend_change` |
 | `amendment_step_failure` | P | weather, attendance | `round_amend_change` |
 | `cancellation_refused` | A | results | `cancellation_changes` |
@@ -654,8 +583,8 @@ A keyed hook takes one function for each key. Each is an object the builder make
 | `AdvanceSteps.register_step` | the kind of a round's job | `register_scheduler_callbacks`, beside each kind's handler | `AdvanceStepFailed` (`test_advance_reports_a_kind_with_no_step_signed_up`) |
 | `HubOptions.register_option` | the option's key, part of the button's custom id | `register_hub_options`, which signs core's About | a press refused |
 
-`ModuleService` reads no module's table or column; `is_<module>_enabled` and `is_enabled_on` are
-the readers `architecture.md` names ("How modules and core fit together").
+`ModuleService` and `SchedulerService` are the framework's (`framework.md`, "The module service"
+and "The scheduler"); core asks for a module's switch by the module's name.
 
 ### The dependency table
 
@@ -698,60 +627,37 @@ off the bot.
 Answers to `architecture.md`, "Errors and failures", which names each failure path and every
 stated exception, core's among them; each docstring there named carries its reason.
 
-| Starting point | Core's code |
+| Starting point | The code |
 |---|---|
-| A command, button or form | `LeagueCommandTree.on_error`, `LeagueView.on_error`, `LeagueModal.on_error` (`core/utils/league_server.py`), each calling `report_failure` (`core/utils/interaction_errors.py`) |
 | The slash-command sync at start-up | `on_ready`, which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
-| A Discord event | `on_event_error` (`core/utils/league_server.py`), attached by the builder with `setattr` |
-| An autocomplete | `bounded_autocomplete` (`core/utils/autocomplete.py`) |
-| A change | `ChangeQueue._start` and `_run_step`, leading to `_stop`, or to `on_fault` or `on_check_fault` where the type gives one |
-| A scheduled job | `_one_off_timer_job` (`core/services/scheduler_service.py`), which logs a handler's fault on the host |
-| A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each contained and reported to the log channel by `start_up_failure_line` |
-| The retry loop | `RetryCog.retry_loop` and `retry_service.attempt_delivery` |
 
-`report_failure` never raises: its reply and its line are each tried on their own. Its docstring
-gives the reason for the reply's words. The tree steps aside for a command with its own error
-handler (`test_a_command_with_its_own_error_handler_is_left_alone`). `on_event_error` drops the
-listener's own arguments, which can hold a member's message, and never raises
-(`test_the_event_error_handler_never_raises`).
+The framework's failure paths, a command, button or form, a Discord event, an autocomplete, a
+change, a scheduled job, the start-up sweep and the retry loop, and the log writer's containment of
+its own faults, are `framework.md`'s ("Errors and failures").
 
-**The log writer contains its own faults**, as `architecture.md` ("Posting to Discord") has it:
-in `OutputRouter._read_config`, `_try_send` and `_enqueue_if_configured`
-(`test_a_database_fault_reading_the_log_channel_is_contained`). `log_destination` alone raises,
-being a query rather than a line posted (its docstring).
-
-**Core's refusal and fault types**, each caught by name:
+**Core's refusal and fault types**, each caught by name; the framework's, `Refused` among them,
+are `framework.md`'s:
 
 | Type | Where | What it is |
 |---|---|---|
-| `Refused` | `core/models/refusal.py` | a refusal whose text the member reads; subclasses `ValueError` |
 | `PackRefused` | `core/services/upkeep/pack_service.py` | `/bot pack`'s refusals, worded by the cog from its fields |
 | `InvalidDriverTransition` | `core/models/driver_profile.py` | a fault: a move past the transition table, caught by a caller that expects the race |
 | `InvalidStageTransition` | `core/models/season.py` | a season asked to move to a stage its lifecycle does not allow from where it is |
-| `SwitchNotSignedUp` | `core/services/modules/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
-| `StepFailedOnDiscord` | `core/models/change.py` | a step's failure on Discord, carrying what the job keeps and a clause for the stop notice |
-| `GuildUnavailable` | `core/models/change.py` | the league's server missing from the cache: a failure on Discord's side |
 
 ---
 
 ## Constraints a later reader might tune away
 
-Each is stated where it lives and pinned by the test named.
+Each is stated where it lives and pinned by the test named. The framework's are `framework.md`'s.
 
 | Constraint | Stated in | Pinned by |
 |---|---|---|
-| SQLite's busy timeout is five seconds, sized for the longest legitimate write; an autocomplete asks for a shorter one (`AUTOCOMPLETE_TIMEOUT_SECONDS`) | `core/db/database.py`, `_BUSY_TIMEOUT_SECONDS` | `test_connections_carry_an_explicit_busy_timeout` |
-| The database runs in WAL with `synchronous` left at FULL, durability chosen over speed | `_enable_wal` | `test_migrations_leave_the_database_in_wal_mode`, `test_connections_keep_full_durability` |
-| Four idle connections are kept to be lent again | `_IDLE_CONNECTIONS_KEPT` | `test_no_more_than_four_idle_connections_are_kept` |
 | `server_configs` holds one row; the claim's condition is in its statement, so two servers cannot both win; releasing the claim keeps the row | `config_service`'s docstring, `ConfigService.claim_on` | `test_a_single_row_table_refuses_a_second_row`, `test_only_one_server_claims_a_released_row`, `test_releasing_the_claim_keeps_what_is_the_league_s` |
 | One live season, held by the schema rather than each reader | `idx_seasons_one_live`; `tests/core/test_one_live_season_per_server.py`'s docstring | `test_a_second_live_season_is_refused` |
 | A placed driver's seat stops a division's delete | `delete_division_on` | `test_a_division_with_a_driver_placed_in_it_is_not_deleted` |
 | A reassign judges every refusal on its save's connection before it writes | `DriverService.reassign_judged_on`, `driver_changes`' docstring | `test_a_failed_driver_reassign_changes_nothing`, `test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_goes_on` |
 | `write_transition` is the one writer of a driver's state | `write_transition` | `test_every_reset_goes_through_the_transition_table` |
 | The driver has no ban states | `DriverState` | `test_the_driver_has_seven_states_and_no_ban_among_them` |
-| The scheduler starts paused and is resumed last, so a restart's take-down of a review comes before its timer | `core/services/upkeep/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
-| The queue is held from before the bot connects until the sweep has asked its own, and released whatever the sweep does | `ChangeQueue.hold`, `release` and `sweeping`, `start_up`'s docstring | `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`, `test_the_sweep_releases_held_requests_before_the_queue_starts` |
-| A held typed answer counts as waiting, so a second is turned away | `turn_waiting`, `ChangeQueue.held_turn_channels` | `test_a_second_message_typed_while_the_first_is_held_is_turned_away` |
 | A fingerprint that cannot be taken is empty, and differs from every fingerprint | `season_fingerprint_service.take_fingerprint` | `test_a_fingerprint_that_could_not_be_taken_differs_from_everything` |
 | A review's expiry asked twice posts one notice | `season_review_changes.claim_take_down` | `test_a_review_expired_twice_at_once_posts_one_notice` |
 | A season starts on the UTC date of the queue's clock | `season_setup_change`'s docstring | `test_the_start_date_is_the_utc_date` |

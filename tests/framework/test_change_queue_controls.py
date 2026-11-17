@@ -1,0 +1,1097 @@
+"""Retry and Discard: the buttons on the stop notice of the job the queue is stopped at (#439).
+
+The owner's rule (2026-10-02): a job that fails stops the queue until it is cleared. A league
+manager or admin may press Retry at any time, and after the hour it is the only way on; a league
+admin may press Discard, which drops the job and lets the queue run on, recorded with what was not
+done. The buttons sit on the one ❌ message the stop posts to the log channel, and still work after
+a restart. `docs/design/architecture.md`, "How a change is carried out", designs it. The dummy
+change types and the league are `test_change_queue.py`'s.
+"""
+from __future__ import annotations
+
+import logging
+import sqlite3
+from datetime import datetime, timedelta
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import discord
+import pytest
+
+from leaguebot.framework.db.database import get_connection
+from tests.framework.test_change_queue import (  # noqa: F401 — `env` is the fixture
+    NOW,
+    STOPPED_AT,
+    WENT_THROUGH,
+    WHAT,
+    _act,
+    _api,
+    _ask,
+    _described,
+    _fails_while,
+    _host_errors,
+    _lines,
+    _queue,
+    _states,
+    _try_at,
+    _type,
+    env,
+)
+from tests.support.change_queue import (
+    LOG_CHANNEL_WARNING,
+    discard_job,
+    http_error,
+    maybe_await,
+    member_interaction,
+    queued_log_lines,
+    restart_queue,
+    retry_job,
+    run_queue,
+    step_rows,
+    stopped_job,
+    tier_member,
+)
+
+MANAGER = {"member_id": 5151, "display_name": "Manager", "name": "Manager#0001"}
+ADMIN = {"member_id": 6161, "display_name": "Boss", "name": "Boss#0001"}
+#: The two pressers as a log line names them, the mention wrapped so it notifies nobody.
+MANAGER_NAMED = "Manager (`<@5151>`)"
+ADMIN_NAMED = "Boss (`<@6161>`)"
+#: The line of a stopped job clearing without going through, its number, what it was and why
+#: filled in.
+CLEARED = "ℹ️ Job #{id} ({job}) no longer stops the queue: {why}. The queue runs on."
+
+
+def _manager() -> Any:
+    return tier_member("manager", **MANAGER)
+
+
+def _admin() -> Any:
+    return tier_member("admin", **ADMIN)
+
+
+def _private(interaction: Any) -> list[str]:
+    """What the presser was told, seen by them alone."""
+    calls = (interaction.response.send_message.await_args_list
+             + interaction.followup.send.await_args_list)
+    return [
+        str(call.args[0] if call.args else call.kwargs.get("content", ""))
+        for call in calls if call.kwargs.get("ephemeral") is True
+    ]
+
+
+async def _stop(env, holder: dict, ran: list, *, later: bool = True) -> dict:
+    """A request of two jobs, its first failing with `holder["fail"]` while set, and a change
+    asked after it; run until the queue stops. Gives the stopped job."""
+    _queue(
+        env,
+        _type(steps=[_fails_while(holder, ran=ran, describe=_described("posting the dummy")),
+                     _act("after", ran)]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+    await _ask(env)
+    if later:
+        await _ask(env, "later")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the queue did not stop"
+    return job
+
+
+async def _press_on(env, action: str, notice_id: int | None, user: Any) -> Any:
+    """Press *action* on the notice *notice_id*, as *user*, then run the queue."""
+    interaction = member_interaction(env.bot, user=user)
+    interaction.message.id = notice_id
+    await maybe_await(getattr(env.bot.change_queue, action)(notice_id, interaction))
+    await run_queue(env.bot)
+    return interaction
+
+
+def _notice(env, job: dict) -> Any:
+    [notice] = [m for m in env.bot.log_channel.posted if m.id == job["notice_message_id"]]
+    return notice
+
+
+def _buttons(message: Any) -> set[str]:
+    return {child.custom_id for child in getattr(message.view, "children", None) or ()}
+
+
+# ---------------------------------------------------------------------------
+# Retry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("presser, named", [
+    pytest.param(_manager, MANAGER_NAMED, id="a league manager"),
+    pytest.param(_admin, ADMIN_NAMED, id="a league admin"),
+])
+async def test_retry_by_a_league_manager_or_admin_tries_the_job_at_once(env, presser, named):
+    """Before the job's next try is due, a league manager's Retry tries it at once: it goes
+    through, the request and the change behind it run, the manager is told privately, the log
+    channel names them and says the job went through, and the notice loses its buttons. A league
+    admin holds the manager's tier within theirs, and their Retry does the same."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+    notice = _notice(env, job)
+    holder["fail"] = None
+
+    interaction = await retry_job(env.bot, user=presser())
+
+    assert ran == ["post", "post", "after", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+    assert _private(interaction)
+    lines = await _lines(env)
+    assert any(named in line and f"job #{job['id']}" in line and "Retr" in line
+               for line in lines)
+    went = WENT_THROUGH.format(id=job["id"], job="posting the dummy")
+    assert [line.split("\n")[0] for line in lines if "went through" in line] == [went]
+    assert _buttons(notice) == set()
+
+
+async def test_retry_after_the_hour_is_the_only_way_on_and_a_failed_retry_leaves_it_stopped(env):
+    """Once the 60-minute try has failed, no try comes but a Retry. A Retry that fails leaves the
+    queue stopped with no try scheduled; one that goes through sets the queue going."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    await _stop(env, holder, ran, later=False)
+    for at in (1, 5, 10, 15, 30, 60):
+        await _try_at(env, at)
+    assert (await stopped_job(env.db_path))["next_try_at"] is None
+
+    await retry_job(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job["tries"] == 8
+    assert job["next_try_at"] is None
+    assert ran == ["post"] * 8
+
+    holder["fail"] = None
+    await retry_job(env.bot)
+
+    assert ran == ["post"] * 9 + ["after"]
+    assert await _states(env) == ["DONE"]
+
+
+async def test_a_retry_whose_try_fails_is_recorded_naming_the_presser(env):
+    """A Retry whose try fails writes one line naming the presser, the job and the kind of fault,
+    and leaves the schedule as it stood."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+    before = await _lines(env)
+
+    await retry_job(env.bot, user=_manager())
+
+    after = await stopped_job(env.db_path)
+    added = [line for line in await _lines(env) if line not in before]
+    assert any(MANAGER_NAMED in line and f"job #{job['id']}" in line and "the bot hit an internal fault" in line
+               for line in added)
+    assert after["next_try_at"] == job["next_try_at"]
+    assert after["failing_since"] == job["failing_since"]
+    assert ran == ["post", "post"]
+
+
+# ---------------------------------------------------------------------------
+# Discard
+# ---------------------------------------------------------------------------
+
+
+async def test_discard_by_a_league_admin_drops_the_job_and_the_queue_runs_on(env):
+    """A league admin's Discard drops the stopped job alone: one line names the admin, job #N and
+    what was not done for which request, an audit record keeps it, the notice loses its buttons,
+    and the request's later job and the change behind it run."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+    notice = _notice(env, job)
+
+    interaction = await discard_job(env.bot, user=_admin())
+
+    assert _buttons(notice) == set()
+    assert ran == ["post", "after", "later"]
+    assert await stopped_job(env.db_path) is None
+    assert await _states(env) == ["DONE", "DONE"]
+    assert _private(interaction)
+    line = f"{ADMIN_NAMED} | Discard job #{job['id']} | Discarded"
+    [said] = [text for text in await _lines(env) if line in text]
+    assert f"not done: posting the dummy for {WHAT}" in said
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_id, change_type FROM audit_entries WHERE change_type = ?",
+            ("CHANGE_JOB_DISCARDED",),
+        )
+        audits = [dict(row) for row in await cursor.fetchall()]
+    assert audits == [{"actor_id": ADMIN["member_id"], "change_type": "CHANGE_JOB_DISCARDED"}]
+
+
+async def test_discard_by_a_league_manager_is_refused(env):
+    """Only a league admin may discard: a league manager is told so privately, the refusal is a
+    ⛔ line naming them, and the job still stops the queue."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+
+    interaction = await discard_job(env.bot, user=_manager())
+
+    assert any("league admin" in text for text in _private(interaction))
+    assert any(line.startswith("⛔") and MANAGER_NAMED in line for line in await _lines(env))
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert ran == ["post"]
+
+
+async def test_retry_asks_the_tiers_the_queue_was_handed(env):
+    """The authority tiers are core's rule, handed to the queue by the builder rather than imported
+    by it: a queue handed tiers that refuse every member refuses a holder of the league manager's
+    role their Retry, having asked those tiers about that very member, and the job still stops
+    the queue."""
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
+
+    tiers = MagicMock()
+    tiers.is_league_manager.return_value = False
+    tiers.is_league_admin.return_value = False
+    env.bot.change_queue = ChangeQueue(env.db_path, env.bot, env.bot.output_router,
+                                       env.bot.config_service, tiers=tiers, clock=env.clock)
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    env.bot.change_queue.register(
+        _type(steps=[_fails_while(holder, ran=ran, describe=_described("posting the dummy")),
+                     _act("after", ran)]))
+    await _ask(env)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the queue did not stop"
+    holder["fail"] = None
+    manager = _manager()
+
+    interaction = await retry_job(env.bot, user=manager)
+
+    assert manager in [call.args[1] for call in tiers.is_league_manager.call_args_list]
+    assert any("league manager" in text for text in _private(interaction))
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert ran == ["post"]
+
+
+async def test_a_press_by_a_member_without_a_tier_is_refused_and_logged(env):
+    """A member holding neither tier is refused Retry and Discard alike, privately, each refusal a
+    ⛔ line; the job is not tried and still stops the queue."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+    nobody = tier_member(None, member_id=7171, display_name="Driver", name="Driver#0001")
+
+    retried = await retry_job(env.bot, user=nobody)
+    discarded = await discard_job(env.bot, user=nobody)
+
+    assert _private(retried) and _private(discarded)
+    refusals = [line for line in await _lines(env)
+                if line.startswith("⛔") and "Driver (`<@7171>`)" in line]
+    assert len(refusals) == 2
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert ran == ["post"]
+
+
+async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
+    """A notice whose job no longer stops the queue (it went through, a league admin discarded
+    it, or its job and change are gone from the database, as a factory reset erases them) is
+    refused, privately and with a ⛔ line, and nothing is tried. The rows are deleted by hand,
+    leaving the server's configuration in place: a pack is refused while the queue holds a job,
+    and a factory reset would erase the configuration too."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+    holder["fail"] = None
+    await _try_at(env, 1)
+    assert await stopped_job(env.db_path) is None
+
+    retried = await _press_on(env, "retry", job["notice_message_id"], _manager())
+    discarded = await _press_on(env, "discard", job["notice_message_id"], _admin())
+
+    assert _private(retried) and _private(discarded)
+    lines = await _lines(env)
+    assert any(line.startswith("⛔") and MANAGER_NAMED in line for line in lines)
+    assert any(line.startswith("⛔") and ADMIN_NAMED in line for line in lines)
+    assert ran == ["post", "post", "after", "later"]
+
+    holder["fail"] = RuntimeError("boom")
+    await _ask(env)
+    await run_queue(env.bot)
+    dropped = await stopped_job(env.db_path)
+    await discard_job(env.bot, user=_admin())
+    assert await stopped_job(env.db_path) is None
+    tried = list(ran)
+
+    retried = await _press_on(env, "retry", dropped["notice_message_id"], _manager())
+    discarded = await _press_on(env, "discard", dropped["notice_message_id"], _admin())
+
+    assert _private(retried) and _private(discarded)
+    lines = await _lines(env)
+    assert len([line for line in lines if line.startswith("⛔") and MANAGER_NAMED in line]) == 2
+    assert len([line for line in lines if line.startswith("⛔") and ADMIN_NAMED in line]) == 2
+    assert ran == tried
+
+    await _ask(env)
+    await run_queue(env.bot)
+    packed = await stopped_job(env.db_path)
+    # Every change and job is deleted, finished ones too, as a factory reset would erase them.
+    async with get_connection(env.db_path) as db:
+        await db.execute("DELETE FROM queued_change_steps")
+        await db.execute("DELETE FROM queued_changes")
+        await db.commit()
+
+    after_pack = await _press_on(env, "retry", packed["notice_message_id"], _manager())
+
+    assert _private(after_pack)
+    assert len([line for line in await _lines(env)
+                if line.startswith("⛔") and MANAGER_NAMED in line]) == 3
+
+
+# ---------------------------------------------------------------------------
+# The notice
+# ---------------------------------------------------------------------------
+
+
+async def test_the_stop_notice_s_buttons_work_after_a_restart(env):
+    """At start-up the queue registers the notice's view, persistent, with its fixed ids: Retry
+    pressed on a notice posted before the restart tries the job."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+    holder["fail"] = None
+
+    await restart_queue(env.bot)
+    try:
+        [view] = [call.args[0] for call in env.bot.add_view.call_args_list
+                  if {getattr(c, "custom_id", None) for c in call.args[0].children}
+                  == {"queue:retry", "queue:discard"}]
+        assert view.timeout is None
+        [retry] = [c for c in view.children if c.custom_id == "queue:retry"]
+        interaction = member_interaction(env.bot, user=_manager())
+        interaction.message.id = job["notice_message_id"]
+        await retry.callback(interaction)
+        await run_queue(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert ran == ["post", "post", "after", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_the_stop_notice_loses_its_buttons_once_the_job_clears(env):
+    """A job that goes through takes the buttons off its notice; a notice already deleted by the
+    time its job is discarded is no failure, and the queue runs on."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop(env, holder, ran)
+    notice = _notice(env, job)
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+    holder["fail"] = None
+    await _try_at(env, 1)
+
+    assert _buttons(notice) == set()
+
+    holder["fail"] = RuntimeError("boom")
+    await _ask(env)
+    await run_queue(env.bot)
+    second = await stopped_job(env.db_path)
+    env.bot.log_channel.posted.remove(_notice(env, second))
+
+    await discard_job(env.bot)
+
+    assert await stopped_job(env.db_path) is None
+    assert await _states(env) == ["DONE", "DONE", "DONE"]
+
+
+async def test_a_stop_notice_that_cannot_be_formed_leaves_the_stop_and_is_posted_at_a_later_try(
+    env, caplog
+):
+    """A database fault forming a stop notice (here the look-up of whether it is to mention the
+    league admins) leaves the stop standing with no notice landed, the fault logged on the host;
+    the notice is posted, with its buttons, at a later try."""
+    holder = {"fail": RuntimeError("boom")}
+    queue = _queue(env, _type(steps=[_fails_while(holder,
+                                                  describe=_described("posting the dummy"))]))
+    looked_up = queue._admins_to_notify
+    faults = {"left": 1}
+
+    async def _admins_to_notify(*args, **kwargs):
+        if faults["left"]:
+            faults["left"] -= 1
+            raise sqlite3.OperationalError("database is locked")
+        return await looked_up(*args, **kwargs)
+
+    queue._admins_to_notify = _admins_to_notify
+
+    await _ask(env)
+    with caplog.at_level(logging.ERROR):
+        await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert faults["left"] == 0
+    assert job["tries"] == 1 and job["notice_message_id"] is None
+    assert any(isinstance(r.exc_info[1], sqlite3.OperationalError) for r in _host_errors(caplog))
+    await _try_at(env, 1)
+    await _try_at(env, 5)
+
+    job = await stopped_job(env.db_path)
+    [notice] = [m for m in env.bot.log_channel.posted
+                if m.content.startswith(f"❌ The queue is stopped at job #{job['id']}")]
+    assert job["notice_message_id"] == notice.id
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+
+async def test_a_discard_whose_answer_to_the_presser_fails_is_still_carried_out(env, caplog):
+    """A league admin's Discard whose answer to them Discord refuses is carried out all the same:
+    the job is dropped, the change asked behind it runs, and the refusal is logged on the
+    host."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    _queue(
+        env,
+        _type(steps=[_fails_while(holder, describe=_described("posting the dummy"))]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    interaction = member_interaction(env.bot, user=tier_member("admin"))
+    interaction.message.id = job["notice_message_id"]
+    interaction.response.send_message = AsyncMock(side_effect=http_error())
+    interaction.followup.send = AsyncMock(side_effect=http_error())
+    with caplog.at_level(logging.WARNING):
+        await maybe_await(env.bot.change_queue.discard(job["notice_message_id"], interaction))
+    await run_queue(env.bot)
+
+    assert await _states(env) == ["DONE", "DONE"]
+    assert ran == ["later"]
+    assert await stopped_job(env.db_path) is None
+    assert any(r.exc_info and isinstance(r.exc_info[1], discord.HTTPException)
+               for r in caplog.records)
+
+
+async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_buttons(env):
+    """A notice the log channel refuses is kept, never put on the log lines' retry queue, and the
+    member is warned; it is posted again, with its buttons, at a later try. So also after the hour,
+    where the post raised after the stop was saved, and at start-up."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    forbidden = http_error(discord.Forbidden, status=403, text="Missing Access")
+    _queue(env, _type(steps=[_fails_while(holder, ran=ran,
+                                          describe=_described("posting the dummy"))]))
+
+    # Refused at the stop, posted at a later try.
+    env.bot.log_channel.fails = forbidden
+    interaction = member_interaction(env.bot)
+    await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job["tries"] == 1 and job["notice_message_id"] is None
+    assert any(call.args and call.args[0] == LOG_CHANNEL_WARNING
+               and call.kwargs.get("ephemeral") is True
+               for call in interaction.followup.send.await_args_list)
+    assert not any("The queue is stopped at job #" in line
+                   for line in await queued_log_lines(env.db_path))
+    await _try_at(env, 1)
+    env.bot.log_channel.fails = None
+    await _try_at(env, 5)
+
+    job = await stopped_job(env.db_path)
+    stop = STOPPED_AT.format(id=job["id"], job="posting the dummy", request=WHAT,
+                             asker="Admin (`<@4242>`)", fault="the bot hit an internal fault")
+    [notice] = [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+    assert job["notice_message_id"] == notice.id
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+    await discard_job(env.bot)
+
+    # The post raised after the stop was saved, and the channel refused it the whole hour.
+    env.bot.log_channel.fails = RuntimeError("the connection dropped")
+    started = env.clock.now
+    await _ask(env)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job["tries"] == 1 and job["notice_message_id"] is None
+    for at in (1, 5, 10, 15, 30, 60):
+        env.clock.now = started
+        env.clock.advance(minutes=at)
+        await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["next_try_at"] is None
+    env.bot.log_channel.fails = None
+    env.clock.now = started
+    env.clock.advance(hours=3)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job["notice_message_id"] is not None
+    assert _buttons(_notice(env, job)) == {"queue:retry", "queue:discard"}
+    await discard_job(env.bot)
+
+    # Refused at the stop, posted as the bot starts again.
+    env.bot.log_channel.fails = forbidden
+    await _ask(env)
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["notice_message_id"] is None
+    env.bot.log_channel.fails = None
+
+    await restart_queue(env.bot)
+    try:
+        job = await stopped_job(env.db_path)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert job["notice_message_id"] is not None
+    assert _buttons(_notice(env, job)) == {"queue:retry", "queue:discard"}
+    assert [row["notice_message_id"] is not None for row in await step_rows(env.db_path)
+            if row["name"] == "post"] == [True, True, True]
+
+
+# ---------------------------------------------------------------------------
+# A press while the worker is at the job
+# ---------------------------------------------------------------------------
+
+
+async def test_discard_of_a_job_the_worker_is_trying_is_refused(env):
+    """A Discard pressed while the worker is trying the stopped job is refused, privately and with
+    a ⛔ line naming the admin: nothing is recorded as discarded, and the try, once it ends, saves
+    its own result, so the request's outcome does not tell the job as left undone."""
+    import asyncio
+
+    from leaguebot.framework.services.queue.change_types import Step
+    from tests.support.change_queue import updated_reply
+
+    api = _api()
+    hold = {"fail": RuntimeError("boom"), "held": False}
+    entered, release = asyncio.Event(), asyncio.Event()
+    ran: list[str] = []
+
+    async def _post(_ctx):
+        ran.append("post")
+        if hold["held"]:
+            entered.set()
+            await release.wait()
+        if hold["fail"] is not None:
+            raise hold["fail"]
+        return api.StepResult()
+
+    def _outcome(ctx):
+        undone = [s.name for s in ctx.steps if (s.result or {}).get("discarded")]
+        return f"⚠️ Done, but not: {', '.join(undone)}." if undone else "✅ Done."
+
+    _queue(env, _type(steps=[Step("post", api.StepKind.ACT, _post), _act("after", ran)],
+                      outcome=_outcome))
+    asked = member_interaction(env.bot)
+    await _ask(env, interaction=asked)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the queue did not stop"
+
+    hold.update(fail=None, held=True)
+    env.clock.advance(minutes=1)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        pressed = await discard_job(env.bot, user=_admin(), run=False)
+    finally:
+        release.set()
+        await trying
+
+    assert any("being tried" in text for text in _private(pressed))
+    assert any(line.startswith("⛔") and ADMIN_NAMED in line for line in await _lines(env))
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM audit_entries WHERE change_type = 'CHANGE_JOB_DISCARDED'"
+        )
+        assert (await cursor.fetchone())["n"] == 0
+    post, after = await step_rows(env.db_path)
+    assert post["done_at"] is not None and after["done_at"] is not None
+    assert "discarded" not in (post["result"] or {})
+    assert ran == ["post", "post", "after"]
+    assert await _states(env) == ["DONE"]
+    assert "✅ Done." in updated_reply(asked)
+    assert "Done, but not" not in updated_reply(asked)
+
+
+async def test_a_change_discarded_while_its_check_runs_does_not_start(env, caplog):
+    """A bot change stopped at its check is ended while the check runs again at its try, as a
+    Discard saved just before the worker chose it would end it: the check then lets it go, but the
+    change stays DISCARDED, none of its jobs runs, and the host's log says it did not start."""
+    import asyncio
+    import logging
+
+    api = _api()
+    mode = {"refuse": True, "held": False}
+    entered, release = asyncio.Event(), asyncio.Event()
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["held"]:
+            mode["held"] = False
+            entered.set()
+            await release.wait()
+            return api.Verdict.go()
+        if mode["refuse"]:
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    caplog.set_level(logging.WARNING)
+    _queue(env, _type(steps=[_act("a", ran), _act("b", ran)], check=_check))
+    mode["refuse"] = False
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["name"] == "a"
+
+    mode.update(refuse=False, held=True)
+    env.clock.advance(minutes=1)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        async with get_connection(env.db_path) as db:
+            await db.execute("UPDATE queued_changes SET state = 'DISCARDED'")
+            await db.commit()
+    finally:
+        release.set()
+        await trying
+
+    assert await _states(env) == ["DISCARDED"]
+    assert ran == []
+    assert any("while its check ran" in record.getMessage() for record in caplog.records)
+
+
+async def test_discard_saves_the_partial_result_a_try_kept_while_the_press_waited(env):
+    """A job failing on Discord keeps what it did on the stopped job. A league admin presses Discard
+    and, while the press waits to be carried out, the job's one-minute try runs and fails, keeping
+    more of what it did: the discard is saved from the job as it stands after that try, not as it
+    was when the press was read, and the request's later job runs."""
+    from leaguebot.framework.services.queue.change_types import Step
+
+    api = _api()
+    kept = {"result": {"removed": [1]}}
+    ran: list[str] = []
+
+    async def _post(_ctx):
+        ran.append("post")
+        raise api.StepFailedOnDiscord("Missing Access", result=dict(kept["result"]))
+
+    _queue(env, _type(steps=[Step("post", api.StepKind.ACT, _post), _act("after", ran)]))
+    await _ask(env)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["result"] == {"removed": [1]}
+
+    kept["result"] = {"removed": [1, 2]}
+    env.clock.advance(minutes=1)
+    lookup = env.bot.config_service.get_server_config
+    waited = {"tried": False}
+
+    async def _lookup_while_the_try_runs(*args, **kwargs):
+        if not waited["tried"]:
+            waited["tried"] = True
+            await run_queue(env.bot)
+        return await lookup(*args, **kwargs)
+
+    env.bot.config_service.get_server_config = _lookup_while_the_try_runs
+    await discard_job(env.bot, user=_admin())
+
+    post, after = await step_rows(env.db_path)
+    assert post["result"]["removed"] == [1, 2]
+    assert "discarded" in post["result"]
+    assert ran == ["post", "post", "after"]
+    assert after["done_at"] is not None
+    assert await _states(env) == ["DONE"]
+
+
+async def test_a_retry_of_a_job_being_tried_is_refused_and_the_try_s_outcome_stands(env):
+    """A Retry pressed while the worker tries the stopped job, or the check of a change stopped at
+    its check, is refused privately as being tried now, with a ⛔ line naming the manager, and the
+    try's outcome stands: the job's failing try moves it to its next mark with no line saying a
+    Retry failed, and a job failing after its change's check has passed is a first failure, its
+    next try one minute on."""
+    import asyncio
+
+    from leaguebot.framework.services.queue.change_types import Step
+
+    api = _api()
+    hold = {"held": False}
+    entered, release = asyncio.Event(), asyncio.Event()
+    mode = {"verdict": "go"}
+    checked, let_go = asyncio.Event(), asyncio.Event()
+    failing: dict[str, Any] = {"fail": RuntimeError("boom")}
+
+    async def _post(_ctx):
+        if hold["held"]:
+            hold["held"] = False
+            entered.set()
+            await release.wait()
+        raise RuntimeError("boom")
+
+    async def _check(_ctx):
+        if mode["verdict"] == "held":
+            mode["verdict"] = "go"
+            checked.set()
+            await let_go.wait()
+            return api.Verdict.go()
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=[Step("post", api.StepKind.ACT, _post)]),
+           _type("checked", steps=[_fails_while(failing, "a")], check=_check))
+    await _ask(env)
+    await _ask(env, "checked", origin=api.ChangeOrigin.BOT)
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["name"] == "post"
+
+    # The job itself is being tried.
+    hold["held"] = True
+    env.clock.advance(minutes=1)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        pressed = await retry_job(env.bot, user=_manager(), run=False)
+    finally:
+        release.set()
+        await trying
+
+    assert any(text.startswith("⛔") and "being tried now" in text for text in _private(pressed))
+    job = await stopped_job(env.db_path)
+    assert job["tries"] == 2
+    assert datetime.fromisoformat(job["next_try_at"]) == NOW + timedelta(minutes=5)
+
+    # The check of a change stopped at its check is being tried.
+    mode["verdict"] = "refuse"
+    await discard_job(env.bot, user=_admin())
+    assert (await stopped_job(env.db_path))["name"] == "a"
+    mode["verdict"] = "held"
+    env.clock.advance(minutes=1)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(checked.wait(), timeout=5)
+        pressed = await retry_job(env.bot, user=_manager(), run=False)
+    finally:
+        let_go.set()
+        await trying
+
+    assert any(text.startswith("⛔") and "being tried now" in text for text in _private(pressed))
+    job = await stopped_job(env.db_path)
+    assert job["name"] == "a" and job["tries"] == 1
+    assert datetime.fromisoformat(job["failing_since"]) == NOW + timedelta(minutes=2)
+    assert datetime.fromisoformat(job["next_try_at"]) == NOW + timedelta(minutes=3)
+    lines = await _lines(env)
+    assert len([line for line in lines if line.startswith("⛔") and MANAGER_NAMED in line]) == 2
+    assert not any("Retry of job #" in line for line in lines)
+
+
+# ---------------------------------------------------------------------------
+# A stop that clears without its job going through
+# ---------------------------------------------------------------------------
+
+
+async def test_a_stopped_bot_change_found_no_longer_due_at_its_check_writes_a_line_and_loses_its_buttons(env):
+    """A bot change stopped at its check (the forecast channel is missing) is found no longer due
+    when its check runs again at its one-minute try: one line says its job no longer stops the
+    queue, as it was dropped, the stop notice loses its buttons, and the change behind it runs."""
+    api = _api()
+    mode = {"verdict": "go"}
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        if mode["verdict"] == "not_due":
+            return api.Verdict.not_due("the season has ended")
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=[_act("a", ran)], check=_check),
+           _type("later", steps=[_act("later", ran)]))
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    await _ask(env, "later")
+    mode["verdict"] = "refuse"
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    notice = _notice(env, job)
+
+    mode["verdict"] = "not_due"
+    await _try_at(env, 1)
+
+    cleared = CLEARED.format(id=job["id"], job=WHAT, why="it is no longer due, so it was dropped")
+    lines = await _lines(env)
+    assert [line.split("\n")[0] for line in lines if "no longer stops the queue" in line] == [cleared]
+    assert not any("went through" in line for line in lines)
+    assert _buttons(notice) == set()
+    assert ran == ["later"]
+    assert await _states(env) == ["DROPPED", "DONE"]
+
+
+async def test_a_member_s_change_stopped_by_a_raising_check_and_then_refused_writes_a_line_and_loses_its_buttons(env):
+    """A member's change whose check raises stops the queue; at its one-minute try the check refuses
+    it (the forecast channel is missing): the member is told the refusal, the refusal line is
+    written and so is one line saying its job no longer stops the queue, as its request was refused
+    at its check, and the stop notice loses its buttons."""
+    from tests.support.change_queue import updated_reply
+
+    api = _api()
+    mode = {"verdict": "go"}
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["verdict"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=[_act("a", ran)], check=_check))
+    asked = member_interaction(env.bot)
+    await _ask(env, interaction=asked)
+    mode["verdict"] = "raise"
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    notice = _notice(env, job)
+
+    mode["verdict"] = "refuse"
+    await _try_at(env, 1)
+
+    cleared = CLEARED.format(id=job["id"], job=WHAT, why="its request was refused at its check")
+    lines = await _lines(env)
+    assert [line.split("\n")[0] for line in lines if "no longer stops the queue" in line] == [cleared]
+    assert any(line.startswith("⛔") and "it is missing" in line for line in lines)
+    assert "The forecast channel is missing." in updated_reply(asked)
+    assert _buttons(notice) == set()
+    assert ran == []
+    assert await _states(env) == ["REFUSED"]
+
+
+async def test_a_stopped_job_found_no_longer_due_at_its_try_writes_a_line(env):
+    """A stopped job found no longer due at its one-minute try is dropped: one line says it no
+    longer stops the queue, as it was dropped, with no line saying it went through, its notice
+    loses its buttons, and the request's later job runs."""
+    holder = {"fail": RuntimeError("boom")}
+    due = {"post": True}
+    ran: list[str] = []
+
+    async def _still_due(_ctx):
+        return due["post"]
+
+    _queue(env, _type(steps=[_fails_while(holder, ran=ran, still_due=_still_due,
+                                          describe=_described("posting the dummy")),
+                             _act("after", ran)]))
+    await _ask(env)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    notice = _notice(env, job)
+
+    due["post"] = False
+    await _try_at(env, 1)
+
+    cleared = CLEARED.format(id=job["id"], job="posting the dummy",
+                             why="it is no longer due, so it was dropped")
+    lines = await _lines(env)
+    assert [line.split("\n")[0] for line in lines if "no longer stops the queue" in line] == [cleared]
+    assert not any("went through" in line for line in lines)
+    assert _buttons(notice) == set()
+    assert ran == ["post", "after"]
+    assert await _states(env) == ["DONE"]
+
+
+# ---------------------------------------------------------------------------
+# A job no one may discard (#439, slice 4b, amendment A)
+# ---------------------------------------------------------------------------
+
+#: What the undiscardable job of the tests below says would follow from dropping it.
+WOULD_NEVER_RUN = "the dummy would never run"
+#: The refusal of a Discard on it, privately and in the log channel.
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it the dummy would never run. Fix what stopped it "
+    "and press **Retry**."
+)
+
+
+async def _would_never_run(_ctx) -> str:
+    return WOULD_NEVER_RUN
+
+
+async def _unreadable(_ctx) -> str:
+    raise RuntimeError("the round could not be read")
+
+
+async def _stop_undiscardable(env, holder: dict, ran: list, *, reader=_would_never_run) -> dict:
+    """A request of three jobs, its second (arming the dummy) undiscardable and failing with
+    `holder["fail"]` while set, and a change asked after it; run until the queue stops at the
+    second. Gives the stopped job."""
+    _queue(
+        env,
+        _type(steps=[_act("first", ran),
+                     _fails_while(holder, "arm", ran=ran,
+                                  describe=_described("arming the dummy"),
+                                  undiscardable=reader),
+                     _act("after", ran)]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the queue did not stop"
+    return job
+
+
+async def _discard_audits(env) -> list[dict]:
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_id FROM audit_entries WHERE change_type = ?", ("CHANGE_JOB_DISCARDED",)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def test_discard_of_an_undiscardable_job_is_refused_and_it_stays_stopped(env):
+    """A league admin's Discard on a job marked undiscardable is refused: they are told
+    privately that it cannot be discarded and what would follow, the log channel gets one ⛔
+    line, and nothing is dropped: the job still stops the queue, no Discard line or audit is
+    written, and neither its request's later job nor the change behind it runs."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop_undiscardable(env, holder, ran)
+
+    interaction = await discard_job(env.bot, user=_admin())
+
+    assert CANNOT_DISCARD in _private(interaction)
+    lines = await _lines(env)
+    refusals = [line for line in lines if line.startswith("⛔") and ADMIN_NAMED in line]
+    assert len(refusals) == 1
+    assert "can't be discarded" in refusals[0]
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert not [line for line in lines if "| Discarded" in line]
+    assert await _discard_audits(env) == []
+    assert ran == ["first", "arm"]
+
+
+async def test_retry_still_clears_an_undiscardable_job(env):
+    """An undiscardable job is cleared by Retry as any job is: once what stopped it is mended, a
+    Retry tries it at once, and its request and the change behind it run."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    await _stop_undiscardable(env, holder, ran)
+    await discard_job(env.bot, user=_admin())
+    holder["fail"] = None
+
+    await retry_job(env.bot, user=_manager())
+
+    assert ran == ["first", "arm", "arm", "after", "later"]
+    assert await stopped_job(env.db_path) is None
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_the_stop_notice_of_an_undiscardable_job_keeps_both_buttons(env):
+    """The stop notice of an undiscardable job carries Retry and Discard as any notice does, the
+    one persistent view serving every notice, and keeps both after a Discard is refused."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop_undiscardable(env, holder, ran)
+    notice = _notice(env, job)
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+    await discard_job(env.bot, user=_admin())
+
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+
+async def test_an_undiscardable_job_whose_reason_cannot_be_read_is_still_refused(env, caplog):
+    """Where what would follow from dropping the job cannot be read, the Discard is refused all
+    the same, naming the job in its place; the error is on the host's log, and nothing is
+    dropped."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop_undiscardable(env, holder, ran, reader=_unreadable)
+
+    with caplog.at_level(logging.ERROR):
+        interaction = await discard_job(env.bot, user=_admin())
+
+    named = (f"⛔ Job #{job['id']} (arming the dummy) can't be discarded. Fix what stopped it "
+             "and press **Retry**.")
+    assert named in _private(interaction)
+    assert _host_errors(caplog)
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert await _discard_audits(env) == []
+    assert ran == ["first", "arm"]
+
+
+def _refused_at_its_check(env, mode: dict, steps: list) -> None:
+    """A dummy change type of *steps* whose check refuses while `mode["refuse"]` is set (the
+    forecast channel is missing), and a change type asked after it."""
+    api = _api()
+
+    async def _check(_ctx):
+        if mode["refuse"]:
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=steps, check=_check),
+           _type("later", steps=[_act("later", mode["ran"])]))
+
+
+async def test_a_change_stopped_at_its_check_whose_first_job_is_undiscardable_cannot_be_discarded_whole(env):
+    """A bot change whose first job (arming the dummy) is undiscardable stops the queue at its
+    check, which refuses it. A league admin's Discard, which would drop the whole change, is
+    refused as a Discard of that first job is, saying what would follow: the change still stops
+    the queue and nothing of it, nor of the change behind it, has run. Once its check passes, a
+    Retry runs it and the change behind it."""
+    api = _api()
+    mode: dict[str, Any] = {"refuse": False, "ran": []}
+    ran = mode["ran"]
+    _refused_at_its_check(env, mode, [
+        _fails_while({}, "arm", ran=ran, describe=_described("arming the dummy"),
+                     undiscardable=_would_never_run),
+        _act("after", ran),
+    ])
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    await _ask(env, "later")
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "arm"
+
+    interaction = await discard_job(env.bot, user=_admin())
+
+    assert CANNOT_DISCARD in _private(interaction)
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert await _discard_audits(env) == []
+    assert ran == []
+
+    mode["refuse"] = False
+    await retry_job(env.bot, user=_manager())
+
+    assert ran == ["arm", "after", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_a_change_stopped_at_its_check_with_only_later_undiscardable_jobs_is_discarded_whole(env):
+    """A bot change whose first job may be discarded, and whose second (arming the dummy) may
+    not, stops the queue at its check, which refuses it. A league admin's Discard drops the whole
+    change, none of its jobs having run, the undiscardable one included, and the change behind
+    it runs."""
+    api = _api()
+    mode: dict[str, Any] = {"refuse": False, "ran": []}
+    ran = mode["ran"]
+    _refused_at_its_check(env, mode, [
+        _act("first", ran),
+        _fails_while({}, "arm", ran=ran, describe=_described("arming the dummy"),
+                     undiscardable=_would_never_run),
+        _act("after", ran),
+    ])
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    await _ask(env, "later")
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "first"
+
+    interaction = await discard_job(env.bot, user=_admin())
+
+    assert CANNOT_DISCARD not in _private(interaction)
+    assert await stopped_job(env.db_path) is None
+    assert ran == ["later"]
+    assert await _states(env) == ["DISCARDED", "DONE"]

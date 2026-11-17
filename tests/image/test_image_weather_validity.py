@@ -339,7 +339,7 @@ async def test_nothing_is_written_before_the_check_passes(templates, tmp_path, m
     no image audit entry is written. The check is the setting's, run before its save, so the guarantee
     holds whether the refusal comes at the ask or as the change runs.
     """
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.image.cogs.image_cog import ImageCog
     from leaguebot.image.services.validity import image_validity_service
     from tests.support.change_queue import run_queue

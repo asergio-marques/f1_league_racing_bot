@@ -261,7 +261,7 @@ async def test_apply_negative_penalty_reorders(
       drivers with identical post-penalty times keep their original order, so driver 1 stays
       P1.
     """
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
 
     db_path = str(tmp_path / "test.db")
@@ -329,7 +329,7 @@ async def test_apply_negative_penalty_reorders(
 
 async def test_dsq_fastest_lap_not_redistributed(tmp_path):
     """AC7: DSQ on fastest-lap holder forfeits the bonus; no other driver gains it."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
     from leaguebot.results.services.standings.standings_service import compute_points_for_session
     from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap
@@ -425,7 +425,7 @@ async def _seed_one_session(tmp_path, session_type: str) -> tuple[str, int, int,
     a league pastes produces that, but it is the one state in which re-sorting a session is
     visible — so it is what shows that no further action does not re-sort at all.
     """
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "nfa.db")
     await run_migrations(db_path)
@@ -485,7 +485,7 @@ def _nfa(session_type: SessionType) -> StagedPenalty:
 
 @pytest.mark.parametrize("phase", ["PENALTY", "APPEAL"])
 async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_path, phase):
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
@@ -515,7 +515,7 @@ async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_pa
 
 
 async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(tmp_path):
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(
@@ -544,7 +544,7 @@ async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(
 async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
     """It alters nothing, but it is still a decision, and the round's verdicts are read from
     the record — its announcement and an amendment's replay both need it there."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, _ = await _seed_one_session(tmp_path, "FEATURE_RACE")
@@ -576,7 +576,7 @@ async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
 async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tmp_path):
     """The guard is on sessions only no further action touches. A real sanction in the same
     session re-sorts it as it always has."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
@@ -617,7 +617,7 @@ async def test_apply_penalties_on_neither_reposts_nor_logs(tmp_path):
     import inspect
     from unittest.mock import AsyncMock, patch
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.publishing import results_post_service as rps
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
 
@@ -661,7 +661,7 @@ async def test_apply_penalties_on_stamps_with_the_handed_time_and_commits_nothin
     import datetime
     from unittest.mock import AsyncMock, patch
 
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
     from leaguebot.results.services.review.review_prompts import _apply_staged_appeals_on
     from leaguebot.results.services.review.verdict_announcement_service import (

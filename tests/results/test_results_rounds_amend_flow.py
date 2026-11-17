@@ -44,7 +44,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.services.submission import result_submission_service, paste_reading
 from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from tests.results.test_amend_changes import (
@@ -94,6 +94,7 @@ from tests.support.review_league import (
     ROUND_ID as LEAGUE_ROUND_ID,
     channel,
 )
+from tests.support.switches import answer_switch
 
 # ---------------------------------------------------------------------------
 # The channel (#439, slice 6b: opened by `results.amend.open` on the league lane)
@@ -649,7 +650,7 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(
     classification published by the first: the division's open amendment refuses Alex's."""
     league = await _league(tmp_path, monkeypatch)
     if case == "module-off":
-        league.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+        answer_switch(league.bot.module_service, "results", False)
     elif case == "open-elsewhere":
         await _open_elsewhere(league, division_id=DIVISION_ID)
     else:

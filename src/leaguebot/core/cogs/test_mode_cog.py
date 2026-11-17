@@ -51,16 +51,16 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
-from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
-from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
+from leaguebot.core.utils.team_autocomplete import team_autocomplete
+from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
-from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.formatting import paginate_fenced
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.messages import chunk_message
+from leaguebot.framework.utils.interaction_errors import describe, describe_form, report_failure
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.utils.messages import chunk_message, paginate_fenced
+from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
 from leaguebot.core.utils.roster_import import parse_roster_csv
 
@@ -165,7 +165,7 @@ class TestModeCog(commands.Cog):
         # between two readings cannot leave a step both offered and named, or neither.
         run = await advance_next_step(
             self.bot.db_path,
-            self.bot.scheduler_service,
+            self.bot.round_jobs,
             now=self.bot.change_queue.now(),
             announce=functools.partial(self._announce_advance, interaction),
             pending_steps_read=self.bot.pending_steps_read,
@@ -283,7 +283,7 @@ class TestModeCog(commands.Cog):
 
         summary = await build_review_summary(
             self.bot.db_path,
-            self.bot.scheduler_service,
+            self.bot.round_jobs,
             now=self.bot.change_queue.now(),
             review_marks_read=self.bot.review_marks_read,
         )

@@ -10,13 +10,14 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection, inserted_id
-from leaguebot.core.models.change import PlannedStep
+from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection, inserted_id
+from leaguebot.framework.models.change import PlannedStep
 from leaguebot.core.models.driver_names import SignupName, SignupNames
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states
 from leaguebot.core.services.upkeep.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
-from leaguebot.core.services.modules.review_sections import Review, ReviewSection
+from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     UNSETTLED_STATES,
     live_season_stage_on,
@@ -33,7 +34,7 @@ from leaguebot.signup.models.signup_module import (
 
 if TYPE_CHECKING:
     from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 
@@ -1228,7 +1229,7 @@ async def review_section(
     channel it shows beside the module's line in its Modules section, where signup has a
     configuration; the configuration review shows none. Reads only.
     """
-    if not await modules.is_signup_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return None
     config = await service.get_config()
     settings = await service.get_settings()

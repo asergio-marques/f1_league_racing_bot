@@ -10,17 +10,48 @@ what becomes of one fired late.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Any
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.framework.db.database import get_connection
+from leaguebot.core.models.amendment import RoundArming
+from leaguebot.core.models.round import RoundLead, RoundStatus
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.seasons.season_end_changes import test_mode_on
 from leaguebot.core.services.seasons.season_service import round_in_division
 from leaguebot.results.services.submission.submission_changes import KIND, ask_submission_open
 
-__all__ = ["ask_round_start"]
+__all__ = ["ROUND_START_KIND", "ask_round_start", "round_armed", "submission_lead", "submission_leads"]
+
+#: The kind a round's submission is stored under, the kind of the timer `ask_round_start` answers.
+ROUND_START_KIND = "results"
+
+
+def submission_lead() -> RoundLead:
+    """The lead of a round's results submission: its timer, at the round's own moment.
+
+    It is the round's one way off Not run, so results answers it for every round, whatever its
+    switch: its handler moves a round on where results is off. It is marked to be run at once where
+    an amendment finds the round's moment passed while it was still Not run, and to be left to
+    `/test-mode advance` where core says so (`results_left_to_advance`). It is armed whatever the
+    hour, and quoted by no date check.
+    """
+    return RoundLead(
+        kind=ROUND_START_KIND, offset=timedelta(0), label="Result submission",
+        run_at_once=True, left_to_advance=True,
+    )
+
+
+async def submission_leads() -> tuple[RoundLead, ...]:
+    """What results answers a round's leads read (`round_leads_read`): its submission."""
+    return (submission_lead(),)
+
+
+async def round_armed(*_args: Any, **_context: Any) -> RoundArming:
+    """What results owes the round armed again: its submission, as the round stands, whatever its
+    switch and whether or not the modules arm anything else. Subscribed to core's `round_armed`."""
+    return RoundArming(jobs=(submission_lead(),))
 
 
 async def ask_round_start(

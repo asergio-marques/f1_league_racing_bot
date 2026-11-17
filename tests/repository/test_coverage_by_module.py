@@ -88,7 +88,7 @@ def test_known_files_are_classified(path, expected):
         ("src/leaguebot/core/cogs/team_cog.py", "core"),
         ("src/leaguebot/core/models/driver_profile.py", "core"),
         ("src/leaguebot/core/utils/roster_import.py", "core"),
-        ("src/leaguebot/core/utils/league_bot.py", "core"),
+        ("src/leaguebot/framework/utils/league_bot.py", "framework"),
         ("src/leaguebot/core/services/drivers/placement_service.py", "core"),
         # The signup review panel, the points amendment, and fetching a portrait.
         ("src/leaguebot/signup/cogs/admin_review_cog.py", "signup"),
@@ -368,14 +368,18 @@ def test_main_survives_a_report_with_no_production_code(tmp_path, capsys):
 
 
 def test_every_file_of_the_bot_is_in_a_module_that_exists():
-    """The five modules plus core, as `core_specification.md` names them, and nothing else:
-    a file in a folder of the package that is none of them has been put in the wrong place."""
+    """The five modules plus core, as `core_specification.md` names them, and the two layers below
+    them, `utils` and the framework (architecture.md, "How the code is laid out"), each measured
+    against the floor as a unit of its own, and nothing else: a file in a folder of the package that
+    is none of them has been put in the wrong place."""
     modules = {
         cbm.classify(path.relative_to(ROOT).as_posix())
         for path in sorted((ROOT / "src").rglob("*.py"))
     }
 
-    assert modules == {"weather", "image", "attendance", "results", "signup", "core"}
+    assert modules == {
+        "weather", "image", "attendance", "results", "signup", "core", "utils", "framework"
+    }
 
 
 # ---------------------------------------------------------------------------

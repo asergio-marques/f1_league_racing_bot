@@ -18,18 +18,20 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from leaguebot.image.models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.image.services.render.image_drawing import ImageDrawing
 from leaguebot.image.services.validity.image_validity_service import (
     blocking_template_problems,
     check_all_templates,
     templates_of_enabled_aspects,
 )
+from tests.support.switches import answer_switch
 
 DEFAULT_TEMPLATES = os.path.join(
     os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates"
@@ -69,14 +71,16 @@ def config_missing_verdicts(tmp_path, monkeypatch):
     """A real configuration whose folder holds every template but the verdicts one.
 
     Built under the project root, because the directory check refuses a path outside it
-    and would report fifteen faults rather than the one under test.
+    and would report fifteen faults rather than the one under test. The folder is named afresh
+    for each use, so that parallel workers running the tests that use it do not build, fill and
+    remove one folder together.
     """
     from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates  # noqa: F401
 
     root = os.path.join(os.path.dirname(__file__), "..", "..")
-    folder = os.path.join(root, "resources", "_test_templates_missing_verdicts")
-    shutil.rmtree(folder, ignore_errors=True)
-    os.makedirs(folder)
+    folder = tempfile.mkdtemp(
+        prefix="_test_templates_missing_verdicts_", dir=os.path.join(root, "resources")
+    )
     for name in os.listdir(DEFAULT_TEMPLATES):
         if "verdicts" in name:
             continue
@@ -87,7 +91,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
 
     fields = {f.name for f in dataclasses.fields(ImageConfig)}
     values = {name: None for name in fields}
-    values.update(template_directory="resources/_test_templates_missing_verdicts")
+    values.update(template_directory=f"resources/{os.path.basename(folder)}")
     for column, default in TEMPLATE_COLUMNS.items():
         if column in fields:
             values[column] = default
@@ -151,7 +155,7 @@ def _drawing(*, module_on=True, toggles=None, reports=None):
     a third it must not."""
     toggles = toggles or {}
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=module_on)
+    answer_switch(modules, "images", module_on)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value=toggles)
     config.is_aspect_enabled = AsyncMock(side_effect=lambda aspect: toggles.get(aspect, False))
@@ -214,7 +218,7 @@ async def test_a_switch_nobody_signed_up_for_answers_no_and_is_left_to_the_job()
     not where it is raised: it answers no, and the picture's own gate, asked when the job draws,
     raises it and stops the job (`test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job`)."""
     drawing = _drawing(toggles={"standings": True})
-    drawing._modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+    answer_switch(drawing._modules, "images", SwitchNotSignedUp("images"))
 
     assert not await drawing.aspect_attaches_files("standings")
 

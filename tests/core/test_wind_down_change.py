@@ -23,7 +23,7 @@ from unittest.mock import patch
 import discord
 import pytest
 
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.framework.models.change import ChangeOrigin
 from tests.support.change_queue import (
     change_rows,
     discard_job,
@@ -617,7 +617,7 @@ async def test_a_module_s_part_of_the_turn_down_s_save_runs_on_that_save_s_conne
     writes on it is unseen elsewhere while the save stands open, and is saved with it. It is
     handed the drivers turned down, 105 among them, already Not Signed Up on that
     connection while another connection still reads them in review."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     league = await _league(tmp_path)
     await signing_up(league)

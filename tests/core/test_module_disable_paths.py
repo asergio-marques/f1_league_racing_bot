@@ -41,7 +41,7 @@ import pytest
 
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.change_queue import (
     MEMBER_ID,
@@ -173,7 +173,7 @@ async def test_disabling_images_clears_the_flag(tmp_path):
     assert acknowledgement(asked).startswith("⏳ Turning the image module off. ")
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_enabled("images") is False
 
 
 async def test_disabling_images_keeps_the_configuration(tmp_path):
@@ -231,7 +231,7 @@ async def test_an_image_disable_that_cannot_be_written_leaves_the_module_on(tmp_
     await cog._disable_images(asked)
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_images_enabled() is True
+    assert await league.bot.module_service.is_enabled("images") is True
     assert last_said(asked) == (
         "❌ `/module disable` stopped on a fault in the bot, not on anything you entered, and "
         "did not finish. Nothing was saved. Run `/module disable images` again to retry. The "
@@ -488,7 +488,7 @@ async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
     assert acknowledgement(asked).startswith("⏳ Turning the signup module on. ")
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled() is True
+    assert await league.bot.module_service.is_enabled("signup") is True
     config = await _signup_config(league.db_path)
     assert config is not None
     assert config["signup_channel_id"] is None
@@ -513,7 +513,7 @@ async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
     await cog._enable_signup(asked)
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled() is True
+    assert await league.bot.module_service.is_enabled("signup") is True
     config = await _signup_config(league.db_path)
     assert config is not None and str(config["signup_channel_id"]) == "620"
 
@@ -596,7 +596,7 @@ async def test_a_signup_enable_that_cannot_be_written_says_the_module_is_still_o
     await cog._enable_signup(asked)
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled() is False
+    assert await league.bot.module_service.is_enabled("signup") is False
     assert await _signup_config(league.db_path) is None
     assert last_said(asked) == SIGNUP_STILL_OFF
     assert await log_lines(league) == [

@@ -11,6 +11,7 @@ import logging
 import discord
 from discord import app_commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import (
     MODULE_OFF,
     RACE_SESSION_CHOICES,
@@ -38,10 +39,10 @@ from leaguebot.core.utils.channel_guard import (
     changes_nothing,
 )
 from leaguebot.core.utils.input_validator import NAME
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import bot_of
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import bot_of
+from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
         session_type = SessionType(self._session.value)
 
         # Checked again at the submit: the form may be submitted long after it was shown.
-        if not await bot.module_service.is_results_enabled():
+        if not await bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, MODULE_OFF, what=what)
             return
 

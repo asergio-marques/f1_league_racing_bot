@@ -21,7 +21,7 @@ import pytest
 
 # Imported as a module: pytest tries to collect a bare `TestModeCog` name as a test class.
 from leaguebot.core.cogs import test_mode_cog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.change_queue import (
     Clock,
@@ -430,7 +430,7 @@ class TestTheNationalityCommand:
         saved either: it is still on and no audit entry stands. Admin is told in
         `setting_change`'s words that nothing was saved and to run it again; the log channel
         gets the one failure line and no success line; the queue is not stopped."""
-        from leaguebot.core.services.queue import change_queue
+        from leaguebot.framework.services.queue import change_queue
 
         monkeypatch.setattr(
             change_queue, "record_change_on",

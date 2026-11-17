@@ -23,14 +23,14 @@ from leaguebot.attendance.services.check_in.attendance_config_service import (
 )
 from leaguebot.core.services.drivers.driver_service import driver_test_names_on
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import division_round_states_on, round_facts_on
 from leaguebot.results.services.standings.standings_service import team_positions_in_round_on
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.utils.channels import as_text_channel
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import LeagueView
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import LeagueView
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing

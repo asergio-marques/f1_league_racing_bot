@@ -16,11 +16,11 @@ from typing import TYPE_CHECKING, NamedTuple
 import aiosqlite
 import discord
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.notice_handler import send_notice
-from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.services.posting.notice_handler import send_notice
+from leaguebot.framework.models.change import StepFailedOnDiscord
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import (
     current_account_map_for_division,
     driver_test_names_on,
@@ -40,8 +40,8 @@ from leaguebot.core.utils.input_validator import (
     parse_penalty_seconds,
 )
 from leaguebot.core.services.drivers.driver_names import read_driver_names, resolve_driver_name
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing

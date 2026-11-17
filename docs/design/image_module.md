@@ -21,7 +21,7 @@ Answers to `architecture.md`, "The database".
 ### Image's tables
 
 Image owns four tables (`TABLE_OWNER` in `tests/repository/test_architecture_rules.py`), all
-declared in `core/db/migrations/001_baseline.sql`.
+declared in `framework/db/migrations/001_baseline.sql`.
 
 | Table | One row is | Held to it by |
 |---|---|---|
@@ -114,7 +114,8 @@ only when called (`aspect_status`'s module docstring).
 
 ### Models and utilities
 
-`image/models/` holds plain data. `image_module` holds the configuration as read (`ImageConfig`),
+`image/models/` holds plain data. `switch` holds `SWITCH_KEY`, the key image's switch is read by
+(`"images"`). `image_module` holds the configuration as read (`ImageConfig`),
 the render's and the validity check's outcomes (`RenderOutcome`, `ValidityReport`), whose shapes
 Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus` and the validity
 layers' numbers. `image_constants` holds the static maps: the nine
@@ -165,9 +166,10 @@ report `configuration_report`'s, each handed what it reads rather than looking i
 ### The wiring
 
 `image/wiring.py` is image's part of the builder (`architecture.md`): it signs image's switch reader
-up with `ModuleService`, its portrait discard to `drivers_deleted` and its fingerprint area to
-`fingerprint_areas_read`, registers its change types and the handler of its one timed job, and names
-its one start-up step. It holds no rule of image's and no database code.
+up with `ModuleService`, its portrait discard to `drivers_deleted`, its fingerprint area to
+`fingerprint_areas_read` and its kept job to `bot_packed`, registers its change types and the
+handler of its one timed job, and names its one start-up step. It holds no rule of image's and no
+database code.
 
 ---
 
@@ -178,11 +180,12 @@ Answers to `architecture.md`, "How a change is carried out".
 ### The settings
 
 Each `/images` command that changes the configuration asks one `image.setting.…` change, built by
-core's `setting_change` from a `Setting` in `image_settings`: the check is the command's, run at the
-ask and again as the change starts; the save writes the value; and the advice a reply carries beside
-it (what a directory resolves to, the fastest-lap colour's contrast) is a step after the save,
-planned only where the save changed something, so that a fault in it leaves the value saved and the
-reply says it could not be checked. `image_settings`'s module docstring holds each part.
+the framework's `setting_change` from a `Setting` in `image_settings`: the check is the command's,
+run at the ask and again as the change starts; the save writes the value; and the advice a reply
+carries beside it (what a directory resolves to, the fastest-lap colour's contrast) is a step after
+the save, planned only where the save changed something, so that a fault in it leaves the value
+saved and the reply says it could not be checked. `image_settings`'s module docstring holds each
+part.
 
 ### The switch on and off
 
@@ -219,8 +222,11 @@ rendered file").
 Answers to `architecture.md`, "Timed work and restarts".
 
 Image has one timed job, the daily portrait refresh, the standing job at a time of day that
-`architecture.md` allows ("Timed work and restarts"), armed by
-`SchedulerService.schedule_portrait_refresh`.
+`architecture.md` allows ("Timed work and restarts"), armed by `schedule_portrait_refresh`
+(`driver_portrait_service`), a plain function handed the scheduler, which arms it through the
+scheduler's `arm_daily` and disarms it, with `cancel_portrait_refresh`, through `remove`. The pack
+keeps the job because image's subscriber of `bot_packed` hands back its id
+(`PORTRAIT_REFRESH_JOB_ID`).
 
 The handler, `run_daily_refresh` (`driver_portrait_service`), is signed up by the wiring and handed
 the queue's moment. It reads the module's switch as it fires and does nothing while the module is
@@ -349,6 +355,7 @@ season through `active_season_driver_ids`.
 |---|---|
 | `drivers_deleted` | `discard_portraits`: the portraits of accounts no longer drawn |
 | `fingerprint_areas_read` | `fingerprint_areas`: image's configuration, toggles and tier colours |
+| `bot_packed` | `bot_packed_on`: hands back the daily refresh's job id under `KEPT_JOB_IDS`, so the pack keeps it |
 | `starting` | the `portrait refresh job` step, under image's switch key |
 
 ---

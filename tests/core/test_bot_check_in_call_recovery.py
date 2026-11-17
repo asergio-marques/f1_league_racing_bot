@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     Clock,
     change_rows,
@@ -37,6 +37,7 @@ from tests.support.change_queue import (
     stopped_job,
     text_channel,
 )
+from tests.support.switches import answer_switch
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -143,8 +144,8 @@ async def _make_bot(db_path: str, *, attendance_enabled: bool = True) -> Any:
     """The league's bot (`league_bot`) with its change queue, images off, Division 1's check-in
     channel (770001) among its channels."""
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
+    answer_switch(bot.module_service, "images", False)
     bot.check_in_channel = text_channel(CHANNEL_ID)
     known = {CHANNEL_ID: bot.check_in_channel, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
@@ -519,7 +520,7 @@ async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_i
     nothing is posted or written, the answer left for the round stands, the log channel is not
     told it was given up, and the queue does not stop."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     db_path = await _make_db(
         tmp_path, until_round=-timedelta(days=3), round_status=status, checkin_cleared=cleared

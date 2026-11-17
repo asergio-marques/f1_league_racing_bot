@@ -32,7 +32,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.bot_cog import BotCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.modules import hub_service
 from tests.support.change_queue import (
     PAST_THE_STOP,
@@ -273,7 +273,7 @@ async def test_a_fault_in_the_save_saves_neither_the_hub_nor_its_audit_entry(
     stopped."""
     import sqlite3
 
-    from leaguebot.core.services.queue import change_queue
+    from leaguebot.framework.services.queue import change_queue
 
     await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
     old, new = _channel(OLD_HUB), _channel(HUB)
@@ -550,7 +550,7 @@ async def test_the_old_panel_comes_down_when_an_earlier_refresh_already_posted_t
     the move waits on the queue. The toggle's refresh runs after the move is saved and before
     the move's own, and posts the new panel, so the move's own refresh only edits it; the old
     panel still comes down, as the new one is up either way, and the new is posted once."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
     old, new = _channel(OLD_HUB), _channel(HUB)
@@ -631,7 +631,7 @@ async def test_a_stopped_hub_panel_lands_once_the_hub_is_set_and_retried(db_path
     league's lane and no panel is posted. The manager presses Retry: the stopped refresh posts
     the panel in 7920 and keeps its id, and the refresh the setting asked for runs after it and
     edits that panel in place, so one panel stands and nothing stops the queue."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     channel = _channel(HUB)
     cog, interaction = await _setup(db_path, channel)

@@ -10,7 +10,7 @@ from discord.ext import commands
 
 import leaguebot.core.services.rounds.track_service as track_service
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

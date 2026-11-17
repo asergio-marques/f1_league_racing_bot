@@ -44,8 +44,8 @@ the caller's job; this module is given a ``now`` and answers for that moment alo
 rather than read from the wall clock, so the tests can pin a date and a moment together. Only
 `judged_with_the_modules` is awaited, for the hook's subscribers. Modelled on
 `approval_window_service`, which answers the neighbouring question at the confirmation of
-placements. The window offsets both modules read, and the scheduler's arming with them, come from
-`round_event_moments`, so the three cannot drift.
+placements. The window offsets both modules read, and core's arming with them, come from each
+module's own lead builder (`forecast_moments`, `check_in_moments`), so the three cannot drift.
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ from leaguebot.core.models.round import (
     read_scheduled_at,
 )
 from leaguebot.core.services.rounds.round_moments import as_utc
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: The fields of a round a league may amend.
 AMENDABLE_FIELDS = frozenset({"track_name", "format", "scheduled_at"})

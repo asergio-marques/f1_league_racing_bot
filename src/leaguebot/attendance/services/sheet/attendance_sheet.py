@@ -17,9 +17,9 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import driver_identities_on
@@ -29,10 +29,10 @@ from leaguebot.core.services.seasons.season_service import (
     division_rounds_in_order_on,
     round_facts_on,
 )
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.services.posting.standing_post_handler import post_standing
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.channels import as_text_channel
+from leaguebot.framework.services.posting.standing_post_handler import post_standing
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing

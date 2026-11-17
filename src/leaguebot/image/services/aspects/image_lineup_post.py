@@ -17,7 +17,7 @@ import discord
 from leaguebot.core.services.drivers.driver_names import read_nationality_collected
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: The one template this aspect draws. Named here rather than inline because the render
 #: body labels its directory resolution with it as well as passing it to the renderer, and

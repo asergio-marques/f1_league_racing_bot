@@ -35,7 +35,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     acknowledgement,
@@ -116,6 +116,7 @@ AMENDED = (
     "cancel it first: cancelling writes every driver's history from the standings, which would "
     "carry its corrections before they are approved."
 )
+
 
 
 def _accepted(number: int) -> str:
@@ -377,7 +378,7 @@ def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
 
 
 def _unarming_fails(league: Any) -> None:
-    league.bot.scheduler_service.cancel_rounds = MagicMock(
+    league.bot.round_jobs.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
 
@@ -387,7 +388,7 @@ def _unarming_works(league: Any) -> None:
         league.unarmed.extend(round_ids)
         return {rid: removed_jobs(rid) for rid in round_ids}
 
-    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
+    league.bot.round_jobs.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
 
 
 async def _formers(league: Any, *user_ids: int) -> None:
@@ -797,16 +798,16 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
     league = await ongoing_league(tmp_path, attendance=True)
     await _empty_submission(league)
     interaction = await _asked(league)
-    scheduler = league.bot.scheduler_service
-    unarming_one = scheduler.cancel_round
-    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    round_jobs = league.bot.round_jobs
+    unarming_one = round_jobs.cancel_round
+    round_jobs.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
     _unarming_fails(league)
     await run_queue(league.bot)
     assert await _stopped_at(league) == ("unarm", None)
     await accept_session(league, R3)
     before = await _rounds(league)
 
-    scheduler.cancel_round = unarming_one
+    round_jobs.cancel_round = unarming_one
     _unarming_works(league)
     await retry_job(league.bot)
 
@@ -834,7 +835,7 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
     armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
     assert armed_whole == set(still_to_run)
     assert {rid for which, ids in league.armed if which == "cleanups" for rid in ids} == set(raced)
-    assert not [call for call in league.bot.scheduler_service.method_calls
+    assert not [call for call in league.bot.round_jobs.method_calls
                 if call[0].startswith("schedule") and "season_end" in call[0]]
 
 
@@ -1035,11 +1036,11 @@ async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path
 
     await _run_through(league, "unarm")
     assert sorted(league.unarmed) == sorted(await _rounds(league))
-    scheduler = league.bot.scheduler_service
-    assert scheduler.cancel_rounds.call_count == 1
-    assert scheduler.cancel_rounds.call_args.kwargs.get("season_end") is True
-    scheduler.cancel_round.assert_not_called()
-    scheduler.cancel_season_end.assert_not_called()
+    round_jobs = league.bot.round_jobs
+    assert round_jobs.cancel_rounds.call_count == 1
+    assert round_jobs.cancel_rounds.call_args.kwargs.get("season_end") is True
+    round_jobs.cancel_round.assert_not_called()
+    round_jobs.cancel_season_end.assert_not_called()
     assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
 
     await run_queue(league.bot)
@@ -1061,15 +1062,15 @@ async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tm
         return await reading(division_id, *args, **kwargs)
 
     seasons.get_division_rounds = _read
-    scheduler = league.bot.scheduler_service
-    scheduler.cancel_round = MagicMock(
+    round_jobs = league.bot.round_jobs
+    round_jobs.cancel_round = MagicMock(
         side_effect=lambda round_id, **_: events.append(("remove", [round_id]))
     )
     def _cancel_rounds(round_ids: Any, **kwargs: Any) -> dict[int, list[str]]:
         events.append(("remove", sorted(round_ids), kwargs.get("season_end")))
         return {rid: removed_jobs(rid) for rid in round_ids}
 
-    scheduler.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
+    round_jobs.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
     await _asked(league)
     events.clear()
 
@@ -1081,7 +1082,7 @@ async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tm
         i for i, event in enumerate(events) if event[0] == "read"
     )
     assert {event[1] for event in events if event[0] == "read"} == {PRO, AM}
-    scheduler.cancel_season_end.assert_not_called()
+    round_jobs.cancel_season_end.assert_not_called()
 
 
 async def test_every_division_still_running_is_told_in_the_season_s_words(tmp_path):
@@ -1240,12 +1241,12 @@ async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled
 
     audits = await league.rows(
         "SELECT division_id, old_value FROM audit_entries WHERE change_type = 'round.status' "
-        "AND new_value = 'CANCELLED' ORDER BY id"
+        "AND new_value = '\"CANCELLED\"' ORDER BY id"
     )
     assert sorted(row["old_value"] for row in audits if row["division_id"] == PRO) == [
-        "AWAITING_RESULTS", "NOT_RUN",
+        '"AWAITING_RESULTS"', '"NOT_RUN"',
     ]
-    assert [row["old_value"] for row in audits if row["division_id"] == AM] == ["NOT_RUN"] * 4
+    assert [row["old_value"] for row in audits if row["division_id"] == AM] == ['"NOT_RUN"'] * 4
 
 
 async def test_every_driver_gets_a_history_entry_marked_cancelled(tmp_path):
@@ -1758,8 +1759,8 @@ async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     with it) and Kimi's wizard unengaged; both turns are then found no longer due and
     dropped (the manager's whole, Kimi's job marked done as dropped), nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
     and neither lane stopped."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import member, register
     from tests.support.season_league import SIGNUP_CHANNEL_BASE
 

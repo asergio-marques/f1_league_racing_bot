@@ -21,18 +21,18 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import AuditRecord
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import Season
-from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.results.models.amendment_state import SeasonAmendmentState
 from leaguebot.results.services.points.points_amendment_faults import approval_faults
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 

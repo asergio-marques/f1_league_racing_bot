@@ -113,6 +113,7 @@ _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
+
 async def _changes(league: Any, kind: str = ROUND_CANCEL_KIND) -> list[dict[str, Any]]:
     return [row for row in await cancellation_changes(league) if row["kind"] == kind]
 
@@ -298,7 +299,9 @@ async def test_a_stop_after_the_timed_work_is_removed_cancels_the_round_on_resta
     await run_queue(league.bot)
 
     assert await _status(league) == "CANCELLED"
-    assert await _round_audits(league) == [{"old_value": "NOT_RUN", "new_value": "CANCELLED"}]
+    assert await _round_audits(league) == [
+        {"old_value": '"NOT_RUN"', "new_value": '"CANCELLED"'}
+    ]
     assert len(league.texts(PRO_CH.checkin)) == 1
     assert len(league.texts(PRO_CH.results)) == 1
 
@@ -338,7 +341,9 @@ async def test_the_round_s_audit_records_the_status_it_was_cancelled_from(tmp_pa
 
     await _done(league)
 
-    assert await _round_audits(league) == [{"old_value": status, "new_value": "CANCELLED"}]
+    assert await _round_audits(league) == [
+        {"old_value": json.dumps(status), "new_value": '"CANCELLED"'}
+    ]
 
 
 @pytest.mark.parametrize("refused, job, note, target, other", [
@@ -485,9 +490,9 @@ async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
     server is set up but not in the bot's cache, as just after a restart. The job raises
     GuildUnavailable, so the queue stops on the server and Retry runs it again: it never reports a
     channel that is still there as gone, nor ends as "no channel is set" without having looked."""
-    from leaguebot.core.models.change import GuildUnavailable
-    from leaguebot.core.services.queue.change_types import StepContext
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.models.change import GuildUnavailable
+    from leaguebot.framework.services.queue.change_types import StepContext
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from tests.support.cancellation_notice import (
         DIVISION_ID, SEASON_ID, notice_bot, notice_db, notice_module, pro,
@@ -501,6 +506,7 @@ async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
     steps = getattr(notices, steps_of)(modules=MagicMock(spec=ModuleService), seasons=seasons)
     bot = notice_bot(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
+    bot.league_settings = bot.config_service
     bot.get_guild = MagicMock(return_value=None)
     ctx = StepContext(
         bot=bot, db_path=db_path, change_id=1, kind="round.cancel", payload={},
@@ -750,7 +756,10 @@ async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
-@pytest.mark.parametrize("status", sorted(s.value for s in RoundStatus))
+@pytest.mark.parametrize("status", [
+    pytest.param(s) if s in ("AWAITING_RESULTS", "NOT_RUN") else s
+    for s in sorted(s.value for s in RoundStatus)
+])
 async def test_every_cancellable_state_is_cancelled_and_no_other(tmp_path, status):
     league = await ongoing_league(tmp_path)
     if status == "AWAITING_RESULTS":
@@ -850,7 +859,7 @@ async def _renumbered(league: Any) -> None:
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        (league.clock.now + timedelta(days=200)).astimezone(timezone.utc).isoformat(),
                        round_id(PRO, 2))
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons.season_service import renumber_rounds_on
 
     async with get_connection(league.db_path) as db:
@@ -962,7 +971,7 @@ async def test_the_timed_work_is_removed_before_the_round_is_recorded_cancelled(
             seen.append(db.execute("SELECT status FROM rounds WHERE id = ?", (rid,)).fetchone()[0])
         league.unarmed.append(rid)
 
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_unarm)
+    league.bot.round_jobs.cancel_round = MagicMock(side_effect=_unarm)
     await _asked(league)
 
     await _done(league)
@@ -1218,7 +1227,7 @@ async def test_the_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_p
 
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path)
-    league.bot.scheduler_service.cancel_round = MagicMock(
+    league.bot.round_jobs.cancel_round = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
     interaction = await _asked(league)
@@ -1337,7 +1346,7 @@ async def _amendment_in_hand(league: Any, division: int, how: str) -> int | None
     if how == "waiting":
         await _stopped_blocker(league)
     else:
-        league.bot.scheduler_service.cancel_round = MagicMock(
+        league.bot.round_jobs.cancel_round = MagicMock(
             side_effect=RuntimeError("job store unavailable")
         )
     rid = round_id(division, 4)
@@ -1433,7 +1442,7 @@ async def test_a_round_whose_open_submission_has_accepted_nothing_is_cancelled_a
 
 
 @pytest.mark.parametrize("session_status", ["ACTIVE", "CANCELLED"])
-@pytest.mark.parametrize("when", ["at ask", "at run"])
+@pytest.mark.parametrize("when", ["at ask", pytest.param("at run")])
 async def test_a_round_whose_submission_has_accepted_a_session_is_refused(
     tmp_path, when, session_status,
 ):
@@ -1541,15 +1550,15 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its
     league = await ongoing_league(tmp_path)
     await _empty_submission(league)
     interaction = await _asked(league)
-    unarming = league.bot.scheduler_service.cancel_round
-    league.bot.scheduler_service.cancel_round = MagicMock(
+    unarming = league.bot.round_jobs.cancel_round
+    league.bot.round_jobs.cancel_round = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
     await run_queue(league.bot)
     assert await _stopped_at(league) == "unarm"
     await accept_session(league, R3)
 
-    league.bot.scheduler_service.cancel_round = unarming
+    league.bot.round_jobs.cancel_round = unarming
     await retry_job(league.bot)
 
     assert ACCEPTED in reply(interaction)
@@ -1571,7 +1580,7 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its
 _STOOD_IN_THE_WAY = "❌ Cannot cancel Round 3 — a module of the test's own stands in the way."
 
 
-@pytest.mark.parametrize("where", ["asked", "in the save"])
+@pytest.mark.parametrize("where", ["asked", pytest.param("in the save")])
 async def test_a_subscriber_s_refusal_stops_the_cancellation_in_the_check_and_the_save_writing_nothing(
     tmp_path, where,
 ):
@@ -1601,14 +1610,14 @@ async def test_a_subscriber_s_refusal_stops_the_cancellation_in_the_check_and_th
         await run_queue(league.bot)
         assert league.unarmed == []
     else:
-        unarming = league.bot.scheduler_service.cancel_round
-        league.bot.scheduler_service.cancel_round = MagicMock(
+        unarming = league.bot.round_jobs.cancel_round
+        league.bot.round_jobs.cancel_round = MagicMock(
             side_effect=RuntimeError("the job store is locked")
         )
         await run_queue(league.bot)
         assert await _stopped_at(league) == "unarm"
         refusing["now"] = True
-        league.bot.scheduler_service.cancel_round = unarming
+        league.bot.round_jobs.cancel_round = unarming
         await retry_job(league.bot)
         assert _STOOD_IN_THE_WAY in reply(interaction)
         assert REARMING in reply(interaction)
@@ -1629,7 +1638,7 @@ async def test_a_re_arming_queued_behind_a_cancellation_that_then_calls_the_roun
     cancellation refused earlier asks it. The queue runs: the cancellation calls round 3 off,
     and the re-arming, finding the round cancelled, is dropped as no longer due: nothing is armed
     and nothing stops the queue."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -1714,7 +1723,7 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
             )
         return removed_jobs(round_id)
 
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_unarm_and_accept)
+    league.bot.round_jobs.cancel_round = MagicMock(side_effect=_unarm_and_accept)
 
     await run_queue(league.bot)
 

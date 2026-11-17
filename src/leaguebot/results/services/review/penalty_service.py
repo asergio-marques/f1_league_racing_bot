@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.utils.input_validator import (
     is_disqualification,

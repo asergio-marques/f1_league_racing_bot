@@ -8,17 +8,18 @@ from __future__ import annotations
 import discord
 from discord import app_commands
 
+from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import ROUNDS_GROUP, ResultsSubgroup
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_server import (
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_server import (
     CallbackButton,
     CallbackSelect,
     LeagueView,
     guild_of,
 )
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.season_gate import season_for_command
 
 
@@ -206,7 +207,7 @@ class RoundsCommands(ResultsSubgroup):
         replaces it, or until a restart forgets it, first deleting its channel where an
         earlier deletion failed.
         """
-        from leaguebot.core.models.change import VerdictKind
+        from leaguebot.framework.models.change import VerdictKind
         from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
         from leaguebot.results.models.points_config import SessionType
         from leaguebot.results.services.round_amendment.amend_changes import (
@@ -216,7 +217,7 @@ class RoundsCommands(ResultsSubgroup):
             label_of,
         )
 
-        if not await self.bot.module_service.is_results_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(
                 interaction,
                 "\u274c The Results & Standings module is not enabled.",

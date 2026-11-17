@@ -11,9 +11,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from tests.support.change_queue import maybe_await
 from tests.support.settings_league import settings_league
+from tests.support.switches import answer_switch, switch_asked
 
 
 async def test_daily_portraits_refusal_reads_the_module_it_is_handed():
@@ -26,9 +27,9 @@ async def test_daily_portraits_refusal_reads_the_module_it_is_handed():
     config = MagicMock()
     config.get_config = AsyncMock(return_value=SimpleNamespace(use_pfp=True, pfp_daily=False))
     off = MagicMock()
-    off.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(off, "images", False)
     on = MagicMock()
-    on.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(on, "images", True)
 
     assert await maybe_await(daily_portraits_refusal(modules=off, config=config, form=True)) == (
         "❌ The Image module was switched off while this form was open. Nothing was stored."
@@ -36,7 +37,7 @@ async def test_daily_portraits_refusal_reads_the_module_it_is_handed():
     assert await maybe_await(daily_portraits_refusal(modules=off, config=config, form=False)) == (
         "❌ The Image module was switched off while this was open. Nothing was stored."
     )
-    off.is_images_enabled.assert_awaited()
+    assert switch_asked(off, "images")
     assert await maybe_await(daily_portraits_refusal(modules=on, config=config, form=False)) is None
 
 

@@ -29,13 +29,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-from leaguebot.core.models.change import ChangeOrigin, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.framework.models.change import ChangeOrigin, Verdict
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.image.services.portraits import driver_portrait_service
 from leaguebot.image.services.render import image_render_service
 from leaguebot.image.services.validity import image_validity_service as validity_module
 from leaguebot.image.services.config.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
-from leaguebot.core.db.database import run_migrations
+from leaguebot.framework.db.database import run_migrations
 from leaguebot.image.models.image_catalogues import CapacityError
 from leaguebot.image.models.image_module import PROBLEM_UNRESOLVED_VALUE
 from leaguebot.image.services.config.image_config_service import ImageConfigService
@@ -53,6 +53,7 @@ from tests.support.off_the_loop import (
     holds_a_tree,
     recording_threads,
 )
+from tests.support.switches import answer_switch
 
 #: The templates the bot ships, from the repository's root.
 SHIPPED = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
@@ -67,7 +68,7 @@ def _validity(config: Any) -> ImageValidityService:
 def _setting(kind: str, config: Any, proposed: Any) -> Any:
     """The image setting *kind*, the module on and *proposed* the configuration it would make."""
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "images", True)
     config.candidate_config = AsyncMock(return_value=proposed)
     return next(
         each for each in image_settings(
@@ -165,7 +166,7 @@ async def test_the_portrait_refresh_before_a_render_reads_the_shape_off_the_loop
 
 def _daily(monkeypatch, tmp_path, config: Any) -> Any:
     """A bot the daily refresh reaches its refresh with, the league holding *config*."""
-    from leaguebot.core.utils import league_server
+    from leaguebot.framework.utils import league_server
 
     bot = MagicMock()
     bot.image_config_service.get_config = AsyncMock(return_value=config)
@@ -383,7 +384,7 @@ def _drawing(aspect: str) -> Any:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "images", True)
     config = MagicMock()
     config.get_config = AsyncMock(return_value=object())
     config.get_toggles = AsyncMock(return_value={aspect: True})

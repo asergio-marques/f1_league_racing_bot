@@ -28,7 +28,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 SERVER_ID = 12508
 SEASON_ID = 1

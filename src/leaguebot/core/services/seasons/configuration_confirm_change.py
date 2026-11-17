@@ -37,8 +37,8 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     ChangeOrigin,
     PlannedStep,
@@ -49,10 +49,10 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -61,13 +61,13 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.seasons.season_lifecycle_service import confirm_configuration_on
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 __all__ = [
     "ALREADY_BEING_CONFIRMED",

@@ -14,7 +14,7 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import tuple_rows
+from leaguebot.framework.db.database import tuple_rows
 
 
 async def fingerprint_areas(db: aiosqlite.Connection, season_id: int) -> dict[str, Any]:

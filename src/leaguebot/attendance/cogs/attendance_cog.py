@@ -17,6 +17,7 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.cogs.attendance_group import ATTENDANCE_GROUP
 
 # The subgroups join `/attendance` in `attendance_group.py`, in the order a league sees them, and
@@ -25,9 +26,9 @@ from leaguebot.attendance.cogs.config_commands import ConfigCommands
 from leaguebot.attendance.cogs.channel_commands import ChannelCommands
 from leaguebot.attendance.cogs.test_commands import TestCommands
 from leaguebot.attendance.cogs.group_commands import GroupCommands
-from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.log_lines import refuse
 
 
 class AttendanceCog(
@@ -51,7 +52,7 @@ class AttendanceCog(
         unless *record* is False, which `config show` passes: it changes nothing and records
         nothing.
         """
-        if not await self.bot.module_service.is_attendance_enabled():
+        if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             reply = (
                 "❌ The Attendance module is not enabled. "
                 "Use `/module enable attendance` first."

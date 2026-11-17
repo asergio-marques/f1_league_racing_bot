@@ -16,13 +16,13 @@ from typing import Any
 
 import discord
 
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
-from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.utils.channel_guard import is_league_manager
-from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.framework.utils.log_lines import refuse
+from leaguebot.framework.utils.member_names import interaction_member
 from leaguebot.results.services.review.review_state import (
     PenaltyReviewState,
     ReadServerConfig,

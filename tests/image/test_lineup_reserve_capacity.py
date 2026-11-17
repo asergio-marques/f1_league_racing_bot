@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
+from tests.support.switches import answer_switch
 
 
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -59,7 +60,7 @@ def _template_file(tmp_path, *, reserve_slots: int, blocks: int = 2, seats: int 
 
 async def _seed(tmp_path, *, reserves: int):
     """A division carrying *reserves* reserve drivers, and two ordinary teams with empty seats."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "reserve_capacity.db")
     await run_migrations(db_path)
@@ -151,7 +152,7 @@ def _drawing(reports, *, toggle: bool = True, images: bool = True):
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value={"lineup": toggle})
     validity = MagicMock()
@@ -236,7 +237,7 @@ async def test_no_lineup_drawn_means_no_problem(tmp_path, toggle, images):
 
 
 async def test_a_reserve_overflow_reaches_the_caller_through_guard_assign(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
 
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)

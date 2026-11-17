@@ -17,9 +17,10 @@ it is. A review is posted at the queue's clock, as its post job stamps it, and i
 view the builder's factory makes (`_approve_view_for`), as the queue's post job attaches it.
 
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
-the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
+the builder's (`league_queue`). It reads the enabled modules' leads as the builder has it read
 them, attendance's settings through `_attendance`, and a real `SeasonCog` holds the season's setup
-in memory. The scheduler is a double recording each `schedule_*` call in `league.armed`. The
+in memory. Core's round jobs are a double recording each round's leads armed (`arm_leads`) in
+`league.armed`; `run_at_once` reads what it was asked to run at once (`run_lead_now`). The
 league's server holds every channel above, the review's channel (610) among them, the roles above
 and the three drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer
 otherwise.
@@ -39,7 +40,7 @@ in memory. Pro's round 1 is FINAL (raced 30 days ago), round 2 AWAITING_REPORT_V
 days ago), rounds 3 and 4 NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check-in call stands
 in Pro's check-in channel (603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in
 `rsvp_embed_messages`), Lewis having accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
-(`CALENDAR_MESSAGE`). The scheduler double records each round `cancel_round` or `cancel_rounds` is
+(`CALENDAR_MESSAGE`). The round jobs' double records each round `cancel_round` or `cancel_rounds` is
 handed in `league.unarmed`, and gives the jobs it removed of each (`removed_jobs`), and a
 message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
 results submission for a round, its channel standing on the server; `cancel_round` and
@@ -48,9 +49,8 @@ results submission for a round, its channel standing on the server; `cancel_roun
 
 For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
 horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
-performed (`phases_done`, by round id), and the bot reads the amendment's windows as the builder has
-it read them: attendance's only where it is on, weather's always. The scheduler double records
-`schedule_round` as weather's arming. `amend_round` runs `/round amend` as admin 77 and presses the
+performed (`phases_done`, by round id), and the bot reads the amendment's leads as the builder has
+it read them. `amend_round` runs `/round amend` as admin 77 and presses the
 Confirm it offered, giving the press; `amendment_changes` lists the amendments asked of the queue;
 `accept_session` saves a session's results as the wizard does on accepting them; `posted_forecast`
 records a phase's forecast as posted, its message standing in the division's forecast channel.
@@ -85,7 +85,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 
 from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     SERVER_ID,
     Clock,
@@ -156,6 +156,45 @@ def round_id(division_id: int, number: int) -> int:
     return division_id * 10 + number
 
 
+def _armed_as(leads: tuple[Any, ...]) -> list[str]:
+    """What a round's *leads* arm, as `league.armed` names it: `"cleanups"` where every one is a
+    clean-up; otherwise `"weather"` for the forecasts with the result submission, `"forecasts"` for
+    forecasts armed without it (which no test expects), `"results"` for the submission alone, then
+    `"attendance"` for the check-in. A round handed no lead arms nothing."""
+    kinds = {lead.kind for lead in leads}
+    if not kinds:
+        return []
+    if all(lead.clean_up for lead in leads):
+        return ["cleanups"]
+    armed = []
+    if any(kind.startswith("weather_p") for kind in kinds):
+        armed.append("weather" if "results" in kinds else "forecasts")
+    elif "results" in kinds:
+        armed.append("results")
+    if any(kind.startswith("rsvp_") for kind in kinds):
+        armed.append("attendance")
+    return armed
+
+
+def leads_armed(round_jobs: Any) -> list[dict[str, Any]]:
+    """What core's round jobs double was handed to arm (`arm_leads`), call by call: the round
+    (``rnd``), its leads (``leads``), ``season_number``, ``division_tier`` and ``now``, whether
+    handed by position or by name."""
+    names = ("rnd", "leads", "season_number", "division_tier", "now")
+    return [{**dict(zip(names, call.args)), **call.kwargs}
+            for call in round_jobs.arm_leads.call_args_list]
+
+
+def run_at_once(round_jobs: Any) -> list[tuple[int, str]]:
+    """What core's round jobs double was asked to run at once (`run_lead_now`), in order: the
+    round's id and the kind of the lead run."""
+    runs = []
+    for call in round_jobs.run_lead_now.call_args_list:
+        handed = {**dict(zip(("rnd", "lead"), call.args)), **call.kwargs}
+        runs.append((handed["rnd"].id, handed["lead"].kind))
+    return runs
+
+
 def profile_id(user_id: int) -> int:
     return user_id - 60
 
@@ -170,8 +209,10 @@ class SeasonLeague:
         self.events: list[tuple[str, int, int]] = []
         #: Every exception a press raised, as the bot's error handler would have caught it.
         self.errors: list[BaseException] = []
-        #: Each `schedule_*` call: (which, the round ids it was handed). `"cleanups"` is a raced
-        #: round's two clean-ups armed alone (`schedule_round_cleanups`).
+        #: Each round's leads armed (`arm_leads`), by the timed work they arm: (which, the round
+        #: ids). `"weather"` is the forecasts with the result submission, `"results"` the
+        #: submission alone, `"attendance"` the check-in, and `"cleanups"` a raced round's
+        #: clean-ups armed alone (`_armed_as`).
         self.armed: list[tuple[str, list[int]]] = []
         #: The roles each member was granted, in order.
         self.granted: dict[int, list[int]] = {}
@@ -182,7 +223,7 @@ class SeasonLeague:
         self._role_doubles: dict[int, Any] = {}
         self.arming_fails: BaseException | None = None
         self.rasteriser_on = True
-        #: The round ids `scheduler.cancel_round` and `scheduler.cancel_rounds` were handed
+        #: The round ids `round_jobs.cancel_round` and `round_jobs.cancel_rounds` were handed
         #: (`ongoing_league`), in order.
         self.unarmed: list[int] = []
         #: Message ids Discord refuses to delete (`ongoing_league`'s check-in call).
@@ -220,16 +261,12 @@ class SeasonLeague:
         from leaguebot.core.cogs.division_cog import DivisionCog
         from leaguebot.core.cogs.round_cog import RoundCog
         from leaguebot.core.cogs.season_cog import SeasonCog
-        from leaguebot.core.services.modules.module_service import ModuleService
+        from leaguebot.framework.services.switches.module_service import ModuleService
 
         db_path = self.db_path
-        scheduler = MagicMock()
-        scheduler.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
-        scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
-        scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
-        self.bot = bot = await league_bot(db_path, scheduler=scheduler, real_config=True)
+        round_jobs = MagicMock()
+        round_jobs.arm_leads = MagicMock(side_effect=self._arm_leads)
+        self.bot = bot = await league_bot(db_path, round_jobs=round_jobs, real_config=True)
         ids = [REVIEW_CHANNEL]
         for _name, _tier, _role, chans in DIVISIONS.values():
             ids += list(vars(chans).values())
@@ -352,14 +389,24 @@ class SeasonLeague:
             raise self.fetch_fails[user_id]
         return self._member(user_id)
 
-    def _arm(self, which: str) -> Any:
-        def _record(rounds: Any, *_args: Any, **_kwargs: Any) -> None:
-            if self.arming_fails is not None:
-                raise self.arming_fails
-            handed = rounds if isinstance(rounds, (list, tuple)) else [rounds]
-            self.armed.append((which, [r.id for r in handed]))
+    def _arm_leads(self, rnd: Any, leads: Any = (), *_args: Any, **kwargs: Any) -> None:
+        """`arm_leads`' double: *rnd*'s *leads* noted as the timed work they arm (`_armed_as`)."""
+        if self.arming_fails is not None:
+            raise self.arming_fails
+        for which in _armed_as(tuple(kwargs.get("leads", leads))):
+            self._note(which, [rnd.id])
 
-        return _record
+    def _note(self, which: str, round_ids: list[int]) -> None:
+        """*which* noted armed for *round_ids*. A result submission armed for rounds whose
+        forecasts are armed already is theirs (`"weather"` arms both), whichever is armed first."""
+        if which == "results" and any(
+            each == "weather" and set(round_ids) <= set(ids) for each, ids in self.armed
+        ):
+            return
+        if which == "weather":
+            self.armed[:] = [(each, ids) for each, ids in self.armed
+                             if not (each == "results" and set(ids) <= set(round_ids))]
+        self.armed.append((which, round_ids))
 
     async def _attendance(self) -> Any:
         async with get_connection(self.db_path) as db:
@@ -601,7 +648,7 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
     recorded in `league.backup_answers` with how many changes had been asked by then, and the
     time the question was given to stand in `league.backup_timeouts`.
     """
-    from leaguebot.core.utils.league_server import LeagueView
+    from leaguebot.framework.utils.league_server import LeagueView
 
     review = review or await post_review(league)
     press = member_interaction(league.bot, user=user or tier_member("admin", member_id=ADMIN_ID))
@@ -884,8 +931,8 @@ async def ongoing_league(
         league.unarmed.extend(round_ids)
         return {rid: removed_jobs(rid) for rid in round_ids}
 
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_cancel_round)
-    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
+    league.bot.round_jobs.cancel_round = MagicMock(side_effect=_cancel_round)
+    league.bot.round_jobs.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
     if hasattr(league.cog, "_pending"):  # no setup held once approved, while the cog holds one
         league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
@@ -941,7 +988,7 @@ def attendance_from_the_database(league: SeasonLeague) -> None:
 
 
 def removed_jobs(rid: int) -> list[str]:
-    """The jobs `ongoing_league`'s scheduler double says it removed of round *rid*: its results
+    """The jobs `ongoing_league`'s round jobs' double says it removed of round *rid*: its results
     submission and its two clean-ups, as a cancellation's removal of its timed work gives them."""
     return [f"results_id{rid}", f"cleanup_id{rid}", f"rsvp_cleanup_id{rid}"]
 

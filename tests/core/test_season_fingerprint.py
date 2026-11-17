@@ -27,7 +27,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.seasons.season_fingerprint_service import (
     AREA_LABELS,
     SeasonFingerprint,
@@ -162,7 +162,7 @@ async def test_a_switch_nobody_signed_up_for_is_raised_not_fingerprinted(season)
     """A module whose switch reader the builder never signed up is a fault in the bot's assembly,
     not a season that could not be read: taking the fingerprint raises it, naming the module,
     rather than giving the empty fingerprint."""
-    from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 
     season.bot.module_service = ModuleService(season.path)
 
@@ -611,7 +611,7 @@ async def test_a_module_s_areas_not_read_leave_an_empty_fingerprint_logged(
     without the column it names, an `IndexError` as `sqlite3.Row` raises), or a bot whose modules
     hand no areas at all, gives an empty fingerprint, which differs from every other, so an
     approval is refused rather than waved through; the fault is logged on the host."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     if fault != "no module hands its areas":
         error = (

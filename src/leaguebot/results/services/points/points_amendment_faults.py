@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import season_exists
-from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.services.publishing import results_post_service
 
 if TYPE_CHECKING:
@@ -71,7 +71,7 @@ async def approval_faults(
     # must not be refused for an attendance channel it has never configured.
     attendance_on = False
     try:
-        attendance_on = await module_service.is_attendance_enabled()
+        attendance_on = await module_service.is_enabled("attendance")
     except SwitchNotSignedUp:
         raise  # a module that never signed up is a fault in the bot's assembly, not a reading
     except Exception:  # noqa: BLE001 — never refuse an amendment on this reader

@@ -2,8 +2,8 @@
 Discord and no database.
 
 `RoundArming` is a module's answer to the round armed again (`round_armed`): the steps it plans
-and the timed work it asks the scheduler to arm, which core's arming carries out. The jobs are the
-module's own (`ForecastJobs`, `CheckInJobs`), core holding no switch and no rule of theirs: a
+and the timed work it asks the scheduler to arm, which core's arming carries out. The jobs are
+plain `RoundLead` records of the module's own, core holding no switch and no rule of theirs: a
 module off, or a round it has no timed work for, answers none.
 
 `AmendmentPart` is a module's answer to the amendment judged (`amendment_judged`): what it refuses
@@ -16,17 +16,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from leaguebot.core.models.change import PlannedStep
-from leaguebot.core.models.round import CheckInJobs, ForecastJobs
+from leaguebot.framework.models.change import PlannedStep
+from leaguebot.core.models.round import RoundLead
 
 
 @dataclass(frozen=True)
 class RoundArming:
     """A module's answer to the round armed again: the *steps* it plans for the amendment's queue,
-    in order, and the *jobs* it asks the scheduler to arm, or None where it asks for none."""
+    in order, and the *jobs* it asks the scheduler to arm, the leads it wants set, or none."""
 
     steps: tuple[PlannedStep, ...] = ()
-    jobs: ForecastJobs | CheckInJobs | None = None
+    jobs: tuple[RoundLead, ...] | None = None
 
 
 @dataclass(frozen=True)

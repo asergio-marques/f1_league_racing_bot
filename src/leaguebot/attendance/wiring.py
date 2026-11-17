@@ -21,32 +21,44 @@ from leaguebot.image.services.render.image_drawing import as_image_drawing
 if TYPE_CHECKING:
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.attendance.services.check_in.check_in_changes import CheckInViewFactory
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.utils.hooks import StartUpStep
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.hooks import StartUpStep
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign attendance up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_attendance_enabled` asks it by."""
+    """Sign attendance up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.attendance.models.switch import SWITCH_KEY
     from leaguebot.attendance.services.settings.module_switch_settings import attendance_enabled_on
 
-    modules.register_switch("attendance", attendance_enabled_on)
+    modules.register_switch(SWITCH_KEY, attendance_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:
-    """Sign attendance up to each hook only attendance joins: none at present. The hooks several
-    modules join are signed up by the entry point, in the order they are called, through the
-    functions below."""
+    """Sign attendance up to each hook only attendance joins: none at present, and its kinds of
+    round job with core's round jobs. The hooks several modules join are signed up by the entry
+    point, in the order they are called, through the functions below."""
+    sign_up_round_kinds(bot)
 
 
-def sign_up_to_round_windows(bot: "LeagueBot") -> None:
-    """Sign attendance's window up to the hook a round's timing windows read declares. It checks
-    its own switch."""
+def sign_up_round_kinds(bot: "LeagueBot") -> None:
+    """Sign attendance's kinds of round job up with core's round jobs, each with its advance
+    phase: the check-in's call, its last notice, its deadline and its clean-up, from the map its
+    test-mode steps hold (`ADVANCE_KINDS`), inverted, so the register and the steps cannot
+    drift."""
+    from leaguebot.attendance.services.hooks.test_mode_steps import ADVANCE_KINDS
+
+    bot.round_jobs.sign_up_kinds({kind: phase for phase, kind in ADVANCE_KINDS.items()})
+
+
+def sign_up_to_round_leads(bot: "LeagueBot") -> None:
+    """Sign attendance's check-in up to the hook a round's leads are read through. It checks its
+    own switch."""
     from leaguebot.attendance.services.hooks import attendance_hooks
 
-    bot.round_windows_read.subscribe(partial(
-        attendance_hooks.round_window, bot.attendance_service, bot.module_service
+    bot.round_leads_read.subscribe(partial(
+        attendance_hooks.round_leads, bot.attendance_service, bot.module_service
     ))
 
 
@@ -308,7 +320,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.attendance.services.sanctions.attendance_sync_change import (
         attendance_sync_change,
     )
-    from leaguebot.core.services.queue.setting_change import setting_change
+    from leaguebot.framework.services.queue.setting_change import setting_change
 
     bot.change_queue.register(
         check_in_call_change(
@@ -378,7 +390,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
         advance_steps as check_in_advance_steps,
     )
     from leaguebot.attendance.services.check_in.check_in_last_notice import ask_check_in_last_notice
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     scheduler = bot.scheduler_service
 

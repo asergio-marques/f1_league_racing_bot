@@ -48,7 +48,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.bot_cog import BotCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
 from tests.support.undecorate import undecorate
@@ -551,7 +551,7 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
     queue is not stopped."""
     import dataclasses
 
-    from leaguebot.core.models.change import Verdict
+    from leaguebot.framework.models.change import Verdict
     from leaguebot.core.services.settings.bot_init_change import KIND
     from tests.support.change_queue import run_queue, stopped_job
 
@@ -598,7 +598,7 @@ async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     clear a stop: run again once the fault is gone, `/bot init` claims the server."""
     import sqlite3
 
-    from leaguebot.core.services.queue import change_queue
+    from leaguebot.framework.services.queue import change_queue
     from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
     from tests.support.change_queue import queued_log_lines, run_queue, stopped_job
 
@@ -920,7 +920,7 @@ async def test_a_core_setting_saves_its_value_and_audit_together(
     the log channel gets the one failure line and no success line; the queue is not stopped."""
     import sqlite3
 
-    from leaguebot.core.services.queue import change_queue
+    from leaguebot.framework.services.queue import change_queue
     from tests.support.change_queue import run_queue, stopped_job
 
     db_path = await _make_db(tmp_path)
@@ -1011,8 +1011,8 @@ async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_anoth
     the stopped job stays stopped. Nothing is written as they ask; once the queue runs, the setting
     is saved and they are answered with today's reply, past the stop, while the other job stays
     stopped where it was."""
-    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.framework.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import (
         acknowledgement,
         member,
@@ -1812,7 +1812,7 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     no raw error in Discord, and a failure line in the log channel, whose configuration is still
     there to find it (#482)."""
     from leaguebot.core.services.upkeep import backup_service, factory_reset_service
-    from leaguebot.core.utils.interaction_errors import failure_reply
+    from leaguebot.framework.utils.interaction_errors import failure_reply
 
     def fail(*_args, **_kwargs):
         raise backup_service.BackupFault("the disk is full")

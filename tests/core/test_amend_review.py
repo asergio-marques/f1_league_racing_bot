@@ -51,6 +51,7 @@ import pytest
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12108
 SEASON_ID = 1
@@ -72,7 +73,7 @@ def _make_cog(
     # spot would open no file on the host.
     bot.db_path = ":memory:"
     bot.module_service = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
+    answer_switch(bot.module_service, "results", enabled)
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.output_router = MagicMock()

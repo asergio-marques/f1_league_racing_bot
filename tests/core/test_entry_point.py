@@ -40,7 +40,7 @@ def test_read_settings(environ, db_path, jobstore_path):
     """`read_settings` reads the token, the database and the job store from a plain mapping,
     resolving the job store once; with no `BOT_TOKEN` it raises `MissingBotToken`, naming it."""
     from leaguebot.__main__ import MissingBotToken, read_settings
-    from leaguebot.core.services.scheduler_service import default_jobstore_path
+    from leaguebot.framework.services.jobs.scheduler import default_jobstore_path
 
     if db_path is None:
         with pytest.raises(MissingBotToken, match="BOT_TOKEN"):
@@ -60,7 +60,7 @@ async def test_build_returns_every_service_complete(tmp_path):
     """`build` on paths under `tmp_path` gives a `LeagueBot` with every service it declares set,
     on the settings' paths, and the wizard service holding the bot from its constructor, with no
     `set_bot` left to call."""
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
     bot = await built_bot(tmp_path, now=_NOW)
 
@@ -303,15 +303,17 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
 
 async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
     """Straight after `build`, every kind of a round's jobs (the three weather phases, the
-    forecast clean-up, the result submission and the four check-in jobs) has the step
-    `/test-mode advance` runs for it signed up on the bot's advance steps, which the builder
-    makes, by the module whose job it is."""
-    from leaguebot.core.models.round import ROUND_JOB_KINDS
+    forecast clean-up, the result submission and the four check-in jobs) is signed up with core's
+    round jobs by the module whose job it is, with its advance phase (weather's 1, 2, 3 and 8,
+    attendance's 5, 6, 7 and 9, results' none), and has the step `/test-mode advance` runs for it
+    signed up on the bot's advance steps, which the builder makes, by that module."""
+    from tests.support.round_jobs import ROUND_KINDS
 
     bot = await built_bot(tmp_path, now=_NOW)
 
+    assert dict(bot.round_jobs.kinds) == ROUND_KINDS
     missing = []
-    for kind in sorted(ROUND_JOB_KINDS):
+    for kind in sorted(bot.round_jobs.kinds):
         try:
             bot.advance_steps.step_for(kind)
         except LookupError:
@@ -337,11 +339,13 @@ _CANCELLATION_PARTS = (
 )
 
 
-#: Each module's subscriber to a round's timing windows read, as the module names it, and what the
-#: test calls it, in the order the builder signs them up.
-_WINDOWS_PARTS = (
-    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_window", "attendance's window"),
-    ("leaguebot.weather.services.weather_config_service", "round_window", "weather's window"),
+#: Each module's subscriber to a round's leads read (`round_leads_read`), as the module names it,
+#: and what the test calls it, in the order the builder signs them up.
+_LEADS_PARTS = (
+    ("leaguebot.attendance.services.hooks.attendance_hooks", "round_leads", "attendance's check-in"),
+    ("leaguebot.weather.services.weather_config_service", "round_leads", "weather's forecasts"),
+    ("leaguebot.results.services.submission.round_start", "submission_leads",
+     "results' submission"),
 )
 
 
@@ -360,6 +364,8 @@ _AMENDMENT_PARTS = (
      "attendance's posts"),
     ("round_armed", "leaguebot.weather.services.forecast_amendment", "round_armed",
      "weather's posts"),
+    ("round_armed", "leaguebot.results.services.submission.round_start", "round_armed",
+     "results' submission"),
     ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
      "weather's clean-ups"),
     ("round_clean_ups_due", "leaguebot.attendance.services.check_in.check_in_amendment",
@@ -511,12 +517,13 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     check-in notice, then weather's forecast note, then results' results note; and the steps a
     module plans, results' deletion of a submission channel, attendance's take-down of a call,
     attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
-    forecast note and results' results note. A round's timing windows read: attendance's window,
-    then weather's, each handed whether the round is being amended. A round amended: as it is judged,
+    forecast note and results' results note. A round's leads read: attendance's check-in, then
+    weather's forecasts, then results' submission; no round's timing windows read is made. A round
+    amended: as it is judged,
     attendance's judgement of its check-in, then weather's of its forecasts; inside the
     save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's reopening
-    of its check-in; as the round is armed again, the posts each owes, attendance's then weather's,
-    then the clean-ups due a day after the round, weather's then attendance's; the steps each
+    of its check-in; as the round is armed again, the posts and timers each owes, attendance's then
+    weather's then results' submission, then the clean-ups due a day after the round, weather's then attendance's; the steps each
     defines, weather's then attendance's, under the names the amendment gives them today; and the
     words an outcome gives a step that was not done, weather's for a forecast, then attendance's
     for its check-in. A season's end: what
@@ -573,7 +580,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
             cancellation_handed.append(args)
         monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
                             raising=False)
-    for module_name, name, part in _WINDOWS_PARTS:
+    for module_name, name, part in _LEADS_PARTS:
         async def window_spy(*_args, part=part, **_kwargs):
             called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, window_spy,
@@ -646,8 +653,8 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         ["notify_forecast"], ["notify_results"],
     ]
     called.clear()
-    await bot.round_windows_read.call()
-    assert called == ["attendance's window", "weather's window"]
+    await bot.round_leads_read.call()
+    assert called == [part for _module, _name, part in _LEADS_PARTS]
     for hook in ("amendment_judged", "round_amended", "round_armed", "round_clean_ups_due"):
         called.clear()
         await getattr(bot, hook).call(None, 0)
@@ -772,25 +779,17 @@ async def test_the_builder_signs_signup_up_to_a_driver_s_account_changed(tmp_pat
     assert steps and all(isinstance(name, str) for name in steps)
 
 
-#: The windows the league configures in the pair test: attendance's three lead times, and
+#: The windows the league configures in the leads test: attendance's three lead times, and
 #: weather's three horizons, each unlike its default.
 _ATTENDANCE_SET = (3, 12, 1)
 _WEATHER_SET = (4, 1, 3)
 
 
-@pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
-@pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
-async def test_the_windows_hook_hands_each_caller_today_s_pair(
-    tmp_path, attendance_on, weather_on
-):
-    """A league whose check-in calls go out 3 days ahead, their last notice 12 hours and their
-    deadline 1 hour before the round, and whose forecasts fall 4 days, 1 day and 3 hours before
-    it, with attendance and weather each on or off. Read through the hook the builder makes,
-    `(attendance, weather)` is what each caller has always received: attendance's window only
-    where attendance is on; weather's only where weather is on."""
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-    from leaguebot.core.services.rounds.round_moments import read_round_windows
+async def _leads_read(tmp_path, *, attendance_on, weather_on, attendance=_ATTENDANCE_SET):
+    """Every lead the hook the builder makes (`round_leads_read`) hands back, in order, for a
+    league whose check-in lead times are *attendance* and forecast horizons `_WEATHER_SET`, with
+    attendance and weather each on or off and results on."""
+    from leaguebot.framework.db.database import get_connection
     from tests.support.change_queue import seed_server
 
     bot = await built_bot(tmp_path, now=_NOW)
@@ -799,7 +798,7 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
         await db.execute(
             "INSERT INTO attendance_config (id, module_enabled, rsvp_notice_days, "
             "rsvp_last_notice_hours, rsvp_deadline_hours) VALUES (1, ?, ?, ?, ?)",
-            (int(attendance_on), *_ATTENDANCE_SET),
+            (int(attendance_on), *attendance),
         )
         await db.execute(
             "INSERT INTO weather_pipeline_config (id, phase_1_days, phase_2_days, phase_3_hours) "
@@ -809,13 +808,98 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
         await db.execute("UPDATE server_configs SET weather_module_enabled = ?",
                          (int(weather_on),))
         await db.commit()
+    return [lead for leads in await bot.round_leads_read.call() for lead in leads or ()]
 
-    pair = await read_round_windows(bot.round_windows_read)
 
-    assert pair == (
-        AttendanceWindows(*_ATTENDANCE_SET) if attendance_on else None,
-        WeatherWindows(*_WEATHER_SET) if weather_on else None,
-    )
+@pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
+@pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
+async def test_the_leads_hook_hands_each_enabled_module_s_leads(
+    tmp_path, attendance_on, weather_on
+):
+    """A league whose check-in calls go out 3 days ahead, their last notice 12 hours and their
+    deadline 1 hour before the round, and whose forecasts fall 4 days, 1 day and 3 hours before
+    it, with attendance and weather each on or off and results on. Read through the hook the
+    builder makes, the leads come in the order the modules are signed up: attendance's only where
+    it is on (its call, last notice and deadline, each armed only while ahead and quoted by the
+    approval's date check as "Check-in call" and the like with its lead time worded "3 days
+    before", "12 hours before", "1 hour before", then its clean-up a day after the round, armed
+    only while ahead and never quoted); weather's only where it is on (its three phases, armed
+    whatever the hour and quoted as "Weather Phase 1" to 3 with "4 days before", "1 day before"
+    and "3 hours before", then its clean-up, never quoted); then results' submission, at the
+    round. Each timer keeps today's name."""
+    from leaguebot.core.models.round import RoundLead
+    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
+
+    handed = await _leads_read(tmp_path, attendance_on=attendance_on, weather_on=weather_on)
+
+    check_in = [
+        RoundLead(kind="rsvp_notice", offset=-timedelta(days=3), label="RSVP notice",
+                  ahead_only=True, check_label="Check-in call", check_wording="3 days before"),
+        RoundLead(kind="rsvp_last_notice", offset=-timedelta(hours=12), label="RSVP last-notice",
+                  ahead_only=True, check_label="Check-in last notice",
+                  check_wording="12 hours before"),
+        RoundLead(kind="rsvp_deadline", offset=-timedelta(hours=1), label="RSVP deadline",
+                  ahead_only=True, check_label="Check-in deadline", check_wording="1 hour before"),
+        RoundLead(kind="rsvp_cleanup", offset=POST_RACE_CLEANUP_DELAY, label="RSVP cleanup",
+                  ahead_only=True, clean_up=True),
+    ]
+    forecasts = [
+        RoundLead(kind="weather_p1", offset=-timedelta(days=4), label="Weather P1",
+                  check_label="Weather Phase 1", check_wording="4 days before"),
+        RoundLead(kind="weather_p2", offset=-timedelta(days=1), label="Weather P2",
+                  check_label="Weather Phase 2", check_wording="1 day before"),
+        RoundLead(kind="weather_p3", offset=-timedelta(hours=3), label="Weather P3",
+                  check_label="Weather Phase 3", check_wording="3 hours before"),
+        RoundLead(kind="cleanup", offset=POST_RACE_CLEANUP_DELAY, label="Forecast cleanup",
+                  clean_up=True),
+    ]
+    submission = RoundLead(kind="results", offset=timedelta(0), label="Result submission",
+                           run_at_once=True, left_to_advance=True)
+    assert handed == [
+        *(check_in if attendance_on else []), *(forecasts if weather_on else []), submission
+    ]
+
+
+async def test_a_zero_hour_last_notice_is_no_lead_and_a_zero_hour_deadline_falls_at_the_round(
+    tmp_path,
+):
+    """A league with attendance on whose check-in calls go out 5 days ahead, with its last notice
+    set to 0 hours and its deadline to 0 hours, and weather off. Attendance answers no last notice
+    at all, and its deadline at the round's own moment, quoted by the approval's date check as
+    "at the round"."""
+    handed = await _leads_read(tmp_path, attendance_on=True, weather_on=False,
+                               attendance=(5, 0, 0))
+
+    assert [(lead.kind, lead.offset, lead.check_label, lead.check_wording)
+            for lead in handed if lead.kind.startswith("rsvp_")] == [
+        ("rsvp_notice", -timedelta(days=5), "Check-in call", "5 days before"),
+        ("rsvp_deadline", timedelta(0), "Check-in deadline", "at the round"),
+        ("rsvp_cleanup", timedelta(hours=24), None, None),
+    ]
+
+
+async def test_results_answers_its_submission_lead_while_switched_off(tmp_path):
+    """A league with weather, attendance and results all off. Asked for a round's leads through
+    the hook the builder makes (`round_leads_read`), results alone answers, though it is off: one
+    lead, its submission, stored as `results`, at the round's own moment (no offset), named
+    "Result submission", run at once where its moment has passed and left to `/test-mode advance`
+    where core says so, armed whatever the hour, no clean-up, and quoted by no date check. With
+    results on, the leads hook test's case with the other two off pins the same answer."""
+    from leaguebot.core.models.round import RoundLead
+    from tests.support.change_queue import seed_server
+    from tests.support.season_league import set_module_flag
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    await seed_server(bot.db_path)
+    for name in ("weather", "attendance", "results"):
+        await set_module_flag(bot.db_path, name, False)
+
+    handed = await bot.round_leads_read.call()
+
+    assert [lead for leads in handed for lead in leads or ()] == [
+        RoundLead(kind="results", offset=timedelta(0), label="Result submission",
+                  run_at_once=True, left_to_advance=True)
+    ]
 
 
 async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
@@ -922,7 +1006,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     `closing_steps`, is handed the bot and its queue, whose clock judges each 24 hours; the held
     signup channels' catch-up, `recover_held_channels` in `closing_steps`, is handed the bot and
     its queue, whose clock judges each hold; the
-    amendment sweep arms the bot's scheduler's sweep; and each other
+    amendment sweep hands results' own arming of it the bot's scheduler; and each other
     step hands its recovery the bot: results' three in results' services and attendance's three in
     `attendance.services.check_in.check_in_recovery`, each of these six also handed the bot's queue, since a
     service does not look the queue up on the bot; each of the others in its module's wiring, but
@@ -935,12 +1019,11 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     import importlib
     from contextlib import asynccontextmanager
 
-    import leaguebot.core.services.upkeep.start_up as start_up_module
-    from leaguebot.core.db.database import get_connection
+    import leaguebot.framework.services.jobs.start_up as start_up_module
+    from leaguebot.framework.db.database import get_connection
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.core.services.modules import hub_service
-    from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.utils.hooks import StartingHook
+    from leaguebot.framework.utils.hooks import StartingHook
     from tests.support.review_prompts import store_review_prompt
 
     ran: list[tuple] = []
@@ -959,8 +1042,10 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
     monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
     monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
-    monkeypatch.setattr(SchedulerService, "schedule_amendment_sweep",
-                        scheduling("schedule_amendment_sweep"))
+    monkeypatch.setattr(
+        "leaguebot.results.services.round_amendment.amendment_writes.schedule_amendment_sweep",
+        scheduling("schedule_amendment_sweep"),
+    )
 
     signed_up: list[tuple] = []
     subscribe = StartingHook.subscribe
@@ -1049,7 +1134,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     [re_armed] = [kwargs for function, _args, kwargs in ran
                   if function == "recover_rsvp_views_and_deadlines"]
     assert callable(re_armed.pop("view_of"))
-    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.framework.utils.league_bot import LeagueBot
     assert not hasattr(LeagueBot, "check_in_view")
     assert "check_in_view" not in LeagueBot.__annotations__
     assert ran == [expected[step] for step in order]
@@ -1079,7 +1164,7 @@ async def _run_main(tmp_path, monkeypatch, calls: list[str], tree: _Tree):
     from unittest.mock import AsyncMock
 
     import leaguebot.__main__ as bot_module
-    from leaguebot.core.db import database
+    from leaguebot.framework.db import database
     from leaguebot.core.services.upkeep import backup_service
 
     settings = bot_module.Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
@@ -1151,7 +1236,7 @@ async def _run_main(tmp_path, monkeypatch, calls: list[str], tree: _Tree):
 
     await bot_module.main()
 
-    from leaguebot.core.services.upkeep import start_up as start_up_module
+    from leaguebot.framework.services.jobs import start_up as start_up_module
 
     start_up = AsyncMock(side_effect=lambda **kwargs: calls.append("start-up") or True)
     monkeypatch.setattr(start_up_module, "start_up", start_up)
@@ -1224,7 +1309,7 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     weather's, each handed which review is gathered, the season and the divisions it shows."""
     import importlib
 
-    from leaguebot.core.services.modules.review_sections import Review
+    from leaguebot.core.services.seasons.review_sections import Review
 
     called: list[tuple] = []
     for module_name, name, part in _REVIEW_SECTION_PARTS:

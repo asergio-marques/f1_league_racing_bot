@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.drivers.placement_service import PlacementService
 
@@ -184,7 +184,7 @@ async def test_an_already_assigned_driver_may_take_a_second_division(tmp_path):
 async def test_a_driver_not_yet_through_signup_cannot_be_placed(tmp_path, state):
     """A seat would contradict the state, and the refusal quotes it back so a manager can
     see which."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, state=state)
 
     with pytest.raises(Refused, match="Unassigned or Assigned"):
@@ -192,7 +192,7 @@ async def test_a_driver_not_yet_through_signup_cannot_be_placed(tmp_path, state)
 
 
 async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
 
     with pytest.raises(Refused, match="not found"):
@@ -202,7 +202,7 @@ async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
 async def test_a_driver_may_hold_only_one_seat_per_division(tmp_path):
     """The refusal names the division rather than the team, because a manager placing
     somebody twice has usually forgotten *where* they already are."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     await _assign(service)
@@ -241,7 +241,7 @@ async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
     """The seats are finite and were created when the division was seeded; there is no
     seat to make. The save refuses before it writes anything, so a refusal has to leave the
     division exactly as it stood — a half-placed driver has no command to finish or undo it."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, team_seats=1)
     service = _service(db_path)
     await _add_driver(db_path, 102)
@@ -258,7 +258,7 @@ async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
 
 
 async def test_a_team_that_does_not_exist_is_refused_by_name(tmp_path):
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path)
 
     with pytest.raises(Refused, match="Ferrari"):

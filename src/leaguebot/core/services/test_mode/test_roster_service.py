@@ -32,13 +32,13 @@ from typing import Any, TypedDict
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.framework.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.services.drivers.template_capacity_service import RosterCapacity
 from leaguebot.core.services.drivers.team_service import (
     division_team_references,
     resolve_team_reference,
 )
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME, parse_nationality
 
 log = logging.getLogger(__name__)

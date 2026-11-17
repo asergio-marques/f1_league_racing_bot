@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
+from tests.support.switches import answer_switch
 
 
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -46,7 +47,7 @@ def _template_file(tmp_path, *, rows: int):
 async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
     """A division of *drivers* drivers on ordinary teams and *reserves* in the reserve team, and
     driver 9999 waiting to be placed."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.framework.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "sheet_capacity.db")
     await run_migrations(db_path)
@@ -125,7 +126,7 @@ def _drawing(template, *, toggle: bool = True, images: bool = True):
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value={"attendance": toggle})
     validity = MagicMock()
@@ -179,7 +180,7 @@ async def test_no_sheet_drawn_means_no_problem(tmp_path, toggle, images):
 async def test_a_reserve_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """Deliberate, and unlike the standings: a seated reserve takes a row, and so would the
     reserve being placed."""
-    from leaguebot.core.models.refusal import Refused
+    from leaguebot.framework.models.refusal import Refused
     from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 

@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 
 SEASON_ID = 1
 CONFIG = "Standard"

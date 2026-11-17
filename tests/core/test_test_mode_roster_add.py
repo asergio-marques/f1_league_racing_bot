@@ -269,7 +269,7 @@ async def test_a_fault_in_the_save_adds_nobody(league):
     interaction = _asks(league)
 
     await _ask(league, interaction, None)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _fake_drivers(league) == []
@@ -302,7 +302,7 @@ async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league)
     asked for again."), and the log channel takes that refusal as a line; only the one change is
     queued. The queue runs it: Mock Alpha is the one fake driver, with one audit entry, and the
     log channel holds the refusal and then the one success line."""
-    from leaguebot.core.utils.log_lines import reply_reason
+    from leaguebot.framework.utils.log_lines import reply_reason
     from tests.support.setup_rounds import repeated
 
     first, repeat = _asks(league), _asks(league)

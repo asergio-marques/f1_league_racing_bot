@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.seasons.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 7654
@@ -337,7 +337,7 @@ async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -
             (div_id,),
         )
         row = await cur.fetchone()
-    assert (row["old_value"], row["new_value"]) == ("SETUP", "CANCELLED")
+    assert (row["old_value"], row["new_value"]) == ('"SETUP"', '"CANCELLED"')
 
 
 async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_path) -> None:
@@ -438,7 +438,9 @@ async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_canc
             "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'round.status'"
         )
         audits = sorted((r["old_value"], r["new_value"]) for r in await cur.fetchall())
-    assert audits == [("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED")]
+    assert audits == [
+        ('"AWAITING_RESULTS"', '"CANCELLED"'), ('"NOT_RUN"', '"CANCELLED"')
+    ]
 
 
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
@@ -707,10 +709,10 @@ async def _run_the_round_job(db_path, round_id, *, results_enabled):
     """
     import contextlib
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.__main__ import register_module_switches
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from tests.support.change_queue import attach_queue, league_double, run_queue
 
     bot = league_double(db_path)

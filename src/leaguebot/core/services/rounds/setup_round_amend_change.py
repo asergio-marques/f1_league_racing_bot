@@ -33,8 +33,8 @@ from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -45,7 +45,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at
 from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -60,9 +60,10 @@ from leaguebot.core.services.rounds.round_add_changes import (
 )
 from leaguebot.core.services.rounds.round_amend_change import NOTHING_AMENDED
 from leaguebot.core.services.seasons.season_service import SeasonService, renumber_rounds_on
-from leaguebot.core.utils.formatting import discord_ts, format_round_list
+from leaguebot.core.utils.formatting import format_round_list
+from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 ROUND_AMEND_SETUP = "core.round_amend"
 

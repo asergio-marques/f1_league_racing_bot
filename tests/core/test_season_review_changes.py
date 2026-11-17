@@ -43,7 +43,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
@@ -150,7 +150,7 @@ async def standing(tmp_path):
 
 async def _take_down(env: Any, ending: str) -> None:
     """The bot asks for Alex's review in channel 700 to be taken down, as *ending* has it."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     channel = env.channel
     await env.bot.change_queue.ask(
@@ -573,7 +573,7 @@ async def test_a_question_whose_posting_was_not_marked_arms_its_five_minutes_on_
     says so in its result."""
     from datetime import timedelta
 
-    from leaguebot.core.services.queue.change_types import StepContext, StepView
+    from leaguebot.framework.services.queue.change_types import StepContext, StepView
     from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
 
     change_type = season_review_post_change(

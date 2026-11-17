@@ -1,6 +1,6 @@
 """The weather deadlines and a division's forecast channel, as settings on the change queue.
 
-Each is built from a `Setting` below by `setting_change` (`core/services/queue/setting_change.py`,
+Each is built from a `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`,
 which holds what every settings change does with a value already held and with a fault).
 
 **The deadlines.** `/weather config phase-1-deadline`, `phase-2-deadline` and `phase-3-deadline`
@@ -29,15 +29,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.weather.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import AuditRecord, Verdict
+from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
-from leaguebot.core.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import Saved, Setting
 from leaguebot.weather.services.forecast_channel import set_division_forecast_channel
 from leaguebot.weather.services.weather_config_service import (
     deadline_refusal,
@@ -48,9 +49,9 @@ from leaguebot.weather.services.weather_config_service import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
 DEADLINE = "weather.setting.deadline"
 FORECAST_CHANNEL = "weather.setting.forecast_channel"
@@ -80,7 +81,7 @@ def deadline_setting(*, modules: "ModuleService", seasons: "SeasonService") -> S
         column = str(ctx.payload["column"])
         value = int(ctx.payload["value"])
         _command, phase, unit, _short = _PHASES[column]
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(_CONFIRMED)
@@ -137,7 +138,7 @@ def forecast_channel_setting(
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
-        if not await modules.is_weather_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
         season = await seasons.get_setup_or_active_season()
         if season is None:

@@ -16,15 +16,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+from leaguebot.attendance.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services.drivers import driver_service, team_service
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.cancellations.cancellation_notice_service import round_label
-from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
+from leaguebot.framework.services.queue.change_types import Step, StepContext, StepView
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 #: The job attendance plans for a round ending not held, reading the check-in for the log line.
 READ_CHECK_IN = "read_check_in"
@@ -127,7 +128,7 @@ def read_check_in_steps(*, modules: "ModuleService") -> dict[str, Step]:
         return StepResult(result={"record": record})
 
     async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         payload = ctx.step_payload

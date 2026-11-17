@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import leaguebot.image.cogs.image_cog as image_cog
-import leaguebot.core.utils.timezones as timezones
+import leaguebot.utils.timezones as timezones
 from leaguebot.image.cogs.config_commands import clear_zone_cache
 from leaguebot.image.cogs.image_cog import ImageCog
 

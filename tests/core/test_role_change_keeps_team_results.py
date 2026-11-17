@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import SessionResult
 from leaguebot.results.services.submission.result_submission_service import (
@@ -38,7 +38,7 @@ from leaguebot.results.services.standings.standings_service import (
     previous_standing_positions,
 )
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 

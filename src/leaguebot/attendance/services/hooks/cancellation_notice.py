@@ -21,22 +21,23 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.attendance.models.switch import SWITCH_KEY
+from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+from leaguebot.framework.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services.cancellations.cancellation_notice_service import (
     post_cancellation_notice,
     require_division,
     round_label,
 )
-from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.framework.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 NOTIFY_CHECKIN = "notify_checkin"
 
@@ -138,7 +139,7 @@ def notify_checkin_steps(*, modules: "ModuleService", seasons: SeasonService) ->
         return StepResult(result={"unset": True} if problem else {"sent": True})
 
     async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the check-in notice for **{ctx.step_payload['division_name']}**"

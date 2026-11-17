@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from tests.support.change_queue import league_bot, league_queue, run_queue, stopped_job
 from tests.support.review_league import channel
@@ -36,6 +36,7 @@ from tests.support.season_league import (
     ongoing_league,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 #: The moment every round is placed relative to.
 NOW = datetime(2026, 10, 5, 18, 0, tzinfo=timezone.utc)
@@ -188,10 +189,10 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
     The check-in channel stands on the server holding every message `_msg_ids` names for both
     rounds; the call is posted there once, and nothing stops the queue."""
     from leaguebot.attendance.services.check_in.check_in_call import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)
     for rid in (POSTED_ROUND, EARLIER_ROUND):
@@ -263,14 +264,14 @@ async def _clean_up(
     rounds; with *attendance_enabled* false the module is off, in its configuration and to the
     module service alike."""
     from leaguebot.attendance.services.check_in.check_in_clean_up import ask_check_in_clean_up
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     if not attendance_enabled:
         async with get_connection(db_path) as db:
             await db.execute("UPDATE attendance_config SET module_enabled = 0")
             await db.commit()
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)
     for rid in (POSTED_ROUND, EARLIER_ROUND):
@@ -479,7 +480,7 @@ async def _ask(league, step: str) -> None:
     timer does, and run the queue to its end."""
     import importlib
 
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     home = importlib.import_module(f"leaguebot.attendance.services.check_in.check_in_{step}")
     ask = getattr(home, f"ask_check_in_{step}")

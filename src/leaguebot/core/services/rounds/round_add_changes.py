@@ -36,8 +36,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -48,16 +48,17 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at, utc_text
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import renumber_rounds_on
-from leaguebot.core.utils.formatting import discord_ts, format_round_list
+from leaguebot.core.utils.formatting import format_round_list
+from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.round_import import ParsedDivisionRounds, format_import_errors
 

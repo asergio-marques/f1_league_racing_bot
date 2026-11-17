@@ -26,7 +26,7 @@ _DECLARES_A_TABLE = re.compile(
 #: The files that may declare a table the migrations declare, and why. A database whose schema
 #: is itself the subject, and a file nothing reads inside, are the only two reasons there are.
 _MAY_DECLARE_A_PRODUCTION_TABLE = {
-    "tests/core/test_database.py": (
+    "tests/framework/test_database.py": (
         "stands up a database from before the baseline, which the runner must refuse"
     ),
     "tests/core/test_backup_service.py": (
@@ -44,7 +44,7 @@ _MAY_DECLARE_A_PRODUCTION_TABLE = {
 def _production_tables() -> set[str]:
     """Every table the migrations declare, and the one `run_migrations` creates for itself."""
     tables = {"schema_migrations"}
-    for sql in sorted((REPO_ROOT / "src" / "leaguebot" / "core" / "db" / "migrations").glob("*.sql")):
+    for sql in sorted((REPO_ROOT / "src" / "leaguebot" / "framework" / "db" / "migrations").glob("*.sql")):
         tables |= {
             match.group(1).lower()
             for match in _DECLARES_A_TABLE.finditer(sql.read_text(encoding="utf-8"))

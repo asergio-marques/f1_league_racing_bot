@@ -23,14 +23,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.db.database import get_connection, run_migrations
+from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.review_workflows import (
     run_workflow,
     sign_up_confirmation_refused,
     sign_up_signup_refusals,
 )
 from tests.support.setup_reads import hold_setup
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12608
 SEASON_ID = 11
@@ -148,8 +149,8 @@ def _cog(
     cog.bot.db_path = db_path
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
-    # No module's window counts: a windows hook nothing is signed up to.
-    cog.bot.round_windows_read = AwaitedHook()
+    # No module's window counts: a leads hook nothing is signed up to.
+    cog.bot.round_leads_read = AwaitedHook()
     # Results' refusals, then signup's, through the hook the approval asks them of, as the
     # builder signs them.
     sign_up_confirmation_refused(cog.bot)
@@ -177,11 +178,11 @@ def _cog(
     hold_setup(season_svc, _pending(), divisions=False)
 
     module_svc = cog.bot.module_service
-    module_svc.is_signup_enabled = AsyncMock(return_value=signup_enabled)
-    module_svc.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    module_svc.is_results_enabled = AsyncMock(return_value=results_enabled)
-    module_svc.is_weather_enabled = AsyncMock(return_value=False)
-    module_svc.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(module_svc, "signup", signup_enabled)
+    answer_switch(module_svc, "attendance", attendance_enabled)
+    answer_switch(module_svc, "results", results_enabled)
+    answer_switch(module_svc, "weather", False)
+    answer_switch(module_svc, "images", False)
 
     # Not a MagicMock attribute: `test_mode_active` reads truthy on one, and the results
     # gate then seeds a points configuration rather than refusing for the want of one.

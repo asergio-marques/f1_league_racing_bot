@@ -58,8 +58,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.models.change import (
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.models.change import (
     FollowOn,
     PlannedStep,
     StepKind,
@@ -67,10 +67,10 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

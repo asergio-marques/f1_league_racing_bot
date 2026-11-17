@@ -25,9 +25,10 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.sheet import attendance_sheet
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.models.change import (
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.models.change import (
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
@@ -36,15 +37,15 @@ from leaguebot.core.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
 from leaguebot.core.services.seasons.season_service import division_first_round
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
@@ -100,7 +101,7 @@ def sheet_step(
         await attendance_sheet.record_sheet_on(db, int(payload["division_id"]), result.result)
 
     async def still_due(ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         payload = ctx.step_payload or ctx.payload
@@ -203,7 +204,7 @@ def opening_steps(
                                                   result.result)
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the opening attendance sheet of **{ctx.step_payload['division_name']}**"
@@ -288,7 +289,7 @@ def final_steps(
         return StepResult(result=result, lines=attendance_sheet.sheet_lines(result))
 
     async def still_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
+        return await modules.is_enabled(SWITCH_KEY)
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the final attendance sheet of **{ctx.step_payload['division_name']}**"

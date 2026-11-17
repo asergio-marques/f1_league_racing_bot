@@ -42,8 +42,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     AuditRecord,
     ChangeOrigin,
     FollowOn,
@@ -55,11 +55,11 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     DiscardedContext,
@@ -69,7 +69,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.posting.channel_tell_change import KIND as CHANNEL_TELL
+from leaguebot.framework.services.posting.channel_tell_change import KIND as CHANNEL_TELL
 from leaguebot.core.services.seasons.season_approval_change import (
     GRANT_ROLES,
     driver_roles_step,
@@ -80,9 +80,9 @@ from leaguebot.core.services.seasons.season_approval_change import (
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 from leaguebot.core.services.drivers.placement_service import uncommitted_placements_on
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
@@ -255,7 +255,7 @@ def mid_season_confirm_change(
             ctx.db_path, season_id, guild, division_channel_faults_read=division_channel_faults_read
         )
         faults = [*(f"Unsettled signup: {line}" for line in unsettled), *channels]
-        if await modules.is_images_enabled():
+        if await modules.is_enabled("images"):
             fault = rasteriser_fault()
             if fault:
                 faults.append(fault)

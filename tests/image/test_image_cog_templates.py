@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.image.cogs.config_commands import ConfigCommands
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.cogs.template_commands import TemplateCommands

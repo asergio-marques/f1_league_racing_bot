@@ -34,7 +34,9 @@ from tests.support.season_league import (
     PRO,
     ongoing_league,
     posted_forecast,
+    leads_armed,
     round_id,
+    run_at_once,
 )
 
 PRO_CH = DIVISIONS[PRO][3]
@@ -57,11 +59,12 @@ CANNOT_DISCARD = (
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
+
 async def _ask_rearm(league: Any, rid: int = R3, number: int = 3, *,
                      cleanups_only: bool = False) -> int | None:
     """Ask, as the bot, for round *number* of Pro (id *rid*) to be armed again, as a refused
     `/round cancel` asks it; with *cleanups_only*, its clean-ups alone, as for a raced round."""
-    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.framework.models.change import ChangeOrigin
 
     payload: dict[str, Any] = {
         "round_id": rid, "round_number": number, "division_id": PRO, "division_name": "Pro",
@@ -165,8 +168,7 @@ async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submi
 
     assert await stopped_job(league.db_path) is None
     assert ("results", [R3]) in league.armed
-    opened = league.bot.scheduler_service.run_result_submission_now
-    assert [call.args[0].id for call in opened.call_args_list] == [R3]
+    assert run_at_once(league.bot.round_jobs) == [(R3, "results")]
 
 
 async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tmp_path):
@@ -182,7 +184,7 @@ async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tm
 
     assert await stopped_job(league.db_path) is None
     assert ("results", [R3]) not in league.armed
-    league.bot.scheduler_service.run_result_submission_now.assert_not_called()
+    assert run_at_once(league.bot.round_jobs) == []
 
 
 @pytest.mark.parametrize("case", [
@@ -322,9 +324,28 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     assert await stopped_job(league.db_path) is None
     assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
     assert league.armed == [("cleanups", [R3])]
-    arming = league.bot.scheduler_service.schedule_round_cleanups
-    assert arming.call_args.kwargs["now"] == league.clock.now
-    league.bot.scheduler_service.run_result_submission_now.assert_not_called()
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert sorted(lead.kind for lead in armed["leads"]) == ["cleanup", "rsvp_cleanup"]
+    assert armed["now"] == league.clock.now
+    assert run_at_once(league.bot.round_jobs) == []
+
+
+async def test_a_switched_off_module_adds_no_clean_up_to_a_raced_round_s_re_arming(tmp_path):
+    """Weather off and attendance on. Pro's round 3 was raced two hours ago and awaits its report
+    verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
+    check-in's clean-up alone: weather, being off, answers nothing, and core reads no module's
+    switch of its own."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await league.write("UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", R3)
+    await _place(league, hours=-2)
+
+    assert await _ask_rearm(league, cleanups_only=True) is not None
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [armed] = leads_armed(league.bot.round_jobs)
+    assert armed["rnd"].id == R3
+    assert [lead.kind for lead in armed["leads"]] == ["rsvp_cleanup"]
 
 
 async def test_a_raced_round_s_clean_ups_already_due_run_at_once(tmp_path):

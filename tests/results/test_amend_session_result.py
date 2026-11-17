@@ -40,12 +40,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.round_amendment.amendment_writes import AmendmentWouldOrphanVerdictError, AmendedSession
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.review_league import amend_stage_one, revert_amendment
 from tests.support.teams import seed_team_instances
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12908
 SEASON_ID = 1
@@ -148,7 +149,7 @@ def _bot(*, guild=True, attendance=False):
     bot.output_router.post_log = AsyncMock()
     # The amendment reposts the attendance sheet where the module is on (#345); off by
     # default here so these tests stay about the results.
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    answer_switch(bot.module_service, "attendance", attendance)
     # The rebuild is the last stage's change (#439), asked of the queue; stage one asks none.
     bot.change_queue.ask = AsyncMock()
     return bot

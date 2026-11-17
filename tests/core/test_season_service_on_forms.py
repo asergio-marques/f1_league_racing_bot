@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.session import SESSIONS_BY_FORMAT
 
@@ -212,6 +212,7 @@ async def _division_status(db) -> str:
     return (await cursor.fetchone())["status"]
 
 
+
 async def _round_audits(db) -> list[tuple[str, str]]:
     cursor = await db.execute(
         "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'round.status' "
@@ -232,7 +233,7 @@ async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(
     async with get_connection(db_path) as db:
         assert await cancel_round_on(db, ROUND_ID + 1, **ACTOR) == "AWAITING_RESULTS"
         assert await _round_statuses(db) == ["FINAL", "CANCELLED", "NOT_RUN"]
-        assert await _round_audits(db) == [("AWAITING_RESULTS", "CANCELLED")]
+        assert await _round_audits(db) == [('"AWAITING_RESULTS"', '"CANCELLED"')]
         assert await _division_status(db) == "ACTIVE"
         await db.rollback()
 
@@ -314,7 +315,9 @@ async def test_a_division_is_cancelled_on_the_save_handed(tmp_path, statuses):
         assert await cancel_division_on(db, DIVISION_ID, **ACTOR) == [ROUND_ID + n for n in later]
         assert await _division_status(db) == "CANCELLED"
         assert await _round_statuses(db) == ["FINAL"] + ["CANCELLED"] * len(later)
-        assert await _round_audits(db) == [(statuses[n], "CANCELLED") for n in later]
+        assert await _round_audits(db) == [
+            (f'"{statuses[n]}"', '"CANCELLED"') for n in later
+        ]
         assert await _season(db) == ("ACTIVE", "ONGOING")
         await db.rollback()
 
@@ -596,8 +599,8 @@ async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
         assert dict(audit) == {
             "actor_id": ACTOR_ID,
             "division_id": division_id,
-            "old_value": "AWAITING_REPORT_VERDICTS",
-            "new_value": "FINAL",
+            "old_value": '"AWAITING_REPORT_VERDICTS"',
+            "new_value": '"FINAL"',
             "timestamp": END_NOW.isoformat(),
         }
         await db.rollback()
@@ -704,8 +707,8 @@ def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
     what it is handed (the connection, the scope and the round's target) and hands back one
     module's notice of its own. Returns the hook, the record, and that notice."""
     from leaguebot.core.models.cancellation import CancellationNotices
-    from leaguebot.core.models.change import PlannedStep
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.models.change import PlannedStep
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     planned = CancellationNotices(steps=(PlannedStep("notify_test", {"round": 1}),))
     handed: list[tuple[Any, ...]] = []
@@ -769,7 +772,7 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
                 "CANCELLED" if n == ended else status for n, status in enumerate(statuses)
             ]
             assert await _not_held(db) == [int(n == ended) for n in range(len(statuses))]
-            assert await _round_audits(db) == [(statuses[ended], "CANCELLED")]
+            assert await _round_audits(db) == [(f'"{statuses[ended]}"', '"CANCELLED"')]
             assert await _division_status(db) == "ACTIVE", "the last round is still to run"
         else:
             assert answer is None
@@ -786,7 +789,7 @@ async def test_end_round_not_held_on_commits_nothing(tmp_path):
     it ended from and no notices; a rollback leaves round 2 awaiting its verdicts and unmarked, no
     audit, Pro active and the season ongoing."""
     from leaguebot.core.services.seasons.season_service import end_round_not_held_on
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_REPORT_VERDICTS"))
     async with get_connection(db_path) as db:

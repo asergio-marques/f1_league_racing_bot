@@ -15,7 +15,7 @@ from __future__ import annotations
 import aiosqlite
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.test_mode.test_roster_service import list_test_drivers
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 

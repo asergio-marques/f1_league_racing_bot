@@ -42,11 +42,11 @@ SCRIPT_DIR = pathlib.Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent
 SRC_DIR = SCRIPT_DIR.parent.parent.parent / "src"
 
-#: The migration that seeds the circuits. Named exactly rather than found by globbing for
-#: the newest track migration: a later migration that edits the table would not repeat the
-#: seed, and naming this one makes a rename fail loudly instead of silently reading the
-#: wrong file.
-TRACKS_MIGRATION_PATH = SRC_DIR / "db" / "migrations" / "029_track_data_expansion.sql"
+#: The migration that seeds the circuits: the baseline the schema starts from. Named exactly
+#: rather than found by globbing: a later migration that edits the table would not repeat the
+#: seed, and naming this one makes a rename fail loudly instead of silently reading the wrong
+#: file.
+TRACKS_MIGRATION_PATH = SRC_DIR / "leaguebot" / "framework" / "db" / "migrations" / "001_baseline.sql"
 
 CALENDAR_PATH = SCRIPT_DIR / "calendar.xml"
 
@@ -96,7 +96,7 @@ WEEKDAY_NUMBERS = list(range(7))
 #: seed, no circuit name carrying an apostrophe.
 _TRACK_ROW_PATTERN = re.compile(r"^\s*\(\s*(\d+)\s*,\s*'([^']+)'", re.MULTILINE)
 
-_TRACK_INSERT_MARKER = "INSERT OR IGNORE INTO tracks"
+_TRACK_INSERT_MARKER = "INSERT INTO tracks"
 
 
 def load_tracks(path=TRACKS_MIGRATION_PATH):
@@ -108,8 +108,7 @@ def load_tracks(path=TRACKS_MIGRATION_PATH):
     in a module, though, and importing track_service would mean opening a database, which
     nothing in this family does — so the seed statement is parsed instead.
 
-    Only the rows of the INSERT are read. The UPDATE statements below it in the same
-    migration rename old round values and carry no circuit ids.
+    Only the rows of the INSERT are read; the rest of the baseline carries no circuit ids.
     """
     if not path.exists():
         raise ValueError(
@@ -148,7 +147,7 @@ def load_zone_validator(src_dir=SRC_DIR):
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
     try:
-        from leaguebot.core.utils.timezones import is_known_zone
+        from leaguebot.utils.timezones import is_known_zone
     except ImportError as error:
         raise ValueError(
             f"Could not import the bot's time-zone list from {src_dir} ({error}). "

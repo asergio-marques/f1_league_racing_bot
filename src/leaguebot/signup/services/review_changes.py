@@ -89,7 +89,8 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import (
+from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import (
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -100,22 +101,22 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.services.drivers.driver_service import state_of_account_on
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import name_of_member
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import name_of_member
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
@@ -145,10 +146,10 @@ from leaguebot.signup.services.wizard_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.driver_service import DriverService
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 APPROVE = "signup.approve"
@@ -885,7 +886,7 @@ def lapse_change(
 
     async def check(ctx: CheckContext) -> Verdict:
         user_id = str(ctx.payload["user_id"])
-        if not await modules.is_signup_enabled():
+        if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.not_due("the signup module is off")
         profile = await drivers().get_profile(user_id)
         if profile is None or profile.current_state != DriverState.AWAITING_CORRECTION_PARAMETER:

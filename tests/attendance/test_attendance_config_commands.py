@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.models.attendance import AttendanceConfig
 from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+from tests.support.switches import answer_switch
 
 SERVER_ID = 9119
 
@@ -57,7 +58,7 @@ def _make_cog(*, cfg: AttendanceConfig | None = None) -> AttendanceCog:
     bot.attendance_service = AsyncMock(spec=AttendanceService)
     bot.attendance_service.get_config.return_value = cfg if cfg is not None else _config()
     bot.module_service = MagicMock()
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.db_path = "unused.db"
@@ -179,7 +180,7 @@ async def test_show_refuses_a_server_with_no_configuration():
 
 async def test_show_is_refused_while_the_module_is_disabled():
     cog = _make_cog()
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    answer_switch(cog.bot.module_service, "attendance", False)
     interaction = _interaction()
 
     await _invoke(AttendanceCog.config_show, cog, interaction)
@@ -190,7 +191,7 @@ async def test_show_is_refused_while_the_module_is_disabled():
 async def test_show_records_nothing_while_the_module_is_disabled():
     """A2: `config show` changes nothing, so its refusal is answered and not recorded."""
     cog = _make_cog()
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    answer_switch(cog.bot.module_service, "attendance", False)
     interaction = _interaction()
 
     await _invoke(AttendanceCog.config_show, cog, interaction)

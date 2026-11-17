@@ -32,7 +32,7 @@ def sign_up_confirmation_refused(bot: Any) -> None:
     database, then what the hook is called with. Results' function is looked up as the hook is
     called, so a stand-in bot carries the hook whether or not any workflow asks it yet. It mirrors
     results' wiring's `sign_up_to_confirmation_refused`."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     async def results_refusals(*args: Any, **kwargs: Any) -> Any:
         from leaguebot.results.services.points import season_points_service
@@ -70,7 +70,7 @@ def sign_up_configuration_faults_read(bot: Any) -> None:
     the server. Signup's function is looked up as the hook is called, and the services read off
     *bot* then, so a stand-in bot carries the hook whether or not any check asks it yet. It
     mirrors signup's wiring's `sign_up_to_configuration_faults_read` (#286, item 25)."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     async def signup_faults(*args: Any, **kwargs: Any) -> Any:
         from leaguebot.signup.services import signup_prerequisites
@@ -89,7 +89,7 @@ def sign_up_driver_names_read(bot: Any) -> None:
     drivers' profile ids. Signup's function is looked up as the hook is called, so a stand-in bot
     carries the hook whether or not any check asks it yet. It mirrors signup's wiring's
     `sign_up_to_driver_names_read`."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     async def signup_names(*args: Any, **kwargs: Any) -> Any:
         from leaguebot.signup.services import signup_module_service
@@ -111,7 +111,7 @@ def sign_up_division_channel_faults_read(bot: Any) -> None:
     divisions judged and the server. Each module's function is looked up as the hook is called, so
     a stand-in bot carries the hook whether or not any check asks it yet. It mirrors the
     builder's `_sign_up_to_division_channel_faults_read`."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.hooks import AwaitedHook
 
     async def weather_faults(*args: Any, **kwargs: Any) -> Any:
         from leaguebot.weather.services import forecast_channel

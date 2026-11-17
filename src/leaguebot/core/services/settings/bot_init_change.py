@@ -59,7 +59,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.models.change import (
+from leaguebot.framework.models.change import (
     AuditRecord,
     LEAGUE_LANE,
     PlannedStep,
@@ -68,10 +68,10 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.core.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
-from leaguebot.core.utils.interaction_errors import failure_reply
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
+from leaguebot.framework.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.settings.config_service import ConfigService

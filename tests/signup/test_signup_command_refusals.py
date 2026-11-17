@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.support.change_queue import run_queue
 from tests.support.settings_league import (
@@ -26,6 +26,7 @@ from tests.support.settings_league import (
     settings_league,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7731
 MANAGER = 42
@@ -76,7 +77,7 @@ def _module_off_bot(tmp_path):
     past a missing gate fails there rather than leaving a file in the working directory."""
     bot = MagicMock()
     bot.db_path = str(tmp_path / "untouched.db")
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "signup", False)
     bot.output_router.post_log = AsyncMock()
     return bot
 

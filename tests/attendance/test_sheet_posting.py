@@ -43,6 +43,7 @@ from tests.support.season_league import (
     run_attendance_channel_command,
 )
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 KIND = "attendance.sync"
 SHEET = DIVISIONS[PRO][3].attendance
@@ -234,7 +235,7 @@ async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_non
     Once the sync's sheet job is done, and before the deletion after it runs, the division
     records the new sheet as its live one. A sheet that takes no live slot, as the final sheet of
     a season, is saved nowhere: its record leaves the live sheet as it was."""
-    from leaguebot.core.db.database import get_connection
+    from leaguebot.framework.db.database import get_connection
 
     league = await _scored_league(tmp_path)
     await _old_sheet_standing(league)
@@ -476,12 +477,10 @@ async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tm
     switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own wiring.
     Alex runs `/attendance sync` for Pro from round 1: the fault reaches the sheet's job, which
     stops; the sheet is not posted as text with a line saying its picture could not be drawn."""
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 
     league = await _scored_league(tmp_path, images=True)
-    league.bot.module_service.is_images_enabled = AsyncMock(
-        side_effect=SwitchNotSignedUp("images")
-    )
+    answer_switch(league.bot.module_service, "images", SwitchNotSignedUp("images"))
 
     await _sync_pro(league)
     await run_queue(league.bot)

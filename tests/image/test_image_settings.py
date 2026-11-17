@@ -26,9 +26,9 @@ import discord
 import pytest
 from discord import app_commands
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.interaction_errors import failure_reply
-from leaguebot.core.utils.paths import resolve_within_project_root
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_constants import (
     ASSET_DIRECTORIES,
     ASSET_LABELS,
@@ -50,6 +50,8 @@ from tests.support.settings_league import (
     interaction,
     last_said,
     log_lines,
+    portrait_refresh_cancels,
+    portrait_refresh_times,
     said,
     settings_league,
 )
@@ -578,7 +580,7 @@ async def test_a_colour_import_saves_every_tier_in_one_save_with_its_audit_entri
 
     asked = await _import_file(TWO_TIERS)(league)
     second_fails = AsyncMock(side_effect=[None, sqlite3.OperationalError("database or disk is full")])
-    with patch("leaguebot.core.services.queue.change_queue.record_change_on", second_fails):
+    with patch("leaguebot.framework.services.queue.change_queue.record_change_on", second_fails):
         await run_queue(league.bot, steps=1)
     await run_queue(league.bot)
 
@@ -604,7 +606,7 @@ async def test_a_fault_in_a_pasted_palette_s_save_saves_none_of_it_says_paste_it
     league = await _league(tmp_path)
 
     asked = await CASES["tier-palette"].ask(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _time_format()(league)
     await run_queue(league.bot)
@@ -636,7 +638,7 @@ async def test_confirming_daily_portraits_saves_the_time_and_the_flag_in_one_sav
     daily job is armed at 04:30, and the Success line names the time."""
     league = await _saves_with_record(tmp_path, CASES["daily-portraits"])
 
-    league.scheduler.schedule_portrait_refresh.assert_called_once_with("04:30")
+    assert portrait_refresh_times(league.scheduler) == ["04:30"]
 
 
 # ---------------------------------------------------------------------------
@@ -653,7 +655,7 @@ async def test_an_image_setting_whose_audit_entry_fails_saves_nothing_and_the_la
     league = await _league(tmp_path)
 
     asked = await CASES["time-zone"].ask(league)
-    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _time_format()(league)
     await run_queue(league.bot)
@@ -734,12 +736,12 @@ async def test_the_daily_job_is_armed_by_a_job_after_the_save(tmp_path):
     await run_queue(league.bot, steps=1)
 
     assert await _rows(league.db_path, DAILY) == [(1, "04:30")]
-    league.scheduler.schedule_portrait_refresh.assert_not_called()
+    assert portrait_refresh_times(league.scheduler) == []
     assert success not in await log_lines(league)
 
     await run_queue(league.bot)
 
-    league.scheduler.schedule_portrait_refresh.assert_called_once_with("04:30")
+    assert portrait_refresh_times(league.scheduler) == ["04:30"]
     assert (await log_lines(league)).count(success) == 1
 
 
@@ -764,7 +766,7 @@ async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lan
         ask, what, doing = _slash("use_pfp_toggle", "images use-pfp toggle"), (
             "`/images use-pfp toggle`"), "Turning **Discord profile pictures** on"
         stored, expected = _column("use_pfp"), [(1,)]
-    league.scheduler.schedule_portrait_refresh.side_effect = RuntimeError("the job store refused")
+    league.scheduler.arm_daily.side_effect = RuntimeError("the job store refused")
 
     asked = await ask(league)
     assert said(asked)[0].startswith(f"⏳ {doing}. ")
@@ -790,7 +792,7 @@ async def test_a_stop_after_daily_portraits_are_saved_arms_the_job_when_the_chan
 
     await _confirm("04:30")(league)
     await run_queue(league.bot, steps=1)
-    league.scheduler.schedule_portrait_refresh.assert_not_called()
+    assert portrait_refresh_times(league.scheduler) == []
 
     await restart_queue(league.bot)
     try:
@@ -798,7 +800,7 @@ async def test_a_stop_after_daily_portraits_are_saved_arms_the_job_when_the_chan
     finally:
         await maybe_await(league.bot.change_queue.stop())
 
-    league.scheduler.schedule_portrait_refresh.assert_called_once_with("04:30")
+    assert portrait_refresh_times(league.scheduler) == ["04:30"]
     success = f"{NAMED} | {CASES['daily-portraits'].line}"
     assert (await log_lines(league)).count(success) == 1
     assert [row["state"] for row in await change_rows(league.db_path)] == ["DONE"]
@@ -814,21 +816,37 @@ async def test_turning_portraits_off_removes_the_daily_job_after_the_save(tmp_pa
     await run_queue(league.bot, steps=1)
 
     assert await _rows(league.db_path, _column("use_pfp")) == [(0,)]
-    league.scheduler.cancel_portrait_refresh.assert_not_called()
+    assert portrait_refresh_cancels(league.scheduler) == 0
 
     await run_queue(league.bot)
 
-    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+    assert portrait_refresh_cancels(league.scheduler) == 1
     assert last_said(asked) == "❌ **Discord profile pictures** disabled."
 
 
-async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(tmp_path):
-    """`/images use-pfp daily-toggle` turning daily updates off, the scheduler refusing to remove
-    the job: the setting stays off, the reply is the success followed by a note that the job
-    could not be removed and does nothing while the setting is off, the Success line and one
-    failure line are written, and `/images config time-format` asked behind it is saved."""
+def _remove_raises(scheduler) -> None:
+    scheduler.remove.side_effect = RuntimeError("the job store refused")
+
+
+def _remove_reports_the_job_still_there(scheduler) -> None:
+    # The framework's remove logs a store fault and reports nothing removed, and the job stands.
+    scheduler.remove.return_value = False
+    scheduler.has_job.return_value = True
+
+
+@pytest.mark.parametrize(
+    "refuse", [_remove_raises, _remove_reports_the_job_still_there],
+    ids=["remove-raises", "remove-logs-and-the-job-stands"],
+)
+async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(tmp_path, refuse):
+    """`/images use-pfp daily-toggle` turning daily updates off, the scheduler failing to remove
+    the job, whether its removal raises or logs the fault and leaves the job standing (image
+    spec: the league is told the update could not be removed): the setting stays off, the reply
+    is the success followed by a note that the job could not be removed and does nothing while
+    the setting is off, the Success line and one failure line are written, and
+    `/images config time-format` asked behind it is saved."""
     league = await _league(tmp_path, **BOTH_UPDATES)
-    league.scheduler.cancel_portrait_refresh.side_effect = RuntimeError("the job store refused")
+    refuse(league.scheduler)
 
     asked = await _slash("use_pfp_daily_toggle", "images use-pfp daily-toggle")(league)
     behind = await _time_format()(league)
@@ -854,7 +872,7 @@ async def test_turning_portraits_off_when_the_daily_job_cannot_be_removed_says_s
     setting is off, the Success line and one failure line are written, no job is stopped, and
     `/images config time-format` asked behind it is saved."""
     league = await _league(tmp_path, **BOTH_UPDATES)
-    league.scheduler.cancel_portrait_refresh.side_effect = RuntimeError("the job store refused")
+    league.scheduler.remove.side_effect = RuntimeError("the job store refused")
 
     asked = await _slash("use_pfp_toggle", "images use-pfp toggle")(league)
     assert said(asked)[0].startswith("⏳ Turning **Discord profile pictures** off. ")
@@ -862,7 +880,7 @@ async def test_turning_portraits_off_when_the_daily_job_cannot_be_removed_says_s
     await run_queue(league.bot)
 
     assert await _rows(league.db_path, _column("use_pfp")) == [(0,)]
-    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+    assert portrait_refresh_cancels(league.scheduler) == 1
     reply = last_said(asked)
     assert reply.startswith("❌ **Discord profile pictures** disabled.")
     assert reply.endswith(NOT_REMOVED)
@@ -1031,8 +1049,8 @@ async def test_a_portrait_toggle_found_already_switched_when_it_runs_changes_not
     assert label in reply and f"already **{state}**" in reply
     assert await _rows(league.db_path, _column(column)) == [(wanted,)]
     assert await audit_rows(league.db_path) == []
-    league.scheduler.schedule_portrait_refresh.assert_not_called()
-    league.scheduler.cancel_portrait_refresh.assert_not_called()
+    assert portrait_refresh_times(league.scheduler) == []
+    assert portrait_refresh_cancels(league.scheduler) == 0
     lines = await log_lines(league)
     assert len(lines) == 1
     assert lines[0].split("\n")[0] == f"{NAMED} | /{command} | Nothing changed"
@@ -1058,7 +1076,7 @@ async def test_a_sub_toggle_whose_partner_was_switched_off_ahead_is_refused_when
     assert await _rows(league.db_path, "SELECT pfp_prerender, pfp_daily FROM image_config") == [
         (0, 1)
     ]
-    league.scheduler.cancel_portrait_refresh.assert_not_called()
+    assert portrait_refresh_cancels(league.scheduler) == 0
     assert (await log_lines(league))[-1].startswith(_refused("`/images use-pfp daily-toggle`"))
 
 

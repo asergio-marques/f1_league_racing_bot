@@ -1,7 +1,7 @@
 """The image settings as settings on the change queue (#439, slice 7).
 
 Each `/images` command that changes the module's configuration asks one `image.setting.…` change,
-built from a `Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds
+built from a `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds
 what every settings change does with a value already held and with a fault). The check of each is
 the command's, in today's order and words, run at the ask and again as the change starts, so a
 module switched off, a template broken by a directory set ahead of it or an output whose drawings
@@ -35,11 +35,12 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
-from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
-from leaguebot.core.utils.paths import resolve_within_project_root
-from leaguebot.core.utils.timezones import is_known_zone
+from leaguebot.image.models.switch import SWITCH_KEY
+from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
+from leaguebot.framework.utils.paths import resolve_within_project_root
+from leaguebot.utils.timezones import is_known_zone
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
     ASSET_DIRECTORIES,
@@ -47,7 +48,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
-from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.framework.utils.interaction_errors import failure_reply
 from leaguebot.image.services.config.image_config_service import (
     pfp_change_refusal,
     read_config_on,
@@ -65,14 +66,19 @@ from leaguebot.image.services.config.image_setting_advice import (
     measure_fastest_lap_contrast,
     toggle_enabled_lines,
 )
+from leaguebot.image.services.portraits.driver_portrait_service import (
+    PORTRAIT_REFRESH_JOB_ID,
+    cancel_portrait_refresh,
+    schedule_portrait_refresh,
+)
 from leaguebot.image.utils.svg_document import off_the_loop
 
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.jobs.scheduler import SchedulerService
     from leaguebot.image.services.config.image_config_service import ImageConfigService
     from leaguebot.image.services.render.image_render_service import ImageRenderService
     from leaguebot.image.services.validity.image_validity_service import ImageValidityService
@@ -168,7 +174,7 @@ def _advice(results: Mapping[str, dict[str, Any]]) -> list[str]:
 
 async def _module_refusal(modules: "ModuleService") -> Verdict | None:
     """The refusal where the Image module is off, else None."""
-    if await modules.is_images_enabled():
+    if await modules.is_enabled(SWITCH_KEY):
         return None
     return Verdict.refuse(MODULE_OFF)
 
@@ -225,7 +231,7 @@ async def daily_portraits_refusal(
     off, or enabled the daily updates. *form* says which is asking, so that a confirmation does
     not call itself a form.
     """
-    if not await modules.is_images_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return (
             f"❌ The Image module was switched off while this {'form ' if form else ''}"
             f"was open. Nothing was stored."
@@ -658,7 +664,7 @@ def _tier_colours(
         return dict(payload["colours"])
 
     async def check(ctx: CheckContext) -> Verdict:
-        if await modules.is_images_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.go()
         return Verdict.refuse(FORM_MODULE_OFF if ctx.payload["form"] else MODULE_OFF)
 
@@ -812,7 +818,7 @@ def arm_daily(scheduler: "SchedulerService", command: Callable[[dict[str, Any]],
 
     async def run(ctx: StepContext) -> StepResult:
         kept = next((view.result or {} for view in ctx.steps if view.name == "save"), {})
-        scheduler.schedule_portrait_refresh(str(ctx.payload.get("time") or kept["daily_time"]))
+        schedule_portrait_refresh(scheduler, str(ctx.payload.get("time") or kept["daily_time"]))
         return StepResult()
 
     return After(
@@ -833,7 +839,8 @@ def disarm_daily(scheduler: "SchedulerService", *, not_removed: str = DAILY_JOB_
     """
 
     async def run(_ctx: StepContext) -> StepResult:
-        scheduler.cancel_portrait_refresh()
+        if not cancel_portrait_refresh(scheduler):
+            raise RuntimeError(f"the daily portrait job {PORTRAIT_REFRESH_JOB_ID} could not be removed")
         return StepResult()
 
     return After(

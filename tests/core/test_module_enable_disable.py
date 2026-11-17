@@ -32,9 +32,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.module_cog import ModuleCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import MEMBER_ID
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 9608
 ACTOR_ID = 77
@@ -75,9 +76,9 @@ def _make_cog(
     bot.db_path = db_path
 
     bot.module_service = MagicMock()
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "weather", weather_enabled)
+    answer_switch(bot.module_service, "results", results_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
 
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
@@ -86,8 +87,8 @@ def _make_cog(
     )
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
 
-    bot.scheduler_service = MagicMock()
-    bot.scheduler_service.cancel_all_weather = AsyncMock(return_value=None)
+    bot.round_jobs = MagicMock()
+    bot.round_jobs.cancel_live_rounds = AsyncMock(return_value=None)
 
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -228,7 +229,7 @@ async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     has been touched yet; once the change has run, the jobs are removed once, the reply says so,
     and the Success line is written."""
     from tests.support.change_queue import acknowledgement, run_queue
-    from tests.support.settings_league import last_said, log_lines
+    from tests.support.settings_league import last_said, log_lines, weather_job_cancels
 
     league, cog = await _weather_league(tmp_path, on=True)
     asked = _asked(league, "disable")
@@ -239,10 +240,10 @@ async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     await run_queue(league.bot, steps=1)
     assert await _weather_flag(league.db_path) == 0
     assert [entry["change_type"] for entry in await _audit(league.db_path)] == ["MODULE_DISABLE"]
-    league.scheduler.cancel_all_weather.assert_not_awaited()
+    assert weather_job_cancels(league.round_jobs) == 0
 
     await run_queue(league.bot)
-    league.scheduler.cancel_all_weather.assert_awaited_once_with()
+    assert weather_job_cancels(league.round_jobs) == 1
     assert last_said(asked) == (
         "✅ Weather module disabled. All scheduled weather jobs have been cancelled."
     )
@@ -258,7 +259,7 @@ async def test_disabling_weather_twice_does_no_work(tmp_path):
     await cog._disable_weather(asked)
 
     assert "already disabled" in last_said(asked)
-    league.scheduler.cancel_all_weather.assert_not_awaited()
+    league.round_jobs.cancel_live_rounds.assert_not_awaited()
     assert await _audit(league.db_path) == []
 
 
@@ -278,7 +279,7 @@ async def test_disabling_weather_is_audited(tmp_path):
 async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off_and_says_so(
     tmp_path,
 ):
-    """The scheduler refuses to remove the season's weather jobs: the module stays off with its
+    """Core's round jobs refuse to remove the season's weather jobs: the module stays off with its
     audit entry, the reply says it is off but its jobs could not be removed and do nothing while
     it is off, never that they were cancelled, the Success line and one failure line are written,
     and no job is left stopped on the queue."""
@@ -286,7 +287,7 @@ async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off
     from tests.support.settings_league import last_said, log_lines
 
     league, cog = await _weather_league(tmp_path, on=True)
-    league.scheduler.cancel_all_weather.side_effect = RuntimeError("the job store refused")
+    league.round_jobs.cancel_live_rounds.side_effect = RuntimeError("the job store refused")
     asked = _asked(league, "disable")
 
     await cog._disable_weather(asked)
@@ -359,21 +360,21 @@ async def test_results_is_enabled(tmp_path):
     audited, the sweep that undoes a lapsed amendment is armed, once, and the reply and the
     Success line keep today's words."""
     from tests.support.change_queue import acknowledgement, run_queue
-    from tests.support.settings_league import last_said, log_lines
+    from tests.support.settings_league import amendment_sweep_armings, last_said, log_lines
 
     league, cog = await _league(tmp_path)
     asked = _asked(league, "enable")
 
     await cog._enable_results(asked)
     assert acknowledgement(asked).startswith("⏳ Turning Results & Standings on. ")
-    assert league.scheduler.schedule_amendment_sweep.call_count == 0
+    assert amendment_sweep_armings(league.scheduler) == 0
     await run_queue(league.bot)
 
     assert await _flag(league.db_path, "results_module_config") == 1
     [entry] = await _audit(league.db_path)
     assert entry["change_type"] == "MODULE_ENABLE"
     assert json.loads(entry["new_value"])["module"] == "results"
-    league.scheduler.schedule_amendment_sweep.assert_called_once_with()
+    assert amendment_sweep_armings(league.scheduler) == 1
     assert last_said(asked) == "✅ Results & Standings module enabled."
     assert await log_lines(league) == [f"{NAMED} | /module enable results | Success"]
 
@@ -386,16 +387,16 @@ async def test_a_results_enable_whose_sweep_cannot_be_armed_leaves_results_on_an
     line, the Success line and one failure line are written, and no job is left stopped on the
     queue."""
     from tests.support.change_queue import run_queue, stopped_job
-    from tests.support.settings_league import last_said, log_lines
+    from tests.support.settings_league import amendment_sweep_armings, last_said, log_lines
 
     league, cog = await _league(tmp_path)
-    league.scheduler.schedule_amendment_sweep.side_effect = RuntimeError("the job store refused")
+    league.scheduler.arm_every.side_effect = RuntimeError("the job store refused")
     asked = _asked(league, "enable")
 
     await cog._enable_results(asked)
     await run_queue(league.bot)
 
-    league.scheduler.schedule_amendment_sweep.assert_called_once_with()
+    assert amendment_sweep_armings(league.scheduler) == 1
     assert await _flag(league.db_path, "results_module_config") == 1
     assert [entry["change_type"] for entry in await _audit(league.db_path)] == ["MODULE_ENABLE"]
     enabled, *warning = last_said(asked).split("\n")
@@ -666,7 +667,7 @@ async def test_a_switch_on_asked_before_placements_are_confirmed_and_run_after_i
     await _confirm_a_season(league.db_path)
     await run_queue(league.bot)
 
-    assert await getattr(league.bot.module_service, f"is_{module}_enabled")() is False
+    assert await league.bot.module_service.is_enabled(module) is False
     assert await _audit(league.db_path) == []
     assert last_said(asked) == PLACEMENTS_CONFIRMED
     assert _refused_line(PLACEMENTS_CONFIRMED.removeprefix("❌ ")) in await log_lines(league)
@@ -695,7 +696,7 @@ async def test_a_switch_off_asked_before_pending_completion_and_run_in_it_is_ref
     await _stage(league.db_path, "PENDING_COMPLETION", "ACTIVE")
     await run_queue(league.bot)
 
-    assert await getattr(league.bot.module_service, f"is_{module}_enabled")() is True
+    assert await league.bot.module_service.is_enabled(module) is True
     assert await _audit(league.db_path) == []
     assert last_said(asked) == PENDING_COMPLETION
     refused = f"⛔ `/module disable` refused for {NAMED} — {PENDING_COMPLETION.removeprefix('❌ ')}"
@@ -736,7 +737,7 @@ async def test_a_signup_switch_asked_before_the_configuration_is_confirmed_and_r
     await _stage(league.db_path, "WAITING", "SETUP")
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled() is bool(on)
+    assert await league.bot.module_service.is_enabled("signup") is bool(on)
     assert await _audit(league.db_path) == []
     reason = SIGNUP_FIXED.format(verb=verb)
     assert last_said(asked) == f"❌ {reason}"
@@ -769,8 +770,8 @@ async def test_a_results_switch_off_is_refused_where_attendance_came_on_behind_i
     await cog._disable_results(disable)
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_attendance_enabled() is True
-    assert await league.bot.module_service.is_results_enabled() is True
+    assert await league.bot.module_service.is_enabled("attendance") is True
+    assert await league.bot.module_service.is_enabled("results") is True
     assert last_said(disable) == CASCADE_CHANGED
     refused = (
         f"⛔ `/module disable results` refused for {NAMED} — "
@@ -988,7 +989,7 @@ async def test_every_module_enable_and_disable_refusal_reaches_the_log_channel(
     season = _season() if setup.pop("season", None) == "confirmed" else None
     signup_enabled = setup.pop("signup_enabled", False)
     cog = _make_cog(db_path, season=season, **setup)
-    cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
+    answer_switch(cog.bot.module_service, "signup", signup_enabled)
     interaction = _interaction()
     interaction.client = cog.bot
     interaction.command.qualified_name = f"module {verb or 'enable'}"

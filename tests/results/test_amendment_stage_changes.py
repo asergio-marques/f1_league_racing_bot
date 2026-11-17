@@ -38,9 +38,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.attendance.services.hooks.attendance_after_review import sanction_card_texts
-from leaguebot.core.db.database import get_connection
+from leaguebot.framework.db.database import get_connection
 from leaguebot.results.services.publishing.results_post_service import set_standings_message_id_on
 from tests.support.change_queue import (
     acknowledgement,
@@ -484,7 +484,7 @@ async def test_a_lapse_run_again_after_a_stop_tells_the_log_channel_once(tmp_pat
     `record_lapse` job: after the job has done its work, before its mark is saved. When the bot
     starts again the queue runs that job again. The log channel is told once that the amendment
     lapsed and the round was put back, counting the lines posted and those still waiting to be."""
-    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.framework.services.queue.change_queue import ChangeQueue
 
     league = await _amend_league(tmp_path)
     saving = ChangeQueue._save_result

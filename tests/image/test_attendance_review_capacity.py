@@ -33,6 +33,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
+from tests.support.switches import answer_switch
 
 SVG_NS = "http://www.w3.org/2000/svg"
 SHEET = "attendance_template"
@@ -68,7 +69,7 @@ def _drawing(tmp_path, *, columns=(1, 2, 3), sessions=(1, 2), aspects=("attendan
         call = _template_file(tmp_path, CALL, [f"session_{n}_name" for n in sessions])
         reports = {SHEET: _report(sheet, SHEET), CALL: _report(call, CALL)}
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "images", images)
     config = MagicMock()
     config.get_config = AsyncMock(return_value=MagicMock())
     config.get_toggles = AsyncMock(return_value={aspect: True for aspect in aspects})

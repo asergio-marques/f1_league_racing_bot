@@ -145,7 +145,7 @@ def resolve_configured_directories(
     is a failure this class in particular could not report: an unresolvable class is reported,
     but a league would have to notice the absence themselves.
     """
-    from leaguebot.core.utils.paths import resolve_within_project_root
+    from leaguebot.framework.utils.paths import resolve_within_project_root
 
     directories: dict[str, Path] = {}
     faults: dict[str, str] = {}

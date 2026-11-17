@@ -39,8 +39,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
     PlannedStep,
     StepKind,
     StepResult,
@@ -49,10 +49,9 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
     ROUND_RACED_AWAITING_VERDICTS,
-    CheckInJobs,
-    ForecastJobs,
     Round,
     RoundFormat,
+    RoundLead,
     RoundStatus,
     read_scheduled_at,
     stored_scheduled_at,
@@ -63,10 +62,7 @@ from leaguebot.core.services.rounds.amendment_rules_service import (
     judged_with_the_modules,
     status_refusal,
 )
-from leaguebot.core.services.rounds.round_moments import (
-    results_left_to_advance,
-    round_event_moments,
-)
+from leaguebot.core.services.rounds.round_moments import read_round_leads, results_left_to_advance
 from leaguebot.core.services.rounds.round_steps import (
     JUDGE,
     judge_kept,
@@ -75,10 +71,11 @@ from leaguebot.core.services.rounds.round_steps import (
 )
 from leaguebot.core.services.cancellations import cancellation_notice_service as notices
 from leaguebot.core.services.cancellations.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
-from leaguebot.core.services.queue.queue_records import (
+from leaguebot.framework.services.queue.audit_service import record_change_on
+from leaguebot.framework.services.queue.queue_records import (
     in_hand,
 )
-from leaguebot.core.services.queue.change_types import (
+from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -88,12 +85,12 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons.season_service import renumber_rounds_on, round_called
 from leaguebot.core.utils.formatting import format_round_list
-from leaguebot.core.utils.hooks import AwaitedHook, Hook
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.hooks import AwaitedHook, Hook
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 __all__ = [
@@ -193,13 +190,14 @@ def round_amend_change(
     *,
     modules: "ModuleService",
     seasons: "SeasonService",
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     amendment_judged: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
     round_clean_ups_due: AwaitedHook,
+    round_leads_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that amends a round; see the module.
@@ -208,16 +206,18 @@ def round_amend_change(
     *changes* being ``[[field, value]]`` (`payload_changes`). It names no season: a payload that
     does is read as holding every division of that season (`review_changes.division_job_in_hand`).
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
-    *scheduler*, *amendment_judged* (the hook each module's part of the judgement is asked
+    *round_jobs*, *amendment_judged* (the hook each module's part of the judgement is asked
     through, each reading its own windows), *round_amended* (the moment inside the save), *round_armed* and
     *round_clean_ups_due* (the moments the round is armed again, at which the modules plan their
-    posts and their clean-ups) and the queue's clock *now*.
+    posts and their clean-ups), *round_leads_read* (the timers the modules want for a round, of
+    which a clean-ups-only re-arm arms the clean-ups) and the queue's clock *now*.
     """
     return _round_change(
-        rearm=False, modules=modules, seasons=seasons, scheduler=scheduler,
+        rearm=False, modules=modules, seasons=seasons, round_jobs=round_jobs,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
         amendment_judged=amendment_judged, round_amended=round_amended,
-        round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
+        round_armed=round_armed, round_clean_ups_due=round_clean_ups_due,
+        round_leads_read=round_leads_read, now=now,
     )
 
 
@@ -225,13 +225,14 @@ def round_rearm_change(
     *,
     modules: "ModuleService",
     seasons: "SeasonService",
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     amendment_judged: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
     round_clean_ups_due: AwaitedHook,
+    round_leads_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that arms a round's timed work again after a refused cancellation; see the module.
@@ -243,10 +244,11 @@ def round_rearm_change(
     The bot asks it, on the league's lane, one for each round.
     """
     return _round_change(
-        rearm=True, modules=modules, seasons=seasons, scheduler=scheduler,
+        rearm=True, modules=modules, seasons=seasons, round_jobs=round_jobs,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
         amendment_judged=amendment_judged, round_amended=round_amended,
-        round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
+        round_armed=round_armed, round_clean_ups_due=round_clean_ups_due,
+        round_leads_read=round_leads_read, now=now,
     )
 
 
@@ -255,13 +257,14 @@ def _round_change(
     rearm: bool,
     modules: "ModuleService",
     seasons: "SeasonService",
-    scheduler: "SchedulerService",
+    round_jobs: "RoundJobs",
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     amendment_judged: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
     round_clean_ups_due: AwaitedHook,
+    round_leads_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The steps of `round_amend_change`, and with *rearm* the change that arms a round again.
@@ -371,7 +374,7 @@ def _round_change(
         return judged(ctx) is not None
 
     async def unarm(ctx: StepContext) -> StepResult:
-        scheduler.cancel_round(int(ctx.payload["round_id"]))
+        round_jobs.cancel_round(int(ctx.payload["round_id"]))
         return StepResult(result={"unarmed": True})
 
     async def apply_due(ctx: StepContext) -> bool:
@@ -443,17 +446,14 @@ def _round_change(
             )
 
         division_id = int(row["division_id"])
-        stamp = now().isoformat()
+        stamp = now()
         changed = ""
         for field, new in ctx.payload["changes"]:
             old = row[field]
-            await db.execute(
-                "INSERT INTO audit_entries (actor_id, actor_name, division_id, change_type, "
-                "old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    ctx.actor_id, ctx.actor_name, division_id, f"round.{field}",
-                    str(old) if old is not None else "", str(new), stamp,
-                ),
+            await record_change_on(
+                db, actor_id=ctx.actor_id, actor_name=ctx.actor_name,
+                change_type=f"round.{field}", old_value=old, new_value=new, now=stamp,
+                division_id=division_id,
             )
             # Each field by a statement naming its column, so that nothing is spliced in.
             if field == "track_name":
@@ -509,16 +509,17 @@ def _round_change(
         The amendment can stand stopped for hours, at the save or before it, and a discard or a
         refusal arms the round again at its old moment: a timer armed for a moment already past
         would only fire late. So, judged at the queue's clock: a round still to be run
-        whose moment has passed has its results submission run at once through the scheduler,
-        and what each module owes is its own answer to the round armed again (`plan_posts`): the
-        forecast phases due are drawn at once, and the call, where none stands and its check-in
-        is not over, is posted where it has fallen due.
+        whose moment has passed has the lead marked to run at once, results' submission, run at
+        once through the round jobs, and what each module owes is its own answer to the round
+        armed again (`plan_posts`): the forecast phases due are drawn at once, and the call, where
+        none stands and its check-in is not over, is posted where it has fallen due.
 
         Under test mode the results submission is not run at once: `/test-mode advance` runs a test
-        season's rounds in their turn. Where results is on and weather off no `results` job is armed
-        at all, as the season's approval arms none; otherwise the round's `results` job is taken
-        down again where its moment has passed, which a job armed with no lateness limit would run
-        at once. Its call is still posted (`post_call`)."""
+        season's rounds in their turn. Where results is on and weather off the lead marked as left
+        to the advance is dropped (`results_left_to_advance`) and no `results` job is armed at all,
+        as the season's approval arms none; otherwise the round's job is taken down again where its
+        moment has passed, which a job armed with no lateness limit would run at once. Its call is
+        still posted (`post_call`)."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -534,70 +535,40 @@ def _round_change(
         if found is None:
             raise LookupError(f"division {rnd.division_id} is no longer there")
         season_number, tier = int(found["season_number"]), int(found["tier"])
-        weather_on = await modules.is_weather_enabled()
         if rearm and ctx.payload.get("cleanups_only"):
             # A round raced, or ended cancelled as not held: only the clean-ups of a day after it
-            # are owed, armed through the scheduler and, where the day has come, run as the
-            # restart's catch-up runs them.
-            # Only the switch is read, by name, as the scheduler's `forecast=` and `check_in=`
-            # ask no lead time: the windows of the next-day clean-up are the one shared delay.
-            check_in_on = await modules.is_attendance_enabled()
+            # are owed, armed through the round jobs and, where the day has come, run as the
+            # restart's catch-up runs them. The modules answer the leads they want and core
+            # arms the clean-ups among them: a module that is off answers none, and core reads
+            # no module's switch.
             planned = await plan_clean_ups(ctx, rnd, kept={})
-            if weather_on or check_in_on:
-                scheduler.schedule_round_cleanups(
-                    rnd, season_number=season_number, division_tier=tier,
-                    forecast=weather_on, check_in=check_in_on, now=now(),
-                )
+            leads = await read_round_leads(round_leads_read)
+            clean_ups = tuple(lead for lead in leads if lead.clean_up)
+            round_jobs.arm_leads(rnd, clean_ups, season_number, tier, now())
             return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
         planned, jobs = await plan_posts(ctx, rnd)
-        forecasts = next((each for each in jobs if isinstance(each, ForecastJobs)), None)
-        check_in = next((each for each in jobs if isinstance(each, CheckInJobs)), None)
-        if forecasts is not None:
-            scheduler.schedule_round(
-                rnd,
-                season_number=season_number,
-                division_tier=tier,
-                phase_1_days=forecasts.windows.phase_1_days,
-                phase_2_days=forecasts.windows.phase_2_days,
-                phase_3_hours=forecasts.windows.phase_3_hours,
-                # Drawn at once by a job of the amendment's: a timer armed for a horizon already
-                # passed has no lateness limit and would fire at once, asking for it a second time.
-                skip_phases=forecasts.skip_phases,
-            )
-        else:
-            # No forecasts armed, whether weather is off or a mystery round moved inside its first
-            # horizon, whose notice already told the drivers and which must not be fired
-            # retroactively: the round's results submission is armed, or it would never leave
-            # Not run. Not under test mode with results on and weather off, which leaves the round
-            # to `/test-mode advance` as the season's approval does (`results_left_to_advance`).
-            if not results_left_to_advance(
-                test_mode=bool(found["test_mode"]),
-                results_on=await modules.is_results_enabled(),
-                weather_on=weather_on,
-            ):
-                scheduler.schedule_result_submission_jobs(
-                    [rnd], division_meta={rnd.division_id: (season_number, tier)}
-                )
-        if check_in is not None:
-            scheduler.schedule_attendance_round(
-                rnd,
-                season_number=season_number,
-                division_tier=tier,
-                notice_days=check_in.windows.notice_days,
-                last_notice_hours=check_in.windows.last_notice_hours,
-                deadline_hours=check_in.windows.deadline_hours,
-                now=now(),
-            )
-        result_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)["results"]
-        if rnd.status == RoundStatus.NOT_RUN.value and result_at <= now() and not found["test_mode"]:
-            # After the arming above, whose job for this moment it replaces.
-            scheduler.run_result_submission_now(
-                rnd, season_number=season_number, division_tier=tier
-            )
-        elif rnd.status == RoundStatus.NOT_RUN.value and result_at <= now():
-            # Test mode: the arming above made a job for a moment already past, which the
-            # scheduler runs at once, so it comes down again and the advance opens the round.
-            scheduler.cancel_round(rnd.id, only=frozenset({"results"}))
+        leads = tuple(lead for each in jobs for lead in each)
+        if results_left_to_advance(
+            test_mode=bool(found["test_mode"]),
+            results_on=await modules.is_enabled("results"),
+            weather_on=await modules.is_enabled("weather"),
+        ):
+            # Under test mode with results on and weather off the round is left to
+            # `/test-mode advance`, as the season's approval leaves its rounds.
+            leads = tuple(lead for lead in leads if not lead.left_to_advance)
+        round_jobs.arm_leads(rnd, leads, season_number, tier, now())
+        if rnd.status == RoundStatus.NOT_RUN.value:
+            at = rnd.scheduled_at
+            for lead in leads:
+                if not lead.run_at_once or at + lead.offset > now():
+                    continue
+                if not found["test_mode"]:
+                    # After the arming above, whose job for this moment it replaces.
+                    round_jobs.run_lead_now(rnd, lead, season_number, tier)
+                else:
+                    # Test mode: the arming above made a job for a moment already past, which the
+                    # scheduler runs at once, so it comes down again and the advance opens the round.
+                    round_jobs.cancel_round(rnd.id, only=frozenset({lead.kind}))
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
     async def plan_clean_ups(
@@ -612,13 +583,15 @@ def _round_change(
 
     async def plan_posts(
         ctx: StepContext, rnd: Round
-    ) -> tuple[tuple[PlannedStep, ...], tuple[ForecastJobs | CheckInJobs, ...]]:
+    ) -> tuple[
+        tuple[PlannedStep, ...], tuple[tuple[RoundLead, ...], ...]
+    ]:
         """The posts the amendment owes and the timed work to arm, as each module answers the
         round armed again (`RoundArming`): its steps, which the queue runs in today's order (the
         check-in call taken down and posted again, its deadline run, each withdrawn forecast that
         was posted deleted, the notice that the forecasts no longer stand, each phase due drawn
         at once) and then the clean-ups due a day after the round (`plan_clean_ups`), and its
-        jobs, which `arm` hands the scheduler. Planned once the round is armed, which is where the
+        jobs, which `arm` hands the round jobs. Planned once the round is armed, which is where the
         amendment stood before them, but read before the timed work is scheduled; what the save
         withdraws, from what each module's part of it kept (`apply`), and only where it was saved.
 

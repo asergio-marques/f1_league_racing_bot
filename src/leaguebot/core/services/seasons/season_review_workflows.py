@@ -31,14 +31,14 @@ from datetime import datetime
 
 import discord
 
-from leaguebot.core.models.refusal import Refused
+from leaguebot.framework.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.framework.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.seasons.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
-from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.seasons.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
@@ -48,10 +48,10 @@ from leaguebot.core.services.seasons.mid_season_confirm_change import (
     every_division_done_in,
     every_division_done_refusal,
 )
-from leaguebot.core.services.modules.module_service import ModuleService
-from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.rounds.round_moments import read_round_windows
-from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.framework.services.switches.module_service import ModuleService
+from leaguebot.framework.services.posting.output_router import OutputRouter
+from leaguebot.core.services.rounds.round_moments import read_round_leads
+from leaguebot.framework.services.jobs.scheduler import SchedulerService
 from leaguebot.core.services.seasons.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
@@ -61,13 +61,13 @@ from leaguebot.core.services.seasons.season_fingerprint_service import take_fing
 from leaguebot.core.services.seasons.season_review_changes import take_review_down_before
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.drivers.team_service import TeamService
-from leaguebot.core.utils.formatting import discord_ts
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.interaction_errors import report_failure
-from leaguebot.core.utils.league_bot import bot_of
-from leaguebot.core.utils.league_server import LeagueView
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.utils.messages import discord_ts
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.interaction_errors import report_failure
+from leaguebot.framework.utils.league_bot import bot_of
+from leaguebot.framework.utils.league_server import LeagueView
+from leaguebot.framework.utils.log_lines import record_abandoned, refuse
+from leaguebot.framework.utils.member_names import interaction_member
 
 __all__ = [
     "BackupBeforeApprovalView",
@@ -513,7 +513,7 @@ async def approve_season(
     change_queue: ChangeQueue,
     scheduler_service: SchedulerService,
     output_router: OutputRouter,
-    round_windows_read: AwaitedHook,
+    round_leads_read: AwaitedHook,
     confirmation_refused: AwaitedHook,
     driver_names_read: AwaitedHook,
     division_channel_faults_read: AwaitedHook,
@@ -675,13 +675,11 @@ async def approve_season(
     # elsewhere — it seeds points configurations so a test season passes that
     # requirement — but a test season that loses its check-ins misreports attendance
     # exactly as a real one does, and is a worse thing to be testing against.
-    _att_windows, _wx_windows = await read_round_windows(round_windows_read)
     _dates = approval_checks.date_refusal(
         divisions,
         div_rounds,
         now=now(),
-        attendance=_att_windows,
-        weather=_wx_windows,
+        leads=await read_round_leads(round_leads_read),
     )
     if _dates is not None:
         await refuse(interaction, _dates.reply, what=what, reason=_dates.reason)
@@ -745,7 +743,7 @@ async def approve_season(
     # and the calendar and nothing else, so a broken results or weather template, or a
     # rasteriser missing with both of those off, meets no render before the season
     # first tries to post it.
-    if await module_service.is_images_enabled():
+    if await module_service.is_enabled("images"):
         image_faults = await approval_checks.image_configuration_faults(image_drawing)
         if image_faults:
             bullet_list = "\n• ".join(image_faults)
