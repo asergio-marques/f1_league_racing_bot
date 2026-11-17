@@ -725,15 +725,24 @@ _FEATURE_RACE_HALF = {1: 15, 2: 13, 3: 11, 4: 9, 5: 7, 6: 5, 7: 4, 8: 3, 9: 2, 1
 # ─── Test mode's seeded configurations ──────────────────────────────────────
 
 async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> TestModePart:
-    """Idempotently create "Standard" and "Half Points" and attach them to *season_id*, on *db*,
-    committing nothing: results' part of test mode turned on, run whether or not the results
-    module is on, as the core specification's test mode section says without a condition.
+    """Create "Standard" and "Half Points" and attach them to *season_id*, on *db*, committing
+    nothing: results' part of test mode turned on, run whether or not the results module is on,
+    as the core specification's test mode section says without a condition.
 
     Seeds only where the server holds no points configuration of any name and none is attached
-    to *season_id*; where it holds one, it creates, changes and attaches nothing.
+    to *season_id* (core specification, Test mode, "Entering and leaving it"); where it holds
+    one, it creates, changes and attaches nothing, so a league's own "Standard" is never
+    rewritten with the test ladder. The two are created together or not at all, in the caller's
+    transaction.
 
-    Returns the names of the configurations newly created and the audit entries of its writes,
-    both empty where it seeded nothing.
+    **Each is written as `/results config` writes one**, through the same audited writers: the
+    name added, every position and the fastest-lap bonus imported, then the configuration
+    attached to the season. It is a real configuration of the server from that moment, listed,
+    viewed and edited as a hand-built one, and the confirmation of placements copies it into the
+    season's own store through the ordinary snapshot.
+
+    Returns the names created and the audit entries of its writes, in the order written, both
+    empty where it seeded nothing.
     """
     cursor = await db.execute(
         "SELECT EXISTS (SELECT 1 FROM points_config_store) "
@@ -742,8 +751,6 @@ async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> Test
     )
     if (await sole_row(cursor))[0]:
         return TestModePart()
-
-    created: list[str] = []
 
     configs: list[
         tuple[str, dict[SessionType, dict[int, int]], dict[SessionType, tuple[int, int]]]
@@ -770,94 +777,17 @@ async def seed_test_configs_on(db: aiosqlite.Connection, season_id: int) -> Test
         ),
     ]
 
-    for config_name, session_entries, fl_configs in configs:
-        newly_created = await _ensure_single_test_config_on(
-            db,
-            season_id=season_id,
-            config_name=config_name,
-            session_entries=session_entries,
-            fl_configs=fl_configs,
-        )
-        if newly_created:
-            created.append(config_name)
+    created: list[str] = []
+    audits: list[AuditRecord] = []
+    for config_name, positions, fastest_laps in configs:
+        for saved in (
+            await points_config_service.create_config_on(db, config_name),
+            await points_config_service.xml_import_config_on(
+                db, config_name, positions, fastest_laps
+            ),
+            await attach_config_on(db, season_id, config_name),
+        ):
+            audits.extend(saved.audits)
+        created.append(config_name)
 
-    return TestModePart(seeded=tuple(created))
-
-
-async def _ensure_single_test_config_on(
-    db: aiosqlite.Connection,
-    season_id: int,
-    config_name: str,
-    session_entries: dict[SessionType, dict[int, int]],
-    fl_configs: dict[SessionType, tuple[int, int]],
-) -> bool:
-    """Create and attach *config_name* to *season_id* if it is not already linked, on *db*,
-    committing nothing.
-
-    *session_entries* maps each SessionType to its position→points dict.
-    *fl_configs* maps each SessionType that has an FL bonus to (fl_points, fl_position_limit).
-    Returns True if the config was newly created, False if it already existed.
-
-    **The config is written as an ordinary server-level one**, into
-    ``points_config_store``/``points_config_entries``/``points_config_fl`` — the same
-    three tables `/results config` writes — and then attached to the season through
-    ``season_points_links``. It is a real config of the server from that moment: it is
-    listed, viewed and edited exactly as a hand-built one, and the confirmation of placements
-    copies it into the season's own store through the ordinary snapshot.
-
-    This used to write the points straight into ``season_points_entries`` while leaving
-    only an empty name row in the server-level store. Everything scored correctly,
-    because scoring reads the season store — but `/results config view` reads the
-    server-level store while the season is in SETUP, so a manager checking the
-    configuration was told "no entries configured" over a config that was fully
-    populated. A seeded config is a config; it does not get its own private path
-    through the schema.
-    """
-    cursor = await db.execute(
-        "SELECT 1 FROM season_points_links WHERE season_id = ? AND config_name = ?",
-        (season_id, config_name),
-    )
-    already_linked = await cursor.fetchone() is not None
-
-    if already_linked:
-        return False
-
-    # Create the server-level config and take its id — the entries hang off it.
-    await db.execute(
-        "INSERT OR IGNORE INTO points_config_store (config_name) VALUES (?)",
-        (config_name,),
-    )
-    cursor = await db.execute(
-        "SELECT id FROM points_config_store WHERE config_name = ?",
-        (config_name,),
-    )
-    config_id = (await sole_row(cursor))["id"]
-
-    # Link to season
-    await db.execute(
-        "INSERT OR IGNORE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
-        (season_id, config_name),
-    )
-
-    for session_type, pos_map in session_entries.items():
-        for pos, points in pos_map.items():
-            await db.execute(
-                "INSERT INTO points_config_entries "
-                "(config_id, session_type, position, points) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(config_id, session_type, position) "
-                "DO UPDATE SET points = excluded.points",
-                (config_id, session_type.value, pos, points),
-            )
-
-    for session_type, (fl_pts, fl_pos_limit) in fl_configs.items():
-        await db.execute(
-            "INSERT INTO points_config_fl "
-            "(config_id, session_type, fl_points, fl_position_limit) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(config_id, session_type) DO UPDATE SET "
-            "fl_points = excluded.fl_points, "
-            "fl_position_limit = excluded.fl_position_limit",
-            (config_id, session_type.value, fl_pts, fl_pos_limit),
-        )
-
-    return True
+    return TestModePart(seeded=tuple(created), audits=tuple(audits))

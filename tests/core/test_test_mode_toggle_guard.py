@@ -202,7 +202,6 @@ def _as_naive(stamp: str) -> datetime:
 
 
 class TestEnabling:
-    @pytest.mark.xfail(strict=True, reason="#547: the seeding's audit entries are not written yet")
     async def test_a_clean_server_may_enter_test_mode(self, cog, db_path):
         """The server is not in test mode, season 3 is in Configuration and the server holds no
         points configuration, and the queue's clock is five minutes on from `NOW` when it runs.

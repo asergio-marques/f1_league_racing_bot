@@ -143,7 +143,6 @@ def _audited(audits) -> list[tuple[str, str, str]]:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#547: the seeding records no audit entry yet")
 async def test_seeding_records_an_audit_entry_for_each_creation_its_points_and_its_attachment(
     db_path, season_id
 ):
