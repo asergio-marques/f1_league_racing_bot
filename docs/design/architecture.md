@@ -1488,12 +1488,12 @@ stated exceptions below them:
    keeping a line for retry (`OutputRouter._enqueue_if_configured`), the retry worker's tries to
    deliver a kept line and to post its own (`retry_service.attempt_delivery`, `_post_own_line`: a
    line that cannot be delivered stays kept and counted for the next try, and the worker's own line
-   falls back to the host's log), recording a refusal already
-   answered (`log_lines.record_refusal`) and naming a member in a line (`log_lines.name_of_member`)
-   are this place's too, a line that can be neither posted nor kept being logged on the host and
-   dropped, a refusal's record that fails not being answered a second time, and a member who cannot
-   be looked up being named by mention alone, because a line to the log channel must not fail the
-   work it records (their docstrings say so);
+   falls back to the host's log), recording a refusal already answered (`log_lines.record_refusal`)
+   and naming a member in a line (`log_lines.name_of_member`) are this place's too, a line that can
+   be neither posted nor kept being logged on the host and dropped, a refusal's record that fails
+   not being answered a second time, and a member who cannot be looked up being named by mention
+   alone, because a line to the log channel must not fail the work it records (their docstrings say
+   so);
 4. around a clean-up that then raises the error again, or around work run in another thread whose
    error is handed back across the thread and raised again, afresh, on the loop that waited for it
    (`off_the_loop`, in `image/utils/svg_document.py`, whose worker catches what the function raises
