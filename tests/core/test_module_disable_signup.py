@@ -79,6 +79,7 @@ from tests.support.season_league import (
     signing_up,
 )
 from tests.support.season_league import SIGNUP_CHANNEL as LEAGUE_SIGNUP_CHANNEL
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12208
 SIGNUP_CHANNEL = 700
@@ -168,7 +169,7 @@ async def _make_cog(
     services doubled over them, with its real change queue attached that nothing runs: what
     these tests read is the command's own work."""
     bot = await league_bot(db_path)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
+    answer_switch(bot.module_service, "signup", enabled)
     bot.signup_module_service.get_config = AsyncMock(
         return_value=_config() if config is _UNSET else config
     )
@@ -311,12 +312,12 @@ async def test_the_module_is_disabled(tmp_path):
     interaction = await _switch_off(league)
 
     assert acknowledgement(interaction).startswith("⏳")
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
 
     await run_queue(league.bot)
 
     assert league.guild.get_channel(LEAGUE_SIGNUP_CHANNEL) is None
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert updated_reply(interaction).startswith("✅")
     assert "disabled" in updated_reply(interaction)
 
@@ -360,11 +361,11 @@ async def test_the_disable_is_logged(tmp_path):
 
     await _switch_off(league)
 
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
 
     await run_queue(league.bot)
 
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert any("/module disable signup" in line for line in await _log_lines(league))
 
 
@@ -430,15 +431,15 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     settings, slots = await signup.get_settings(), await signup.get_slots()
 
     await _switch_off(league)
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
     await run_queue(league.bot)
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = league.bot
     await cog._enable_signup(_manager(league))
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
     assert await signup.get_settings() == settings
     assert await signup.get_slots() == slots
     config = await signup.get_config()
@@ -463,7 +464,7 @@ async def test_a_window_closed_since_the_ask_refuses_the_switch_off(tmp_path):
     await league.write("UPDATE signup_module_config SET signups_open = 0")
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
     assert await _disables(league) == []
     assert channel.set_permissions.await_count == 0
     assert updated_reply(interaction) == (
@@ -565,7 +566,7 @@ async def test_a_league_with_no_configuration_still_disables(tmp_path):
     await run_queue(league.bot)
 
     assert [job["name"] for job in await _off_jobs(league)] == ["switch_off"]
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert len(await _disables(league)) == 1
 
 
@@ -654,7 +655,7 @@ async def test_a_server_with_no_configuration_row_reverts_the_rest(tmp_path):
     await run_queue(league.bot)
 
     assert set(_cleared(channel)) == {league.guild.default_role, league.guild.me}
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
 
 
 async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, monkeypatch):
@@ -675,7 +676,7 @@ async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, m
     await discard_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
     assert channel.set_permissions.await_count == 0
     assert "still on" in updated_reply(interaction)
 
@@ -696,11 +697,11 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
     interaction = await _switch_off(league)
 
     assert acknowledgement(interaction).startswith("⏳")
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
 
     await run_queue(league.bot)
 
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert "disabled" in updated_reply(interaction)
 
 
@@ -721,7 +722,7 @@ async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
 
     assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "disarm_timers"]
     assert channel.set_permissions.await_count == 0
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
 
 
 async def test_a_guild_the_bot_has_left_does_not_stop_the_disable(tmp_path):
@@ -733,11 +734,11 @@ async def test_a_guild_the_bot_has_left_does_not_stop_the_disable(tmp_path):
 
     await _switch_off(league)
 
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
 
     await run_queue(league.bot)
 
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert len(await _disables(league)) == 1
 
 
@@ -774,7 +775,7 @@ async def test_a_discarded_closed_notice_is_named_and_the_season_stays_in_config
 
     await discard_job(league.bot)
 
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert await _season_stage(league) == "CONFIGURATION"
     assert "closed notice could not be posted" in updated_reply(interaction)
     assert "The module is off, but not every step succeeded" in updated_reply(interaction)
@@ -800,7 +801,7 @@ async def test_a_discarded_return_of_the_drivers_says_the_button_was_left_standi
 
     await discard_job(league.bot)
 
-    assert not await league.bot.module_service.is_signup_enabled()
+    assert not await league.bot.module_service.is_enabled("signup")
     assert await _season_stage(league) == "CONFIGURATION"
     reply = updated_reply(interaction)
     assert "Sign Up button was left standing" in reply
@@ -826,7 +827,7 @@ async def test_a_switch_off_discarded_after_the_close_says_what_the_close_did(tm
 
     await discard_job(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled()
+    assert await league.bot.module_service.is_enabled("signup")
     reply = updated_reply(interaction)
     assert "Nothing was changed" not in reply
     assert "Signups were closed first, returning 1 driver(s)" in reply

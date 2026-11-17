@@ -693,8 +693,7 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
         return _read
 
     for cls, names in (
-        (ModuleService, ("is_weather_enabled", "is_results_enabled", "is_attendance_enabled",
-                         "is_images_enabled", "is_signup_enabled")),
+        (ModuleService, ("is_enabled",)),
         (SeasonService, ("get_divisions", "get_division_rounds", "get_stage")),
     ):
         for name in names:

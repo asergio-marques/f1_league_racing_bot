@@ -31,6 +31,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
+from tests.support.switches import answer_switch
 
 SERVER_ID = 11808
 
@@ -70,8 +71,8 @@ def _make_cog(
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.module_service = MagicMock()
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
+    answer_switch(bot.module_service, "weather", weather_enabled)
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_config_or_defaults = AsyncMock(
         return_value=attendance_config

@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     stopped_job,
 )
 from tests.support.teams import seed_team_instances
+from tests.support.switches import answer_switch
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -499,14 +500,12 @@ class ReviewLeague:
         # A round ending cancelled asks for its division's calendar again, only where one was
         # posted: this league posts none, so the division is not found and the job drops out.
         self.bot.season_service.get_divisions = AsyncMock(return_value=[])
-        self.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+        answer_switch(self.bot.module_service, "images", False)
         # A round ending cancelled asks each module's notice, only where that module is on; the
         # notices are not what this league's tests are about, so weather and results answer off.
-        self.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-        self.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-        self.bot.module_service.is_attendance_enabled = AsyncMock(
-            side_effect=lambda: self.attendance_on
-        )
+        answer_switch(self.bot.module_service, "weather", False)
+        answer_switch(self.bot.module_service, "results", False)
+        answer_switch(self.bot.module_service, "attendance", lambda: self.attendance_on)
         league_queue(self.bot, db_path, now=NOW)
 
     def channel(self, cid: int) -> Any:

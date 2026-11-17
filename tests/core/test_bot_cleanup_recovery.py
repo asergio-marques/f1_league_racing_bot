@@ -39,6 +39,7 @@ import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.start_up_sweep import round_failures, run_weather_start_up_step
+from tests.support.switches import answer_switch
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -115,7 +116,7 @@ async def _make_db(
 def _bot(db_path: str) -> MagicMock:
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "weather", True)
     return bot
 
 

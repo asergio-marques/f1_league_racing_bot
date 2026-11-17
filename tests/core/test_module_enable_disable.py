@@ -35,6 +35,7 @@ from leaguebot.core.cogs.module_cog import ModuleCog
 from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import MEMBER_ID
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 9608
 ACTOR_ID = 77
@@ -75,9 +76,9 @@ def _make_cog(
     bot.db_path = db_path
 
     bot.module_service = MagicMock()
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "weather", weather_enabled)
+    answer_switch(bot.module_service, "results", results_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
 
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
@@ -736,7 +737,7 @@ async def test_a_signup_switch_asked_before_the_configuration_is_confirmed_and_r
     await _stage(league.db_path, "WAITING", "SETUP")
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_signup_enabled() is bool(on)
+    assert await league.bot.module_service.is_enabled("signup") is bool(on)
     assert await _audit(league.db_path) == []
     reason = SIGNUP_FIXED.format(verb=verb)
     assert last_said(asked) == f"❌ {reason}"
@@ -769,8 +770,8 @@ async def test_a_results_switch_off_is_refused_where_attendance_came_on_behind_i
     await cog._disable_results(disable)
     await run_queue(league.bot)
 
-    assert await league.bot.module_service.is_attendance_enabled() is True
-    assert await league.bot.module_service.is_results_enabled() is True
+    assert await league.bot.module_service.is_enabled("attendance") is True
+    assert await league.bot.module_service.is_enabled("results") is True
     assert last_said(disable) == CASCADE_CHANGED
     refused = (
         f"⛔ `/module disable results` refused for {NAMED} — "
@@ -988,7 +989,7 @@ async def test_every_module_enable_and_disable_refusal_reaches_the_log_channel(
     season = _season() if setup.pop("season", None) == "confirmed" else None
     signup_enabled = setup.pop("signup_enabled", False)
     cog = _make_cog(db_path, season=season, **setup)
-    cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
+    answer_switch(cog.bot.module_service, "signup", signup_enabled)
     interaction = _interaction()
     interaction.client = cog.bot
     interaction.command.qualified_name = f"module {verb or 'enable'}"

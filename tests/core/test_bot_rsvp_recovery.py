@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     run_queue,
     text_channel,
 )
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12908
 SEASON_ID = 1
@@ -358,8 +359,8 @@ async def _check_in_bot(db_path: str) -> tuple:
 
     bot = await league_bot(db_path)
     bot.add_view = MagicMock()
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", True)
+    answer_switch(bot.module_service, "images", False)
     check_in = text_channel(770001)
     known = {770001: check_in, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}

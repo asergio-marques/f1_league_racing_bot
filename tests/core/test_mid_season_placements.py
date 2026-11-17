@@ -34,6 +34,7 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     SERVER_ID,
     db_path,  # noqa: F401 — the fixture
 )
+from tests.support.switches import answer_switch
 
 
 def _service(db_path) -> PlacementService:
@@ -153,10 +154,10 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     cog.bot.output_router.post_log = AsyncMock()
     cog.bot.change_queue.ask = AsyncMock()
     # No module on: the season's lineup and calendar channels are the only ones it posts to.
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(cog.bot.module_service, "weather", False)
+    answer_switch(cog.bot.module_service, "results", False)
+    answer_switch(cog.bot.module_service, "attendance", False)
+    answer_switch(cog.bot.module_service, "images", False)
     # The calendar's and the lineup's own gates, asked through the drawing rather than the bot's
     # services directly (#283); each defaults to the same "not drawn" answer the module being off
     # gave.
@@ -363,7 +364,7 @@ def _report_cog(*, placements, unsettled=(), channels=(), configuration=(), divi
     import leaguebot.core.cogs.season_cog as season_cog
 
     cog = _cog(":memory:", SeasonStage.ONGOING_PLACEMENTS)
-    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(cog.bot.module_service, "images", images)
     cog.bot.change_queue.ask = AsyncMock(return_value=1)
     cog.bot.placement_service.uncommitted_placements = AsyncMock(return_value=placements)
     cog.bot.season_service.get_divisions = AsyncMock(
@@ -609,9 +610,9 @@ async def test_only_the_image_checks_of_the_configuration_review_are_repeated(mo
     list are fixed, and its points were recorded upon it. A server points configuration
     removed or reordered mid-season must not stop drivers being placed."""
     cog = _cog(":memory:", SeasonStage.ONGOING_PLACEMENTS)
-    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    answer_switch(cog.bot.module_service, "images", True)
+    answer_switch(cog.bot.module_service, "results", True)
+    answer_switch(cog.bot.module_service, "signup", True)
     cog.image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
     # Results' points gates, stood in where results keeps them (#283).
     from leaguebot.results.services.points import season_points_service

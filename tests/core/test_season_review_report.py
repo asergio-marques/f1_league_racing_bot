@@ -56,6 +56,7 @@ from tests.support.review_workflows import (
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12808
 SEASON_ID = 13
@@ -222,11 +223,11 @@ def _cog(
     hold_setup(bot.season_service, pending or _pending())
 
     modules = bot.module_service
-    modules.is_weather_enabled = AsyncMock(return_value=weather)
-    modules.is_signup_enabled = AsyncMock(return_value=signup)
-    modules.is_results_enabled = AsyncMock(return_value=results)
-    modules.is_attendance_enabled = AsyncMock(return_value=attendance)
-    modules.is_images_enabled = AsyncMock(return_value=images)
+    answer_switch(modules, "weather", weather)
+    answer_switch(modules, "signup", signup)
+    answer_switch(modules, "results", results)
+    answer_switch(modules, "attendance", attendance)
+    answer_switch(modules, "images", images)
 
     bot.signup_module_service.get_config = AsyncMock(
         return_value=SimpleNamespace(signup_channel_id=900)

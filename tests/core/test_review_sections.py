@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.framework.utils.hooks import AwaitedHook
+from tests.support.switches import answer_switch
 
 
 def _hook(*handed_back):
@@ -102,7 +103,7 @@ async def test_the_builder_signs_results_division_lines_up_before_attendance_s(t
         )
         await db.commit()
     modules = MagicMock()
-    modules.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(modules, "attendance", True)
     bot = SimpleNamespace(
         db_path=db_path, module_service=modules, attendance_service=AttendanceService(db_path)
     )

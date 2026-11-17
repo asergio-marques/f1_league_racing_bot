@@ -33,6 +33,7 @@ from tests.support.season_league import (
     leads_armed,
     round_id,
 )
+from tests.support.switches import answer_switch
 
 
 #: Who staged each change, and when: the modification store records each change it stages (#442).
@@ -880,8 +881,8 @@ async def _bot_recording_reposts(path: str, reposted: list[tuple], *,
 
     bot.user.id = _BOT_USER_ID
     bot.get_guild = MagicMock(return_value=guild)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", False)
+    answer_switch(bot.module_service, "images", False)
     bot.image_config_service.get_toggles = AsyncMock(return_value={})
     return bot
 
@@ -1307,7 +1308,7 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
         path, [], missing=(601,),
         attendance_hook_of=lambda made, _path: AttendanceAfterReview(made, MagicMock()),
     )
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
 
     press = await _approve(path, season_id, bot)
 
@@ -1345,9 +1346,7 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
     # 601 is absent, but the module is off, or cannot be read, so nothing asks after it.
     bot = await _bot_recording_reposts(path, [], missing=(601,))
     if unreadable:
-        bot.module_service.is_attendance_enabled = AsyncMock(
-            side_effect=sqlite3.OperationalError("database is locked")
-        )
+        answer_switch(bot.module_service, "attendance", sqlite3.OperationalError("database is locked"))
     await _approve(path, season_id, bot)
 
     async with get_connection(path) as db:

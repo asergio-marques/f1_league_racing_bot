@@ -24,6 +24,7 @@ from tests.support.season_league import reply as _told
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 7
 SEASON_ID = 31
@@ -114,11 +115,11 @@ def _bot(
     by the migrations, which the press may read; `bot.change_queue` records what is asked."""
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=signup)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=images)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "signup", signup)
+    answer_switch(bot.module_service, "results", results)
+    answer_switch(bot.module_service, "images", images)
+    answer_switch(bot.module_service, "attendance", False)
+    answer_switch(bot.module_service, "weather", False)
     bot.signup_module_service.get_config = AsyncMock(
         return_value=signup_config if signup_config is not None else _signup_config()
     )
@@ -702,8 +703,8 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     from leaguebot.weather.services import weather_config_service
 
     bot = _report_bot(signup=True, results=True, images=True)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "attendance", True)
+    answer_switch(bot.module_service, "weather", True)
     bot.attendance_service.get_config = AsyncMock(
         return_value=SimpleNamespace(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2,
@@ -813,9 +814,9 @@ async def test_the_builder_s_faults_read_signup_s_settings_as_they_stand(tmp_pat
     db_path = str(tmp_path / "config_faults.db")
     await run_migrations(db_path)
     bot = await league_bot(db_path, real_config=True)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "signup", True)
+    answer_switch(bot.module_service, "results", False)
+    answer_switch(bot.module_service, "images", False)
     bot.signup_module_service = SimpleNamespace(
         get_config=AsyncMock(return_value=_signup_config(channel=None))
     )

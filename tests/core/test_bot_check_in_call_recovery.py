@@ -37,6 +37,7 @@ from tests.support.change_queue import (
     stopped_job,
     text_channel,
 )
+from tests.support.switches import answer_switch
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -143,8 +144,8 @@ async def _make_bot(db_path: str, *, attendance_enabled: bool = True) -> Any:
     """The league's bot (`league_bot`) with its change queue, images off, Division 1's check-in
     channel (770001) among its channels."""
     bot = await league_bot(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
+    answer_switch(bot.module_service, "images", False)
     bot.check_in_channel = text_channel(CHANNEL_ID)
     known = {CHANNEL_ID: bot.check_in_channel, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}

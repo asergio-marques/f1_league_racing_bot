@@ -24,6 +24,7 @@ from tests.support.review_workflows import (
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
+from tests.support.switches import answer_switch
 
 SERVER_ID = 22070
 SEASON_ID = 7
@@ -61,9 +62,9 @@ def _cog(db_path, *, weather=False, results=False, attendance=False) -> SeasonCo
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=results)
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    answer_switch(cog.bot.module_service, "weather", weather)
+    answer_switch(cog.bot.module_service, "results", results)
+    answer_switch(cog.bot.module_service, "attendance", attendance)
     sign_up_driver_names_read(cog.bot)
     sign_up_division_channel_faults_read(cog.bot)
     return cog

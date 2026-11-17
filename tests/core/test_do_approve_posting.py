@@ -31,6 +31,7 @@ from tests.support.review_workflows import (
     sign_up_signup_refusals,
 )
 from tests.support.setup_reads import hold_setup
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12608
 SEASON_ID = 11
@@ -177,11 +178,11 @@ def _cog(
     hold_setup(season_svc, _pending(), divisions=False)
 
     module_svc = cog.bot.module_service
-    module_svc.is_signup_enabled = AsyncMock(return_value=signup_enabled)
-    module_svc.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    module_svc.is_results_enabled = AsyncMock(return_value=results_enabled)
-    module_svc.is_weather_enabled = AsyncMock(return_value=False)
-    module_svc.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(module_svc, "signup", signup_enabled)
+    answer_switch(module_svc, "attendance", attendance_enabled)
+    answer_switch(module_svc, "results", results_enabled)
+    answer_switch(module_svc, "weather", False)
+    answer_switch(module_svc, "images", False)
 
     # Not a MagicMock attribute: `test_mode_active` reads truthy on one, and the results
     # gate then seeds a points configuration rather than refusing for the want of one.

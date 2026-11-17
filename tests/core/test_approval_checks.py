@@ -14,6 +14,7 @@ import discord
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.switches import answer_switch
 
 SERVER_ID = 22071
 SEASON_ID = 7
@@ -50,9 +51,9 @@ async def db_path(tmp_path):
 
 def _modules(*, weather=False, results=False, attendance=False):
     modules = MagicMock()
-    modules.is_weather_enabled = AsyncMock(return_value=weather)
-    modules.is_results_enabled = AsyncMock(return_value=results)
-    modules.is_attendance_enabled = AsyncMock(return_value=attendance)
+    answer_switch(modules, "weather", weather)
+    answer_switch(modules, "results", results)
+    answer_switch(modules, "attendance", attendance)
     return modules
 
 
@@ -278,8 +279,8 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
 
     bot = MagicMock()
     bot.db_path = ":memory:"
-    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
+    answer_switch(bot.module_service, "results", False)
+    answer_switch(bot.module_service, "signup", enabled)
     bot.signup_module_service.get_config = AsyncMock(return_value=config)
     sign_up_confirmation_refused(bot)
     sign_up_signup_refusals(bot)

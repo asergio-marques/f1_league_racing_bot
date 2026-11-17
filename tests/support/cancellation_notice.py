@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.cancellation import SCOPE_ROUND
 from tests.support.change_queue import in_a_job
+from tests.support.switches import answer_switch
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -59,9 +60,9 @@ def notice_bot(db_path: str) -> Any:
     """A bot on *db_path* with weather, results and attendance on."""
     bot = MagicMock()
     bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    answer_switch(bot.module_service, "weather", True)
+    answer_switch(bot.module_service, "results", True)
+    answer_switch(bot.module_service, "attendance", True)
     return bot
 
 

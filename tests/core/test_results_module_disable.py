@@ -65,6 +65,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.teams import seed_team_instances
+from tests.support.switches import answer_switch
 
 SERVER_ID = 12408
 ACTOR_ID = 77
@@ -343,13 +344,13 @@ def _make_cog(
     bot = MagicMock()
     bot.db_path = db_path
     bot.module_service = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    answer_switch(bot.module_service, "results", results_enabled)
+    answer_switch(bot.module_service, "attendance", attendance_enabled)
     # The disable now reads every module's flag through the table (#283), not attendance's
     # alone, so each other module's getter needs its own double too.
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    answer_switch(bot.module_service, "weather", False)
+    answer_switch(bot.module_service, "signup", False)
+    answer_switch(bot.module_service, "images", False)
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.output_router = MagicMock()
