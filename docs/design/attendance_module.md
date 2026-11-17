@@ -143,8 +143,9 @@ cascade, from their attendance row.
 
 Each works on the delete's own connection and commits nothing, so the rows go with the thing they
 belong to or not at all (`architecture.md`, "Deletes are proven by a test, and each module deletes
-its own rows"). Turning attendance off is another delete of attendance's own: it lowers the flag and
-keeps the settings, the divisions' channels and the answers, and clears only the divisions' sheet message ids, which name messages the module posted and are not configuration (`switch_off_on`).
+its own rows"). Turning attendance off deletes none of its rows: it lowers the flag, keeps the
+settings, the divisions' channels and the answers, and clears only the divisions' sheet message ids,
+which name messages the module posted and are not configuration (`switch_off_on`).
 
 ### What a restart loses
 
