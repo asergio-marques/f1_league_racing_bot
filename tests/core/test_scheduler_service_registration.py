@@ -252,7 +252,11 @@ def test_a_check_in_cleanup_already_due_is_not_armed():
 
 @pytest.mark.xfail(strict=True, reason=NO_ROUND_JOBS)
 def test_a_round_s_forecast_and_check_in_come_down_together():
-    """One figure for both modules, so a round's channels clear at the same moment."""
+    """A round on 1 March 2026 at 18:00 is armed in full, its forecast and its check-in (call 5
+    days before, last notice 24 hours, deadline 2 hours), with `now` a month before it: every job
+    stands at its moment, the three phases at 5 days, 2 days and 2 hours before the start, the
+    submission at it, and both clean-ups at one figure after it, so a round's channels clear at
+    the same moment."""
     service = _service()
     start = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
     rnd = _round_starting(start)
@@ -260,9 +264,18 @@ def test_a_round_s_forecast_and_check_in_come_down_together():
     _round_jobs(service).schedule_round(rnd, season_number=7, division_tier=1)
     jobs = _attendance_jobs(service, rnd, now=start - timedelta(days=30))
 
-    forecast = jobs["cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
-    check_in = jobs["rsvp_cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
-    assert forecast == check_in == rnd.scheduled_at + POST_RACE_CLEANUP_DELAY
+    moments = {job_id: job.kwargs["trigger"].run_date for job_id, job in jobs.items()}
+    assert moments == {
+        "weather_p1_s7_d1_r3_id21": start - timedelta(days=5),
+        "weather_p2_s7_d1_r3_id21": start - timedelta(days=2),
+        "weather_p3_s7_d1_r3_id21": start - timedelta(hours=2),
+        "cleanup_s7_d1_r3_id21": start + POST_RACE_CLEANUP_DELAY,
+        "results_s7_d1_r3_id21": start,
+        "rsvp_notice_s7_d1_r3_id21": start - timedelta(days=5),
+        "rsvp_last_notice_s7_d1_r3_id21": start - timedelta(hours=24),
+        "rsvp_deadline_s7_d1_r3_id21": start - timedelta(hours=2),
+        "rsvp_cleanup_s7_d1_r3_id21": start + POST_RACE_CLEANUP_DELAY,
+    }
 
 
 # ---------------------------------------------------------------------------
