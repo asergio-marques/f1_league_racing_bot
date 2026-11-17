@@ -12,6 +12,7 @@ import logging
 import discord
 from discord import app_commands
 
+from leaguebot.image.models.switch import SWITCH_KEY
 from leaguebot.framework.models.refusal import Refused
 from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
@@ -120,7 +121,7 @@ async def _module_still_on(cog, interaction: discord.Interaction, form: discord.
     it would store belongs to a module that is off. Nothing is written then: the submit is
     refused and recorded under the form's name.
     """
-    if await cog.bot.module_service.is_images_enabled():
+    if await cog.bot.module_service.is_enabled(SWITCH_KEY):
         return True
     await refuse(
         interaction,

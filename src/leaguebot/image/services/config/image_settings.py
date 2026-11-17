@@ -35,6 +35,7 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.image.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
@@ -173,7 +174,7 @@ def _advice(results: Mapping[str, dict[str, Any]]) -> list[str]:
 
 async def _module_refusal(modules: "ModuleService") -> Verdict | None:
     """The refusal where the Image module is off, else None."""
-    if await modules.is_images_enabled():
+    if await modules.is_enabled(SWITCH_KEY):
         return None
     return Verdict.refuse(MODULE_OFF)
 
@@ -230,7 +231,7 @@ async def daily_portraits_refusal(
     off, or enabled the daily updates. *form* says which is asking, so that a confirmation does
     not call itself a form.
     """
-    if not await modules.is_images_enabled():
+    if not await modules.is_enabled(SWITCH_KEY):
         return (
             f"❌ The Image module was switched off while this {'form ' if form else ''}"
             f"was open. Nothing was stored."
@@ -663,7 +664,7 @@ def _tier_colours(
         return dict(payload["colours"])
 
     async def check(ctx: CheckContext) -> Verdict:
-        if await modules.is_images_enabled():
+        if await modules.is_enabled(SWITCH_KEY):
             return Verdict.go()
         return Verdict.refuse(FORM_MODULE_OFF if ctx.payload["form"] else MODULE_OFF)
 

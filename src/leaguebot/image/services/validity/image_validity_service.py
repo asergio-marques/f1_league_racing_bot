@@ -1315,11 +1315,11 @@ class ImageValidityService:
 
     async def disabled_source_modules(self) -> set[str]:
         disabled: set[str] = set()
-        if not await self._module_service.is_results_enabled():
+        if not await self._module_service.is_enabled("results"):
             disabled.add("results")
-        if not await self._module_service.is_attendance_enabled():
+        if not await self._module_service.is_enabled("attendance"):
             disabled.add("attendance")
-        if not await self._module_service.is_weather_enabled():
+        if not await self._module_service.is_enabled("weather"):
             disabled.add("weather")
         return disabled
 

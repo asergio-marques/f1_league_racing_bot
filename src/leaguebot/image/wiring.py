@@ -21,11 +21,12 @@ if TYPE_CHECKING:
 
 
 def register_switch(modules: "ModuleService") -> None:
-    """Sign image up with `ModuleService` for the reader of its own switch, keyed by the name
-    `is_images_enabled` asks it by."""
+    """Sign image up with `ModuleService` for the reader of its own switch, keyed by `SWITCH_KEY`,
+    the key `is_enabled` asks it by."""
+    from leaguebot.image.models.switch import SWITCH_KEY
     from leaguebot.image.services.config.module_switch_settings import images_enabled_on
 
-    modules.register_switch("images", images_enabled_on)
+    modules.register_switch(SWITCH_KEY, images_enabled_on)
 
 
 def sign_up(bot: "LeagueBot") -> None:

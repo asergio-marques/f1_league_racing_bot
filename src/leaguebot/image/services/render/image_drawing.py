@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from leaguebot.image.services.aspects.image_verdict_service import VerdictKind
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
+from leaguebot.image.models.switch import SWITCH_KEY
 from leaguebot.core.services.modules.image_drawing import (
     CalendarPicture,
     CapacityProblem,
@@ -221,7 +222,7 @@ class ImageDrawing:
         For the questions that gate what is actually posted: a graphic that will not be drawn
         has no capacity to outgrow.
         """
-        if not await self._modules.is_images_enabled():
+        if not await self._modules.is_enabled(SWITCH_KEY):
             return None
         return await self._reviewed_template(aspect, template_key)
 
@@ -286,7 +287,7 @@ class ImageDrawing:
         return CapacityProblem(problem=problem, remedy=_STANDINGS_REMEDY)
 
     async def declared_capacity_problem(self, drivers: int) -> CapacityProblem | None:
-        if not await self._modules.is_images_enabled():
+        if not await self._modules.is_enabled(SWITCH_KEY):
             return None
         capacities = declared_capacities()
         if not capacities:
@@ -308,7 +309,7 @@ class ImageDrawing:
         """Not gated on the `lineup` aspect (FR-023): this reports a template that cannot
         draw the season, a fault whether or not that graphic is posted, and gated on the
         module alone — a league with no templates configured has nothing to measure."""
-        if not await self._modules.is_images_enabled():
+        if not await self._modules.is_enabled(SWITCH_KEY):
             return []
         reports = await self._validity.template_reports()
         report = reports.get(LINEUP_TEMPLATE_KEY)
@@ -504,7 +505,7 @@ class ImageDrawing:
         the template's own reason. For the one aspect that says why it is not drawn, weather;
         every other asks `aspect_wanted`, which answers a fault as text.
         """
-        if not await self._modules.is_images_enabled():
+        if not await self._modules.is_enabled(SWITCH_KEY):
             return False, None
         if not (await self._config.get_toggles()).get(aspect):
             return False, None
@@ -912,7 +913,7 @@ class ImageDrawing:
         """
         try:
             if template_key is None:
-                if not await self._modules.is_images_enabled():
+                if not await self._modules.is_enabled(SWITCH_KEY):
                     return False
                 return await self._config.is_aspect_enabled(aspect)
             return await self._drawn_template(aspect, template_key) is not None
@@ -1392,7 +1393,7 @@ class ImageDrawing:
         """
         from leaguebot.image.services.config.image_config_service import portrait_configuration_fault
 
-        if not await self._modules.is_images_enabled():
+        if not await self._modules.is_enabled(SWITCH_KEY):
             return None
         config = await self._config.get_config()
         return portrait_configuration_fault(config)
