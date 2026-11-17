@@ -420,7 +420,8 @@ so the two judge "before the bot came up" by one value (`ask_round_start`'s docs
 
 The amendment sweep is a standing sweep (`architecture.md`, "A standing sweep is an interval job
 that re-reads its rows each time it runs"): an `IntervalTrigger` every `AMENDMENT_SWEEP_MINUTES`,
-armed with no lateness limit by `schedule_amendment_sweep` (`amendment_writes`, a plain function handed the scheduler, which arms it through `arm_every`), whose handler,
+armed with no lateness limit by `schedule_amendment_sweep` (`amendment_writes`, a plain function
+handed the scheduler, which arms it through `arm_every`), whose handler,
 `amendment_writes.sweep_expired_amendments`, reads every amendment's deadline against the `now` it
 is handed and asks `results.amend.lapse` for each past it. **It is a sweep and not one timer per
 amendment** because an amendment is left abandoned by no event the bot sees, and it is an interval
@@ -430,7 +431,8 @@ job rather than one that re-arms itself because a sweep that raised would then b
 stage of the amendment is in hand, stopped included, so the next run asks again.
 
 It is armed in results' start-up turn (`arm_amendment_sweep`) and by the switch-on's `After` step,
-and removed by the switch-off's `disarm_sweep`, which calls `cancel_amendment_sweep` handed through results' wiring, as a switch-off undoes what the switch-on set up
+and removed by the switch-off's `disarm_sweep`, which calls `cancel_amendment_sweep` handed
+through results' wiring, as a switch-off undoes what the switch-on set up
 (`results_off_change`'s docstring; `test_turning_results_off_removes_the_amendment_sweep`).
 
 ### The lapse and the lock's clear
