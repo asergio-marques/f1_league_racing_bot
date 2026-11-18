@@ -203,15 +203,19 @@ _OWNING_MODULE = {
 }
 
 
-@pytest.mark.parametrize("setting", sorted(_OWNING_MODULE))
+@pytest.mark.parametrize("setting", [
+    *sorted(_OWNING_MODULE),
+    pytest.param("signup", marks=pytest.mark.xfail(
+        strict=True, reason="#449: signup answers for its channel while it is switched off")),
+])
 async def test_a_switched_off_module_s_channel_is_free_to_another_setting(db_path, setting):
-    """Channel 500 kept as Pro's *setting* while its module is switched off: the module answers
-    for no channel while it is off, so nothing holds 500, and Pro's lineup may take it. The module
-    clears it when it is switched back on."""
+    """Channel 500 kept as Pro's *setting*, or as the server's signup channel, while its module is
+    switched off: the module answers for no channel while it is off, so nothing holds 500, and
+    Pro's lineup may take it. The module clears it when it is switched back on."""
     season_id = await _season(db_path)
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, setting, 500, division_id=division_id)
-    off = (_OWNING_MODULE[setting],)
+    off = (_OWNING_MODULE.get(setting, setting),)
 
     assert await find_channel_use(
         db_path, 500, **channel_uses_given(db_path, off=off)

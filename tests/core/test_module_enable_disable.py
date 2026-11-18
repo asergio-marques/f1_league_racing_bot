@@ -977,8 +977,29 @@ _KEPT = {
     "attendance": ("attendance", "attendance_division_config", "attendance_channel_id",
                    "attendance channel", "/attendance channel attendance",
                    "✅ Attendance module enabled.", "ATTENDANCE_CHANNEL_SET"),
+    "signup": ("signup", "signup_module_config", "signup_channel_id", "signup channel",
+               "/signup channel", "✅ Signup module enabled.", "SIGNUP_CHANNEL_SET"),
 }
-KEPT_SETTINGS = list(_KEPT)
+#: Why signup's case fails until its switch-on checks the channel it keeps.
+_SIGNUP_UNCHECKED = "#449: signup forgets its channel on switch-off, and its switch-on checks none"
+KEPT_SETTINGS = [
+    *(setting for setting in _KEPT if setting != "signup"),
+    pytest.param("signup", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_UNCHECKED)),
+]
+#: The server's own roles, set where the kept channel is the server's (signup's), so that its
+#: switch-on asks for neither.
+SERVER_BASE_ROLE, SERVER_DRIVER_ROLE = 819, 820
+
+
+def _server_wide(setting: str) -> bool:
+    """Whether *setting* is the server's, kept once (signup's channel), not a division's."""
+    return _KEPT[setting][1] == "signup_module_config"
+
+
+def _whose(setting: str) -> str:
+    """Whose kept *setting* the reply and the line name: Pro's, or the server's own."""
+    label = _KEPT[setting][3]
+    return f"the {label}" if _server_wide(setting) else f"**Pro**'s {label}"
 
 #: The heading the reply names each channel to set again under.
 SET_AGAIN = (
@@ -1003,6 +1024,12 @@ async def _keep(db, setting: str, division_id: int, channel_id: int | None) -> N
     _module, table, column = _KEPT[setting][:3]
     if table == "divisions":
         await db.execute(f"UPDATE divisions SET {column} = ? WHERE id = ?", (channel_id, division_id))
+    elif _server_wide(setting):
+        await db.execute(
+            f"INSERT INTO {table} (id, {column}, signups_open) VALUES (1, ?, 0) "
+            f"ON CONFLICT(id) DO UPDATE SET {column} = ?",
+            (channel_id, channel_id),
+        )
     else:
         await db.execute(
             f"INSERT INTO {table} (division_id, {column}) VALUES (?, ?) "
@@ -1012,11 +1039,13 @@ async def _keep(db, setting: str, division_id: int, channel_id: int | None) -> N
 
 
 async def _kept(db_path: str, setting: str, division_id: int) -> int | None:
-    """The channel *division_id* holds as *setting*, None where none."""
+    """The channel *division_id* holds as *setting*, None where none; the server's own where
+    *setting* is the server's."""
     _module, table, column = _KEPT[setting][:3]
-    key = "id" if table == "divisions" else "division_id"
+    key = "id" if table == "divisions" or _server_wide(setting) else "division_id"
+    held_by = 1 if _server_wide(setting) else division_id
     async with get_connection(db_path) as db:
-        cursor = await db.execute(f"SELECT {column} FROM {table} WHERE {key} = ?", (division_id,))
+        cursor = await db.execute(f"SELECT {column} FROM {table} WHERE {key} = ?", (held_by,))
         row = await cursor.fetchone()
     return None if row is None or row[column] is None else int(row[column])
 
@@ -1024,7 +1053,10 @@ async def _kept(db_path: str, setting: str, division_id: int) -> int | None:
 async def _switched_off_league(tmp_path, setting: str, *, guild=None, pictures: tuple[str, ...] = ()):
     """A league in a season in setup, divisions Pro and Am, whose module of *setting* is off with
     Pro's *setting* kept as channel 501 and Am's as 502, and a completed season's division Old
-    keeping 503; results on where the module is attendance. The bot's server is *guild*
+    keeping 503; results on where the module is attendance. A setting of the server's own
+    (signup's channel) is kept once, as 501, with the league's base and driver roles set and the
+    season in setup standing in Configuration, where signup may be switched. The
+    bot's server is *guild*
     (`server_holding()`, every channel there and usable, by default), and the image module's
     drawing answers that the pictures of *pictures* attach a file. Gives the league, the cog and
     Pro's division id."""
@@ -1045,8 +1077,16 @@ async def _switched_off_league(tmp_path, setting: str, *, guild=None, pictures: 
         pro = await _division_row(db, cursor.lastrowid, "Pro")
         am = await _division_row(db, cursor.lastrowid, "Am")
         await _keep(db, setting, pro, PRO_CHANNEL)
-        await _keep(db, setting, am, AM_CHANNEL)
-        await _keep(db, setting, old, OLD_CHANNEL)
+        if _server_wide(setting):
+            await db.execute(
+                "UPDATE server_configs SET base_role_id = ?, driver_role_id = ?",
+                (SERVER_BASE_ROLE, SERVER_DRIVER_ROLE),
+            )
+            # Signup is switched only while the season in setup stands in Configuration.
+            await db.execute("UPDATE seasons SET stage = 'CONFIGURATION' WHERE status = 'SETUP'")
+        else:
+            await _keep(db, setting, am, AM_CHANNEL)
+            await _keep(db, setting, old, OLD_CHANNEL)
         await db.commit()
     league.bot.get_guild = MagicMock(return_value=guild if guild is not None else server_holding())
     answer_attachments(league.bot.image_drawing, *pictures)
@@ -1073,12 +1113,13 @@ async def test_a_switch_on_names_each_kept_channel_no_longer_on_the_server(tmp_p
     completed season's division keeps a deleted channel too. Switched back on, the module is on;
     the reply names Pro's channel alone, under the heading, with the command that sets it again;
     Pro's channel is still held, for the league to set again; and the Success line says it is no
-    longer on the server. The completed season is not checked."""
+    longer on the server. The completed season is not checked. Signup's channel is the server's:
+    it was deleted while signup was off, and is named as the signup channel."""
     from tests.support.channel_faults import server_holding
     from tests.support.settings_league import last_said, log_lines
 
     module, *_rest = _KEPT[setting]
-    label, command, enabled = _KEPT[setting][3:6]
+    command, enabled = _KEPT[setting][4:6]
     league, cog, pro = await _switched_off_league(
         tmp_path, setting, guild=server_holding(gone=(PRO_CHANNEL, OLD_CHANNEL))
     )
@@ -1087,12 +1128,12 @@ async def test_a_switch_on_names_each_kept_channel_no_longer_on_the_server(tmp_p
 
     assert await _module_on(league, module)
     assert last_said(asked) == "\n".join(
-        [enabled, SET_AGAIN, f"• **Pro**'s {label} — `{command}`"]
+        [enabled, SET_AGAIN, f"• {_whose(setting)} — `{command}`"]
     )
     assert await _kept(league.db_path, setting, pro) == PRO_CHANNEL
     lines = "\n".join(await log_lines(league))
     assert f"{NAMED} | /module enable {module} | Success" in lines
-    assert f"  **Pro**'s {label} is no longer on the server — `{command}`" in lines
+    assert f"  {_whose(setting)} is no longer on the server — `{command}`" in lines
     assert "**Am**" not in lines and "**Old**" not in lines
 
 
@@ -1102,12 +1143,12 @@ async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(
     lineup, and is not refused. Switched back on, the module is on, names 501 under the heading,
     and clears it from Pro's *setting*, audited from 501 to none under the setting's own change
     type; the Success line says it was given to another setting and is cleared; and the lineup
-    keeps 501."""
+    keeps 501. Signup's channel is the server's, named as the signup channel."""
     from tests.support.change_queue import run_queue
     from tests.support.settings_league import last_said, log_lines
 
     module, *_rest = _KEPT[setting]
-    label, command, enabled, audited = _KEPT[setting][3:7]
+    command, enabled, audited = _KEPT[setting][4:7]
     league, cog, pro = await _switched_off_league(tmp_path, setting)
     lineup = _asked(league, "division lineup-channel")
     await league.bot.change_queue.ask(
@@ -1123,7 +1164,7 @@ async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(
 
     assert await _module_on(league, module)
     assert last_said(asked) == "\n".join(
-        [enabled, SET_AGAIN, f"• **Pro**'s {label} — `{command}`"]
+        [enabled, SET_AGAIN, f"• {_whose(setting)} — `{command}`"]
     )
     assert await _kept(league.db_path, setting, pro) is None
     assert any(
@@ -1132,7 +1173,7 @@ async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(
         for row in await _audit(league.db_path)
     )
     lines = "\n".join(await log_lines(league))
-    assert f"  **Pro**'s {label} was given to another setting and is cleared — `{command}`" in lines
+    assert f"  {_whose(setting)} was given to another setting and is cleared — `{command}`" in lines
     async with get_connection(league.db_path) as db:
         cursor = await db.execute("SELECT lineup_channel_id FROM divisions WHERE id = ?", (pro,))
         assert int((await cursor.fetchone())["lineup_channel_id"]) == PRO_CHANNEL
@@ -1179,6 +1220,8 @@ async def test_a_switch_on_whose_kept_channels_cannot_be_checked_leaves_the_modu
     ("rsvp", "embed_links", "Embed Links", ()),
     ("attendance", "read_message_history", "Read Message History", ()),
     ("attendance", "send_messages", "Send Messages", ()),
+    pytest.param("signup", "manage_roles", "Manage Permissions", (),
+                 marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_UNCHECKED)),
 ])
 async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_module_off_and_names_the_way_out(
     tmp_path, setting, denied, missing, pictures
@@ -1189,13 +1232,13 @@ async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_
     while the module was off. The module stays off; the reply names Pro's channel and what it
     lacks, and the three ways out, and does not name Am's; the one line is a refusal naming the
     same, and no failure; nothing is audited, nothing stops the queue, and Pro's and Am's channels
-    are still held, Am's for the next switch-on to name."""
+    are still held, Am's for the next switch-on to name. Signup's channel, the server's, lacks
+    Manage Permissions, which putting the bot's permissions back on it needs."""
     from tests.support.change_queue import stopped_job
     from tests.support.channel_faults import server_holding
     from tests.support.settings_league import last_said, log_lines
 
     module, *_rest = _KEPT[setting]
-    label = _KEPT[setting][3]
     guild = (server_holding(gone=(AM_CHANNEL,), forbidden=(PRO_CHANNEL,)) if denied == "forbidden"
              else server_holding(gone=(AM_CHANNEL,), unusable={PRO_CHANNEL: (denied,)}))
     league, cog, pro = await _switched_off_league(tmp_path, setting, guild=guild, pictures=pictures)
@@ -1208,7 +1251,7 @@ async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_
     assert replied.startswith(
         "⛔ The module is still off: kept channels are missing permissions the bot needs there:"
     )
-    assert f"• **Pro**'s {label} <#{PRO_CHANNEL}>: {missing}" in replied
+    assert f"• {_whose(setting)} <#{PRO_CHANNEL}>: {missing}" in replied
     assert (
         "Give the bot them, delete the channel, or give it to another setting (the module's own "
         f"channel command is refused while it is off), then run `/module enable {module}` again."
@@ -1216,12 +1259,13 @@ async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_
     assert "**Am**" not in replied
     [line] = await log_lines(league)
     assert line == _refused_line(
-        f"kept channels are missing permissions the bot needs there: **Pro**'s {label} ({missing})"
+        f"kept channels are missing permissions the bot needs there: {_whose(setting)} ({missing})"
     )
     assert await _audit(league.db_path) == audits_before
     assert await stopped_job(league.db_path) is None
     assert await _kept(league.db_path, setting, pro) == PRO_CHANNEL
-    assert await _kept(league.db_path, setting, pro + 1) == AM_CHANNEL  # Am, added after Pro
+    if not _server_wide(setting):
+        assert await _kept(league.db_path, setting, pro + 1) == AM_CHANNEL  # Am, added after Pro
 
 
 async def test_the_first_of_two_switched_off_modules_back_on_keeps_their_channel(tmp_path):
