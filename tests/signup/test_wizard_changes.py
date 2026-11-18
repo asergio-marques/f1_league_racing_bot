@@ -2317,12 +2317,6 @@ async def test_a_cancellation_asked_behind_an_expiry_that_proves_not_due_still_c
 # An ending asked behind another ending of the same driver (#502)
 # ---------------------------------------------------------------------------
 
-#: Why the tests of an ending asked behind another fail until each kind has its own queue key.
-ENDINGS_SHARE_A_KEY = (
-    "#502: every kind of signup ending but a cancellation shares one queue key, so one asked "
-    "behind another of the same driver is refused as a repeat"
-)
-
 
 async def _reject_asked(league: SeasonLeague) -> Any:
     """Manager 77 has pressed Reject on Kimi's review panel (the press deferred and parked as the
@@ -2369,12 +2363,10 @@ async def _signup_audits(league: SeasonLeague) -> list[str]:
     "first, second, refusal, audited, rejections, withdrawals",
     [
         pytest.param(_reject_asked, _press_cancel, "This signup has already ended.",
-                     "SIGNUP_REJECT", 1, 0, id="withdrawal-behind-rejection",
-                     marks=pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)),
+                     "SIGNUP_REJECT", 1, 0, id="withdrawal-behind-rejection"),
         pytest.param(_press_cancel, _reject_asked,
                      "This signup has moved on since you pressed Reject.",
-                     "SIGNUP_WITHDRAW", 0, 1, id="rejection-behind-withdrawal",
-                     marks=pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)),
+                     "SIGNUP_WITHDRAW", 0, 1, id="rejection-behind-withdrawal"),
     ],
 )
 async def test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at_its_turn(
@@ -2405,7 +2397,6 @@ async def test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at
     assert await _signup_audits(league) == [audited]
 
 
-@pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)
 async def test_a_withdrawal_asked_behind_an_expiry_that_proves_not_due_goes_through(tmp_path):
     """Kimi is part-way through signing up and his 24 hours have run out: his timer fires and his
     expiry is queued, then an answer of his is saved, so it is due no longer. Before the queue runs
