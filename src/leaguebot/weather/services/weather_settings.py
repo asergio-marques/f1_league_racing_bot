@@ -20,10 +20,11 @@ the channel to another job: the module on, a season live, the division in it, th
 free of any other job (`channel_registry_service`), the channel this very division already has
 being refused as "Nothing was changed", and last the channel one the bot has the permissions a
 forecast needs in (`forecast_channel.channel_needs`, with the *drawing* the builder is handed,
-judged by `unusable_refusal` against the league's server as it stands when the check runs). The save writes the division's column and the audit
-entry with the division, together, the audit entry stamped by the queue's clock; the column it
-replaces is read in the save, never at the ask, so a change waiting behind another for the same
-division records what that one left, and its reply reads "set" or "updated" by it.
+judged by `unusable_refusal` against the league's server as it stands when the check runs).
+The save writes the division's column and the audit entry with the division, together, the audit
+entry stamped by the queue's clock; the column it replaces is read in the save, never at the ask,
+so a change waiting behind another for the same division records what that one left, and its
+reply reads "set" or "updated" by it.
 """
 
 from __future__ import annotations
