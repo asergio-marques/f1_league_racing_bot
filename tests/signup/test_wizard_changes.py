@@ -2224,3 +2224,69 @@ async def test_a_cancellation_of_a_driver_with_no_signup_in_progress_is_refused_
     assert ("/driver reject" in line) is names_driver_reject
     assert await change_rows(league.db_path) == []
     assert await _driver_state(league, user_id) == state
+
+
+async def _expiry_not_due_ahead(league: SeasonLeague) -> None:
+    """Kimi part-way through signing up, his last answer 24 hours and a minute ago: his timer
+    fires and his expiry, due as it is asked, is queued. Kimi's answer is then saved, so the
+    expiry will prove not due when its turn comes. The queue is not run."""
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+    await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
+    assert [change["state"] for change in await _changes_of(league, END_KIND)] == ["QUEUED"]
+    await league.write(
+        "UPDATE signup_wizard_records SET last_activity_at = ? WHERE discord_user_id = ?",
+        league.clock.now.isoformat(), str(SIGNING_UP),
+    )
+
+
+async def _withdrawal_ahead(league: SeasonLeague) -> None:
+    """Kimi part-way through signing up, his channel standing, presses Cancel Signup. The queue
+    is not run."""
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    _held(league, KIMI_CHANNEL)
+    await _press_cancel(league)
+
+
+@pytest.mark.parametrize(
+    "ahead, cancels",
+    [
+        pytest.param(_expiry_not_due_ahead, True, id="expiry-not-due-ahead"),
+        pytest.param(_withdrawal_ahead, False, id="withdrawal-ahead"),
+    ],
+)
+async def test_a_cancellation_asked_behind_an_expiry_that_proves_not_due_still_cancels(
+    tmp_path, ahead, cancels,
+):
+    """Kimi is part-way through signing up and another ending of his signup waits on the queue:
+    his expiry, asked when his 24 hours ran out but due no longer, an answer of his having been
+    saved since, or his own withdrawal. Admin (77) runs `/signup cancel` of Kimi and submits the form; it is queued, not
+    refused as a repeat of the ending ahead. When the queue runs, Kimi is Not Signed Up. Behind
+    the expiry, which proves not due, the cancellation goes ahead: one "Signup | Cancelled" line,
+    one `SIGNUP_CANCEL` audit entry, his channel told once and Admin told it was cancelled.
+    Behind the withdrawal, which ends the signup first, the cancellation is refused by its own
+    check as Kimi having no signup in progress: Admin is told so, one refusal line is written,
+    and no line, audit entry or notice of a cancellation follows."""
+    league = await _league(tmp_path)
+    await ahead(league)
+
+    submitted = await _cancel(league, CANCEL_REASON)
+    await run_queue(league.bot)
+
+    reply = _told_admin(submitted)
+    assert "already been asked for" not in reply
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    cancel_lines = [line for line in league.bot.log_channel.sent
+                    if "| Signup | Cancelled" in line]
+    if cancels:
+        assert len(cancel_lines) == 1
+        assert len(await _cancel_audits(league)) == 1
+        assert len(_cancelled(league)) == 1
+        assert _expired(league) == []
+        assert "✅ Signup cancelled." in reply
+    else:
+        assert cancel_lines == []
+        assert await _cancel_audits(league) == []
+        assert _cancelled(league) == []
+        assert "⛔" in reply and "no signup in progress" in reply and "✅" not in reply
+        assert len(_refusal_lines(league)) == 1
+
