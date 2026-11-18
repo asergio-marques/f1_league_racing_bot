@@ -591,8 +591,8 @@ answers for none of them (`channel_uses` asks the switch); another setting may t
 switch-on's step before its save (`check_kept_channels`, `core.md`, "Each module's switch is a change
 of the module's own") finds it, and the save clears it through the column's own writer, audited as the
 setting's own change. The reader asks `channel_needs` as the check runs, not as the switch-on is
-built. The placements-review lines of an off module may show a channel it has yielded, until it is
-switched on and clears it.
+built. The placements-review lines of an off module show what it holds (core_specification.md,
+"Channels").
 
 ### The hooks results signs up to
 
