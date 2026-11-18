@@ -750,8 +750,10 @@ async def test_the_cascade_disables_attendance_and_says_what_it_keeps(tmp_path):
 async def test_attendance_taken_down_with_results_comes_back_as_it_was(tmp_path):
     """The issue's reproduction (#449), through the cascade: a league whose attendance went off
     with Results & Standings, and which switches both back on, finds its check-in notice and its
-    division's check-in and attendance channels as it left them."""
+    division's check-in and attendance channels as it left them, both still on the server and
+    usable, so the switch-on's check of its kept channels finds nothing to name."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+    from tests.support.channel_faults import answer_attachments, server_holding
     from tests.support.settings_league import interaction, settings_league
 
     league = await settings_league(tmp_path, modules=("results", "attendance"))
@@ -770,6 +772,8 @@ async def test_attendance_taken_down_with_results_comes_back_as_it_was(tmp_path)
         )
         await db.execute("UPDATE attendance_config SET rsvp_notice_days = 7")
         await db.commit()
+    league.bot.get_guild = MagicMock(return_value=server_holding())
+    answer_attachments(league.bot.image_drawing)
     cog = ModuleCog(league.bot)
 
     await _turn_off(cog, cascade=True)
