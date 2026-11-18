@@ -323,33 +323,14 @@ async def test_a_fault_saves_no_channel_and_says_to_run_it_again(tmp_path, where
 # ---------------------------------------------------------------------------
 
 
-#: Why a new signup channel the bot cannot use is not yet refused in the common words.
-_NOT_JUDGED = "#570: /signup channel does not judge the new channel against everything it needs"
-
-
 @pytest.mark.parametrize(
     "refused, denied, missing",
     [
-        pytest.param(
-            "new", ("manage_roles",), "Manage Permissions", id="new-only-manage-channels",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
-        pytest.param(
-            "new", ("manage_channels",), "Manage Channel", id="new-only-manage-roles",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
-        pytest.param(
-            "new", ("embed_links",), "Embed Links", id="new-no-embed-links",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
-        pytest.param(
-            "new", ("send_messages",), "Send Messages", id="new-no-send-messages",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
-        pytest.param(
-            "new", ("view_channel",), "View Channel", id="new-no-view-channel",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
+        pytest.param("new", ("manage_roles",), "Manage Permissions", id="new-only-manage-channels"),
+        pytest.param("new", ("manage_channels",), "Manage Channel", id="new-only-manage-roles"),
+        pytest.param("new", ("embed_links",), "Embed Links", id="new-no-embed-links"),
+        pytest.param("new", ("send_messages",), "Send Messages", id="new-no-send-messages"),
+        pytest.param("new", ("view_channel",), "View Channel", id="new-no-view-channel"),
         pytest.param("old", ("manage_roles",), None, id="old-only-manage-channels"),
         pytest.param("old", ("manage_channels",), None, id="old-only-manage-roles"),
     ],
@@ -380,9 +361,6 @@ async def test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_befor
 
 
 @pytest.mark.parametrize("meanwhile", ["permission_lost", "channel_deleted"])
-@pytest.mark.xfail(
-    strict=True, reason="#570: /signup channel does not judge the new channel as it starts"
-)
 async def test_a_signup_channel_change_is_refused_as_it_starts_where_its_channel_can_no_longer_be_used(
     tmp_path, meanwhile
 ):
