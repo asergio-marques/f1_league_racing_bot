@@ -192,6 +192,22 @@ async def test_each_aspect_is_asked_for_separately():
     assert not await drawing.aspect_attaches_files("results")
 
 
+async def test_calendar_and_lineup_attach_files_follow_their_aspect():
+    """Core's channel checks ask after the calendar and lineup channels by name: each answer
+    follows its own aspect, and the module being off settles both."""
+    calendar_on = _drawing(toggles={"calendar": True, "lineup": False})
+    assert await calendar_on.calendar_attaches_files()
+    assert not await calendar_on.lineup_attaches_files()
+
+    lineup_on = _drawing(toggles={"calendar": False, "lineup": True})
+    assert not await lineup_on.calendar_attaches_files()
+    assert await lineup_on.lineup_attaches_files()
+
+    module_off = _drawing(module_on=False, toggles={"calendar": True, "lineup": True})
+    assert not await module_off.calendar_attaches_files()
+    assert not await module_off.lineup_attaches_files()
+
+
 async def test_template_validity_is_deliberately_not_consulted():
     """**The guard on the decision, not an incidental assertion.**
 
