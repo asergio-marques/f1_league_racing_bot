@@ -52,8 +52,6 @@ ENABLED_AGAIN = (
     "✅ Image module enabled. Your configuration is kept as it stood, each output aspect on or off "
     "as you left it — `/images config view` shows which are on."
 )
-#: Why switching the module on again is not yet answered with ENABLED_AGAIN.
-NOT_YET_AGAIN = "#556: switching on again still says every output aspect starts disabled"
 
 #: What the enable says where the daily portrait refresh could not be armed (owner's wording,
 #: decided 2026-11-15 for #288).
@@ -179,10 +177,7 @@ async def _refuse_the_audit(db_path: str) -> None:
 @pytest.mark.parametrize("rasteriser", [True, False], ids=["with a rasteriser", "without"])
 @pytest.mark.parametrize(
     "again",
-    [
-        pytest.param(False, id="first"),
-        pytest.param(True, id="again", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_AGAIN)),
-    ],
+    [pytest.param(False, id="first"), pytest.param(True, id="again")],
 )
 async def test_the_module_is_enabled(tmp_path, again, rasteriser):
     """With or without a rasteriser (FR-007 / FR-008), for the first time or again over a kept
