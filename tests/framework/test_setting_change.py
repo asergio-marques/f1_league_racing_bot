@@ -393,7 +393,7 @@ async def test_the_acknowledgement_names_what_is_being_set(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("fault_at", ["before", "save"])
+@pytest.mark.parametrize("fault_at", [pytest.param("before"), "save"])
 async def test_a_fault_before_or_in_the_save_saves_nothing_says_to_run_it_again_and_the_lane_goes_on(
     env, fault_at
 ):
