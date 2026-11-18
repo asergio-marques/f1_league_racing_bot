@@ -50,6 +50,7 @@ import pytest
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
+from tests.support.channel_faults import answer_attachments, league_server
 from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
 from tests.support.undecorate import undecorate
 
@@ -903,6 +904,82 @@ async def test_a_setting_command_is_acknowledged_then_answered_and_logged_in_tod
     assert _delivered(bot, log_channel) == [
         f"{_NAMED} | {command} | Success\n  {column}: {_shown(column, new_id)}"
     ]
+
+
+def _lose_send_messages(bot: Any, channel_id: int) -> None:
+    """The bot is denied Send Messages in *channel_id*, which both of the bot's channels need."""
+    league_server(bot, unusable={channel_id: ("send_messages",)})
+
+
+def _delete_the_channel(bot: Any, channel_id: int) -> None:
+    """*channel_id* is deleted from the league's server."""
+    league_server(bot, gone=(channel_id,))
+
+
+@pytest.mark.parametrize(
+    "attribute,column,use,meanwhile,missing",
+    [
+        pytest.param(
+            attribute, column, use, meanwhile, missing, id=f"{column}-{how}"
+        )
+        for attribute, column, use in (
+            ("handle_log_channel", "log_channel_id", "bot log channel"),
+            ("handle_interaction_channel", "interaction_channel_id", "bot command channel"),
+        )
+        for meanwhile, missing, how in (
+            (_lose_send_messages, "Send Messages", "permission_lost"),
+            (_delete_the_channel, None, "channel_deleted"),
+        )
+    ],
+)
+@pytest.mark.xfail(strict=True, reason="#570: the setting does not judge its channel as it starts")
+async def test_a_channel_setting_is_refused_as_it_starts_where_its_channel_can_no_longer_be_used(
+    tmp_path, attribute, column, use, meanwhile, missing
+):
+    """Core spec, Channels: a channel's needs are judged again as the change starts. The league's
+    server is set up, holding channel 905, the bot holding every permission there. An
+    administrator runs `/bot log-channel`, or `/bot interaction-channel`, for 905 and is
+    acknowledged; before the change runs, the bot is denied Send Messages in 905
+    (*permission_lost*), or 905 is deleted (*channel_deleted*). The change is refused: the
+    member's reply becomes the refusal, naming what the bot lacks or that 905 is no longer on the
+    server, the column keeps its value, nothing is audited, and the log channel takes the refusal
+    as its one line."""
+    from tests.support.change_queue import acknowledgement, run_queue, text_channel
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = await _queued_bot(db_path)
+    bot.test_channels[905] = text_channel(905)
+    league_server(bot)
+    cog = BotCog(bot)
+    command = _WORDS[column][0]
+    interaction = _asking(bot, command[1:])
+    before = (await _row(db_path))[column]
+
+    await _unwrap(getattr(cog, attribute))(cog, interaction, _channel(905))
+    assert acknowledgement(interaction).startswith("⏳ ")
+    meanwhile(bot, 905)
+    await run_queue(bot)
+
+    refused = (
+        _cannot_use(905, use, missing) if missing
+        else "❌ <#905> is no longer on the server. Nothing was changed."
+    )
+    assert _said(interaction)[-1] == refused
+    assert (await _row(db_path))[column] == before
+    assert await _audit_rows(db_path) == []
+    assert _delivered(bot, CONFIGURED_LOG) == [
+        f"⛔ `{command}` refused for {_NAMED} — {_reason(refused)}"
+    ]
+
+
+def _cannot_use(channel_id: int, use: str, missing: str) -> str:
+    """The refusal of *channel_id* as the *use* where the bot lacks *missing* there, word for
+    word."""
+    return (
+        f"❌ The bot is missing permissions it needs in <#{channel_id}> as the {use}: {missing}. "
+        f"Give the bot them there, or pick another channel. Nothing was changed."
+    )
 
 
 @pytest.mark.parametrize(
@@ -2132,6 +2209,10 @@ async def _init(cog, interaction):
     )
 
 
+#: Why a case of a channel the bot cannot use fails until the setting judges the channel.
+_NOT_JUDGED = "#570: the setting does not judge what the bot holds in its channel"
+
+
 async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str, str]:
     """Set up the refusal *case* and run it: the bot, the interaction, the command as the log
     names it, and a phrase of today's reply: for a setting's refusal, the whole of it."""
@@ -2223,12 +2304,23 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
             "ℹ️ <#905> is already the hub channel. Nothing was changed."
         )
     if case == "hub-channel lacks permissions":
-        channel = _unconfigured_channel()
-        channel.permissions_for.return_value = MagicMock(manage_channels=False, manage_roles=True)
-        await _unwrap(cog.handle_hub_channel)(cog, interaction, channel)
+        league_server(bot, unusable={905: ("manage_channels",)})
+        await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel())
+        return bot, interaction, command, _cannot_use(905, "hub channel", "Manage Channel")
+    if case == "log-channel lacks permissions":
+        league_server(bot, unusable={905: ("send_messages",)})
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, _cannot_use(905, "bot log channel", "Send Messages")
+    if case == "interaction-channel lacks permissions":
+        answer_attachments(bot.image_drawing, "calendar")
+        league_server(bot, unusable={905: ("attach_files",)})
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, _cannot_use(905, "bot command channel", "Attach Files")
+    if case == "log-channel already this setting, lacking permissions":
+        league_server(bot, unusable={CONFIGURED_LOG: ("send_messages",)})
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_LOG))
         return bot, interaction, command, (
-            "❌ The bot needs **Manage Channel** on <#905> to set who may see the hub. Nothing "
-            "was changed."
+            f"ℹ️ <#{CONFIGURED_LOG}> is already the bot log channel. Nothing was changed."
         )
     if case == "factory-reset without the word":
         await _unwrap(cog.handle_factory_reset)(cog, interaction, "yes")
@@ -2282,7 +2374,21 @@ def _replied(interaction: MagicMock) -> str:
         "driver-role cannot be granted",
         "hub-channel already another job",
         "hub-channel already this setting",
-        "hub-channel lacks permissions",
+        pytest.param(
+            "hub-channel lacks permissions",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#570: the hub's refusal is not yet in the common words"
+            ),
+        ),
+        pytest.param(
+            "log-channel lacks permissions",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        pytest.param(
+            "interaction-channel lacks permissions",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        "log-channel already this setting, lacking permissions",
         "factory-reset without the word",
     ],
 )
