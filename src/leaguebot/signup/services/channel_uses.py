@@ -51,7 +51,8 @@ OVERWRITE_NEEDS: Needs = (MANAGE_CHANNEL, MANAGE_PERMISSIONS)
 def channel_needs() -> Needs:
     """What the signup channel needs of the bot, stated once: its posting needs
     (`POSTING_NEEDS`), which `/signup open` checks before it posts, and its overwrite needs
-    (`OVERWRITE_NEEDS`)."""
+    (`OVERWRITE_NEEDS`). `/signup channel`'s check judges the new channel against all five
+    (`channel_setting`); the switch-on's check judges the kept channel against them (`kept_channels`)."""
     return POSTING_NEEDS + OVERWRITE_NEEDS
 
 
