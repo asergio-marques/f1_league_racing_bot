@@ -7,8 +7,9 @@ words for what it found (*refusal*). It judges nothing that is not about to be a
 output left as text has no channel judged, and switching an output off asks nothing.
 
 **It names no module and imports none.** The caller hands it which outputs are switched on
-(*aspects_of*, read on the connection the step holds) and the hook `picture_channels_read`, which
-each module and core answer for the outputs they post: each signs up a function handing back the
+(*aspects_of*, read on the connection the step holds, from the change's payload) and the hook
+`picture_channels_read`, which each module and core answer for the outputs they post: each signs
+up a function handing back the
 `PictureChannel`s of its own outputs asked for, given the connection, the divisions of the live
 season (those not cancelled: the bot posts to no cancelled division's channel; a finished
 season's channels are not judged either) and the aspects switched on. A module answers only while
@@ -31,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import aiosqlite
 
@@ -79,12 +81,13 @@ class PictureChannel:
 #: Each of the live season's divisions that is handed, and so is not cancelled, by id to name.
 Divisions = Mapping[int, str]
 
-#: Reads which outputs are switched on, on the connection the step holds.
-AspectsOf = Callable[[aiosqlite.Connection], Awaitable[frozenset[str]]]
+#: Reads which outputs the change switches on, on the connection the step holds, from the payload
+#: of the change.
+AspectsOf = Callable[[aiosqlite.Connection, dict[str, Any]], Awaitable[frozenset[str]]]
 
 #: Words what the check collected, each channel with what the bot proved of it, as the reply and
-#: the reason the ⛔ line states (`HALTED`).
-Refusal = Callable[[list[tuple[PictureChannel, Presence]]], dict[str, str]]
+#: the reason the ⛔ line states (`HALTED`); handed the payload of the change.
+Refusal = Callable[[list[tuple[PictureChannel, Presence]], dict[str, Any]], dict[str, str]]
 
 
 async def core_picture_channels(
@@ -165,15 +168,16 @@ def picture_channels_check(
     """The step before an output is switched to a picture: each channel it posts to, judged as the
     module docstring says.
 
-    *aspects_of* reads which outputs the change switches on; *picture_channels_read* is the hook
-    each module's answer is read through; *refusal* words what is collected. The step finds
-    nothing (`{}`) where no output is switched on or no channel is answered, or halts with what
-    *refusal* gives. The connection is closed before Discord is asked.
+    *aspects_of* reads which outputs the change switches on, from its payload;
+    *picture_channels_read* is the hook each module's answer is read through; *refusal* words
+    what is collected, for the payload. The step finds nothing (`{}`) where no output is switched
+    on or no channel is answered, or halts with what *refusal* gives. The connection is closed
+    before Discord is asked.
     """
 
     async def run(ctx: StepContext) -> StepResult:
         async with get_connection(ctx.db_path) as db:
-            aspects = await aspects_of(db)
+            aspects = await aspects_of(db, ctx.payload)
             if not aspects:
                 return StepResult(result={})
             divisions = await live_divisions_on(db, cancelled=False)
@@ -195,7 +199,7 @@ def picture_channels_check(
             if judged[key].state is not PresenceState.PRESENT:
                 collected.append((channel, judged[key]))
         if collected:
-            return StepResult(result={HALTED: refusal(collected)})
+            return StepResult(result={HALTED: refusal(collected, ctx.payload)})
         return StepResult(result={})
 
     return Before(Step(CHECK_PICTURE_CHANNELS, StepKind.ACT, run))
