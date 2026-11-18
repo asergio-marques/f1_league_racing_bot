@@ -181,6 +181,16 @@ class LeagueBot(commands.Bot):
     #: core's registry reads no module's table (architecture.md, "A hook core declares is a list
     #: of subscribers").
     channel_uses_read: AwaitedHook
+    #: The moment an output is about to be switched to a picture (`/images config toggle`, and the
+    #: image module's switch-on judging the outputs already on): each part signs up a function
+    #: handing back, as `PictureChannel`s, the channels its own outputs asked for post to, handed
+    #: the connection, the divisions of the live season that are not cancelled (id to name) and the
+    #: aspects switched on, only while its module is on, and each need counted as for a picture.
+    #: Core's answers the lineup and calendar alone. The builder makes it and signs them up in
+    #: the order a division's channels read (core's, weather, results, attendance), so that
+    #: core's check reads no module's table (architecture.md, "A hook core declares is a list of
+    #: subscribers"); `picture_channels_check` gathers what they hand back.
+    picture_channels_read: AwaitedHook
     #: The moment the factory reset gathers the channels it cleans up: each module signs up a
     #: function handing back, as `DiscordTargets`, every channel it holds in any season (the
     #: database's path is bound as it signs up), whatever its switch: those its settings name and
