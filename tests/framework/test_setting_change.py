@@ -32,6 +32,7 @@ from tests.support.change_queue import (
     restart_queue,
     run_queue,
     seed_server,
+    step_rows,
     stopped_job,
     updated_reply,
 )
@@ -70,23 +71,28 @@ async def env(tmp_path):
         await db.execute("CREATE TABLE undeclared (v TEXT)")
         await db.commit()
     return SimpleNamespace(
-        db_path=db_path, bot=league_double(db_path), clock=Clock(NOW), ran=[],
+        db_path=db_path, bot=league_double(db_path), clock=Clock(NOW), ran=[], handed=[],
         knobs={
             "refuse": False,        # the check refuses
             "check_faults": 0,      # how many checks to come raise
             "save_faults": 0,       # how many saves to come raise after writing
             "after_faults": 0,      # how many after-steps to come raise
+            "before_faults": 0,     # how many steps before the save to come raise
+            "before_result": {},    # what the step before the save finds
             "undeclared": False,    # the save also writes a table it does not declare
         },
     )
 
 
-def _setting(env, *, after: str | None = None, carries_line: bool = False, **fields) -> Any:
+def _setting(env, *, after: str | None = None, carries_line: bool = False,
+             before: str | None = None, **fields) -> Any:
     """The dummy `Setting`: one integer held in `dummy_setting`, set to the payload's `value`.
 
     *after*, where named, is a step after the save (an `ACT`) that records it ran, notes
     "Checked." for the reply, and raises while `after_faults` lasts; *carries_line* makes the
-    success line wait for it.
+    success line wait for it. *before*, where named, is a step before the save that records it
+    ran, raises while `before_faults` lasts, and otherwise finds `before_result`; the reply
+    names what it found under `n`. Every payload the save is handed is kept in `env.handed`.
     """
     from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.framework.services.queue.change_types import Step
@@ -101,6 +107,7 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False, **fie
         return Verdict.refuse("⚠️ Not now.") if knobs["refuse"] else Verdict.go()
 
     async def _save(db, payload):
+        env.handed.append(payload)
         cursor = await db.execute("SELECT value FROM dummy_setting WHERE id = 1")
         held = (await cursor.fetchone())[0]
         then = (PlannedStep(after, {}),) if after else ()
@@ -129,6 +136,9 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False, **fie
             else f"ℹ️ Nothing changed: the dummy value is already **{saved['value']}**."
         )
         note = (results.get(after) or {}).get("note") if after else None
+        found = (results.get(before) or {}).get("n") if before else None
+        if found is not None:
+            text = f"{text}\nFound {found}."
         return f"{text}\n{note}" if note else text
 
     async def _after(_ctx):
@@ -145,6 +155,17 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False, **fie
             carries_line=carries_line,
         ),
     }
+    if before is not None:
+        from leaguebot.framework.services.queue.setting_change import Before
+
+        async def _before(_ctx):
+            env.ran.append(before)
+            if knobs["before_faults"]:
+                knobs["before_faults"] -= 1
+                raise RuntimeError("the step before broke")
+            return StepResult(result=dict(knobs["before_result"]))
+
+        fields["before"] = (Before(step=Step(before, StepKind.ACT, _before)),)
     return Setting(
         kind=KIND,
         command=lambda _payload: COMMAND,
@@ -372,12 +393,29 @@ async def test_the_acknowledgement_names_what_is_being_set(env):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_fault_in_the_save_saves_nothing_says_to_run_it_again_and_the_lane_goes_on(env):
+#: A fault in a step before the save is a fault in the setting, as one in the save is.
+NOT_YET_BEFORE = "#449: a setting has no steps before its save yet"
+
+
+@pytest.mark.parametrize("fault_at", [
+    pytest.param("before", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_BEFORE)),
+    "save",
+])
+async def test_a_fault_before_or_in_the_save_saves_nothing_says_to_run_it_again_and_the_lane_goes_on(
+    env, fault_at
+):
+    """A step the save waits on (a module's kept channels checked before it is switched on) that
+    raises ends the setting as a fault in the save does: nothing saved or audited, the reply
+    saying to run it again, one failure line, and the lane going on to the next change."""
     from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
 
     assert NOTHING_SAVED == "Nothing was saved. Run `{command}` again to retry."
-    _league(env)
-    env.knobs["save_faults"] = 1
+    if fault_at == "before":
+        _league(env, before="check")
+        env.knobs["before_faults"] = 1
+    else:
+        _league(env)
+        env.knobs["save_faults"] = 1
     interaction = member_interaction(env.bot)
 
     await _ask(env, 6, interaction)
@@ -386,11 +424,88 @@ async def test_a_fault_in_the_save_saves_nothing_says_to_run_it_again_and_the_la
 
     assert updated_reply(interaction) == failure_reply(WHAT, NOTHING_SAVED_HERE)
     lines = await _lines(env)
-    assert FAILED_LINE.format(fault="RuntimeError") in lines
+    assert lines.count(FAILED_LINE.format(fault="RuntimeError")) == 1
     assert _success_line(6) not in lines
     assert await stopped_job(env.db_path) is None
     assert await _value(env) == 7
     assert [(a[1], a[2]) for a in await _audits(env)] == [({"value": 5}, {"value": 7})]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_BEFORE)
+async def test_a_step_before_the_save_runs_first_and_hands_the_save_what_it_found(env):
+    """What a step before the save found is handed to the save under `FOUND`, by the step's name,
+    and the reply may read it; the change's own payload is not rewritten."""
+    from leaguebot.framework.services.queue.setting_change import FOUND, SAVE
+
+    _league(env, before="check")
+    env.knobs["before_result"] = {"n": 2}
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, 6, interaction)
+    await run_queue(env.bot)
+
+    assert [row["name"] for row in await step_rows(env.db_path)] == ["check", SAVE]
+    assert [payload[FOUND]["check"] for payload in env.handed] == [{"n": 2}]
+    assert env.handed[0]["value"] == 6
+    assert json.loads((await change_rows(env.db_path))[0]["payload"]) == {"value": 6}
+    assert updated_reply(interaction) == "✅ The dummy value is now **6**.\nFound 2."
+    assert await _value(env) == 6
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_BEFORE)
+async def test_a_step_before_the_save_that_halts_ends_the_setting_refused(env):
+    """A step before the save that finds the setting cannot go ahead (a kept channel the bot
+    cannot use) ends it refused: no save is planned, nothing is saved or audited, the member is
+    given the step's reply, and the one line is a refusal formed here from the step's reason,
+    not a failure."""
+    from leaguebot.framework.services.queue.setting_change import HALTED, SAVE
+    from leaguebot.framework.utils.log_lines import refusal_line
+
+    _league(env, before="check")
+    env.knobs["before_result"] = {
+        HALTED: {"reply": "⛔ The value is still 5: the check found a fault.",
+                 "reason": "the check found a fault"},
+    }
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, 6, interaction)
+    await run_queue(env.bot)
+
+    assert SAVE not in [row["name"] for row in await step_rows(env.db_path)]
+    assert env.handed == []
+    assert await _value(env) == 5
+    assert await _audits(env) == []
+    assert updated_reply(interaction) == "⛔ The value is still 5: the check found a fault."
+    assert await _lines(env) == [refusal_line(NAMED, WHAT, "the check found a fault")]
+    assert await stopped_job(env.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_BEFORE)
+async def test_a_restart_between_a_step_before_the_save_and_the_save_still_hands_it_what_was_found(
+    env
+):
+    """What the step before the save found is read from the steps the queue keeps, so a restart
+    between the two hands the save the same findings, and the step is not run again."""
+    from leaguebot.framework.services.queue.setting_change import FOUND
+
+    _league(env, before="check")
+    env.knobs["before_result"] = {"n": 2}
+
+    await _ask(env, 6)
+    await run_queue(env.bot, steps=1)
+    assert env.ran == ["check"]
+    assert env.handed == []
+
+    await restart_queue(env.bot)
+    try:
+        await run_queue(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert env.ran == ["check"]
+    assert [payload[FOUND]["check"] for payload in env.handed] == [{"n": 2}]
+    assert await _value(env) == 6
+    assert await _states(env) == ["DONE"]
 
 
 async def test_a_setting_s_own_not_saved_words_replace_the_generic_ones(env):
