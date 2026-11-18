@@ -72,6 +72,7 @@ async def env(tmp_path):
         await db.commit()
     return SimpleNamespace(
         db_path=db_path, bot=league_double(db_path), clock=Clock(NOW), ran=[], handed=[],
+        undone=[],
         knobs={
             "refuse": False,        # the check refuses
             "check_faults": 0,      # how many checks to come raise
@@ -79,20 +80,30 @@ async def env(tmp_path):
             "after_faults": 0,      # how many after-steps to come raise
             "before_faults": 0,     # how many steps before the save to come raise
             "before_result": {},    # what the step before the save finds
+            "before_left": None,    # what the step before the save leaves on Discord, as it raises
+            "undo_left": None,      # what the undo of the step before the save leaves, as it raises
+            "later_faults": 0,      # how many second steps before the save to come raise
+            "later_result": {},     # what the second step before the save finds
             "undeclared": False,    # the save also writes a table it does not declare
         },
     )
 
 
 def _setting(env, *, after: str | None = None, carries_line: bool = False,
-             before: str | None = None, **fields) -> Any:
+             before: str | None = None, undo: str | None = None, later: str | None = None,
+             **fields) -> Any:
     """The dummy `Setting`: one integer held in `dummy_setting`, set to the payload's `value`.
 
     *after*, where named, is a step after the save (an `ACT`) that records it ran, notes
     "Checked." for the reply, and raises while `after_faults` lasts; *carries_line* makes the
     success line wait for it. *before*, where named, is a step before the save that records it
-    ran, raises while `before_faults` lasts, and otherwise finds `before_result`; the reply
-    names what it found under `n`. Every payload the save is handed is kept in `env.handed`.
+    ran, raises while `before_faults` lasts, raises `StepFailedOnDiscord` carrying `before_left`
+    as its notice where that is set, and otherwise finds `before_result`; the reply names what it
+    found under `n`. *undo*, where named, is *before*'s undo: it records it ran, keeps in
+    `env.undone` what *before* found as the queue keeps it, and raises `StepFailedOnDiscord`
+    carrying `undo_left` as its notice where that is set. *later*, where named, is a second step
+    before the save, after *before*: it records it ran, raises while `later_faults` lasts, and
+    otherwise finds `later_result`. Every payload the save is handed is kept in `env.handed`.
     """
     from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.framework.services.queue.change_types import Step
@@ -156,6 +167,7 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False,
         ),
     }
     if before is not None:
+        from leaguebot.framework.models.change import StepFailedOnDiscord
         from leaguebot.framework.services.queue.setting_change import Before
 
         async def _before(_ctx):
@@ -163,9 +175,33 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False,
             if knobs["before_faults"]:
                 knobs["before_faults"] -= 1
                 raise RuntimeError("the step before broke")
+            if knobs["before_left"] is not None:
+                raise StepFailedOnDiscord(
+                    "the step before left something", notice=knobs["before_left"]
+                ) from RuntimeError("Discord refused")
             return StepResult(result=dict(knobs["before_result"]))
 
-        fields["before"] = (Before(step=Step(before, StepKind.ACT, _before)),)
+        async def _undo(ctx):
+            env.ran.append(undo)
+            env.undone.extend(dict(view.result or {}) for view in ctx.steps if view.name == before)
+            if knobs["undo_left"] is not None:
+                raise StepFailedOnDiscord(
+                    "the undo left something", notice=knobs["undo_left"]
+                ) from RuntimeError("Discord refused")
+            return StepResult(result={})
+
+        async def _later(_ctx):
+            env.ran.append(later)
+            if knobs["later_faults"]:
+                knobs["later_faults"] -= 1
+                raise RuntimeError("the later step broke")
+            return StepResult(result=dict(knobs["later_result"]))
+
+        first = (Before(step=Step(before, StepKind.ACT, _before), undo=Step(undo, StepKind.ACT, _undo))
+                 if undo is not None else Before(step=Step(before, StepKind.ACT, _before)))
+        fields["before"] = (first, *(
+            (Before(step=Step(later, StepKind.ACT, _later)),) if later is not None else ()
+        ))
     return Setting(
         kind=KIND,
         command=lambda _payload: COMMAND,
@@ -496,6 +532,116 @@ async def test_a_restart_between_a_step_before_the_save_and_the_save_still_hands
     assert [payload[FOUND]["check"] for payload in env.handed] == [{"n": 2}]
     assert await _value(env) == 6
     assert await _states(env) == ["DONE"]
+
+
+#: What work before the save says it left on Discord, as a step raising `StepFailedOnDiscord`
+#: carries it.
+LEFT = "Something was left on Discord: run `/dummy set` again, or remove it by hand."
+
+
+@pytest.mark.xfail(strict=True, reason="#449: a step before the save takes no undo, and a save "
+                   "that faults takes nothing back")
+async def test_a_save_that_faults_after_a_step_before_it_takes_that_step_back(env):
+    """A step before the save (signup's permissions put back on its channel) declares an undo and
+    returns, finding 2; the save then raises. The undo runs, reading what the step found from the
+    steps the queue keeps; nothing is saved or audited; the member is told nothing was saved and to
+    run it again; there is one failure line, and the lane goes on to the next change, whose own
+    step before the save returns and whose undo is not run."""
+    from leaguebot.framework.services.queue.setting_change import SAVE
+
+    _league(env, before="restore", undo="take_back")
+    env.knobs["before_result"] = {"n": 2}
+    env.knobs["save_faults"] = 1
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, 6, interaction)
+    await _ask(env, 7)
+    await run_queue(env.bot)
+
+    assert env.ran == ["restore", "take_back", "restore"]
+    assert env.undone == [{"n": 2}]
+    assert updated_reply(interaction) == failure_reply(WHAT, NOTHING_SAVED_HERE)
+    lines = await _lines(env)
+    assert [line for line in lines if line.startswith("❌")] == [
+        FAILED_LINE.format(fault="RuntimeError")
+    ]
+    assert await stopped_job(env.db_path) is None
+    assert await _value(env) == 7
+    assert [(a[1], a[2]) for a in await _audits(env)] == [({"value": 5}, {"value": 7})]
+    assert SAVE in [row["name"] for row in await step_rows(env.db_path)]
+
+
+@pytest.mark.parametrize("how", ["halts", "faults"])
+@pytest.mark.xfail(strict=True, reason="#449: a step before the save takes no undo, and a later "
+                   "step's halt or fault takes nothing back")
+async def test_a_later_step_before_the_save_that_does_not_go_through_takes_back_the_earlier_one(
+    env, how
+):
+    """Two steps before the save: the first (permissions put back) declares an undo and returns;
+    the second halts the setting (a refusal) or raises. The first step's undo runs, no save is
+    planned, nothing is saved or audited, and the member is given the halt's reply or told nothing
+    was saved."""
+    from leaguebot.framework.services.queue.setting_change import HALTED, SAVE
+
+    _league(env, before="restore", undo="take_back", later="judge")
+    if how == "halts":
+        env.knobs["later_result"] = {
+            HALTED: {"reply": "⛔ The value is still 5: the check found a fault.",
+                     "reason": "the check found a fault"},
+        }
+    else:
+        env.knobs["later_faults"] = 1
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, 6, interaction)
+    await run_queue(env.bot)
+
+    assert env.ran == ["restore", "judge", "take_back"]
+    assert SAVE not in [row["name"] for row in await step_rows(env.db_path)]
+    assert env.handed == []
+    assert await _value(env) == 5
+    assert await _audits(env) == []
+    assert updated_reply(interaction) == (
+        "⛔ The value is still 5: the check found a fault." if how == "halts"
+        else failure_reply(WHAT, NOTHING_SAVED_HERE)
+    )
+    assert await stopped_job(env.db_path) is None
+
+
+@pytest.mark.parametrize("left_by", ["the step before the save", "its undo"])
+@pytest.mark.xfail(strict=True, reason="#449: what work before the save leaves on Discord is not "
+                   "told in the reply or the failure line")
+async def test_work_before_the_save_that_leaves_something_says_what_and_how_to_put_it_right(
+    env, left_by
+):
+    """The step before the save raises `StepFailedOnDiscord` from Discord's refusal, carrying a
+    notice of what it left (its own partial work it could not take back); or it returns and the
+    save faults, and its undo raises so, carrying the notice. Nothing is saved; the reply carries
+    the notice; a failure line names the kind of fault from its cause (`RuntimeError`, never
+    `StepFailedOnDiscord`) with the notice beneath it; and the lane goes on."""
+    if left_by == "the step before the save":
+        _league(env, before="restore")
+        env.knobs["before_left"] = LEFT
+    else:
+        _league(env, before="restore", undo="take_back")
+        env.knobs["save_faults"] = 1
+        env.knobs["undo_left"] = LEFT
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, 6, interaction)
+    await run_queue(env.bot)
+
+    reply = updated_reply(interaction)
+    assert NOTHING_SAVED_HERE in reply and LEFT in reply
+    lines = await _lines(env)
+    head = FAILED_LINE.format(fault="RuntimeError")
+    assert any(
+        line.startswith(f"{head}\n") and LEFT in line.split("\n", 1)[1] for line in lines
+    )
+    assert "StepFailedOnDiscord" not in "\n".join(lines)
+    assert await _value(env) == 5
+    assert await _audits(env) == []
+    assert await stopped_job(env.db_path) is None
 
 
 async def test_a_setting_s_own_not_saved_words_replace_the_generic_ones(env):
