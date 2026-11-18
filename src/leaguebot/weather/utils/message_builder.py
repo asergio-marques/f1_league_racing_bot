@@ -138,7 +138,7 @@ def phase3_message(
     return "\n".join(lines)
 
 
-def invalidation_message(track: str, division_role_id: int | None = None) -> str:
+def invalidation_message(track: str, division_role_id: int | None) -> str:
     """Broadcast message when prior weather results are invalidated by an amendment.
 
     It begins with the division's role mention, as a forecast does, and with nothing where the
