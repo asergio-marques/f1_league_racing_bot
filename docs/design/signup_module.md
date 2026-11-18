@@ -732,3 +732,4 @@ Each is stated where it lives and pinned by the test named.
 | A fault reading the configuration at a review's button grants nothing | `_may_review_signup`'s docstring | `test_a_signup_review_refuses_when_the_config_cannot_be_read` |
 | Core's season checks read signup only through its hooks | `signup_prerequisites`' docstring | `test_the_signup_module_lacks_only_its_channel_while_it_is_on` |
 | A pending reason is cleared, and its lapse cancelled, on a pack or reset | `clear_pending_reasons`' docstring | `test_a_reset_cancels_every_pending_lapse_and_none_fires_after` |
+| `/signup cancel`'s pending-reason refusal is made at the ask and the form's submit, never in the change's check | `reason_pending_for`'s and `cancellation_refusal`'s docstrings | `test_a_button_pressed_after_a_cancellation_is_asked_lets_it_go_ahead`, `test_a_cancellation_is_refused_while_a_manager_awaits_a_reason` |
