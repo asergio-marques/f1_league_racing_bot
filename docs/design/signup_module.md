@@ -188,11 +188,11 @@ before anything is set, so a restore run again after a stop reads the first reco
 restores what stood before the first attempt, not what the stop left. The permissions are merged
 with what the league set by hand, which stands, and a take-back restores the exact recorded
 overwrite. The check is `kept_channels_check`'s own and `channel_needs` states what it holds the
-channel to, once, as the signup specification's "Enabling signup flow" gives it, and `/signup channel`'s check holds its new channel to all of it: `/signup open`
-reads the posting part (`POSTING_NEEDS`), and `OVERWRITE_NEEDS` holds the rest, which setting who
-may see the channel needs. *Rejected:* an `After` step, which would leave the module on while they
-are unset, where nothing may be half-set (Constitution X, rule 2; `Before.undo` in
-`setting_change`). Tests:
+channel to, once, as the signup specification's "Enabling signup flow" gives it, and `/signup
+channel`'s check holds its new channel to all of it: `/signup open` reads the posting part
+(`POSTING_NEEDS`), and `OVERWRITE_NEEDS` holds the rest, which setting who may see the channel
+needs. *Rejected:* an `After` step, which would leave the module on while they are unset, where
+nothing may be half-set (Constitution X, rule 2; `Before.undo` in `setting_change`). Tests:
 `test_a_restore_discord_refuses_part_way_leaves_signup_off_and_takes_back_what_it_set`,
 `test_a_save_that_faults_after_the_restore_takes_the_permissions_back`,
 `test_a_restore_run_again_after_a_stop_takes_back_to_the_first_record`.
@@ -413,20 +413,21 @@ identity, not its rank**, the command resolving the rank to a day and time at th
 before anything is saved, where the bot lacks any of the five things it needs of the new channel
 (`channel_needs`, judged through `unusable_refusal` in the words every channel check gives) or
 Manage Channel or Manage Permissions on the old one it is to clear, so a move Discord would refuse
-for the old channel never strips it of what it holds; the check, not the command, judges it, since
-a change ahead on the queue may have taken the channel since the command asked. Where the league's
+for the old channel never strips it of what it holds; the check, not the command, judges it, since a
+change ahead on the queue may have taken the channel since the command asked. Where the league's
 server is not to hand it fails, saving nothing, rather than standing aside as every other channel
-setting does: the change sets the channel's permissions, which it cannot do without the server. After the save, one step (`SET_PERMISSIONS`)
-sets the new channel's overwrites first and clears the old one's last. Only a refusal the check
-could not foresee (`discord.HTTPException`, caught by name) leaves the channel saved with the fault
-named in the reply and beside the line; the old channel is cleared all the same, being no longer
-the signup channel. It is a repair setting (`repairs_the_bot`): where the stored channel is no
-longer on the server it is allowed though a confirmed season has fixed the configuration, and runs
-while the lane is stopped. Where a window is open, a second step (`POST_INFORMATION`) posts the
-information message with its Sign Up button in the new channel and keeps its id as the window's,
-so drivers can sign up there at once; a fault in it leaves the channel saved and the reply says what
-was not posted (`channel_setting`'s module docstring; the specification's "Enabling signup flow").
-Pinned by `test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_before_anything_is_edited`,
+setting does: the change sets the channel's permissions, which it cannot do without the server.
+After the save, one step (`SET_PERMISSIONS`) sets the new channel's overwrites first and clears the
+old one's last. Only a refusal the check could not foresee (`discord.HTTPException`, caught by name)
+leaves the channel saved with the fault named in the reply and beside the line; the old channel is
+cleared all the same, being no longer the signup channel. It is a repair setting
+(`repairs_the_bot`): where the stored channel is no longer on the server it is allowed though a
+confirmed season has fixed the configuration, and runs while the lane is stopped. Where a window is
+open, a second step (`POST_INFORMATION`) posts the information message with its Sign Up button in
+the new channel and keeps its id as the window's, so drivers can sign up there at once; a fault in
+it leaves the channel saved and the reply says what was not posted (`channel_setting`'s module
+docstring; the specification's "Enabling signup flow"). Pinned by
+`test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_before_anything_is_edited`,
 `test_moving_the_signup_channel_sets_the_new_before_clearing_the_old`,
 `test_an_unforeseen_refusal_keeps_the_channel_and_names_the_fault`,
 `test_a_signup_channel_deleted_mid_season_is_replaced` and

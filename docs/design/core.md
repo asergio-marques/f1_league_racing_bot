@@ -242,11 +242,11 @@ the server in its payload, which runs at the ask and again as the change claims 
 because the Discord read belongs in a check and never in a save. Both judge only where no server
 is claimed (core_specification.md, "Setting the bot up", says what a configured server and
 another server are answered); the cog refuses another server's claim at the ask, and the save
-reports it as the change starts. The change's `on_refused` hook writes the refusal where
-core_specification.md, "Setting the bot up", says, the queue's own line having no league log to
-go to before the claim. The alternatives rejected: judging in the save,
+reports it as the change starts, with no channel refusal beside it. The change's `on_refused` hook
+writes the refusal where core_specification.md, "Setting the bot up", says, the queue's own line
+having no league log to go to before the claim. The alternatives rejected: judging in the save,
 which reads the database alone (architecture.md, "How a change is carried out"); and judging only
-at the ask, which leaves a channel broken while the command waits to be claimed.
+at the ask, which leaves a channel broken while the change waits in the queue.
 
 **Core's own two channels are named through the same hook as the modules'.** The lineup and the
 calendar need the image module's answer to build their needs, which is awaited, so
@@ -748,6 +748,7 @@ Each is stated where it lives and pinned by the test named. The framework's are 
 | A review's expiry asked twice posts one notice | `season_review_changes.claim_take_down` | `test_a_review_expired_twice_at_once_posts_one_notice` |
 | A season starts on the UTC date of the queue's clock | `season_setup_change`'s docstring | `test_the_start_date_is_the_utc_date` |
 | Every store of league state in memory is cleared by pack and factory reset, or named as holding none | `core/services/upkeep/in_memory_state.py` | `tests/core/test_in_memory_state.py` |
+| `/bot init` judges its two channels again as it claims the server, though the ask judged them | `bot_init_change`'s docstring | `test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be_used` |
 
 ---
 
