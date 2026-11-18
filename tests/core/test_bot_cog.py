@@ -50,7 +50,7 @@ import pytest
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
-from tests.support.channel_faults import answer_attachments, league_server
+from tests.support.channel_faults import answer_attachments, league_server, server_holding
 from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
 from tests.support.undecorate import undecorate
 
@@ -316,6 +316,59 @@ async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
     assert row["timestamp"] == NOW.isoformat()
 
 
+@pytest.mark.parametrize(
+    "lineup,denied,refusals",
+    [
+        pytest.param(
+            True, {CONFIGURED_CHANNEL: ("attach_files",)},
+            [(CONFIGURED_CHANNEL, "bot command channel", "Attach Files")],
+            id="command-channel-without-attach-files",
+        ),
+        pytest.param(
+            False, {CONFIGURED_LOG: ("send_messages",)},
+            [(CONFIGURED_LOG, "bot log channel", "Send Messages")],
+            id="log-channel-without-send-messages",
+        ),
+        pytest.param(
+            True, {CONFIGURED_CHANNEL: ("attach_files",), CONFIGURED_LOG: ("send_messages",)},
+            [
+                (CONFIGURED_CHANNEL, "bot command channel", "Attach Files"),
+                (CONFIGURED_LOG, "bot log channel", "Send Messages"),
+            ],
+            id="both",
+        ),
+    ],
+)
+@pytest.mark.xfail(strict=True, reason="#570: /bot init does not judge its two channels")
+async def test_bot_init_refuses_a_channel_the_bot_cannot_use_and_claims_nothing(
+    tmp_path, lineup, denied, refusals
+):
+    """Core spec, Setting the bot up: `/bot init` judges the interaction channel (View Channel,
+    Send Messages, and Attach Files where a lineup or calendar picture is on) and the log channel
+    (View Channel, Send Messages) when asked. No server is claimed; an administrator runs
+    `/bot init` for command channel 111 and log channel 333. Where a lineup picture is on and the
+    bot is denied Attach Files in 111, or is denied Send Messages in 333, or both, they are refused
+    at the ask, each channel the bot cannot use named on its own line, the command channel first,
+    word for word. Nothing is asked of the queue and no server is claimed."""
+    from tests.support.change_queue import change_rows
+
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    answer_attachments(bot.image_drawing, *(("lineup",) if lineup else ()))
+    cog = BotCog(bot)
+    interaction = _asking(bot, "bot init")
+    interaction.guild = server_holding(unusable=denied)
+
+    await _ask_init(cog, interaction)
+
+    assert _said(interaction) == [
+        "\n".join(_cannot_use(channel_id, use, missing) for channel_id, use, missing in refusals)
+    ]
+    assert await change_rows(db_path) == []
+    assert await bot.config_service.get_league_server_id() is None
+    assert await _audit_rows(db_path) == []
+
+
 async def _init_configured(tmp_path) -> tuple[Any, MagicMock]:
     """Run a first `/bot init` through the queue with the four configured settings, the league
     admin role named "League Admins": the bot and the interaction."""
@@ -383,9 +436,13 @@ async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path
     ), [record.getMessage() for record in caplog.records]
 
 
-async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):
-    """The league's server is set up; an administrator runs `/bot init` again. They are refused,
-    in today's words, at the ask: nothing is asked of the queue, and nothing is written."""
+@pytest.mark.parametrize("channels", ["usable", "unusable"])
+async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path, channels):
+    """The league's server is set up; an administrator runs `/bot init` again, for channels 901
+    and 902, which the bot can use, or (*unusable*) in both of which it is denied Send Messages,
+    a lineup picture being on. They are refused, in today's words, at the ask: `/bot init` runs
+    once, and on a configured server judges no channel, so the refusal is the same whatever the
+    channels. Nothing is asked of the queue, and nothing is written."""
     from tests.support.change_queue import change_rows
 
     db_path = await _make_db(tmp_path)
@@ -393,6 +450,11 @@ async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_pat
     bot = await _queued_bot(db_path)
     cog = BotCog(bot)
     interaction = _asking(bot, "bot init")
+    if channels == "unusable":
+        answer_attachments(bot.image_drawing, "lineup")
+        denied = {901: ("send_messages",), 902: ("send_messages",)}
+        interaction.guild = server_holding(unusable=denied)
+        league_server(bot, unusable=denied)
 
     await _unwrap(cog.handle_bot_init)(
         cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
@@ -2326,6 +2388,15 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         await _unwrap(cog.handle_factory_reset)(cog, interaction, "yes")
         return bot, interaction, command, "CONFIRM"
     # The host-only cases.
+    if case == "init channel lacks permissions before init":
+        answer_attachments(bot.image_drawing)
+        guild = server_holding(unusable={902: ("send_messages",)})
+        guild.owner_id = OWNER_ID
+        interaction.guild = guild
+        # A claim asked of the queue is recorded, not run: the refusal is the ask's.
+        bot.change_queue.ask = AsyncMock()
+        await _init(cog, interaction)
+        return bot, interaction, command, _cannot_use(902, "bot log channel", "Send Messages")
     if case == "init on another server":
         interaction.guild_id = SERVER_ID + 1
         await _init(cog, interaction)
@@ -2416,6 +2487,12 @@ async def test_a_refusal_of_the_bot_cog_is_recorded_in_the_log_channel(tmp_path,
     "case",
     [
         "init on another server",
+        pytest.param(
+            "init channel lacks permissions before init",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#570: /bot init does not judge its two channels"
+            ),
+        ),
         "log-channel before init",
         "base-role before init",
         "hub-channel before init",
