@@ -541,21 +541,13 @@ INVALIDATION_NOTICE = (
 )
 
 
-#: The invalidation notice not yet mentioning or notifying the division's role.
-NOTICE_PINGS_NO_ROLE = (
-    "#452: the invalidation notice does not yet mention or notify the division's role"
-)
-
-
 @pytest.mark.parametrize("role, mention, allowed, pictures", [
     pytest.param(PRO_ROLE, f"<@&{PRO_ROLE}> ",
-                 {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, False, id="role set",
-                 marks=pytest.mark.xfail(strict=True, reason=NOTICE_PINGS_NO_ROLE)),
+                 {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, False, id="role set"),
     pytest.param(0, "", NOBODY, False, id="no role"),
     pytest.param(PRO_ROLE, f"<@&{PRO_ROLE}> ",
                  {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, True,
-                 id="role set, forecasts as pictures",
-                 marks=pytest.mark.xfail(strict=True, reason=NOTICE_PINGS_NO_ROLE)),
+                 id="role set, forecasts as pictures"),
 ])
 async def test_the_invalidation_notice_notifies_the_division_s_role(
     tmp_path, monkeypatch, role, mention, allowed, pictures,

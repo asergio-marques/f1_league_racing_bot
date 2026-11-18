@@ -169,15 +169,21 @@ def _not_due(
     return None
 
 
-def _forecast_mentions(phase: int, role_id: int | None) -> discord.AllowedMentions:
-    """Who a forecast's post may notify: its division's role alone, whether it is posted as text
-    or as a picture and whether it is a first try or a retry, and nobody for the mystery notice
-    (phase 0) or a division with no role set. No member and not everyone, ever."""
-    if phase == 0 or not role_id:
+def _role_mentions(role_id: int | None) -> discord.AllowedMentions:
+    """Who a weather post naming a division's role may notify: that role alone, and nobody for a
+    division with no role set. No member and not everyone, ever."""
+    if not role_id:
         return discord.AllowedMentions.none()
     return discord.AllowedMentions(
         everyone=False, users=False, roles=[discord.Object(id=int(role_id))]
     )
+
+
+def _forecast_mentions(phase: int, role_id: int | None) -> discord.AllowedMentions:
+    """Who a forecast's post may notify: its division's role alone, whether it is posted as text
+    or as a picture and whether it is a first try or a retry, and nobody for the mystery notice
+    (phase 0) or a division with no role set. No member and not everyone, ever."""
+    return discord.AllowedMentions.none() if phase == 0 else _role_mentions(role_id)
 
 
 def _drawers() -> dict[int, Callable[..., Any]]:
@@ -1021,13 +1027,17 @@ def amendment_steps(
         )
 
     async def notify_invalidation(ctx: StepContext) -> StepResult:
-        """Tell the division's forecast channel that its forecasts no longer stand. A channel never
-        set is done and unnamed; one set and gone, or a send Discord refuses, stops the queue."""
+        """Tell the division's forecast channel that its forecasts no longer stand, beginning with
+        a mention of the division's role and notifying that role alone (nobody where it has none),
+        read as the step runs. A channel never set is done and unnamed; one set and gone, or a send
+        Discord refuses, stops the queue."""
         division_id = int(ctx.payload["division_id"])
         async with get_connection(ctx.db_path) as db:
             channels = await forecast_channels_on(db, [division_id])
-        if division_id not in channels:
+            division = await division_on(db, division_id)
+        if division_id not in channels or division is None:
             raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
+        role_id = division.mention_role_id
         forecast_channel_id = channels[division_id]
         if not forecast_channel_id:
             return StepResult(result={"unset": True})
@@ -1042,8 +1052,8 @@ def amendment_steps(
         try:
             await send_notice(
                 channel,
-                invalidation_message(str(ctx.step_payload["track"])),
-                mentions=discord.AllowedMentions.none(),
+                invalidation_message(str(ctx.step_payload["track"]), role_id),
+                mentions=_role_mentions(role_id),
             )
         except discord.HTTPException as exc:
             raise StepFailedOnDiscord(
