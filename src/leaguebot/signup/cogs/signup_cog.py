@@ -14,6 +14,7 @@ Commands:
   /signup close-time add    <close_time>      — arm an auto-close time
   /signup close-time cancel                   — clear the auto-close time
   /signup close-time modify <close_time>      — replace the armed auto-close time
+  /signup cancel <user>                       — end a driver's signup that is under way
 
 The league's base role and driver role, which this module reads, are core's and are set by
 `/bot base-role` and `/bot driver-role` (issue #276).
@@ -32,13 +33,15 @@ from discord.ext import commands
 
 from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
-from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.signup_views import (
+    IN_PROGRESS_STATES, SignupButtonView, reason_pending_for,
+)
 from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
 from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
 from leaguebot.signup.services.signup_settings import format_slots, kind_of
 from leaguebot.signup.services.wizard_answers import take_typed_answer
 from leaguebot.signup.services.wizard_changes import (
-    DELETED, ask_channel_gone, ask_member_left,
+    CANCELLED, DELETED, END, ask_channel_gone, ask_member_left, cancellation_refusal,
 )
 from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
@@ -52,9 +55,9 @@ from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.utils.time_parsing import parse_time_of_day
 from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
-from leaguebot.framework.utils.league_server import LeagueView, is_foreign_guild
+from leaguebot.framework.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
 from leaguebot.utils.messages import chunk_message
-from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.interaction_errors import describe, describe_form
 from leaguebot.framework.utils.log_lines import name_of_member, record_abandoned, refuse
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
@@ -256,6 +259,57 @@ class ConfirmCloseView(LeagueView):
             await self._asked.edit_original_response(view=None)
         except discord.HTTPException:
             log.warning("could not take the close confirmation's buttons down", exc_info=True)
+
+
+#: The longest reason `/signup cancel` takes. The notice the driver's channel is told holds it
+#: beside the manager's name and the hold on the channel, and has to fit one Discord message.
+CANCEL_REASON_LIMIT = 1000
+
+
+class CancelSignupModal(LeagueModal, title="Cancel signup"):
+    """The form `/signup cancel` opens: one optional reason, told to the driver in their channel.
+
+    Nothing is asked of the queue until it is submitted, and closing it records nothing. The
+    submission judges the driver's signup again, as the command did, for a form can stay open while
+    the driver withdraws, is approved, or a manager presses Reject on their review: where it is no
+    longer under way, or a reason is awaited, the cancellation is refused and recorded. The queue's
+    own check judges the state once more when its turn comes, from the database alone.
+    """
+
+    reason: discord.ui.TextInput = discord.ui.TextInput(
+        label="Reason (told to the driver)",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=CANCEL_REASON_LIMIT,
+    )
+
+    def __init__(self, cog: "SignupCog", driver: discord.Member) -> None:
+        super().__init__()
+        self._cog = cog
+        self._driver = driver
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        bot = self._cog.bot
+        driver = self._driver
+        profile = await bot.driver_service.get_profile(str(driver.id))
+        refusal = cancellation_refusal(
+            None if profile is None else profile.current_state,
+            driver.mention,
+            reason_pending_for(driver.id),
+        )
+        if refusal is not None:
+            await refuse(interaction, f"⛔ {refusal}", what=describe_form(self), reason=refusal)
+            return
+        await bot.change_queue.ask(
+            END,
+            {
+                "user_id": str(driver.id), "reason": CANCELLED,
+                "actor_id": interaction.user.id,
+                "actor_name": getattr(interaction.user, "display_name", str(interaction.user)),
+                "text": self.reason.value.strip() or None,
+            },
+            interaction=interaction, what=describe_form(self),
+        )
 
 
 class SignupCog(commands.Cog):
@@ -583,6 +637,41 @@ class SignupCog(commands.Cog):
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
         await self._ask_close_time(interaction, "modify", close_time)
+
+    # ── /signup cancel (#502) ──────────────────────────────────────────
+
+    @signup.command(
+        name="cancel",
+        description="End the signup a driver has under way.",
+    )
+    @app_commands.describe(user="The driver whose signup to end.")
+    @league_manager_only
+    async def signup_cancel(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """End the signup a driver is filling in, awaiting review or correcting.
+
+        Refused, with the reason and a line in the log channel, for a driver with no signup in
+        progress, an approved one (Unassigned: `/driver reject` turns them down), one placed in a
+        seat, signup being off, and a driver whose signup a manager has pressed Reject or Request
+        Changes on and not yet given the reason. Otherwise it opens a form for an optional reason;
+        the signup ends when that is submitted (`CancelSignupModal`). The command holds no rule:
+        `cancellation_refusal` judges the state, here from the driver service and again by the
+        queued change from the database. The reason a manager is still to type lives in memory, so
+        it is judged here and on the form's submission and never by the queued change.
+        """
+        if not await self._module_gate(interaction):
+            return
+        profile = await self.bot.driver_service.get_profile(str(user.id))
+        refusal = cancellation_refusal(
+            None if profile is None else profile.current_state,
+            user.mention,
+            reason_pending_for(user.id),
+        )
+        if refusal is not None:
+            await refuse(
+                interaction, f"⛔ {refusal}", what=describe(interaction), reason=refusal
+            )
+            return
+        await interaction.response.send_modal(CancelSignupModal(self, user))
 
     # ── /signup open (T017) ───────────────────────────────────────────
 

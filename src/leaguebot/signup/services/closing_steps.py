@@ -12,7 +12,7 @@ the channel as it was.
 The jobs are usable on either lane (docs/wip-specs/core_specification.md, "How a change is
 carried out"). A league change that closes signups (a command or a timer) runs them itself; the
 `signup.closing` change is what a league change that ended a driver's signup (Withdraw, Approve, a
-Reject reason) asks back of the driver's own lane, so that a refused notice stops that driver's
+Reject reason, a manager's cancellation) asks back of the driver's own lane, so that a refused notice stops that driver's
 lane alone. It needs only its channel to stand, not the signup it closes: that has ended.
 """
 

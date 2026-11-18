@@ -223,8 +223,12 @@ work and restarts"), each a timer in memory and no change on the queue:
 
 - **a manager's pending reason** after Reject or Request Changes, awaiting the message they type
   (`_PENDING_REASONS` in `signup_views.py`, with its five-minute lapse an asyncio task kept in the
-  entry). A restart drops it unrecorded; `clear_pending_reasons` drops every entry and cancels every
-  lapse on `/bot pack` and `/bot factory-reset` (`in_memory_state_cleared`;
+  entry), which `/signup cancel` also reads (`reason_pending_for`) to refuse a driver a manager is
+  typing a reason about, as the specification's "Wizard flow" has it. That refusal reads memory,
+  so it is made at the ask and at the form's submit and never in the change's check, which reads
+  only the database and the queue. A restart drops the pending reason unrecorded;
+  `clear_pending_reasons` drops every entry and cancels every lapse on `/bot pack` and
+  `/bot factory-reset` (`in_memory_state_cleared`;
   `test_a_reset_cancels_every_pending_lapse_and_none_fires_after`);
 - **`/signup close`'s confirmation** (`ConfirmCloseView`, five minutes), whose cancel and lapse are
   recorded and whose asking records nothing.
@@ -273,15 +277,19 @@ view, so its buttons answer after a restart.
 ### The cogs
 
 `/signup` is one group in one cog, `SignupCog` (`signup/cogs/signup_cog.py`): `channel`,
-`nationality`, `time-type`, `time-image`, `open` and `close` on the group, and the subgroups
+`nationality`, `time-type`, `time-image`, `open`, `close` and `cancel` on the group, and the subgroups
 `config` (`view` alone, `test_the_signup_config_group_holds_only_view`), `time-slot`, `close-time`
 and `unassigned`. A command that changes something parses its own input (the close time, through
 `_parse_close_time`, one parser for `/signup open` and `/signup close-time`) and asks one change. A
 setting command holds no rule of its own; `/signup open` and `/signup close` also refuse at the ask
 (test mode, no configuration; signups not open, a season's end in hand, a close time armed), and
 `close` chooses between asking at once and `ConfirmCloseView`, the change's check judging again
-when its turn comes. Five commands run `_module_gate` after their tier guard: `time-slot list`,
-`open`, `close`, `unassigned list` and `unassigned export`. The setting commands go straight to the
+when its turn comes. `cancel` is the same shape: it reads the driver's state through the driver
+service on the bot (the cog runs no SQL), refuses at the ask through `cancellation_refusal`, a pure
+reader of that state, and opens `CancelSignupModal`, a `LeagueModal` with one optional reason; its
+submit reads the state again and asks `signup.end` with `CANCELLED`, the change's check judging a
+third time when its turn comes. Six commands run `_module_gate` after their tier guard: `time-slot
+list`, `open`, `close`, `cancel`, `unassigned list` and `unassigned export`. The setting commands go straight to the
 queue and leave the module-on refusal to their change's check: `open_to_change` for the five settings and
 `/signup channel`, the close-time group's own check for its three.
 
@@ -324,7 +332,7 @@ is told.
 | `module.on:signup`, `module.off:signup` | league | `/module enable` and `/module disable` |
 | `signup.open`, `signup.close` | league | `/signup open`; `/signup close` and its Confirm Close, the close timer, the restart |
 | `signup.close_timer.arm` | league | the restart, for a close time still ahead |
-| `signup.start`, `signup.end`, `signup.submit` | league | Sign Up; Cancel Signup, a Reject reason, the 24 hours, a channel found gone; the last answer |
+| `signup.start`, `signup.end`, `signup.submit` | league | Sign Up; Cancel Signup, a Reject reason, a manager's `/signup cancel`, the 24 hours, a channel found gone; the last answer |
 | `signup.approve`, `signup.request_changes`, `signup.correction.choose`, `signup.correction.lapse` | league | the review's buttons; the five minutes' timer and the restart |
 | `signup.member_left` | league | the member-remove listener |
 | `signup.answer`, `signup.panel`, `signup.choices`, `signup.recollect`, `signup.closing`, `signup.reason.delete`, `signup.channel.delete` | the driver's, `channel:<id>` | a typed answer or a wizard button; asked back by the league's changes; the held channel's 24 hours |
@@ -339,7 +347,7 @@ is carried out" has it: a press outside a conversation is a command's, and so is
 **The driver's own lane, `channel:<id>`, carries the conversation:** the answers, and what a league
 change asks back of it to post in the driver's channel. So `signup.submit` saves the signup on the
 league lane and asks `signup.panel` back on the driver's; an approval, a withdrawal and a Reject
-ask `signup.closing` back (`closing_steps`' module docstring), while an expiry runs the notice, the
+ask `signup.closing` back, as does a manager's cancellation (`closing_steps`' module docstring), while an expiry runs the notice, the
 lock and the deletion's arming itself on the league lane and an ending for a channel gone asks
 nothing; `signup.request_changes` asks `signup.choices`, and the choice asks `signup.recollect`. A refusal Discord gives there stops that driver's lane alone, and the league's
 change is done (`test_a_closing_notice_asked_back_runs_on_the_driver_s_lane_and_a_refusal_stops_only_it`,
@@ -374,7 +382,9 @@ correction choice is judged against the press's time, carried in its payload, ag
 
 Each saving job writes what its step changes and its audit and lines in one save, on the
 connection the queue hands it, and a job that posts records its id in the save that marks it done.
-Three of the shape's consequences:
+A person's decision on a signup writes its audit entry in the save that moves the driver, the prior
+state read in that save and the driver named in the entry's values, as the audit table has no
+subject column. Three of the shape's consequences:
 
 - **The window is open only once its message is up:** `post_info`'s record opens it, and
   `post_closed`'s record closes it and moves the season on (`window_changes`' module docstring), so
@@ -447,7 +457,7 @@ the drop would leave):
 
 | Job | Change | Dropped, it would leave | Pinned by |
 |---|---|---|---|
-| `end` | `signup.end` | a driver mid-correction never ended | `test_ending_a_signup_cannot_be_discarded` |
+| `end` | `signup.end` | a driver mid-correction never ended, or one awaiting review left so, with the season's placements unconfirmable | `test_ending_a_signup_cannot_be_discarded`, `test_ending_a_signup_awaiting_review_cannot_be_discarded` |
 | `arm_inactivity` | `signup.answer` | a signup that never times out | `test_rearming_the_24_hours_cannot_be_discarded` |
 | `commit` | `signup.submit` | a signup never submitted | `test_a_correction_s_commit_cannot_be_discarded` |
 | `post_panel` | `signup.panel` | a driver awaiting approval with no panel | `test_the_review_panel_s_post_cannot_be_discarded` |
@@ -725,3 +735,5 @@ Each is stated where it lives and pinned by the test named.
 | A fault reading the configuration at a review's button grants nothing | `_may_review_signup`'s docstring | `test_a_signup_review_refuses_when_the_config_cannot_be_read` |
 | Core's season checks read signup only through its hooks | `signup_prerequisites`' docstring | `test_the_signup_module_lacks_only_its_channel_while_it_is_on` |
 | A pending reason is cleared, and its lapse cancelled, on a pack or reset | `clear_pending_reasons`' docstring | `test_a_reset_cancels_every_pending_lapse_and_none_fires_after` |
+| `/signup cancel`'s pending-reason refusal is made at the ask and the form's submit, never in the change's check | `reason_pending_for`'s and `cancellation_refusal`'s docstrings | `test_a_button_pressed_after_a_cancellation_is_asked_lets_it_go_ahead`, `test_a_cancellation_is_refused_while_a_manager_awaits_a_reason` |
+| Each kind of signup ending has its own queue key, so one asked behind another of the driver is judged at its turn, not refused as a repeat | `end_key`'s docstring | `test_a_withdrawal_asked_behind_an_expiry_that_proves_not_due_goes_through`, `test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at_its_turn`, `test_a_cancellation_asked_behind_an_expiry_that_proves_not_due_still_cancels` |

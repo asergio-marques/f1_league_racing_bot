@@ -206,7 +206,8 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
     runs the change, of kind `core.driver_reject`. Once it has, Valtteri is Not Signed Up; his
     signup stays with the season but is no longer approved, withdrawn through the
     driver-turned-down hook in the same save; one audit entry, `DRIVER_REJECT`, by Admin, on no
-    division, stamped with the queue's clock, records him Unassigned before and Not Signed Up after;
+    division, stamped with the queue's clock, records him, Unassigned before and Not Signed Up
+    after;
     the log channel holds today's success line once; the driver role is taken from him; and the
     acknowledgement is updated to today's reply, "✅ Turned down **Valtteri**. They are no longer
     signed up."."""
@@ -228,7 +229,7 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
     assert await _valtteri(league) == ("NOT_SIGNED_UP", 0, 1)
     [entry] = await _reject_audits(league)
     assert (entry["actor_id"], entry["division_id"]) == (77, None)
-    assert entry["old_value"] == {"state": "UNASSIGNED"}
+    assert entry["old_value"] == {"state": "UNASSIGNED", "discord_user_id": str(UNASSIGNED)}
     assert entry["new_value"] == {"new_state": "NOT_SIGNED_UP"}
     assert entry["timestamp"] == league.clock.now.isoformat()
     assert _reject_lines(await log_lines(league)) == [_reject_line()]

@@ -602,3 +602,111 @@ async def test_a_reason_whose_press_is_discarded_at_its_check_is_taken_down(
     await run_queue(league.bot)
 
     assert _reason_standing(league, "Lap time could not be verified.") == []
+
+
+# ---------------------------------------------------------------------------
+# Every signup decision a person makes is audited (#502)
+# ---------------------------------------------------------------------------
+
+async def _approved(tmp_path: Any) -> SeasonLeague:
+    league = await _league(tmp_path)
+    await _approve(league)
+    return league
+
+
+async def _rejected(tmp_path: Any) -> SeasonLeague:
+    league = await _league(tmp_path)
+    await _type_reason(league, "reject", "Lap time unverified")
+    return league
+
+
+async def _changes_requested(tmp_path: Any) -> SeasonLeague:
+    league = await _league(tmp_path)
+    await _type_reason(league, "request_changes", "Lap times look mistyped")
+    return league
+
+
+async def _field_chosen(tmp_path: Any) -> SeasonLeague:
+    from datetime import timedelta
+
+    from tests.signup.test_review_changes import _league as offered_league
+    from tests.signup.test_review_changes import _press_choice
+
+    league = await offered_league(tmp_path, state="AWAITING_CORRECTION_PARAMETER",
+                                  offered_ago=timedelta(minutes=1))
+    await _press_choice(league)
+    await run_queue(league.bot)
+    return league
+
+
+async def _withdrew(tmp_path: Any) -> SeasonLeague:
+    from tests.signup.test_wizard_changes import _mid_signup, _press_cancel
+
+    league = await _mid_signup(tmp_path)
+    await _press_cancel(league)
+    await run_queue(league.bot)
+    return league
+
+
+async def _expired(tmp_path: Any) -> SeasonLeague:
+    from datetime import timedelta
+
+    from tests.signup.test_wizard_changes import (
+        INACTIVITY_TIMER as INACTIVITY,
+        _idle,
+        _league as wizard_league,
+        _timer_callback,
+    )
+
+    league = await wizard_league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+    await _timer_callback(league, INACTIVITY)(str(SIGNING_UP))
+    await run_queue(league.bot)
+    return league
+
+
+@pytest.mark.parametrize(
+    "decide, after, audited",
+    [
+        pytest.param(_approved, "UNASSIGNED",
+                     ("SIGNUP_APPROVE", REVIEWER, "PENDING_ADMIN_APPROVAL"),
+                     id="approve"),
+        pytest.param(_rejected, "NOT_SIGNED_UP",
+                     ("SIGNUP_REJECT", REVIEWER, "PENDING_ADMIN_APPROVAL"),
+                     id="reject"),
+        pytest.param(_changes_requested, "AWAITING_CORRECTION_PARAMETER",
+                     ("SIGNUP_REQUEST_CHANGES", REVIEWER, "PENDING_ADMIN_APPROVAL"),
+                     id="request-changes"),
+        pytest.param(_field_chosen, "PENDING_DRIVER_CORRECTION",
+                     ("SIGNUP_CORRECTION_CHOICE", REVIEWER, "AWAITING_CORRECTION_PARAMETER"),
+                     id="field-choice"),
+        pytest.param(_withdrew, "NOT_SIGNED_UP",
+                     ("SIGNUP_WITHDRAW", SIGNING_UP, "PENDING_SIGNUP_COMPLETION"),
+                     id="withdrawal"),
+        pytest.param(_expired, "NOT_SIGNED_UP", None, id="expiry"),
+    ],
+)
+async def test_each_signup_decision_writes_an_audit_entry(tmp_path, decide, after, audited):
+    """Kimi's signup is decided by a person: manager 77 approves it, rejects it or asks for
+    changes on his review panel (typing the reason), or picks the field Kimi is to correct; or
+    Kimi withdraws it himself part-way through. Once the queue has run, Kimi is in his new status
+    and exactly one signup audit entry records it: by the person who decided, naming Kimi, his
+    status before and his status after. Kimi's signup expiring after 24 hours idle is the bot's
+    doing, not a person's, and writes no signup audit entry."""
+    from tests.support.settings_league import audit_rows
+
+    league = await decide(tmp_path)
+
+    assert await _state(league) == after
+    entries = [row for row in await audit_rows(league.db_path)
+               if row["change_type"].startswith("SIGNUP_")]
+    if audited is None:
+        assert entries == []
+        return
+    change_type, actor, before = audited
+    [entry] = entries
+    assert entry["change_type"] == change_type
+    assert entry["actor_id"] == actor
+    assert entry["old_value"]["state"] == before
+    assert entry["old_value"]["discord_user_id"] == str(SIGNING_UP)
+    assert entry["new_value"]["new_state"] == after

@@ -366,6 +366,7 @@ async def _withdraw(league: SeasonLeague) -> None:
     await league.bot.change_queue.ask(
         "signup.end", {"user_id": str(SIGNING_UP), "reason": "withdrawn"},
         what=f"withdrawing <@{SIGNING_UP}>'s signup", origin=ChangeOrigin.BOT,
+        actor=league._member(SIGNING_UP),
     )
 
 

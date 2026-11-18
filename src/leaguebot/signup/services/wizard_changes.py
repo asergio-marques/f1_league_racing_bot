@@ -22,7 +22,8 @@ naming the cause so that nothing is left to stop the queue. Its jobs are:
 
 Cancel Signup asks `signup.end`, a change of the league lane too: its check refuses a signup that
 has already ended, and its one job `end` (a save) returns the driver to Not Signed Up, ends the
-wizard, takes away the timers, writes the "Withdrawn" line and asks back `signup.closing` (signup's
+wizard, takes away the timers, writes the "Withdrawn" line (a manager's cancellation, #502, the
+"Cancelled" line and an audit entry) and asks back `signup.closing` (signup's
 closing jobs, `closing_steps`) on the driver's own lane, so that a closing notice Discord refuses
 stops that lane alone and the league's change is done. `end` cannot be discarded (#439, slice 8),
 whatever ended the signup: dropped, a driver correcting their signup would stay in Pending Driver
@@ -54,6 +55,7 @@ import discord
 
 from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import (
+    AuditRecord,
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -98,6 +100,7 @@ from leaguebot.signup.services.closing_steps import (
     take_reason_down,
 )
 from leaguebot.signup.services.signup_module_service import signup_enabled_on
+from leaguebot.signup.services.signup_settings import NOT_ENABLED
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, IN_PROGRESS_STATES
 from leaguebot.signup.services.wizard_answers import (
@@ -139,6 +142,8 @@ NAME_JOB = "name_driver"
 WITHDRAWN = "withdrawn"
 #: Why a signup ends: a manager pressed Reject and typed the reason.
 REJECTED = "rejected"
+#: Why a signup ends: a league manager cancelled it with `/signup cancel` (#502).
+CANCELLED = "cancelled"
 #: What a manager is told whose reason arrives after the signup moved on.
 REJECT_MOVED_ON = (
     f"⛔ This signup has moved on since you pressed {_BUTTON_OF['reject']}. "
@@ -150,6 +155,51 @@ SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 WITHDRAWN_NOTICE = (
     "❌ You have withdrawn your signup. This channel will be automatically deleted in 24 hours."
 )
+#: What the driver's channel is told when a manager cancels their signup, before the reason (where
+#: one was given) and the hold on the channel.
+CANCELLED_BY_MANAGER = "<@{user_id}> ❌ Your signup has been cancelled by **{manager}**."
+#: What a manager is told who cancels the signup of a driver with none under way.
+NO_SIGNUP_IN_PROGRESS = "{name} has no signup in progress. Nothing was changed."
+#: What a manager is told who cancels the signup of a driver approved and not yet placed.
+ALREADY_APPROVED = (
+    "{name}'s signup has already been approved. To turn them down, use `/driver reject`. "
+    "Nothing was changed."
+)
+#: What a manager is told who cancels the signup of a driver placed in a seat.
+ALREADY_PLACED = (
+    "{name}'s signup has already been approved and they hold a seat. Nothing was changed."
+)
+#: What a manager is told who cancels the signup of a driver while a manager awaits a reason.
+REASON_PENDING = (
+    "A manager has pressed {button} on {name}'s signup and the reason is awaited. Nothing was "
+    "changed: run `/signup cancel` again once the reason is given or has lapsed."
+)
+
+
+def cancellation_refusal(
+    state: DriverState | None, name: str, pending_button: str | None = None
+) -> str | None:
+    """Why `/signup cancel` of the driver *name*, in *state* (None: no driver profile), is refused,
+    or None where it may go ahead. Reads no store, so that the command and the queued change, which
+    know the state from different places, judge it by one rule.
+
+    A driver with no signup in progress is refused, an approved and unplaced one (Unassigned) with
+    a pointer to `/driver reject`, which turns such a driver down, and a placed one without. A
+    signup awaiting a reason that a manager pressed *pending_button* ("Reject" or "Request
+    Changes") for is refused too: the queued change never passes it, for the reason lives in
+    memory and a check reads only the database and the queue, so only the command and its form
+    do.
+    """
+    if state in IN_PROGRESS_STATES:
+        if pending_button is not None:
+            return REASON_PENDING.format(button=pending_button, name=name)
+        return None
+    if state is DriverState.UNASSIGNED:
+        return ALREADY_APPROVED.format(name=name)
+    if state is DriverState.ASSIGNED:
+        return ALREADY_PLACED.format(name=name)
+    return NO_SIGNUP_IN_PROGRESS.format(name=name)
+
 #: The most channels Discord lets a category hold.
 CATEGORY_LIMIT = 50
 #: Where a gone signup channel was found (`found` in a `CHANNEL_GONE` ending's payload): where the
@@ -166,6 +216,8 @@ _GONE_SENTENCE = {
 
 __all__ = [
     "ANSWER", "Accepted", "Refused", "judge_answer",
+    "ALREADY_APPROVED", "ALREADY_PLACED", "CANCELLED", "CANCELLED_BY_MANAGER",
+    "NO_SIGNUP_IN_PROGRESS", "REASON_PENDING", "cancellation_refusal",
     "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "DELETED", "END",
     "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB", "delete_signup_channel",
     "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
@@ -503,6 +555,19 @@ def start_change(
     )
 
 
+def end_key(payload: dict[str, Any]) -> str:
+    """The key of an ending, which the queue refuses to ask twice in a row on a lane.
+
+    Each kind of ending (withdrawal, rejection, expiry, cancellation, channel gone) has its own
+    key per driver: an ending asked behind a different ending of the same driver (a withdrawal
+    behind an expiry that proves not due, a Reject reason behind a withdrawal) is then queued and
+    judged by its own check when its turn comes, never refused as a repeat of an ask nobody made,
+    and never lost where the ending ahead of it is dropped. Two endings of the same kind in a row
+    are still one ask, and are refused as a repeat.
+    """
+    return f"{END}:{payload.get('reason')}:{payload['user_id']}"
+
+
 def end_change(
     *,
     signup: Callable[[], "SignupModuleService"],
@@ -517,7 +582,9 @@ def end_change(
     The payload is ``user_id`` (the driver's account, as text) and ``reason``: `WITHDRAWN` (the
     driver pressed Cancel Signup), `REJECTED` (a manager pressed Reject and typed the reason: the
     payload then carries ``actor_id`` and ``actor_name`` (the manager), ``text`` (the reason) and
-    ``reason_message_id`` (the message it was typed in)), `EXPIRED` (their 24 hours ran out,
+    ``reason_message_id`` (the message it was typed in)), `CANCELLED` (a league manager ran
+    `/signup cancel` and gave the form's optional reason: the payload carries ``actor_id`` and
+    ``actor_name`` (the manager) and ``text`` (the reason, None where none was given)), `EXPIRED` (their 24 hours ran out,
     asked by the timer or at a restart, with the signup channel's id as ``channel_id``), or
     `CHANNEL_GONE` (their signup channel was gone: where their review panel was due, or deleted
     while the signup was under way, seen by the bot or found at a restart. The payload carries
@@ -526,7 +593,10 @@ def end_change(
     `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
     Signed Up and the wizard ended in the same save, and the line written
-    ("Withdrawn", "Rejected" with the manager and the reason, or the lapse); `disarm_timers`
+    ("Withdrawn", "Rejected" with the manager and the reason, or the lapse), and, for the three
+    endings a person decides (`WITHDRAWN`, `REJECTED`, `CANCELLED`), the audit entry (`SIGNUP_WITHDRAW`,
+    `SIGNUP_REJECT`, `SIGNUP_CANCEL`) naming the driver and the state they left; the bot's own
+    endings (the lapse, a gone channel) write none; `disarm_timers`
     takes the timers away after it, as a job of its own, so that a save that fails keeps them. Where a
     closing follows on the driver's own lane (every reason but a gone channel), the job leaves the
     channel's deletion timer, which that closing arms, to *cancel_unclosed_timers*' own to keep:
@@ -536,7 +606,14 @@ def end_change(
     awaiting approval, or awaiting or making a correction): a driver not signed up, approved
     (Unassigned) or placed (Assigned) is told the signup has already ended and nothing changes, their
     state, seat and roles as they were; it asks back `signup.closing` for the driver's channel, which holds the
-    notice, the lock and the deletion's arming on the channel's own lane. A rejection is refused
+    notice, the lock and the deletion's arming on the channel's own lane. A cancellation is refused unless signup is on
+    and the driver's signup is still under way (`cancellation_refusal`, which reads the state alone):
+    the refusal that a manager is typing a reason is made by the command and its form, never here,
+    since a check reads only the database and the queue. It ends the signup at once, whatever state
+    it was in (a correction awaited or being made included), writes the "Cancelled" line and the
+    `SIGNUP_CANCEL` audit entry in the one save that moves the driver, and asks back the same
+    `signup.closing` a withdrawal does, its notice naming the manager and giving the reason where
+    there is one. A rejection is refused
     where the driver no longer awaits review (another manager approved them, they withdrew, a
     correction was asked for), telling the manager so and changing nothing, and otherwise asks back
     the same change, whose first job deletes the manager's reason message and whose notice gives
@@ -617,6 +694,19 @@ def end_change(
             ):
                 return Verdict.not_due("the signup has ended or moved to another channel")
             return Verdict.go()
+        if ctx.payload.get("reason") == CANCELLED:
+            async with get_connection(ctx.db_path) as db:
+                switched_on = await signup_enabled_on(db)
+            if not switched_on:
+                return Verdict.refuse(NOT_ENABLED)
+            # Judged on the database alone: a reason a manager is typing lives in memory, and
+            # is refused at the ask (#502).
+            refusal = cancellation_refusal(
+                None if profile is None else profile.current_state, f"<@{user_id}>"
+            )
+            if refusal is not None:
+                return Verdict.refuse(f"⛔ {refusal}", refusal)
+            return Verdict.go()
         if ctx.payload.get("reason") == REJECTED:
             # A signup that has moved on since the press: approved by another manager, withdrawn,
             # or already sent back for a correction (#492). The reason is too late to act on.
@@ -645,6 +735,9 @@ def end_change(
                 key: payload[key]
                 for key in ("actor_id", "actor_name", "text", "reason_message_id")
             })
+        if payload["reason"] == CANCELLED:
+            shared_end.update({key: payload[key] for key in ("actor_id", "actor_name")})
+            shared_end["text"] = payload.get("text")
         planned = [
             PlannedStep(NAME_JOB, {"user_id": user_id}), PlannedStep(END_JOB, shared_end),
             *disarming([user_id], keep_deletion=True),
@@ -666,6 +759,8 @@ def end_change(
             (user_id,),
         )
         wizard_row = await cursor.fetchone()
+        prior_state = await drivers().state_of_account_on(db, user_id)
+        prior = None if prior_state is None else prior_state.value
         await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
         await signup().end_wizard_on(db, user_id)
         named = member_named(None, int(user_id))
@@ -712,9 +807,43 @@ def end_change(
                 ),)
             return StepResult(
                 result={},
+                audits=(AuditRecord(
+                    "SIGNUP_REJECT",
+                    {"state": prior, "discord_user_id": user_id},
+                    {"new_state": DriverState.NOT_SIGNED_UP.value, "reason": payload["text"]},
+                ),),
                 lines=(
                     f"{manager} | Signup | Rejected\n  driver: {named}\n  reason: {payload['text']}",
                 ),
+                follow_ons=follow_ons,
+            )
+        if ctx.step_payload["reason"] == CANCELLED:
+            payload = ctx.step_payload
+            manager = member_named(payload["actor_name"], int(payload["actor_id"]))
+            text = payload.get("text")
+            if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
+                notice = CANCELLED_BY_MANAGER.format(
+                    user_id=user_id, manager=payload["actor_name"]
+                )
+                if text:
+                    notice += f"\n**Reason:** {text}"
+                follow_ons = (FollowOn(
+                    CLOSING,
+                    {
+                        "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                        "notice": f"{notice}\nThis channel will be automatically deleted in 24 hours.",
+                    },
+                    "Closing a cancelled signup",
+                ),)
+            because = f"\n  reason: {text}" if text else ""
+            return StepResult(
+                result={},
+                audits=(AuditRecord(
+                    "SIGNUP_CANCEL",
+                    {"state": prior, "discord_user_id": user_id},
+                    {"new_state": DriverState.NOT_SIGNED_UP.value, "reason": text},
+                ),),
+                lines=(f"{manager} | Signup | Cancelled\n  driver: {named}{because}",),
                 follow_ons=follow_ons,
             )
         if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
@@ -726,7 +855,16 @@ def end_change(
                 },
                 "Closing a withdrawn signup",
             ),)
-        return StepResult(result={}, lines=(f"{named} | Signup | Withdrawn",), follow_ons=follow_ons)
+        return StepResult(
+            result={},
+            audits=(AuditRecord(
+                "SIGNUP_WITHDRAW",
+                {"state": prior, "discord_user_id": user_id},
+                {"new_state": DriverState.NOT_SIGNED_UP.value},
+            ),),
+            lines=(f"{named} | Signup | Withdrawn",),
+            follow_ons=follow_ons,
+        )
 
     async def name_driver(ctx: StepContext) -> StepResult:
         return StepResult(result={
@@ -753,9 +891,17 @@ def end_change(
                 "signup channel and no review panel, and the season's placements could not be "
                 "confirmed"
             )
+        # Keyed on the reason, not the state: only a rejection is certain to be of a signup
+        # awaiting review. A withdrawal or a cancellation may end any signup under way, so
+        # the plain text below, which is true of them all, serves them.
+        if ctx.step_payload["reason"] == REJECTED:
+            return (
+                f"<@{ctx.step_payload['user_id']}> would stay awaiting review, and the "
+                "season's placements could not be confirmed"
+            )
         return (
             f"<@{ctx.step_payload['user_id']}>'s signup would never end, and the season's "
-            "placements could not be confirmed until the bot restarts"
+            "placements could not be confirmed"
         )
 
     def outcome(ctx: OutcomeContext) -> str:
@@ -764,6 +910,8 @@ def end_change(
         rejected = ctx.payload.get("reason") == REJECTED
         if rejected:
             return "✅ Signup rejected."
+        if ctx.payload.get("reason") == CANCELLED:
+            return "✅ Signup cancelled."
         if ctx.payload.get("reason") == CHANNEL_GONE:
             return "✅ The signup has ended: its signup channel was gone."
         if expired:
@@ -790,10 +938,11 @@ def end_change(
             **closing_steps(now=now, arm_once=arm_once),
         },
         check=check,
-        key=lambda payload: f"{END}:{payload['user_id']}",
+        key=end_key,
         doing=lambda payload: (
             "Ending a signup" if payload.get("reason") in (EXPIRED, CHANNEL_GONE)
             else "Rejecting a signup" if payload.get("reason") == REJECTED
+            else "Cancelling a signup" if payload.get("reason") == CANCELLED
             else "Withdrawing a signup"
         ),
         outcome=outcome,

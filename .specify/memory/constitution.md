@@ -1,6 +1,33 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-11-18 — v14.16.1 → v14.17.0: MINOR — Principle VIII: the Permitted Transitions table removed, the core specification its one home (issue #502)]
+  Version change    : 14.16.1 → 14.17.0
+  Bump rationale    : MINOR, sized by how much it matters: a rule moves out of the constitution
+                      into a specification. The driver-state transitions are behavioural
+                      specification, not a governance rule (the owner, 2026-11-18), and the table
+                      had fallen behind the core specification, which already permits every move
+                      the bot makes (Awaiting Correction Parameter → Not Signed Up among them,
+                      which the table lacked). No principle is added or removed.
+
+  Modified sections :
+    - Principle VIII, State machine enforcement — a driver's state changes only through the
+      transitions the core specification permits ("The states of a driver"); every other
+      sentence kept.
+    - Principle VIII, No ban states — "wired into the transition table" becomes "wired into the
+      permitted transitions", the table being gone.
+
+  Added sections    : none.
+  Removed sections  :
+    - Principle VIII, "#### Permitted Transitions" (the table). Every trigger it named is carried
+      by the core or signup specification: inactivity, the 5-minute correction lapse and a
+      restart, the season's end, the turn-down when signups close, a signup channel deleted, and
+      test mode.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Documents to follow: none; docs/wip-specs/core_specification.md "The states of a driver" already
+                      holds the transitions.
+  Deferred / TODO   : none.
+
 [2026-11-17 — v14.16.0 → v14.16.1: PATCH — Principle X, rule 6: which module keeps a shared channel, and an unusable kept channel fails the enable (issue #449)]
   Version change    : 14.16.0 → 14.16.1
   Bump rationale    : PATCH: the wording of a rule amended on this same branch (v14.16.0) is
@@ -5894,11 +5921,12 @@ Every Discord user is represented by at most one driver profile, keyed on their 
 ID. The following rules are non-negotiable:
 
 - **State machine enforcement**: A driver's current state MUST only change via the transitions
-  in the table below. Any transition not in the approved list MUST be rejected with a clear
-  error. No code path may bypass the state machine to set state directly. A state changed
+  the core specification permits (`docs/wip-specs/core_specification.md`, "The states of a
+  driver"), which is their one home. Any transition it does not permit MUST be rejected with a
+  clear error. No code path may bypass the state machine to set state directly. A state changed
   inside a larger write — a sack freeing seats in the same transaction, the driver pass that
   ends a season, the turning down of pending placements — MUST be written through the same
-  transition table, and refused where the table refuses it.
+  permitted transitions, and refused where they refuse it.
 
 #### Driver States
 
@@ -5915,33 +5943,9 @@ ID. The following rules are non-negotiable:
 No state bars a driver from signing up. A driver MUST NOT be banned: sanctions belong to the
 stewarding module, which will bring the bar together with the commands that impose and lift it.
 
-#### Permitted Transitions
-
-| From | To | Trigger / Condition |
-|------|----|---------------------|
-| Not Signed Up | Pending Signup Completion | Driver presses signup button (signups must be open) |
-| Pending Signup Completion | Pending Admin Approval | Driver completes all wizard steps |
-| Pending Signup Completion | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
-| Pending Admin Approval | Awaiting Correction Parameter | League manager clicks "request changes" |
-| Awaiting Correction Parameter | Pending Driver Correction | League manager selects field to correct |
-| Awaiting Correction Parameter | Pending Admin Approval | 5-minute timeout with no field selected; or bot restart while the window is open; in either case only where the driver's signup channel still stands |
-| Pending Driver Correction | Pending Admin Approval | Driver submits valid corrected field |
-| Pending Driver Correction | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
-| Pending Admin Approval | Unassigned | League manager approves signup |
-| Pending Admin Approval | Not Signed Up | League manager rejects signup; or driver withdraws |
-| Unassigned | Assigned | `/driver assign` places driver in their first seat |
-| Assigned | Unassigned | `/driver unassign` removes driver's last seat assignment, that placement not yet confirmed |
-| Unassigned | Not Signed Up | `/driver reject`, while the season is in Placements or Ongoing, placements |
-| Assigned | Not Signed Up | `/driver sack`, while the season is in an ongoing stage, of a driver whose placement is confirmed |
-| Unassigned, Assigned, Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | The season's end: its completion, cancellation or abort |
-| Unassigned, Assigned, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | Every division of a season in Ongoing, signups open or Ongoing, placements is finished or cancelled: the season's signup window is closed, every unsettled signup and every driver whose placements are all uncommitted is turned down, and the season moves straight to Pending completion |
-| Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | The driver's signup channel is deleted while the signup is under way, or is gone when their review panel is due (on submission, or at a correction's lapse) |
-| Not Signed Up | Unassigned | Test mode: admin direct-assign |
-| Not Signed Up | Assigned | Test mode: admin direct-assign |
-
 - **No ban states**: The profile MUST NOT carry ban counters, and no driver state may bar a
   driver from signing up. *Season Banned* and *League Banned* were enumerated here and wired
-  into the transition table while no command could impose or lift either, so every rule above had to
+  into the permitted transitions while no command could impose or lift either, so every rule above had to
   account for two states no league could reach (issue #221). A ban is a sanction, and sanctions
   are the stewarding module's: it MUST bring the state, the counter and the commands that write
   them in one piece, rather than inherit a state with no command behind it.
@@ -9126,4 +9130,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.16.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-17
+**Version**: 14.17.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-18

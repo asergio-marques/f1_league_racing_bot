@@ -91,6 +91,7 @@ import discord
 
 from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import (
+    AuditRecord,
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -215,6 +216,14 @@ def total_lap_ms(lap_times: dict[str, str]) -> int | None:
     return total if total > 0 else None
 
 
+async def _prior_state(
+    drivers: "DriverService", db: aiosqlite.Connection, user_id: str
+) -> str | None:
+    """The driver's state as *db* holds it, read before a save moves it, for the audit entry."""
+    prior = await drivers.state_of_account_on(db, user_id)
+    return None if prior is None else prior.value
+
+
 def approve_change(
     *,
     signup: Callable[[], "SignupModuleService"],
@@ -257,6 +266,7 @@ def approve_change(
         record = await signup().get_record_on(db, user_id)
         if record is not None and record.lap_times:
             await signup().set_total_lap_ms_on(db, user_id, total_lap_ms(record.lap_times))
+        prior = await _prior_state(drivers(), db, user_id)
         await drivers().transition_on(db, user_id, DriverState.UNASSIGNED)
         await signup().mark_approved_on(db, user_id)
         follow_ons: tuple[FollowOn, ...] = ()
@@ -269,7 +279,15 @@ def approve_change(
                 },
                 "Closing an approved signup",
             ),)
-        return StepResult(result={}, follow_ons=follow_ons)
+        return StepResult(
+            result={},
+            audits=(AuditRecord(
+                "SIGNUP_APPROVE",
+                {"state": prior, "discord_user_id": user_id},
+                {"new_state": DriverState.UNASSIGNED.value},
+            ),),
+            follow_ons=follow_ons,
+        )
 
     async def approved(ctx: StepContext) -> bool:
         return not any(
@@ -403,6 +421,7 @@ def request_changes_change(
         wizard = await signup().get_wizard_on(db, user_id)
         if wizard is None:
             return StepResult(result={"no_wizard": True})
+        prior = await _prior_state(drivers(), db, user_id)
         await drivers().transition_on(db, user_id, DriverState.AWAITING_CORRECTION_PARAMETER)
         # Who asked is written down, as the window can outlive the process; the reason beside it
         # appears only when the driver is prompted to re-submit.
@@ -429,7 +448,19 @@ def request_changes_change(
                 },
                 "Offering a signup's correction choices",
             ),)
-        return StepResult(result={}, lines=(line,), follow_ons=follow_ons)
+        return StepResult(
+            result={},
+            audits=(AuditRecord(
+                "SIGNUP_REQUEST_CHANGES",
+                {"state": prior, "discord_user_id": user_id},
+                {
+                    "new_state": DriverState.AWAITING_CORRECTION_PARAMETER.value,
+                    "reason": payload["text"] or None,
+                },
+            ),),
+            lines=(line,),
+            follow_ons=follow_ons,
+        )
 
     async def describe_name(ctx: StepContext) -> str:
         return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
@@ -655,6 +686,7 @@ def choose_change(
         target = _CORRECTION_PARAMETER_STATES[str(pl["parameter"])]
         # The check judged the state as the change started; the transition is the check that
         # cannot be raced, and a refused one means the request has ended all the same.
+        prior = await _prior_state(drivers(), db, user_id)
         try:
             await drivers().transition_on(db, user_id, DriverState.PENDING_DRIVER_CORRECTION)
         except InvalidDriverTransition:
@@ -690,7 +722,19 @@ def choose_change(
                 },
                 "Asking a driver to re-submit an answer",
             ),)
-        return StepResult(result={}, lines=(line,), follow_ons=follow_ons)
+        return StepResult(
+            result={},
+            audits=(AuditRecord(
+                "SIGNUP_CORRECTION_CHOICE",
+                {"state": prior, "discord_user_id": user_id},
+                {
+                    "new_state": DriverState.PENDING_DRIVER_CORRECTION.value,
+                    "parameter": pl["parameter"],
+                },
+            ),),
+            lines=(line,),
+            follow_ons=follow_ons,
+        )
 
     async def chosen(ctx: StepContext) -> bool:
         return any(
