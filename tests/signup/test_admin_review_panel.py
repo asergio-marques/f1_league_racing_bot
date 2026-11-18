@@ -70,6 +70,8 @@ from tests.signup.test_wizard_changes import (
     END_KIND,
     NO_CANCEL,
     _ask_cancel,
+    _cancel,
+    _cancel_audits,
     _submit_cancel,
     _told_admin,
 )
@@ -766,3 +768,36 @@ async def test_a_cancellation_is_refused_while_a_manager_awaits_a_reason(
     assert await _driver_state(league) == (
         "NOT_SIGNED_UP" if label == "Reject" else "AWAITING_CORRECTION_PARAMETER"
     )
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
+@pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
+async def test_a_button_pressed_after_a_cancellation_is_asked_lets_it_go_ahead(
+    tmp_path, button, label
+):
+    """Kimi's signup awaits review. Admin (77) runs `/signup cancel` of Kimi and submits the form;
+    before the queue reaches the cancellation, 77 presses *label* on Kimi's panel. The refusal
+    while a reason is awaited is made at the ask only, so when the queue runs the cancellation goes
+    ahead: Kimi is Not Signed Up, one cancellation audit entry is written, and Admin is told
+    "✅ Signup cancelled.". The reason 77 then types is refused: he is told the signup has moved on
+    since he pressed *label*, one refusal line names the button, and Kimi stays Not Signed Up."""
+    league = await _league(tmp_path)
+
+    answered = await _cancel(league, CANCEL_REASON)
+    press = await _press(league, button)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(await _cancel_audits(league)) == 1
+    assert "✅ Signup cancelled." in _told_admin(answered)
+    assert _refusals(league) == []
+
+    await _hear(league, REASON)
+    await run_queue(league.bot)
+
+    told = " ".join(_sent(press) + [_answered(press)])
+    assert f"This signup has moved on since you pressed {label}." in told, told
+    [line] = _refusals(league)
+    assert line.startswith(f"⛔ the “{label}” button of") and "has moved on" in line, line
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(await _cancel_audits(league)) == 1
