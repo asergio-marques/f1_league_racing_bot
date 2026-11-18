@@ -209,7 +209,12 @@ stands aside on that raise, the stated exception in architecture.md's "Errors an
 is what a confirmation wants. The strict reader raises so that a caller free to refuse on a check it
 could not make may, and the kept-channels check is that caller. Setting one of a division's channels
 judges a channel's needs too, and reads `judged_presence`, so it stands aside as the confirmation
-does; core_specification.md, "Channels", says what a league sees where it cannot tell.
+does, and so do the server's own channels (the log channel, the interaction channel and the hub),
+which judge through `unusable_refusal` straight after the in-use and same-value refusals, at the
+ask and again as the change starts; core_specification.md, "Channels", says what a league sees
+where it cannot tell. The one setting that does not stand aside is signup's: its check sets the
+channel's permissions as well as judging it, which needs the server, so it fails where the server
+is not to hand (`signup_module.md`, "Settings are `Setting` changes").
 `channel_registry_service.unusable_refusal` is handed the server, the id, the needs and the use, and
 judges through `judged_presence` without owning a need, a permission or a channel of any module. The
 gates before a repost and a recalculation judge from the cache alone, through
@@ -224,6 +229,22 @@ through the module's wiring, only whether a picture could attach a file (signup'
 picture, asks nothing). The alternatives rejected: one table of every channel's needs in core, which
 would hold each module's rule (architecture.md, "What each part may do"); and each gate keeping its
 own list, which lets two gates judge one channel differently.
+
+**The server's channels hand their needs from the service that owns the setting.** `hub_service`
+owns `HUB_NEEDS` (the panel is an embed posted by the bot, and the hub's permissions are set on
+the channel, hence View Channel, Send Messages, Embed Links, Manage Channel and Manage
+Permissions); `bot_settings` owns `LOG_CHANNEL_NEEDS` and `interaction_channel_needs(drawing)`,
+the latter asking the image module's drawing, as the division channels do, whether a lineup or
+calendar picture attaches a file. `/bot init` judges both its channels through
+`init_channel_refusals`, which words every refusal on a line of its own, the command channel
+first. It is called twice: by the cog at the ask, against the server the command runs in, and by
+`bot_init_change`'s check as the change claims the server, against the server in its payload,
+because the Discord read belongs in a check and never in a save. Both judge only where no server
+is claimed: a configured server is answered that `/bot init` runs once, and another server's
+claim is reported by the save as before, with no channel refusal beside it. A refusal goes to the
+host's log alone, as no log channel is set before the claim. The alternatives rejected: judging
+in the save, which reads the database alone (architecture.md, "How a change is carried out"); and judging only at the ask,
+which leaves a channel broken while the command waits to be claimed.
 
 **Core's own two channels are named through the same hook as the modules'.** The lineup and the
 calendar need the image module's answer to build their needs, which is awaited, so
