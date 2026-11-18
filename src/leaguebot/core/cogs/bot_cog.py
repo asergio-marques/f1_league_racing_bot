@@ -42,6 +42,7 @@ from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
 from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
+from leaguebot.core.services.settings.bot_settings import init_channel_refusals
 from leaguebot.framework.utils.background import start_background
 from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import (
@@ -54,6 +55,7 @@ from leaguebot.core.utils.channel_guard import (
 )
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.interaction_errors import describe, describe_fault, report_failure
+from leaguebot.framework.utils.league_server import guild_of
 from leaguebot.framework.utils.log_lines import lane_name, refuse
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
@@ -136,6 +138,14 @@ class BotCog(commands.Cog):
         because it is the tier that governs the bot: a server initialised without one has
         nobody who may cancel its season, and the refusal every league admin command would
         then give is a worse introduction than one more parameter.
+
+        The two channels are judged here as well, where no server holds the league yet
+        (`init_channel_refusals`, on the interaction's server): a channel the bot cannot use is
+        refused, naming each permission and claiming nothing, to the host's log alone, there
+        being no league log to write to. Where this server already holds the league the
+        question is answered by "runs once" through the change queue and no channel is judged.
+        The change type's check judges them again, on the payload's server, as the claim is
+        taken (`bot_init_change`).
         """
         server_id = interaction.guild_id
         # `bot_setup_only` admits only a member of a server, so there is always one here.
@@ -158,6 +168,17 @@ class BotCog(commands.Cog):
                 "it has finished.",
             )
             return
+
+        if league is None:
+            channel_refusal = await init_channel_refusals(
+                guild_of(interaction),
+                interaction_channel_id=interaction_channel.id,
+                log_channel_id=log_channel.id,
+                drawing=self.bot.image_drawing,
+            )
+            if channel_refusal is not None:
+                await _refuse_on_host(interaction, channel_refusal)
+                return
 
         payload = {
             "server_id": server_id,

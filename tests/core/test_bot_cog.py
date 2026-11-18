@@ -339,7 +339,6 @@ async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#570: /bot init does not judge its two channels")
 async def test_bot_init_refuses_a_channel_the_bot_cannot_use_and_claims_nothing(
     tmp_path, lineup, denied, refusals
 ):
@@ -2574,12 +2573,7 @@ async def test_a_refusal_of_the_bot_cog_is_recorded_in_the_log_channel(tmp_path,
     "case",
     [
         "init on another server",
-        pytest.param(
-            "init channel lacks permissions before init",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#570: /bot init does not judge its two channels"
-            ),
-        ),
+        "init channel lacks permissions before init",
         "log-channel before init",
         "base-role before init",
         "hub-channel before init",
