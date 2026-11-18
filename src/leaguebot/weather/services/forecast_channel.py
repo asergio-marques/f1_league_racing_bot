@@ -17,6 +17,7 @@ import aiosqlite
 from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection, sole_row, tuple_rows_in
 from leaguebot.core.models.channel_needs import ATTACH, SEND, VIEW, Needs
+from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse, DiscordTargets
 
@@ -97,6 +98,27 @@ async def channel_needs(drawing: "ImageDrawing") -> Needs:
     reposted, so Embed Links and Read Message History are not asked."""
     attaches = await drawing.aspect_attaches_files("weather")
     return (VIEW, SEND) + ((ATTACH,) if attaches else ())
+
+
+async def kept_channels(drawing: "ImageDrawing") -> KeptReader:
+    """The reader of the forecast channels weather keeps, for the check its switch-on makes
+    (`core/services/modules/kept_channels.py`): given a connection and the live season's divisions
+    (id to name), it gives each one's forecast channel that is set, with what it needs of the bot
+    (`channel_needs`, asked of the *drawing* now and not when the switch-on is built, as a picture
+    switched on while weather was off may attach a file). Reads only."""
+    needs = await channel_needs(drawing)
+
+    async def read(db: aiosqlite.Connection, divisions: Mapping[int, str]) -> list[KeptChannel]:
+        channels = await forecast_channels_on(db, list(divisions))
+        return [
+            KeptChannel(
+                "weather", division_id, divisions[division_id], channel, _LABEL, _COMMAND, needs
+            )
+            for division_id, channel in sorted(channels.items())
+            if channel is not None
+        ]
+
+    return read
 
 
 async def division_channel_faults(

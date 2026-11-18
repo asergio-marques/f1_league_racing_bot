@@ -277,7 +277,7 @@ SWITCH_ON_CLEARS = "#449: the switch-on does not yet declare the channel table i
     [
         pytest.param(
             "weather", "leaguebot.weather.", {"server_configs", "divisions"}, {"server_configs"},
-            id="weather", marks=pytest.mark.xfail(strict=True, reason=SWITCH_ON_CLEARS),
+            id="weather",
         ),
         pytest.param(
             "images", "leaguebot.image.", {"image_config", "image_aspect_toggles"},
