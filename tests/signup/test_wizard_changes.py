@@ -857,11 +857,6 @@ async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
     assert "lapsed" in league.log().lower()
 
 
-#: Why the Discard refusal of a signup's ending fails before the change: it promises a restart.
-DISCARD_PROMISES_RESTART = "#502: a stopped signup ending's Discard text promises a restart ends it"
-
-
-@pytest.mark.xfail(strict=True, reason=DISCARD_PROMISES_RESTART)
 async def test_ending_a_signup_cannot_be_discarded(tmp_path):
     """Kimi is correcting his signup (Pending Driver Correction), last active 24 hours and a
     minute ago. His 24-hour timer fires, but the save ending his signup fails, so the league lane
@@ -910,7 +905,6 @@ async def test_ending_a_signup_cannot_be_discarded(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=DISCARD_PROMISES_RESTART)
 async def test_ending_a_signup_awaiting_review_cannot_be_discarded(tmp_path):
     """Kimi's signup awaits review, his signup channel (6405) standing. Manager 77 has pressed
     Reject and types the reason, but the save ending Kimi's signup fails, so the league lane stops

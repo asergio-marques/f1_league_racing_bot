@@ -861,9 +861,14 @@ def end_change(
                 "signup channel and no review panel, and the season's placements could not be "
                 "confirmed"
             )
+        if ctx.step_payload["reason"] == REJECTED:
+            return (
+                f"<@{ctx.step_payload['user_id']}> would stay awaiting review, and the "
+                "season's placements could not be confirmed"
+            )
         return (
             f"<@{ctx.step_payload['user_id']}>'s signup would never end, and the season's "
-            "placements could not be confirmed until the bot restarts"
+            "placements could not be confirmed"
         )
 
     def outcome(ctx: OutcomeContext) -> str:
