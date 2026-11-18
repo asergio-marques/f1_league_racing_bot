@@ -167,8 +167,8 @@ async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
     Messages and Read Message History, and no embed: it is text or a picture. Each also needs Attach
     Files where the image module answers that its pictures could attach a file
     (`aspect_attaches_files`, a question it answers by its switches and not by the state of a
-    template): `rsvp` for the call, `attendance` for the sheet (`_ASPECTS`). With no *drawing*, nothing is drawn
-    and no channel needs Attach Files.
+    template): `rsvp` for the call, `attendance` for the sheet (`_ASPECTS`). With no *drawing*,
+    nothing is drawn and no channel needs Attach Files.
     """
 
     async def attaches(aspects: Collection[str]) -> bool:

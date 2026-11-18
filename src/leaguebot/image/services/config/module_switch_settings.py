@@ -35,9 +35,9 @@ left, since an aspect left on is still on and still posts.
 toggle, as Principle X rule 6 asks of every module: a disabled module keeps its configuration
 (FR-004a). No image config value names a Discord channel, role or message, so nothing the module
 keeps is checked against the server; the channels its outputs post to are core's and other
-modules', judged by the switch-on as above. The daily portrait job that `pfp_daily` arms is removed in a step
-after that save, which may fail without holding up the queue, and the job reads the module's switch
-as it fires, so one left armed does nothing.
+modules', judged by the switch-on as above. The daily portrait job that `pfp_daily` arms is
+removed in a step after that save, which may fail without holding up the queue, and the job reads
+the module's switch as it fires, so one left armed does nothing.
 
 **The switch-on arms it again.** Where the kept configuration has portraits on with daily updates
 set, a step after the save arms the daily job at the stored time and carries the success line,

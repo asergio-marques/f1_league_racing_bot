@@ -1,12 +1,13 @@
 """The image settings as settings on the change queue (#439, slice 7).
 
 Each `/images` command that changes the module's configuration asks one `image.setting.…` change,
-built from a `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds
-what every settings change does with a value already held and with a fault). The check of each is
-the command's, in today's order and words, run at the ask and again as the change starts, so a
-module switched off, a template broken by a directory set ahead of it or an output whose drawings
-broke meanwhile is taken into account. A switch to a picture is also judged by a step of its own
-before the save, which reads the channels it posts to as the change runs, not at the ask. Every check refuses first where the Image module is off, but for the switching of an
+built from a `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`,
+which holds what every settings change does with a value already held and with a fault). The check
+of each is the command's, in today's order and words, run at the ask and again as the change
+starts, so a module switched off, a template broken by a directory set ahead of it or an output
+whose drawings broke meanwhile is taken into account. A switch to a picture is also judged by a
+step of its own before the save, which reads the channels it posts to as the change runs, not at
+the ask. Every check refuses first where the Image module is off, but for the switching of an
 output to text, which is allowed while it is off.
 
 **What a change carries.** Every payload is plain JSON, as the queue stores it: the column or
@@ -462,8 +463,8 @@ def _aspect(
     or while the drawings behind it are unusable, the output left off, since an output that cannot
     draw withholds the season's approval and posts nothing where a driver would otherwise have
     read text. The check is made against the configured directory, so it answers for the files
-    the league actually has, and again as the change starts. An output found already in the state asked for, where two presses raced, changes
-    nothing and says so.
+    the league actually has, and again as the change starts. An output found already in the state
+    asked for, where two presses raced, changes nothing and says so.
 
     **Switching one on also judges the channels it posts to** (`picture_channels_check`, a step
     before the save), as an output counted as a picture: one lacking a permission its use needs,
