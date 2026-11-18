@@ -82,6 +82,7 @@ async def env(tmp_path):
             "before_result": {},    # what the step before the save finds
             "before_left": None,    # what the step before the save leaves on Discord, as it raises
             "undo_left": None,      # what the undo of the step before the save leaves, as it raises
+            "left_caused": True,    # the leaving step or undo chains Discord's refusal as its cause
             "later_faults": 0,      # how many second steps before the save to come raise
             "later_result": {},     # what the second step before the save finds
             "undeclared": False,    # the save also writes a table it does not declare
@@ -101,7 +102,8 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False,
     as its notice where that is set, and otherwise finds `before_result`; the reply names what it
     found under `n`. *undo*, where named, is *before*'s undo: it records it ran, keeps in
     `env.undone` what *before* found as the queue keeps it, and raises `StepFailedOnDiscord`
-    carrying `undo_left` as its notice where that is set. *later*, where named, is a second step
+    carrying `undo_left` as its notice where that is set. Either raises it from Discord's refusal
+    (a `RuntimeError`) while `left_caused` holds, and from nothing otherwise. *later*, where named, is a second step
     before the save, after *before*: it records it ran, raises while `later_faults` lasts, and
     otherwise finds `later_result`. Every payload the save is handed is kept in `env.handed`.
     """
@@ -170,24 +172,26 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False,
         from leaguebot.framework.models.change import StepFailedOnDiscord
         from leaguebot.framework.services.queue.setting_change import Before
 
+        def _leaving(reason: str, notice: str) -> None:
+            left = StepFailedOnDiscord(reason, notice=notice)
+            if knobs["left_caused"]:
+                raise left from RuntimeError("Discord refused")
+            raise left
+
         async def _before(_ctx):
             env.ran.append(before)
             if knobs["before_faults"]:
                 knobs["before_faults"] -= 1
                 raise RuntimeError("the step before broke")
             if knobs["before_left"] is not None:
-                raise StepFailedOnDiscord(
-                    "the step before left something", notice=knobs["before_left"]
-                ) from RuntimeError("Discord refused")
+                _leaving("the step before left something", knobs["before_left"])
             return StepResult(result=dict(knobs["before_result"]))
 
         async def _undo(ctx):
             env.ran.append(undo)
             env.undone.extend(dict(view.result or {}) for view in ctx.steps if view.name == before)
             if knobs["undo_left"] is not None:
-                raise StepFailedOnDiscord(
-                    "the undo left something", notice=knobs["undo_left"]
-                ) from RuntimeError("Discord refused")
+                _leaving("the undo left something", knobs["undo_left"])
             return StepResult(result={})
 
         async def _later(_ctx):
@@ -604,15 +608,29 @@ async def test_a_later_step_before_the_save_that_does_not_go_through_takes_back_
     assert await stopped_job(env.db_path) is None
 
 
-@pytest.mark.parametrize("left_by", ["the step before the save", "its undo"])
+@pytest.mark.parametrize(
+    "left_by, caused, fault",
+    [
+        ("the step before the save", True, "RuntimeError"),
+        ("its undo", True, "RuntimeError"),
+        ("the step before the save", False, "the step before left something"),
+        ("its undo", False, "the undo left something"),
+    ],
+    ids=[
+        "the step before the save", "its undo",
+        "the step before the save, with no cause", "its undo, with no cause",
+    ],
+)
 async def test_work_before_the_save_that_leaves_something_says_what_and_how_to_put_it_right(
-    env, left_by
+    env, left_by, caused, fault
 ):
-    """The step before the save raises `StepFailedOnDiscord` from Discord's refusal, carrying a
-    notice of what it left (its own partial work it could not take back); or it returns and the
-    save faults, and its undo raises so, carrying the notice. Nothing is saved; the reply carries
-    the notice; a failure line names the kind of fault from its cause (`RuntimeError`, never
-    `StepFailedOnDiscord`) with the notice beneath it; and the lane goes on."""
+    """The step before the save raises `StepFailedOnDiscord`, carrying a notice of what it left
+    (its own partial work it could not take back); or it returns and the save faults, and its undo
+    raises so, carrying the notice. Each raises it from Discord's refusal, or from nothing. Nothing
+    is saved; the reply carries the notice; a failure line names the kind of fault, from its cause
+    (`RuntimeError`) or, with none, from the step's own reason, never `StepFailedOnDiscord` nor an
+    error class, with the notice beneath it; and the lane goes on."""
+    env.knobs["left_caused"] = caused
     if left_by == "the step before the save":
         _league(env, before="restore")
         env.knobs["before_left"] = LEFT
@@ -628,7 +646,7 @@ async def test_work_before_the_save_that_leaves_something_says_what_and_how_to_p
     reply = updated_reply(interaction)
     assert NOTHING_SAVED_HERE in reply and LEFT in reply
     lines = await _lines(env)
-    head = FAILED_LINE.format(fault="RuntimeError")
+    head = FAILED_LINE.format(fault=fault)
     assert any(
         line.startswith(f"{head}\n") and LEFT in line.split("\n", 1)[1] for line in lines
     )
