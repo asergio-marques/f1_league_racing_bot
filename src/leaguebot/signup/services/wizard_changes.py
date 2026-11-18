@@ -98,6 +98,7 @@ from leaguebot.signup.services.closing_steps import (
     take_reason_down,
 )
 from leaguebot.signup.services.signup_module_service import signup_enabled_on
+from leaguebot.signup.services.signup_settings import NOT_ENABLED
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, IN_PROGRESS_STATES
 from leaguebot.signup.services.wizard_answers import (
@@ -139,6 +140,8 @@ NAME_JOB = "name_driver"
 WITHDRAWN = "withdrawn"
 #: Why a signup ends: a manager pressed Reject and typed the reason.
 REJECTED = "rejected"
+#: Why a signup ends: a league manager cancelled it with `/signup cancel` (#502).
+CANCELLED = "cancelled"
 #: What a manager is told whose reason arrives after the signup moved on.
 REJECT_MOVED_ON = (
     f"⛔ This signup has moved on since you pressed {_BUTTON_OF['reject']}. "
@@ -150,6 +153,51 @@ SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 WITHDRAWN_NOTICE = (
     "❌ You have withdrawn your signup. This channel will be automatically deleted in 24 hours."
 )
+#: What the driver's channel is told when a manager cancels their signup, before the reason (where
+#: one was given) and the hold on the channel.
+CANCELLED_BY_MANAGER = "<@{user_id}> ❌ Your signup has been cancelled by **{manager}**."
+#: What a manager is told who cancels the signup of a driver with none under way.
+NO_SIGNUP_IN_PROGRESS = "{name} has no signup in progress. Nothing was changed."
+#: What a manager is told who cancels the signup of a driver approved and not yet placed.
+ALREADY_APPROVED = (
+    "{name}'s signup has already been approved. To turn them down, use `/driver reject`. "
+    "Nothing was changed."
+)
+#: What a manager is told who cancels the signup of a driver placed in a seat.
+ALREADY_PLACED = (
+    "{name}'s signup has already been approved and they hold a seat. Nothing was changed."
+)
+#: What a manager is told who cancels the signup of a driver while a manager awaits a reason.
+REASON_PENDING = (
+    "A manager has pressed {button} on {name}'s signup and the reason is awaited. Nothing was "
+    "changed: run `/signup cancel` again once the reason is given or has lapsed."
+)
+
+
+def cancellation_refusal(
+    state: DriverState | None, name: str, pending_button: str | None = None
+) -> str | None:
+    """Why `/signup cancel` of the driver *name*, in *state* (None: no driver profile), is refused,
+    or None where it may go ahead. Reads no store, so that the command and the queued change, which
+    know the state from different places, judge it by one rule.
+
+    A driver with no signup in progress is refused, an approved and unplaced one (Unassigned) with
+    a pointer to `/driver reject`, which turns such a driver down, and a placed one without. A
+    signup awaiting a reason that a manager pressed *pending_button* ("Reject" or "Request
+    Changes") for is refused too: the queued change never passes it, for the reason lives in
+    memory and a check reads only the database and the queue, so only the command and its form
+    do.
+    """
+    if state in IN_PROGRESS_STATES:
+        if pending_button is not None:
+            return REASON_PENDING.format(button=pending_button, name=name)
+        return None
+    if state is DriverState.UNASSIGNED:
+        return ALREADY_APPROVED.format(name=name)
+    if state is DriverState.ASSIGNED:
+        return ALREADY_PLACED.format(name=name)
+    return NO_SIGNUP_IN_PROGRESS.format(name=name)
+
 #: The most channels Discord lets a category hold.
 CATEGORY_LIMIT = 50
 #: Where a gone signup channel was found (`found` in a `CHANNEL_GONE` ending's payload): where the
@@ -166,6 +214,8 @@ _GONE_SENTENCE = {
 
 __all__ = [
     "ANSWER", "Accepted", "Refused", "judge_answer",
+    "ALREADY_APPROVED", "ALREADY_PLACED", "CANCELLED", "CANCELLED_BY_MANAGER",
+    "NO_SIGNUP_IN_PROGRESS", "REASON_PENDING", "cancellation_refusal",
     "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "DELETED", "END",
     "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB", "delete_signup_channel",
     "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
@@ -616,6 +666,19 @@ def end_change(
                 or (held is not None and asked is not None and int(held) != int(asked))
             ):
                 return Verdict.not_due("the signup has ended or moved to another channel")
+            return Verdict.go()
+        if ctx.payload.get("reason") == CANCELLED:
+            async with get_connection(ctx.db_path) as db:
+                switched_on = await signup_enabled_on(db)
+            if not switched_on:
+                return Verdict.refuse(NOT_ENABLED)
+            # Judged on the database alone: a reason a manager is typing lives in memory, and
+            # is refused at the ask (#502).
+            refusal = cancellation_refusal(
+                None if profile is None else profile.current_state, f"<@{user_id}>"
+            )
+            if refusal is not None:
+                return Verdict.refuse(f"⛔ {refusal}", refusal)
             return Verdict.go()
         if ctx.payload.get("reason") == REJECTED:
             # A signup that has moved on since the press: approved by another manager, withdrawn,
