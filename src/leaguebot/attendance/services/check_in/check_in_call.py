@@ -387,8 +387,12 @@ def check_in_steps(
                 country_name=row["track_country"],
                 faults=faults,
             )
+            # Named by the season, the division and the round (image spec, the check-in graphic).
+            season = (
+                f"Season {row['season_number']} " if row["season_number"] is not None else ""
+            )
             picture_lines = tuple(
-                f"**{division}** — check-in call of round {row['round_number']}: {fault}"
+                f"{season}**{division}** — check-in call of round {row['round_number']}: {fault}"
                 for fault in faults
             ) + drawn_lines
         try:

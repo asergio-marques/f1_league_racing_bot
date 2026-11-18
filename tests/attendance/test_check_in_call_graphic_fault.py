@@ -5,8 +5,8 @@ The league is `ongoing_league`'s with attendance and images on: Pro's round 4 is
 past the moment its call falls due and before its deadline, with no call posted for it yet. The
 call is asked of the queue as its timer asks it, and the queue is run. Where the graphic cannot be
 drawn, or is drawn without the deadline, the call still posts and is recorded, and the log channel
-is told what was left out, naming the division and the round; the full error stays in the host's
-log.
+is told what was left out, naming the season, the division and the round; the full error stays in
+the host's log.
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     """(not drawn) the drawing raises: the call posts without a picture and the log channel is
     told so. (no deadline) the configuration read for the deadline raises: the graphic is drawn
     without it, the call posts with it, and the log channel is told so. (none) the graphic is drawn
-    whole: no such line is written."""
+    whole: no such line is written. Each line written names season 3, Pro and round 4."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     league = await _league(tmp_path)
@@ -93,8 +93,8 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     assert record["message_id"] == str(_sent(league)[0])
     lines = [line for line in league.log().splitlines() if "check-in call of round 4:" in line]
     expected = {"not drawn": [NOT_DRAWN], "no deadline": [NO_DEADLINE], "none": []}[fault]
-    # Each line names the division and the round.
-    heading = f"**{DIVISIONS[PRO][0]}** — check-in call of round 4: "
+    # Each line names the season, the division and the round.
+    heading = f"Season 3 **{DIVISIONS[PRO][0]}** — check-in call of round 4: "
     assert lines == [heading + clause for clause in expected]
 
 
