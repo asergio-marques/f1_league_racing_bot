@@ -124,7 +124,8 @@ and their amendments, tracks, the calendar post, and the arming of a round's tim
 framework's scheduler), `drivers/` (drivers, teams, placements, the lineup and the changes to them),
 `settings/` (which answers the framework's questions of the league), `test_mode/`, `upkeep/`
 (backup, pack, factory reset, the in-memory state and clean-up) and `modules/` (the hub and its
-About option, and what core asks of the modules, such as the drawing protocol). A folder is not a
+About option, and what core asks of the modules, such as the drawing protocol and the check a
+switch-on runs on the channels its module kept). A folder is not a
 kind: every check reads a file's kind from the first folder below its part or the framework, so
 `core/services/seasons/season_service.py` is a service of core. A module's own services stay in its
 `services/` folder unless its design file groups them. `tests/repository/test_import_contracts.py`
@@ -276,7 +277,7 @@ judged, a round amended or its timed work armed again, a round's timed work read
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
-command sets it, the factory reset gathering the channels each module holds, a round's drawn phases
+command sets it or as a module is switched on (answered only while the module is on), the factory reset gathering the channels each module holds, a round's drawn phases
 read, a driver's signup name, username and nationality read for a season, with whether a nationality
 is collected, which the modules that draw a driver ask through core's reader, the divisions a
 driver's accounts raced in read, a driver's standing in a division read for the season's history, a
@@ -403,6 +404,16 @@ module's settings, with work after it that nothing waits on (the removal of its 
 of its own. Where the dependency table makes one module's switch-off take another's with it, the
 dependent module offers its switch-off as a function on the connection it is handed, and the builder
 hands it to the change that cascades, as results' switch-off is handed attendance's.
+
+A module that keeps channels while it is off has its switch-on check them. The switch-on is a
+`Setting` with a step before its save, which core's check (`core/services/modules/kept_channels.py`)
+supplies and which the module hands its own reader of the channels it kept, with its own needs of the
+bot in each: core names no module in it, and each module's reader is built from the one table of its
+channels that its confirmation faults also read. The channel hook is read as the switch-on runs and a
+module answers it only while it is on, so a channel it kept does not count against another setting
+while it is off, and the switch-on claims it again, clearing what another setting took meanwhile.
+*Rejected:* a check inside the switch-on's save, which carries no finding to the reply and could not
+end the setting refused.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (after PEP 8's convention, extended to the files of one module). What a
@@ -613,9 +624,12 @@ permissions set (the new channel's first, the old one's cleared last); see "The 
 queue's"), and the work after it that the setting does not need (checking it against the templates,
 arming or removing a timed job, granting a role to every driver, asking the hub's panel to be posted
 again as the bot's own change, posting the signup information in the new signup channel where a
-window is open) is work nothing later depends on. A fault in either leaves nothing half-done and
-nothing behind it on the lane waits on it. A fault in the save is rolled back whole, so nothing is
-saved and the member can simply ask again; a fault in a step after the save leaves the setting
+window is open) is work nothing later depends on. Work the save waits on may come before it (a
+module's kept channels checked before it is switched on): it saves nothing, and a fault in it, or a refusal by it,
+ends the setting with nothing saved and no audit record. A fault in any of these leaves nothing
+half-done and nothing behind it on the lane waits on it. A fault in a step before the save, or in the
+save, is rolled back whole, so nothing is saved and the member can simply ask again; a fault in a
+step after the save leaves the setting
 saved, so asking again with the same value saves nothing and repeats no step, and the reply says
 what was not done, or what to do by hand, where the step has anything to say. So such a step carries
 `Step.on_fault`: where it raises, the queue does not stop the lane but marks the job done with what
@@ -699,7 +713,10 @@ stop nobody yet holds the role to clear.
   command that sets such a channel keeps to this as it moves onto the queue. So no stopped head ever
   has a remaining job that claims a channel, an overtaking change runs to its own end before the
   head is tried again, and a channel setting's check as the change starts is still the save's last
-  judgement of the state. That invariant is the one a later reader could tune away: a change that
+  judgement of the state, as is the reading a module's switch-on makes of its kept channels before its
+  save: a module's channels are not counted while it is off, and its switch-on claims them again, so
+  a switch-on must stay a change that never stops its lane, its steps before the save and its save
+  ending on a fault. That invariant is the one a later reader could tune away: a change that
   can stop its lane and claims a channel would need the save to re-check, or would need to be barred
   from being overtaken.
 
@@ -794,10 +811,12 @@ stop nobody yet holds the role to clear.
   through the bot, since a service does not use the bot to look up other services (above).
 
   A league's settings share the mechanism rather than each forming its own: a command declares a
-  `Setting` (its check, its save on a connection, its reply and the tables it writes) and
-  `setting_change` builds the change type, so that the line, whether an audit record is written,
+  `Setting` (its check, any steps before its save, its save on a connection, its reply and the
+  tables it writes) and `setting_change` builds the change type, so that the line, whether an audit record is written,
   the answer for a value already held and the answer for a fault are decided in one place. A
-  setting's value, its audit record and its line are one save, save where a step after it arms the
+  setting's value, its audit record and its line are one save, after any steps before it (a module's
+  kept channels checked before it is switched on, which save nothing and end the setting on a
+  fault, or refused, with no audit record), save where a step after it arms the
   daily portrait job, grants a role to every driver where it replaces one gone from the server
   while the season's configuration is fixed, stands the old hub down and sets the new one's
   permissions once its channel is moved, or sets the new signup channel's permissions and then

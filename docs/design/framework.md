@@ -187,6 +187,16 @@ its lane"), set by each setting's declaration; a step that carries the save's li
 once it has succeeded (`carries_line`). Core's settings are listed in `core.md`, "A league's
 settings".
 
+A setting may run steps before its save (`Setting.before`, each a `Before`), for work the save waits
+on, such as a module's kept channels checked before it is switched on. Each is a step of the
+change, so a restart resumes at it. A fault in one ends the setting as a fault in its save does,
+with nothing saved and nothing audited. A step may end the setting refused by returning a `HALTED`
+result carrying the reply and the reason, from which `setting_change` forms the one ⛔ line, the step
+writing none. What the steps found is handed to the save under `FOUND` in its payload, read from
+the steps the queue keeps rather than from memory, so a restart between a step and the save
+hands it the same. The docstring of `setting_change` holds why the steps before the save keep the
+queue's last-judgement invariant.
+
 ### The clock
 
 The queue's clock, `ChangeQueue.now`, is the bot's: the builder hands services, change types and
