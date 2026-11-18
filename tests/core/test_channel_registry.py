@@ -16,6 +16,7 @@ manager hunting a conflict that does not exist.
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,7 +31,9 @@ from leaguebot.core.services.settings.channel_registry_service import (
     find_channel_use,
     refusal,
 )
+from leaguebot.core.models.channel_needs import ATTACH, EMBED, SEND, VIEW
 from leaguebot.framework.utils.hooks import AwaitedHook
+from tests.support.channel_faults import server_holding
 from tests.support.channel_uses import channel_uses_given
 
 SERVER_ID = 4242
@@ -401,6 +404,67 @@ async def test_a_division_refuses_the_hub_channel(db_path):
 
     assert use == ChannelUse("hub")
     assert use.describe() == "hub channel"
+
+
+# ── A channel the bot cannot use (#570) ───────────────────────────────────
+#
+# A command setting a channel refuses one where the bot lacks a permission that channel's use
+# needs, naming each in Discord's own words, in the order the use asks for them.
+
+_LINEUP_NEEDS = (VIEW, SEND, EMBED, ATTACH)
+_CANNOT_USE = (
+    "❌ The bot is missing permissions it needs in <#500> as the lineup channel for **Pro**: "
+    "{missing}. Give the bot them there, or pick another channel. Nothing was changed."
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#570: setting a channel does not yet judge whether the bot can use it")
+@pytest.mark.parametrize(
+    ("server", "expected"),
+    [
+        pytest.param(
+            {"unusable": {500: ("attach_files", "embed_links")}},
+            _CANNOT_USE.format(missing="Embed Links, Attach Files"),
+            id="permissions-denied",
+        ),
+        pytest.param(
+            {"forbidden": (500,)}, _CANNOT_USE.format(missing="View Channel"), id="cannot-see-it"
+        ),
+        pytest.param(
+            {"gone": (500,)},
+            "❌ <#500> is no longer on the server. Nothing was changed.",
+            id="gone",
+        ),
+        pytest.param({}, None, id="every-permission-held"),
+    ],
+)
+async def test_a_channel_the_bot_cannot_use_is_refused_naming_what_it_lacks(server, expected):
+    from leaguebot.core.services.settings.channel_registry_service import unusable_refusal
+
+    refused = await unusable_refusal(
+        server_holding(**server), 500, _LINEUP_NEEDS, ChannelUse("lineup", "Pro")
+    )
+
+    assert refused == expected
+
+
+@pytest.mark.xfail(strict=True, reason="#570: setting a channel does not yet judge whether the bot can use it")
+@pytest.mark.parametrize("cause", ["the server answers with an error", "no server to ask"])
+async def test_a_channel_that_cannot_be_judged_is_not_refused(cause, caplog):
+    """A check that cannot be made stands aside, as a confirmation's does: only what Discord
+    proves refuses a channel."""
+    from leaguebot.core.services.settings.channel_registry_service import unusable_refusal
+
+    guild = server_holding(unreadable=(500,)) if cause == "the server answers with an error" else None
+    with caplog.at_level(logging.WARNING):
+        refused = await unusable_refusal(guild, 500, _LINEUP_NEEDS, ChannelUse("lineup", "Pro"))
+
+    assert refused is None
+    if guild is not None:
+        assert any(
+            record.levelno == logging.WARNING and "500" in record.getMessage()
+            for record in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------
