@@ -756,6 +756,7 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path, open_wi
     ]
     assert len(notices) == 1 and len(successes) == 1
     assert not any("Incomplete" in line for line in lines)
+    assert not any("failed_step" in line for line in lines)
     assert (notices[0] < successes[0]) == open_window
 
 
