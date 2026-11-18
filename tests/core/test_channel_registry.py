@@ -268,9 +268,6 @@ async def test_a_finished_seasons_channel_is_free_again(db_path, status):
     assert await _find(db_path, 500) is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#570: live_divisions_on takes no cancelled= to pass over cancelled divisions"
-)
 async def test_live_divisions_pass_over_cancelled_divisions_only_when_asked(db_path):
     """The live season's divisions, cancelled ones included, as the registry guards them; asked
     with `cancelled=False`, a division cancelled in the running season is passed over, which is

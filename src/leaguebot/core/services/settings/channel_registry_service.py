@@ -152,17 +152,25 @@ async def channel_ids_in(db: aiosqlite.Connection, sql: str, source: str) -> set
     return found
 
 
-async def live_divisions_on(db: aiosqlite.Connection) -> dict[int, str]:
+async def live_divisions_on(
+    db: aiosqlite.Connection, *, cancelled: bool = True
+) -> dict[int, str]:
     """The live season's divisions, by id, naming each: those of a season in SETUP or ACTIVE.
 
     What :func:`find_channel_use` hands each module through `channel_uses_read`, and so the
-    divisions whose channels the registry guards. A reader that must look at the same
-    divisions the registry does reads them here rather than restating the query.
+    divisions whose channels the registry guards, a cancelled division's among them: its channels
+    stay held until the season ends. A reader that must look at the same divisions the registry
+    does reads them here rather than restating the query. With *cancelled* False a division
+    cancelled in the running season is passed over, which is what a picture about to be switched
+    on judges: the bot posts to no cancelled division's channel.
     """
-    cursor = await db.execute(
+    sql = (
         "SELECT d.id, d.name FROM divisions d JOIN seasons s ON s.id = d.season_id "
         "WHERE s.status IN ('SETUP', 'ACTIVE')"
     )
+    if not cancelled:
+        sql += " AND d.status != 'CANCELLED'"
+    cursor = await db.execute(sql)
     return {int(row[0]): str(row[1]) for row in await cursor.fetchall()}
 
 
