@@ -2142,9 +2142,9 @@ async def test_a_cancellation_whose_signup_channel_is_gone_ends_the_signup_and_p
     """Kimi is part-way through signing up, his wizard naming signup channel 6405, which has been
     deleted from the server. Admin (77) runs `/signup cancel` of Kimi and submits the form. When
     the queue runs, Kimi is Not Signed Up, one `SIGNUP_CANCEL` audit entry is written, Admin is
-    told the signup was cancelled, no lane is left stopped, and nothing is posted: no channel
-    on the server, the interaction channel included, is sent anything, and no channel is
-    created in place of Kimi's."""
+    told the signup was cancelled, no lane is left stopped, and nothing is posted apart from the
+    cancellation's line in the log channel: no channel on the server, the interaction channel
+    included, is sent anything, and no channel is created in place of Kimi's."""
     league = await _league(tmp_path)
     await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
     league.channels.pop(KIMI_CHANNEL)
