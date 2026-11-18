@@ -1063,7 +1063,7 @@ See [Testing with test mode](docs/how-to/test-mode.md) for how these fit togethe
 
 #### `/test-mode backup` — Save the database and put it back
 
-*Access: League manager*
+*Access: League admin*
 
 Save the whole database and return to it later, so a state reached once while testing need not be built again. Four subcommands, none of which take a parameter.
 
