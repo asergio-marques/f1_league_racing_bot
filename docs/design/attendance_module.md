@@ -575,10 +575,10 @@ with no placement row there is refused as not a member
 ### What attendance's channels need of the bot
 
 `division_channels.channel_needs` states it, the one source of it within attendance. The check-in
-call's channel (`rsvp`) needs View Channel, Send Messages and Embed Links, the call being an embed.
-The attendance sheet's channel needs View Channel, Send Messages and Read Message History, the
-sheet being reposted, and no embed, being text or a picture. Each also needs Attach Files where the
-drawing answers that its pictures could attach one. The confirmation's faults
+call's channel is `rsvp` and the attendance sheet's is `attendance`; the attendance specification,
+under "Configuring the attendance module", "Channels", says what each needs. The one thing the
+statement asks of the image module is whether a channel's pictures could attach a file, which the
+drawing answers by its switches and not by a template's state. The confirmation's faults
 (`attendance_hooks.division_channel_faults`) judge both channels by it, and the recalculation's gate
 judges the attendance channel by it and the verdicts channel by results' statement of its needs,
 where the sanction's picture goes, so a verdicts channel the bot cannot attach to is refused up
