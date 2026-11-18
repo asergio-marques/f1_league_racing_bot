@@ -154,7 +154,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
 | **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset`, and to post again and take down what it posted in the results, standings, verdicts and attendance channels, and to read the check-in call back to redraw it |
 | **Manage Roles** | Grants the driver role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
-| **Mention @everyone, @here, and All Roles** | Pings the division role in a division's weather forecast messages (phase 1–3), in the check-in call (posted again when an amendment calls for it) and in the attendance cancellation notice, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
+| **Mention @everyone, @here, and All Roles** | Pings the division role in a division's weather forecast messages (phase 1–3), in the check-in call (posted again when an amendment calls for it), in the attendance cancellation notice and in the weather notice that an amended round's forecasts no longer stand, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
 
 The bot needs more than a server-wide grant in the channels it posts to: a channel's own settings can take a permission away. Each division channel, below, names the permissions it needs, and confirming placements names any the bot lacks.
 
@@ -554,7 +554,7 @@ Divisions are built once the season is in **placements** — after its configura
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name (used to reference it in subsequent commands) |
-| `role` | Role | ✅ | Discord role pinged by this division's forecasts (phases 1–3), check-in call and attendance cancellation notice |
+| `role` | Role | ✅ | Discord role pinged by this division's forecasts (phases 1–3), check-in call, attendance cancellation notice and weather invalidation notice |
 | `tier` | Integer | ✅ | Tier number for this division (1 = top tier; must be 1 or higher, and unique within the season) |
 
 Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at approval, not here, so a half-built season may hold a gap while you are still adding divisions.
@@ -3108,6 +3108,8 @@ Each phase's message **supersedes** the previous one: the earlier forecast is de
 **Each phase is drawn, then posted.** The draw is recorded and its calculation written to the log channel in one step, and the forecast posted in a step after it. A forecast whose division has no forecast channel set stops the queue, the notice naming `/weather channel`: set one and press Retry. A forecast a league admin discards is not posted, and its draw stands, recorded and logged. A phase whose turn on the queue comes after its race has started, held behind a stopped queue, is dropped: nothing is drawn or posted for it.
 
 All forecast messages go to each division forecast channel, on a message mentioning that division's role. The mention notifies the role whether the forecast is posted as text or as a picture. A forecast too long for one message is posted in parts, and every part is recorded with it and deleted with it, from the channel it was posted in, even after the division's forecast channel has been changed. Computation logs go to the server log channel.
+
+**Amending a round withdraws its forecasts, and says so.** Where an amendment withdraws a forecast already posted, the forecast channel gets a notice that the round's forecasts no longer stand and that an updated one follows. It begins by mentioning the division's role and notifies that role alone, as a forecast does, so the drivers the forecast reached learn it is withdrawn; a division with no role set gets the notice with no mention, notifying nobody. It is posted as text whatever the image toggle says. Where no forecast was withdrawn, no notice is posted.
 
 **Mystery rounds.** No weather is generated for a Mystery round — nothing is drawn, nothing is
 computed, and nothing is logged. At the Phase 1 horizon your drivers still get a message: a fixed

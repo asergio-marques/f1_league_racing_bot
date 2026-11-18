@@ -752,17 +752,35 @@ def _notifies_no_member(send: Any) -> bool:
     return not getattr(mentions, "users", False) and not getattr(mentions, "everyone", False)
 
 
-async def test_a_forecast_posted_as_text_notifies_the_division_s_role(tmp_path):
-    """Images off: Pro's phase 1 forecast for round 3 is asked and the queue run. It is posted as
-    text in Pro's forecast channel, naming Pro's role 801, and is sent letting that role notify,
-    and no member and not everyone."""
+@pytest.mark.parametrize("manner", ["text", "picture"])
+@pytest.mark.parametrize("phase", [1, 2, 3])
+async def test_a_forecast_notifies_the_division_s_role_as_text_or_as_a_picture(
+    tmp_path, monkeypatch, phase, manner,
+):
+    """Pro's round 3 has its earlier phases posted, and its *phase* forecast is asked and the
+    queue run, posted as text with images off, or as a picture where the drawing hands one back.
+    As text it names Pro's role 801; as a picture its message says `<@&801>` and nothing else.
+    Either way it is sent letting that role notify, and no member and not everyone."""
     league = await _league(tmp_path)
+    await _posted(league, *range(1, phase))
+    if manner == "picture":
+        monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", AsyncMock(
+            side_effect=lambda *_a, **_k: (
+                discord.File(io.BytesIO(b"png"), filename="forecast.png"), (),
+            )))
 
-    await _ask(league, 1)
+    await _ask(league, phase)
     await run_queue(league.bot)
 
-    [send] = _sends(league)
-    assert f"<@&{PRO_ROLE}>" in str(send.args[0])
+    assert await stopped_job(league.db_path) is None
+    send = _sends(league)[-1]
+    content = str(send.args[0]) if send.args else str(send.kwargs.get("content", ""))
+    if manner == "picture":
+        assert send.kwargs.get("file") is not None
+        assert content == f"<@&{PRO_ROLE}>"
+    else:
+        assert send.kwargs.get("file") is None
+        assert f"<@&{PRO_ROLE}>" in content
     assert _notified_roles(send) == {PRO_ROLE}
     assert _notifies_no_member(send)
 

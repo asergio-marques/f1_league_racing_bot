@@ -60,7 +60,7 @@ PHASE_DESCRIPTIONS = {
 
 def _role_prefix(division_role_id: int | None) -> str:
     """The division's role mention and a space, or nothing where the division has no role: a
-    forecast for it names no one rather than the role `<@&0>`."""
+    post for it names no one rather than the role `<@&0>`."""
     return f"<@&{division_role_id}> " if division_role_id else ""
 
 
@@ -138,10 +138,13 @@ def phase3_message(
     return "\n".join(lines)
 
 
-def invalidation_message(track: str) -> str:
-    """Broadcast message when prior weather results are invalidated by an amendment."""
+def invalidation_message(track: str, division_role_id: int | None) -> str:
+    """Broadcast message when prior weather results are invalidated by an amendment.
+
+    It begins with the division's role mention, as a forecast does, and with nothing where the
+    division has no role (`_role_prefix`): the notice names no one rather than the role `<@&0>`."""
     return (
-        f"⚠️ **Weather Forecast Invalidated**\n"
+        f"{_role_prefix(division_role_id)}⚠️ **Weather Forecast Invalidated**\n"
         f"The configuration for **{track}** has been amended by an admin. "
         f"All previously published forecasts for this round have been invalidated. "
         f"An updated forecast will be posted automatically."

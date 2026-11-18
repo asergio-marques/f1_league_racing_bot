@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
+import io
 import json
 import sqlite3
 import sys
@@ -49,6 +50,7 @@ from tests.support.season_league import (
     FERRARI,
     MAX,
     PRO,
+    PRO_ROLE,
     _refusing_delete,
     amend_round,
     amendment_changes,
@@ -531,25 +533,50 @@ async def test_a_withdrawn_forecast_discord_will_not_delete_stops_the_queue_keep
     assert "8001" in bullet
 
 
-async def test_the_invalidation_notice_notifies_nobody(tmp_path):
+#: The invalidation notice's words after any role mention, as they have always read.
+INVALIDATION_NOTICE = (
+    "⚠️ **Weather Forecast Invalidated**\nThe configuration for **Silverstone** has been "
+    "amended by an admin. All previously published forecasts for this round have been "
+    "invalidated. An updated forecast will be posted automatically."
+)
+
+
+@pytest.mark.parametrize("role, mention, allowed, pictures", [
+    pytest.param(PRO_ROLE, f"<@&{PRO_ROLE}> ",
+                 {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, False, id="role set"),
+    pytest.param(0, "", NOBODY, False, id="no role"),
+    pytest.param(PRO_ROLE, f"<@&{PRO_ROLE}> ",
+                 {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, True,
+                 id="role set, forecasts as pictures"),
+])
+async def test_the_invalidation_notice_notifies_the_division_s_role(
+    tmp_path, monkeypatch, role, mention, allowed, pictures,
+):
     """Weather on; round 3, at Silverstone, has its posted phase 1 forecast withdrawn by moving
     the round ninety-one days on. The notice in Pro's forecast channel that the forecasts no
-    longer stand reads, word for word, as it always has, naming the track, and notifies
-    nobody."""
-    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    longer stand begins with Pro's role mention and notifies that role alone, no member and not
+    everyone, its words after the mention as they always were and naming the track. Where Pro
+    has no role set (0), the notice mentions no role, never `<@&0>`, and notifies nobody. Where
+    forecasts are posted as pictures (images on, the forecast picture drawing stood in to hand
+    back a PNG should anything draw one; no forecast is posted again), the notice is still text
+    alone, carrying no file."""
+    league = await ongoing_league(tmp_path, weather=True, images=pictures, horizons=HORIZONS)
+    if pictures:
+        monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", AsyncMock(
+            side_effect=lambda *_a, **_k: (
+                discord.File(io.BytesIO(b"png"), filename="forecast.png"), ()))
+        )
+    await league.write("UPDATE divisions SET mention_role_id = ? WHERE id = ?", role, PRO)
     await posted_forecast(league, R3, 1, 8001)
     await _amended(league, scheduled_at=_at(league, days=91))
 
     await run_queue(league.bot)
 
     assert await _stopped_at(league) is None
-    assert league.texts(PRO_CH.forecast) == [
-        "⚠️ **Weather Forecast Invalidated**\nThe configuration for **Silverstone** has been "
-        "amended by an admin. All previously published forecasts for this round have been "
-        "invalidated. An updated forecast will be posted automatically."
-    ]
+    assert league.texts(PRO_CH.forecast) == [mention + INVALIDATION_NOTICE]
+    assert league.channel(PRO_CH.forecast).files == [None]
     [call] = league.channel(PRO_CH.forecast).send.await_args_list
-    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
+    assert notified(call.kwargs.get("allowed_mentions")) == allowed
 
 
 async def test_an_invalidation_notice_discord_refuses_stops_the_queue(tmp_path):
