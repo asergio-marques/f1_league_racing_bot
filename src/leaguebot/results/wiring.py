@@ -591,6 +591,8 @@ def register_change_types(
                 modules=bot.module_service,
                 seasons=bot.season_service,
                 scheduler=bot.scheduler_service,
+                channel_uses_read=bot.channel_uses_read,
+                drawing=as_image_drawing(bot.image_drawing),
             )
         )
     )

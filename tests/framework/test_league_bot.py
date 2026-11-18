@@ -292,7 +292,6 @@ SWITCH_ON_CLEARS = "#449: the switch-on does not yet declare the channel table i
         pytest.param(
             "results", "leaguebot.results.",
             {"results_module_config", "division_results_config"}, None, id="results",
-            marks=pytest.mark.xfail(strict=True, reason=SWITCH_ON_CLEARS),
         ),
         pytest.param(
             "signup", "leaguebot.signup.", {"server_configs", "signup_module_config"}, None,

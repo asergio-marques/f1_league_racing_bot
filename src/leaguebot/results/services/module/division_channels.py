@@ -27,6 +27,7 @@ import aiosqlite
 from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.channel_needs import ATTACH, READ_HISTORY, SEND, VIEW, Needs
+from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
@@ -243,6 +244,37 @@ async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
         "standings": await attaches("standings"),
         "verdicts": await attaches("verdicts", "verdict_banner"),
     }
+
+
+async def kept_channels(drawing: "ImageDrawing | None") -> KeptReader:
+    """The reader of the channels results keeps, for the check its switch-on makes
+    (`core/services/modules/kept_channels.py`): given a connection and the live season's divisions
+    (id to name), it gives each one's results, standings and verdicts channel that is set, in the
+    order `_CHANNELS` gives, with what each needs of the bot (`channel_needs`, asked of the
+    *drawing* now and not when the switch-on is built, as a picture switched on while results was
+    off may attach a file). Reads only."""
+    needs = await channel_needs(drawing)
+
+    async def read(db: aiosqlite.Connection, divisions: Mapping[int, str]) -> list[KeptChannel]:
+        cursor = await db.execute(
+            "SELECT division_id, results_channel_id, standings_channel_id, penalty_channel_id "
+            "FROM division_results_config ORDER BY division_id"
+        )
+        kept: list[KeptChannel] = []
+        for row in await cursor.fetchall():
+            if int(row["division_id"]) not in divisions:
+                continue
+            for column, setting, label, command, _unset in _CHANNELS:
+                if row[column] is not None and row[column] != "":
+                    kept.append(
+                        KeptChannel(
+                            setting, int(row["division_id"]), divisions[int(row["division_id"])],
+                            int(row[column]), label, command, needs[setting],
+                        )
+                    )
+        return kept
+
+    return read
 
 
 async def division_channel_faults(
