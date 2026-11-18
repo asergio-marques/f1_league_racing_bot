@@ -2084,7 +2084,9 @@ async def test_a_league_manager_may_cancel_their_own_signup(tmp_path):
     league = await _league(tmp_path)
     await signing_up(league, REVIEWER, state="PENDING_ADMIN_APPROVAL")
 
-    submitted = await _cancel(league, None, user_id=REVIEWER)
+    asked = await _ask_cancel(league, REVIEWER)
+    asked.response.send_modal.assert_awaited_once()
+    submitted = await _submit_cancel(league, asked)
     await run_queue(league.bot)
 
     assert await _driver_state(league, REVIEWER) == "NOT_SIGNED_UP"
