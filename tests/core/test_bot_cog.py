@@ -369,6 +369,52 @@ async def test_bot_init_refuses_a_channel_the_bot_cannot_use_and_claims_nothing(
     assert await _audit_rows(db_path) == []
 
 
+@pytest.mark.parametrize("meanwhile", ["unusable", "deleted"])
+@pytest.mark.xfail(strict=True, reason="#570: /bot init does not judge its two channels as it claims")
+async def test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be_used(
+    tmp_path, caplog, meanwhile
+):
+    """Core spec, Setting the bot up: `/bot init` judges its two channels again as it claims the
+    server. No server is claimed and no picture is on; an administrator runs `/bot init` for
+    command channel 111 and log channel 333 on a server whose every channel the bot can use, and
+    is acknowledged. Before the queue runs the claim, the bot is denied Send Messages in 333
+    (*unusable*), or 333 is deleted (*deleted*). The claim is refused: the member's reply becomes
+    the refusal, naming what the bot lacks in 333 or that 333 is no longer on the server, word for
+    word; no server is claimed, nothing is audited, no line goes to any channel, there being no
+    league log channel yet, and the bot host's log records the refusal."""
+    from tests.support.change_queue import acknowledgement, queued_log_lines, run_queue
+
+    caplog.set_level(logging.INFO, logger="leaguebot")
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    answer_attachments(bot.image_drawing)
+    league_server(bot)
+    cog = BotCog(bot)
+    interaction = _asking(bot, "bot init")
+    interaction.guild = server_holding()
+
+    await _ask_init(cog, interaction)
+    assert acknowledgement(interaction).startswith(_INIT_ACKNOWLEDGED)
+    if meanwhile == "unusable":
+        league_server(bot, unusable={CONFIGURED_LOG: ("send_messages",)})
+        refused = _cannot_use(CONFIGURED_LOG, "bot log channel", "Send Messages")
+    else:
+        league_server(bot, gone=(CONFIGURED_LOG,))
+        refused = f"❌ <#{CONFIGURED_LOG}> is no longer on the server. Nothing was changed."
+    await run_queue(bot)
+
+    assert _said(interaction)[-1] == refused
+    assert await bot.config_service.get_league_server_id() is None
+    assert await _audit_rows(db_path) == []
+    assert all(not channel.sent for channel in bot.test_channels.values())
+    assert await queued_log_lines(db_path) == []
+    assert any(
+        record.name == "leaguebot.core.services.settings.bot_init_change"
+        and _reason(refused) in record.getMessage()
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+
+
 async def _init_configured(tmp_path) -> tuple[Any, MagicMock]:
     """Run a first `/bot init` through the queue with the four configured settings, the league
     admin role named "League Admins": the bot and the interaction."""
