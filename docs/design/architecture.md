@@ -417,14 +417,15 @@ switch-on runs and a module answers it only while it is on, so a channel it kept
 against another setting while it is off, and the switch-on claims it again, clearing what another
 setting took meanwhile (core_specification.md, "Modules" and "Channels"). Signup's channel is the
 server's, not a division's, so its reader answers with no division.
-
-Where a module also put something on the server that its switch-off took off, its switch-on puts it
-back as a further step before the save, after the check: the step records what it found, puts back,
-and declares an undo that takes the put-back back, from the record the queue keeps, where a later
-step or the save does not go through. Signup's three steps are the check, the record of the bot's
-permissions on its channel, and the restore.
 *Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are
 in `setting_change`'s docstring.
+
+Where a module also put something on the server that its switch-off took off, its switch-on puts it
+back as two further steps before the save, after the check: a record step, which keeps what it found
+there before it puts anything back, and a restore step, which puts back and declares an undo that
+restores the record where a later step or the save does not go through. The record is a step of its
+own so that a restore run again after a stop takes back to the first record. The steps of signup's
+switch-on are in signup_module.md.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (after PEP 8's convention, extended to the files of one module). What a
