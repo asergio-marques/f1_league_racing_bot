@@ -17,9 +17,11 @@ rasteriser *for*.
 existing configuration is left exactly as it was (FR-004a) — the other half of Principle X
 rule 6, under which the disable keeps the configuration and re-enabling finds it as it stood; `tests/image/test_image_module_flow.py` pins both halves.
 
-**Every aspect starts disabled.** A league enabling the module does not thereby start posting
-graphics; each output aspect is opted into separately, so enabling cannot surprise a division
-with a picture where it expected text.
+**Every aspect starts disabled on the first switch-on.** A league enabling the module for the
+first time does not thereby start posting graphics; each output aspect is opted into separately,
+so enabling cannot surprise a division with a picture where it expected text. Switched on again,
+the aspects are as the league left them, and the reply says so rather than claiming they start
+off.
 
 **A failed enable leaves nothing.** The configuration, the flag and the audit entry are one
 save, so a fault anywhere in it leaves the module off with no configuration behind it — never
@@ -45,6 +47,13 @@ from tests.support.settings_league import portrait_refresh_times
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 #: The enable's reply where the host carries the rasteriser.
 ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
+#: The enable's reply where the module is switched on again over its kept configuration.
+ENABLED_AGAIN = (
+    "✅ Image module enabled. Your configuration is kept as it stood, each output aspect on or off "
+    "as you left it — `/images config view` shows which are on."
+)
+#: Why switching the module on again is not yet answered with ENABLED_AGAIN.
+NOT_YET_AGAIN = "#556: switching on again still says every output aspect starts disabled"
 
 #: What the enable says where the daily portrait refresh could not be armed (owner's wording,
 #: decided 2026-11-15 for #288).
@@ -143,6 +152,15 @@ async def _keep_daily_portraits(db_path: str) -> None:
         await db.commit()
 
 
+async def _keep_standings_on(db_path: str) -> None:
+    """Switch the module off with its configuration kept as a disable keeps it, the standings
+    aspect switched on, so that switching it on again finds an aspect already on."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE image_aspect_toggles SET enabled = 1 WHERE aspect = 'standings'")
+        await db.execute("UPDATE image_config SET module_enabled = 0")
+        await db.commit()
+
+
 async def _refuse_the_audit(db_path: str) -> None:
     """Make the audit entry, the last write of the enable's save, fail as a full disk would."""
     async with get_connection(db_path) as db:
@@ -159,29 +177,41 @@ async def _refuse_the_audit(db_path: str) -> None:
 
 
 @pytest.mark.parametrize("rasteriser", [True, False], ids=["with a rasteriser", "without"])
-async def test_the_module_is_enabled(tmp_path, rasteriser):
-    """With or without a rasteriser (FR-007 / FR-008). Refusing would leave a league unable to
-    set up the module they are installing the rasteriser for. The member is acknowledged at
-    once, and once the change has run the module is on, and the reply and the Success line keep
-    today's words.
+@pytest.mark.parametrize(
+    "again",
+    [
+        pytest.param(False, id="first"),
+        pytest.param(True, id="again", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_AGAIN)),
+    ],
+)
+async def test_the_module_is_enabled(tmp_path, again, rasteriser):
+    """With or without a rasteriser (FR-007 / FR-008), for the first time or again over a kept
+    configuration with the standings aspect on. Refusing would leave a league unable to set up
+    the module they are installing the rasteriser for. The member is acknowledged at once, and
+    once the change has run the module is on, and the reply and the Success line keep today's
+    words.
 
-    The reply says every output aspect starts disabled: enabling the module does not thereby
-    start posting graphics, so a division is not surprised by a picture where it expected text.
-    A missing rasteriser is said, and a present one adds nothing: otherwise the first graphic a
+    The first switch-on says every output aspect starts disabled: enabling the module does not
+    thereby start posting graphics, so a division is not surprised by a picture where it
+    expected text. Switched on again, the reply says the configuration is kept as the league left
+    it, since an aspect left on is still on. A missing rasteriser is said, and a present one adds nothing: otherwise the first graphic a
     league expects simply does not arrive, with nothing connecting that to a program nobody told
     them about; and with nothing to warn about, a notice every time would be noise on the common
     path."""
     from tests.support.change_queue import acknowledgement
     from tests.support.settings_league import last_said, log_lines
 
-    league, cog = await _league(tmp_path)
+    league, cog = await _league(tmp_path, on=again)
+    if again:
+        await _keep_standings_on(league.db_path)
     asked = _asked(league)
 
     await _enable(league, cog, asked, rasteriser=rasteriser)
 
     assert acknowledgement(asked).startswith("⏳ Turning the image module on. ")
     assert await _images_flag(league.db_path) == 1
-    expected = ENABLED if rasteriser else f"{ENABLED}\n\n{NO_RASTERISER}"
+    reply = ENABLED_AGAIN if again else ENABLED
+    expected = reply if rasteriser else f"{reply}\n\n{NO_RASTERISER}"
     assert last_said(asked) == expected
     assert await log_lines(league) == [f"{NAMED} | /module enable images | Success"]
 
