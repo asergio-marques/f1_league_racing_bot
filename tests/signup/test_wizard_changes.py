@@ -24,6 +24,11 @@ asks `signup.member_left` on the league lane (an event counts as a command, A27)
 the driver and deletes the channel; a turn of his already stopped on his lane stays stopped
 (decision 24) until Retry finds it no longer due.
 
+A league manager's `/signup cancel` (#502) opens a form for an optional reason; submitting it asks
+`signup.end` on the league lane, judged again when its turn comes, which asks back
+`signup.closing` on the driver's lane where their channel stands, and writes a `SIGNUP_CANCEL`
+audit entry beside its line.
+
 The league: `setup_league` at Signups, the signup module on and its window open in the signup
 channel (620), which sits in the category "Signups" (630) with room to spare and the bot allowed
 to manage channels there. Kimi (105) presses Sign Up in it; a channel the bot creates is given the
@@ -1886,3 +1891,195 @@ async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_pat
     assert await _driver_state(league, user_id) == ("UNASSIGNED" if approved else None)
     assert league.order == []
     assert await league.rows("SELECT * FROM signup_records") == signups
+
+
+# ---------------------------------------------------------------------------
+# A manager's cancellation (#502)
+# ---------------------------------------------------------------------------
+
+#: The audit entry a manager's cancellation writes.
+CANCEL_AUDIT = "SIGNUP_CANCEL"
+#: The reason manager 77 gives on the form, where they give one.
+CANCEL_REASON = "Signed up twice by mistake"
+#: Why a cancellation test fails before the change: `/signup cancel` does not exist.
+NO_CANCEL = "#502: /signup cancel does not exist yet"
+
+
+async def _ask_cancel(league: SeasonLeague, user_id: int = SIGNING_UP) -> Any:
+    """`/signup cancel user:<driver user_id>`, as league manager Admin (77) runs it: the
+    interaction. A form it opens is kept on `send_modal`; the queue is not run."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from tests.support.change_queue import tier_member
+    from tests.support.settings_league import interaction
+    from tests.support.undecorate import undecorate
+
+    asked = interaction(
+        league.bot, "signup cancel",
+        user=tier_member("manager", member_id=REVIEWER, display_name="Admin"),
+    )
+    asked.guild = league.guild
+    asked.response.send_modal = AsyncMock()
+    await undecorate(SignupCog.signup_cancel)(
+        SignupCog(league.bot), asked, league._member(user_id)
+    )
+    return asked
+
+
+async def _submit_cancel(league: SeasonLeague, asked: Any, reason: str | None = None) -> Any:
+    """Admin submits the form *asked* opened, giving *reason* (none: the field left empty): the
+    form's interaction. The queue is not run."""
+    from tests.support.settings_league import interaction
+
+    form = asked.response.send_modal.await_args.args[0]
+    form.reason._value = reason or ""
+    submitted = interaction(league.bot, None, user=asked.user)
+    submitted.guild = league.guild
+    await form.on_submit(submitted)
+    return submitted
+
+
+async def _cancel(league: SeasonLeague, reason: str | None = None,
+                  user_id: int = SIGNING_UP) -> Any:
+    """`/signup cancel` of *user_id*, its form submitted with *reason*: the form's
+    interaction. The queue is not run."""
+    return await _submit_cancel(league, await _ask_cancel(league, user_id), reason)
+
+
+async def _cancel_audits(league: SeasonLeague) -> list[dict[str, Any]]:
+    from tests.support.settings_league import audit_rows
+
+    return [row for row in await audit_rows(league.db_path) if row["change_type"] == CANCEL_AUDIT]
+
+
+def _cancelled(league: SeasonLeague) -> list[str]:
+    return [text for text in league.channel(KIMI_CHANNEL).texts if "cancelled" in text.lower()]
+
+
+def _told_admin(submitted: Any) -> str:
+    """Everything Admin was told on submitting the form: its acknowledgement and its updates."""
+    from tests.support.settings_league import said
+
+    return "\n".join(said(submitted))
+
+
+def _refusal_lines(league: SeasonLeague) -> list[str]:
+    return [line for line in league.bot.log_channel.sent
+            if line.startswith("⛔") and "refused for" in line]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
+@pytest.mark.parametrize(
+    "state, reason",
+    [
+        pytest.param("PENDING_SIGNUP_COMPLETION", CANCEL_REASON, id="filling-in"),
+        pytest.param("PENDING_ADMIN_APPROVAL", CANCEL_REASON, id="awaiting-review"),
+        pytest.param("AWAITING_CORRECTION_PARAMETER", CANCEL_REASON, id="awaiting-a-field"),
+        pytest.param("PENDING_DRIVER_CORRECTION", CANCEL_REASON, id="correcting"),
+        pytest.param("PENDING_ADMIN_APPROVAL", None, id="awaiting-review-no-reason"),
+    ],
+)
+async def test_a_manager_s_cancellation_ends_the_signup_tells_the_driver_and_holds_the_channel(
+    tmp_path, state, reason,
+):
+    """Kimi's signup is under way at *state*, his signup channel (6405) standing. League manager
+    Admin (77) runs `/signup cancel` of Kimi and submits the form with *reason* (or none). When
+    the queue runs, Kimi is Not Signed Up and his wizard ended; a `signup.end` on the league lane
+    asked back a `signup.closing` on his channel's lane; his channel is told once that Admin
+    cancelled his signup, with the reason where one was given; his typing there is revoked, the
+    channel's deletion armed a day on, and his 24-hour timer disarmed. The log channel holds one
+    "Signup | Cancelled" line naming Admin and Kimi (and the reason); one `SIGNUP_CANCEL` audit
+    entry by Admin records Kimi, his state before and Not Signed Up after; and Admin is told the
+    signup was cancelled."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state=state)
+    _held(league, KIMI_CHANNEL)
+
+    submitted = await _cancel(league, reason)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert (await _wizard(league))["wizard_state"] == "UNENGAGED"
+    [end] = await _changes_of(league, END_KIND)
+    [closing] = await _changes_of(league, CLOSING_KIND)
+    assert (_lane(end), _lane(closing)) == ("league", KIMI_LANE)
+    assert end["id"] < closing["id"]
+    [told] = _cancelled(league)
+    assert f"<@{SIGNING_UP}>" in told and "cancelled by **Admin**" in told
+    assert (reason in told) if reason else ("Reason" not in told)
+    assert _locked(league)
+    assert _armed(league, DELETE_TIMER) == [
+        (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
+    ]
+    disarmed = [call.args for call in league.bot.scheduler_service.disarm.call_args_list]
+    assert (INACTIVITY_TIMER, str(SIGNING_UP)) in disarmed
+    [line] = [line for line in league.bot.log_channel.sent if "| Signup | Cancelled" in line]
+    assert f"<@{REVIEWER}>" in line and f"<@{SIGNING_UP}>" in line
+    assert (reason in line) if reason else ("reason:" not in line)
+    [entry] = await _cancel_audits(league)
+    assert entry["actor_id"] == REVIEWER
+    assert entry["old_value"] == {"state": state, "discord_user_id": str(SIGNING_UP)}
+    assert entry["new_value"] == {"new_state": "NOT_SIGNED_UP", "reason": reason}
+    assert "✅ Signup cancelled." in _told_admin(submitted)
+
+
+async def _approved_meanwhile(league: SeasonLeague) -> None:
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+
+
+async def _signup_off_meanwhile(league: SeasonLeague) -> None:
+    await league.switch("signup", False)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
+@pytest.mark.parametrize(
+    "meanwhile, state_after",
+    [
+        pytest.param(_approved_meanwhile, "UNASSIGNED", id="approved-meanwhile"),
+        pytest.param(_signup_off_meanwhile, "PENDING_ADMIN_APPROVAL", id="signup-off-meanwhile"),
+    ],
+)
+async def test_a_cancellation_is_judged_again_when_its_turn_comes(tmp_path, meanwhile, state_after):
+    """Kimi's signup awaits review, his signup channel standing. Admin (77) runs `/signup cancel`
+    of Kimi and submits the form; before the queue runs, another manager approves Kimi
+    (Unassigned), or the signup module is switched off. When the queue runs the cancellation is
+    refused: Admin is told why, one refusal line is written, Kimi stays as the meanwhile left him,
+    his channel is told nothing, and no audit entry is written."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    _held(league, KIMI_CHANNEL)
+
+    submitted = await _cancel(league, CANCEL_REASON)
+    await meanwhile(league)
+    await run_queue(league.bot)
+
+    assert "⛔" in _told_admin(submitted) and "✅" not in _told_admin(submitted)
+    assert len(_refusal_lines(league)) == 1
+    assert await _driver_state(league) == state_after
+    assert league.channel(KIMI_CHANNEL).texts == []
+    assert await _cancel_audits(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
+async def test_a_cancellation_whose_signup_channel_is_gone_ends_the_signup_and_posts_nothing(
+    tmp_path,
+):
+    """Kimi is part-way through signing up, his wizard naming signup channel 6405, which has been
+    deleted from the server. Admin (77) runs `/signup cancel` of Kimi and submits the form. When
+    the queue runs, Kimi is Not Signed Up, one `SIGNUP_CANCEL` audit entry is written, Admin is
+    told the signup was cancelled, nothing is posted, and no lane is left stopped."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    league.channels.pop(KIMI_CHANNEL)
+
+    submitted = await _cancel(league, CANCEL_REASON)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(await _cancel_audits(league)) == 1
+    assert "✅ Signup cancelled." in _told_admin(submitted)
+    assert await stopped_job(league.db_path, "league") is None
+    assert await stopped_job(league.db_path, KIMI_LANE) is None
+    assert KIMI_CHANNEL not in league.channels
