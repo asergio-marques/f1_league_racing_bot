@@ -565,8 +565,9 @@ async def test_the_invalidation_notice_notifies_the_division_s_role(
     longer stand begins with Pro's role mention and notifies that role alone, no member and not
     everyone, its words after the mention as they always were and naming the track. Where Pro
     has no role set (0), the notice mentions no role, never `<@&0>`, and notifies nobody. Where
-    forecasts are posted as pictures (images on, a forecast's picture drawn), the notice is still
-    text alone, carrying no file."""
+    forecasts are posted as pictures (images on, the forecast picture drawing stood in to hand
+    back a PNG should anything draw one; no forecast is posted again), the notice is still text
+    alone, carrying no file."""
     league = await ongoing_league(tmp_path, weather=True, images=pictures, horizons=HORIZONS)
     if pictures:
         monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", AsyncMock(
