@@ -421,19 +421,16 @@ season, which the registry and the check both read, so that they judge the same 
 
 **An output switched to a picture does the same before its save.** The image module's toggle and its
 switch-on run `picture_channels_check` (`core/services/modules/picture_channels.py`) as a step
-before the save. It is handed a reader of the outputs the change switches on, read on the
-connection it holds, and gathers the channels those outputs post to through the
-`picture_channels_read` hook, in the same connection and with `live_divisions_on(db,
-cancelled=False)`, so that a cancelled division's channels are passed over. Core answers for the
-lineup and the calendar alone (`core_picture_channels`: each division's channel, and the command
-channel once for both), and weather, results and attendance each for their own, while on. Each
-channel is judged once, strictly (`channel_presence`), on every need its use has with the output
-counted as a picture (`attaching`, `channel_needs.py`): gone or lacking refuses, and a channel it
-cannot read ends the setting on a fault, nothing saved, which is the rule of Channels in
-core_specification.md and not the stand-aside of a channel being set. The step names no module:
-the image module calls it, never the hook. *Rejected:* asking the image module's drawing for what a
-picture attaches, which awaits where the connection is held (`architecture.md`, "The database"), and
-which would answer the same, the output being counted as a picture.
+before the save, handed a reader of the outputs the change switches on. It gathers the channels they
+post to through the `picture_channels_read` hook, in the connection the reader used and with
+`live_divisions_on(db, cancelled=False)`, so that a cancelled division's channels are passed over,
+and judges each distinct (channel, needs) once with `channel_presence`. `core_picture_channels` is
+core's own answer, for the lineup and the calendar alone: each division's channel, and the command
+channel once for both, their needs those of `DIVISION_CHANNEL_NEEDS` and `INTERACTION_CHANNEL_NEEDS`
+with the file a picture attaches added (`attaching`, `channel_needs.py`). Its `drawing` parameter is
+kept for the shape every answer has and is not asked. `architecture.md`, "How modules and core fit
+together", gives the arrangement and why the drawing is not asked; core_specification.md,
+"Channels", the rules a league sees.
 
 Each file's docstring holds its change's check, its steps and the reason for each. Three shapes
 recur:
