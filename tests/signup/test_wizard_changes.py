@@ -2366,26 +2366,26 @@ async def _signup_audits(league: SeasonLeague) -> list[str]:
 
 
 @pytest.mark.parametrize(
-    "first, second, refusal, audited",
+    "first, second, refusal, audited, rejections, withdrawals",
     [
         pytest.param(_reject_asked, _press_cancel, "This signup has already ended.",
-                     "SIGNUP_REJECT", id="withdrawal-behind-rejection",
+                     "SIGNUP_REJECT", 1, 0, id="withdrawal-behind-rejection",
                      marks=pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)),
         pytest.param(_press_cancel, _reject_asked,
                      "This signup has moved on since you pressed Reject.",
-                     "SIGNUP_WITHDRAW", id="rejection-behind-withdrawal",
+                     "SIGNUP_WITHDRAW", 0, 1, id="rejection-behind-withdrawal",
                      marks=pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)),
     ],
 )
 async def test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at_its_turn(
-    tmp_path, first, second, refusal, audited,
+    tmp_path, first, second, refusal, audited, rejections, withdrawals,
 ):
     """Kimi's signup awaits review, his signup channel (6405) standing. One ending of it is asked
     and, before the queue runs, a second: manager 77 rejects it (typing the reason) and Kimi then
     presses Cancel Signup; or Kimi presses Cancel Signup and 77 then types a Reject reason. The
     second is queued, never answered that it "has already been asked for". When the queue runs
-    the first ends the signup: Kimi is Not Signed Up, his channel is told once, and the first's
-    audit entry alone is written. The second is refused by its own check when its turn comes:
+    the first ends the signup: Kimi is Not Signed Up, his channel gets the first's notice alone
+    (rejected, or withdrawn), and the first's audit entry alone is written. The second is refused by its own check when its turn comes:
     Kimi is told his signup has already ended, or 77 that the signup has moved on since they
     pressed Reject."""
     league = await _league(tmp_path)
@@ -2400,7 +2400,8 @@ async def test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at
     assert "already been asked for" not in told, told
     assert refusal in told, told
     assert await _driver_state(league) == "NOT_SIGNED_UP"
-    assert len(_rejected(league)) + len(_told(league)) == 1
+    assert len(_rejected(league)) == rejections
+    assert len(_told(league)) == withdrawals
     assert await _signup_audits(league) == [audited]
 
 
