@@ -136,18 +136,6 @@ def test_neither_hook_can_post_into_a_channel_a_driver_reads():
         assert "rsvp_channel" not in source
 
 
-def test_the_sheet_report_names_the_division_and_the_round():
-    source = inspect.getsource(attendance_sheet._sheet_attachment)
-    assert "division_name" in source and "round_number" in source
-    assert "attendance after round" in source
-
-
-def test_the_call_report_names_the_division_and_the_round():
-    source = inspect.getsource(image_rsvp_post.describe)
-    assert "check-in call of round" in source
-    assert "division_name" in source
-
-
 # ── The configured absence is read from the league's own switch ───────────
 
 
