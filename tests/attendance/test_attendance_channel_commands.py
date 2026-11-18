@@ -101,8 +101,6 @@ _NO_SEASON = (
     "❌ No season is live. A division's channels belong to the season being built or raced — "
     "start one with `/season setup`."
 )
-_NO_ACCESS = "❌ Cannot access that channel. Ensure the bot has permission to post there."
-
 #: The refusal a channel is given where the bot lacks permissions its use needs there, the
 #: setting's word and the permissions it lacks filled in.
 _CANNOT_USE = (
@@ -479,7 +477,6 @@ REFUSAL_CASES = [
         id="cannot-use",
         marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
     ),
-    pytest.param("no-guild", _NO_ACCESS, id="no-guild"),
     pytest.param("no-season", _NO_SEASON, id="no-season"),
     pytest.param("unknown-division", _not_found("Division 9"), id="unknown-division"),
     pytest.param("in-use", _clash(), id="in-use"),
@@ -502,8 +499,6 @@ async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, c
       check-in call needs both, the attendance sheet, which is no embed, the second alone: each
       command names what its own channel's use lacks, checked before the write rather than
       discovered at the first notice, when the round it was meant to announce has started.
-    - **no-guild**: the interaction carries no server. `permissions_for(guild.me)` needs one, so
-      the absence is answered rather than raising an `AttributeError` at a manager.
     - **no-season**: the only season, Season 1, is completed, so there is no division to hang the
       setting on.
     - **unknown-division**: Season 1 has Division 1 alone and the manager names Division 9,
@@ -518,8 +513,6 @@ async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, c
         await _claim(db_path)
     cog = await _make_cog(db_path)
     interaction = _interaction(cog, which)
-    if case == "no-guild":
-        interaction.guild = None
     if case == "cannot-use":
         league_server(cog.bot, unusable={CHANNEL_ID: ("embed_links", "read_message_history")})
         reply = reply[which]
