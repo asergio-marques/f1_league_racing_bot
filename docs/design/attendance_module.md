@@ -581,9 +581,8 @@ switch-on's reader (`kept_channels`) reads it too, and the registry's answer its
 `channel_uses` asks the module's switch, which is how the channels yield while it is off. The
 switch-on's save clears a taken channel through the column's own writer (`set_rsvp_channel`,
 `set_attendance_channel`), audited as that setting's change, and the reader asks `channel_needs` as
-the check runs. `core.md`, "Each module's switch is a change of the module's own", and
-`architecture.md`, "How modules and core fit together", give the arrangement; core_specification.md,
-"Channels", the rules.
+the check runs. `core.md`, "Core's change types", and `architecture.md`, "How modules and core fit
+together", give the arrangement; core_specification.md, "Channels", the rules.
 
 ### What attendance's channels need of the bot
 

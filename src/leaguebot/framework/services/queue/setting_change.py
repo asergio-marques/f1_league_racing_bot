@@ -73,9 +73,10 @@ one ends the setting as a fault in the save does: nothing is saved, no `SAVE` is
 member is told so and to run it again (`NOTHING_SAVED`), one failure line is written and the lane
 goes on. A step may instead end the setting refused (`HALTED`): its result gives the reply and the
 reason, no `SAVE` is planned, and the one line, a ⛔ refusal, is formed here from the reason, the
-step writing none. Either way nothing is saved and nothing is audited. *Rejected:* an `After` step that undoes the switch-on, which would leave the module on for
-a moment and whose undo is a second save that can itself fail; and the check in `check()`, which
-carries no findings and runs at the ask as well.
+step writing none. Either way nothing is saved and nothing is audited. *Rejected:* an `After` step
+that undoes the switch-on, which would leave the module on for a moment and whose undo is a second
+save that can itself fail; and the check in `check()`, which carries no findings and runs at the ask
+as well.
 
 **Recorded twice, in one save, but for a step that carries the line.** The value, its audit entry
 and its line share one save, save where a step after it `carries_line` (the arming of the daily
@@ -379,6 +380,6 @@ def setting_change(setting: Setting) -> ChangeType:
 
 
 __all__ = [
-    "After", "Before", "FOUND", "HALTED", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
-    "setting_change",
+    "After", "Before", "FOUND", "HALTED", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved",
+    "Setting", "setting_change",
 ]

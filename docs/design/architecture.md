@@ -277,19 +277,20 @@ judged, a round amended or its timed work armed again, a round's timed work read
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
-command sets it or as a module is switched on (weather, results and attendance answer it only while the module is on, signup whatever its switch), the factory reset gathering the channels each module holds, a round's drawn phases
-read, a driver's signup name, username and nationality read for a season, with whether a nationality
-is collected, which the modules that draw a driver ask through core's reader, the divisions a
-driver's accounts raced in read, a driver's standing in a division read for the season's history, a
-season's fingerprint taken, a season's pending test-mode steps read, the test-mode review's marks
-read, a season's confirmation judged, a division's final round read, a season ending, a season,
-division, round or driver deleted, a driver merged into another or turned down, a driver's account
-changed, a base role changed, the bot packed, test mode turned on, the bot's in-memory state
-cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
-builder, or the module's wiring it calls, signs each module up to it before the bot connects. Core
-calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
-out"). A module turned on or off is not a hook but a change of the module's own, which core asks for
-by its kind (see "Each module turns itself on and off").
+command sets it or as a module is switched on (weather, results and attendance answer it only while
+the module is on, signup whatever its switch), the factory reset gathering the channels each module
+holds, a round's drawn phases read, a driver's signup name, username and nationality read for a
+season, with whether a nationality is collected, which the modules that draw a driver ask through
+core's reader, the divisions a driver's accounts raced in read, a driver's standing in a division
+read for the season's history, a season's fingerprint taken, a season's pending test-mode steps
+read, the test-mode review's marks read, a season's confirmation judged, a division's final round
+read, a season ending, a season, division, round or driver deleted, a driver merged into another or
+turned down, a driver's account changed, a base role changed, the bot packed, test mode turned on,
+the bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read),
+core declares a hook. The builder, or the module's wiring it calls, signs each module up to it
+before the bot connects. Core calls whoever signed up, and never imports a module, the bot's type
+aside (see "How the code is laid out"). A module turned on or off is not a hook but a change of the
+module's own, which core asks for by its kind (see "Each module turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
@@ -407,14 +408,15 @@ hands it to the change that cascades, as results' switch-off is handed attendanc
 
 A module that keeps channels while it is off has its switch-on check them. The switch-on is a
 `Setting` with a step before its save, which core's check (`core/services/modules/kept_channels.py`)
-supplies and which the module hands its own reader of the channels it kept, with its own needs of the
-bot in each: core names no module in it, and each module's reader is built from the one table of its
-channels that its confirmation faults also read. The channel hook is read as the switch-on runs and a
-module answers it only while it is on, so a channel it kept does not count against another setting
-while it is off, and the switch-on claims it again, clearing what another setting took meanwhile
-(core_specification.md, "Modules" and "Channels").
-*Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are in
-`setting_change`'s docstring.
+supplies and which the module hands its own reader of the channels it kept, with its own needs of
+the bot in each: core names no module in it, and each module's reader is built from the one
+statement of its channels that its confirmation faults also read (a table of them, or, for weather's
+one channel, the constants it is named and set by). The channel hook is read as the switch-on runs
+and a module answers it only while it is on, so a channel it kept does not count against another
+setting while it is off, and the switch-on claims it again, clearing what another setting took
+meanwhile (core_specification.md, "Modules" and "Channels").
+*Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are
+in `setting_change`'s docstring.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (after PEP 8's convention, extended to the files of one module). What a
@@ -626,26 +628,26 @@ queue's"), and the work after it that the setting does not need (checking it aga
 arming or removing a timed job, granting a role to every driver, asking the hub's panel to be posted
 again as the bot's own change, posting the signup information in the new signup channel where a
 window is open) is work nothing later depends on. Work the save waits on may come before it (a
-module's kept channels checked before it is switched on): it saves nothing, and a fault in it, or a refusal by it,
-ends the setting with nothing saved and no audit record. A fault in any of these leaves nothing
-half-done and nothing behind it on the lane waits on it. A fault in a step before the save, or in the
-save, is rolled back whole, so nothing is saved and the member can simply ask again; a fault in a
-step after the save leaves the setting
-saved, so asking again with the same value saves nothing and repeats no step, and the reply says
-what was not done, or what to do by hand, where the step has anything to say. So such a step carries
-`Step.on_fault`: where it raises, the queue does not stop the lane but marks the job done with what
-`on_fault` returns, in a save of its own with its lines, and the change carries on to its next step
-or finishes. A change type may likewise give `ChangeType.on_check_fault` for a check that raises as
-a **member's** change starts: the change is ended as REFUSED in one save, with the failure line in
-place of a refusal's, and the reply it returns. What the member is told and what the log channel
-records of either is the core specification's "How a change is carried out"; the full detail goes to
-the host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
-must hold. `framework/services/queue/setting_change.py` builds both callbacks for every settings
-command once. *Rejected:* a step that catches its own fault, which would leave its partial writes on
-the save's connection and could not catch what fails after it returns, the queue's own audit and
-line writes and the commit; stopping the lane for a setting, which would hold every other change for
-a fault that either the member cures by asking again (a save rolled back) or that nothing later on
-the lane depends on (a step after it).
+module's kept channels checked before it is switched on): it saves nothing, and a fault in it, or a
+refusal by it, ends the setting with nothing saved and no audit record. A fault in any of these
+leaves nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the
+save saves nothing, and one in the save is rolled back whole, so nothing is saved and the member can
+simply ask again; a fault in a step after the save leaves the setting saved, so asking again with
+the same value saves nothing and repeats no step, and the reply says what was not done, or what to
+do by hand, where the step has anything to say. So such a step carries `Step.on_fault`: where it
+raises, the queue does not stop the lane but marks the job done with what `on_fault` returns, in a
+save of its own with its lines, and the change carries on to its next step or finishes. A change
+type may likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change
+starts: the change is ended as REFUSED in one save, with the failure line in place of a refusal's,
+and the reply it returns. What the member is told and what the log channel records of either is the
+core specification's "How a change is carried out"; the full detail goes to the host's log. A step
+that is `undiscardable` may not carry `on_fault`, since it is a step a stop must hold.
+`framework/services/queue/setting_change.py` builds both callbacks for every settings command once.
+*Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
+connection and could not catch what fails after it returns, the queue's own audit and line writes
+and the commit; stopping the lane for a setting, which would hold every other change for a fault
+that either the member cures by asking again (a save rolled back) or that nothing later on the lane
+depends on (a step after it).
 
 One kind of setting is not wholly so: a change that recalculates and posts as `/attendance sync`
 does follows the sync's rule whatever starts it, a setting included. Its cards, lineups and sheets
@@ -714,12 +716,12 @@ stop nobody yet holds the role to clear.
   command that sets such a channel keeps to this as it moves onto the queue. So no stopped head ever
   has a remaining job that claims a channel, an overtaking change runs to its own end before the
   head is tried again, and a channel setting's check as the change starts is still the save's last
-  judgement of the state, as is the reading a module's switch-on makes of its kept channels before its
-  save: a module's channels are not counted while it is off, and its switch-on claims them again, so
-  a switch-on must stay a change that never stops its lane, its steps before the save and its save
-  ending on a fault. That invariant is the one a later reader could tune away: a change that
-  can stop its lane and claims a channel would need the save to re-check, or would need to be barred
-  from being overtaken.
+  judgement of the state, as is the reading a module's switch-on makes of its kept channels before
+  its save: a module's channels are not counted while it is off, and its switch-on claims them
+  again, so a switch-on must stay a change that never stops its lane, its steps before the save and
+  its save ending on a fault. That invariant is the one a later reader could tune away: a change
+  that can stop its lane and claims a channel would need the save to re-check, or would need to be
+  barred from being overtaken.
 
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
@@ -813,23 +815,22 @@ stop nobody yet holds the role to clear.
 
   A league's settings share the mechanism rather than each forming its own: a command declares a
   `Setting` (its check, any steps before its save, its save on a connection, its reply and the
-  tables it writes) and `setting_change` builds the change type, so that the line, whether an audit record is written,
-  the answer for a value already held and the answer for a fault are decided in one place. A
-  setting's value, its audit record and its line are one save, after any steps before it (a module's
-  kept channels checked before it is switched on, which save nothing and end the setting on a
-  fault, or refused, with no audit record), save where a step after it arms the
-  daily portrait job, grants a role to every driver where it replaces one gone from the server
-  while the season's configuration is fixed, stands the old hub down and sets the new one's
-  permissions once its channel is moved, or sets the new signup channel's permissions and then
-  clears the old one's: there the value and the audit record share the save and
-  the line follows in that step's own save, so that a fault of the bot's own in that step — a
-  failed arming, a failed grant, the guild or the new hub's channel gone missing — records no
-  success, while a permission edit Discord refuses, which the step reports rather than raises, or a
-  base role gone from the server, records a success with that fault named beneath it. *Rejected:* a
-  bespoke change type for each command, which forms the line, the audit and the fault answer a
-  score of ways. `/bot init` alone is a change type of its own rather than a `Setting`: it claims
-  the server, where a setting writes one column of a server already claimed
-  (`core/services/settings/bot_init_change.py`).
+  tables it writes) and `setting_change` builds the change type, so that the line, whether an audit
+  record is written, the answer for a value already held and the answer for a fault are decided in
+  one place. A setting's value, its audit record and its line are one save, after any steps before
+  it (a module's kept channels checked before it is switched on, which save nothing and end the
+  setting on a fault, or refused, with no audit record), save where a step after it arms the daily
+  portrait job, grants a role to every driver where it replaces one gone from the server while the
+  season's configuration is fixed, stands the old hub down and sets the new one's permissions once
+  its channel is moved, or sets the new signup channel's permissions and then clears the old one's:
+  there the value and the audit record share the save and the line follows in that step's own save,
+  so that a fault of the bot's own in that step — a failed arming, a failed grant, the guild or the
+  new hub's channel gone missing — records no success, while a permission edit Discord refuses,
+  which the step reports rather than raises, or a base role gone from the server, records a success
+  with that fault named beneath it. *Rejected:* a bespoke change type for each command, which forms
+  the line, the audit and the fault answer a score of ways. `/bot init` alone is a change type of
+  its own rather than a `Setting`: it claims the server, where a setting writes one column of a
+  server already claimed (`core/services/settings/bot_init_change.py`).
 
 ---
 

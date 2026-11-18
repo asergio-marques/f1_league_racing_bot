@@ -4,8 +4,8 @@
 `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("weather")` and
 `module_off("weather")` (`framework/models/change.py`), so core's cog names the change without
-importing weather. Each save writes only `server_configs.weather_module_enabled`, weather's own
-column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
+importing weather. The switch-off's save writes only `server_configs.weather_module_enabled`,
+weather's own column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 `tests/repository/test_architecture_rules.py`).
 
 **The switch-on checks the channels weather kept while it was off, before its save**
@@ -14,7 +14,7 @@ channel gone from the server is named, one another setting took meanwhile is nam
 the save through `set_division_forecast_channel`, audited as the forecast channel's own change
 (from the channel to none), with a line beneath the Success line for each, and one the bot cannot
 use keeps weather off, refused. A check that cannot be made ends the switch-on on a fault, nothing
-saved. The save may then write `divisions` as well as the flag.
+saved. The switch-on's save writes the flag and may clear a forecast channel in `divisions`.
 
 **The switch-off removes the season's weather jobs after the save, not before**
 (`docs/design/architecture.md`, "How modules and core fit together"): the flag going down and its

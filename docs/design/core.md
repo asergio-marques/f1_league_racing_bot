@@ -177,6 +177,7 @@ folder.
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
+| A module switched on | `kept_channels` (`kept_channels_check`) | nothing: it reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
 
@@ -362,12 +363,13 @@ and attendance keep their channels while off, so each switch-on is a `Setting` w
 the save (`Setting.before`, `framework.md`, "Settings"): `kept_channels_check`
 (`core/services/modules/kept_channels.py`). It takes the reader of the module's own channels that
 each switch-on hands it (`KeptReader`: a connection and the live season's divisions in, the kept
-channels out, awaiting only the connection), asks the registry, through the module's channel-uses
-hook, which are taken, and `channel_presence` which are gone or unusable. `architecture.md`, "How modules and core fit together", gives the arrangement
-and the invariant the reading rests on; core_specification.md, "Modules" and "Channels", the rules a
-league sees. `live_divisions_on`
-(`channel_registry_service`) names the divisions of the live season, which the registry and the
-check both read, so that they judge the same channels.
+channels out, awaiting only the connection), asks the registry which are taken (`find_channel_use`,
+through the bot's `channel_uses_read` hook, which every module holding channels answers), and
+`channel_presence` which are gone or unusable. `architecture.md` gives the arrangement in "How
+modules and core fit together" and the invariant the reading rests on in "How a change is carried
+out"; core_specification.md, "Modules" and "Channels", gives the rules a league sees.
+`live_divisions_on` (`channel_registry_service`) names the divisions of the live season, which the
+registry and the check both read, so that they judge the same channels.
 
 Each file's docstring holds its change's check, its steps and the reason for each. Three shapes
 recur:
@@ -388,10 +390,10 @@ recur:
   plans them before the save that switches test mode off, asks (`fill`) with a flag that the jobs are
   due only where test mode is still on as each comes up, and the module's job reads it; core names
   no module's step.
-- **A fault in a job stops the lane**, save in `/bot init`'s save, a `Setting`'s save and the
-  steps after it, and a role move (`role_moves.role_move_step`), each of which ends on a fault
-  instead. `/season setup`'s
-  docstring says why its save stops the lane where `/bot init`'s does not.
+- **A fault in a job stops the lane**, save in `/bot init`'s save, a `Setting`'s steps before its
+  save, its save and the steps after it, and a role move (`role_moves.role_move_step`), each of
+  which ends on a fault instead. `/season setup`'s docstring says why its save stops the lane where
+  `/bot init`'s does not.
 - **A step the league cannot discard** is marked so where dropping it would leave a season or a
   round stuck: the approval's arming, an amendment's arming, a cancellation's save, a
   re-arming's two jobs, and a review's `forget`. The mid-season confirmation has none, for the

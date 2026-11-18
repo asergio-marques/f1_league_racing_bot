@@ -88,13 +88,13 @@ fires in between is dropped, which is why the removal can follow the flag
 (`module_switch_settings`' docstring, `tests/weather/test_weather_module_gate.py`). What a
 switch-off keeps is the weather specification's opening rules.
 
-The switch-on runs a step before its save, `kept_channels_check` (`core.md`, "Each module's switch
-is a change of the module's own"), handed `forecast_channel.kept_channels`, a reader that asks
-`channel_needs` of the drawing as the check runs, so that a picture switched on meanwhile counts.
-The save raises the flag and, for a forecast channel another setting took while weather was off,
-clears it through `set_division_forecast_channel`, which takes `None` for that, with the audit entry
-of the channel's own setting. `_LABEL` and `_COMMAND` are the one statement of how the channel is
-named and set again, which the confirmation's faults and the check both use.
+The switch-on runs a step before its save, `kept_channels_check` (`core.md`, "Core's change types"),
+handed `forecast_channel.kept_channels`, a reader that asks `channel_needs` of the drawing as the
+check runs, so that a picture switched on meanwhile counts. The save raises the flag and, for a
+forecast channel another setting took while weather was off, clears it through
+`set_division_forecast_channel`, which takes `None` for that, with the audit entry of the channel's
+own setting. `_LABEL` and `_COMMAND` are the one statement of how the channel is named and set
+again, which the confirmation's faults and the check both use.
 
 ### Who writes each table
 
@@ -266,11 +266,11 @@ directions are `Setting`s built by `setting_change`, which holds what every sett
 with a value already held and with a fault. Their checks run as the command is answered and again as
 the change starts. The forecast channel's setting is handed core's `channel_uses_read` hook, as
 results' and attendance's are, so that it asks which job a channel already does without importing
-the module that holds the answer. `channel_uses` asks weather's own switch, which is how the forecast
-channel yields while weather is off; the switch-on's save clears it, if taken, through the
-forecast channel's writer, audited as that setting's change. `core.md`, "Each module's switch is a
-change of the module's own", and `architecture.md`, "How modules and core fit together", give the
-arrangement; core_specification.md, "Channels", the rules.
+the module that holds the answer. `channel_uses` asks weather's own switch, which is how the
+forecast channel yields while weather is off; the switch-on's save clears it, if taken, through the
+forecast channel's writer, audited as that setting's change. `core.md`, "Core's change types", and
+`architecture.md`, "How modules and core fit together", give the arrangement; core_specification.md,
+"Channels", the rules.
 
 ### The steps weather plans for an amendment
 
