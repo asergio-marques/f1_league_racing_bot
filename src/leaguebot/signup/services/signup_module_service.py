@@ -309,6 +309,22 @@ class SignupModuleService:
         """
         await db.execute("DELETE FROM signup_module_config")
 
+    async def switch_off_on(self, db: aiosqlite.Connection, *, now: datetime) -> None:
+        """Write the signup module's switch-off on *db*, committing nothing, so that
+        `signup_off_change`'s save carries it with the switch-off's audit: the configuration is
+        forgotten (`delete_config_on`), the open window's record is stamped closed at *now*, and
+        the module's flag comes down.
+
+        The window's record is stamped closed with the module's going off, or the next opening
+        would make a second open window, which the schema refuses.
+        """
+        await self.delete_config_on(db)
+        await db.execute(
+            "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
+            (now.isoformat(),),
+        )
+        await db.execute("UPDATE server_configs SET signup_module_enabled = 0")
+
     async def move_base_role_overwrite(
         self, guild: discord.Guild, old_role_id: int | None, new_role: discord.Role
     ) -> None:

@@ -198,14 +198,7 @@ def signup_off_change(
         config = await cursor.fetchone()
         channel_id = None if config is None else config["signup_channel_id"]
         window_open = ctx.payload["window"] is not None
-        await signup_module_service().delete_config_on(db)
-        # The window's record is stamped closed with the module's going off, or the next opening
-        # would make a second open window, which the schema refuses.
-        await db.execute(
-            "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
-            (now().isoformat(),),
-        )
-        await db.execute("UPDATE server_configs SET signup_module_enabled = 0")
+        await signup_module_service().switch_off_on(db, now=now())
         return StepResult(
             result={},
             audits=(AuditRecord("MODULE_DISABLE", {"module": "signup"}, {}),),

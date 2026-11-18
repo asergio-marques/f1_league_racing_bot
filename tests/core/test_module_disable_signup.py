@@ -666,7 +666,7 @@ async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, m
     league = await _league(tmp_path)
     channel = _signup_channel(league)
     monkeypatch.setattr(
-        type(league.bot.signup_module_service), "delete_config_on",
+        type(league.bot.signup_module_service), "switch_off_on",
         AsyncMock(side_effect=RuntimeError("the save failed")),
     )
     interaction = await _switch_off(league)
@@ -819,7 +819,7 @@ async def test_a_switch_off_discarded_after_the_close_says_what_the_close_did(tm
 
     league = await _league(tmp_path, SIGNING_UP, open_window=True)
     monkeypatch.setattr(
-        type(league.bot.signup_module_service), "delete_config_on",
+        type(league.bot.signup_module_service), "switch_off_on",
         AsyncMock(side_effect=RuntimeError("the save failed")),
     )
     interaction = await _switch_off(league)
