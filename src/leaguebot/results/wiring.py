@@ -236,10 +236,13 @@ def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
 
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign results' uses of a channel up to the hook a channel being set is asked of each module
-    through, handed the database's path."""
+    through, handed the module service, which answers whether results is on, and the database's
+    path."""
     from leaguebot.results.services.module import division_channels as results_channels
 
-    bot.channel_uses_read.subscribe(partial(results_channels.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(
+        partial(results_channels.channel_uses, bot.module_service, bot.db_path)
+    )
 
 
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:

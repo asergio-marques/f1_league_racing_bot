@@ -158,16 +158,19 @@ async def division_lines(
 
 
 async def channel_uses(
-    db_path: str, *, channel_id: int, divisions: Mapping[int, str]
+    modules: "ModuleService", db_path: str, *, channel_id: int, divisions: Mapping[int, str]
 ) -> list[ChannelUse]:
     """The results, standings and verdicts channels of those of *divisions* (the live season's, by
     id, naming each) that are *channel_id*, each as the use of it, naming its division, in that
-    order; empty where none is.
+    order; empty where none is, and always where the results module is off.
 
     Subscribed to core's `channel_uses_read`, which asks it as a channel is set, so that a
-    channel does one job. Asked no switch: a channel results holds is held whether results is on
-    or off. Reads only.
+    channel does one job. A switched-off module answers for none of its channels, which it keeps:
+    another setting may take one, and the module clears it when it is switched on again
+    (`core/services/modules/kept_channels.py`). Reads only.
     """
+    if not await modules.is_enabled(SWITCH_KEY):
+        return []
     uses: list[ChannelUse] = []
     async with get_connection(db_path) as db:
         for column, setting, _label, _command, _unset in _CHANNELS:
