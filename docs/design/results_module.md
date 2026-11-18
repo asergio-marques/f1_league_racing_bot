@@ -663,15 +663,15 @@ fallbacks").
 
 ### What results' channels need of the bot
 
-`division_channels.channel_needs` states it, the one source of it within results: the results,
-standings and verdicts channels each need View Channel, Send Messages and Read Message History, the
-last because a repost finds what the bot posted last and takes it down, and Attach Files where the
-drawing answers that the channel's pictures could attach one (`results`, `standings`, and `verdicts`
-or `verdict_banner` for the verdicts channel, where attendance's sanction cards go too). The
-confirmation's faults (`division_channel_faults`) and the repost gate
-(`results_post_service.repost_channel_faults`) both read it, as does attendance's recalculation for
-the verdicts channel, so the gates judge a channel by one statement and cannot disagree about it.
-`manage_messages` is not asked: the bot deletes only its own posts.
+`division_channels.channel_needs` states it, the one source of it within results; the results
+specification, under "Assigning channels to divisions", says what each channel needs. The one thing
+the statement asks of the image module is whether a channel's pictures could attach a file, which the
+drawing answers by its switches (`results`, `standings`, and `verdicts` or `verdict_banner` for the
+verdicts channel, where attendance's sanction cards go too). The confirmation's faults
+(`division_channel_faults`) and the repost gate (`results_post_service.repost_channel_faults`) both
+read it, as does attendance's recalculation for the verdicts channel, so the gates judge a channel by
+one statement and cannot disagree about it. `manage_messages` is not asked: the bot deletes only its
+own posts.
 
 ### The `/results` group
 

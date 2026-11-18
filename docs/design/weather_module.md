@@ -476,13 +476,12 @@ composes sample words of its own.
 
 ### What the forecast channel needs of the bot
 
-`forecast_channel.channel_needs` states it, the one source of it within weather: View Channel and
-Send Messages, as a forecast is posted as text, and Attach Files where the drawing answers that the
-weather pictures could attach one. Neither Embed Links nor Read Message History is asked, a forecast
-being no embed and never reposted. `division_channel_faults` asks it of the drawing the wiring hands
-it and judges the channel by it (`approval_checks.channel_fault`, `architecture.md`, "Errors and
-failures", and `core.md`, "Services, and what each owns"), so weather holds no permission list of
-the channel's beside it.
+`forecast_channel.channel_needs` states it, the one source of it within weather; the weather
+specification, under "Configuring the weather module", "Channels", says what the channel needs. The
+one thing the statement asks of the image module is whether the weather pictures could attach a file.
+`division_channel_faults` asks it of the drawing the wiring hands it and judges the channel by it
+(`approval_checks.channel_fault`, `architecture.md`, "Errors and failures", and `core.md`, "Services,
+and what each owns"), so weather holds no permission list of the channel's beside it.
 
 ### The forecast provider
 
