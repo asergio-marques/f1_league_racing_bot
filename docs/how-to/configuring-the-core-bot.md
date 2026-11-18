@@ -293,7 +293,7 @@ The bot posts the configuration to the channel, a message per subject: test mode
 
 | The check | Only with |
 |---|---|
-| The signup channel, and the league's base role and driver role, are set; both roles are still on the server; the bot can grant the driver role | `signup` |
+| The signup channel, and the league's base role and driver role, are set; the signup channel is still on the server and the bot holds what it needs there; both roles are still on the server; the bot can grant the driver role | `signup` |
 | Every team's shorthand can be used | — |
 | A points configuration is attached, every attached one exists, and each is in order | `results` |
 | Inkscape is installed, every template a switched-on output draws is valid, every colour slot a drawing uses has a colour, and the driver-photo setting could fetch something | `images` |
@@ -537,8 +537,11 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 | A team's shorthand cannot be used | The team list is fixed once the configuration is confirmed, so only `/season abort` and configuring the season again clears it. `/season config-review` refuses such a shorthand, so a season rarely gets this far with one |
 | A division is missing a channel it posts to — its calendar or lineup channel, or one an enabled module needs — or one has been deleted from the server, or the bot lacks a permission it needs in one | Step 9 — the message names the division, the channel, the command and any permission missing |
 | A signup is unsettled | Step 10 |
+| The signup channel is unset, deleted from the server or missing a permission the bot needs there (module on) | The message names which. `/signup channel` sets or replaces one that is unset or gone; where the permissions are missing, give the bot them, since `/signup channel` is refused once the configuration is confirmed unless the channel is gone from the server |
 
-**And more, depending on what you turned on** — every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
+**And more, depending on what you turned on** — every check from step 6 made again: a missing or badly ordered points configuration, a signup channel that is unset, deleted or unusable, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
+
+**The approval is judged again when it runs.** The review stands for minutes and the approval may wait on the queue, so when its turn comes the dates, the division channels, the drawing program and every refusal an enabled module gives are checked once more, and again on each retry of its save. A refusal then approves nothing, ends the approval with its reply updated, and the queue goes on.
 
 The approval is acknowledged at once ("⏳ Approving season 3 …", naming its first job), the review is cleared, and the rest is carried out on the change queue, each step a job of its own (see [When a job stops the queue](#when-a-job-stops-the-queue)). The bot:
 

@@ -88,7 +88,7 @@ The module does nothing at all until it has a channel, and the league's two role
 
 > **The signup channel cannot be your bot command channel.** The bot refuses outright. They are doing opposite jobs — one is for drivers who may not type, the other is for admins who must.
 
-**These three block a season.** While the signup module is on, `/season config-review` withholds its button until the channel and both roles are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
+**These three block a season.** While the signup module is on, `/season config-review` withholds its button until the channel and both roles are set, the channel is still on the server and the bot holds what it needs there (View Channel, Send Messages, Embed Links, Manage Channel and Manage Permissions), and names the ones that are missing. `/season placements-review` withholds Approve for the same channel faults, and the approval refuses them again when it runs. Once the configuration is confirmed, a channel missing permissions is put right by giving the bot them; `/signup channel` replaces only a channel deleted from the server. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
 
 ---
 
