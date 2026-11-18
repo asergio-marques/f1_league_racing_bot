@@ -195,7 +195,6 @@ async def _valtteri_on_an_account_gone_from_the_server(league):
         pytest.param(_placing_mid_season, id="mid-season-placements"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#502: the DRIVER_REJECT audit entry does not name the driver")
 async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_save_then_the_role(
     tmp_path, build,
 ):

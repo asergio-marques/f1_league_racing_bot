@@ -26,7 +26,8 @@ job, in this order:
 A rejection is for a driver approved and not yet placed (Unassigned), while drivers are being
 placed: the one save turns them down (`write_transition`), calls the *driver_turned_down* hook
 each module signs up to (signup withdraws the approval of their signup), and writes the
-`DRIVER_REJECT` audit entry, shaped as a sack's; the one job after it takes the driver role. It
+`DRIVER_REJECT` audit entry, shaped as a sack's and naming the driver in its values (the audit
+table has no subject column); the one job after it takes the driver role. It
 is judged again as it starts for the stage, a driver no longer Unassigned, and a driver whose
 current account is not the one asked for and has left the server.
 
@@ -895,7 +896,7 @@ def driver_reject_change(
             result={},
             audit=AuditRecord(
                 "DRIVER_REJECT",
-                {"state": state.value},
+                {"state": state.value, "discord_user_id": str(row["discord_user_id"])},
                 {"new_state": DriverState.NOT_SIGNED_UP.value},
                 None,
             ),
