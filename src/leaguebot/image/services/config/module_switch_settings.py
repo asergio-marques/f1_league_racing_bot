@@ -17,6 +17,11 @@ rasteriser (FR-007, FR-008), so the reply adds the notice where one is missing, 
 than at the check: refusing would leave a league unable to finish setting the module up while
 waiting for Inkscape to be installed, which is exactly the case the notice exists to help with.
 
+**The reply tells the first switch-on from a later one:** the save records whether the
+configuration row existed before `create_defaults_on`, the only code that creates it. The first
+says every aspect starts off, which holds only then; a later one says the configuration is kept as
+left, since an aspect left on is still on and still posts.
+
 **The switch-off is one save: the flag and the audit entry.** It deletes nothing and resets no
 toggle, as Principle X rule 6 asks of every module: a disabled module keeps its configuration
 (FR-004a). No image config value names a Discord channel, role or message, so the switch-on has
@@ -77,6 +82,10 @@ async def images_enabled_on(db: "aiosqlite.Connection") -> bool:
 
 
 _ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
+_ENABLED_AGAIN = (
+    "✅ Image module enabled. Your configuration is kept as it stood, each output aspect on or off "
+    "as you left it — `/images config view` shows which are on."
+)
 
 
 def _still_off(_payload: dict[str, Any]) -> str:
@@ -104,6 +113,7 @@ def module_on_images(
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
+        had_config = await read_config_on(db) is not None
         await create_defaults_on(db)
         await db.execute("UPDATE image_config SET module_enabled = 1")
         kept = await read_config_on(db)
@@ -113,19 +123,23 @@ def module_on_images(
             audits=(
                 AuditRecord(change_type="IMAGE_MODULE_ENABLED", old_value={}, new_value={}),
             ),
-            result={"daily_time": kept.pfp_daily_time} if kept is not None and daily else {},
+            result={
+                "had_config": had_config,
+                **({"daily_time": kept.pfp_daily_time} if kept is not None and daily else {}),
+            },
             then=(PlannedStep(ARM_DAILY),) * daily + (PlannedStep(REFRESH_HUB),),
         )
 
-    def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
+    def reply(_payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
         from leaguebot.image.services.render.image_render_service import (
             converter_absent_message,
             converter_available,
         )
 
+        enabled = _ENABLED_AGAIN if results["save"]["had_config"] else _ENABLED
         if converter_available(use_cache=False):
-            return _ENABLED
-        return f"{_ENABLED}\n\n{converter_absent_message()}"
+            return enabled
+        return f"{enabled}\n\n{converter_absent_message()}"
 
     return Setting(
         kind=module_on("images"),

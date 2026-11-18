@@ -16,7 +16,7 @@ You do not need to read those first. Start here.
 
 **Template** — a drawing file the bot fills in. Think of a certificate with blanks: the design is fixed, the bot types the names and numbers into the gaps. There are sixteen, one per kind of picture. They all come with the bot; you can restyle them later.
 
-**Aspect** — the bot's word for *a kind of output*, like the calendar or the results table. There are eight, and each has its own on/off switch. Unfortunately the word also turns up when talking about the shape of a picture, so in this guide "aspect" always means a kind of output, and artwork gets a plain **size** in pixels instead.
+**Aspect** — the bot's word for *a kind of output*, like the calendar or the results table. There are nine, and each has its own on/off switch. Unfortunately the word also turns up when talking about the shape of a picture, so in this guide "aspect" always means a kind of output, and artwork gets a plain **size** in pixels instead.
 
 ---
 
@@ -64,7 +64,7 @@ If your server has no season yet, set one up first — a preview draws your own 
 
 The calendar is the one to start with because it needs the least: no teams, no drivers, no round number. The lineup, the results, the standings, the attendance sheet and the verdict also need a team beyond Reserve, and every kind but the calendar and the lineup needs a round number as well. If a preview refuses, it names exactly which of those is missing — a wrong division name, a round the division does not have, or a team list with nothing but Reserve in it.
 
-Switching the module on does not change anything the bot posts yet. All eight kinds of output stay off until you turn them on, which is step 6.
+The first time you switch the module on, it changes nothing the bot posts yet: all nine kinds of output start off and stay off until you turn them on, which is step 6. Switching it on again later finds them as you left them: any you had on are still on and post pictures again, and the reply says so. `/images config view` shows which.
 
 > If you get a message about Inkscape instead of a picture, stop and sort that out. Nothing below will work until you do.
 
@@ -599,7 +599,7 @@ It changes nothing by itself. It prints commands; you run the ones you want.
 /images config toggle aspect:<which output>
 ```
 
-Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts** and **Verdict banner** — the same names `/images config view` and `/season placements-review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
+Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts** and **Verdict banner** — the same names `/images config view` and `/season placements-review` use for them. All start off the first time the module is switched on; switching it on again later keeps each as you left it. Each one swaps that output between a picture and the text the bot has always posted.
 
 It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text. The bot reads the output's state when you run the command and asks for the opposite one, so two presses made before the first was carried out ask for the same thing: the second is refused as a repeat while the first waits, and answers that nothing changed if it still got through.
 
@@ -670,7 +670,7 @@ When you switch something on, the bot tells you if it would not work as things s
 /images config view
 ```
 
-Lists every setting and whether it is usable, and each of the eight outputs as ✅ on, ❌ off, or ⚠️ on but broken. Drawing files and artwork folders only ever show ✅ or ⚠️ — never ❌, since there is always something to fall back on. If something is broken it names the exact drawing file at fault — which weather phase, or which half of the results or standings pair.
+Lists every setting and whether it is usable, and each of the nine outputs as ✅ on, ❌ off, or ⚠️ on but broken. Drawing files and artwork folders only ever show ✅ or ⚠️ — never ❌, since there is always something to fall back on. If something is broken it names the exact drawing file at fault — which weather phase, or which half of the results or standings pair.
 
 **Anything that is not ✅ tells you why, on the lines beneath it — and what to do about it.** A ⚠️ says what is broken. A ❌ says the output is switched off, that the bot posts that thing as text instead, and hands you the `/images config toggle` command with the right choice already filled in — and then, if there is anything else standing in the way, lists it: a drawing at fault, a module the output draws its data from that is itself switched off, or the missing rasteriser. That list is exactly what you would see if you switched the output on, so nothing catches you out afterwards.
 
