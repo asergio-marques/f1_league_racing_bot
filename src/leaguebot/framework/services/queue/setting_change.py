@@ -18,7 +18,11 @@ Settings are written only on the league lane, one change at a time, and conversa
 write these tables. No other setting ever runs beside it: an overtaking setting (below) runs ahead
 of its lane's stopped head, never beside it, and the queue keeps that overtaking change running to
 the end before the head is tried again, so no second writer can land between a check and its save.
-The save judges only held or not.
+The save judges only held or not. For a setting with steps before its save their readings are its
+last judgement too (a switch-on's reading of what holds each channel it kept), and the invariant
+behind it is that the steps before the save and the save end on a fault: a switch-on is never a
+stopped head, so no channel setting overtaking a stop can run ahead of it between a step and its
+save. The save is handed what the steps found (`FOUND`), read from the steps the queue keeps.
 
 **A setting a league repairs itself with overtakes a stop on the league lane.**
 `Setting.repairs_the_bot` is read once, here, to set the change type's `overtakes_a_stop` — never a
@@ -118,6 +122,11 @@ NOTHING_SAVED = "Nothing was saved. Run `{command}` again to retry."
 
 #: The name of the step that saves the setting.
 SAVE = "save"
+
+#: The key, in the payload the save is handed, of what the steps before it found: each step's
+#: result, by the step's name. Read from the steps the queue keeps, so that a restart between a step
+#: and the save hands the save the same findings; the change's own payload is not rewritten.
+FOUND = "found"
 
 #: The key, in a step before the save's result, of a halt: the step found the setting cannot go
 #: ahead, and the value is `{"reply": the member's answer, "reason": what the ⛔ line says}`.
@@ -301,9 +310,17 @@ def setting_change(setting: Setting) -> ChangeType:
     See the module for what the change does with a value already held, a fault and the line.
     """
     carriers = {name for name, after in setting.after.items() if after.carries_line}
+    before_names = [before.step.name for before in setting.before]
+    order = [*before_names, SAVE]
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        saved = await setting.save(db, ctx.payload)
+        found = {
+            view.name: dict(view.result)
+            for view in ctx.steps
+            if view.name in before_names and view.result is not None
+        }
+        payload = {**ctx.payload, FOUND: found} if found else ctx.payload
+        saved = await setting.save(db, payload)
         planned = saved.then if saved.changed else ()
         line = _line(ctx.named, setting.command(ctx.payload), saved)
         result: dict[str, Any] = {"changed": saved.changed, **saved.result}
@@ -339,8 +356,6 @@ def setting_change(setting: Setting) -> ChangeType:
                 reply = after.fault_reply(ctx.payload, reply)
         return reply
 
-    before_names = [before.step.name for before in setting.before]
-    order = [*before_names, SAVE]
     steps: dict[str, Step] = {
         **{
             before.step.name: _before_step(before, order[index + 1])
@@ -364,6 +379,6 @@ def setting_change(setting: Setting) -> ChangeType:
 
 
 __all__ = [
-    "After", "Before", "HALTED", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
+    "After", "Before", "FOUND", "HALTED", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
     "setting_change",
 ]

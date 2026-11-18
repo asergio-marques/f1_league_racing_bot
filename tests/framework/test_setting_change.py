@@ -393,10 +393,6 @@ async def test_the_acknowledgement_names_what_is_being_set(env):
 # ---------------------------------------------------------------------------
 
 
-#: A fault in a step before the save is a fault in the setting, as one in the save is.
-NOT_YET_BEFORE = "#449: a setting has no steps before its save yet"
-
-
 @pytest.mark.parametrize("fault_at", ["before", "save"])
 async def test_a_fault_before_or_in_the_save_saves_nothing_says_to_run_it_again_and_the_lane_goes_on(
     env, fault_at
@@ -428,7 +424,6 @@ async def test_a_fault_before_or_in_the_save_saves_nothing_says_to_run_it_again_
     assert [(a[1], a[2]) for a in await _audits(env)] == [({"value": 5}, {"value": 7})]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_BEFORE)
 async def test_a_step_before_the_save_runs_first_and_hands_the_save_what_it_found(env):
     """What a step before the save found is handed to the save under `FOUND`, by the step's name,
     and the reply may read it; the change's own payload is not rewritten."""
@@ -476,7 +471,6 @@ async def test_a_step_before_the_save_that_halts_ends_the_setting_refused(env):
     assert await stopped_job(env.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_BEFORE)
 async def test_a_restart_between_a_step_before_the_save_and_the_save_still_hands_it_what_was_found(
     env
 ):
