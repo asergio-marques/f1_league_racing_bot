@@ -64,7 +64,10 @@ from tests.support.season_league import (
     SIGNING_UP,
     SIGNUP_CHANNEL,
     SIGNUP_CHANNEL_BASE,
+    UNASSIGNED,
     SeasonLeague,
+    approved_unplaced,
+    profile_id,
     setup_league,
     signing_up,
 )
@@ -853,11 +856,17 @@ async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
     assert "lapsed" in league.log().lower()
 
 
+#: Why the Discard refusal of a signup's ending fails before the change: it promises a restart.
+DISCARD_PROMISES_RESTART = "#502: a stopped signup ending's Discard text promises a restart ends it"
+
+
+@pytest.mark.xfail(strict=True, reason=DISCARD_PROMISES_RESTART)
 async def test_ending_a_signup_cannot_be_discarded(tmp_path):
     """Kimi is correcting his signup (Pending Driver Correction), last active 24 hours and a
     minute ago. His 24-hour timer fires, but the save ending his signup fails, so the league lane
     stops at `end`. A league admin's Discard on it is refused, saying Kimi's signup would never
-    end and the season's placements could not be confirmed until the bot restarts. He is still
+    end and the season's placements could not be confirmed, with no promise that a restart would
+    end it. He is still
     Pending Driver Correction, his channel is not told his signup expired, his typing there is
     not revoked, the channel's deletion is not armed, and the queue stays stopped there. Once the
     fault is lifted, a Retry ends it: he is Not Signed Up, told once, his typing revoked and the
@@ -877,11 +886,12 @@ async def test_ending_a_signup_cannot_be_discarded(tmp_path):
 
     refused = await discard_job(league.bot, lane="league")
 
-    assert acknowledgement(refused) == (
-        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>'s signup would never end, "
-        "and the season's placements could not be confirmed until the bot restarts. Fix what "
-        "stopped it and press **Retry**."
-    )
+    said = acknowledgement(refused)
+    assert said.startswith(
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>'s signup would never end"
+    ), said
+    assert "placements could not be confirmed" in said and "restart" not in said, said
+    assert said.endswith("Fix what stopped it and press **Retry**."), said
     assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
     assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
     assert _expired(league) == []
@@ -897,6 +907,56 @@ async def test_ending_a_signup_cannot_be_discarded(tmp_path):
     assert _armed(league, DELETE_TIMER) == [
         (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
     ]
+
+
+@pytest.mark.xfail(strict=True, reason=DISCARD_PROMISES_RESTART)
+async def test_ending_a_signup_awaiting_review_cannot_be_discarded(tmp_path):
+    """Kimi's signup awaits review, his signup channel (6405) standing. Manager 77 has pressed
+    Reject and types the reason, but the save ending Kimi's signup fails, so the league lane stops
+    at `end`. A league admin's Discard on it is refused, saying Kimi would stay awaiting review
+    and the season's placements could not be confirmed, with no promise that a restart would end
+    it; he still awaits review and the queue stays stopped there."""
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
+    from tests.support.change_queue import typed_message
+
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    _held(league, KIMI_CHANNEL)
+    await refuse_the_job(league.db_path, END_KIND, "end", True)
+    manager = league._member(REVIEWER)
+    manager.bot = False
+    press = member_interaction(league.bot, user=manager)
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    await press.response.defer(ephemeral=True)
+    _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
+        "action": "reject",
+        "discord_user_id": str(SIGNING_UP),
+        "actor": manager,
+        "guild": league.guild,
+        "interaction": press,
+        "followup": press.followup,
+    }
+    reason = typed_message(league.channel(KIMI_CHANNEL), manager, REASON,
+                           created_at=league.clock.now)
+    reason.guild = league.guild
+    try:
+        await AdminReviewCog(league.bot).on_message(reason)
+        await run_queue(league.bot)
+    finally:
+        _PENDING_REASONS.clear()
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "end"
+
+    refused = await discard_job(league.bot, lane="league")
+
+    said = acknowledgement(refused)
+    assert said.startswith(f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>"), said
+    assert "awaiting review" in said and "placements could not be confirmed" in said, said
+    assert "restart" not in said and "never end" not in said, said
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
 # ---------------------------------------------------------------------------
@@ -2083,3 +2143,89 @@ async def test_a_cancellation_whose_signup_channel_is_gone_ends_the_signup_and_p
     assert await stopped_job(league.db_path, "league") is None
     assert await stopped_job(league.db_path, KIMI_LANE) is None
     assert KIMI_CHANNEL not in league.channels
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
+async def test_signup_cancel_opens_a_one_field_form_and_asks_nothing_until_it_is_submitted(
+    tmp_path,
+):
+    """Kimi's signup awaits review, his signup channel (6405) standing. League manager Admin (77)
+    runs `/signup cancel` of Kimi and leaves the form unsubmitted. One form opens, holding one
+    field alone: an optional, multi-line reason with a length limit. Nothing is asked of the queue,
+    and once it runs Kimi still awaits review, his channel is told nothing and no line is
+    written: closing the form records nothing."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    _held(league, KIMI_CHANNEL)
+
+    asked = await _ask_cancel(league)
+    await run_queue(league.bot)
+
+    [call] = asked.response.send_modal.await_args_list
+    form = call.args[0]
+    assert [item for item in form.children] == [form.reason]
+    assert form.reason.required is False
+    assert form.reason.style == discord.TextStyle.paragraph
+    assert isinstance(form.reason.max_length, int)
+    assert await change_rows(league.db_path) == []
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert league.channel(KIMI_CHANNEL).texts == []
+    assert league.bot.log_channel.sent == []
+
+
+async def _not_signed_up(league: SeasonLeague) -> int:
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, ?, 'NOT_SIGNED_UP', 0)",
+        profile_id(SIGNING_UP), str(SIGNING_UP),
+    )
+    return SIGNING_UP
+
+
+async def _no_profile(_league: SeasonLeague) -> int:
+    return SIGNING_UP
+
+
+async def _unassigned(league: SeasonLeague) -> int:
+    await approved_unplaced(league, UNASSIGNED)
+    return UNASSIGNED
+
+
+async def _assigned(_league: SeasonLeague) -> int:
+    return LEWIS
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
+@pytest.mark.parametrize(
+    "driver, state, names_driver_reject",
+    [
+        pytest.param(_not_signed_up, "NOT_SIGNED_UP", False, id="not-signed-up"),
+        pytest.param(_no_profile, None, False, id="no-profile"),
+        pytest.param(_unassigned, "UNASSIGNED", True, id="unassigned"),
+        pytest.param(_assigned, "ASSIGNED", False, id="assigned"),
+    ],
+)
+async def test_a_cancellation_of_a_driver_with_no_signup_in_progress_is_refused_before_the_form(
+    tmp_path, driver, state, names_driver_reject,
+):
+    """Admin (77) runs `/signup cancel` of a member with no signup under way: Kimi Not Signed Up,
+    or with no driver profile at all; a driver approved and not yet placed (Unassigned); or Lewis,
+    placed in a seat (Assigned). No form opens: Admin is told why, the approved-and-unplaced
+    driver's refusal pointing to `/driver reject` and the placed driver's not, and one refusal line
+    names the command and gives the same reason. Nothing is asked of the queue and the member's
+    status is unchanged."""
+    league = await _league(tmp_path)
+    user_id = await driver(league)
+
+    asked = await _ask_cancel(league, user_id)
+    await run_queue(league.bot)
+
+    asked.response.send_modal.assert_not_awaited()
+    reply = _told_admin(asked)
+    assert "⛔" in reply
+    [line] = _refusal_lines(league)
+    assert line.startswith("⛔ `/signup cancel` refused for Admin (")
+    assert ("/driver reject" in reply) is names_driver_reject
+    assert ("/driver reject" in line) is names_driver_reject
+    assert await change_rows(league.db_path) == []
+    assert await _driver_state(league, user_id) == state

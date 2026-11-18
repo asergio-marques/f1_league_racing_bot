@@ -102,7 +102,18 @@ _ACTING = [
     ("close_time_modify", "signup close-time modify", lambda: ["2099-06-15T20:00:00"]),
     ("signup_open", "signup open", list),
     ("signup_close", "signup close", list),
+    pytest.param(
+        "signup_cancel", "signup cancel", lambda: [MagicMock()], id="signup cancel",
+        marks=pytest.mark.xfail(strict=True, reason="#502: /signup cancel does not exist yet"),
+    ),
 ]
+
+
+def _name(case) -> str:
+    """The command a case of `_ACTING` runs, as its test is named: a case marked through
+    `pytest.param` holds its values apart."""
+    return getattr(case, "values", case)[1]
+
 
 _LISTS = [
     ("time_slot_list", "signup time-slot list"),
@@ -111,7 +122,7 @@ _LISTS = [
 ]
 
 
-@pytest.mark.parametrize("method, name, args", _ACTING, ids=[n for _, n, _ in _ACTING])
+@pytest.mark.parametrize("method, name, args", _ACTING, ids=[_name(case) for case in _ACTING])
 async def test_a_command_refused_while_the_module_is_off_is_answered_once_and_recorded(
     tmp_path, method, name, args
 ):

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -63,7 +64,14 @@ from tests.signup.test_review_changes import (
     _manager,
     _texts,
 )
-from tests.signup.test_wizard_changes import END_KIND
+from tests.signup.test_wizard_changes import (
+    CANCEL_REASON,
+    END_KIND,
+    NO_CANCEL,
+    _ask_cancel,
+    _submit_cancel,
+    _told_admin,
+)
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     http_error,
@@ -556,6 +564,52 @@ async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untou
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+#: Why the lapse after a signup moved on fails before the change: the lapse never reads the state.
+LAPSE_READS_NO_STATE = "#502: a lapsed reason says the signup still awaits review though it moved on"
+
+
+def _meanwhile(league: SeasonLeague, state: str) -> None:
+    """Kimi's status becomes *state* at once, written without yielding to the loop, so that a
+    lapse of no length started by the press cannot run before it."""
+    with sqlite3.connect(league.db_path) as db:
+        db.execute(
+            "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+            (state, str(SIGNING_UP)),
+        )
+
+
+@pytest.mark.xfail(strict=True, reason=LAPSE_READS_NO_STATE)
+@pytest.mark.parametrize(
+    "state",
+    [pytest.param("NOT_SIGNED_UP", id="driver-withdrew"),
+     pytest.param("UNASSIGNED", id="another-manager-approved")],
+)
+async def test_a_reason_that_lapses_after_the_signup_moved_on_says_so(
+    tmp_path, monkeypatch, state
+):
+    """Manager 77 presses Reject on Kimi's panel and types no reason; before the five minutes run
+    out Kimi withdraws (Not Signed Up), or another manager approves him (Unassigned). When they
+    run out, the manager is told, and the one lapse line says, that the signup has moved on since
+    he pressed Reject and nothing was rejected, never that it still awaits review. Nothing is
+    asked of the queue and Kimi stays as he was left."""
+    monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
+    league = await _league(tmp_path)
+
+    press = await _press(league, "reject_button")
+    _meanwhile(league, state)
+    await _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["lapse"]
+
+    told = _sent(press)[-1]
+    assert "moved on" in told and "nothing was rejected" in told.lower(), told
+    assert "still awaits review" not in told, told
+    lapsed = [line for line in _lines(league) if line.startswith("⌛")]
+    assert len(lapsed) == 1, _lines(league)
+    assert "moved on" in lapsed[0] and "nothing was rejected" in lapsed[0].lower(), lapsed[0]
+    assert "still awaits review" not in lapsed[0], lapsed[0]
+    await _nothing_asked(league)
+    assert await _driver_state(league) == state
+
+
 async def test_a_reason_lapse_that_fails_is_reported(tmp_path, monkeypatch):
     """Manager 77 presses Reject on Kimi's panel and types no reason; when the five minutes run
     out, writing the lapse's line faults unexpectedly. One ❌ line in the log channel names the
@@ -664,3 +718,47 @@ async def test_a_fault_in_the_reason_step_is_reported_through_the_press(tmp_path
     assert len(failed) == 1, _lines(league)
     assert failed[0].startswith(f"❌ the “{label}” button of"), failed[0]
     assert f"<@{REVIEWER}>" in failed[0] and "failed for" in failed[0]
+
+
+# ---------------------------------------------------------------------------
+# A manager's cancellation while a reason is awaited (#502)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
+@pytest.mark.parametrize("form_open_first", [False, True], ids=["before-the-form", "on-submit"])
+@pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
+async def test_a_cancellation_is_refused_while_a_manager_awaits_a_reason(
+    tmp_path, button, label, form_open_first
+):
+    """Kimi's signup awaits review. Manager 77 presses *label* on Kimi's panel and has yet to type
+    the reason; he runs `/signup cancel` of Kimi, before the press (the form already open when he
+    presses, then submitted with a reason) or after it. The cancellation is refused, before the
+    form opens or when it is submitted: he is told a *label* reason is awaited, one refusal line
+    records it, and nothing is asked of the queue. The reason he then types works as usual: Kimi
+    is rejected (Not Signed Up), or asked for changes (Awaiting Correction Parameter)."""
+    league = await _league(tmp_path)
+
+    if form_open_first:
+        asked = await _ask_cancel(league)
+        await _press(league, button)
+        answered = await _submit_cancel(league, asked, CANCEL_REASON)
+    else:
+        await _press(league, button)
+        answered = asked = await _ask_cancel(league)
+        asked.response.send_modal.assert_not_awaited()
+    await run_queue(league.bot)
+
+    told = _told_admin(answered)
+    assert "⛔" in told and label in told, told
+    [line] = _refusals(league)
+    assert "refused for" in line and label in line, line
+    await _nothing_asked(league)
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+
+    await _hear(league, REASON)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == (
+        "NOT_SIGNED_UP" if label == "Reject" else "AWAITING_CORRECTION_PARAMETER"
+    )
