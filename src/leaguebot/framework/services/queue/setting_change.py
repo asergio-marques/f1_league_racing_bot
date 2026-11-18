@@ -256,13 +256,17 @@ def _failed(
 
     A step that leaves something on Discord raises `StepFailedOnDiscord` with a *notice* saying
     what and how to put it right. The line names the kind of fault from the cause the step chained
-    it from, never `StepFailedOnDiscord`, and carries the notice beneath it; the notice is kept in
-    the result as `left`, for the reply to add (`outcome`).
+    it from, or from its reason where it chained none, never `StepFailedOnDiscord`, and carries the
+    notice beneath it; the notice is kept in the result as `left`, for the reply to add
+    (`outcome`).
     """
     marks: dict[str, Any] = {"failed": True}
+    cause = error
+    while isinstance(cause, StepFailedOnDiscord) and cause.__cause__ is not None:
+        cause = cause.__cause__
     line = failure_line(
-        ctx.what, ctx.named,
-        error.__cause__ if isinstance(error, StepFailedOnDiscord) and error.__cause__ else error,
+        ctx.what, ctx.named, cause,
+        kind=cause.reason if isinstance(cause, StepFailedOnDiscord) else None,
     )
     if isinstance(error, StepFailedOnDiscord) and error.notice:
         marks[LEFT] = error.notice

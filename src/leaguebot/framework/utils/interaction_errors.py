@@ -83,15 +83,18 @@ def failure_reply(
     )
 
 
-def failure_line(what: str, named: str, error: BaseException) -> str:
+def failure_line(
+    what: str, named: str, error: BaseException, *, kind: str | None = None
+) -> str:
     """The log channel's line for *what* failing for *named* with *error*; *what* is used as given.
 
     The line of a failure with a member to name: `report_failure` writes it, and so does the
     change queue for a change that faults. A Discord event's has none, and is formed by
-    `event_failure_line`.
+    `event_failure_line`. The kind of fault is the error's type, or *kind* where given: for a
+    fault that is no exception of Discord's or the bot's own, but the bot's words for what failed.
     """
     return (
-        f"❌ {what} failed for {named} — {type(error).__name__}. "
+        f"❌ {what} failed for {named} — {kind.rstrip('.') if kind else type(error).__name__}. "
         f"The details are in the host's log."
     )
 
