@@ -908,7 +908,7 @@ and from the gate on completing the season. It is refused while any round of the
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where the division's lineup is posted. The bot needs View Channel, Send Messages and Embed Links there, and Attach Files where the lineup is drawn as a picture |
+| `channel` | Channel | ✅ | Channel where the division's lineup is posted. The bot needs View Channel, Send Messages and Embed Links there, and Attach Files where the lineup is drawn as a picture. A channel lacking any is refused |
 
 #### `/division calendar-channel` — Set the calendar posting channel for a division
 *Access: League manager*
@@ -916,7 +916,7 @@ and from the gate on completing the season. It is refused while any round of the
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where the division's calendar is posted. The bot needs View Channel and Send Messages there, and Attach Files where the calendar is drawn as a picture |
+| `channel` | Channel | ✅ | Channel where the division's calendar is posted. The bot needs View Channel and Send Messages there, and Attach Files where the calendar is drawn as a picture. A channel lacking any is refused |
 
 > **Both are required at approval**, whatever modules you run. A division missing its lineup or calendar channel, or whose channel has since been deleted from the server or taken a permission the bot needs from it, is named in `/season placements-review` with the command that sets it, the Approve button is withheld, and pressing a button already offered is refused on the same reading. See [`/season placements-review`](#season-placements-review--review-pending-configuration).
 
@@ -1195,7 +1195,7 @@ No parameters. Replies to you alone with the Phase 1, Phase 2 and Phase 3 deadli
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where weather forecast messages are posted. The bot needs View Channel and Send Messages there, and Attach Files where forecasts are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where weather forecast messages are posted. The bot needs View Channel and Send Messages there, and Attach Files where forecasts are drawn as pictures. A channel lacking any is refused |
 
 Required for every division while the weather module is enabled: approval is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
@@ -1636,7 +1636,7 @@ The three act on the season being built or raced, pending completion included, s
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where session results are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where results are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where session results are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where results are drawn as pictures. A channel lacking any is refused |
 
 ##### `/results channel standings` — Set the standings posting channel for a division
 *Access: League manager · Results & Standings module required*
@@ -1644,7 +1644,7 @@ The three act on the season being built or raced, pending completion included, s
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where standings tables are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where standings are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where standings tables are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where standings are drawn as pictures. A channel lacking any is refused |
 
 ##### `/results channel verdicts` — Set the verdicts channel for a division
 *Access: League manager · Results & Standings module required*
@@ -1652,9 +1652,9 @@ The three act on the season being built or raced, pending completion included, s
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where verdicts or their banners are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where verdicts or their banners are drawn as pictures. A channel lacking any is refused |
 
-The bot must be able to post in the verdicts channel, or it is refused: `❌ Cannot access that channel. Ensure the bot has permission to post there.`
+A channel where the bot lacks a permission it needs is refused, whichever of the three it is, with each permission missing named and nothing saved: `❌ The bot is missing permissions it needs in #channel as the verdicts channel for **Division**: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.` Where the bot cannot tell, because the server is not to be had or Discord answers with an error, the channel is saved.
 
 Approval is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
@@ -2256,7 +2256,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where check-in calls are posted. The bot needs View Channel, Send Messages, Embed Links and Read Message History there, and Attach Files where the call is drawn with a picture |
+| `channel` | Channel | ✅ | Channel where check-in calls are posted. The bot needs View Channel, Send Messages, Embed Links and Read Message History there, and Attach Files where the call is drawn with a picture. A channel lacking any is refused |
 
 #### `/attendance channel attendance` — Set the attendance logging channel for a division
 *Access: League manager · Attendance module required*
@@ -2264,7 +2264,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where the attendance sheet is posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where the sheet is drawn as a picture |
+| `channel` | Channel | ✅ | Channel where the attendance sheet is posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where the sheet is drawn as a picture. A channel lacking any is refused |
 
 Both are required for every division while the attendance module is enabled: approval is refused until each division has both. Each acts on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the module is off (`❌ The Attendance module is not enabled.`), for a channel the bot cannot post in, for a channel already doing another job, and for the channel the division already has. Like every division channel command each is a change on the queue that runs past a stopped job, so a check-in call or sheet stopped for want of its channel is put right by setting it and pressing Retry — see [`/division lineup-channel`](#division-lineup-channel--set-the-lineup-posting-channel-for-a-division).
 
