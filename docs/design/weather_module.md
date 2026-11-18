@@ -494,7 +494,9 @@ specification, under "Configuring the weather module", "Channels", says what the
 one thing the statement asks of the image module is whether the weather pictures could attach a file.
 `division_channel_faults` asks it of the drawing the wiring hands it and judges the channel by it
 (`approval_checks.channel_fault`, `architecture.md`, "Errors and failures", and `core.md`, "Services,
-and what each owns"), so weather holds no permission list of the channel's beside it.
+and what each owns"), and so does the check of the command setting the channel
+(`channel_registry_service.unusable_refusal`), so weather holds no permission list of the channel's
+beside it.
 
 ### The forecast provider
 

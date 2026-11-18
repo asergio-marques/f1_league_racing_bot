@@ -591,7 +591,8 @@ call's channel is `rsvp` and the attendance sheet's is `attendance`; the attenda
 under "Configuring the attendance module", "Channels", says what each needs. The one thing the
 statement asks of the image module is whether a channel's pictures could attach a file, which the
 drawing answers by its switches and not by a template's state. The confirmation's faults
-(`attendance_hooks.division_channel_faults`) judge both channels by it, and the recalculation's gate
+(`attendance_hooks.division_channel_faults`) judge both channels by it, as does the check of the
+command setting each (`channel_registry_service.unusable_refusal`), and the recalculation's gate
 judges the attendance channel by it and the verdicts channel by results' statement of its needs,
 where the sanction's picture goes, so a verdicts channel the bot cannot attach to is refused up
 front like one it cannot see.
