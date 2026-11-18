@@ -14,12 +14,11 @@ in Placements; the season changed since the review (the review's own fingerprint
 everything the press's gates read of the season); a date gone by (the clock); a channel no longer on
 the server (Discord); the first refusal any module gives the approval, as the press asks it
 (`confirmation_refused`, handed the server); the rasteriser gone from the host, where images is
-on. The press keeps every
-gate in its own words and order, so a refusal there answers the member at once; the check is what
-stands between a season changed while the approval waited on the queue and its commitment. It
-imports nothing from a module and no cog, and reaches a module's service only through what the
-builder hands it (`season_approval_change`'s parameters); `ctx.bot` is used for Discord alone, the
-league's server.
+on. The press keeps every gate in its own words and order, so a refusal there answers the member
+at once; the check is what stands between a season changed while the approval waited on the queue
+and its commitment. It imports nothing from a module and no cog, and reaches a module's service
+only through what the builder hands it (`season_approval_change`'s parameters); `ctx.bot` is used
+for Discord alone, the league's server.
 
 **Everything the approval writes is one job** (`apply`, architecture.md, "All or nothing in one
 step"): every round's sessions, the points snapshot, the commitment of the placements and the move
@@ -315,10 +314,10 @@ def season_approval_change(
     name), *division_channel_faults_read* (the hook each module names its own channels' faults
     through), *fingerprint_areas_read* (the hook each module's own areas of the fingerprint are
     asked through), *confirmation_refused* (the hook each module's refusals of the approval are
-    read through, handed the season and the server, as the press reads them), *rasteriser_fault* (what is wrong with the host's drawing program, None where
-    nothing is), *season_approved* (the hook each module's keeping for the season is called
-    through, inside the save, handed its connection and the season's id) and *now* (the queue's
-    clock).
+    read through, handed the season and the server, as the press reads them), *rasteriser_fault*
+    (what is wrong with the host's drawing program, None where nothing is), *season_approved*
+    (the hook each module's keeping for the season is called through, inside the save, handed its
+    connection and the season's id) and *now* (the queue's clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
