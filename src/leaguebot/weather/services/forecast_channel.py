@@ -30,9 +30,11 @@ _COMMAND = "/weather channel"
 
 
 async def set_division_forecast_channel(
-    db: aiosqlite.Connection, division_id: int, channel_id: int
+    db: aiosqlite.Connection, division_id: int, channel_id: int | None
 ) -> int | None:
     """Set `divisions.forecast_channel_id` on *db*, never committing; returns the previous value.
+    A *channel_id* of `None` clears it, as the weather switch-on does for a channel another
+    setting took while the module was off (`module_switch_settings.module_on_weather`).
 
     The save that calls it owns the transaction, so the column and the audit entry stand or fall
     together. A value already held is left unwritten, and the caller told so by the value it gets
