@@ -279,16 +279,16 @@ async def unusable_refusal(
     """Why the bot cannot use *channel_id* as *use*, or None where it can, or where that cannot
     be told.
 
-    What every channel command checks, after :func:`channel_refusal` and before it writes, and
-    again as the change starts, so that a channel the bot lacks a permission in is never saved.
-    *needs* is what the channel's use asks of the bot, which its owner states
-    (`core_channel_needs`, a module's `channel_needs`); *guild* is the league's server, handed
-    by the caller. The channel is judged by `approval_checks.judged_presence`, so a channel is
-    refused only on what Discord proves: one gone is "no longer on the server", one lacking a
-    permission names each, in Discord's own words and in the order *needs* asks for them. With no
-    *guild*, or no answer from Discord, the check **stands aside** and the channel is saved,
-    logged on the host: the same exception a confirmation makes (architecture.md, "A reader or a
-    check that stands aside"). Returned rather than sent, as :func:`channel_refusal` is.
+    What a channel command checks, after the registry's in-use refusal (:func:`refusal`) and before
+    it writes, and again as the change starts, so that a channel the bot lacks a permission in is
+    never saved. *needs* is what the channel's use asks of the bot, which its owner states
+    (`core_channel_needs`, a module's `channel_needs`); *guild* is the league's server, handed by
+    the caller. The channel is judged by `approval_checks.judged_presence`, so a channel is refused
+    only on what Discord proves: one gone is "no longer on the server", one lacking a permission
+    names each, in Discord's own words and in the order *needs* asks for them. With no *guild*, or
+    no answer from Discord, the check **stands aside** and the channel is saved, logged on the
+    host: the same exception a confirmation makes (architecture.md, "A reader or a check that
+    stands aside"). Returned rather than sent, as :func:`channel_refusal` is.
     """
     mention = f"<#{channel_id}>"
     if guild is None:
