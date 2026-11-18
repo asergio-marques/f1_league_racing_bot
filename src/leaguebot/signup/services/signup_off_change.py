@@ -232,8 +232,8 @@ def signup_off_change(
 
     async def clear_overwrites(ctx: StepContext) -> StepResult:
         """Clear what `/signup channel` applied to the signup channel: everyone's, the bot's, the
-        base role's and the interaction role's (the admin role's allow is left, #372). Each is
-        tried on its own and a refusal logged and told, never raised."""
+        base role's, the interaction role's and the league admin role's. Each is tried on its own
+        and a refusal logged and told, never raised."""
         guild = await league_guild(ctx.bot)
         channel = None if guild is None else guild.get_channel(int(ctx.step_payload["channel_id"]))
         if guild is None or not isinstance(channel, discord.TextChannel):
@@ -250,6 +250,10 @@ def signup_off_change(
             interaction_role = guild.get_role(league.interaction_role_id)
             if interaction_role:
                 targets.append(interaction_role)
+            if league.league_admin_role_id:
+                admin_role = guild.get_role(league.league_admin_role_id)
+                if admin_role:
+                    targets.append(admin_role)
         left = False
         for target in targets:
             try:
