@@ -1103,7 +1103,10 @@ async def _gate_2b_signup_channel_unusable(db_path, monkeypatch):
     from tests.support.channel_faults import server_holding
 
     cog = await _a_signup_channel_on(db_path, server_holding(unusable={900: ("embed_links",)}))
-    return cog, "missing permissions the bot needs there: Embed Links"
+    # A confirmed season's `/signup channel` only replaces a channel gone from the server.
+    return cog, (
+        "missing permissions the bot needs there: Embed Links", "give the bot them",
+    ), ("`/signup channel`",)
 
 
 #: Why the approval does not yet refuse a signup channel deleted or unusable.
@@ -1162,15 +1165,19 @@ async def test_every_approval_gate_refusal_is_recorded(db_path, monkeypatch, gat
     """Manager (id 77) presses ✅ Approve and one gate refuses: the reply is today's, nothing is
     approved, and the log channel gets exactly one refusal line naming the button and its
     review, carrying the reply's reason — every item of it where the reply is a list. A gate
-    that judges the server is pressed on the one it gives the cog."""
-    cog, reply_says = await gate(db_path, monkeypatch)
+    that judges the server is pressed on the one it gives the cog; one that names words the reply
+    must not carry finds none of them in it, and one that names several finds each."""
+    cog, reply_says, *reply_omits = await gate(db_path, monkeypatch)
     interaction = _recorded_interaction(cog)
     interaction.guild = getattr(cog, "guild", None)
 
     await _run(cog, interaction)
 
     reply = _replies(interaction)
-    assert reply_says in reply
+    for says in ((reply_says,) if isinstance(reply_says, str) else reply_says):
+        assert says in reply, (says, reply)
+    for omitted in (reply_omits[0] if reply_omits else ()):
+        assert omitted not in reply, (omitted, reply)
     cog.bot.change_queue.ask.assert_not_awaited()
     lines = _logged(cog)
     assert len(lines) == 1, lines

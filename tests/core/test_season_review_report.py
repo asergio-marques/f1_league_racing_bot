@@ -546,34 +546,38 @@ _SIGNUP_CHANNEL_NOT_REVIEWED = (
 )
 
 
-@pytest.mark.parametrize("channel, server, named", [
+@pytest.mark.parametrize("channel, server, named, unsaid", [
     pytest.param(
-        None, {}, ["`/signup channel`", "`/season placements-review`"],
+        None, {}, ["`/signup channel`", "`/season placements-review`"], [],
         id="unset", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
     ),
     pytest.param(
         900, {"gone": (900,)},
         ["⛔ The signup channel <#900> is no longer on the server.", "`/signup channel`",
          "`/season placements-review`"],
+        [],
         id="deleted", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
     ),
     pytest.param(
         900, {"unusable": {900: ("manage_channels",)}},
         ["<#900>", "missing permissions the bot needs there: Manage Channel",
-         "`/season placements-review`"],
+         "give the bot them", "`/season placements-review`"],
+        ["`/signup channel`"],
         id="lacking_manage_channel",
         marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
     ),
-    pytest.param(900, {"unreadable": (900,)}, None, id="unreadable"),
+    pytest.param(900, {"unreadable": (900,)}, None, [], id="unreadable"),
 ])
 async def test_a_signup_channel_the_approval_would_refuse_withholds_approval(
-    db_path, channel, server, named,
+    db_path, channel, server, named, unsaid,
 ):
     """Signup is on. Its signup channel is unset, deleted from the server, or missing a
     permission the bot needs there (Manage Channel here); `/season placements-review` names it
     privately, saying what to run, and the review asked of the queue carries no Approve question,
-    since the press would refuse it. One the server could not be asked about (a server error) is
-    not named, and Approve is offered."""
+    since the press would refuse it. An unusable channel's line says to give the bot the
+    permissions and never `/signup channel`, which a confirmed season refuses unless the channel
+    is gone. One the server could not be asked about (a server error) is not named, and Approve
+    is offered."""
     from tests.support.channel_faults import server_holding
     from tests.support.review_workflows import sign_up_signup_refusals
 
@@ -595,6 +599,8 @@ async def test_a_signup_channel_the_approval_would_refuse_withholds_approval(
         assert not _offered(cog)
         for words in named:
             assert words in private, (words, private)
+        for words in unsaid:
+            assert words not in private, (words, private)
 
 
 @pytest.mark.parametrize("signup", [True, False])
