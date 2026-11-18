@@ -89,6 +89,8 @@ Run it anywhere, and run it as a server administrator: until it has run there is
 
 **Pick a private channel for logs.** The bot writes a great deal there — every command that succeeded, every picture it could not draw, every driver it could not place. It is written for you, not for your drivers.
 
+**Give the bot what it needs in both channels first.** In the interaction channel it needs View Channel and Send Messages, and Attach Files where a lineup or calendar picture is on; in the log channel, View Channel and Send Messages. `/bot init` refuses a channel lacking any of these, naming each permission missing and the channel it is missing in, and both where both fail. It claims nothing when it does, and as no log channel is set yet the refusal goes to the bot host's log alone. It looks again as it claims the server, so a channel that breaks while the command waits refuses it then; run it again once the permission is back.
+
 **Two levels of permission, and both are roles you pick.**
 
 | To run | You need |
@@ -122,7 +124,7 @@ everything else sits behind. Drivers do not need it.
 /bot admin-role role:@NewOwners
 ```
 
-Each changes that one setting and touches nothing else, answering at once that the change is under way and updating that reply once it has run. Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing — you're told so, and the hub's permissions are left alone; the two channel commands refuse outright instead if you give them the channel they already hold.
+Each changes that one setting and touches nothing else, answering at once that the change is under way and updating that reply once it has run. Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing — you're told so, and the hub's permissions are left alone; the two channel commands refuse outright instead if you give them the channel they already hold, and refuse a channel the bot lacks a permission it needs in (the same ones as at `/bot init`), naming each permission missing. Nothing is saved then, and a channel deleted while the command waits is refused as no longer on the server.
 
 > **These work from any channel, and a server administrator can run them.** That is on purpose. They exist for the day something goes wrong with the four settings themselves — somebody deletes the log channel, archives the command channel, or removes one of the two roles. If they needed the command channel or a league role to run, the one thing you could not repair would be the thing that had broken; and if they needed the league admin role, a server that had lost that role could never get it back. So these five, and only these five, also accept Discord's **Administrator** permission. Each of the four may also overtake a stopped job at the head of the league's lane — the stopped job stays stopped, but one of these four asked behind it need not wait with everything else. So may every command that points the bot at a channel; see [When a job stops the queue](#when-a-job-stops-the-queue).
 >
@@ -156,7 +158,7 @@ These are ordinary commands: the interaction role runs them, in the command chan
 /bot hub-channel channel:#league-hub
 ```
 
-It is visible to your base role — or to every member, if you have not set one — and to both league roles, and nobody but the bot can post there. Change any of those roles later and the hub follows. Give it a channel of its own: setting the hub replaces that channel's permissions. The panel starts with **About**, which tells whoever presses it which bot this is, which version it runs and when that version was made; modules add their options to it as they are built. The panel is posted, and brought up to date, as a job of the change queue: a panel Discord refuses stops the queue (see [When a job stops the queue](#when-a-job-stops-the-queue)) and the hub stays set. Moving the hub posts the panel in the new channel before it is deleted from the old.
+It is visible to your base role — or to every member, if you have not set one — and to both league roles, and nobody but the bot can post there. Change any of those roles later and the hub follows. Give it a channel of its own: setting the hub replaces that channel's permissions. The bot needs View Channel, Send Messages, Embed Links, Manage Channel and Manage Permissions there; with any missing the command is refused before anything is changed, naming each permission missing. The panel starts with **About**, which tells whoever presses it which bot this is, which version it runs and when that version was made; modules add their options to it as they are built. The panel is posted, and brought up to date, as a job of the change queue: a panel Discord refuses stops the queue (see [When a job stops the queue](#when-a-job-stops-the-queue)) and the hub stays set. Moving the hub posts the panel in the new channel before it is deleted from the old.
 
 The command is itself a change on the queue: you are told at once that it is under way, and that reply is updated once it has run. Like every command that sets a channel, it runs even while the queue is stopped at a job, which stays stopped. Where the hub's permissions cannot be set at all — a fault of the bot's own, not Discord refusing one — the hub is still set, and the reply adds that its permissions could not be updated.
 
