@@ -572,8 +572,6 @@ async def test_a_save_that_faults_after_a_step_before_it_takes_that_step_back(en
 
 
 @pytest.mark.parametrize("how", ["halts", "faults"])
-@pytest.mark.xfail(strict=True, reason="#449: a step before the save takes no undo, and a later "
-                   "step's halt or fault takes nothing back")
 async def test_a_later_step_before_the_save_that_does_not_go_through_takes_back_the_earlier_one(
     env, how
 ):

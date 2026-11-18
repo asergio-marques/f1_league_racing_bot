@@ -73,7 +73,11 @@ one ends the setting as a fault in the save does: nothing is saved, no `SAVE` is
 member is told so and to run it again (`NOTHING_SAVED`), one failure line is written and the lane
 goes on. A step may instead end the setting refused (`HALTED`): its result gives the reply and the
 reason, no `SAVE` is planned, and the one line, a ⛔ refusal, is formed here from the reason, the
-step writing none. Either way nothing is saved and nothing is audited. *Rejected:* an `After` step
+step writing none. Either way nothing is saved and nothing is audited. **A step that changes
+something on Discord declares an undo** (`Before.undo`), planned as a job of the change where a
+later step before the save halts or faults, last step first, so that nothing is half-set (Constitution
+X, rule 2) and a restart finishes it; a step that ends on a fault part-way takes back its own
+partial work before it raises, and the undo is for work it finished. *Rejected:* an `After` step
 that undoes the switch-on, which would leave the module on for a moment and whose undo is a second
 save that can itself fail; and the check in `check()`, which carries no findings and runs at the ask
 as well.
@@ -94,7 +98,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -184,9 +188,17 @@ class Before:
 
     *step* is an `ACT` step. It runs ahead of the save, in the order the setting lists them, and
     the save is planned only once the last has returned.
+
+    *undo*, where a step changes something on Discord, is an `ACT` step that takes back what
+    *step* did once it has returned. It is planned, as a job of the change, where a later step
+    before the save halts or faults; it reads what *step* found from the steps the queue keeps
+    (`StepContext.steps`), never from memory, so that a restart finishes it. Where *step* itself
+    ends on a fault part-way it takes back its own partial work before it raises again: an undo is
+    for finished work only. The undos of the steps that returned run last first.
     """
 
     step: Step
+    undo: Step | None = None
 
 
 @dataclass(frozen=True)
@@ -229,9 +241,18 @@ def _line(named: str, command: str, saved: Saved) -> str:
     )
 
 
-def _failed(ctx: StepContext, error: BaseException) -> StepResult:
-    """A step ended on a fault: its mark, and the failure line."""
-    return StepResult(result={"failed": True}, lines=(failure_line(ctx.what, ctx.named, error),))
+def _failed(
+    ctx: StepContext, error: BaseException, then: tuple[PlannedStep, ...] = ()
+) -> StepResult:
+    """A step ended on a fault: its mark, and the failure line; *then* are the undos to run."""
+    return StepResult(
+        result={"failed": True}, lines=(failure_line(ctx.what, ctx.named, error),), then=then
+    )
+
+
+def _undos(befores: Sequence[Before]) -> tuple[PlannedStep, ...]:
+    """The undos of *befores*, which have returned, as the jobs that run them: last step first."""
+    return tuple(PlannedStep(before.undo.name) for before in reversed(befores) if before.undo)
 
 
 def _lowered(text: str) -> str:
@@ -282,12 +303,13 @@ def _after_step(after: After) -> Step:
     return dataclasses.replace(inner, run=run, on_fault=_failed)
 
 
-def _before_step(before: Before, following: str) -> Step:
+def _before_step(before: Before, following: str, earlier: Sequence[Before] = ()) -> Step:
     """*before*'s step as the change runs it: ending on a fault, and planning the step *following*.
 
     A step's own `then` stays, and the next step of the setting follows it. A step that returns
     `HALTED` ends the setting refused: no step follows, and the one line, a refusal, is formed here
-    from its reason, the step returning no lines of its own.
+    from its reason, the step returning no lines of its own. Where the step halts or faults, the
+    undos of the *earlier* steps, which have returned, are planned in its place.
     """
     inner = before.step
 
@@ -298,10 +320,13 @@ def _before_step(before: Before, following: str) -> Step:
             return StepResult(
                 result={HALTED: halted},
                 lines=(refusal_line(ctx.named, ctx.what, halted["reason"]),),
+                then=_undos(earlier),
             )
         return dataclasses.replace(result, then=(*result.then, PlannedStep(following)))
 
-    return dataclasses.replace(inner, run=run, on_fault=_failed)
+    return dataclasses.replace(
+        inner, run=run, on_fault=lambda ctx, error: _failed(ctx, error, _undos(earlier))
+    )
 
 
 def setting_change(setting: Setting) -> ChangeType:
@@ -359,8 +384,13 @@ def setting_change(setting: Setting) -> ChangeType:
 
     steps: dict[str, Step] = {
         **{
-            before.step.name: _before_step(before, order[index + 1])
+            before.step.name: _before_step(before, order[index + 1], setting.before[:index])
             for index, before in enumerate(setting.before)
+        },
+        **{
+            before.undo.name: dataclasses.replace(before.undo, on_fault=_failed)
+            for before in setting.before
+            if before.undo is not None
         },
         SAVE: Step(SAVE, StepKind.SAVE, save, describe=describe, on_fault=_failed),
         **{name: _after_step(after) for name, after in setting.after.items()},
