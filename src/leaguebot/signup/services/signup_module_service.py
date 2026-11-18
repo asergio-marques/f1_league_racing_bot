@@ -323,7 +323,11 @@ class SignupModuleService:
         await db.execute("UPDATE server_configs SET signup_module_enabled = 0")
 
     async def move_base_role_overwrite(
-        self, guild: discord.Guild, old_role_id: int | None, new_role: discord.Role
+        self,
+        modules: "ModuleService",
+        guild: discord.Guild,
+        old_role_id: int | None,
+        new_role: discord.Role,
     ) -> None:
         """Carry the signup channel's base-role overwrite from *old_role_id* to *new_role*.
 
@@ -334,12 +338,16 @@ class SignupModuleService:
         no longer entitled to. Re-setting the same role touches only the grant: a "remove
         then add" on one role would briefly revoke it, and outright if the grant failed.
 
-        Nothing is done without a signup channel, which exists only while the module is
-        enabled. A refusal from Discord (`discord.HTTPException`) is logged and never raised:
+        Nothing is done while the module is off, *modules* saying so, or without a signup channel.
+        A switched-off module keeps its channel but holds no permission on it: the base role is
+        read again as it then stands when the switch-on puts them back
+        (`module_switch_settings`). A refusal from Discord (`discord.HTTPException`) is logged and never raised:
         Discord refuses an overwrite for reasons that have nothing to do with the setting, and
         the role the league chose is still the right one to have stored. The channel is
         repairable by hand.
         """
+        if not await modules.is_enabled(SWITCH_KEY):
+            return
         cfg = await self.get_config()
         if cfg is None or cfg.signup_channel_id is None:
             return

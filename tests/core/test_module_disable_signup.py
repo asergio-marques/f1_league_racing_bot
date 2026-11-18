@@ -1046,8 +1046,6 @@ async def test_a_restore_run_again_after_a_stop_takes_back_to_the_first_record(t
     assert not await league.bot.module_service.is_enabled("signup")
 
 
-@pytest.mark.xfail(strict=True, reason="#449: a base role changed while signup is off still moves "
-                   "the overwrite on the kept signup channel")
 async def test_a_base_role_changed_while_signup_is_off_leaves_the_kept_channel_alone(tmp_path):
     """Signup is off with 620 kept. The league's base role is changed from 3001 to 3005, and the
     "base role changed" hook signup subscribes to is called as `/bot base-role` calls it: no

@@ -51,8 +51,11 @@ def sign_up(bot: "LeagueBot") -> None:
 
 def sign_up_to_base_role_changed(bot: "LeagueBot") -> None:
     """Sign signup's move of the signup channel's overwrite up to the hook the base role changed
-    declares, so core never reaches into the signup module itself."""
-    bot.base_role_changed.subscribe(bot.signup_module_service.move_base_role_overwrite)
+    declares, so core never reaches into the signup module itself. It is handed the module
+    service, which answers whether signup is on."""
+    bot.base_role_changed.subscribe(
+        partial(bot.signup_module_service.move_base_role_overwrite, bot.module_service)
+    )
 
 
 def sign_up_to_configuration_confirmed(bot: "LeagueBot") -> None:

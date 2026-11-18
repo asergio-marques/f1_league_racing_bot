@@ -117,9 +117,12 @@ async def _make_db(
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id, base_role_id, driver_role_id) "
-            "VALUES (?, 900, 100, ?, ?, ?)",
-            (SERVER_ID if claimed else None, LOG_CHANNEL, base_role, driver_role),
+            "interaction_channel_id, log_channel_id, base_role_id, driver_role_id, "
+            "signup_module_enabled) VALUES (?, 900, 100, ?, ?, ?, ?)",
+            (
+                SERVER_ID if claimed else None, LOG_CHANNEL, base_role, driver_role,
+                int(signup_channel is not NO_SIGNUP),
+            ),
         )
         if signup_channel is not NO_SIGNUP:
             await db.execute(
