@@ -20,7 +20,7 @@
 - A "weather channel" command shall be available to league managers, which shall have as input a division name and a channel on which weather forecasts for that division shall be posted by the bot.
     - If a forecast channel is not configured for a division while the weather module is enabled, then the season shall fail validation and confirming its placements shall be refused, the offending divisions being named.
     - Each division's forecast channel shall be displayed in the placements review much alike other division channels like results, standings, attendance, etc.
-    - A forecast channel shall be one the bot can post in: View Channel and Send Messages, and Attach Files where the weather forecast could be posted as a picture. Confirming a season's placements shall name a division whose forecast channel lacks any, with what it lacks, as it names one that is gone.
+    - A forecast channel shall be one the bot can post in: View Channel and Send Messages, and Attach Files where the weather forecast could be posted as a picture. Confirming a season's placements shall name a division whose forecast channel lacks any, with what it lacks, as it names one that is gone. The command setting it shall refuse one lacking any, as the core specification's Channels sets out.
     - A division created by duplicating another shall not inherit the source division's forecast channel.
 - The bot shall output weather forecasts only in the forecast channel configured for the division of the round, and shall record the calculations behind each phase only in the server log channel.
 - Every forecast shall mention the division's configured role. The mystery round notice is the sole exception.
