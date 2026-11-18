@@ -1003,8 +1003,6 @@ async def test_a_save_that_faults_after_the_restore_takes_the_permissions_back(
         assert any(line.startswith("❌") and LEFT in line for line in await _log_lines(league))
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-on records no permissions and puts none "
-                   "back")
 async def test_a_restore_run_again_after_a_stop_takes_back_to_the_first_record(tmp_path):
     """Signup is off with 620 kept, no overwrite standing on it. Manager 77 switches it on and the
     queue runs until the bot's permissions on 620 have been recorded. The bot then stops part-way
@@ -1023,7 +1021,7 @@ async def test_a_restore_run_again_after_a_stop_takes_back_to_the_first_record(t
 
     await _switch_on(league)
     for _ in range(12):
-        if any(row["name"] == recorded and row["state"] == "DONE"
+        if any(row["name"] == recorded and row["done_at"] is not None
                for row in await step_rows(league.db_path)):
             break
         await run_queue(league.bot, steps=1)
