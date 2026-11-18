@@ -62,6 +62,15 @@ type per command, which forms the line, the audit and the fault answer a score o
 catching its own fault, which could not undo its partial writes nor catch what fails after it
 returns (see `change_queue`).
 
+**A setting may run steps before its save** (`Setting.before`), which the save waits on: a module's
+kept channels checked before it is switched on. The change opens with the first and each plans the
+next, the save after the last, so the queue carries the order and a restart resumes it. A fault in
+one ends the setting as a fault in the save does: nothing is saved, no `SAVE` is planned, the
+member is told so and to run it again (`NOTHING_SAVED`), one failure line is written and the lane
+goes on. *Rejected:* an `After` step that undoes the switch-on, which would leave the module on for
+a moment and whose undo is a second save that can itself fail; and the check in `check()`, which
+carries no findings and runs at the ask as well.
+
 **Recorded twice, in one save, but for a step that carries the line.** The value, its audit entry
 and its line share one save, save where a step after it `carries_line` (the arming of the daily
 portrait job, and a role's grant to every driver where the one it replaces is gone from the
@@ -153,6 +162,17 @@ class After:
 
 
 @dataclass(frozen=True)
+class Before:
+    """A step before the save that the save waits on: a fault in it ends the setting, nothing saved.
+
+    *step* is an `ACT` step. It runs ahead of the save, in the order the setting lists them, and
+    the save is planned only once the last has returned.
+    """
+
+    step: Step
+
+
+@dataclass(frozen=True)
 class Setting:
     """One settings command's change, as `setting_change` builds it.
 
@@ -164,7 +184,8 @@ class Setting:
     *not_saved* is what a fault's reply says became of the change, or a function of the payload
     that returns it, for a setting whose command is a paste as well as a single value (the reply
     to a check that raises as the change starts is formed from the payload, as the outcome is);
-    *after* are the steps that may follow the save, by name. *repairs_the_bot* marks a league's
+    *after* are the steps that may follow the save, by name; *before* are the steps that run ahead
+    of it and that it waits on. *repairs_the_bot* marks a league's
     repair settings, the four that let it back into the bot and every channel setting, and makes
     the change type `overtakes_a_stop`, so that it can still be asked for, and run, while the
     league's lane is stopped on something else — see the module docstring.
@@ -179,6 +200,7 @@ class Setting:
     writes: tuple[str, ...]
     not_saved: str | Callable[[dict[str, Any]], str] = NOTHING_SAVED
     after: Mapping[str, After] = field(default_factory=dict)
+    before: tuple[Before, ...] = ()
     repairs_the_bot: bool = False
 
 
@@ -243,8 +265,23 @@ def _after_step(after: After) -> Step:
     return dataclasses.replace(inner, run=run, on_fault=_failed)
 
 
+def _before_step(before: Before, following: str) -> Step:
+    """*before*'s step as the change runs it: ending on a fault, and planning the step *following*.
+
+    A step's own `then` stays, and the next step of the setting follows it.
+    """
+    inner = before.step
+
+    async def run(ctx: StepContext) -> StepResult:
+        result = await inner.run(ctx)
+        return dataclasses.replace(result, then=(*result.then, PlannedStep(following)))
+
+    return dataclasses.replace(inner, run=run, on_fault=_failed)
+
+
 def setting_change(setting: Setting) -> ChangeType:
-    """The change type of *setting*: one `SAVE` step, then whatever steps after it its save plans.
+    """The change type of *setting*: its steps before the save, one `SAVE` step, then whatever
+    steps after it its save plans.
 
     See the module for what the change does with a value already held, a fault and the line.
     """
@@ -271,7 +308,7 @@ def setting_change(setting: Setting) -> ChangeType:
 
     def outcome(ctx: OutcomeContext) -> str:
         results = {view.name: dict(view.result) for view in ctx.steps if view.result is not None}
-        if results.get(SAVE, {}).get("failed"):
+        if any(results.get(name, {}).get("failed") for name in (*before_names, SAVE)):
             return failure_reply(
                 ctx.what,
                 _not_saved(setting, ctx.payload).format(command=setting.command(ctx.payload)),
@@ -283,13 +320,19 @@ def setting_change(setting: Setting) -> ChangeType:
                 reply = after.fault_reply(ctx.payload, reply)
         return reply
 
+    before_names = [before.step.name for before in setting.before]
+    order = [*before_names, SAVE]
     steps: dict[str, Step] = {
+        **{
+            before.step.name: _before_step(before, order[index + 1])
+            for index, before in enumerate(setting.before)
+        },
         SAVE: Step(SAVE, StepKind.SAVE, save, describe=describe, on_fault=_failed),
         **{name: _after_step(after) for name, after in setting.after.items()},
     }
     return ChangeType(
         kind=setting.kind,
-        opening=(PlannedStep(SAVE),),
+        opening=(PlannedStep(order[0]),),
         steps=steps,
         check=setting.check,
         key=lambda payload: f"{setting.kind}|{json.dumps(payload, sort_keys=True)}",
@@ -302,6 +345,6 @@ def setting_change(setting: Setting) -> ChangeType:
 
 
 __all__ = [
-    "After", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
+    "After", "Before", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
     "setting_change",
 ]
