@@ -955,9 +955,9 @@ async def produce_standings(
                         if wanted[championship]
                     },
                     subject=(
-                        f"{division_name} round {round_number}"
+                        f"{season_prefix}{division_name} round {round_number}"
                         if occasion.names_a_round
-                        else f"{division_name} — {occasion.label()}"
+                        else f"{season_prefix}{division_name} — {occasion.label()}"
                     ),
                 )
         except SwitchNotSignedUp:
