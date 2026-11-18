@@ -566,10 +566,6 @@ async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untou
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-#: Why the lapse after a signup moved on fails before the change: the lapse never reads the state.
-LAPSE_READS_NO_STATE = "#502: a lapsed reason says the signup still awaits review though it moved on"
-
-
 def _meanwhile(league: SeasonLeague, state: str) -> None:
     """Kimi's status becomes *state* at once, written without yielding to the loop, so that a
     lapse of no length started by the press cannot run before it."""
@@ -580,7 +576,6 @@ def _meanwhile(league: SeasonLeague, state: str) -> None:
         )
 
 
-@pytest.mark.xfail(strict=True, reason=LAPSE_READS_NO_STATE)
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 @pytest.mark.parametrize(
     "state",

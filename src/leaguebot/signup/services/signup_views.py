@@ -50,8 +50,9 @@ log = logging.getLogger(__name__)
 # Used to capture the admin's reason message before executing the action.
 #
 # **A pending reason lapses after five minutes** (`_REASON_LAPSE_SECONDS`), and nothing is done:
-# the manager is told, one lapse line is written, and the signup still awaits review. The
-# lapse is a task started through `start_background` and kept in the entry under "lapse" — never a
+# the manager is told, one lapse line is written, and the signup is left as it is: awaiting review,
+# or, where it moved on while the manager did not type, said to have moved on (the lapse re-reads
+# the driver's state through the review view's driver service). The lapse is a task started through `start_background` and kept in the entry under "lapse" — never a
 # bare `create_task`, whose reference the loop does not hold, and never an APScheduler job, which
 # would outlive a restart that drops the entry. A fault in it is logged and written to the log
 # channel as one line, through the router's `post_log`. It acts only while its own entry is the
@@ -98,9 +99,14 @@ def clear_pending_reasons() -> None:
     _PENDING_REASONS.clear()
 
 
-async def _lapse_pending_reason(key: tuple[int, int], entry: dict) -> None:
+async def _lapse_pending_reason(key: tuple[int, int], entry: dict, drivers: "DriverService") -> None:
     """After `_REASON_LAPSE_SECONDS`, end the pending *entry* unanswered: tell the manager, record
-    the lapse naming them, and leave the signup awaiting review.
+    the lapse naming them, and leave the signup as it is.
+
+    The driver's state is read again, through *drivers* (the review view's driver service, never
+    the bot), when the five minutes run out: where the signup still awaits review the manager is
+    told so and may press again; where it has moved on (the driver withdrew, another manager
+    decided, a cancellation) they are told that, never that it still awaits review.
 
     Acts only while *entry* is still the one pending under *key*: a reason that arrived has
     taken it, and a later press has replaced it.
@@ -113,9 +119,16 @@ async def _lapse_pending_reason(key: tuple[int, int], entry: dict) -> None:
     followup: discord.Webhook = entry["followup"]
     label = _BUTTON_OF[entry["action"]]
     nothing_done = _NOTHING_DONE[entry["action"]]
+    profile = await drivers.get_profile(str(entry["discord_user_id"]))
+    if profile is not None and profile.current_state == DriverState.PENDING_ADMIN_APPROVAL:
+        left = "the signup still awaits review"
+        detail = f"{nothing_done}; {left}. Press {label} again to give a reason."
+    else:
+        left = f"the signup has moved on since you pressed {label}"
+        detail = f"{nothing_done}; {left}."
     try:
         await followup.send(
-            f"⌛ No reason arrived within five minutes. {nothing_done}; the signup still awaits review.",
+            f"⌛ No reason arrived within five minutes. {nothing_done}; {left}.",
             ephemeral=True,
         )
     except discord.HTTPException:
@@ -125,7 +138,7 @@ async def _lapse_pending_reason(key: tuple[int, int], entry: dict) -> None:
         entry["actor"],
         what=f"the “{label}” button of {_review_owner(interaction, entry['discord_user_id'])} signup review",
         lapsed=True,
-        detail=f"{nothing_done}; the signup still awaits review. Press {label} again to give a reason.",
+        detail=detail,
     )
 
 
@@ -376,7 +389,7 @@ class AdminReviewView(LeagueView):
         # Started last, so the lapse's line can never come before the press's own.
         if _PENDING_REASONS.get(key) is entry:
             entry["lapse"] = start_background(
-                _lapse_pending_reason(key, entry),
+                _lapse_pending_reason(key, entry, self._drivers),
                 name="signup reason lapse",
                 report=self._router.post_log,
             )
