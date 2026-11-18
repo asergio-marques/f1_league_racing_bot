@@ -226,7 +226,8 @@ async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
 
 async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
     """The bot is no longer in the league's server when round 3 starts: no channel is created
-    and no submission recorded."""
+    and no submission recorded, and the queue stops at the channel's creation with its notice in
+    the log channel rather than passing over it in silence (#456)."""
     league = await _opening_league(tmp_path)
     league.bot.get_guild = MagicMock(return_value=None)
 
@@ -234,6 +235,12 @@ async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
 
     assert league.created == []
     assert await _submissions(league) == []
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "create_channel"
+    assert (
+        f"stopped at job #{stopped['id']}: creating the results submission channel of round 3"
+        in league.log()
+    )
 
 
 async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):

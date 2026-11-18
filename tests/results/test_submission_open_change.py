@@ -142,7 +142,8 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
 
 async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
     """Discord refuses to create round 3's channel (Missing Permissions). The queue stops at the
-    channel's creation, and round 3 is already awaiting results: its move off NOT_RUN was saved
+    channel's creation, its notice in the log channel naming the Manage Channels permission the
+    bot needs (#456), and round 3 is already awaiting results: its move off NOT_RUN was saved
     with the mark of the job before it, `start_round`. No submission is recorded, and no penalty
     review is asked."""
     league = await _league(tmp_path)
@@ -153,6 +154,7 @@ async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
 
     job = await stopped_job(league.db_path)
     assert job is not None and job["name"] == "create_channel"
+    assert "Manage Channels" in league.log()
     assert await _status(league) == "AWAITING_RESULTS"
     [change] = await _open_changes(league)
     [start] = [step for step in await step_rows(league.db_path, change["id"])
@@ -248,7 +250,9 @@ async def test_a_second_open_asked_while_the_first_is_stopped_is_dropped_once_th
 async def test_an_open_with_no_results_channel_stops_the_queue_naming_the_command(tmp_path):
     """Pro has no results channel set when round 3 starts. The queue stops rather than passing
     over it, its stop notice in the log channel naming `/results channel results`, and no
-    channel is created."""
+    channel is created. Once the channel is set again (606) and the job retried, the submission
+    opens: one channel is created and recorded, the queue runs clear, and round 3 awaits its
+    results (#456)."""
     league = await _league(tmp_path)
     await league.write(
         "UPDATE division_results_config SET results_channel_id = NULL WHERE division_id = ?", PRO,
@@ -260,6 +264,16 @@ async def test_an_open_with_no_results_channel_stops_the_queue_naming_the_comman
     assert await stopped_job(league.db_path) is not None
     assert "/results channel results" in league.log()
     assert league.created == []
+
+    await league.write(
+        "UPDATE division_results_config SET results_channel_id = 606 WHERE division_id = ?", PRO,
+    )
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+    assert await _status(league) == "AWAITING_RESULTS"
 
 
 async def test_the_opening_of_a_submission_cannot_be_discarded(tmp_path):
