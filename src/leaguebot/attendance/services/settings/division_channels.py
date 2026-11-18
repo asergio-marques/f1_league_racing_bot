@@ -72,12 +72,18 @@ async def set_attendance_channel(
     return old_id
 
 
-#: The settings of the check-in call and attendance channels, by the column that holds each, in
-#: the order a channel is looked for: what core's `channel_uses_read` names each.
-_SETTINGS = (
-    ("rsvp_channel_id", "rsvp"),
-    ("attendance_channel_id", "attendance"),
+#: The check-in call and attendance channels, in the order a division's faults read and a channel
+#: is looked for: the setting (what core's `channel_uses_read` names it, and the key of
+#: `channel_needs`), the column that holds it, what a league calls it, and the command that sets
+#: it. Public, because the confirmation's faults (`attendance_hooks.division_channel_faults`) read
+#: it from another file.
+CHANNELS = (
+    ("rsvp", "rsvp_channel_id", "RSVP channel", "/attendance channel rsvp"),
+    ("attendance", "attendance_channel_id", "attendance channel", "/attendance channel attendance"),
 )
+
+#: The same channels, by the column that holds each, with their setting.
+_SETTINGS = tuple((column, setting) for setting, column, _label, _command in CHANNELS)
 
 
 async def channel_uses(

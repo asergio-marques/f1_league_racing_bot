@@ -20,7 +20,7 @@ from leaguebot.attendance.models.attendance import AttendanceWindows
 from leaguebot.core.models.round import RoundLead
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.approval_checks import channel_fault
-from leaguebot.attendance.services.settings.division_channels import channel_needs
+from leaguebot.attendance.services.settings.division_channels import CHANNELS, channel_needs
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
@@ -225,12 +225,8 @@ async def division_channel_faults(
     for division_id, name in divisions.items():
         channels = await service.get_division_config(division_id)
         lines: list[str] = []
-        for value, label, command, setting in (
-            (channels.rsvp_channel_id if channels else None, "RSVP channel",
-             "/attendance channel rsvp", "rsvp"),
-            (channels.attendance_channel_id if channels else None, "attendance channel",
-             "/attendance channel attendance", "attendance"),
-        ):
+        for setting, column, label, command in CHANNELS:
+            value = getattr(channels, column) if channels else None
             fault = await channel_fault(guild, name, value, label, command, needs[setting])
             if fault:
                 lines.append(fault)

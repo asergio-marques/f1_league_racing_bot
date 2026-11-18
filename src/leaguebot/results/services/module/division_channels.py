@@ -38,12 +38,16 @@ if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-#: Results' three channels, in the order a division's lines read: the column that holds it, what a
-#: league calls it, the command that sets it, and what the review shows where it is not set.
+#: Results' three channels, in the order a division's lines read and a channel is looked for: the
+#: column that holds it, its setting (what core's `channel_uses_read` names it, and the key of
+#: `channel_needs`), what a league calls it, the command that sets it, and what the review shows
+#: where it is not set.
 _CHANNELS = (
-    ("results_channel_id", "results channel", "/results channel results", "*(none)*"),
-    ("standings_channel_id", "standings channel", "/results channel standings", "*(none)*"),
-    ("penalty_channel_id", "verdicts channel", "/results channel verdicts", "*(not configured)*"),
+    ("results_channel_id", "results", "results channel", "/results channel results", "*(none)*"),
+    ("standings_channel_id", "standings", "standings channel", "/results channel standings",
+     "*(none)*"),
+    ("penalty_channel_id", "verdicts", "verdicts channel", "/results channel verdicts",
+     "*(not configured)*"),
 )
 
 
@@ -148,18 +152,9 @@ async def division_lines(
         lines[division_id] = [
             f"  {label.capitalize()}: "
             + (f"<#{row[column]}>" if row is not None and row[column] else unset)
-            for column, label, _command, unset in _CHANNELS
+            for column, _setting, label, _command, unset in _CHANNELS
         ]
     return lines
-
-
-#: The settings of results' three channels, by the column that holds each, in the order a channel
-#: is looked for: what core's `channel_uses_read` names each.
-_SETTINGS = (
-    ("results_channel_id", "results"),
-    ("standings_channel_id", "standings"),
-    ("penalty_channel_id", "verdicts"),
-)
 
 
 async def channel_uses(
@@ -175,7 +170,7 @@ async def channel_uses(
     """
     uses: list[ChannelUse] = []
     async with get_connection(db_path) as db:
-        for column, setting in _SETTINGS:
+        for column, setting, _label, _command, _unset in _CHANNELS:
             cursor = await db.execute(
                 f"SELECT division_id FROM division_results_config WHERE {column} = ? "
                 f"ORDER BY division_id",
@@ -199,7 +194,7 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> Disc
     """
     found: set[int] = set()
     async with get_connection(db_path) as db:
-        for column, _setting in _SETTINGS:
+        for column, _setting, _label, _command, _unset in _CHANNELS:
             found |= await channel_ids_in(
                 db,
                 f"SELECT {column} FROM division_results_config WHERE {column} IS NOT NULL",
@@ -267,15 +262,14 @@ async def division_channel_faults(
         return {}
     channels = await _channels_of(db_path)
     needs = await channel_needs(drawing)
-    setting_of = dict(_SETTINGS)
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         row = channels.get(division_id)
         lines: list[str] = []
-        for column, label, command, _unset in _CHANNELS:
+        for column, setting, label, command, _unset in _CHANNELS:
             fault = await channel_fault(
                 guild, name, row[column] if row is not None else None, label, command,
-                needs[setting_of[column]],
+                needs[setting],
             )
             if fault:
                 lines.append(fault)

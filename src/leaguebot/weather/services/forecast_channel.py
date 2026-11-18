@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
+#: The forecast channel as a league calls it, and the command that sets it: what its faults name.
+_LABEL = "weather channel"
+_COMMAND = "/weather channel"
+
 
 async def set_division_forecast_channel(
     db: aiosqlite.Connection, division_id: int, channel_id: int
@@ -117,7 +121,7 @@ async def division_channel_faults(
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         fault = await channel_fault(
-            guild, name, channels.get(division_id), "weather channel", "/weather channel", needs
+            guild, name, channels.get(division_id), _LABEL, _COMMAND, needs
         )
         found[division_id] = [fault] if fault else []
     return found
