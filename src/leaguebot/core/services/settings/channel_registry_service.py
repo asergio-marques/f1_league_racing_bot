@@ -44,6 +44,7 @@ __all__ = [
     "channel_ids_in",
     "channel_refusal",
     "find_channel_use",
+    "live_divisions_on",
     "SETTING_LABELS",
     "DIVISION_SOURCES",
     "SERVER_SOURCES",
@@ -143,6 +144,20 @@ async def channel_ids_in(db: aiosqlite.Connection, sql: str, source: str) -> set
     return found
 
 
+async def live_divisions_on(db: aiosqlite.Connection) -> dict[int, str]:
+    """The live season's divisions, by id, naming each: those of a season in SETUP or ACTIVE.
+
+    What :func:`find_channel_use` hands each module through `channel_uses_read`, and so the
+    divisions whose channels the registry guards. A reader that must look at the same
+    divisions the registry does reads them here rather than restating the query.
+    """
+    cursor = await db.execute(
+        "SELECT d.id, d.name FROM divisions d JOIN seasons s ON s.id = d.season_id "
+        "WHERE s.status IN ('SETUP', 'ACTIVE')"
+    )
+    return {int(row[0]): str(row[1]) for row in await cursor.fetchall()}
+
+
 async def find_channel_use(
     db_path: str,
     channel_id: int,
@@ -192,11 +207,7 @@ async def find_channel_use(
                 continue
             return use
 
-        cursor = await db.execute(
-            "SELECT d.id, d.name FROM divisions d JOIN seasons s ON s.id = d.season_id "
-            "WHERE s.status IN ('SETUP', 'ACTIVE')"
-        )
-        divisions = {int(row[0]): str(row[1]) for row in await cursor.fetchall()}
+        divisions = await live_divisions_on(db)
 
     for found in await channel_uses_read.call(channel_id=channel_id, divisions=divisions):
         for use in found:
