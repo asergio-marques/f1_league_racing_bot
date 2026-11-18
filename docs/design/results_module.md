@@ -619,7 +619,7 @@ held or turns itself off, it hands core's writer the hook (`cancellation_notices
 | `test_mode_turned_on` | `season_points_service.seed_test_configs_on` | seeds the test configurations where the core specification's "Entering and leaving it" says, whatever results' switch, through the writers `/results config` uses, and hands back the names and the audit entries as a `TestModePart` |
 | `review_sections_read` | `season_points_service.review_section` | results' section of a season review |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry (answering nothing while results is off) and the factory reset |
-| `picture_channels_read` | `division_channels.picture_channels` | a division's channels for the results, standings and verdicts outputs asked, counted as pictures (needing Attach Files), answering nothing while results is off |
+| `picture_channels_read` | `division_channels.picture_channels` | a division's channels for the results, standings, verdicts and verdict banner outputs asked (the verdicts and the banner share the verdicts channel), counted as pictures (needing Attach Files), answering nothing while results is off |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | results' configuration in the season's fingerprint |
 | `round_leads_read` | `round_start.submission_leads` | answers the submission's lead for every round, whatever results' switch ("The round's `results` job") |
 | `round_armed` | `round_start.round_armed` | answers the submission's lead for an amended round, whatever results' switch |
