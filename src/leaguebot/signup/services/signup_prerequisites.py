@@ -125,8 +125,8 @@ async def configuration_faults(
     reads, naming what to run to put it right: no signup channel, or one gone from the server or
     lacking a permission the bot needs there (`channel_fault`, judged where *guild* is given; one
     the server could not be asked about is not named), no base role, no driver role, and the
-    league's two roles judged upon the server where *guild* is given (`league_role_faults`). Nothing while signup is off: the two roles are the league's, but only
-    signup needs them.
+    league's two roles judged upon the server where *guild* is given (`league_role_faults`).
+    Nothing while signup is off: the two roles are the league's, but only signup needs them.
 
     Subscribed to core's `configuration_faults_read`, and read where signup's lines stand in the
     configuration's faults, ahead of the team names, so the manager reads them in the same order.

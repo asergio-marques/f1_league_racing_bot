@@ -704,6 +704,8 @@ The image subsection also lists the eight **asset directories** and the path eac
 > **So does every other fault in the image module's configuration** — the rasteriser missing, a template an enabled output draws that will not load, a tier colour a template wants and a division lacks, or the portrait settings — and a lineup template with too few blocks or seats for a division. The review draws only the calendar and the lineup, so these are checked rather than drawn, the same way `/season config-review` checks them, and each is named in the same note. A template belonging only to an output you have switched off holds nothing back. Pressing a button that was offered before one of these arose refuses on the same faults, with nothing committed.
 >
 > **A team name that cannot be used as an artwork filename withholds it too.** `/season config-review` refuses such names, so a season rarely gets this far with one; the team list is fixed once the configuration is confirmed, so the only way out is `/season abort` and configuring the season again.
+>
+> **A signup channel that is unset, deleted or unusable withholds it too.** Where the signup module is enabled, the review names the signup channel when it is unset, no longer on the server, or missing a permission the bot needs there (saying which), and offers no Approve until it is put right: with `/signup channel` where it is unset or deleted, by giving the bot the permissions where it is unusable, since `/signup channel` is refused once the configuration is confirmed unless the channel is gone from the server. Pressing Approve refuses the same, privately, with nothing committed.
 
 #### Approving — the button in `/season placements-review`
 *Access: the reviewer, or a league admin*
@@ -741,8 +743,6 @@ Pressing it is acknowledged at once, naming its first job, and the reply is upda
 The same list is added to the approval's line in the log channel. A driver who has left the server is simply passed over.
 
 > **If your confirmation cannot reach you** — the approval took longer than fourteen minutes, or the bot restarted while it ran — the channel the review was in is told instead, in one line that mentions you: whether the season was approved, and that the log channel has the rest. Discord gives the bot fifteen minutes to answer a button, and an approval that waited on the queue or was stopped on a failure can outlast them. Once your reply can no longer be updated, the same line follows an approval refused when its turn came on the queue, with the reason beneath it, and one a league admin discarded before it began, saying it was not approved.
-
-> **A signup channel that is unset, deleted or unusable withholds the button too.** Where the signup module is enabled, the review names the signup channel when it is unset, no longer on the server, or missing a permission the bot needs there (saying which), and offers no Approve until it is put right: with `/signup channel` where it is unset or deleted, by giving the bot the permissions where it is unusable, since `/signup channel` is refused once the configuration is confirmed unless the channel is gone from the server. Pressing Approve refuses the same, privately, with nothing committed.
 
 **Who may press it.** The person who ran the review, or a **league admin**. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask a league admin to approve it, which is the point of putting it where both can see it.
 

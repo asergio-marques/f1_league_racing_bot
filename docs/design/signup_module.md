@@ -587,7 +587,7 @@ several modules join a hook the entry point calls the function in its order.
 | `starting` | `wiring.start_up_steps` | its three start-up steps (above) |
 | `base_role_changed` | `SignupModuleService.move_base_role_overwrite` | carries the signup channel's overwrite to the new base role while the module is on; while it is off, nothing, the switch-on reading the role then |
 | `configuration_confirmed` | `configuration_confirmed_on` | the season's copy of the configuration, in the confirmation's save |
-| `confirmation_refused`, `configuration_faults_read` | `signup_prerequisites.confirmation_refusals`, `configuration_faults` | what a season's approval and configuration lack while signup is on |
+| `confirmation_refused`, `configuration_faults_read` | `signup_prerequisites.confirmation_refusals`, `configuration_faults` | what a season's placements review, approval and configuration lack while signup is on |
 | `review_sections_read` | `review_section` | signup's section of a season review |
 | `driver_names_read` | `driver_names` | each driver's signup to the season asked about, else their latest, as name, username and nationality, and whether the league collects a nationality |
 | `driver_turned_down` | `driver_turned_down_on` | the approval of the driver's signup withdrawn |
@@ -618,13 +618,13 @@ channel, the league's two roles, judged on the server). Both judge the channel a
 `channel_needs`, stated once, through `judged_presence`, so a channel the server could not be asked
 about is not refused, and with no server handed only whether it is set is judged. The wording is
 each reader's own: `configuration_faults` lays the channel's line in core's shared `channel_fault`
-(extended to a channel of no division), while `confirmation_refusals` words the review's and the
-approval's lines itself, since after the configuration is confirmed an unusable channel's line must
-say to give the bot the permissions and never offer `/signup channel`, which `channel_fault` always
-offers. Both read signup's switch and hand
-nothing while it is off, and neither catches a fault in reading, which reaches the caller's own
-failure path. The approval judges the channel alone, since confirming the configuration already
-judged the roles and fixed them (`signup_prerequisites`' module docstring). Core's season checks
+(which also words a channel of no division), while `confirmation_refusals` words the review's and
+the approval's lines itself, since after the configuration is confirmed an unusable channel's line
+must say to give the bot the permissions and never offer `/signup channel`, which `channel_fault`
+always offers. Both read signup's switch and hand nothing while it is off, and neither catches a
+fault in reading, which reaches the caller's own failure path. The placements review and the
+approval judge the channel alone, since confirming the configuration already judged the roles and
+fixed them (`signup_prerequisites`' module docstring). Core's season checks
 neither import signup (the `core-uses-no-module` contract) nor name its tables (`TABLE_OWNER` in
 `tests/repository/test_architecture_rules.py`). Pinned by
 `test_the_signup_module_lacks_only_its_channel_while_it_is_on` and

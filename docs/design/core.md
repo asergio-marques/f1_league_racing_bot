@@ -591,7 +591,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `rounds_made_final` | A | results | `season_service` (`end_rounds_awaiting_results_on`, `close_raced_rounds_on`) |
 | `placements_confirmed`, `placements_confirmed_steps` | A, P | results, attendance | `season_approval_change` |
 | `configuration_confirmed` | A | signup | `configuration_confirm_change` |
-| `confirmation_refused` | A | results, signup | `confirmation_refusals`, which hands every subscriber the season and the server where its caller has one (the press, the placements report and `approval_checks` do, as does the queued check; a caller with none passes None, and a subscriber that needs the server then judges what it can without), and `season_approval_change`, whose check reads it again at the queue |
+| `confirmation_refused` | A | results, signup | `confirmation_refusals.read_refusals`, called by the placements report, the press, `approval_checks` and `season_approval_change`'s queued check, which hands every subscriber the season and the server where its caller has one; a caller with none passes None, and a subscriber that needs the server then judges what it can without |
 | `configuration_faults_read` | A | signup | `approval_checks` |
 | `review_sections_read` | A | signup, attendance, results, weather | `review_sections` |
 | `division_lines_read` | A | results, attendance, weather | `review_sections` |
