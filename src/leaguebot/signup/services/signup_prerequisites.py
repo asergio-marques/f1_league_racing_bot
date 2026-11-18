@@ -36,8 +36,10 @@ async def confirmation_refusals(
     signup: "SignupModuleService",
     season_id: int,
     confirmation: Confirmation,
+    guild: discord.Guild | None = None,
 ) -> list[Refusal]:
     """What signup refuses a season's approval on: its signup channel, unset while signup is on.
+    *guild*, which the hook hands every subscriber, is not read yet.
 
     Subscribed to core's `confirmation_refused`, after results'. Signup refuses neither the
     placements review nor the configuration's confirmation here (its configuration faults are read

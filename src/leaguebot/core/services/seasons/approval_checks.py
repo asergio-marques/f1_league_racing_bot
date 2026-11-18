@@ -664,7 +664,7 @@ async def configuration_faults(
     faults += [
         refusal.message
         for refusal in await read_refusals(
-            confirmation_refused, season_id, Confirmation.CONFIGURATION
+            confirmation_refused, season_id, Confirmation.CONFIGURATION, guild=guild
         )
     ]
 

@@ -21,6 +21,8 @@ from leaguebot.results.services.module.module_switch_settings import results_ena
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
+    import discord
+
     from leaguebot.framework.services.switches.module_service import ModuleService
 
 log = logging.getLogger(__name__)
@@ -297,12 +299,17 @@ async def no_points_config_attached(db_path: str, season_id: int) -> bool:
 
 
 async def confirmation_refusals(
-    modules: "ModuleService", db_path: str, season_id: int, confirmation: Confirmation
+    modules: "ModuleService",
+    db_path: str,
+    season_id: int,
+    confirmation: Confirmation,
+    guild: "discord.Guild | None" = None,
 ) -> list[Refusal]:
     """What results refuses a season's confirmation on: its points configurations.
 
-    Subscribed to core's `confirmation_refused`, and handing nothing while results is off. The
-    three faults are read through `no_points_config_attached`, `missing_points_config_problems`
+    Subscribed to core's `confirmation_refused`, and handing nothing while results is off. It
+    judges nothing on the server, so *guild*, which the hook hands every subscriber, is not
+    read. The three faults are read through `no_points_config_attached`, `missing_points_config_problems`
     and `points_ordering_problems`, the helpers `review_section` reports from, so the report and
     the refusal cannot drift. Test mode is no exception: it attaches Standard and Half Points when
     it is enabled, on a server holding no points configuration, and at no other moment, so a

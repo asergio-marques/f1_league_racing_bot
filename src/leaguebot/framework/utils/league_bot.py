@@ -125,7 +125,8 @@ class LeagueBot(commands.Bot):
     #: The moment a season's confirmation is judged (the placements review, the approval and the
     #: configuration's faults): each module signs up a function handing back what it refuses the
     #: confirmation on, or nothing where its module is off, handed the season and which
-    #: confirmation is judged. The builder makes it and signs them up, so that core's review,
+    #: confirmation is judged, and the league's server where the caller has it (None where it
+    #: does not). The builder makes it and signs them up, so that core's review,
     #: approval and configuration check read no module's service (architecture.md, "A hook core
     #: declares is a list of subscribers"); `read_refusals` gathers what they hand back.
     confirmation_refused: AwaitedHook

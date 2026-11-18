@@ -529,7 +529,8 @@ class SeasonCog(commands.Cog):
         # Read through the hook the approval and the configuration's faults read it by, so the
         # report and the refusal cannot drift. Each is a private reply, sent below.
         module_refusals = await read_refusals(
-            self.bot.confirmation_refused, season.id, Confirmation.REVIEW
+            self.bot.confirmation_refused, season.id, Confirmation.REVIEW,
+            guild=interaction.guild,
         )
 
         # Pre-fetch role configs so we can warn about teams missing a role
