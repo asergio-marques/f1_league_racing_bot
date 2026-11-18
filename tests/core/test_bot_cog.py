@@ -2619,6 +2619,9 @@ async def test_a_refusal_outside_the_league_goes_to_the_host_log_alone(tmp_path,
     bot, interaction, command, phrase = await _refused_site(case, tmp_path)
 
     assert phrase in _replied(interaction)
+    if case == "init on another server":
+        # Its channels are unusable too, but the server is refused alone, never its channels.
+        assert "missing permissions" not in _replied(interaction)
     bot.output_router.post_log.assert_not_awaited()
     member = re.compile(rf"(?<!\d){OWNER_ID}(?!\d)")
     assert any(
