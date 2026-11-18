@@ -2468,6 +2468,11 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         league_server(bot, unusable={905: ("attach_files",)})
         await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(905))
         return bot, interaction, command, _cannot_use(905, "bot command channel", "Attach Files")
+    if case == "interaction-channel lacks view channel":
+        answer_attachments(bot.image_drawing)
+        league_server(bot, unusable={905: ("view_channel",)})
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, _cannot_use(905, "bot command channel", "View Channel")
     if case == "log-channel already this setting, lacking permissions":
         league_server(bot, unusable={CONFIGURED_LOG: ("send_messages",)})
         await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_LOG))
@@ -2551,6 +2556,10 @@ def _replied(interaction: MagicMock) -> str:
         ),
         pytest.param(
             "interaction-channel lacks permissions",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        pytest.param(
+            "interaction-channel lacks view channel",
             marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
         "log-channel already this setting, lacking permissions",
