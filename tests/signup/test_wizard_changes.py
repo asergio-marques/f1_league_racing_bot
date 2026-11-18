@@ -2290,3 +2290,115 @@ async def test_a_cancellation_asked_behind_an_expiry_that_proves_not_due_still_c
         assert "⛔" in reply and "no signup in progress" in reply and "✅" not in reply
         assert len(_refusal_lines(league)) == 1
 
+
+# ---------------------------------------------------------------------------
+# An ending asked behind another ending of the same driver (#502)
+# ---------------------------------------------------------------------------
+
+#: Why the tests of an ending asked behind another fail until each kind has its own queue key.
+ENDINGS_SHARE_A_KEY = (
+    "#502: every kind of signup ending but a cancellation shares one queue key, so one asked "
+    "behind another of the same driver is refused as a repeat"
+)
+
+
+async def _reject_asked(league: SeasonLeague) -> Any:
+    """Manager 77 has pressed Reject on Kimi's review panel (the press deferred and parked as the
+    button parks it) and types "Lap time not credible" in Kimi's channel, which the review cog
+    hears: a rejection is asked of the queue, which is not run. Gives the stored press."""
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
+    from tests.support.change_queue import typed_message
+
+    manager = league._member(REVIEWER)
+    manager.bot = False
+    press = member_interaction(league.bot, user=manager)
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    await press.response.defer(ephemeral=True)
+    press.followup.send.return_value = MagicMock(edit=press.edit_original_response)
+    _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
+        "action": "reject",
+        "discord_user_id": str(SIGNING_UP),
+        "actor": manager,
+        "guild": league.guild,
+        "interaction": press,
+        "followup": press.followup,
+    }
+    reason = typed_message(league.channel(KIMI_CHANNEL), manager, REASON,
+                           created_at=league.clock.now)
+    reason.guild = league.guild
+    try:
+        await AdminReviewCog(league.bot).on_message(reason)
+    finally:
+        _PENDING_REASONS.clear()
+    return press
+
+
+async def _signup_audits(league: SeasonLeague) -> list[str]:
+    """The kinds of the signup audit entries written, in order."""
+    from tests.support.settings_league import audit_rows
+
+    return [row["change_type"] for row in await audit_rows(league.db_path)
+            if row["change_type"].startswith("SIGNUP_")]
+
+
+@pytest.mark.parametrize(
+    "first, second, refusal, audited",
+    [
+        pytest.param(_reject_asked, _press_cancel, "This signup has already ended.",
+                     "SIGNUP_REJECT", id="withdrawal-behind-rejection",
+                     marks=pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)),
+        pytest.param(_press_cancel, _reject_asked,
+                     "This signup has moved on since you pressed Reject.",
+                     "SIGNUP_WITHDRAW", id="rejection-behind-withdrawal",
+                     marks=pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)),
+    ],
+)
+async def test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at_its_turn(
+    tmp_path, first, second, refusal, audited,
+):
+    """Kimi's signup awaits review, his signup channel (6405) standing. One ending of it is asked
+    and, before the queue runs, a second: manager 77 rejects it (typing the reason) and Kimi then
+    presses Cancel Signup; or Kimi presses Cancel Signup and 77 then types a Reject reason. The
+    second is queued, never answered that it "has already been asked for". When the queue runs
+    the first ends the signup: Kimi is Not Signed Up, his channel is told once, and the first's
+    audit entry alone is written. The second is refused by its own check when its turn comes:
+    Kimi is told his signup has already ended, or 77 that the signup has moved on since they
+    pressed Reject."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    _held(league, KIMI_CHANNEL)
+
+    await first(league)
+    press = await second(league)
+    await run_queue(league.bot)
+
+    told = "\n".join((_answered(press), _said_to(press)))
+    assert "already been asked for" not in told, told
+    assert refusal in told, told
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_rejected(league)) + len(_told(league)) == 1
+    assert await _signup_audits(league) == [audited]
+
+
+@pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)
+async def test_a_withdrawal_asked_behind_an_expiry_that_proves_not_due_goes_through(tmp_path):
+    """Kimi is part-way through signing up and his 24 hours have run out: his timer fires and his
+    expiry is queued, then an answer of his is saved, so it is due no longer. Before the queue
+    runs Kimi presses Cancel Signup: the
+    withdrawal is queued, never answered that it "has already been asked for". When the queue
+    runs the expiry proves not due and the withdrawal goes ahead: Kimi is Not Signed Up, his
+    channel is told once that he withdrew and never that his signup expired, and one
+    `SIGNUP_WITHDRAW` audit entry is written."""
+    league = await _league(tmp_path)
+    await _expiry_not_due_ahead(league)
+
+    press = await _press_cancel(league)
+    await run_queue(league.bot)
+
+    assert "already been asked for" not in _answered(press)
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_told(league)) == 1
+    assert _expired(league) == []
+    assert await _signup_audits(league) == ["SIGNUP_WITHDRAW"]
