@@ -92,7 +92,7 @@ from leaguebot.framework.services.queue.change_types import (
 )
 from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
 from leaguebot.framework.utils.interaction_errors import failure_reply
-from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason, reply_reasons
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
@@ -187,7 +187,7 @@ def _on_refused(ctx: RefusedContext) -> tuple[()]:
     follow-on is owed. "Already configured" is the league's log channel's, the queue's own line,
     and is not written here as well."""
     if ctx.reply != ALREADY_CONFIGURED:
-        log.info("%s refused for %s: %s", ctx.what, ctx.actor_id, reply_reason(ctx.reply))
+        log.info("%s refused for %s: %s", ctx.what, ctx.actor_id, reply_reasons(ctx.reply))
     return ()
 
 

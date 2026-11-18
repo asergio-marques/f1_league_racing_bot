@@ -56,7 +56,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.framework.utils.league_server import guild_of
-from leaguebot.framework.utils.log_lines import lane_name, refuse
+from leaguebot.framework.utils.log_lines import lane_name, refuse, reply_reasons
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
@@ -80,7 +80,7 @@ async def _refuse_on_host(interaction: discord.Interaction, reply: str) -> None:
         describe(interaction),
         getattr(interaction.user, "display_name", "a member"),
         getattr(interaction.user, "id", None),
-        reply.strip().splitlines()[0] if reply.strip() else "",
+        reply_reasons(reply),
     )
     if interaction.response.is_done():
         await interaction.followup.send(reply, ephemeral=True)

@@ -84,6 +84,13 @@ def reply_reason(reply: str) -> str:
     return first
 
 
+def reply_reasons(reply: str) -> str:
+    """Every line of a multi-line *reply* as its reason, `; ` between them: a refusal that names
+    more than one thing (`/bot init`'s two unusable channels, one to a line) is recorded whole,
+    where `reply_reason` gives only the first line."""
+    return "; ".join(reply_reason(line) for line in reply.splitlines() if line.strip())
+
+
 async def _named(bot: Any, member: int | discord.abc.User | None) -> str:
     """*member* named as the log channel names them: a member object by the display name it
     carries, an id (or an object with no name) found on the league's server, nobody as "a member"."""
