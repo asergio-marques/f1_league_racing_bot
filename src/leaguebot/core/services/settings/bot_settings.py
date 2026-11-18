@@ -151,6 +151,38 @@ async def _log_channel_needs() -> Needs:
     return LOG_CHANNEL_NEEDS
 
 
+async def init_channel_refusals(
+    guild: discord.Guild | None,
+    *,
+    interaction_channel_id: int,
+    log_channel_id: int,
+    drawing: "ImageDrawing",
+) -> str | None:
+    """Why `/bot init` cannot take the two channels it was given, or None where it can: each
+    refusal `unusable_refusal` gives, the command channel's first, one to a line, so a manager
+    told of both repairs both before running it again.
+
+    *guild* is the server the channels are on: the interaction's at the ask, the payload's as the
+    server is claimed. Each channel is judged as the use `/bot init` will make of it
+    (`interaction_channel_needs`, `LOG_CHANNEL_NEEDS`), standing aside where *guild* is None or
+    Discord cannot say, as every channel check does.
+    """
+    refusals = [
+        line
+        for line in (
+            await unusable_refusal(
+                guild, interaction_channel_id, await interaction_channel_needs(drawing),
+                ChannelUse("interaction"),
+            ),
+            await unusable_refusal(
+                guild, log_channel_id, LOG_CHANNEL_NEEDS, ChannelUse("log")
+            ),
+        )
+        if line is not None
+    ]
+    return "\n".join(refusals) if refusals else None
+
+
 #: The name of the step, after a role setting's save, that sets the hub's permissions again.
 REAPPLY_HUB = "reapply_hub"
 
@@ -794,6 +826,7 @@ __all__ = [
     "base_role_setting",
     "driver_role_setting",
     "hub_channel_setting",
+    "init_channel_refusals",
     "interaction_channel_needs",
     "interaction_channel_setting",
     "interaction_role_setting",
