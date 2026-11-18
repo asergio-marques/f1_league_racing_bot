@@ -411,6 +411,10 @@ async def test_recalculation_faults_wants_attach_files_only_with_graphics(
     assert label in faults[0]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#449: the check-in call's channel does not yet need Read Message History",
+)
 async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_path):
     """Pro's RSVP channel 130 is gone from the server and its attendance channel 131 is there;
     Am has neither. Attendance on names Pro's RSVP channel as gone and both of Am's as missing,
@@ -422,7 +426,9 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
     which needs no embed, is not. Where the bot lacks Attach Files in the RSVP channel and Read
     Message History in the attendance channel, which a repost of the sheet needs, the attendance
     channel is named for it; the RSVP channel is named for Attach Files only with check-in pictures
-    on."""
+    on. Where the bot holds View Channel, Send Messages and Embed Links in the RSVP channel but not
+    Read Message History, which it reads the check-in call back with to redraw it after an answer
+    and to take its buttons off at the deadline, the RSVP channel is named for it."""
     from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
@@ -475,6 +481,13 @@ async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_p
             "**Pro**'s RSVP channel is missing permissions the bot needs there: Attach Files — "
             "give the bot them, or `/attendance channel rsvp`.",
             no_history,
+        ],
+        **am,
+    }
+    assert await faults(True, server_holding(unusable={130: ("read_message_history",)})) == {
+        10: [
+            "**Pro**'s RSVP channel is missing permissions the bot needs there: "
+            "Read Message History — give the bot them, or `/attendance channel rsvp`."
         ],
         **am,
     }
