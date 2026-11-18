@@ -455,14 +455,14 @@ async def test_a_channel_that_cannot_be_judged_is_not_refused(cause, caplog):
     proves refuses a channel."""
     from leaguebot.core.services.settings.channel_registry_service import unusable_refusal
 
-    guild = server_holding(unreadable=(500,)) if cause == "the server answers with an error" else None
+    guild = server_holding(unreadable=(501,)) if cause == "the server answers with an error" else None
     with caplog.at_level(logging.WARNING):
-        refused = await unusable_refusal(guild, 500, _LINEUP_NEEDS, ChannelUse("lineup", "Pro"))
+        refused = await unusable_refusal(guild, 501, _LINEUP_NEEDS, ChannelUse("lineup", "Pro"))
 
     assert refused is None
     if guild is not None:
         assert any(
-            record.levelno == logging.WARNING and "500" in record.getMessage()
+            record.levelno == logging.WARNING and "channel 501" in record.getMessage()
             for record in caplog.records
         )
 
