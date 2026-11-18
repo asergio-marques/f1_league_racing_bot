@@ -1143,13 +1143,21 @@ async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(
     lineup, and is not refused. Switched back on, the module is on, names 501 under the heading,
     and clears it from Pro's *setting*, audited from 501 to none under the setting's own change
     type; the Success line says it was given to another setting and is cleared; and the lineup
-    keeps 501. Signup's channel is the server's, named as the signup channel."""
+    keeps 501. Signup's channel is the server's, named as the signup channel, and the switch-on
+    puts none of signup's permissions on 501, now the lineup's."""
     from tests.support.change_queue import run_queue
     from tests.support.settings_league import last_said, log_lines
 
     module, *_rest = _KEPT[setting]
     command, enabled, audited = _KEPT[setting][4:7]
     league, cog, pro = await _switched_off_league(tmp_path, setting)
+    guild = league.bot.get_guild.return_value
+    finding = guild.get_channel.side_effect
+    taken = finding(PRO_CHANNEL)
+    taken.set_permissions, taken.edit = AsyncMock(), AsyncMock()
+    guild.get_channel = MagicMock(
+        side_effect=lambda cid: taken if int(cid) == PRO_CHANNEL else finding(cid)
+    )
     lineup = _asked(league, "division lineup-channel")
     await league.bot.change_queue.ask(
         "core.setting.lineup_channel_id",
@@ -1159,6 +1167,7 @@ async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(
     )
     await run_queue(league.bot)
     assert last_said(lineup).startswith("✅ ")
+    edits_before = (taken.set_permissions.await_count, taken.edit.await_count)
 
     asked = await _switch_on(league, cog, module)
 
@@ -1174,6 +1183,7 @@ async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(
     )
     lines = "\n".join(await log_lines(league))
     assert f"  {_whose(setting)} was given to another setting and is cleared — `{command}`" in lines
+    assert (taken.set_permissions.await_count, taken.edit.await_count) == edits_before
     async with get_connection(league.db_path) as db:
         cursor = await db.execute("SELECT lineup_channel_id FROM divisions WHERE id = ?", (pro,))
         assert int((await cursor.fetchone())["lineup_channel_id"]) == PRO_CHANNEL
