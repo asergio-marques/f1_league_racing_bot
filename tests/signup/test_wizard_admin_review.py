@@ -608,10 +608,6 @@ async def test_a_reason_whose_press_is_discarded_at_its_check_is_taken_down(
 # Every signup decision a person makes is audited (#502)
 # ---------------------------------------------------------------------------
 
-#: Why a decision's audit test fails before the change: signup decisions write no audit entry.
-NO_DECISION_AUDIT = "#502: a signup decision writes no audit entry"
-
-
 async def _approved(tmp_path: Any) -> SeasonLeague:
     league = await _league(tmp_path)
     await _approve(league)
@@ -677,7 +673,6 @@ async def _expired(tmp_path: Any) -> SeasonLeague:
                      id="approve"),
         pytest.param(_rejected, "NOT_SIGNED_UP",
                      ("SIGNUP_REJECT", REVIEWER, "PENDING_ADMIN_APPROVAL"),
-                     marks=pytest.mark.xfail(strict=True, reason=NO_DECISION_AUDIT),
                      id="reject"),
         pytest.param(_changes_requested, "AWAITING_CORRECTION_PARAMETER",
                      ("SIGNUP_REQUEST_CHANGES", REVIEWER, "PENDING_ADMIN_APPROVAL"),
@@ -687,7 +682,6 @@ async def _expired(tmp_path: Any) -> SeasonLeague:
                      id="field-choice"),
         pytest.param(_withdrew, "NOT_SIGNED_UP",
                      ("SIGNUP_WITHDRAW", SIGNING_UP, "PENDING_SIGNUP_COMPLETION"),
-                     marks=pytest.mark.xfail(strict=True, reason=NO_DECISION_AUDIT),
                      id="withdrawal"),
         pytest.param(_expired, "NOT_SIGNED_UP", None, id="expiry"),
     ],

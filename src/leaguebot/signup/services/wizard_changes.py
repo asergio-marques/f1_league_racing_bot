@@ -580,7 +580,10 @@ def end_change(
     `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
     Signed Up and the wizard ended in the same save, and the line written
-    ("Withdrawn", "Rejected" with the manager and the reason, or the lapse); `disarm_timers`
+    ("Withdrawn", "Rejected" with the manager and the reason, or the lapse), and, for the three
+    endings a person decides (`WITHDRAWN`, `REJECTED`, `CANCELLED`), the audit entry (`SIGNUP_WITHDRAW`,
+    `SIGNUP_REJECT`, `SIGNUP_CANCEL`) naming the driver and the state they left; the bot's own
+    endings (the lapse, a gone channel) write none; `disarm_timers`
     takes the timers away after it, as a job of its own, so that a save that fails keeps them. Where a
     closing follows on the driver's own lane (every reason but a gone channel), the job leaves the
     channel's deletion timer, which that closing arms, to *cancel_unclosed_timers*' own to keep:
@@ -791,6 +794,11 @@ def end_change(
                 ),)
             return StepResult(
                 result={},
+                audits=(AuditRecord(
+                    "SIGNUP_REJECT",
+                    {"state": prior, "discord_user_id": user_id},
+                    {"new_state": DriverState.NOT_SIGNED_UP.value, "reason": payload["text"]},
+                ),),
                 lines=(
                     f"{manager} | Signup | Rejected\n  driver: {named}\n  reason: {payload['text']}",
                 ),
@@ -834,7 +842,16 @@ def end_change(
                 },
                 "Closing a withdrawn signup",
             ),)
-        return StepResult(result={}, lines=(f"{named} | Signup | Withdrawn",), follow_ons=follow_ons)
+        return StepResult(
+            result={},
+            audits=(AuditRecord(
+                "SIGNUP_WITHDRAW",
+                {"state": prior, "discord_user_id": user_id},
+                {"new_state": DriverState.NOT_SIGNED_UP.value},
+            ),),
+            lines=(f"{named} | Signup | Withdrawn",),
+            follow_ons=follow_ons,
+        )
 
     async def name_driver(ctx: StepContext) -> StepResult:
         return StepResult(result={
