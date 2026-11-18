@@ -2279,15 +2279,15 @@ async def _withdrawal_ahead(league: SeasonLeague) -> None:
 async def test_a_cancellation_asked_behind_an_expiry_that_proves_not_due_still_cancels(
     tmp_path, ahead, cancels,
 ):
-    """Kimi is part-way through signing up and another ending of his signup waits on the queue:
-    his expiry, asked when his 24 hours ran out but due no longer, an answer of his having been
-    saved since, or his own withdrawal. Admin (77) runs `/signup cancel` of Kimi and submits the form; it is queued, not
-    refused as a repeat of the ending ahead. When the queue runs, Kimi is Not Signed Up. Behind
-    the expiry, which proves not due, the cancellation goes ahead: one "Signup | Cancelled" line,
-    one `SIGNUP_CANCEL` audit entry, his channel told once and Admin told it was cancelled.
-    Behind the withdrawal, which ends the signup first, the cancellation is refused by its own
-    check as Kimi having no signup in progress: Admin is told so, one refusal line is written,
-    and no line, audit entry or notice of a cancellation follows."""
+    """Kimi is part-way through signing up and another ending of his signup waits on the queue: his
+    expiry, asked when his 24 hours ran out but due no longer, an answer of his having been saved
+    since, or his own withdrawal. Admin (77) runs `/signup cancel` of Kimi and submits the form; it
+    is queued, not refused as a repeat of the ending ahead. When the queue runs, Kimi is Not Signed
+    Up. Behind the expiry, which proves not due, the cancellation goes ahead: one
+    "Signup | Cancelled" line, one `SIGNUP_CANCEL` audit entry, his channel told once and Admin told
+    it was cancelled. Behind the withdrawal, which ends the signup first, the cancellation is
+    refused by its own check as Kimi having no signup in progress: Admin is told so, one refusal
+    line is written, and no line, audit entry or notice of a cancellation follows."""
     league = await _league(tmp_path)
     await ahead(league)
 
@@ -2383,11 +2383,11 @@ async def test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at
     """Kimi's signup awaits review, his signup channel (6405) standing. One ending of it is asked
     and, before the queue runs, a second: manager 77 rejects it (typing the reason) and Kimi then
     presses Cancel Signup; or Kimi presses Cancel Signup and 77 then types a Reject reason. The
-    second is queued, never answered that it "has already been asked for". When the queue runs
-    the first ends the signup: Kimi is Not Signed Up, his channel gets the first's notice alone
-    (rejected, or withdrawn), and the first's audit entry alone is written. The second is refused by its own check when its turn comes:
-    Kimi is told his signup has already ended, or 77 that the signup has moved on since they
-    pressed Reject."""
+    second is queued, never answered that it "has already been asked for". When the queue runs the
+    first ends the signup: Kimi is Not Signed Up, his channel gets the first's notice alone
+    (rejected, or withdrawn), and the first's audit entry alone is written. The second is refused by
+    its own check when its turn comes: Kimi is told his signup has already ended, or 77 that the
+    signup has moved on since they pressed Reject."""
     league = await _league(tmp_path)
     await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
     _held(league, KIMI_CHANNEL)
@@ -2408,12 +2408,11 @@ async def test_an_ending_asked_behind_another_that_ends_the_signup_is_refused_at
 @pytest.mark.xfail(strict=True, reason=ENDINGS_SHARE_A_KEY)
 async def test_a_withdrawal_asked_behind_an_expiry_that_proves_not_due_goes_through(tmp_path):
     """Kimi is part-way through signing up and his 24 hours have run out: his timer fires and his
-    expiry is queued, then an answer of his is saved, so it is due no longer. Before the queue
-    runs Kimi presses Cancel Signup: the
-    withdrawal is queued, never answered that it "has already been asked for". When the queue
-    runs the expiry proves not due and the withdrawal goes ahead: Kimi is Not Signed Up, his
-    channel is told once that he withdrew and never that his signup expired, and one
-    `SIGNUP_WITHDRAW` audit entry is written."""
+    expiry is queued, then an answer of his is saved, so it is due no longer. Before the queue runs
+    Kimi presses Cancel Signup: the withdrawal is queued, never answered that it "has already been
+    asked for". When the queue runs the expiry proves not due and the withdrawal goes ahead: Kimi is
+    Not Signed Up, his channel is told once that he withdrew and never that his signup expired, and
+    one `SIGNUP_WITHDRAW` audit entry is written."""
     league = await _league(tmp_path)
     await _expiry_not_due_ahead(league)
 
