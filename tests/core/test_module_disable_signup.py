@@ -369,29 +369,39 @@ async def test_the_disable_is_logged(tmp_path):
     assert any("/module disable signup" in line for line in await _log_lines(league))
 
 
-async def test_the_configuration_is_cleared(tmp_path):
-    """The configuration row, which holds the channel, is deleted by the switch-off's job: it
-    stands until the queue runs, and is gone after, the acknowledgement updated to say the
-    channel has been cleared. What survives it is pinned by
-    `test_time_slots_and_settings_stand_again_after_a_re_enable`."""
+@pytest.mark.xfail(strict=True, reason="#449: the switch-off deletes the configuration row and "
+                   "its channel")
+async def test_the_channel_is_kept_and_its_permissions_removed(tmp_path):
+    """The configuration row names the signup channel (620) with the window closed. Once the
+    switch-off has run, the row still stands and still names 620, and the acknowledgement says the
+    channel, time slots and question settings are kept, and that the permissions the bot set on
+    the channel are removed and put back when the module is switched on again. Which permissions
+    go is pinned by `test_the_overwrites_the_bot_applied_are_cleared`."""
     league = await _league(tmp_path)
 
     interaction = await _switch_off(league)
-
-    assert await league.rows("SELECT * FROM signup_module_config") != []
-
     await run_queue(league.bot)
 
-    assert await league.rows("SELECT * FROM signup_module_config") == []
-    assert "Its channel has been cleared" in updated_reply(interaction)
+    assert [row["signup_channel_id"] for row in
+            await league.rows("SELECT signup_channel_id FROM signup_module_config")] == [
+        LEAGUE_SIGNUP_CHANNEL
+    ]
+    reply = updated_reply(interaction)
+    assert "Its channel, time slots and question settings are kept" in reply
+    assert (
+        "The permissions the bot set on the channel are removed, and put back when the module is "
+        "switched on again."
+    ) in reply
 
 
+@pytest.mark.xfail(strict=True, reason="#449: the switch-off deletes the configuration row and "
+                   "its channel")
 async def test_disabling_signup_keeps_both_roles(tmp_path):
     """They are the league's, not the module's (issue #276). Disabling signup deleted them
     with its configuration row, and a league that ran on without signups lost the base role
     another module reads and the driver role its season's end revokes. The base role (3001) and
-    the driver role (3002) are set; once the switch-off has run both stand, the configuration is
-    gone (it stands until the queue runs) and the acknowledgement says the two roles are kept."""
+    the driver role (3002) are set; once the switch-off has run both stand, the configuration and
+    its signup channel stand too, and the acknowledgement says the two roles are kept."""
     league = await _league(tmp_path)
     await league.write("UPDATE server_configs SET base_role_id = ?, driver_role_id = 3002",
                        BASE_ROLE)
@@ -404,18 +414,27 @@ async def test_disabling_signup_keeps_both_roles(tmp_path):
 
     config = await league.bot.config_service.get_server_config()
     assert (config.base_role_id, config.driver_role_id) == (BASE_ROLE, 3002)
-    assert await league.bot.signup_module_service.get_config() is None
+    signup_config = await league.bot.signup_module_service.get_config()
+    assert signup_config is not None
+    assert signup_config.signup_channel_id == LEAGUE_SIGNUP_CHANNEL
     assert "base role and driver role" in updated_reply(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#449: the switch-off forgets the signup channel, and the "
+                   "switch-on puts no permission back")
 async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
-    """Only the channel goes (issue #127). The slots and the three question settings live in
-    tables no key joins to the configuration row, so nothing but the rule keeps them: a
-    disable that cleared them too would pass every other test here. Every setting is away from
-    its default and two slots are saved; the module is switched off through the queue (still on
-    until it runs) and then enabled again through the queue: the settings and slots are as they
-    were, the configuration naming no channel."""
+    """Nothing the league configured goes (issue #127, #449). The slots and the three question
+    settings live in tables no key joins to the configuration row, so nothing but the rule keeps
+    them: a disable that cleared them too would pass every other test here. Every setting is away
+    from its default, two slots are saved and the signup channel (620) is on the server, usable;
+    the module is switched off through the queue (still on until it runs) and then enabled again
+    through the queue: the settings and slots are as they were, the configuration still names 620,
+    and the switch-on has set each permission `/signup channel` sets on it
+    (`signup_channel_overwrites`) again."""
+    from leaguebot.signup.services.signup_module_service import signup_channel_overwrites
+
     league = await _league(tmp_path)
+    channel = _signup_channel(league)
     signup = league.bot.signup_module_service
     # Every setting away from its default, so a reset to defaults cannot pass for kept.
     await league.write(
@@ -443,7 +462,11 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     assert await signup.get_settings() == settings
     assert await signup.get_slots() == slots
     config = await signup.get_config()
-    assert config is not None and config.signup_channel_id is None
+    assert config is not None and config.signup_channel_id == LEAGUE_SIGNUP_CHANNEL
+    wanted = signup_channel_overwrites(
+        league.guild, await league.bot.config_service.get_server_config()
+    )
+    assert set(_put_back(channel)) == set(wanted)
 
 
 async def test_a_window_closed_since_the_ask_refuses_the_switch_off(tmp_path):
@@ -576,14 +599,27 @@ async def test_a_league_with_no_configuration_still_disables(tmp_path):
 
 
 def _signup_channel(league: SeasonLeague, *, set_permissions_fails: bool = False) -> Any:
-    """The signup channel (620) as a double that records its permission edits."""
+    """The signup channel (620) as a double that records its permission edits, on the server
+    with every permission the bot needs there held, and with no overwrite standing on it."""
     channel = _channel(set_permissions_fails=set_permissions_fails)
     channel.id = LEAGUE_SIGNUP_CHANNEL
+    channel.guild = league.guild
+    channel.overwrites = {}
+    channel.overwrites_for = MagicMock(side_effect=lambda _target: discord.PermissionOverwrite())
+    channel.permissions_for = MagicMock(return_value=discord.Permissions.all())
     finding = league.guild.get_channel.side_effect
     league.guild.get_channel = MagicMock(
         side_effect=lambda cid: channel if int(cid) == LEAGUE_SIGNUP_CHANNEL else finding(cid)
     )
     return channel
+
+
+def _put_back(channel: Any) -> list[Any]:
+    """Every target the channel was given an overwrite for, in order."""
+    return [
+        call.args[0] for call in channel.set_permissions.await_args_list
+        if call.kwargs.get("overwrite") is not None
+    ]
 
 
 def _cleared(channel: Any) -> list[Any]:

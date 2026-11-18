@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -476,24 +476,50 @@ async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
     assert config is not None and str(config["signup_channel_id"]) == "620"
 
 
-async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path):
+@pytest.mark.parametrize("kept", [
+    pytest.param(False, id="no channel kept"),
+    pytest.param(True, id="a channel kept", marks=pytest.mark.xfail(
+        strict=True, reason="#449: the switch-on asks for /signup channel with one kept")),
+])
+async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path, kept):
     """A module enabled with nothing configured does nothing at all, and these are the
     difference between a league proceeding and a league wondering what happened. With neither
-    role set, the reply names all three, word for word."""
+    role set and no signup channel kept, the reply names all three, word for word. Where the
+    configuration kept from before the switch-off names channel 620, on the server and usable,
+    `/signup channel` is not asked for, and only the two roles are."""
+    import discord
+
     from tests.support.settings_league import last_said
 
     league, cog, asked = await _signup_league(tmp_path)
+    if kept:
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
+                "VALUES (1, 620, 0)"
+            )
+            await db.commit()
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 620
+        channel.set_permissions = AsyncMock()
+        channel.overwrites = {}
+        channel.overwrites_for = MagicMock(side_effect=lambda _target: discord.PermissionOverwrite())
+        channel.permissions_for = MagicMock(return_value=discord.Permissions.all())
+        guild = MagicMock()
+        guild.get_channel = MagicMock(side_effect=lambda cid: channel if int(cid) == 620 else None)
+        channel.guild = guild
+        league.bot.get_guild = MagicMock(return_value=guild)
 
     await cog._enable_signup(asked)
     await run_queue(league.bot)
 
-    assert last_said(asked) == (
-        "✅ Signup module enabled.\n"
-        "Next steps — configure with:\n"
-        "  • `/signup channel <channel>`\n"
-        "  • `/bot base-role <role>`\n"
-        "  • `/bot driver-role <role>`"
-    )
+    assert last_said(asked) == "\n".join([
+        "✅ Signup module enabled.",
+        "Next steps — configure with:",
+        *(() if kept else ("  • `/signup channel <channel>`",)),
+        "  • `/bot base-role <role>`",
+        "  • `/bot driver-role <role>`",
+    ])
 
 
 async def test_enabling_signup_does_not_ask_for_roles_the_league_already_set(tmp_path):
