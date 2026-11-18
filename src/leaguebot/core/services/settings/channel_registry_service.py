@@ -12,6 +12,10 @@ The rule is therefore **server-wide**: a channel serving one purpose anywhere on
 be given a second, not even in another division. Two divisions posting their results to one channel
 would produce two sets of tables nobody can tell apart.
 
+A module that keeps its channels when switched off (weather, results, attendance) answers for them
+**only while it is on**: a channel it kept may be given to another setting meanwhile. Its switch-on clears the channel again (`core/services/modules/kept_channels.py`), and of
+two switched-off modules holding one channel, the first switched back on keeps it.
+
 Read at the moment a channel is set, never cached: a manager can clear a channel by other
 routes, and a stale answer would refuse a channel that is genuinely free.
 
