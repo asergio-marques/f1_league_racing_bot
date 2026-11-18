@@ -1197,7 +1197,8 @@ async def test_a_switch_on_whose_kept_channels_cannot_be_checked_leaves_the_modu
     """Pro's kept channel is out of the cache and Discord answers its fetch with a server error,
     or the league's server is out of the bot's reach: the check cannot be made, so the module
     stays off, the member is told to run the command again, the one line is a failure, nothing is
-    audited, and nothing stops the queue."""
+    audited, nothing stops the queue, and the channel is still held. Signup's channel is the
+    server's own, kept once as 501, and its check fails the same two ways."""
     from tests.support.change_queue import stopped_job
     from tests.support.channel_faults import server_holding
     from tests.support.settings_league import last_said, log_lines
