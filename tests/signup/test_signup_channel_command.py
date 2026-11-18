@@ -112,19 +112,24 @@ def _discord(league, *channels):
     return edits
 
 
-def _channel(channel_id: int = NEW, *, manage_channels=True, manage_roles=True, fault=None):
+def _channel(
+    channel_id: int = NEW, *, manage_channels=True, manage_roles=True, denied=(), fault=None
+):
     """A text channel on which the bot holds Manage Channel and Manage Permissions, as
-    *manage_channels* and *manage_roles* say, whose edit raises *fault* where one is given."""
+    *manage_channels* and *manage_roles* say, and every other permission but those *denied*, each
+    named as `discord.Permissions` names it (`embed_links`), whose edit raises *fault* where one is
+    given."""
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
     channel.name = f"signups-{channel_id}"
     channel.mention = f"<#{channel_id}>"
-    channel.permissions_for = MagicMock(
-        return_value=MagicMock(
-            manage_channels=manage_channels, manage_roles=manage_roles,
-            view_channel=True, send_messages=True,
-        )
+    permissions = MagicMock(
+        manage_channels=manage_channels, manage_roles=manage_roles,
+        view_channel=True, send_messages=True,
     )
+    for attribute in denied:
+        setattr(permissions, attribute, False)
+    channel.permissions_for = MagicMock(return_value=permissions)
     channel._fault = fault
     return channel
 
@@ -167,6 +172,15 @@ def _may_not_edit(channel) -> str:
     return (
         f"❌ The bot needs **Manage Channel** and **Manage Permissions** on {channel.mention} "
         "to set who may see it. The signup channel was not changed."
+    )
+
+
+def _cannot_use(channel_id: int, missing: str) -> str:
+    """The refusal of *channel_id* as the signup channel where the bot lacks *missing* there, in
+    the words every channel setting uses, word for word."""
+    return (
+        f"❌ The bot is missing permissions it needs in <#{channel_id}> as the signup channel: "
+        f"{missing}. Give the bot them there, or pick another channel. Nothing was changed."
     )
 
 
@@ -274,16 +288,25 @@ async def test_the_command_runs_to_the_end_without_an_unbound_name(tmp_path):
     assert [kind for kind, _actor in await _audits(league.db_path)] == ["SIGNUP_CHANNEL_SET"]
 
 
-async def test_a_fault_in_the_save_saves_no_channel_and_says_to_run_it_again(tmp_path):
-    """Criterion 6: the manager sets 700 as the signup channel while the audit entry's write
-    faults. Nothing is saved, no channel's permissions are touched, the manager is told
-    nothing was saved and to run the command again, and no Success line is written."""
+@pytest.mark.parametrize("where", ["save", "server-not-to-hand"])
+async def test_a_fault_saves_no_channel_and_says_to_run_it_again(tmp_path, where):
+    """Criterion 6: the manager sets 700 as the signup channel, and as the queue runs it the audit
+    entry's write faults (*save*), or the league's server is no longer to hand for the check
+    (*server-not-to-hand*), which is not a channel the bot is judged unable to use but a check
+    that cannot be made, so `/signup channel` does not stand aside and save as other channel
+    settings do (decided 2026-11-18). Nothing is saved, no channel's permissions are touched, the
+    manager is told nothing was saved and to run the command again, and no Success line is
+    written."""
     league = await _league(tmp_path)
     channel = _channel()
     edits = _discord(league, channel)
 
     asked = await _ask(league, channel)
-    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
+    if where == "save":
+        with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
+            await run_queue(league.bot)
+    else:
+        league.bot.get_guild = MagicMock(return_value=None)
         await run_queue(league.bot)
 
     assert last_said(asked) == failure_reply(
@@ -300,38 +323,96 @@ async def test_a_fault_in_the_save_saves_no_channel_and_says_to_run_it_again(tmp
 # ---------------------------------------------------------------------------
 
 
+#: Why a new signup channel the bot cannot use is not yet refused in the common words.
+_NOT_JUDGED = "#570: /signup channel does not judge the new channel against everything it needs"
+
+
 @pytest.mark.parametrize(
-    "refused, manage_channels, manage_roles",
+    "refused, denied, missing",
     [
-        pytest.param("new", True, False, id="new-only-manage-channels"),
-        pytest.param("new", False, True, id="new-only-manage-roles"),
-        pytest.param("old", True, False, id="old-only-manage-channels"),
-        pytest.param("old", False, True, id="old-only-manage-roles"),
+        pytest.param(
+            "new", ("manage_roles",), "Manage Permissions", id="new-only-manage-channels",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        pytest.param(
+            "new", ("manage_channels",), "Manage Channel", id="new-only-manage-roles",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        pytest.param(
+            "new", ("embed_links",), "Embed Links", id="new-no-embed-links",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        pytest.param(
+            "new", ("send_messages",), "Send Messages", id="new-no-send-messages",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        pytest.param("old", ("manage_roles",), None, id="old-only-manage-channels"),
+        pytest.param("old", ("manage_channels",), None, id="old-only-manage-roles"),
     ],
 )
-async def test_signup_channel_refuses_early_without_both_permissions(
-    tmp_path, refused, manage_channels, manage_roles
+async def test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_before_anything_is_edited(
+    tmp_path, refused, denied, missing
 ):
-    """The channel's permissions are set with both, which Discord shows on a channel as Manage
-    Channel and Manage Permissions. The league's signup channel is 650 and the manager moves it
-    to 700, the bot holding only one of the two on the *refused* channel (700, the new, or 650,
-    the old). The move is refused before anything is edited, in the hub's words naming that
-    channel; neither channel's permissions are touched, 650 stays the signup channel, and the
-    refusal is logged. Takes the place of the planned
-    `test_a_foreseeable_permission_refusal_saves_nothing`."""
+    """Core spec, Channels, and the signup spec. The league's signup channel is 650 and the
+    manager moves it to 700. Where the bot lacks one of View Channel, Send Messages, Embed Links,
+    Manage Channel and Manage Permissions on 700, the new channel, it is refused in the words every
+    channel setting uses, naming what the bot lacks there; where it lacks Manage Channel or Manage
+    Permissions on 650, the old channel, whose permissions the move clears, it is refused in the
+    hub's words naming 650, as before. Either way the move is refused before anything is edited:
+    neither channel's permissions are touched, 650 stays the signup channel, and one refusal line
+    is written."""
     league = await _league(tmp_path, held=OLD)
-    lacking = {"manage_channels": manage_channels, "manage_roles": manage_roles}
-    old = _channel(OLD, **(lacking if refused == "old" else {}))
-    new = _channel(NEW, **(lacking if refused == "new" else {}))
+    old = _channel(OLD, denied=denied if refused == "old" else ())
+    new = _channel(NEW, denied=denied if refused == "new" else ())
     edits = _discord(league, old, new)
 
     asked = await _run(league, new)
 
-    refused_channel = new if refused == "new" else old
-    assert last_said(asked) == _may_not_edit(refused_channel)
+    said = _cannot_use(NEW, missing) if refused == "new" else _may_not_edit(old)
+    assert last_said(asked) == said
     assert edits == []
     assert await _stored(league.db_path) == OLD
-    await _assert_one_refusal_line(league, "/signup channel", "Manage Permissions")
+    await _assert_one_refusal_line(league, "/signup channel", said.removeprefix("❌ "))
+
+
+@pytest.mark.parametrize("meanwhile", ["permission_lost", "channel_deleted"])
+@pytest.mark.xfail(
+    strict=True, reason="#570: /signup channel does not judge the new channel as it starts"
+)
+async def test_a_signup_channel_change_is_refused_as_it_starts_where_its_channel_can_no_longer_be_used(
+    tmp_path, meanwhile
+):
+    """Core spec, Channels: a channel's needs are judged again as the change starts. The league's
+    signup channel is 650 and the manager moves it to 700, the bot holding every permission on
+    both, and is acknowledged. Before the change runs, the bot is denied Embed Links on 700
+    (*permission_lost*), or 700 is deleted (*channel_deleted*). The move is refused: the manager's
+    reply becomes the refusal, naming what the bot lacks on 700 or that 700 is no longer on the
+    server; 650 stays the signup channel, neither channel's permissions are touched, nothing is
+    audited, and one refusal line is written."""
+    league = await _league(tmp_path, held=OLD)
+    old, new = _channel(OLD), _channel(NEW)
+    edits = _discord(league, old, new)
+
+    asked = await _ask(league, new)
+    assert acknowledgement(asked).startswith("⏳ ")
+    if meanwhile == "permission_lost":
+        new.permissions_for.return_value.embed_links = False
+        said = _cannot_use(NEW, "Embed Links")
+    else:
+        standing = {OLD: old}
+        league.guild.get_channel = MagicMock(side_effect=standing.get)
+        league.bot.get_channel = MagicMock(side_effect=standing.get)
+        league.guild.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+        )
+        said = f"❌ <#{NEW}> is no longer on the server. Nothing was changed."
+    await run_queue(league.bot)
+
+    assert last_said(asked) == said
+    assert await _stored(league.db_path) == OLD
+    assert edits == []
+    assert await _audits(league.db_path) == []
+    await _assert_one_refusal_line(league, "/signup channel", said.removeprefix("❌ "))
 
 
 async def test_an_unforeseen_refusal_keeps_the_channel_and_names_the_fault(tmp_path):
@@ -545,6 +626,9 @@ SIGNUP_CHANNEL_REFUSALS = [
                  "not configured", id="signup-channel-not-configured"),
     pytest.param("signup_channel", lambda: (_channel(INTERACTION_CHANNEL_ID),), None,
                  "/signup channel", "already the", id="signup-channel-already-in-use"),
+    pytest.param("signup_channel",
+                 lambda: (_channel(INTERACTION_CHANNEL_ID, denied=("embed_links",)),), None,
+                 "/signup channel", "already the", id="signup-channel-already-in-use-lacking"),
     pytest.param("signup_channel", lambda: (_channel(),), "fixed", "/signup channel",
                  "fixed for Season 3", id="signup-channel-fixed"),
     pytest.param("nationality", lambda: (), "fixed", "/signup nationality",
