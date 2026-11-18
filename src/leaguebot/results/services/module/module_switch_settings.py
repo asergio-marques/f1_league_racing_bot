@@ -54,6 +54,10 @@ from leaguebot.core.services.modules.kept_channels import (
     kept_channels_check,
     named_reply,
 )
+from leaguebot.results.services.module.channel_settings import (
+    typed_channel_audit,
+    verdicts_channel_audit,
+)
 from leaguebot.results.services.module.division_channels import (
     kept_channels,
     set_division_penalty_channel,
@@ -76,20 +80,13 @@ ARM_SWEEP = "arm_amendment_sweep"
 
 _ENABLE_COMMAND = "/module enable results"
 
-#: What clearing each of results' channels is: the column's own writer, the change type of the
-#: setting that sets it and what its audit entry names the channel as (none for the verdicts
-#: channel's, which names only the id).
+#: What clearing each of results' channels is: the column's own writer, and the audit entry of
+#: the setting that sets it.
 _CLEARS = {
-    "results": (set_division_results_channel, "DIVISION_CHANNEL_SET", "results"),
-    "standings": (set_division_standings_channel, "DIVISION_CHANNEL_SET", "standings"),
-    "verdicts": (set_division_penalty_channel, "VERDICTS_CHANNEL_SET", None),
+    "results": (set_division_results_channel, typed_channel_audit("results")),
+    "standings": (set_division_standings_channel, typed_channel_audit("standings")),
+    "verdicts": (set_division_penalty_channel, verdicts_channel_audit),
 }
-
-
-def _holding(channel_type: str | None, channel_id: int | None) -> dict[str, Any]:
-    """The value of a channel setting's audit entry holding *channel_id*."""
-    named: dict[str, Any] = {} if channel_type is None else {"channel_type": channel_type}
-    return {**named, "channel_id": channel_id}
 
 _SWEEP_NOT_ARMED = (
     "⚠️ The module is on, but the check that undoes an amendment left unapproved past its time "
@@ -166,17 +163,10 @@ def module_on_results(
             )
         ]
         for each in taken:
-            write, change_type, channel_type = _CLEARS[each.setting]
+            write, audit = _CLEARS[each.setting]
             old_id = await write(db, each.division_id, None)
             if old_id is not None:
-                audits.append(
-                    AuditRecord(
-                        change_type,
-                        _holding(channel_type, old_id),
-                        _holding(channel_type, None),
-                        each.division_id,
-                    )
-                )
+                audits.append(audit(old_id, None, each.division_id))
         return Saved(
             changed=True,
             audits=tuple(audits),
@@ -199,7 +189,8 @@ def module_on_results(
         not_saved=_still_off,
         before=(
             kept_channels_check(
-                lambda: kept_channels(drawing), channel_uses_read=channel_uses_read
+                lambda: kept_channels(drawing), command=_ENABLE_COMMAND,
+                channel_uses_read=channel_uses_read,
             ),
         ),
         after={

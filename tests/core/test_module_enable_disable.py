@@ -1211,7 +1211,7 @@ async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_
     assert f"• **Pro**'s {label} <#{PRO_CHANNEL}>: {missing}" in replied
     assert (
         "Give the bot them, delete the channel, or give it to another setting (the module's own "
-        "channel command is refused while it is off), then run"
+        f"channel command is refused while it is off), then run `/module enable {module}` again."
     ) in replied
     assert "**Am**" not in replied
     [line] = await log_lines(league)

@@ -95,9 +95,9 @@ def _whose(kept: KeptChannel) -> str:
     return f"**{kept.division_name}**'s {kept.label}"
 
 
-def _halt(unusable: list[tuple[KeptChannel, tuple[str, ...]]], what: str) -> dict[str, str]:
-    """The halt for the unusable channels: the reply the member reads and the reason the ⛔ line
-    states."""
+def _halt(unusable: list[tuple[KeptChannel, tuple[str, ...]]], command: str) -> dict[str, str]:
+    """The halt for the unusable channels: the reply the member reads, closing on *command* to run
+    again, and the reason the ⛔ line states."""
     bullets = "\n".join(
         f"• {_whose(kept)} <#{kept.channel_id}>: {', '.join(missing)}" for kept, missing in unusable
     )
@@ -105,7 +105,7 @@ def _halt(unusable: list[tuple[KeptChannel, tuple[str, ...]]], what: str) -> dic
         "⛔ The module is still off: kept channels are missing permissions the bot needs there:\n"
         f"{bullets}\n"
         "Give the bot them, delete the channel, or give it to another setting (the module's own "
-        f"channel command is refused while it is off), then run {what} again."
+        f"channel command is refused while it is off), then run `{command}` again."
     )
     reason = "kept channels are missing permissions the bot needs there: " + "; ".join(
         f"{_whose(kept)} ({', '.join(missing)})" for kept, missing in unusable
@@ -114,12 +114,13 @@ def _halt(unusable: list[tuple[KeptChannel, tuple[str, ...]]], what: str) -> dic
 
 
 def kept_channels_check(
-    read: Callable[[], Awaitable[KeptReader]], *, channel_uses_read: AwaitedHook
+    read: Callable[[], Awaitable[KeptReader]], *, command: str, channel_uses_read: AwaitedHook
 ) -> Before:
     """The step before a module's switch-on saves: each channel it kept for a division of the live
     season, judged as the module docstring says.
 
     *read* gives the module's reader of its kept channels, awaited each time the step runs;
+    *command* is the module's switch-on command, which a refusal says to run again;
     *channel_uses_read* is the hook the registry asks each module for the uses of a channel
     through. The step finds `{"named": bullets for the reply, "taken": the channels to clear,
     "details": lines for beneath the Success line}`, or halts where a channel is unusable.
@@ -159,7 +160,7 @@ def kept_channels_check(
             named.append(f"• {_whose(each)} — `{each.command}`")
             details.append(f"{_whose(each)} {said} — `{each.command}`")
         if unusable:
-            return StepResult(result={HALTED: _halt(unusable, ctx.what)})
+            return StepResult(result={HALTED: _halt(unusable, command)})
         return StepResult(result={"named": named, "taken": taken, "details": details})
 
     return Before(Step(CHECK_KEPT, StepKind.ACT, run))

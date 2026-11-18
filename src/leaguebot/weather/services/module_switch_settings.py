@@ -157,7 +157,12 @@ def module_on_weather(
         reply=reply,
         writes=("server_configs", "divisions"),
         not_saved=_still_off,
-        before=(kept_channels_check(lambda: kept_channels(drawing), channel_uses_read=channel_uses_read),),
+        before=(
+            kept_channels_check(
+                lambda: kept_channels(drawing), command=_ENABLE_COMMAND,
+                channel_uses_read=channel_uses_read,
+            ),
+        ),
         after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
