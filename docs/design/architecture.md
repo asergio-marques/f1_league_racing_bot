@@ -125,7 +125,8 @@ framework's scheduler), `drivers/` (drivers, teams, placements, the lineup and t
 `settings/` (which answers the framework's questions of the league), `test_mode/`, `upkeep/`
 (backup, pack, factory reset, the in-memory state and clean-up) and `modules/` (the hub and its
 About option, and what core asks of the modules, such as the drawing protocol and the check a
-switch-on runs on the channels its module kept). A folder is not a kind: every check reads a file's
+switch-on runs on the channels its module kept, and the one an output's switch to a picture runs on the
+channels it posts to). A folder is not a kind: every check reads a file's
 kind from the first folder below its part or the framework, so
 `core/services/seasons/season_service.py` is a service of core. A module's own services stay in its
 `services/` folder unless its design file groups them. `tests/repository/test_import_contracts.py`
@@ -278,7 +279,9 @@ a division or a season cancelled, a round's results made final, placements confi
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
 command sets it or as a module is switched on (weather, results, attendance and signup answer it
-only while the module is on), the factory reset gathering the channels each module holds, a round's
+only while the module is on), the channels a picture posts to read as an output is switched to one or
+the image module is switched on (core, weather, results and attendance answer it, each for its own
+outputs and only while on), the factory reset gathering the channels each module holds, a round's
 drawn phases read, a driver's signup name, username and nationality read for a season, with whether
 a nationality is collected, which the modules that draw a driver ask through core's reader, the
 divisions a driver's accounts raced in read, a driver's standing in a division read for the season's
@@ -417,6 +420,22 @@ switch-on runs and a module answers it only while it is on, so a channel it kept
 against another setting while it is off, and the switch-on claims it again, clearing what another
 setting took meanwhile (core_specification.md, "Modules" and "Channels"). Signup's channel is the
 server's, not a division's, so its reader answers with no division.
+
+An output switched to a picture has the channels it posts to checked in the same way, by a step
+before the save (`core/services/modules/picture_channels.py`), which the image module hands the
+outputs the change switches on, read on the connection the step holds, and which asks the hook of the
+channels a picture posts to. Core answers its own channels for the lineup and the calendar alone,
+and each module answers for its own, only while it is on, as its channel uses are answered. Every
+need is asked as if the output were a picture, Attach Files among it, whatever the output's switch
+holds now, so the answers fix the need and are not handed the drawing to ask what a picture could
+attach: the step's connection is held, and nothing but it may be awaited (see "The database"). The
+step judges every channel strictly (`channel_presence`) and once however many outputs post to it, so
+that a channel gone or lacking a permission refuses, and a channel it cannot read ends the setting
+on a fault with nothing saved. The image module's switch-on makes the same check of the outputs
+already on, since the configuration is kept while the module is off. An output left as text, a module
+that is off, a cancelled division and a finished season have no channel judged
+(core_specification.md, "Channels"). The check names no module, and the image module calls it,
+never the hook.
 *Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are
 in `setting_change`'s docstring.
 
@@ -638,7 +657,7 @@ queue's"), after any step before the save, and the work after it that the settin
 driver, asking the hub's panel to be posted again as the bot's own change, posting the signup
 information in the new signup channel where a window is open) is work nothing later depends on.
 Work the save waits on may come before it (a module's kept channels checked before it is switched
-on, and what it put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends
+on, the channels an output switched to a picture posts to, and what it put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends
 the setting with nothing saved and no audit record, what a step before the save changed on Discord
 being undone so that nothing is half-set (framework.md, "Settings"). A fault in any of these leaves
 nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the save
@@ -829,7 +848,8 @@ stop nobody yet holds the role to clear.
   tables it writes) and `setting_change` builds the change type, so that the line, whether an audit
   record is written, the answer for a value already held and the answer for a fault are decided in
   one place. A setting's value, its audit record and its line are one save, after any steps before
-  it (a module's kept channels checked before it is switched on, and what it puts back, which save
+  it (a module's kept channels checked before it is switched on, the channels an output switched
+  to a picture posts to, and what it puts back, which save
   nothing and end the setting on a fault, or refused, with no audit record, what they changed on
   Discord undone), save where a step after it arms the daily
   portrait job, grants a role to every driver where it replaces one gone from the server while the
@@ -1584,7 +1604,10 @@ one that says otherwise below.
   manager chose. The strict reader beneath it (`approval_checks.channel_presence`) answers only
   what Discord proves, a channel found, gone, or found and lacking a permission its use needs, and
   raises on anything else, so that a caller which can refuse for a check that could not be made is
-  not forced to treat it as passed.
+  not forced to treat it as passed. The check made before an output is switched to a picture
+  (`picture_channels.picture_channels_check`) is such a caller: it refuses a channel gone or lacking
+  a permission and ends the setting on a fault where it cannot tell, so that nothing is saved on a
+  guess.
 - The image module's gate (`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the
   weather forecast's, whose own gate is of the sixth place) answers that the league does not draw the
   aspect, with no line to the log channel, so the text goes out, because a gate that cannot be read
