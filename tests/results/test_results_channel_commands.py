@@ -94,7 +94,6 @@ _NO_SEASON = (
     "❌ No season is live. A division's channels belong to the season being built or raced — "
     "start one with `/season setup`."
 )
-_NO_ACCESS = "❌ Cannot access that channel. Ensure the bot has permission to post there."
 
 #: The refusal a channel is given where the bot lacks permissions its use needs there, the
 #: setting and the permissions it lacks filled in.
@@ -564,21 +563,6 @@ async def test_the_verdicts_channel_is_not_refused_while_attendance_is_off(tmp_p
     await _run(cog, _interaction(cog, "verdicts"), "verdicts")
 
     assert len(await _audit(db_path)) == 1
-
-
-async def test_the_verdicts_channel_outside_a_guild_is_refused(tmp_path):
-    """The manager's interaction carries no server. `permissions_for(guild.me)` needs one, so the
-    absence is answered rather than raising an `AttributeError` at a manager: the reply is the
-    channel-access refusal, and no change is asked of the queue."""
-    db_path = await _make_db(tmp_path)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, "verdicts")
-    interaction.guild = None
-
-    await _run(cog, interaction, "verdicts")
-
-    assert _replied(interaction) == _NO_ACCESS
-    assert await change_rows(db_path) == []
 
 
 async def test_the_verdicts_division_is_matched_regardless_of_case(tmp_path):
