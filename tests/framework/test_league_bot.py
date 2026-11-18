@@ -270,8 +270,6 @@ def test_every_channel_setting_overtakes_a_stopped_job():
     )
 
 
-SWITCH_ON_CLEARS = "#449: the switch-on does not yet declare the channel table it clears"
-
 @pytest.mark.parametrize(
     ("module", "package", "on_writes", "off_writes"),
     [
@@ -287,7 +285,6 @@ SWITCH_ON_CLEARS = "#449: the switch-on does not yet declare the channel table i
             "attendance", "leaguebot.attendance.",
             {"attendance_config", "attendance_division_config"},
             {"attendance_config", "attendance_division_config"}, id="attendance",
-            marks=pytest.mark.xfail(strict=True, reason=SWITCH_ON_CLEARS),
         ),
         pytest.param(
             "results", "leaguebot.results.",

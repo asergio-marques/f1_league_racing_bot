@@ -961,8 +961,6 @@ async def test_every_module_enable_and_disable_refusal_reaches_the_log_channel(
 # the module and named; one the bot cannot use keeps the module off (⛔), and a check that cannot
 # be made keeps it off as a fault (❌).
 
-NOT_YET_KEPT = "#449: a switch-on does not check the channels its module kept"
-
 #: Each module's kept channel under test: its setting's column and table, its label and command,
 #: the reply and audit type of its switch-on and of the setting a clear undoes.
 _KEPT = {
@@ -1069,7 +1067,6 @@ async def _module_on(league, module: str) -> bool:
     return bool(await league.bot.module_service.is_enabled(module))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_KEPT)
 @pytest.mark.parametrize("setting", KEPT_SETTINGS)
 async def test_a_switch_on_names_each_kept_channel_no_longer_on_the_server(tmp_path, setting):
     """Pro's kept channel was deleted while the module was off, Am's is still there, and a
@@ -1099,7 +1096,6 @@ async def test_a_switch_on_names_each_kept_channel_no_longer_on_the_server(tmp_p
     assert "**Am**" not in lines and "**Old**" not in lines
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_KEPT)
 @pytest.mark.parametrize("setting", KEPT_SETTINGS)
 async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(tmp_path, setting):
     """While the module is off, `/division lineup-channel` gives Pro's kept channel 501 to Pro's
@@ -1142,7 +1138,6 @@ async def test_a_switch_on_clears_and_names_a_kept_channel_another_setting_took(
         assert int((await cursor.fetchone())["lineup_channel_id"]) == PRO_CHANNEL
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_KEPT)
 @pytest.mark.parametrize("cause", ["a channel's fetch fails", "the server is out of reach"])
 @pytest.mark.parametrize("setting", KEPT_SETTINGS)
 async def test_a_switch_on_whose_kept_channels_cannot_be_checked_leaves_the_module_off(
@@ -1177,7 +1172,6 @@ async def test_a_switch_on_whose_kept_channels_cannot_be_checked_leaves_the_modu
     assert await _kept(league.db_path, setting, pro) == PRO_CHANNEL
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_KEPT)
 @pytest.mark.parametrize("setting, denied, missing, pictures", [
     ("weather", "forbidden", "View Channel", ()),
     ("results", "read_message_history", "Read Message History", ()),
@@ -1230,7 +1224,6 @@ async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_
     assert await _kept(league.db_path, setting, pro + 1) == AM_CHANNEL  # Am, added after Pro
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_KEPT)
 async def test_the_first_of_two_switched_off_modules_back_on_keeps_their_channel(tmp_path):
     """Attendance keeps 501 as Pro's check-in channel and is off. Weather is switched on, and
     `/weather channel` gives 501 to Pro's forecasts, which is not refused; then weather is

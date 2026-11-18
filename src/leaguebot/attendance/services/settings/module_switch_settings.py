@@ -15,6 +15,14 @@ switch-off kept and raises only the flag, so the league's timings, penalties and
 back as they were (Principle X.6), pinned by
 `tests/core/test_module_enable_disable.py::test_re_enabling_attendance_keeps_the_league_s_settings`.
 
+**The switch-on checks the channels attendance kept while it was off, before its save**
+(`core/services/modules/kept_channels.py`, handed `division_channels.kept_channels`): a check-in
+call or attendance channel gone from the server is named, one another setting took meanwhile is
+named and cleared by the save through the column's own writer, audited as that channel's own
+change (from the channel to none), with a line beneath the Success line for each, and one the bot
+cannot use keeps attendance off, refused. A check that cannot be made ends the switch-on on a
+fault, nothing saved.
+
 **The switch-off is one save: `AttendanceService.switch_off_on` and the audit entry.** That
 method lowers the flag and keeps the settings row and every division's check-in and attendance
 channels, so the module comes back as it was left (Principle X.6); it clears only each
@@ -55,6 +63,16 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
 )
+from leaguebot.core.services.modules.kept_channels import (
+    found_in,
+    kept_channels_check,
+    named_reply,
+)
+from leaguebot.attendance.services.settings.division_channels import (
+    kept_channels,
+    set_attendance_channel,
+    set_rsvp_channel,
+)
 from leaguebot.framework.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
@@ -62,7 +80,9 @@ if TYPE_CHECKING:
 
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 _ENABLE_COMMAND = "/module enable attendance"
 _DISABLE_COMMAND = "/module disable attendance"
@@ -93,9 +113,27 @@ def _nothing_saved(_payload: dict[str, Any]) -> str:
     return "Nothing was saved. Run `/module disable attendance` again to retry."
 
 
-def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
-    """`module.on:attendance`: the flag raised and the audit, in one save; the row is created with
-    the packaged values on the first switch-on and kept as the league left it after that."""
+#: What clearing each of attendance's channels is: the column's own writer and the change type of
+#: the setting that sets it.
+_CLEARS = {
+    "rsvp": (set_rsvp_channel, "RSVP_CHANNEL_SET"),
+    "attendance": (set_attendance_channel, "ATTENDANCE_CHANNEL_SET"),
+}
+
+
+def module_on_attendance(
+    *,
+    modules: "ModuleService",
+    seasons: "SeasonService",
+    channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing",
+) -> Setting:
+    """`module.on:attendance`: the channels attendance kept checked, then the flag raised and the
+    audit (and the clear of each channel another setting took), in one save; the row is created
+    with the packaged values on the first switch-on and kept as the league left it after that.
+
+    *channel_uses_read* is core's hook, which the check asks who holds a kept channel through, and
+    *drawing* the image module's, which says whether a picture could attach a file."""
 
     async def check(_ctx: CheckContext) -> Verdict:
         if await modules.is_enabled(SWITCH_KEY):
@@ -110,7 +148,8 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 
-    async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        named, taken, details = found_in(payload)
         # The packaged values are the column defaults of `attendance_config`, held once there:
         # a first switch-on inserts the row naming only the flag, so the eight settings take the
         # schema's defaults; a row already kept is left as it is and only its flag is raised.
@@ -118,16 +157,31 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
             "INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1) "
             "ON CONFLICT(id) DO UPDATE SET module_enabled = 1"
         )
+        audits = [
+            AuditRecord(change_type="ATTENDANCE_MODULE_ENABLED", old_value={}, new_value={})
+        ]
+        for each in taken:
+            write, change_type = _CLEARS[each.setting]
+            old_id = await write(db, each.division_id, None)
+            if old_id is not None:
+                audits.append(
+                    AuditRecord(
+                        change_type,
+                        {"channel_id": old_id},
+                        {"channel_id": None},
+                        each.division_id,
+                    )
+                )
         return Saved(
             changed=True,
-            audits=(
-                AuditRecord(change_type="ATTENDANCE_MODULE_ENABLED", old_value={}, new_value={}),
-            ),
+            audits=tuple(audits),
+            details=tuple(details),
+            result={"named": named},
             then=(PlannedStep(REFRESH_HUB),),
         )
 
-    def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
-        return "✅ Attendance module enabled."
+    def reply(_payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        return named_reply("✅ Attendance module enabled.", results["save"]["named"])
 
     return Setting(
         kind=module_on("attendance"),
@@ -136,8 +190,13 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
         check=check,
         save=save,
         reply=reply,
-        writes=("attendance_config",),
+        writes=("attendance_config", "attendance_division_config"),
         not_saved=_still_off,
+        before=(
+            kept_channels_check(
+                lambda: kept_channels(drawing), channel_uses_read=channel_uses_read
+            ),
+        ),
         after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 

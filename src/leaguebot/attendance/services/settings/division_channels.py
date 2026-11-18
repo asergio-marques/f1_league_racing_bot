@@ -22,6 +22,7 @@ import aiosqlite
 from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.channel_needs import ATTACH, EMBED, READ_HISTORY, SEND, VIEW, Needs
+from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     DiscordTargets,
@@ -167,3 +168,34 @@ async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
         "rsvp": (VIEW, SEND, EMBED, READ_HISTORY) + await attaches("rsvp"),
         "attendance": (VIEW, SEND, READ_HISTORY) + await attaches("attendance"),
     }
+
+
+async def kept_channels(drawing: "ImageDrawing | None") -> KeptReader:
+    """The reader of the channels attendance keeps, for the check its switch-on makes
+    (`core/services/modules/kept_channels.py`): given a connection and the live season's divisions
+    (id to name), it gives each one's check-in call and attendance channel that is set, in the
+    order `CHANNELS` gives, with what each needs of the bot (`channel_needs`, asked of the
+    *drawing* now and not when the switch-on is built, as a picture switched on while attendance
+    was off may attach a file). Reads only."""
+    needs = await channel_needs(drawing)
+
+    async def read(db: aiosqlite.Connection, divisions: Mapping[int, str]) -> list[KeptChannel]:
+        cursor = await db.execute(
+            "SELECT division_id, rsvp_channel_id, attendance_channel_id "
+            "FROM attendance_division_config ORDER BY division_id"
+        )
+        kept: list[KeptChannel] = []
+        for row in await cursor.fetchall():
+            if int(row["division_id"]) not in divisions:
+                continue
+            for setting, column, label, command in CHANNELS:
+                if row[column] is not None and row[column] != "":
+                    kept.append(
+                        KeptChannel(
+                            setting, int(row["division_id"]), divisions[int(row["division_id"])],
+                            int(row[column]), label, command, needs[setting],
+                        )
+                    )
+        return kept
+
+    return read
