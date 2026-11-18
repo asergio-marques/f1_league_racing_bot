@@ -181,6 +181,13 @@ async def read_config_on(db: aiosqlite.Connection) -> ImageConfig | None:
     return _row_to_config(row)
 
 
+async def enabled_aspects_on(db: aiosqlite.Connection) -> frozenset[str]:
+    """The outputs switched on, read on *db*: the pictures the bot is drawing now. An output with
+    no row reads as off."""
+    cursor = await db.execute("SELECT aspect FROM image_aspect_toggles WHERE enabled = 1")
+    return frozenset(row["aspect"] for row in await cursor.fetchall())
+
+
 async def set_field_on(db: aiosqlite.Connection, column: str, value: str) -> Saved:
     """Write one text configuration column on *db*, guarded by the allow-list.
 
