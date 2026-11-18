@@ -577,12 +577,13 @@ with no placement row there is refused as not a member
 
 `division_channels.CHANNELS` is the one table of the two channels (setting, column, label, command),
 public because `attendance_hooks` reads it across files for the confirmation's faults. The
-switch-on's reader (`kept_channels`) reads it too, and the registry's answer its columns. A
-switched-off module keeps its channels and answers for none of them (`channel_uses` asks the
-switch), so another setting may take one; the switch-on's step before its save
-(`check_kept_channels`, `core.md`, "Each module's switch is a change of the module's own") finds it,
-and the save clears it through the column's own writer (`set_rsvp_channel`, `set_attendance_channel`),
-audited as that setting's change. The reader asks `channel_needs` as the check runs.
+switch-on's reader (`kept_channels`) reads it too, and the registry's answer its columns.
+`channel_uses` asks the module's switch, which is how the channels yield while it is off. The
+switch-on's save clears a taken channel through the column's own writer (`set_rsvp_channel`,
+`set_attendance_channel`), audited as that setting's change, and the reader asks `channel_needs` as
+the check runs. `core.md`, "Each module's switch is a change of the module's own", and
+`architecture.md`, "How modules and core fit together", give the arrangement; core_specification.md,
+"Channels", the rules.
 
 ### What attendance's channels need of the bot
 

@@ -360,13 +360,12 @@ Each module's switch is a change of the module's own, of kind `module.on:<name>`
 **A switch-on of a module that keeps channels does its reading before its save.** Weather, results
 and attendance keep their channels while off, so each switch-on is a `Setting` with a step before
 the save (`Setting.before`, `framework.md`, "Settings"): `kept_channels_check`
-(`core/services/modules/kept_channels.py`). It names no module and holds no module's columns: the
-switch-on hands it a reader of its own channels (`kept_channels(drawing)` in each module, built on
-its own table of channels and its own `channel_needs`), and the hook the registry asks. The reading
-is the switch-on's last judgement, as a channel setting's check as its change starts is the save's:
-the step and the save end on a fault, so no change stops the lane between them. A channel the
-registry finds taken is cleared by the save, through the module's own writer; a channel gone is
-named and kept; one the bot cannot use ends the switch-on refused. `live_divisions_on`
+(`core/services/modules/kept_channels.py`). It takes the reader of the module's own channels that
+each switch-on hands it (`KeptReader`: a connection and the live season's divisions in, the kept
+channels out, awaiting only the connection), asks the registry which are taken and the hook which
+are gone or unusable. `architecture.md`, "How modules and core fit together", gives the arrangement
+and the invariant the reading rests on; core_specification.md, "Modules" and "Channels", the rules a
+league sees. `live_divisions_on`
 (`channel_registry_service`) names the divisions of the live season, which the registry and the
 check both read, so that they judge the same channels.
 

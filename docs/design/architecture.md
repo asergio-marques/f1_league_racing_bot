@@ -411,7 +411,8 @@ supplies and which the module hands its own reader of the channels it kept, with
 bot in each: core names no module in it, and each module's reader is built from the one table of its
 channels that its confirmation faults also read. The channel hook is read as the switch-on runs and a
 module answers it only while it is on, so a channel it kept does not count against another setting
-while it is off, and the switch-on claims it again, clearing what another setting took meanwhile.
+while it is off, and the switch-on claims it again, clearing what another setting took meanwhile
+(core_specification.md, "Modules" and "Channels").
 *Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are in
 `setting_change`'s docstring.
 

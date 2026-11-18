@@ -586,13 +586,13 @@ Answers to `architecture.md`, "How modules and core fit together".
 `division_channels._CHANNELS` is the one table of the three channels: each one's column, its setting,
 its label, its command and what the review shows where it is unset. The review's lines, the
 confirmation's faults, the registry's answer and the switch-on's reader (`kept_channels`) are all
-read from it, so that a channel added to it is judged by all four. A switched-off module keeps its channels and
-answers for none of them (`channel_uses` asks the switch); another setting may take one, and the
-switch-on's step before its save (`check_kept_channels`, `core.md`, "Each module's switch is a change
-of the module's own") finds it, and the save clears it through the column's own writer, audited as the
-setting's own change. The reader asks `channel_needs` as the check runs, not as the switch-on is
-built. The placements-review lines of an off module show what it holds (core_specification.md,
-"Channels").
+read from it, so that a channel added to it is judged by all four. `channel_uses` asks the module's
+switch, which is how the channels yield while it is off. The switch-on's save clears a taken channel
+through the column's own writer, audited as the setting's own change, and the reader asks
+`channel_needs` as the check runs, not as the switch-on is built. `core.md`, "Each module's switch is
+a change of the module's own", and `architecture.md`, "How modules and core fit together", give the
+arrangement; core_specification.md, "Channels", the rules, among them what the review lines of an off
+module show.
 
 ### The hooks results signs up to
 
