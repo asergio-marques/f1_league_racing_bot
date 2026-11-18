@@ -66,6 +66,8 @@ The calendar is the one to start with because it needs the least: no teams, no d
 
 The first time you switch the module on, it changes nothing the bot posts yet: all nine kinds of output start off and stay off until you turn them on, which is step 6. Switching it on again later finds them as you left them: any you had on are still on and post pictures again, and the reply says so. `/images config view` shows which.
 
+Switching it on again judges the channels of every output you left on, as step 6 describes for one being switched on. Where one is gone or lacks a permission the module stays off and the reply names it and the outputs that post there: give the bot the permission, set the channel again or switch those outputs back to text with `/images config toggle` (allowed while the module is off), then run `/module enable images` again.
+
 > If you get a message about Inkscape instead of a picture, stop and sort that out. Nothing below will work until you do.
 
 ---
@@ -604,6 +606,10 @@ Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine en
 It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text. The bot reads the output's state when you run the command and asks for the opposite one, so two presses made before the first was carried out ask for the same thing: the second is refused as a repeat while the first waits, and answers that nothing changed if it still got through.
 
 **Switching one on checks its drawings first, and refuses if they are not right.** You are told what is wrong and the output stays off. That is on purpose: an output switched on over a broken drawing posts *nothing* where your drivers would otherwise have read text, and it holds up your season's approval as well. Switching one **off** is never refused — text needs no drawing, so you can always go back to it.
+
+**It checks the channels it posts to as well.** Before an output comes on, every channel it posts to that you have set is looked at, counting the output as a picture: it must still be on the server and give the bot every permission its use needs there, Attach Files included. The lineup and the calendar post to the division's own channel and to the bot interaction channel. Where one is gone or lacks something, you get a line for each such channel, saying what it lacks, and the output stays off. Give the bot those permissions or set those channels again, then run the command again. Where the bot cannot tell, nothing changes and you are asked to run it again. The channels of a module that is off, of a cancelled division and of a finished season are passed over.
+
+**Going back to text works even while the module is off.** Switching one on does not: switch the module on first. Switching off judges nothing.
 
 **What you leave switched off costs you nothing.** A missing or broken drawing behind an output you have not switched on does not stop a season being approved: nothing would ever post it. `/season placements-review` still names it, as a ⚠️ rather than a ⛔, so you know it is there before you decide to switch that output on.
 
