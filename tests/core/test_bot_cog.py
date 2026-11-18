@@ -2546,12 +2546,7 @@ def _replied(interaction: MagicMock) -> str:
         "driver-role cannot be granted",
         "hub-channel already another job",
         "hub-channel already this setting",
-        pytest.param(
-            "hub-channel lacks permissions",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#570: the hub's refusal is not yet in the common words"
-            ),
-        ),
+        "hub-channel lacks permissions",
         pytest.param(
             "log-channel lacks permissions",
             marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),

@@ -477,21 +477,12 @@ def _cannot_use(missing: str) -> str:
         ),
         pytest.param(
             True, ("embed_links",), "Embed Links", id="no-embed-links",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#570: a hub lacking Embed Links is not refused"
-            ),
         ),
         pytest.param(
             True, ("send_messages",), "Send Messages", id="no-send-messages",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#570: a hub lacking Send Messages is not refused"
-            ),
         ),
         pytest.param(
             True, ("view_channel",), "View Channel", id="no-view-channel",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#570: a hub lacking View Channel is not refused"
-            ),
         ),
     ],
 )
@@ -540,9 +531,6 @@ def _delete_the_channel(cog, channel) -> None:
             id="channel_deleted",
         ),
     ],
-)
-@pytest.mark.xfail(
-    strict=True, reason="#570: the hub change does not judge its channel as it starts"
 )
 async def test_a_hub_change_is_refused_as_it_starts_where_its_channel_can_no_longer_be_used(
     db_path, meanwhile, refused

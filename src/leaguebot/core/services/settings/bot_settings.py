@@ -42,15 +42,14 @@ once the role is saved, from an `After` step the save plans, never from the comm
 
 **`/bot hub-channel` is a `Setting` too, built by `hub_channel_setting`
 below. It overtakes a stop on the league lane like the four, being a channel setting.** The
-cog judges all four of its refusals at the ask, before the change is even asked for: the channel
-already doing another job, the channel already the hub, the bot's missing Manage Channel or
-Manage Permissions, and the server not yet configured. The missing-permission refusal has
-nothing to do with a value already held, so nothing repeats it once the change starts, as the
-missing driver role is judged before `/bot driver-role` asks for its own and not again. The
-channel already doing another job, or already this channel, and the server not yet configured
-are the setting's own `check` as well, run again as the change starts, since a change queued
-ahead of this one might have claimed the channel for something else, or left the server
-unconfigured, since it was asked. **The old hub's
+cog judges the channel already doing another job, or already the hub, and the server not yet
+configured at the ask, before the change is even asked for; the setting's own `check` judges the
+channel's use and what the bot holds in it (`HUB_NEEDS`), straight after the in-use refusal, at
+the ask and again as the change starts, since a change queued ahead might have claimed the
+channel for something else, or the bot lost a permission there, or the server been left
+unconfigured, since it was asked. A permission refusal comes after the in-use one, so a manager
+re-running the command for the hub's own value still reads "Nothing was changed" rather than a
+permission refusal that happens to be true as well. **The old hub's
 permissions cleared and the new hub's permissions set are one `After` step after the save**
 (`_restyle_hub`), which `carries_line`: the two permission edits are each Discord's to refuse
 without raising, so both faults, where either or both happen, sit beneath the save's own line in
@@ -81,9 +80,16 @@ from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
+    unusable_refusal,
 )
-from leaguebot.core.services.modules.hub_service import HUB_REFRESH, apply_hub_permissions, reapply_hub_permissions
+from leaguebot.core.services.modules.hub_service import (
+    HUB_NEEDS,
+    HUB_REFRESH,
+    apply_hub_permissions,
+    reapply_hub_permissions,
+)
 from leaguebot.framework.services.queue.setting_change import After, RENAMED_OUTCOME, Saved, Setting
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.framework.utils.hooks import AwaitedHook
@@ -670,6 +676,11 @@ def hub_channel_setting(*, config: "ConfigService", channel_uses_read: "AwaitedH
             return Verdict.refuse(
                 refusal(f"<#{value}>", use, same_setting=(use == ChannelUse("hub")))
             )
+        unusable = await unusable_refusal(
+            await league_guild(ctx.bot), value, HUB_NEEDS, ChannelUse("hub")
+        )
+        if unusable is not None:
+            return Verdict.refuse(unusable)
         if await config.get_server_config() is None:
             return Verdict.refuse(_UNCONFIGURED)
         return Verdict.go()
