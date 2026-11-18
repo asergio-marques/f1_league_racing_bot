@@ -192,12 +192,6 @@ def _interaction() -> MagicMock:
 # ── What the configuration review checks ────────────────────────────────────────────
 
 
-#: Why a signup channel deleted or unusable is not yet a fault of the configuration.
-_SIGNUP_CHANNEL_NOT_JUDGED = (
-    "#449: the configuration's faults do not judge the signup channel on the server"
-)
-
-
 def _plain(line: str) -> str:
     """*line* as read, without its bold marks, in lower case."""
     return line.replace("**", "").lower()
@@ -207,13 +201,11 @@ def _plain(line: str) -> str:
     pytest.param(None, None, "the signup module has no signup channel", id="unset"),
     pytest.param(
         1, {"gone": (1,)}, "is no longer on the server — `/signup channel`", id="deleted",
-        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
     ),
     pytest.param(
         1, {"unusable": {1: ("manage_roles",)}},
         "is missing permissions the bot needs there: manage permissions",
         id="lacking_manage_permissions",
-        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
     ),
     pytest.param(1, {"unreadable": (1,)}, None, id="unreadable"),
 ])
@@ -294,7 +286,6 @@ def _signup_channel_gone() -> MagicMock:
     pytest.param(
         _signup_channel_gone, "is no longer on the server — `/signup channel`",
         id="the_signup_channel_deleted",
-        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
     ),
 ])
 async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path, server, named):
@@ -834,7 +825,6 @@ def _on_a_server_without_the_signup_channel(interaction: MagicMock) -> MagicMock
     pytest.param(
         (2, 3), _on_a_server_without_the_signup_channel,
         "is no longer on the server — `/signup channel`", id="the_signup_channel_deleted",
-        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
     ),
 ])
 async def test_a_faulty_configuration_is_reported_without_a_button(

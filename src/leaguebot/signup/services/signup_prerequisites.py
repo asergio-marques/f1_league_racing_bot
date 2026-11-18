@@ -18,7 +18,9 @@ from typing import TYPE_CHECKING
 
 from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
+from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.utils.channel_guard import league_role_faults
+from leaguebot.signup.services.channel_uses import COMMAND, LABEL, channel_needs
 
 if TYPE_CHECKING:
     import discord
@@ -68,9 +70,10 @@ async def configuration_faults(
     guild: "discord.Guild | None",
 ) -> list[str]:
     """Every fault in signup's part of a season's configuration, each a line a league manager
-    reads, naming what to run to put it right: no signup channel, no base role, no driver role,
-    and the league's two roles judged upon the server where *guild* is given
-    (`league_role_faults`). Nothing while signup is off: the two roles are the league's, but only
+    reads, naming what to run to put it right: no signup channel, or one gone from the server or
+    lacking a permission the bot needs there (`channel_fault`, judged where *guild* is given; one
+    the server could not be asked about is not named), no base role, no driver role, and the
+    league's two roles judged upon the server where *guild* is given (`league_role_faults`). Nothing while signup is off: the two roles are the league's, but only
     signup needs them.
 
     Subscribed to core's `configuration_faults_read`, and read where signup's lines stand in the
@@ -85,6 +88,14 @@ async def configuration_faults(
     faults: list[str] = []
     if config is None or config.signup_channel_id is None:
         faults.append("The signup module has no **signup channel** — `/signup channel`.")
+    elif guild is not None:
+        # Judged on the server as the roles are: named where it is gone or the bot lacks what it
+        # needs there, and not where the server could not be asked.
+        fault = await channel_fault(
+            guild, None, config.signup_channel_id, LABEL, COMMAND, channel_needs()
+        )
+        if fault:
+            faults.append(fault)
     if base_role_id is None:
         faults.append("The signup module needs the league's **base role** — `/bot base-role`.")
     if driver_role_id is None:

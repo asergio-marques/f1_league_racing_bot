@@ -287,11 +287,6 @@ async def _delete_the_signup_channel(league: Any) -> None:
             _delete_the_signup_channel, "is no longer on the server — `/signup channel`.",
             "is no longer on the server — `/signup channel`.", "CONFIGURATION",
             id="the_signup_channel_deleted",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#449: confirming the configuration does not judge the signup channel "
-                "on the server",
-            ),
         ),
     ],
 )

@@ -37,8 +37,8 @@ if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
 
 #: The signup channel as a league calls it, and the command that sets it: what its faults name.
-_LABEL = "signup channel"
-_COMMAND = "/signup channel"
+LABEL = "signup channel"
+COMMAND = "/signup channel"
 
 #: What the bot needs on the signup channel to post there: the information post with its Sign Up
 #: button is an embed (`window_changes`), so View Channel, Send Messages and Embed Links.
@@ -71,7 +71,7 @@ async def kept_channels() -> KeptReader:
         row = await cursor.fetchone()
         if row is None:
             return []
-        return [KeptChannel("signup", None, None, int(row[0]), _LABEL, _COMMAND, needs)]
+        return [KeptChannel("signup", None, None, int(row[0]), LABEL, COMMAND, needs)]
 
     return read
 
