@@ -40,7 +40,7 @@ import pytest
 
 from leaguebot.core.cogs.module_cog import ModuleCog
 from leaguebot.framework.db.database import get_connection
-from tests.support.change_queue import MEMBER_ID
+from tests.support.change_queue import INTERACTION_CHANNEL_ID, MEMBER_ID
 from tests.support.settings_league import portrait_refresh_times
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
@@ -368,3 +368,147 @@ async def test_an_enable_that_cannot_arm_the_daily_refresh_leaves_the_module_on_
     lines = await log_lines(league)
     assert len(lines) == 1, lines
     assert lines[0].startswith(f"❌ `/module enable` failed for {NAMED}"), lines[0]
+
+
+# ---------------------------------------------------------------------------
+# The channels the outputs already on post to (#570, slice 3)
+# ---------------------------------------------------------------------------
+
+#: Why the enable's channel tests fail until the check before its save lands.
+CHANNELS_NOT_JUDGED = "#570: switching the image module on judges no channel an output posts to"
+#: The opening and the close of the enable's refusal for channels that cannot take a picture.
+STILL_OFF = (
+    "⛔ The image module is still off: outputs switched on post to channels that cannot take "
+    "them:"
+)
+WAY_OUT = (
+    "Give the bot those permissions, set those channels again, or switch those outputs back to "
+    "text with `/images config toggle`, then run `/module enable images` again."
+)
+#: The bot command channel, which the season's review posts the lineup and calendar in.
+COMMAND = INTERACTION_CHANNEL_ID
+#: Pro's standings channel, where results keeps its channels.
+PRO_STANDINGS = 121
+
+
+async def _kept_league(tmp_path, *aspects: str, results: bool = False, **server):
+    """The image module switched off over its kept configuration, *aspects* left on, results on
+    where *results*, a season in setup holding Pro, its standings channel 121, and a server
+    holding every channel as `league_server` is told by *server*; with the module cog."""
+    from tests.support.channel_faults import league_server
+    from tests.support.settings_league import settings_league
+
+    league = await settings_league(
+        tmp_path, modules=("images", "results") if results else ("images",)
+    )
+    async with get_connection(league.db_path) as db:
+        for aspect in aspects:
+            await db.execute(
+                "UPDATE image_aspect_toggles SET enabled = 1 WHERE aspect = ?", (aspect,)
+            )
+        await db.execute("UPDATE image_config SET module_enabled = 0")
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-03-01', 'SETUP', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, status, tier) "
+            "VALUES (1, 1, 'Pro', 1, 'SETUP', 1)"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, standings_channel_id) "
+            "VALUES (1, ?)",
+            (PRO_STANDINGS,),
+        )
+        await db.commit()
+    league_server(league.bot, **server)
+    return league, ModuleCog(league.bot)
+
+
+@pytest.mark.parametrize(
+    ("aspects", "results", "server", "named"),
+    [
+        pytest.param(
+            ("lineup", "calendar"), False, {"unusable": {COMMAND: ("attach_files",)}},
+            ("**Lineup, Calendar**", f"<#{COMMAND}>", "Attach Files"),
+            id="lineup and calendar on, command channel lacking Attach Files",
+            marks=pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED),
+        ),
+        pytest.param(
+            ("standings",), True, {"gone": (PRO_STANDINGS,)},
+            ("**Standings**", f"<#{PRO_STANDINGS}>", "no longer on the server"),
+            id="standings on, results on, standings channel gone",
+            marks=pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED),
+        ),
+        pytest.param(
+            ("standings",), False, {"gone": (PRO_STANDINGS,)}, None,
+            id="standings on, results off, standings channel gone",
+        ),
+    ],
+)
+async def test_enabling_is_refused_where_an_output_left_on_posts_to_a_channel_that_cannot_take_it(
+    tmp_path, aspects, results, server, named
+):
+    """The image module switched off over its kept configuration, a season in setup holding Pro.
+    Lineup and Calendar left on, the bot command channel 100 lacking Attach Files; or Standings
+    left on with results on, Pro's standings channel 121 deleted: `/module enable images` is
+    refused, the module still off, the reply naming the channel in one bullet with the outputs
+    that post to it and what it lacks or that it is gone, and the ways out; one "⛔" line and no
+    audit entry. Standings left on with results off, its channel deleted, is not judged: the
+    module is switched on again as today."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _kept_league(tmp_path, *aspects, results=results, **server)
+    asked = _asked(league)
+
+    await _enable(league, cog, asked)
+
+    if named is None:
+        assert await _images_flag(league.db_path) == 1
+        assert last_said(asked) == ENABLED_AGAIN
+        return
+    assert await _images_flag(league.db_path) == 0
+    reply = last_said(asked)
+    assert reply.startswith(f"{STILL_OFF}\n• ")
+    assert reply.endswith(f"\n{WAY_OUT}")
+    bullets = [line for line in reply.split("\n") if line.startswith("• ")]
+    assert len(bullets) == 1
+    assert all(words in bullets[0] for words in named), bullets[0]
+    assert await _audit_types(league.db_path) == []
+    [line] = await log_lines(league)
+    assert line.startswith(f"⛔ `/module enable` refused for {NAMED} — ")
+
+
+@pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED)
+@pytest.mark.parametrize("cause", ["a channel's fetch fails", "the server is out of reach"])
+async def test_an_enable_that_cannot_tell_leaves_the_module_off_and_says_to_run_it_again(
+    tmp_path, cause
+):
+    """The image module switched off over its kept configuration with the Calendar left on, and
+    Discord answers the fetch of the bot command channel 100 with a server error, or the
+    league's server is out of the bot's reach: `/module enable images` cannot make the check, so
+    the module stays off, the member is told it stopped on a fault and to run it again, the one
+    line is a failure, nothing is audited and nothing stops the queue."""
+    from unittest.mock import MagicMock
+
+    from tests.support.change_queue import stopped_job
+    from tests.support.settings_league import last_said, log_lines
+
+    server = {"unreadable": (COMMAND,)} if cause == "a channel's fetch fails" else {}
+    league, cog = await _kept_league(tmp_path, "calendar", **server)
+    if cause == "the server is out of reach":
+        league.bot.get_guild = MagicMock(return_value=None)
+    asked = _asked(league)
+
+    await _enable(league, cog, asked)
+
+    assert await _images_flag(league.db_path) == 0
+    assert last_said(asked) == (
+        "❌ `/module enable` stopped on a fault in the bot, not on anything you entered, and did "
+        "not finish. The module is still off. Run `/module enable images` again once the fault "
+        "is cleared. The fault is recorded in the log channel."
+    )
+    assert await _audit_types(league.db_path) == []
+    [line] = await log_lines(league)
+    assert line.startswith(f"❌ `/module enable` failed for {NAMED} — ")
+    assert await stopped_job(league.db_path) is None

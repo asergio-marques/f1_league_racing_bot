@@ -71,11 +71,14 @@ async def _enable(module_service, config_service):
 
 async def _switched(tmp_path):
     """A league whose settings run on the queue, the image module off with no configuration,
-    the module cog over its bot, and its image configuration service."""
+    the module cog over its bot, and its image configuration service. Its server holds every
+    channel, the bot holding every permission in each."""
     from leaguebot.core.cogs.module_cog import ModuleCog
+    from tests.support.channel_faults import league_server
     from tests.support.settings_league import settings_league
 
     league = await settings_league(tmp_path, modules=())
+    league_server(league.bot)
     return league, ModuleCog(league.bot), league.bot.image_config_service
 
 
