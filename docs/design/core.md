@@ -206,35 +206,36 @@ architecture.md's "How modules and core fit together" has it and holds no rule o
 fetch and answers `PRESENT`, `GONE` or `UNUSABLE` with what the bot lacks there, and raises on any
 answer Discord does not prove, a server error or a bot member it cannot read. `judged_presence`
 stands aside on that raise, the stated exception in architecture.md's "Errors and failures", which
-is what a confirmation wants. The strict reader raises so that a caller free to refuse on a check it could not make may, and
-the kept-channels check is that caller. Setting one of a division's channels judges a channel's needs too, and
-reads `judged_presence`, so it stands aside as the confirmation does; core_specification.md,
-"Channels", says what a league sees where it cannot tell.
-`channel_registry_service.unusable_refusal` is handed the server, the id, the needs and the use,
-and judges through `judged_presence` without owning a need, a permission or a channel of any module.
-The gates before a repost and a recalculation judge from
-the cache alone, through `results_post_service.channel_fault`. Core's own `channel_fault` words the
-confirmation's line, and takes the *needs* its caller hands it, so it holds no list of channels and
-no permission of its own. It also words a channel of no division, the server's, where its division
-name is None, which signup's configuration faults use, so one wording serves the division channels
-and signup's at the configuration. A need is data (`core/models/channel_needs.py`) and each part builds its
-channels' from it in its own service (`channel_needs`: weather's forecast channel, results' three,
+is what a confirmation wants. The strict reader raises so that a caller free to refuse on a check it
+could not make may, and the kept-channels check is that caller. Setting one of a division's channels
+judges a channel's needs too, and reads `judged_presence`, so it stands aside as the confirmation
+does; core_specification.md, "Channels", says what a league sees where it cannot tell.
+`channel_registry_service.unusable_refusal` is handed the server, the id, the needs and the use, and
+judges through `judged_presence` without owning a need, a permission or a channel of any module. The
+gates before a repost and a recalculation judge from the cache alone, through
+`results_post_service.channel_fault`. Core's own `channel_fault` words the confirmation's line, and
+takes the *needs* its caller hands it, so it holds no list of channels and no permission of its own.
+It also words a channel of no division, the server's, where its division name is None, which
+signup's configuration faults use, so one wording serves the division channels and signup's at the
+configuration. A need is data (`core/models/channel_needs.py`) and each part builds its channels'
+from it in its own service (`channel_needs`: weather's forecast channel, results' three,
 attendance's two, and signup's one in `channel_uses`), asking the image module's drawing, handed
-through the module's wiring, only whether a picture could attach a file (signup's, which has no picture,
-asks nothing). The alternatives rejected: one table of every channel's needs
-in core, which would hold each module's rule (architecture.md, "What each part may do"); and each
-gate keeping its own list, which lets two gates judge one channel differently.
+through the module's wiring, only whether a picture could attach a file (signup's, which has no
+picture, asks nothing). The alternatives rejected: one table of every channel's needs in core, which
+would hold each module's rule (architecture.md, "What each part may do"); and each gate keeping its
+own list, which lets two gates judge one channel differently.
 
 **Core's own two channels are named through the same hook as the modules'.** The lineup and the
 calendar need the image module's answer to build their needs, which is awaited, so
 `core_division_channel_faults` (its subscriber of `division_channel_faults_read`, signed up before
 every module's, so a division's lines read core's first) builds them where it can await, from
 `core_channel_needs`. The lineup and calendar settings' check (`division_settings`) reads the same
-`core_channel_needs`, with the drawing the builder hands `division_channel_settings`, and so
-cannot judge a channel differently from the confirmation. `division_channel_faults` holds no list of channels, so the review and the two
-confirmations cannot disagree about one and `season_approval_change` holds none. *Rejected:* the
-check reading the image module's configuration for a switch, which is the module's to answer
-(`ImageDrawing.calendar_attaches_files` and `lineup_attaches_files`).
+`core_channel_needs`, with the drawing the builder hands `division_channel_settings`, and so cannot
+judge a channel differently from the confirmation. `division_channel_faults` holds no list of
+channels, so the review and the two confirmations cannot disagree about one and
+`season_approval_change` holds none. *Rejected:* the check reading the image module's configuration
+for a switch, which is the module's to answer (`ImageDrawing.calendar_attaches_files` and
+`lineup_attaches_files`).
 
 **The approval's queued check judges what the press judged, whole.** Between the press and the
 queue reaching the approval, any of it can change, and a module's own channel is as likely to be
