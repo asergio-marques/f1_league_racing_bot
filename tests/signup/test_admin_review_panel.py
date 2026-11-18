@@ -36,6 +36,7 @@ when the queue reaches them. These tests drive the panel through a real queue: t
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import sqlite3
 from typing import Any
@@ -571,7 +572,7 @@ LAPSE_READS_NO_STATE = "#502: a lapsed reason says the signup still awaits revie
 def _meanwhile(league: SeasonLeague, state: str) -> None:
     """Kimi's status becomes *state* at once, written without yielding to the loop, so that a
     lapse of no length started by the press cannot run before it."""
-    with sqlite3.connect(league.db_path) as db:
+    with contextlib.closing(sqlite3.connect(league.db_path)) as db, db:
         db.execute(
             "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
             (state, str(SIGNING_UP)),
