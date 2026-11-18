@@ -135,7 +135,8 @@ def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
 async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
     """Pro's round 4's check-in call is drawn, its flag falling back (one render notice). The
     call posts with its picture, and the log channel carries the notice once, in a block whose
-    heading names Pro and round 4; no block without a heading carries it a second time."""
+    heading names round 4, season 3 and Pro; no block without a heading carries it a second
+    time."""
     league = await _league(tmp_path)
     _draw_with(league, tmp_path, "notice")
 
@@ -147,14 +148,14 @@ async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_ro
     assert log.count(NOTICE_DETAIL) == 1, log
     [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
     heading = block.splitlines()[0]
-    assert DIVISIONS[PRO][0] in heading and "round 4" in heading.lower(), block
+    assert f"check-in call of round 4 in Season 3 **{DIVISIONS[PRO][0]}**:" in heading, block
 
 
 async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(tmp_path):
     """Pro's round 4's check-in call is drawn, and its render fails on a template fault. The call
     posts without a picture, and the log channel gives the fault on one line headed "⚠️ Check-in
-    call image", the name `/images config toggle` offers, naming Pro and round 4; nothing in the
-    log calls it a results image."""
+    call image", the name `/images config toggle` offers, naming round 4, season 3 and Pro;
+    nothing in the log calls it a results image."""
     league = await _league(tmp_path)
     _draw_with(league, tmp_path, "fault")
 
@@ -164,8 +165,10 @@ async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_imag
     assert league.channel(CHECK_IN).files[-1] is None
     log = league.log()
     [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
-    assert line.startswith("⚠️ Check-in call image — "), line
-    assert DIVISIONS[PRO][0] in line and "round 4" in line.lower(), line
+    named = (
+        f"⚠️ Check-in call image — check-in call of round 4 in Season 3 **{DIVISIONS[PRO][0]}**: "
+    )
+    assert line.startswith(named), line
     assert "Results image" not in log, log
 
 

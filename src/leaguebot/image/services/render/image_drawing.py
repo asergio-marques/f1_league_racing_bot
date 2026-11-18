@@ -641,7 +641,9 @@ class ImageDrawing:
         nobody signed up for (`SwitchNotSignedUp`) is not one, being a fault in the bot's assembly,
         and is raised, as `aspect_wanted` raises it.
         """
-        what = image_rsvp_post.describe(division_name=division_name, round_number=round_number)
+        what = image_rsvp_post.describe(
+            season_number=season_number, division_name=division_name, round_number=round_number
+        )
         try:
             if not await self.aspect_wanted(RSVP_ASPECT, RSVP_TEMPLATE_KEY):
                 return None, ()
