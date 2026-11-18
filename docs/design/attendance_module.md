@@ -260,7 +260,7 @@ a league is told.
 | `attendance.check_in.answer` | a press of a button, the maintainer's form | `save_answer` (or `save_answers`), `redraw` |
 | `attendance.sync` | `/attendance sync` | the reserve's capacity, one save, the roles, the cards, lineups and sheets, the closing line |
 | `attendance.setting.<name>` for the five settings that are not penalties, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
-| `module.on:attendance` | `/module enable attendance` | before it, `check_kept_channels`; then one save: the flag, the clear of each channel another setting took, and the audit entries |
+| `module.on:attendance` | `/module enable attendance` | before it, `check_kept_channels`; then one save: the flag, the clear of each channel another setting took, and the audit entries; then the hub's refresh, an `After` step |
 | `attendance.setting.no_rsvp_penalty`, `attendance.setting.absent_penalty`, `attendance.setting.no_show_penalty` | the commands | the Reserve capacity, one save (the value, the season's recalculation and the sanctions it owes), then the roles, cards, lineups, sheets and deletions the sync's jobs make |
 
 Attendance also contributes jobs to changes core owns, through the hooks of a round amended, a
