@@ -568,6 +568,8 @@ async def _set_results_channel(league: _League, channel_id: int) -> Any:
     # the builder hands the setting.
     sign_up_channel_uses_read(league.bot)
     builder.channel_uses_read = league.bot.channel_uses_read
+    # The setting asks the drawing whether the channel's picture could attach a file.
+    builder.image_drawing = _drawing_of(league)
     register_change_types(builder)
     built = {call.args[0].kind: call.args[0]
              for call in builder.change_queue.register.call_args_list}

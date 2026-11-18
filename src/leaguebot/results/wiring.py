@@ -601,8 +601,8 @@ def register_change_types(
         *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
         *results_channel_settings(
             modules=bot.module_service, seasons=bot.season_service,
-            channel_of=lambda channel_id: bot.get_channel(channel_id),
             channel_uses_read=bot.channel_uses_read,
+            drawing=as_image_drawing(bot.image_drawing),
         ),
     ):
         bot.change_queue.register(setting_change(setting))

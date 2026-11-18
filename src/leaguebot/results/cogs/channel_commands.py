@@ -12,7 +12,6 @@ from discord import app_commands
 from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.results.cogs.results_group import CHANNEL_GROUP, ResultsSubgroup
 from leaguebot.results.services.module.channel_settings import (
-    NO_ACCESS,
     NOT_ENABLED,
     RESULTS_CHANNEL,
     STANDINGS_CHANNEL,
@@ -58,14 +57,13 @@ class ChannelCommands(ResultsSubgroup):
         lost before the season completes may be repaired. The command finds the division from
         the name typed, since the change is for it by its id (`results_channel_settings`).
 
-        **A channel does one job** (`channel_registry_service`, judged by the setting's `check`),
-        as the queue is asked and again as the change starts, so a refusal leaves the
-        configuration exactly as it stood — the value the setting already holds included. The
-        queue's acknowledgement is the command's response, so nothing is deferred; the queue
-        writes the channel and its audit entry in one save and answers and logs after it.
-
-        **Verdicts' channel is one the bot must be able to post in**, refused before the season
-        is read, and its division is refused in words of its own.
+        **A channel does one job, and the bot must be able to use it** (`channel_registry_service`,
+        judged by the setting's `check`), as the queue is asked and again as the change starts, so
+        a refusal leaves the configuration exactly as it stood — the value the setting already
+        holds included. The command judges neither: it holds no verdict on the channel's
+        permissions of its own. The queue's acknowledgement is the command's response, so nothing
+        is deferred; the queue writes the channel and its audit entry in one save and answers and
+        logs after it. Verdicts' division is refused in words of its own.
 
         Every refusal is recorded: `refuse` answers and writes one line naming the command,
         which is read from the interaction.
@@ -73,12 +71,6 @@ class ChannelCommands(ResultsSubgroup):
         if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, NOT_ENABLED, what=describe(interaction))
             return
-
-        if channel_type == "verdicts":
-            guild = interaction.guild
-            if guild is None or not channel.permissions_for(guild.me).send_messages:
-                await refuse(interaction, NO_ACCESS, what=describe(interaction))
-                return
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
