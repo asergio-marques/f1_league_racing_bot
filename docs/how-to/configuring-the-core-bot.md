@@ -566,7 +566,7 @@ Your season is **ongoing** from the moment it is saved in step 1, before anythin
 - part of a division's opening standings left standing when the job stopped, naming the channel and the message — delete it by hand;
 - that notice, where it could not be deleted, with its link — delete it by hand.
 
-A calendar or lineup that was drawn with notices is named in the confirmation too, whatever else it says, under **⚠️ Image notices**: each picture (*calendar — Pro*, *lineup — Pro*), a *see them in the log* link and each notice beneath. The same list goes to the log channel. A driver who has left the server is simply passed over.
+A calendar or lineup that was drawn with notices is named in the confirmation too, whatever else it says, under **⚠️ Image notices**: each picture (*calendar — Season 3 Pro*, *lineup — Pro*), a *see them in the log* link and each notice beneath. The same list goes to the log channel. A driver who has left the server is simply passed over.
 
 > **If your confirmation never arrives**, look in the channel you ran the review in. Discord gives the bot fifteen minutes to answer a button, and an approval that waits on a stopped queue can outlast them, as can a restart of the bot while it ran. The bot then posts one line there instead, mentioning you: whether the season was approved, and that the log channel has the rest. The same line follows an approval refused when its turn came on the queue — the season, its dates, its channels or the drawing program having changed while it waited — with the reason it was refused, and one a league admin discarded before it began, saying it was not approved.
 
