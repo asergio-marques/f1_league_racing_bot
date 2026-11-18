@@ -418,7 +418,6 @@ _CANNOT_USE = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#570: setting a channel does not yet judge whether the bot can use it")
 @pytest.mark.parametrize(
     ("server", "expected"),
     [
@@ -448,7 +447,6 @@ async def test_a_channel_the_bot_cannot_use_is_refused_naming_what_it_lacks(serv
     assert refused == expected
 
 
-@pytest.mark.xfail(strict=True, reason="#570: setting a channel does not yet judge whether the bot can use it")
 @pytest.mark.parametrize("cause", ["the server answers with an error", "no server to ask"])
 async def test_a_channel_that_cannot_be_judged_is_not_refused(cause, caplog):
     """A check that cannot be made stands aside, as a confirmation's does: only what Discord

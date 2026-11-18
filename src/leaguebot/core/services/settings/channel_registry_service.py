@@ -38,6 +38,8 @@ from dataclasses import dataclass
 import aiosqlite
 import discord
 
+from leaguebot.core.models.channel_needs import Needs
+from leaguebot.core.services.seasons import approval_checks
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.utils.hooks import AwaitedHook
 
@@ -55,6 +57,7 @@ __all__ = [
     "SERVER_SOURCES",
     "missing_channel_fault",
     "unpostable_channel_fault",
+    "unusable_refusal",
 ]
 
 
@@ -268,6 +271,39 @@ async def channel_refusal(
     return refusal(
         channel.mention, use, same_setting=(use == ChannelUse(setting, division_name))
     )
+
+
+async def unusable_refusal(
+    guild: discord.Guild | None, channel_id: int, needs: Needs, use: ChannelUse
+) -> str | None:
+    """Why the bot cannot use *channel_id* as *use*, or None where it can, or where that cannot
+    be told.
+
+    What every channel command checks, after :func:`channel_refusal` and before it writes, and
+    again as the change starts, so that a channel the bot lacks a permission in is never saved.
+    *needs* is what the channel's use asks of the bot, which its owner states
+    (`core_channel_needs`, a module's `channel_needs`); *guild* is the league's server, handed
+    by the caller. The channel is judged by `approval_checks.judged_presence`, so a channel is
+    refused only on what Discord proves: one gone is "no longer on the server", one lacking a
+    permission names each, in Discord's own words and in the order *needs* asks for them. With no
+    *guild*, or no answer from Discord, the check **stands aside** and the channel is saved,
+    logged on the host: the same exception a confirmation makes (architecture.md, "A reader or a
+    check that stands aside"). Returned rather than sent, as :func:`channel_refusal` is.
+    """
+    mention = f"<#{channel_id}>"
+    if guild is None:
+        log.warning("channel check: no server to judge channel %s on", channel_id)
+        return None
+    presence = await approval_checks.judged_presence(guild, channel_id, needs)
+    if presence.state is approval_checks.PresenceState.GONE:
+        return f"❌ {mention} is no longer on the server. Nothing was changed."
+    if presence.state is approval_checks.PresenceState.UNUSABLE:
+        return (
+            f"❌ The bot is missing permissions it needs in {mention} as the {use.describe()}: "
+            f"{', '.join(presence.missing)}. Give the bot them there, or pick another channel. "
+            f"Nothing was changed."
+        )
+    return None
 
 
 def missing_channel_fault(division_name: str, setting: str, channel_id: int) -> str:
