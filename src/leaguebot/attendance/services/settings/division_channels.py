@@ -136,15 +136,15 @@ async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
     the bot: the one source of it within attendance, read by the faults a season's confirmation
     names and by the gate before a recalculation.
 
-    The check-in call is an embed posted in the channel, so it needs View Channel, Send Messages
-    and Embed Links, and Read Message History, since the bot reads the call back to redraw it
-    after an answer and to take its buttons off at the deadline. The sheet is reposted, which
-    reads the channel to find what the bot posted last and takes it down, so it needs View
-    Channel, Send Messages and Read Message History, and no embed: it is text or a picture. Each
-    also needs Attach Files where the image module answers that its
-    pictures could attach a file (`aspect_attaches_files`, a question it answers by its switches
-    and not by the state of a template): `rsvp` for the call, `attendance` for the sheet. With no
-    *drawing*, nothing is drawn and no channel needs Attach Files.
+    The check-in call is an embed posted in the channel, so it needs View Channel, Send Messages and
+    Embed Links, and Read Message History, since the bot reads the call back to redraw it after an
+    answer and to take its buttons off at the deadline. The sheet is reposted, which reads the
+    channel to find what the bot posted last and takes it down, so it needs View Channel, Send
+    Messages and Read Message History, and no embed: it is text or a picture. Each also needs Attach
+    Files where the image module answers that its pictures could attach a file
+    (`aspect_attaches_files`, a question it answers by its switches and not by the state of a
+    template): `rsvp` for the call, `attendance` for the sheet. With no *drawing*, nothing is drawn
+    and no channel needs Attach Files.
     """
 
     async def attaches(aspect: str) -> Needs:

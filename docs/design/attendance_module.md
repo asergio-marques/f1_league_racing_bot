@@ -593,12 +593,12 @@ image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet
 (`ImageDrawing.attendance_wanted` and `draw_attendance_sheet`), both on the drawing the wiring hands
 the post jobs, from what attendance hands it, the call's deadline included: attendance works it out
 (`derive_checkin_deadline`) and hands it in. The recalculation's check that the attendance channel
-can use what it is sent reads the module's stated needs (`division_channels.channel_needs`, below)
+can use what it is sent reads the module's stated needs (`division_channels.channel_needs`, above)
 and, for the verdicts channel, results' (`channel_needs` in `results.services.module`); both ask the
 same drawing whether the aspect attaches files (`ImageDrawing.aspect_attaches_files`), which the cog
-reads off the bot. It also implements its
-share of the image module's `PreviewSources`, the check-in deadline the previews draw, and the
-builder joins it with results' share and hands the whole in as `bot.preview_sources`.
+reads off the bot. It also implements its share of the image module's `PreviewSources`, the check-in
+deadline the previews draw, and the builder joins it with results' share and hands the whole in as
+`bot.preview_sources`.
 
 ---
 

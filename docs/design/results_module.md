@@ -665,13 +665,16 @@ fallbacks").
 
 `division_channels.channel_needs` states it, the one source of it within results; the results
 specification, under "Assigning channels to divisions", says what each channel needs. The one thing
-the statement asks of the image module is whether a channel's pictures could attach a file, which the
-drawing answers by its switches (`results`, `standings`, and `verdicts` or `verdict_banner` for the
-verdicts channel, where attendance's sanction cards go too). The confirmation's faults
+the statement asks of the image module is whether a channel's pictures could attach a file, which
+the drawing answers by its switches (`results`, `standings`, and `verdicts` or `verdict_banner` for
+the verdicts channel, where attendance's sanction cards go too). The confirmation's faults
 (`division_channel_faults`) and the repost gate (`results_post_service.repost_channel_faults`) both
-read it, as does attendance's recalculation for the verdicts channel, so the gates judge a channel by
-one statement and cannot disagree about it. `manage_messages` is not asked: the bot deletes only its
-own posts.
+read it, as does attendance's recalculation for the verdicts channel, so the gates judge a channel
+by one statement and cannot disagree about what it needs. They do not share a reader: the
+confirmation finds a channel in the cache or by a fetch (`approval_checks.channel_presence`), where
+the repost and recalculation gates read the cache alone and also refuse a channel that is not a text
+channel (`results_post_service.channel_fault`). `manage_messages` is not asked: the bot deletes only
+its own posts.
 
 ### The `/results` group
 

@@ -205,30 +205,31 @@ architecture.md's "How modules and core fit together" has it and holds no rule o
 fetch and answers `PRESENT`, `GONE` or `UNUSABLE` with what the bot lacks there, and raises on any
 answer Discord does not prove, a server error or a bot member it cannot read. `judged_presence`
 stands aside on that raise, the stated exception in architecture.md's "Errors and failures", which
-is what a confirmation wants, and is the strict reader's one caller: it raises so that a caller
-free to refuse on a check it could not make may. The gates before a repost and a recalculation
-judge from the cache alone, through `results_post_service.channel_fault`. Core's own `channel_fault`
-words the confirmation's line, and takes the *needs* its caller hands it, so it holds no list of channels and no permission of its own. A need is data (`core/models/channel_needs.py`)
-and each part builds its channels' from it in its own service (`channel_needs`: weather's forecast
-channel, results' three, attendance's two), asking the image module's drawing, handed through the
-module's wiring, only whether a picture could attach a file. The alternatives rejected: one table of
-every channel's needs in core, which would hold each module's rule (architecture.md, "What each part
-may do"); and each gate keeping its own list, which lets two gates judge one channel differently.
+is what a confirmation wants, and is the strict reader's one caller: it raises so that a caller free
+to refuse on a check it could not make may. The gates before a repost and a recalculation judge from
+the cache alone, through `results_post_service.channel_fault`. Core's own `channel_fault` words the
+confirmation's line, and takes the *needs* its caller hands it, so it holds no list of channels and
+no permission of its own. A need is data (`core/models/channel_needs.py`) and each part builds its
+channels' from it in its own service (`channel_needs`: weather's forecast channel, results' three,
+attendance's two), asking the image module's drawing, handed through the module's wiring, only
+whether a picture could attach a file. The alternatives rejected: one table of every channel's needs
+in core, which would hold each module's rule (architecture.md, "What each part may do"); and each
+gate keeping its own list, which lets two gates judge one channel differently.
 
 **Core's own two channels are named through the same hook as the modules'.** The lineup and the
 calendar need the image module's answer to build their needs, which is awaited, so
 `core_division_channel_faults` (its subscriber of `division_channel_faults_read`, signed up before
 every module's, so a division's lines read core's first) builds them where it can await, from
 `core_channel_needs`. `division_channel_faults` holds no list of channels, so the review and the two
-confirmations cannot disagree about one and `season_approval_change` is untouched. *Rejected:* the
+confirmations cannot disagree about one and `season_approval_change` holds none. *Rejected:* the
 check reading the image module's configuration for a switch, which is the module's to answer
 (`ImageDrawing.calendar_attaches_files` and `lineup_attaches_files`).
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
 status and stage, a division's and a round's status, the driver's state and the dependency table
 (`module_dependencies.py`), and the permissions a saved channel needs (`channel_needs.py`: `Needs`
-and the named permissions, which each part states its channels' needs from). The change queue's vocabulary and `Refused` are the framework's models
-(`framework.md`, "How the code is laid out").
+and the named permissions, which each part states its channels' needs from). The change queue's
+vocabulary and `Refused` are the framework's models (`framework.md`, "How the code is laid out").
 
 **Core's helpers** (`core/utils/`) are the tier guards (`channel_guard.py`), the season-stage gate
 (`season_gate.py`), the team choices a command's autocomplete offers (`team_autocomplete.py`),

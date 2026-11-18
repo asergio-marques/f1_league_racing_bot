@@ -465,14 +465,14 @@ round's facts and its division (`round_facts_on`, `division_on`), a round's sess
 Weather needs no other module (no entry in `NEEDS`). Of the image module it asks the forecast's
 graphic (`ImageDrawing.attach_forecast`, on the drawing the wiring hands the post job) and the
 discarding of a drawn attachment (`ImageDrawing.discard_attachment`, handed to `post_phase_message`
-beside the picture), and, for the faults a confirmation names, whether the forecast could attach a
-file (`ImageDrawing.aspect_attaches_files`), and builds the model image declares for it (`image.models.forecast_values`); it
-uses no other module. The image module reads none of weather's tables: weather hands it the words,
-composed as the text composes them (`forecast_changes.forecast_values`), in a model image declares
-(`ForecastValues`: the phase's description, the likelihood of rain as text, and each session's
-label, weather type, slots and the summary of its slots, in the order they are run), so that image
-imports no other module and holds no second copy of weather's wording. For `/images test`, image
-composes sample words of its own.
+beside the picture), and it builds the model image declares for the graphic
+(`image.models.forecast_values`). For the faults a confirmation names, it asks whether the forecast
+could attach a file (`ImageDrawing.aspect_attaches_files`). It uses no other module. The image
+module reads none of weather's tables: weather hands it the words, composed as the text composes
+them (`forecast_changes.forecast_values`), in a model image declares (`ForecastValues`: the phase's
+description, the likelihood of rain as text, and each session's label, weather type, slots and the
+summary of its slots, in the order they are run), so that image imports no other module and holds no
+second copy of weather's wording. For `/images test`, image composes sample words of its own.
 
 ### What the forecast channel needs of the bot
 

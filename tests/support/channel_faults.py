@@ -2,8 +2,9 @@
 for the tests of each module's channel faults.
 
 A channel is looked for in the server's cache and then fetched, a fetch answering NotFound being
-the one proof it is gone (`approval_checks.channel_on_server`). A channel found is judged by the
-permissions the bot holds in it, against what that channel's use needs.
+the one proof it is gone and one Discord refuses the bot proving it unusable, lacking View
+Channel (`approval_checks.channel_presence`). A channel found is judged by the permissions the
+bot holds in it, against what that channel's use needs.
 """
 from __future__ import annotations
 
