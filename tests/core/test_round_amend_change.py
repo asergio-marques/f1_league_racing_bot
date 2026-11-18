@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
+import io
 import json
 import sqlite3
 import sys
@@ -540,23 +541,38 @@ INVALIDATION_NOTICE = (
 )
 
 
-@pytest.mark.parametrize("role, mention, allowed", [
+#: The invalidation notice not yet mentioning or notifying the division's role.
+NOTICE_PINGS_NO_ROLE = (
+    "#452: the invalidation notice does not yet mention or notify the division's role"
+)
+
+
+@pytest.mark.parametrize("role, mention, allowed, pictures", [
     pytest.param(PRO_ROLE, f"<@&{PRO_ROLE}> ",
-                 {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, id="role set",
-                 marks=pytest.mark.xfail(strict=True, reason=(
-                     "#452: the invalidation notice does not yet mention or notify the "
-                     "division's role"))),
-    pytest.param(0, "", NOBODY, id="no role"),
+                 {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, False, id="role set",
+                 marks=pytest.mark.xfail(strict=True, reason=NOTICE_PINGS_NO_ROLE)),
+    pytest.param(0, "", NOBODY, False, id="no role"),
+    pytest.param(PRO_ROLE, f"<@&{PRO_ROLE}> ",
+                 {"everyone": False, "users": set(), "roles": {PRO_ROLE}}, True,
+                 id="role set, forecasts as pictures",
+                 marks=pytest.mark.xfail(strict=True, reason=NOTICE_PINGS_NO_ROLE)),
 ])
 async def test_the_invalidation_notice_notifies_the_division_s_role(
-    tmp_path, role, mention, allowed,
+    tmp_path, monkeypatch, role, mention, allowed, pictures,
 ):
     """Weather on; round 3, at Silverstone, has its posted phase 1 forecast withdrawn by moving
     the round ninety-one days on. The notice in Pro's forecast channel that the forecasts no
     longer stand begins with Pro's role mention and notifies that role alone, no member and not
     everyone, its words after the mention as they always were and naming the track. Where Pro
-    has no role set (0), the notice mentions no role, never `<@&0>`, and notifies nobody."""
-    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    has no role set (0), the notice mentions no role, never `<@&0>`, and notifies nobody. Where
+    forecasts are posted as pictures (images on, a forecast's picture drawn), the notice is still
+    text alone, carrying no file."""
+    league = await ongoing_league(tmp_path, weather=True, images=pictures, horizons=HORIZONS)
+    if pictures:
+        monkeypatch.setattr(league.bot.image_drawing, "attach_forecast", AsyncMock(
+            side_effect=lambda *_a, **_k: (
+                discord.File(io.BytesIO(b"png"), filename="forecast.png"), ()))
+        )
     await league.write("UPDATE divisions SET mention_role_id = ? WHERE id = ?", role, PRO)
     await posted_forecast(league, R3, 1, 8001)
     await _amended(league, scheduled_at=_at(league, days=91))
@@ -565,6 +581,7 @@ async def test_the_invalidation_notice_notifies_the_division_s_role(
 
     assert await _stopped_at(league) is None
     assert league.texts(PRO_CH.forecast) == [mention + INVALIDATION_NOTICE]
+    assert league.channel(PRO_CH.forecast).files == [None]
     [call] = league.channel(PRO_CH.forecast).send.await_args_list
     assert notified(call.kwargs.get("allowed_mentions")) == allowed
 
