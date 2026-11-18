@@ -4,7 +4,7 @@
 is results': where the window is open, the jobs of a close come first, in the order a close runs
 them (`window_changes`, `closing_steps`) -- each driver still filling in the wizard returned and
 told, the Sign Up button taken down, "Signups are now closed" posted -- and the last job,
-`switch_off`, is one save: it forgets the signup channel and the window beside it, brings the
+`switch_off`, is one save: it clears the window's state, keeps the signup channel, brings the
 module's flag down and audits the switch-off; once it is saved the job `disarm_timers` takes away
 the close timer and the timers of each wizard still engaged (never inside the save, so that one
 that fails keeps them). The deletion a held signup channel waits on is none of an engaged wizard's:
@@ -29,11 +29,13 @@ The permission overwrites the bot applied to the signup channel are cleared by a
 change, `clear_overwrites`, planned by the switch-off once it has turned the module off. They go
 only with the module: a switch-off that is refused when it runs, waits behind a stopped queue or
 is discarded leaves the channel as the module needs it (visible to the league's roles alone, the
-bot able to post in it), which the signup specification requires while the module is on. A
-permission Discord refuses to clear is logged and stepped over: a channel with a stale overwrite is
-put right by hand, a module left half-off is not.
-The time slots and the three question settings are not in the configuration row and stand again
-when the module is next enabled; the league's base role and driver role are core's and stand.
+bot able to post in it), which the signup specification requires while the module is on. The
+switch-on puts them back, as a step of its own (`module_switch_settings`). A permission Discord
+refuses to clear is stepped over and told, in the reply and a line of the log, with the channel
+and to remove it by hand: a channel with a stale overwrite is put right by hand, a module left
+half-off is not.
+The configuration row, the signup channel with it, is kept, as are the time slots and the three
+question settings; the league's base role and driver role are core's and stand.
 """
 
 from __future__ import annotations
@@ -107,8 +109,15 @@ WINDOW_CHANGED = (
 )
 NOTHING_CHANGED = "Nothing was changed: the signup module is still on."
 SWITCHED_OFF = (
-    "✅ Signup module disabled. Its channel has been cleared; its time slots and "
-    "question settings are kept, and so are the league's base role and driver role."
+    "✅ Signup module disabled. Its channel, time slots and question settings are kept, and so "
+    "are the league's base role and driver role. The permissions the bot set on the channel are "
+    "removed, and put back when the module is switched on again."
+)
+#: What a permission Discord would not remove from the signup channel leaves, for the reply and the
+#: line, with the channel named.
+PERMISSIONS_LEFT = (
+    "Permissions the bot set on the signup channel <#{channel_id}> could not be removed: "
+    "remove them by hand."
 )
 
 #: What a close that went wrong in the signup channel leaves, one sentence each, for the reply and
@@ -224,7 +233,7 @@ def signup_off_change(
     async def clear_overwrites(ctx: StepContext) -> StepResult:
         """Clear what `/signup channel` applied to the signup channel: everyone's, the bot's, the
         base role's and the interaction role's (the admin role's allow is left, #372). Each is
-        tried on its own and a refusal logged, never raised."""
+        tried on its own and a refusal logged and told, never raised."""
         guild = await league_guild(ctx.bot)
         channel = None if guild is None else guild.get_channel(int(ctx.step_payload["channel_id"]))
         if guild is None or not isinstance(channel, discord.TextChannel):
@@ -241,12 +250,20 @@ def signup_off_change(
             interaction_role = guild.get_role(league.interaction_role_id)
             if interaction_role:
                 targets.append(interaction_role)
+        left = False
         for target in targets:
             try:
                 await channel.set_permissions(target, overwrite=None)
             except Exception:
                 log.exception("disable_signup: could not clear overwrite for %s", target)
-        return StepResult()
+                left = True
+        if not left:
+            return StepResult()
+        said = PERMISSIONS_LEFT.format(channel_id=int(ctx.step_payload["channel_id"]))
+        return StepResult(
+            result={"left": True},
+            lines=(f"{ctx.named} | /module disable signup | Incomplete\n  failed_step: {said}",),
+        )
 
     async def off_line(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one line of a switch-off that closed the window: what the close's jobs did, and
@@ -288,6 +305,11 @@ def signup_off_change(
             )
             return text + bullets
         text = SWITCHED_OFF
+        text += "".join(
+            "\n⚠️ " + PERMISSIONS_LEFT.format(channel_id=view.payload["channel_id"])
+            for view in ctx.steps
+            if view.name == CLEAR_OVERWRITES and (view.result or {}).get("left")
+        )
         if failed:
             lead = "The window is closed" if window_was_closed(ctx.steps) else "The module is off"
             text += f"\n⚠️ {lead}, but not every step succeeded:" + bullets

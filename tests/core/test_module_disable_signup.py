@@ -371,8 +371,6 @@ async def test_the_disable_is_logged(tmp_path):
     assert any("/module disable signup" in line for line in await _log_lines(league))
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-off deletes the configuration row and "
-                   "its channel")
 async def test_the_channel_is_kept_and_its_permissions_removed(tmp_path):
     """The configuration row names the signup channel (620) with the window closed. Once the
     switch-off has run, the row still stands and still names 620, and the acknowledgement says the
@@ -715,8 +713,6 @@ async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, m
     assert "still on" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-off does not say which permissions it "
-                   "could not remove")
 async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
     """A module left half-disabled is worse than a channel with a stale overwrite: one is
     repairable by hand, the other needs the toggle run again in a state it may refuse. Discord
@@ -1124,8 +1120,6 @@ async def test_a_discarded_closed_notice_is_named_and_the_season_stays_in_config
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-off deletes the configuration row, and "
-                   "with it the window's state")
 async def test_a_discarded_return_of_the_drivers_says_the_button_was_left_standing(tmp_path, monkeypatch):
     """The first job of the close, returning the drivers still signing up, fails and is discarded.
     Nothing after it was planned, so the Sign Up button stands and no closed notice was posted:

@@ -293,32 +293,29 @@ class SignupModuleService:
             })
         return results
 
-    async def delete_config_on(self, db: aiosqlite.Connection) -> None:
-        """Forget the signup channel and the window state on *db*, committing nothing, so that
-        the module's switch-off saves it together with the flag coming down.
-
-        The row holds what names a Discord object — the channel, the button and the
-        closed-status message — and the window's state. A channel can be deleted or given
-        another job while the module is off, so the disable clears it (constitution,
-        Principle X, rules 3 and 6). The time slots and the three question settings are not
-        in this row, and no key joins their tables to it, so nothing cascades: they stand
-        again when the module is next enabled, as the signup specification requires
-        (issue #127). The closed-status message is the one id the disable does not lose: the
-        close kept it, with its channel, among the settings (`closed_notice_of`), so that the
-        first opening after the module is switched back on takes the notice down.
-        """
-        await db.execute("DELETE FROM signup_module_config")
-
     async def switch_off_on(self, db: aiosqlite.Connection, *, now: datetime) -> None:
         """Write the signup module's switch-off on *db*, committing nothing, so that
-        `signup_off_change`'s save carries it with the switch-off's audit: the configuration is
-        forgotten (`delete_config_on`), the open window's record is stamped closed at *now*, and
-        the module's flag comes down.
+        `signup_off_change`'s save carries it with the switch-off's audit: the open window's
+        record is stamped closed at *now*, the configuration's window state is cleared and the
+        module's flag comes down.
 
-        The window's record is stamped closed with the module's going off, or the next opening
-        would make a second open window, which the schema refuses.
+        **The configuration is kept**, signup channel included (constitution, Principle X,
+        rule 3): so are the time slots and the three question settings, which no key joins to
+        it, and the closed notice's message (`signup_closed_message_id`), which the first opening
+        after the module is switched back on takes down. A channel can be deleted or given
+        another job while the module is off, which the switch-on checks (`kept_channels`).
+
+        What is cleared is the window's state: the row reads the window closed, with no Sign Up
+        button and no close time. The close clears it as a window closes (`set_window_closed_on`),
+        but a switch-off whose close job was discarded never ran it, and a kept row left reading
+        an open window would bring signup back on with one. The window's record is stamped closed
+        with the module's going off, or the next opening would make a second open window, which
+        the schema refuses.
         """
-        await self.delete_config_on(db)
+        await db.execute(
+            "UPDATE signup_module_config "
+            "SET signups_open = 0, signup_button_message_id = NULL, close_at = NULL"
+        )
         await db.execute(
             "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
             (now.isoformat(),),
