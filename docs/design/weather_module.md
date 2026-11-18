@@ -441,6 +441,7 @@ together" has a module sign up, through `wiring.py`.
 | `test_mode_flushed` | `forecast_changes.test_mode_flushed_on` | hands back the `flush_forecasts` job |
 | `rounds_deleted`, `bot_packed` | `forecast_cleanup_service` | see "The database" |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `forecast_channel` | its channel, read for the reviews, the channel registry (answering nothing while weather is off) and the factory reset |
+| `picture_channels_read` | `forecast_channel.picture_channels` | its forecast channels, for a forecast asked as a picture and counted as one (needing Attach Files), answering nothing while weather is off |
 | `review_sections_read` | `weather_config_service.review_section` | its section of a season review |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channels and horizons in the season's fingerprint, whatever its switch |
 | `pending_steps_read`, `review_marks_read` | `test_mode_steps` | a round's forecasts for `/test-mode advance` and its review |
