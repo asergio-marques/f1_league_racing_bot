@@ -778,26 +778,17 @@ async def test_a_button_pressed_after_a_cancellation_is_asked_lets_it_go_ahead(
     """Kimi's signup awaits review. Admin (77) runs `/signup cancel` of Kimi and submits the form;
     before the queue reaches the cancellation, 77 presses *label* on Kimi's panel. The refusal
     while a reason is awaited is made at the ask only, so when the queue runs the cancellation goes
-    ahead: Kimi is Not Signed Up, one cancellation audit entry is written, and Admin is told
-    "✅ Signup cancelled.". The reason 77 then types is refused: he is told the signup has moved on
-    since he pressed *label*, one refusal line names the button, and Kimi stays Not Signed Up."""
+    ahead: Kimi is Not Signed Up, one cancellation audit entry is written, Admin is told
+    "✅ Signup cancelled." and nothing is refused. The reason 77 types afterwards gets the "moved
+    on" refusal, which `test_a_reason_typed_after_the_signup_moved_on_is_refused_and_recorded`
+    pins."""
     league = await _league(tmp_path)
 
     answered = await _cancel(league, CANCEL_REASON)
-    press = await _press(league, button)
+    await _press(league, button)
     await run_queue(league.bot)
 
     assert await _driver_state(league) == "NOT_SIGNED_UP"
     assert len(await _cancel_audits(league)) == 1
     assert "✅ Signup cancelled." in _told_admin(answered)
     assert _refusals(league) == []
-
-    await _hear(league, REASON)
-    await run_queue(league.bot)
-
-    told = " ".join(_sent(press) + [_answered(press)])
-    assert f"This signup has moved on since you pressed {label}." in told, told
-    [line] = _refusals(league)
-    assert line.startswith(f"⛔ the “{label}” button of") and "has moved on" in line, line
-    assert await _driver_state(league) == "NOT_SIGNED_UP"
-    assert len(await _cancel_audits(league)) == 1
