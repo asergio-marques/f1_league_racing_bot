@@ -432,6 +432,23 @@ async def _signup_config(db_path: str) -> dict | None:
     return None if row is None else dict(row)
 
 
+def _kept_channel_on_the_server(league) -> None:
+    """The league's server, reachable, holding the kept signup channel 620 with every permission
+    the bot needs there and no overwrite standing on it."""
+    import discord
+
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 620
+    channel.set_permissions = AsyncMock()
+    channel.overwrites = {}
+    channel.overwrites_for = MagicMock(side_effect=lambda _target: discord.PermissionOverwrite())
+    channel.permissions_for = MagicMock(return_value=discord.Permissions.all())
+    guild = MagicMock()
+    guild.get_channel = MagicMock(side_effect=lambda cid: channel if int(cid) == 620 else None)
+    channel.guild = guild
+    league.bot.get_guild = MagicMock(return_value=guild)
+
+
 async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
     """So the `/signup …` commands have a row to update. Without it every one of them would be a
     silent no-op against nothing. The member is acknowledged at once; once the change has run the
@@ -459,7 +476,8 @@ async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
 async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
     """A configuration row standing while the module is off (a restored database could hold one)
     is kept, not replaced by a bare one: the switch-on creates only what is missing. The signup
-    channel it names is still named once the module is on again."""
+    channel it names, 620, on the league's server and usable there, is still named once the
+    module is on again."""
     league, cog, asked = await _signup_league(tmp_path)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -467,6 +485,7 @@ async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
             "VALUES (1, 620, 0)"
         )
         await db.commit()
+    _kept_channel_on_the_server(league)
 
     await cog._enable_signup(asked)
     await run_queue(league.bot)
@@ -487,8 +506,6 @@ async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path, ke
     role set and no signup channel kept, the reply names all three, word for word. Where the
     configuration kept from before the switch-off names channel 620, on the server and usable,
     `/signup channel` is not asked for, and only the two roles are."""
-    import discord
-
     from tests.support.settings_league import last_said
 
     league, cog, asked = await _signup_league(tmp_path)
@@ -499,16 +516,7 @@ async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path, ke
                 "VALUES (1, 620, 0)"
             )
             await db.commit()
-        channel = MagicMock(spec=discord.TextChannel)
-        channel.id = 620
-        channel.set_permissions = AsyncMock()
-        channel.overwrites = {}
-        channel.overwrites_for = MagicMock(side_effect=lambda _target: discord.PermissionOverwrite())
-        channel.permissions_for = MagicMock(return_value=discord.Permissions.all())
-        guild = MagicMock()
-        guild.get_channel = MagicMock(side_effect=lambda cid: channel if int(cid) == 620 else None)
-        channel.guild = guild
-        league.bot.get_guild = MagicMock(return_value=guild)
+        _kept_channel_on_the_server(league)
 
     await cog._enable_signup(asked)
     await run_queue(league.bot)
