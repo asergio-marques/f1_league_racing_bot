@@ -255,10 +255,6 @@ _CANNOT_USE = (
 #: The refusal #notices is given where it has been deleted from the server.
 _GONE = f"❌ <#{CHANNEL_ID}> is no longer on the server. Nothing was changed."
 
-#: Why a test fails until setting a channel judges whether the bot can use it.
-_NOT_JUDGED = "#570: setting a lineup or calendar channel does not yet judge whether the bot can use it"
-
-
 # ---------------------------------------------------------------------------
 # What both hold to
 # ---------------------------------------------------------------------------
@@ -485,11 +481,11 @@ async def _delete_the_channel(db_path: str, bot) -> None:
         pytest.param(
             "permission_lost", _lose_the_permission,
             _CANNOT_USE.format(which="{which}", missing="Send Messages"),
-            id="permission_lost", marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+            id="permission_lost",
         ),
         pytest.param(
             "channel_deleted", _delete_the_channel, _GONE,
-            id="channel_deleted", marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+            id="channel_deleted",
         ),
     ],
 )
@@ -695,10 +691,7 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
         "a_channel_doing_another_job",
         "another_divisions_results_channel",
         "the_channel_already_set",
-        pytest.param(
-            "a_channel_the_bot_cannot_use",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
+        "a_channel_the_bot_cannot_use",
         "a_channel_doing_another_job_the_bot_cannot_use",
         "the_channel_already_set_the_bot_cannot_use",
     ],
@@ -772,8 +765,7 @@ async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
 @pytest.mark.parametrize(
     "attaches",
     [
-        pytest.param(True, id="picture-attaches-a-file",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED)),
+        pytest.param(True, id="picture-attaches-a-file"),
         pytest.param(False, id="no-picture"),
     ],
 )

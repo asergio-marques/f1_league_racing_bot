@@ -127,12 +127,8 @@ _NOT_YET_DRAWN = (
 @pytest.mark.parametrize(
     "name",
     ["log channel", "interaction channel", "hub channel",
-     pytest.param(
-         "division lineup channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
-     ),
-     pytest.param(
-         "division calendar channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
-     ),
+     "division lineup channel",
+     "division calendar channel",
      pytest.param(
          "division forecast channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
      )],
