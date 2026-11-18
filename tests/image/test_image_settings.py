@@ -36,7 +36,9 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
+from tests.support.channel_faults import league_server
 from tests.support.change_queue import (
+    INTERACTION_CHANNEL_ID,
     MEMBER_ID,
     change_rows,
     maybe_await,
@@ -54,6 +56,7 @@ from tests.support.settings_league import (
     portrait_refresh_times,
     said,
     settings_league,
+    switch,
 )
 from tests.support.undecorate import undecorate
 
@@ -105,10 +108,14 @@ def _rasteriser_present(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def _league(tmp_path: Any, **config: Any) -> Any:
-    """The league of the module docstring, images alone on, *config* written over the image
-    configuration's defaults, and `aspects` (where given) switched on."""
-    league = await settings_league(tmp_path, modules=("images",))
+async def _league(
+    tmp_path: Any, *, modules: tuple[str, ...] = ("images",), **config: Any
+) -> Any:
+    """The league of the module docstring, *modules* on (images alone by default), *config*
+    written over the image configuration's defaults, and `aspects` (where given) switched on.
+    Its server holds every channel, the bot holding every permission in each."""
+    league = await settings_league(tmp_path, modules=modules)
+    league_server(league.bot)
     aspects = config.pop("aspects", ())
     async with get_connection(league.db_path) as db:
         for column, value in config.items():
@@ -1012,6 +1019,211 @@ async def test_an_output_toggle_found_already_switched_when_it_runs_changes_noth
     lines = await log_lines(league)
     assert len(lines) == 1
     assert lines[0].split("\n")[0] == f"{NAMED} | /images config toggle | Nothing changed"
+
+
+# ---------------------------------------------------------------------------
+# Switching an output on checks the channels it posts to (#570, slice 3)
+# ---------------------------------------------------------------------------
+
+#: Why the switch-on tests below fail until the check before the save lands.
+CHANNELS_NOT_JUDGED = "#570: switching an output on judges none of the channels it posts to"
+#: The bot command channel, which the season's review posts the lineup and calendar in.
+COMMAND = INTERACTION_CHANNEL_ID
+#: Pro's lineup channel, and its standings channel where results keeps its channels.
+PRO_LINEUP, PRO_STANDINGS = 11, 121
+
+
+async def _live_season(db_path: str) -> None:
+    """A running season holding one division, Pro, its lineup channel 11 and its standings
+    channel 121."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-03-01', 'ACTIVE', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, status, tier, "
+            "lineup_channel_id) VALUES (1, 1, 'Pro', 1, 'ACTIVE', 1, ?)",
+            (PRO_LINEUP,),
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, standings_channel_id) "
+            "VALUES (1, ?)",
+            (PRO_STANDINGS,),
+        )
+        await db.commit()
+
+
+def _switch(label: str, aspect: str) -> Ask:
+    """`/images config toggle` for the output *aspect*, offered under *label*."""
+    return _slash(
+        "config_toggle", "images config toggle",
+        aspect=app_commands.Choice(name=label, value=aspect),
+    )
+
+
+def _switch_of(aspect: str) -> str:
+    return f"SELECT enabled FROM image_aspect_toggles WHERE aspect = '{aspect}'"
+
+
+def _no_channel(label: str, *bullets: str) -> str:
+    """The refusal of switching *label* on, one bullet for each channel that cannot take it."""
+    return (
+        f"⛔ **{label}** image output was **not** switched on — channels it posts to cannot "
+        "take it:\n"
+        + "".join(f"• {bullet}\n" for bullet in bullets)
+        + "Give the bot those permissions there, or set those channels again, then run "
+        "`/images config toggle` again. The output is still posted as text in the meantime."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED)
+@pytest.mark.parametrize(
+    ("label", "aspect", "modules", "season", "server", "bullets"),
+    [
+        pytest.param(
+            "Calendar", "calendar", ("images",), False,
+            {"unusable": {COMMAND: ("attach_files",)}},
+            (f"<#{COMMAND}>, the bot command channel: Attach Files",),
+            id="calendar, no season, command channel lacking Attach Files",
+        ),
+        pytest.param(
+            "Lineup", "lineup", ("images",), True,
+            {"unusable": {PRO_LINEUP: ("embed_links",)}, "gone": (COMMAND,)},
+            (
+                f"<#{PRO_LINEUP}>, the lineup channel for **Pro**: Embed Links",
+                f"<#{COMMAND}>, the bot command channel: no longer on the server — "
+                "`/bot interaction-channel`",
+            ),
+            id="lineup, live season, lineup channel lacking Embed Links, command channel gone",
+        ),
+        pytest.param(
+            "Standings", "standings", ("images", "results"), True,
+            {"unusable": {PRO_STANDINGS: ("read_message_history",)}},
+            (f"<#{PRO_STANDINGS}>, the standings channel for **Pro**: Read Message History",),
+            id="standings, results on, standings channel lacking Read Message History",
+        ),
+    ],
+)
+async def test_switching_an_output_on_is_refused_where_a_channel_it_posts_to_cannot_take_it(
+    tmp_path, label, aspect, modules, season, server, bullets
+):
+    """`/images config toggle` switching an output on, its drawing sound: the Calendar with no
+    season, the bot command channel 100 lacking Attach Files; the Lineup with a running season
+    holding Pro, Pro's lineup channel 11 lacking Embed Links and the bot command channel deleted;
+    the Standings with results on, Pro's standings channel 121 lacking Read Message History.
+    Acknowledged at once; once run, it is refused, the reply word for word listing each channel
+    and what it lacks, or that it is no longer on the server with the command that sets it, the
+    output still off, no audit entry, and one "⛔" line naming the command."""
+    league = await _league(tmp_path, modules=modules)
+    if season:
+        await _live_season(league.db_path)
+    league_server(league.bot, **server)
+
+    asked = await _switch(label, aspect)(league)
+    assert said(asked)[0].startswith(f"⏳ Switching **{label}** image output on. ")
+    await run_queue(league.bot)
+
+    assert last_said(asked) == _no_channel(label, *bullets)
+    assert await _rows(league.db_path, _switch_of(aspect)) == [(0,)]
+    assert await audit_rows(league.db_path) == []
+    [line] = await log_lines(league)
+    assert line.startswith(_refused("`/images config toggle`"))
+
+
+async def test_switching_an_output_on_judges_no_channel_of_a_module_that_is_off(tmp_path):
+    """Results off, a running season holding Pro, Pro's standings channel 121 deleted:
+    `/images config toggle Standings` is refused because the results module is off, as the
+    drawing check refuses it, and names no channel; the Standings stay off and nothing of the
+    server is read."""
+    league = await _league(tmp_path)
+    await _live_season(league.db_path)
+    guild = league_server(league.bot, gone=(PRO_STANDINGS,))
+
+    asked = await _switch("Standings", "standings")(league)
+    await run_queue(league.bot)
+
+    reply = last_said(asked)
+    assert reply.startswith(
+        "⛔ **Standings** image output was **not** switched on — it cannot be drawn as things "
+        "stand:"
+    )
+    assert "the results module is switched off" in reply
+    assert f"<#{PRO_STANDINGS}>" not in reply
+    assert await _rows(league.db_path, _switch_of("standings")) == [(0,)]
+    guild.get_channel.assert_not_called()
+    guild.fetch_channel.assert_not_called()
+
+
+async def test_switching_an_output_off_judges_no_channel(tmp_path):
+    """The Calendar on, the bot command channel 100 deleted: `/images config toggle Calendar`
+    switches it off, said as today, and nothing of the server is read."""
+    league = await _league(tmp_path, aspects=("calendar",))
+    guild = league_server(league.bot, gone=(COMMAND,))
+
+    asked = await _toggle()(league)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == "❌ **Calendar** image output **disabled**. Posting stays as text."
+    assert await _rows(league.db_path, CALENDAR_SWITCH) == [(0,)]
+    guild.get_channel.assert_not_called()
+    guild.fetch_channel.assert_not_called()
+
+
+@pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED)
+@pytest.mark.parametrize("cause", ["a channel's fetch fails", "the server is out of reach"])
+async def test_a_switch_on_that_cannot_tell_saves_nothing_and_says_to_run_it_again(
+    tmp_path, cause
+):
+    """`/images config toggle Calendar` with no season, where Discord answers the fetch of the
+    bot command channel 100 with a server error, or the league's server is out of the bot's
+    reach: the check cannot be made, so the Calendar stays off, the member is told it stopped on
+    a fault and to run `/images config toggle` again, the one line is a failure, nothing is
+    audited and nothing stops the queue."""
+    league = await _league(tmp_path)
+    if cause == "a channel's fetch fails":
+        league_server(league.bot, unreadable=(COMMAND,))
+    else:
+        league.bot.get_guild = MagicMock(return_value=None)
+
+    asked = await _toggle()(league)
+    await run_queue(league.bot)
+
+    reply = last_said(asked)
+    assert reply.startswith("❌ `/images config toggle` stopped on a fault in the bot")
+    assert "`/images config toggle` again" in reply
+    assert reply.endswith("The fault is recorded in the log channel.")
+    assert await _rows(league.db_path, CALENDAR_SWITCH) == [(0,)]
+    assert await audit_rows(league.db_path) == []
+    [line] = await log_lines(league)
+    assert line.startswith(_failed("`/images config toggle`"))
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#570: an output cannot be switched to text while the module is off"
+)
+async def test_an_output_may_be_switched_off_while_the_module_is_off(tmp_path):
+    """The Calendar on and the image module then switched off: `/images config toggle Calendar`
+    is acknowledged as switching it off and, once run, switches it off, said as today, with one
+    `IMAGE_ASPECT_SET` entry from on to off and its Success line."""
+    league = await _league(tmp_path, aspects=("calendar",))
+    await switch(league.bot, ("images",), on=False)
+
+    asked = await _toggle()(league)
+    assert said(asked)[0].startswith("⏳ Switching **Calendar** image output off. ")
+    await run_queue(league.bot)
+
+    assert last_said(asked) == "❌ **Calendar** image output **disabled**. Posting stays as text."
+    assert await _rows(league.db_path, CALENDAR_SWITCH) == [(0,)]
+    audits = await audit_rows(league.db_path)
+    assert [(a["change_type"], a["old_value"], a["new_value"]) for a in audits] == [
+        ("IMAGE_ASPECT_SET", {"aspect": "calendar", "enabled": True},
+         {"aspect": "calendar", "enabled": False}),
+    ]
+    assert await log_lines(league) == [
+        f"{NAMED} | /images config toggle | Success\n  Calendar image output: disabled"
+    ]
 
 
 @pytest.mark.parametrize(

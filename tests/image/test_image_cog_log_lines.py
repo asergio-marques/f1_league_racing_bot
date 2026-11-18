@@ -33,6 +33,7 @@ from leaguebot.image.models.image_constants import (
 )
 from leaguebot.image.services.validity.image_validity_service import Problem
 from tests.support.change_queue import run_queue
+from tests.support.channel_faults import league_server
 from tests.support.image_cog_doubles import (
     assert_one_line,
     assert_one_refusal,
@@ -100,7 +101,8 @@ async def _league(tmp_path, *, modules=("images",), tier_colours=(), no_configur
                   **config) -> Any:
     """A league with *modules* on, the image configuration's defaults with *config* written over
     them, *tier_colours* (slug, slot, colour) stored, or, with *no_configuration*, the module on
-    and no configuration at all; its bot is `log_bot`'s real-queue form."""
+    and no configuration at all; its bot is `log_bot`'s real-queue form, its server holding
+    every channel with every permission."""
     league = await settings_league(tmp_path, modules=modules)
     async with get_connection(league.db_path) as db:
         for column, value in config.items():
@@ -117,6 +119,7 @@ async def _league(tmp_path, *, modules=("images",), tier_colours=(), no_configur
         # and no configuration is reached only by the module service answering for it.
         answer_switch(league.bot.module_service, "images", True)
     log_bot(league)
+    league_server(league.bot)
     return league
 
 
