@@ -236,6 +236,15 @@ async def core_channel_needs(drawing: ImageDrawing) -> dict[str, Needs]:
     }
 
 
+#: Core's two division channels, each as (the column of `divisions` holding it, what a league calls
+#: it, its key in `core_channel_needs`, which also names the command `/division {key}-channel`
+#: that sets it): what `core_division_channel_faults` and core's picture channels read them by.
+DIVISION_CHANNELS: tuple[tuple[str, str, str], ...] = (
+    ("lineup_channel_id", "lineup channel", "lineup"),
+    ("calendar_channel_id", "calendar channel", "calendar"),
+)
+
+
 async def core_division_channel_faults(
     db_path: str,
     drawing: ImageDrawing,
@@ -265,10 +274,7 @@ async def core_division_channel_faults(
     for division_id, name in divisions.items():
         row = rows.get(division_id)
         lines: list[str] = []
-        for column, label, setting in (
-            ("lineup_channel_id", "lineup channel", "lineup"),
-            ("calendar_channel_id", "calendar channel", "calendar"),
-        ):
+        for column, label, setting in DIVISION_CHANNELS:
             fault = await channel_fault(
                 guild, name, None if row is None else row[column], label,
                 f"/division {setting}-channel", needs[setting],
