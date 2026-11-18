@@ -368,37 +368,58 @@ async def test_bot_init_refuses_a_channel_the_bot_cannot_use_and_claims_nothing(
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.parametrize("meanwhile", ["unusable", "deleted"])
+@pytest.mark.parametrize(
+    "when,meanwhile",
+    [
+        pytest.param("claim", "unusable", id="unusable"),
+        pytest.param("claim", "deleted", id="deleted"),
+        pytest.param("claim", "both", id="both-as-it-claims"),
+        pytest.param("ask", "both", id="both-when-asked"),
+    ],
+)
 async def test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be_used(
-    tmp_path, caplog, meanwhile
+    tmp_path, caplog, when, meanwhile
 ):
     """Core spec, Setting the bot up: `/bot init` judges its two channels again as it claims the
-    server. No server is claimed and no picture is on; an administrator runs `/bot init` for
-    command channel 111 and log channel 333 on a server whose every channel the bot can use, and
-    is acknowledged. Before the queue runs the claim, the bot is denied Send Messages in 333
-    (*unusable*), or 333 is deleted (*deleted*). The claim is refused: the member's reply becomes
-    the refusal, naming what the bot lacks in 333 or that 333 is no longer on the server, word for
-    word; no server is claimed, nothing is audited, no line goes to any channel, there being no
-    league log channel yet, and the bot host's log records the refusal."""
+    server, and its refusal goes to the bot host's log alone. No server is claimed; an
+    administrator runs `/bot init` for command channel 111 and log channel 333 on a server whose
+    every channel the bot can use, and is acknowledged. Before the queue runs the claim, the bot
+    is denied Send Messages in 333 (*unusable*), or 333 is deleted (*deleted*), with no picture
+    on; or, with a lineup picture on, the bot is denied Attach Files in 111 and Send Messages in
+    333 (*both-as-it-claims*). The claim is refused: the member's reply becomes the refusal,
+    naming what the bot lacks or that 333 is no longer on the server, word for word, one channel
+    to a line and the command channel first; no server is claimed, nothing is audited, no line
+    goes to any channel, there being no league log channel yet, and the bot host's log records
+    the refusal with every line's reason, the command channel's first, joined by "; ". Where both
+    channels are already unusable when `/bot init` is asked (*both-when-asked*), it is refused
+    there with the same reply and the host's log records the same two reasons."""
     from tests.support.change_queue import acknowledgement, queued_log_lines, run_queue
 
     caplog.set_level(logging.INFO, logger="leaguebot")
     db_path = await _make_db(tmp_path)
     bot = await _queued_bot(db_path)
-    answer_attachments(bot.image_drawing)
-    league_server(bot)
+    both = {CONFIGURED_CHANNEL: ("attach_files",), CONFIGURED_LOG: ("send_messages",)}
+    answer_attachments(bot.image_drawing, *(("lineup",) if meanwhile == "both" else ()))
+    league_server(bot, unusable=both if when == "ask" else {})
     cog = BotCog(bot)
     interaction = _asking(bot, "bot init")
-    interaction.guild = server_holding()
+    interaction.guild = server_holding(unusable=both if when == "ask" else {})
 
     await _ask_init(cog, interaction)
-    assert acknowledgement(interaction).startswith(_INIT_ACKNOWLEDGED)
+    if when == "claim":
+        assert acknowledgement(interaction).startswith(_INIT_ACKNOWLEDGED)
     if meanwhile == "unusable":
         league_server(bot, unusable={CONFIGURED_LOG: ("send_messages",)})
         refused = _cannot_use(CONFIGURED_LOG, "bot log channel", "Send Messages")
-    else:
+    elif meanwhile == "deleted":
         league_server(bot, gone=(CONFIGURED_LOG,))
         refused = f"❌ <#{CONFIGURED_LOG}> is no longer on the server. Nothing was changed."
+    else:
+        league_server(bot, unusable=both)
+        refused = "\n".join([
+            _cannot_use(CONFIGURED_CHANNEL, "bot command channel", "Attach Files"),
+            _cannot_use(CONFIGURED_LOG, "bot log channel", "Send Messages"),
+        ])
     await run_queue(bot)
 
     assert _said(interaction)[-1] == refused
@@ -406,9 +427,13 @@ async def test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be
     assert await _audit_rows(db_path) == []
     assert all(not channel.sent for channel in bot.test_channels.values())
     assert await queued_log_lines(db_path) == []
+    recorder = (
+        "leaguebot.core.cogs.bot_cog" if when == "ask"
+        else "leaguebot.core.services.settings.bot_init_change"
+    )
+    reasons = "; ".join(_reason(line) for line in refused.splitlines())
     assert any(
-        record.name == "leaguebot.core.services.settings.bot_init_change"
-        and _reason(refused) in record.getMessage()
+        record.name == recorder and record.getMessage().endswith(f": {reasons}")
         for record in caplog.records
     ), [record.getMessage() for record in caplog.records]
 
