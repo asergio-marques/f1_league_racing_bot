@@ -648,7 +648,7 @@ async def test_the_overwrites_the_bot_applied_are_cleared(tmp_path):
 
 
 async def test_a_league_with_no_base_role_reverts_the_rest(tmp_path):
-    """Configuring one is optional; the other three overwrites were still applied."""
+    """Configuring one is optional; the other four overwrites were still applied."""
     league = await _league(tmp_path)
     channel = _signup_channel(league)
 

@@ -202,10 +202,12 @@ The undos of the steps that returned run, last step first, where a later step ha
 where the save does, planned as jobs of the change in the place of the rest, so a restart finishes
 them; a step that fails part-way takes back its own partial work before it raises, and its undo is
 not run. The pattern a module follows is a step that records what is there, a step that changes it
-whose undo restores the record, and the save, the record being kept by the queue (`FOUND`) rather
-than in memory. Where Discord refuses a take-back, the undo raises `StepFailedOnDiscord` with a
-notice of what was left and how to put it right; `setting_change` carries the notice into the failure
-line and the reply, and names the kind of fault from its cause, never `StepFailedOnDiscord`.
+whose undo restores the record, and the save, the record being the record step's result among the
+steps the queue keeps (`StepContext.steps`) rather than in memory. Where Discord refuses a
+take-back, whether the undo's or a step's own part-way one, the step raises `StepFailedOnDiscord`
+with a notice of what was left and how to put it right; `setting_change` carries the notice into
+the failure line and the reply, and names the kind of fault from its cause, or from its reason
+where it chained none, never `StepFailedOnDiscord`.
 
 ### The clock
 

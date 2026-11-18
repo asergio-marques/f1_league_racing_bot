@@ -220,9 +220,10 @@ def _record_permissions(config: "ConfigService") -> Before:
     """The step that records, before the save, what is to be put on the signup channel and what
     stands there: `{"channel_id", "targets": [{"kind": `EVERYONE`, `BOT` or `ROLE`, "id": the
     role's, None for the other two, which the server names itself, "prior": the overwrite held
-    now, None where there is none, "wanted": the overwrite `/signup channel` sets}]}`, in the order `signup_channel_overwrites` gives the targets, or `{"skip": True}` where
-    no channel is kept or the check named the one that is (gone, or another setting's), which is
-    set again by hand. It reaches the server through `league_guild` and raises where the server or
+    now, None where there is none, "wanted": the overwrite `/signup channel` sets}]}`, in the
+    order `signup_channel_overwrites` gives the targets, or `{"skip": True}` where no channel is
+    kept or the check named the one that is (gone, or another setting's), which is set again by
+    hand. It reaches the server through `league_guild` and raises where the server or
     the channel is missing. It changes nothing on Discord, and so declares no undo."""
 
     async def run(ctx: StepContext) -> StepResult:
@@ -295,9 +296,12 @@ def _restore_permissions() -> Before:
                     if entry["prior"] is None
                     else _overwrite(entry["prior"])
                 )
-                merged.update(
-                    **{name: value for name, value in _overwrite(entry["wanted"]) if value is not None}
-                )
+                merged.update(**{
+                    name: value
+                    for name, value in _overwrite(entry["wanted"])
+                    if value is not None
+                })
+                # Every target resolved: a missing one raised before the loop.
                 assert target is not None
                 await channel.set_permissions(target, overwrite=merged)
                 applied.append(index)

@@ -359,18 +359,18 @@ Each module's switch is a change of the module's own, of kind `module.on:<name>`
 `ModuleCog` asks for by that kind.
 
 **A switch-on of a module that keeps channels does its reading before its save.** Weather, results,
-attendance and signup keep their channels while off, so each switch-on is a `Setting` with a step before
-the save (`Setting.before`, `framework.md`, "Settings"): `kept_channels_check`
+attendance and signup keep their channels while off, so each switch-on is a `Setting` with a step
+before the save (`Setting.before`, `framework.md`, "Settings"): `kept_channels_check`
 (`core/services/modules/kept_channels.py`). It takes the reader of the module's own channels that
 each switch-on hands it (`KeptReader`: a connection and the live season's divisions in, the kept
 channels out, awaiting only the connection; a kept channel is a division's, or the server's, as
-signup's is, and then names no division and is spoken of as "the signup channel"), asks the registry which are taken (`find_channel_use`,
-through the bot's `channel_uses_read` hook, which every module holding channels answers), and
-`channel_presence` which are gone or unusable. `architecture.md` gives the arrangement in "How
-modules and core fit together" and the invariant the reading rests on in "How a change is carried
-out"; core_specification.md, "Modules" and "Channels", gives the rules a league sees.
-`live_divisions_on` (`channel_registry_service`) names the divisions of the live season, which the
-registry and the check both read, so that they judge the same channels.
+signup's is, and then names no division and is spoken of as "the signup channel"), asks the registry
+which are taken (`find_channel_use`, through the bot's `channel_uses_read` hook, which every module
+holding channels answers), and `channel_presence` which are gone or unusable. `architecture.md`
+gives the arrangement in "How modules and core fit together" and the invariant the reading rests on
+in "How a change is carried out"; core_specification.md, "Modules" and "Channels", gives the rules a
+league sees. `live_divisions_on` (`channel_registry_service`) names the divisions of the live
+season, which the registry and the check both read, so that they judge the same channels.
 
 Each file's docstring holds its change's check, its steps and the reason for each. Three shapes
 recur:

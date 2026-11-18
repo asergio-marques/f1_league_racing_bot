@@ -160,17 +160,17 @@ The switch-off's save (`signup_off_change`'s `switch_off`) calls `switch_off_on`
 the window's state, the row reading the window closed with no Sign Up button and no close time, and
 stamps the open window's record closed. The configuration row is kept with its channel, as the
 specification's "Enabling signup flow" (the disable bullet) requires, as the modules that keep their
-channels do: a channel can be deleted or given another job while the module is
-off, and the switch-on checks it (below) rather than the switch-off forgetting it. The window's
-state is cleared because a switch-off whose close job was discarded never ran the close, and a kept
-row reading an open window would bring signup back on with one
-(`switch_off_on`'s docstring; `test_the_channel_is_kept_and_its_permissions_removed`). The slots and
-the three settings sit in tables no key joins to the row, and stand again when the module is
-switched back on (`test_time_slots_and_settings_stand_again_after_a_re_enable`). The closed notice's
-place is the configuration's own, kept with it, so the first opening after a switch-on still takes
-the notice down (`test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on`). The
-signups, the windows, the seasons' copies and the wizard rows of held channels are kept too; the
-league's two roles are core's and stand (`test_disabling_signup_keeps_both_roles`).
+channels do: a channel can be deleted or given another job while the module is off, and the
+switch-on checks it (below). The window's state is cleared because a switch-off whose close job was
+discarded never ran the close, and a kept row reading an open window would bring signup back on with
+one (`switch_off_on`'s docstring;
+`test_a_discarded_return_of_the_drivers_says_the_button_was_left_standing`). The slots and the three
+settings sit in tables no key joins to the row, and stand again when the module is switched back on
+(`test_time_slots_and_settings_stand_again_after_a_re_enable`). The closed notice's place is the
+configuration's own, kept with it, so the first opening after a switch-on still takes the notice
+down (`test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on`). The signups, the
+windows, the seasons' copies and the wizard rows of held channels are kept too; the league's two
+roles are core's and stand (`test_disabling_signup_keeps_both_roles`).
 
 **What it removes is every permission the bot set on the channel** (everyone's, its own, the base
 role's, the interaction role's and the league admin role's), by a job of its own after the save
@@ -180,18 +180,19 @@ overwrite is put right by hand where a half-off module is not.
 
 **The switch-on checks the channel, records, puts the permissions back and saves**, in three steps
 before its save (`module_switch_settings`): the check core makes of a kept channel
-(`kept_channels_check`), which clears one another setting took and refuses one the bot cannot use;
-`record_permissions`, which reads each target's overwrite as it stands, against the base role as it
-stands now; and `restore_permissions`, which sets the merged overwrite of each, declaring
-`take_back_permissions` as its undo. The record is a step of its own, marked done before anything is
-set, so a restore run again after a stop reads the first record and a take-back restores what stood
-before the first attempt, not what the stop left. The permissions are merged with what the league
-set by hand, which stands, and a take-back restores the exact recorded overwrite. The check is
-`kept_channels_check`'s own and `channel_needs` states what it holds the channel to, once, as the
-signup specification's "Enabling signup flow" gives it: `/signup open` reads the posting part
-(`POSTING_NEEDS`) and setting who may see the channel the rest (`OVERWRITE_NEEDS`).
-*Rejected:* an `After` step, which would leave the module on while they are unset (`setting_change`'s
-docstring). Tests:
+(`kept_channels_check`), which finds one another setting took, for the save to clear, and refuses
+one the bot cannot use; `record_permissions`, which reads each target's overwrite as it stands,
+against the base role as it stands now; and `restore_permissions`, which sets the merged overwrite
+of each, declaring `take_back_permissions` as its undo. The record is a step of its own, marked done
+before anything is set, so a restore run again after a stop reads the first record and a take-back
+restores what stood before the first attempt, not what the stop left. The permissions are merged
+with what the league set by hand, which stands, and a take-back restores the exact recorded
+overwrite. The check is `kept_channels_check`'s own and `channel_needs` states what it holds the
+channel to, once, as the signup specification's "Enabling signup flow" gives it: `/signup open`
+reads the posting part (`POSTING_NEEDS`), and `OVERWRITE_NEEDS` holds the rest, which setting who
+may see the channel needs. *Rejected:* an `After` step, which would leave the module on while they
+are unset, where nothing may be half-set (Constitution X, rule 2; `Before.undo` in
+`setting_change`). Tests:
 `test_a_restore_discord_refuses_part_way_leaves_signup_off_and_takes_back_what_it_set`,
 `test_a_save_that_faults_after_the_restore_takes_the_permissions_back`,
 `test_a_restore_run_again_after_a_stop_takes_back_to_the_first_record`.
@@ -674,9 +675,9 @@ stops (`recover_gone_channels`, `recover_correction_timeouts`, place 2). The swi
 stepping over one it cannot clear, for the reason `signup_off_change`'s module docstring gives: a
 channel with a stale overwrite is put right by hand, a module left half-off is not. The switch-on's
 `_take_back` does the same in a loop over the targets it set, so that one refused set-back leaves
-the rest still taken back and the league told of what was left (its docstring). The architecture
-check accepts each as a catch-all inside a loop; neither is one of the six places as
-`architecture.md` words them.
+the rest still taken back (its docstring), and the league told of what was left (the module's
+docstring). The architecture check accepts each as a catch-all inside a loop; neither is one of the
+six places as `architecture.md` words them.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops"):
 

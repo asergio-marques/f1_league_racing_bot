@@ -125,8 +125,8 @@ framework's scheduler), `drivers/` (drivers, teams, placements, the lineup and t
 `settings/` (which answers the framework's questions of the league), `test_mode/`, `upkeep/`
 (backup, pack, factory reset, the in-memory state and clean-up) and `modules/` (the hub and its
 About option, and what core asks of the modules, such as the drawing protocol and the check a
-switch-on runs on the channels its module kept). A folder is not a
-kind: every check reads a file's kind from the first folder below its part or the framework, so
+switch-on runs on the channels its module kept). A folder is not a kind: every check reads a file's
+kind from the first folder below its part or the framework, so
 `core/services/seasons/season_service.py` is a service of core. A module's own services stay in its
 `services/` folder unless its design file groups them. `tests/repository/test_import_contracts.py`
 holds it: no service of the framework's or of core's sits outside a topic folder.
@@ -277,20 +277,20 @@ judged, a round amended or its timed work armed again, a round's timed work read
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
-command sets it or as a module is switched on (weather, results, attendance and signup answer it only
-while the module is on), the factory reset gathering the channels each module
-holds, a round's drawn phases read, a driver's signup name, username and nationality read for a
-season, with whether a nationality is collected, which the modules that draw a driver ask through
-core's reader, the divisions a driver's accounts raced in read, a driver's standing in a division
-read for the season's history, a season's fingerprint taken, a season's pending test-mode steps
-read, the test-mode review's marks read, a season's confirmation judged, a division's final round
-read, a season ending, a season, division, round or driver deleted, a driver merged into another or
-turned down, a driver's account changed, a base role changed, the bot packed, test mode turned on,
-the bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read),
-core declares a hook. The builder, or the module's wiring it calls, signs each module up to it
-before the bot connects. Core calls whoever signed up, and never imports a module, the bot's type
-aside (see "How the code is laid out"). A module turned on or off is not a hook but a change of the
-module's own, which core asks for by its kind (see "Each module turns itself on and off").
+command sets it or as a module is switched on (weather, results, attendance and signup answer it
+only while the module is on), the factory reset gathering the channels each module holds, a round's
+drawn phases read, a driver's signup name, username and nationality read for a season, with whether
+a nationality is collected, which the modules that draw a driver ask through core's reader, the
+divisions a driver's accounts raced in read, a driver's standing in a division read for the season's
+history, a season's fingerprint taken, a season's pending test-mode steps read, the test-mode
+review's marks read, a season's confirmation judged, a division's final round read, a season ending,
+a season, division, round or driver deleted, a driver merged into another or turned down, a driver's
+account changed, a base role changed, the bot packed, test mode turned on, the bot's in-memory state
+cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
+builder, or the module's wiring it calls, signs each module up to it before the bot connects. Core
+calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
+out"). A module turned on or off is not a hook but a change of the module's own, which core asks for
+by its kind (see "Each module turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
@@ -422,10 +422,10 @@ in `setting_change`'s docstring.
 
 Where a module also put something on the server that its switch-off took off, its switch-on puts it
 back as two further steps before the save, after the check: a record step, which keeps what it found
-there before it puts anything back, and a restore step, which puts back and declares an undo that
-restores the record where a later step or the save does not go through. The record is a step of its
-own so that a restore run again after a stop takes back to the first record. The steps of signup's
-switch-on are in signup_module.md.
+there before it puts anything back, and a restore step, which puts it back and is undone where the
+switch-on does not go through, so that nothing is half-set (the undo is framework.md's, "Settings").
+The record is a step of its own so that a restore run again after a stop takes back to the first
+record. The steps of signup's switch-on are in signup_module.md.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (after PEP 8's convention, extended to the files of one module). What a
@@ -633,18 +633,16 @@ it that carries the line — the arming of the daily portrait job, a role's gran
 where it replaces one gone from the server while the season's configuration is fixed, the old hub
 stood down and the new one's permissions set once its channel is moved, or the signup channel's
 permissions set (the new channel's first, the old one's cleared last); see "The record is the
-queue's"), after any step before the save, and the work after it that the setting does not need (checking it against the templates,
-arming or removing a timed job, granting a role to every driver, asking the hub's panel to be posted
-again as the bot's own change, posting the signup information in the new signup channel where a
-window is open) is work nothing later depends on. Work the save waits on may come before it (a
-module's kept channels checked before it is switched on, and what it put back on Discord): it saves
-nothing, and a fault in it, or a refusal by it, ends the setting with nothing saved and no audit
-record. A step that changed something on Discord declares an undo (`Before.undo`), which the queue
-runs, last step first, where a later step before the save halts or faults or the save does, so that
-nothing is half-set; where Discord refuses the take-back, the step says what it left and the reply
-and the failure line carry it. A fault in any of these
-leaves nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the
-save saves nothing, and one in the save is rolled back whole, so nothing is saved and the member can
+queue's"), after any step before the save, and the work after it that the setting does not need
+(checking it against the templates, arming or removing a timed job, granting a role to every
+driver, asking the hub's panel to be posted again as the bot's own change, posting the signup
+information in the new signup channel where a window is open) is work nothing later depends on.
+Work the save waits on may come before it (a module's kept channels checked before it is switched
+on, and what it put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends
+the setting with nothing saved and no audit record, what a step before the save changed on Discord
+being undone so that nothing is half-set (framework.md, "Settings"). A fault in any of these leaves
+nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the save
+saves nothing, and one in the save is rolled back whole, so nothing is saved and the member can
 simply ask again; a fault in a step after the save leaves the setting saved, so asking again with
 the same value saves nothing and repeats no step, and the reply says what was not done, or what to
 do by hand, where the step has anything to say. So such a step carries `Step.on_fault`: where it
@@ -732,9 +730,9 @@ stop nobody yet holds the role to clear.
   judgement of the state, as is the reading a module's switch-on makes of its kept channels before
   its save: a module's channels are not counted while it is off, and its switch-on claims them
   again, so a switch-on must stay a change that never stops its lane, its steps before the save and
-  its save ending on a fault, and the undos of those steps ending on a fault too. That invariant is the one a later reader could tune away: a change
-  that can stop its lane and claims a channel would need the save to re-check, or would need to be
-  barred from being overtaken.
+  its save ending on a fault, and the undos of those steps ending on a fault too. That invariant is
+  the one a later reader could tune away: a change that can stop its lane and claims a channel
+  would need the save to re-check, or would need to be barred from being overtaken.
 
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
@@ -832,8 +830,8 @@ stop nobody yet holds the role to clear.
   record is written, the answer for a value already held and the answer for a fault are decided in
   one place. A setting's value, its audit record and its line are one save, after any steps before
   it (a module's kept channels checked before it is switched on, and what it puts back, which save
-  nothing and end the setting on a fault, or refused, with no audit record, the steps that changed
-  something on Discord taken back by their undos), save where a step after it arms the daily
+  nothing and end the setting on a fault, or refused, with no audit record, what they changed on
+  Discord undone), save where a step after it arms the daily
   portrait job, grants a role to every driver where it replaces one gone from the server while the
   season's configuration is fixed, stands the old hub down and sets the new one's permissions once
   its channel is moved, or sets the new signup channel's permissions and then clears the old one's:
