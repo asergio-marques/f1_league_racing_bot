@@ -55,9 +55,9 @@ stood. The daily portrait job the configuration arms is
 not configuration and is not kept armed: the switch-off removes it and the switch-on arms it again
 ("How a change is carried out", below).
 
-An output is switched to text with the module off but to a picture only with it on: the posting being
-text already, the retreat needs nothing of the module, while the switch to a picture does, so the
-toggle refuses `MODULE_OFF` only where it switches on (`image_settings`).
+The toggle refuses `MODULE_OFF` only where it switches an output on (`image_settings`), the exception
+to the module-off rule that `image_module_specification.md`, "Configuration" makes; the cog's gate on the module
+is likewise made only then.
 
 ### The portrait register
 
@@ -191,13 +191,11 @@ the save, planned only where the save changed something, so that a fault in it l
 saved and the reply says it could not be checked. `image_settings`'s module docstring holds each
 part.
 
-A toggle that switches an output on has a step before the save, `picture_channels_check` (core's,
-`core/services/modules/picture_channels.py`), handed the aspect as the change names it: the channels
-the output posts to are judged with the output counted as a picture, and a channel gone or lacking
-what a picture needs refuses the toggle (`_toggle_refusal`), the output left as text. A toggle that
-switches off hands it nothing, and the step answers at once, judging no channel. The step runs as the
-change starts and not at the ask, so that a channel deleted while the change waited is judged as it
-then stands.
+A toggle has a step before the save, `picture_channels_check` (core's,
+`core/services/modules/picture_channels.py`), handed the aspect as the change names it only where the
+toggle switches on (`_switched_on`); the rule it enforces is in `image_module_specification.md`,
+"Configuration", under `/images config toggle`, and a refusal is `_toggle_refusal`. The step runs as
+the change starts, not at the ask.
 
 ### The switch on and off
 
